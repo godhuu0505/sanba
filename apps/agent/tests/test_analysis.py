@@ -25,7 +25,10 @@ def test_open_topics_flags_missing_non_functional() -> None:
 
 
 def test_open_topics_drops_covered_topics() -> None:
-    transcript = "レイテンシは1秒以内。セキュリティは認証必須。予算は月5万円。同時ユーザーは10人。可用性はSLO99.9%。"
+    transcript = (
+        "レイテンシは1秒以内。セキュリティは認証必須。予算は月5万円。"
+        "同時ユーザーは10人。可用性はSLO99.9%。"
+    )
     topics = heuristic_open_topics(transcript)
     assert topics == []
 
