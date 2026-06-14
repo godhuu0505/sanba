@@ -13,7 +13,7 @@ definition. `root_agent` is the module-level agent ADK discovers.
 
 from __future__ import annotations
 
-from google.adk.agents import Agent
+from google.adk.agents import Agent, BaseAgent
 
 from interviewer.config import get_config
 from interviewer.personas import PERSONAS
@@ -36,7 +36,8 @@ def build_interviewer(model: str | None = None) -> Agent:
     model = model or cfg.model
 
     # Specialist sub-agents. Each can ground its questions and recall past work.
-    sub_agents = [
+    # Annotated as list[BaseAgent] because sub_agents is invariant in BaseAgent.
+    sub_agents: list[BaseAgent] = [
         Agent(
             name=persona.name,
             model=model,
