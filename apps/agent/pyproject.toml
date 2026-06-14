@@ -9,6 +9,7 @@ dependencies = [
     "google-genai>=1.0.0",
     "google-cloud-firestore>=2.16.0",
     "elasticsearch>=8.14,<9",
+    "httpx>=0.27",
     "pydantic>=2.7",
     "pydantic-settings>=2.3",
     "opentelemetry-sdk>=1.25",

@@ -40,5 +40,10 @@ class Settings(BaseSettings):
     langfuse_public_key: str = ""
     langfuse_secret_key: str = ""
 
+    # External connectors (issue #7). OFF by default — never affects the demo path.
+    github_connector_enabled: bool = False
+    github_token: str = ""
+    github_repo: str = ""  # "owner/name"
+
 
 settings = Settings()
