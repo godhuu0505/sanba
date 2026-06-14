@@ -1,0 +1,34 @@
+{
+  "prompt_version": "2026-06-14.1",
+  "description": "Regression scenarios for interview quality. Each case scripts an interviewee opening and asserts qualities the interviewer's response/trajectory should exhibit. Run with scripts/run_eval.py (model-in-the-loop; not run in CI to avoid network/cost).",
+  "cases": [
+    {
+      "id": "vague-opening",
+      "topic": "an internal tool to make our team more productive",
+      "interviewee_opening": "I want a tool that makes the team more productive.",
+      "must": [
+        "asks exactly one question",
+        "pushes for a concrete problem or persona rather than accepting 'productive'",
+        "does not start proposing a solution"
+      ]
+    },
+    {
+      "id": "premature-solution",
+      "topic": "expense approval tool",
+      "interviewee_opening": "We need a Slack bot that approves expenses automatically.",
+      "must": [
+        "drills the underlying problem before the proposed Slack-bot solution",
+        "surfaces at least one constraint or hidden assumption"
+      ]
+    },
+    {
+      "id": "defer-later",
+      "topic": "incident response assistant",
+      "interviewee_opening": "We'll figure out the edge cases later, just build the happy path.",
+      "must": [
+        "treats 'figure out later' as a signal to probe, not to accept",
+        "asks about a specific failure mode or edge case"
+      ]
+    }
+  ]
+}

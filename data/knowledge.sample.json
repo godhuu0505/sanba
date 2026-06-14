@@ -1,0 +1,20 @@
+[
+  {
+    "id": "approval-routing-pitfalls",
+    "title": "Approval routing pitfalls",
+    "text": "Approval workflows commonly fail on: out-of-office approvers (need delegation/escalation), multi-level thresholds (who approves above $X), and audit trails for compliance. Always ask about the escalation path and the system of record.",
+    "metadata": { "domain": "internal-tools" }
+  },
+  {
+    "id": "sso-integration",
+    "title": "SSO / identity constraints",
+    "text": "If a company already has an identity provider (Okta, Entra ID, Google Workspace), new internal tools are usually required to use it. Probe whether SSO is mandatory, whether SCIM provisioning is needed, and how contractors/external users are handled.",
+    "metadata": { "domain": "identity" }
+  },
+  {
+    "id": "incident-response-loop",
+    "title": "Incident response essentials",
+    "text": "Incident assistants must clarify: severity definitions, who owns the incident, the comms channel, and what 'resolved' means. The hardest requirement is usually the human handoff, not the detection.",
+    "metadata": { "domain": "sre" }
+  }
+]
