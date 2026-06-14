@@ -22,6 +22,20 @@ export async function createSession(roles: string[]): Promise<CreateSessionRespo
   return res.json();
 }
 
+export async function addSessionContext(
+  sessionId: string,
+  text: string,
+  sourceName = "uploaded",
+): Promise<{ indexed_chunks: number }> {
+  const res = await fetch(`${API_URL}/api/sessions/${sessionId}/context`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text, source_name: sourceName }),
+  });
+  if (!res.ok) throw new Error(`add context failed: ${res.status}`);
+  return res.json();
+}
+
 export async function joinSession(params: {
   invite: string;
   participantName: string;

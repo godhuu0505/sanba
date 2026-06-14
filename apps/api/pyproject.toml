@@ -10,6 +10,10 @@ dependencies = [
     "pydantic>=2.7",
     "pydantic-settings>=2.3",
     "google-cloud-firestore>=2.16.0",
+    "elasticsearch>=8.14,<9",
+    "google-genai>=1.0.0",
+    "pypdf>=4.2",
+    "python-multipart>=0.0.9",
     "structlog>=24.1",
     "opentelemetry-instrumentation-fastapi>=0.46b0",
     "opentelemetry-sdk>=1.25",
@@ -30,6 +34,10 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI dependency-injection markers are called in argument defaults by design.
+extend-immutable-calls = ["fastapi.File", "fastapi.Depends", "fastapi.Query", "fastapi.Form"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -18,13 +18,14 @@ from collections import defaultdict, deque
 from datetime import timedelta
 
 import structlog
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from livekit import api
 from pydantic import BaseModel
 
 from .auth import InvalidInvite, create_invite, verify_invite
 from .config import settings
+from .ingestion import ContextIndexer, chunk_text, extract_text_from_upload
 
 log = structlog.get_logger(__name__)
 
@@ -39,6 +40,9 @@ app.add_middleware(
 # In-memory per-IP rate limiter for the join endpoint. Stateless workers can use
 # a shared store (Redis/Firestore) later; this is enough to blunt abuse in the MVP.
 _join_hits: dict[str, deque[float]] = defaultdict(deque)
+
+# Context indexer shares the agent's Elasticsearch grounding index (issue #6).
+_indexer = ContextIndexer()
 
 
 def _rate_limit(client_ip: str) -> None:
@@ -61,6 +65,15 @@ class CreateSessionRequest(BaseModel):
 class CreateSessionResponse(BaseModel):
     session_id: str
     invites: dict[str, str]  # role -> invite token
+
+
+class ContextRequest(BaseModel):
+    text: str
+    source_name: str = "uploaded"
+
+
+class ContextResponse(BaseModel):
+    indexed_chunks: int
 
 
 class JoinRequest(BaseModel):
@@ -92,6 +105,28 @@ def create_session(req: CreateSessionRequest) -> CreateSessionResponse:
     }
     log.info("session_created", session=session_id, roles=req.roles)
     return CreateSessionResponse(session_id=session_id, invites=invites)
+
+
+@app.post("/api/sessions/{session_id}/context", response_model=ContextResponse)
+def add_context(session_id: str, req: ContextRequest) -> ContextResponse:
+    """Register reference text for a session; chunks go to RAG grounding."""
+    if len(req.text) > settings.max_context_chars:
+        raise HTTPException(status_code=413, detail="context too large")
+    chunks = chunk_text(req.text)
+    n = _indexer.index_context(session_id, chunks, req.source_name)
+    return ContextResponse(indexed_chunks=n)
+
+
+@app.post("/api/sessions/{session_id}/context/file", response_model=ContextResponse)
+async def add_context_file(session_id: str, file: UploadFile = File(...)) -> ContextResponse:
+    """Register an uploaded document (txt/md/pdf) as session context."""
+    raw = await file.read()
+    if len(raw) > settings.max_context_chars * 4:  # bytes guard (~utf-8 worst case)
+        raise HTTPException(status_code=413, detail="file too large")
+    text = extract_text_from_upload(file.filename or "upload", raw)
+    chunks = chunk_text(text)
+    n = _indexer.index_context(session_id, chunks, file.filename or "upload")
+    return ContextResponse(indexed_chunks=n)
 
 
 @app.post("/api/sessions/join", response_model=JoinResponse)
