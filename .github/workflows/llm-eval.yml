@@ -1,0 +1,31 @@
+name: LLM Eval (LLMOps)
+
+# プロンプトやエージェント定義の変更時に、要件インタビューの品質を回帰評価する。
+# 「聞き漏らし率」「矛盾検知率」を Langfuse のデータセットで測り、劣化したら fail。
+on:
+  pull_request:
+    paths:
+      - "apps/agent/src/kikitori_agent/prompts/**"
+      - "apps/agent/src/kikitori_agent/agent_team.py"
+      - "apps/agent/src/kikitori_agent/tools/**"
+  workflow_dispatch:
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    if: ${{ secrets.GOOGLE_API_KEY != '' }}
+    defaults:
+      run:
+        working-directory: apps/agent
+    env:
+      GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+      LANGFUSE_HOST: ${{ secrets.LANGFUSE_HOST }}
+      LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
+      LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - run: uv python install 3.12
+      - run: uv sync --all-extras --dev
+      # Placeholder: real evaluation script lands with Phase 1.
+      - run: uv run python -m kikitori_agent.eval || echo "eval harness not yet implemented"

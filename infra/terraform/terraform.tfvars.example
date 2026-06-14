@@ -1,0 +1,5 @@
+project_id         = "kikitori-prod"
+region             = "us-central1"
+image_tag          = "latest"
+billing_account    = ""        # e.g. "0123AB-456789-CDEF01" to enable budget alerts
+monthly_budget_jpy = 30000

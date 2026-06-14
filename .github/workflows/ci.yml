@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  agent:
+    name: agent (lint + test)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/agent
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - run: uv python install 3.12
+      - run: uv sync --all-extras --dev
+      - run: uv run ruff check .
+      - run: uv run pytest -q
+
+  api:
+    name: api (lint + test)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - run: uv python install 3.12
+      - run: uv sync --all-extras --dev
+      - run: uv run ruff check .
+      - run: uv run pytest -q
+
+  web:
+    name: web (typecheck + build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install
+      - run: npm run typecheck
+      - run: npm run build
+
+  docker:
+    name: docker build
+    runs-on: ubuntu-latest
+    needs: [agent, api, web]
+    strategy:
+      matrix:
+        app: [agent, api, web]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: apps/${{ matrix.app }}
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

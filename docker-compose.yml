@@ -1,0 +1,105 @@
+# Kikitori local development stack.
+# つくる(agent/api/web) を まわす(observability) 基盤の上で動かす。
+name: kikitori
+
+services:
+  # ---- Application ----
+  agent:
+    build: ./apps/agent
+    env_file: .env
+    depends_on: [livekit, otel-collector, firestore]
+    command: ["python", "-m", "kikitori_agent.main", "start"]
+    restart: unless-stopped
+
+  api:
+    build: ./apps/api
+    env_file: .env
+    ports: ["8080:8080"]
+    depends_on: [livekit, firestore]
+    restart: unless-stopped
+
+  web:
+    build: ./apps/web
+    env_file: .env
+    ports: ["3000:3000"]
+    depends_on: [api]
+    restart: unless-stopped
+
+  # ---- Realtime media ----
+  livekit:
+    image: livekit/livekit-server:latest
+    command: ["--dev", "--bind", "0.0.0.0"]
+    ports: ["7880:7880", "7881:7881", "7882:7882/udp"]
+    environment:
+      LIVEKIT_KEYS: "devkey: secret"
+
+  # ---- State ----
+  firestore:
+    image: google/cloud-sdk:emulators
+    command: >
+      gcloud emulators firestore start
+      --host-port=0.0.0.0:8200 --project=kikitori-dev
+    ports: ["8200:8200"]
+
+  # ---- Observability stack ----
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    command: ["--config=/etc/otel/config.yaml"]
+    volumes:
+      - ./infra/observability/otel/config.yaml:/etc/otel/config.yaml:ro
+    ports: ["4317:4317", "4318:4318"]
+    depends_on: [prometheus, loki, tempo]
+
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+      - ./infra/observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports: ["9090:9090"]
+
+  loki:
+    image: grafana/loki:latest
+    command: ["-config.file=/etc/loki/config.yaml"]
+    volumes:
+      - ./infra/observability/loki/config.yaml:/etc/loki/config.yaml:ro
+    ports: ["3100:3100"]
+
+  tempo:
+    image: grafana/tempo:latest
+    command: ["-config.file=/etc/tempo/config.yaml"]
+    volumes:
+      - ./infra/observability/tempo/config.yaml:/etc/tempo/config.yaml:ro
+    ports: ["3200:3200"]
+
+  grafana:
+    image: grafana/grafana:latest
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_SECURITY_ALLOW_EMBEDDING: "true"
+    volumes:
+      - ./infra/observability/grafana/provisioning:/etc/grafana/provisioning:ro
+    ports: ["3001:3000"]
+    depends_on: [prometheus, loki, tempo]
+
+  # ---- LLMOps ----
+  langfuse-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: langfuse
+      POSTGRES_PASSWORD: langfuse
+      POSTGRES_DB: langfuse
+    volumes:
+      - langfuse-db:/var/lib/postgresql/data
+
+  langfuse:
+    image: langfuse/langfuse:latest
+    depends_on: [langfuse-db]
+    environment:
+      DATABASE_URL: postgresql://langfuse:langfuse@langfuse-db:5432/langfuse
+      NEXTAUTH_SECRET: local-dev-secret
+      NEXTAUTH_URL: http://localhost:3030
+      SALT: local-dev-salt
+    ports: ["3030:3000"]
+
+volumes:
+  langfuse-db:
