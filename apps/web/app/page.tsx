@@ -8,7 +8,7 @@ import {
   BarVisualizer,
 } from "@livekit/components-react";
 import { useState } from "react";
-import { joinSession, type JoinResponse } from "../lib/api";
+import { createSession, joinSession, type JoinResponse } from "../lib/api";
 
 export default function Home() {
   const [name, setName] = useState("");
@@ -19,7 +19,11 @@ export default function Home() {
   async function handleJoin() {
     try {
       setError(null);
-      setConn(await joinSession({ participantName: name || "ゲスト", role }));
+      // Owner flow for the demo: create a session, then redeem the role invite.
+      // (Multi-participant flow shares these invite links — see issue #8.)
+      const session = await createSession([role]);
+      const invite = session.invites[role];
+      setConn(await joinSession({ invite, participantName: name || "ゲスト" }));
     } catch (e) {
       setError(String(e));
     }
