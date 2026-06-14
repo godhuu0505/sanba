@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from google.adk.agents import Agent
 
+from interviewer.config import get_config
 from interviewer.personas import PERSONAS
 from interviewer.prompts import lead_instruction, persona_instruction
 from interviewer.tools import (
@@ -22,7 +23,6 @@ from interviewer.tools import (
     save_session_log,
     search_past_sessions,
 )
-from interviewer.config import get_config
 
 
 def build_interviewer(model: str | None = None) -> Agent:
