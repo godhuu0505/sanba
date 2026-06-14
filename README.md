@@ -84,14 +84,14 @@ flowchart LR
 
 | レイヤー | 採用技術 | 評価上の狙い |
 |---|---|---|
-| 音声 I/O | **Gemini Live API** (speech-to-speech) + **LiveKit Agents** | 低レイテンシ・自然な多人数対話 |
+| 音声 I/O | **Gemini Live API** (speech-to-speech) + **LiveKit Agents**（LiveKit Cloud） | 低レイテンシ・自然な多人数対話（ADR-0006） |
 | エージェント | **Google ADK**（root + subagent + agent-as-a-tool） | 「エージェントの必然性」「マルチエージェント協調」 |
 | LLM | **Gemini 2.x**（Vertex AI / Gemini API） | 必須AI技術 |
 | バックエンド | **FastAPI**（Python） | LiveKit トークン発行・オーケストレーション |
 | フロント | **Next.js** + LiveKit React Components | 本番品質UX（Cloud Run） |
 | 永続化 | **Firestore**（セッション/要件）+ Cloud Storage（アーティファクト） | 運用想定の状態管理 |
 | 検索/RAG | **Elasticsearch**（BM25 + ベクトルのハイブリッド） | 根拠付け・過去セッション検索（佐藤一憲氏 Agentic RAG） |
-| 実行基盤 | **Cloud Run**（必須） | スケーラブルな本番デプロイ |
+| 実行基盤 | **Cloud Run**（必須・GKE は見送り） | スケーラブルな本番デプロイ（ADR-0006） |
 | IaC | **Terraform** | 再現可能なインフラ |
 | CI/CD | **GitHub Actions** + Cloud Build | 「まわす」軸 |
 | 可観測性 | **OpenTelemetry** → Cloud Trace/Logging + **Grafana / Prometheus / Loki / Tempo** | Observability |
