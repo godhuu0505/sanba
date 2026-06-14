@@ -1,0 +1,51 @@
+name: Deploy (Cloud Run)
+
+# main へのマージで Cloud Run にデプロイ。鍵レス認証は Workload Identity Federation。
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  REGION: us-central1
+  REPO: kikitori
+
+permissions:
+  contents: read
+  id-token: write   # Workload Identity Federation
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    # Secrets/vars must be configured in the repo; skip gracefully if absent.
+    if: ${{ vars.GCP_PROJECT_ID != '' }}
+    strategy:
+      matrix:
+        app: [agent, api, web]
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.DEPLOY_SA }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+
+      - name: Build & push
+        run: |
+          IMAGE="${REGION}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${REPO}/${{ matrix.app }}:${GITHUB_SHA}"
+          docker build -t "$IMAGE" apps/${{ matrix.app }}
+          docker push "$IMAGE"
+          echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
+
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy kikitori-${{ matrix.app }} \
+            --image "$IMAGE" \
+            --region "$REGION" \
+            --quiet

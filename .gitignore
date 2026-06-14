@@ -1,0 +1,44 @@
+# Secrets / env
+.env
+.env.*
+!.env.example
+*.key
+*-credentials.json
+service-account*.json
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.uv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+dist/
+*.egg-info/
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+.pnpm-store/
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+crash.log
+
+# Observability / data volumes
+infra/observability/**/data/
+*.db
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.log
