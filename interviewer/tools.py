@@ -17,8 +17,8 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from interviewer.formatting import render_session_log_markdown, slugify
 from interviewer.config import get_config
+from interviewer.formatting import render_session_log_markdown, slugify
 from interviewer.types import Decision, SessionLog
 
 
