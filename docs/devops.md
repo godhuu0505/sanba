@@ -72,8 +72,10 @@ flowchart LR
 ## 7. ローカル開発
 
 ```bash
-make up      # 全スタック起動
-make test    # 単体/結合テスト
-make lint    # lint + 型チェック
-make logs    # ログ追従
+just up      # 全スタック起動
+just test    # 単体/結合テスト
+just lint    # lint + 型チェック
+just logs    # ログ追従
 ```
+
+> `just` 未導入なら `make`（同名ターゲット）でも可。`justfile` が標準。

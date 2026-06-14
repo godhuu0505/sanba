@@ -104,12 +104,16 @@ flowchart LR
 
 ```bash
 cp .env.example .env   # GOOGLE_API_KEY / LIVEKIT_* などを設定
-make up                # docker compose で agent / api / web / 可観測性スタックを起動
-make logs              # ログ確認
+just up                # docker compose で agent / api / web / 可観測性スタックを起動
+just logs              # ログ確認
 open http://localhost:3000          # Web クライアント
 open http://localhost:3001          # Grafana
 open http://localhost:3030          # Langfuse
 ```
+
+> タスクランナーは [`just`](https://github.com/casey/just)（`justfile`）が標準です。
+> `just` 未導入の環境向けに `make` も同じターゲットで利用できます（`make up` 等）。
+> レシピ一覧は `just`（引数なし）。
 
 詳細は [`docs/devops.md`](docs/devops.md)。
 
