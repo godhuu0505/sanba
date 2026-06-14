@@ -1,14 +1,15 @@
 name: Claude Review Response
 
-# レビューコメント（Codex の自動レビュー / 人間レビュアーの指摘）が付いたら、
-# Claude Code が内容を読み取り、対応方針を返信したうえで
+# レビューが付いたら Claude Code が内容を読み取り、対応方針を返信したうえで
 # 「対応 / skip / issue 起票」のいずれかを実行する。
+#
+# レビューの出し手は 2 系統:
+#  - Codex GitHub 連携（ChatGPT サブスク）が出す自動レビュー（Bot 名義の review）
+#  - 人間レビュアーの review / インラインコメント
 on:
   pull_request_review:
     types: [submitted]
   pull_request_review_comment:
-    types: [created]
-  issue_comment:
     types: [created]
 
 # Claude がコード修正のコミット・コメント返信・issue 起票を行えるよう権限を付与。
@@ -18,29 +19,30 @@ permissions:
   issues: write
 
 concurrency:
-  # 同一 PR の連続イベントを直列化（自分の返信での再入も抑制）。
-  group: claude-review-response-${{ github.event.pull_request.number || github.event.issue.number }}
+  # 同一 PR の連続イベントを直列化。
+  group: claude-review-response-${{ github.event.pull_request.number }}
   cancel-in-progress: false
 
 jobs:
   triage:
     name: Claude triage
     runs-on: ubuntu-latest
-    # ループ防止と対象の限定:
-    #  - 人間レビュー/インラインコメント: Bot 投稿は無視（自分の返信・他 bot を除外）。
-    #  - issue_comment: PR 上かつ Codex レビュー（マーカー付き）のみを拾う。
-    #    → Claude 自身の返信（マーカー無し）では再起動しない。
+    # 対象の限定とループ防止:
+    #  - review(submitted): 本文ありのレビューを拾う。Codex(Bot) は対象に含めるが、
+    #    Claude 自身の投稿元 github-actions[bot] は除外して自己ループを防ぐ。
+    #    （Codex のインラインコメント群は review_comment で個別発火させず、
+    #      この review サマリ 1 件にまとめて反応する。）
+    #  - review_comment(created): 人間のインラインコメントのみ（Bot は除外）。
+    #  - Claude の返信は `gh pr comment`（issue_comment）で行うため、本ワークフローを
+    #    再起動しない（issue_comment はトリガーに含めていない）。
     # secrets はジョブ if で参照できないためステップで確認する。
     if: >-
       ${{
         (github.event_name == 'pull_request_review' &&
-          github.event.review.user.type != 'Bot' &&
+          github.event.review.user.login != 'github-actions[bot]' &&
           github.event.review.body != '' && github.event.review.body != null) ||
         (github.event_name == 'pull_request_review_comment' &&
-          github.event.comment.user.type != 'Bot') ||
-        (github.event_name == 'issue_comment' &&
-          github.event.issue.pull_request != null &&
-          contains(github.event.comment.body, '<!-- codex-review -->'))
+          github.event.comment.user.type != 'Bot')
       }}
     steps:
       # API キー未設定の環境ではスキップし CI を止めない。
@@ -72,17 +74,20 @@ jobs:
             --max-turns 25
           prompt: |
             あなたは Kikitori リポジトリの PR レビュー対応エージェントです。
-            トリガーとなったレビュー（Codex の自動レビュー、または人間レビュアーの
-            コメント）を読み取り、対応してください。
+            トリガーとなったレビュー（Codex GitHub 連携の自動レビュー、または
+            人間レビュアーのコメント）を読み取り、対応してください。
 
             コンテキスト:
             - リポジトリ: ${{ github.repository }}
-            - PR 番号: ${{ github.event.pull_request.number || github.event.issue.number }}
+            - PR 番号: ${{ github.event.pull_request.number }}
             - イベント種別: ${{ github.event_name }}
 
             手順:
             1. `gh pr view <PR番号> --json title,body,headRefName` と
                `gh pr diff <PR番号>` で PR の文脈と差分を把握する。
+               Codex はインラインでも指摘するため、必要なら
+               `gh api repos/${{ github.repository }}/pulls/<PR番号>/comments` で
+               レビューコメントも取得する。
             2. トリガーとなったレビュー本文（下記）を読み、指摘ごとに分類する。
             3. 各指摘について次のいずれかを判断する:
                - 対応: その PR の範囲内で、低リスクかつ明確に正しい修正。
