@@ -11,7 +11,15 @@ Run locally:
 from __future__ import annotations
 
 import structlog
-from livekit.agents import Agent, AgentSession, JobContext, RunContext, WorkerOptions, cli
+from livekit.agents import (
+    Agent,
+    AgentSession,
+    JobContext,
+    RoomInputOptions,
+    RunContext,
+    WorkerOptions,
+    cli,
+)
 from livekit.agents.llm import function_tool
 from livekit.plugins import google
 
@@ -37,6 +45,10 @@ class KikitoriAgent(Agent):
         self._repo = repo
         self._grounding = grounding
         self._transcript: list[str] = []
+
+    @property
+    def transcript(self) -> list[str]:
+        return self._transcript
 
     def record_utterance(self, speaker: str, text: str) -> None:
         self._transcript.append(f"{speaker}: {text}")
@@ -94,6 +106,31 @@ class KikitoriAgent(Agent):
         )
         log.info("requirement_saved", session=self._session_id, id=requirement.id)
         return {"saved": requirement.id}
+
+    @function_tool
+    async def note_visual_requirement(
+        self, _ctx: RunContext, observation: str, statement: str
+    ) -> dict:
+        """画面共有やモックなど視覚情報から読み取った要件を記録する。
+
+        Args:
+            observation: 画面で観察した内容(例「ログイン画面にSSOボタンがある」)。
+            statement: そこから導いた要件の一文。
+        """
+        requirement = Requirement(
+            id=make_requirement_id(statement),
+            statement=statement,
+            category=RequirementCategory.FUNCTIONAL,
+            source_speaker="screen-share",
+        )
+        self._repo.save_requirement(self._session_id, requirement)
+        self._grounding.index_passage(
+            text=f"{statement}（画面観察: {observation}）",
+            source=f"visual:{requirement.id}", kind="requirement",
+            session_id=self._session_id,
+        )
+        log.info("visual_requirement", session=self._session_id, id=requirement.id)
+        return {"saved": requirement.id, "from": "screen-share"}
 
     @function_tool
     async def search_grounding(self, _ctx: RunContext, query: str) -> dict:
@@ -162,13 +199,28 @@ async def entrypoint(ctx: JobContext) -> None:
             speaker = "participant"
             agent.record_utterance(speaker, ev.transcript)
 
-    await session.start(agent=agent, room=ctx.room)
+    # video_enabled=True forwards screen-share / camera frames to Gemini Live,
+    # so the agent can read mockups and whiteboards (multimodal grounding).
+    await session.start(
+        agent=agent,
+        room=ctx.room,
+        room_input_options=RoomInputOptions(video_enabled=True),
+    )
     await session.generate_reply(
         instructions=(
             "まず自己紹介し、これから要件を一緒に整理することを伝え、"
+            "画面共有やモックがあれば見せてほしいと案内した上で、"
             "最初の問いを1つだけ、推奨回答例を添えて投げかけてください。"
         )
     )
+
+    # When the room closes, score the interview (LLM-as-a-judge) and log to Langfuse.
+    async def _on_close() -> None:
+        from .evaluation import score_session
+
+        await score_session(session_id=session_id, transcript="\n".join(agent.transcript))
+
+    ctx.add_shutdown_callback(_on_close)
 
 
 def main() -> None:

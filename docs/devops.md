@@ -48,9 +48,9 @@ flowchart LR
 |---|---|
 | プロンプト管理 | `apps/agent/src/kikitori_agent/prompts/` でバージョン管理 + Langfuse Prompts |
 | トレース | 全 LLM 呼び出しを Langfuse に送信（入出力・レイテンシ・コスト） |
-| 評価データセット | 代表的なヒアリングシナリオを Langfuse Datasets 化 |
-| 回帰テスト | 「聞き漏らし率」「矛盾検知率」を CI で測定し、劣化を検出 |
-| オンライン評価 | 本番セッションを LLM-as-a-judge でスコアリングし改善に回す |
+| 評価データセット | 代表的なヒアリングシナリオを `evaluation.DEFAULT_SCENARIOS` / Langfuse Datasets 化 |
+| 回帰テスト | `llm-eval` ワークフローが `python -m kikitori_agent.evaluation` を実行。ルーブリック採点で順序関係・閾値を検証し劣化を検出（ADR-0005） |
+| オンライン評価 | セッション終了時に `score_session` が LLM-as-a-judge で採点し Langfuse に記録 |
 
 ## 5. Four Keys / DORA（開発生産性）
 

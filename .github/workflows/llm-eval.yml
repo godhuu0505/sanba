@@ -8,16 +8,18 @@ on:
       - "apps/agent/src/kikitori_agent/prompts/**"
       - "apps/agent/src/kikitori_agent/agent_team.py"
       - "apps/agent/src/kikitori_agent/tools/**"
+      - "apps/agent/src/kikitori_agent/evaluation.py"
   workflow_dispatch:
 
 jobs:
   eval:
     runs-on: ubuntu-latest
-    if: ${{ secrets.GOOGLE_API_KEY != '' }}
     defaults:
       run:
         working-directory: apps/agent
     env:
+      # When the key is present the real LLM judge runs; otherwise the harness
+      # falls back to deterministic heuristic scoring so the gate still works.
       GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
       LANGFUSE_HOST: ${{ secrets.LANGFUSE_HOST }}
       LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
@@ -27,5 +29,5 @@ jobs:
       - uses: astral-sh/setup-uv@v3
       - run: uv python install 3.12
       - run: uv sync --all-extras --dev
-      # Placeholder: real evaluation script lands with Phase 1.
-      - run: uv run python -m kikitori_agent.eval || echo "eval harness not yet implemented"
+      # Regression eval: fails if quality drops below threshold or ordering breaks.
+      - run: uv run python -m kikitori_agent.evaluation

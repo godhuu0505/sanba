@@ -16,7 +16,8 @@
 |---|---|---|
 | **Web Client** | ルーム参加・音声送受・要件の可視化 | Next.js + LiveKit Components |
 | **API** | LiveKit 参加トークン発行・セッション CRUD・成果物書き出し | FastAPI |
-| **Voice Agent Worker** | LiveKit ルームに「参加」し、Gemini Live で対話する司会者 | LiveKit Agents + `google.beta.realtime` |
+| **Voice Agent Worker** | LiveKit ルームに「参加」し、Gemini Live で対話する司会者。画面共有/モック映像も受け取る（マルチモーダル, ADR-0004） | LiveKit Agents + `google.beta.realtime` |
+| **Evaluation** | セッションを LLM-as-a-judge で採点（オンライン）＋ CI 回帰（ADR-0005） | Gemini + Langfuse |
 | **ADK Agent Team** | 要件の構造化・矛盾検知・専門深掘り | Google ADK |
 | **Firestore** | セッション状態・確定要件・発話ログ | Firestore (emulator in dev) |
 | **Elasticsearch** | RAG 根拠付け・過去セッション検索（BM25 + kNN ハイブリッド） | Elasticsearch 8.x |
