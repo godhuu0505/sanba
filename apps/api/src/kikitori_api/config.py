@@ -18,5 +18,16 @@ class Settings(BaseSettings):
     # CORS allowlist for the web client
     allowed_origins: str = "http://localhost:3000"
 
+    # ---- Access control ----
+    # Secret used to sign session invites. MUST be overridden in prod (Secret Manager).
+    session_signing_secret: str = "dev-only-insecure-secret-change-me"
+    invite_ttl_seconds: int = 3600
+    # LiveKit join token lifetime.
+    livekit_token_ttl_minutes: int = 60
+    # Local-dev escape hatch: allow joining without an invite. Never enable in prod.
+    auth_dev_bypass: bool = False
+    # Simple per-IP rate limit on join (requests per minute).
+    join_rate_per_minute: int = 30
+
 
 settings = Settings()
