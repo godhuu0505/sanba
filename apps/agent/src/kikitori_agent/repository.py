@@ -6,11 +6,24 @@ Falls back to an in-memory store when Firestore is unavailable (e.g. unit tests)
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
+
 import structlog
 
+from .config import settings
 from .models import Requirement, Utterance
 
 log = structlog.get_logger(__name__)
+
+
+def _expire_at() -> datetime | None:
+    """Retention deadline for stored data (issue #10). None = keep indefinitely.
+
+    Firestore deletes documents whose `expireAt` field is in the past, once a TTL
+    policy is enabled on that field (see infra/terraform + docs/security.md).
+    """
+    days = settings.data_retention_days
+    return datetime.now(UTC) + timedelta(days=days) if days > 0 else None
 
 
 class SessionRepository:
@@ -34,23 +47,29 @@ class SessionRepository:
 
     def add_utterance(self, session_id: str, utterance: Utterance) -> None:
         if self._client is not None:
+            doc = utterance.model_dump(mode="json")
+            if (exp := _expire_at()) is not None:
+                doc["expireAt"] = exp
             (
                 self._client.collection("sessions")
                 .document(session_id)
                 .collection("utterances")
-                .add(utterance.model_dump(mode="json"))
+                .add(doc)
             )
             return
         self._mem_utterances.setdefault(session_id, []).append(utterance)
 
     def save_requirement(self, session_id: str, requirement: Requirement) -> None:
         if self._client is not None:
+            doc = requirement.model_dump(mode="json")
+            if (exp := _expire_at()) is not None:
+                doc["expireAt"] = exp
             (
                 self._client.collection("sessions")
                 .document(session_id)
                 .collection("requirements")
                 .document(requirement.id)
-                .set(requirement.model_dump(mode="json"))
+                .set(doc)
             )
             return
         self._mem_requirements.setdefault(session_id, {})[requirement.id] = requirement

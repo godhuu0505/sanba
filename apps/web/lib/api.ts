@@ -12,11 +12,14 @@ export interface JoinResponse {
   identity: string;
 }
 
-export async function createSession(roles: string[]): Promise<CreateSessionResponse> {
+export async function createSession(
+  roles: string[],
+  consentAcknowledged: boolean,
+): Promise<CreateSessionResponse> {
   const res = await fetch(`${API_URL}/api/sessions`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ roles }),
+    body: JSON.stringify({ roles, consent_acknowledged: consentAcknowledged }),
   });
   if (!res.ok) throw new Error(`create session failed: ${res.status}`);
   return res.json();

@@ -46,6 +46,22 @@ resource "google_firestore_database" "default" {
   depends_on  = [google_project_service.services]
 }
 
+# TTL policy: documents are deleted once their `expireAt` timestamp passes.
+# The agent writes `expireAt` based on DATA_RETENTION_DAYS (issue #10).
+resource "google_firestore_field" "utterances_ttl" {
+  database   = google_firestore_database.default.name
+  collection = "utterances"
+  field      = "expireAt"
+  ttl_config {}
+}
+
+resource "google_firestore_field" "requirements_ttl" {
+  database   = google_firestore_database.default.name
+  collection = "requirements"
+  field      = "expireAt"
+  ttl_config {}
+}
+
 # ---- Service account for Cloud Run workloads (least privilege) ----
 resource "google_service_account" "runtime" {
   account_id   = "kikitori-runtime"

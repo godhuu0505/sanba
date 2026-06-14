@@ -16,6 +16,7 @@ import re
 import structlog
 
 from .config import settings
+from .pii import mask_pii
 
 log = structlog.get_logger(__name__)
 
@@ -98,10 +99,11 @@ class ContextIndexer:
         """Index `chunks` for a session; returns the number indexed."""
         for i, chunk in enumerate(chunks):
             source = f"{source_name}#{i}"
-            embedding = _embed(chunk)
+            text = mask_pii(chunk) if settings.mask_pii_before_index else chunk
+            embedding = _embed(text)
             if self._client is not None:  # pragma: no cover - needs live ES
                 doc = {
-                    "text": chunk,
+                    "text": text,
                     "source": source,
                     "kind": "context",
                     "session_id": session_id,
@@ -111,7 +113,7 @@ class ContextIndexer:
                 self._client.index(index=INDEX, document=doc)
             else:
                 self._mem.append(
-                    {"text": chunk, "source": source, "kind": "context", "session_id": session_id}
+                    {"text": text, "source": source, "kind": "context", "session_id": session_id}
                 )
         log.info("context_indexed", session=session_id, source=source_name, chunks=len(chunks))
         return len(chunks)
