@@ -1,0 +1,38 @@
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: /apps/agent
+    schedule:
+      interval: weekly
+    groups:
+      python-deps:
+        patterns: ["*"]
+
+  - package-ecosystem: pip
+    directory: /apps/api
+    schedule:
+      interval: weekly
+    groups:
+      python-deps:
+        patterns: ["*"]
+
+  - package-ecosystem: npm
+    directory: /apps/web
+    schedule:
+      interval: weekly
+    groups:
+      npm-deps:
+        patterns: ["*"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: docker
+    directories:
+      - /apps/agent
+      - /apps/api
+      - /apps/web
+    schedule:
+      interval: weekly

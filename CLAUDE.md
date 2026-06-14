@@ -32,6 +32,13 @@
 - システム/E2E: LiveKit ルームへの参加〜要件ドキュメント生成までを Playwright で。
 - LLM出力は Langfuse の評価データセットで回帰テストする（LLMOps）。
 
+## セキュリティ
+- PR では `/security-review` を回し、指摘に対応する。
+- CI のセキュリティスキャン（`.github/workflows/security.yml`: pip-audit / npm audit / gitleaks /
+  Trivy、`codeql.yml`、`dependabot.yml`）の結果を確認する。advisory は段階的に解消する。
+- シークレットは絶対にコミットしない（gitleaks が検出）。`.env`（gitignore 済）と Secret Manager を使う。
+- コンテナは非 root 実行・最小ベースを維持する。
+
 ## やってはいけないこと
 - 単発の Gemini API 呼び出しを「エージェント」と称する薄い実装。
 - CI を空にする / テストを消して通す。

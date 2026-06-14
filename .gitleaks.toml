@@ -1,0 +1,20 @@
+# gitleaks configuration for Kikitori.
+# Extends the default ruleset; allowlists local-dev placeholder secrets so the
+# scan stays green while still catching real leaked credentials.
+title = "Kikitori gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Local-dev placeholders and example files (no real secrets)"
+paths = [
+  '''\.env\.example''',
+  '''docker-compose\.yml''',
+]
+regexes = [
+  # Known dev placeholder values committed intentionally.
+  '''dev-only-insecure-secret-change-me''',
+  '''LIVEKIT_KEYS:\s*"devkey:\s*secret"''',
+  '''devkey''',
+]
