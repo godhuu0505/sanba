@@ -8,20 +8,29 @@ import {
   BarVisualizer,
 } from "@livekit/components-react";
 import { useState } from "react";
-import { createSession, joinSession, type JoinResponse } from "../lib/api";
+import {
+  addSessionContext,
+  createSession,
+  joinSession,
+  type JoinResponse,
+} from "../lib/api";
 
 export default function Home() {
   const [name, setName] = useState("");
   const [role, setRole] = useState("pm");
+  const [context, setContext] = useState("");
   const [conn, setConn] = useState<JoinResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function handleJoin() {
     try {
       setError(null);
-      // Owner flow for the demo: create a session, then redeem the role invite.
-      // (Multi-participant flow shares these invite links — see issue #8.)
+      // Owner flow for the demo: create a session, optionally register reference
+      // material (RAG grounding, issue #6), then redeem the role invite (#8).
       const session = await createSession([role]);
+      if (context.trim()) {
+        await addSessionContext(session.session_id, context, "貼り付け資料");
+      }
       const invite = session.invites[role];
       setConn(await joinSession({ invite, participantName: name || "ゲスト" }));
     } catch (e) {
@@ -65,6 +74,16 @@ export default function Home() {
           <option value="engineer">エンジニア</option>
           <option value="customer">顧客</option>
         </select>
+      </label>
+      <label>
+        参考資料（任意・要件のヒントになる既存メモやPRDなど）
+        <textarea
+          value={context}
+          onChange={(e) => setContext(e.target.value)}
+          rows={5}
+          placeholder="ここに貼り付けた内容はAIが事前に読み込み、既知の事項は質問しません。"
+          style={inputStyle}
+        />
       </label>
       <button onClick={handleJoin} style={buttonStyle}>インタビューを始める</button>
       {error && <p style={{ color: "crimson" }}>{error}</p>}

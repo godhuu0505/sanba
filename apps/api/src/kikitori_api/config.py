@@ -29,5 +29,15 @@ class Settings(BaseSettings):
     # Simple per-IP rate limit on join (requests per minute).
     join_rate_per_minute: int = 30
 
+    # ---- Context ingestion -> RAG grounding (issue #6) ----
+    # Shared with the agent's grounding store (same Elasticsearch index).
+    elasticsearch_url: str = ""
+    elasticsearch_api_key: str = ""
+    google_api_key: str = ""
+    google_genai_use_vertexai: bool = False
+    gemini_embed_model: str = "text-embedding-004"
+    # Max characters accepted per context upload (guards memory/cost).
+    max_context_chars: int = 200_000
+
 
 settings = Settings()
