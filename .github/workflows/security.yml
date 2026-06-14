@@ -1,0 +1,79 @@
+name: Security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # Dependency vulnerability audit. Advisory at first (non-blocking) so transitive
+  # CVEs we can't immediately fix don't wall off the PR; tighten to blocking later.
+  python-audit:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        app: [agent, api]
+    defaults:
+      run:
+        working-directory: apps/${{ matrix.app }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - run: uv python install 3.12
+      - run: uv sync --all-extras --dev
+      - name: pip-audit
+        continue-on-error: true
+        run: uv run --with pip-audit pip-audit
+
+  npm-audit:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --package-lock-only
+      - name: npm audit
+        continue-on-error: true
+        run: npm audit --audit-level=high
+
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Run the gitleaks binary directly (the v2 action needs a license on private
+      # org repos); scans the working tree against our allowlisted config.
+      - name: Install gitleaks
+        run: |
+          VERSION=8.18.4
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${VERSION}/gitleaks_${VERSION}_linux_x64.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin gitleaks
+      - name: Scan working tree
+        run: gitleaks detect --no-git --source . --config .gitleaks.toml --redact --verbose
+
+  image-scan:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        app: [agent, api, web]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t kikitori-${{ matrix.app }}:scan apps/${{ matrix.app }}
+      # Trivy is advisory: the docker build above is the gate. Install + scan are
+      # both continue-on-error so a flaky install/scan never blocks the PR.
+      - name: Install Trivy
+        continue-on-error: true
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \
+            | sudo sh -s -- -b /usr/local/bin v0.55.0
+      - name: Trivy scan
+        continue-on-error: true
+        run: trivy image --severity HIGH,CRITICAL --format table kikitori-${{ matrix.app }}:scan || true

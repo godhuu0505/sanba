@@ -1,0 +1,35 @@
+name: CodeQL
+
+# NOTE: Uploading results requires "Code scanning" (GitHub Advanced Security) to be
+# enabled in repo Settings → Security. Until then the upload step reports a
+# configuration error, so the analyze step is advisory (continue-on-error) to keep
+# CI green. Once Code scanning is enabled, drop the continue-on-error to make it gating.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "0 3 * * 1"  # weekly
+
+jobs:
+  analyze:
+    name: analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [python, javascript-typescript]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        continue-on-error: true
+        with:
+          languages: ${{ matrix.language }}
+      - uses: github/codeql-action/analyze@v3
+        continue-on-error: true
+        with:
+          category: /language:${{ matrix.language }}
