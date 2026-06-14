@@ -39,5 +39,13 @@ class Settings(BaseSettings):
     # Max characters accepted per context upload (guards memory/cost).
     max_context_chars: int = 200_000
 
+    # ---- Data governance (issue #10) ----
+    # Mask PII before context is written to the shared grounding index.
+    mask_pii_before_index: bool = True
+    # Require explicit consent (recording + AI processing) to create a session.
+    require_consent: bool = True
+    # Retention for session data (utterances/requirements). 0 = keep indefinitely.
+    data_retention_days: int = 30
+
 
 settings = Settings()

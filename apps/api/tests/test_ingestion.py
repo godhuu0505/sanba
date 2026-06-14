@@ -38,7 +38,9 @@ def test_memory_indexer_counts_chunks() -> None:
 
 
 def test_context_endpoint_indexes_text() -> None:
-    created = client.post("/api/sessions", json={"roles": ["pm"]}).json()
+    created = client.post(
+        "/api/sessions", json={"roles": ["pm"], "consent_acknowledged": True}
+    ).json()
     sid = created["session_id"]
     res = client.post(
         f"/api/sessions/{sid}/context",
@@ -49,7 +51,9 @@ def test_context_endpoint_indexes_text() -> None:
 
 
 def test_context_endpoint_rejects_oversized() -> None:
-    created = client.post("/api/sessions", json={"roles": ["pm"]}).json()
+    created = client.post(
+        "/api/sessions", json={"roles": ["pm"], "consent_acknowledged": True}
+    ).json()
     sid = created["session_id"]
     res = client.post(
         f"/api/sessions/{sid}/context",

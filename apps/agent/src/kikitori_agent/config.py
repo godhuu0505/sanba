@@ -29,6 +29,10 @@ class Settings(BaseSettings):
     elasticsearch_api_key: str = ""
     gemini_embed_model: str = "text-embedding-004"
 
+    # Data governance (issue #10)
+    mask_pii_before_index: bool = True
+    data_retention_days: int = 30
+
     # Observability
     otel_exporter_otlp_endpoint: str = ""
     otel_service_name: str = "kikitori-agent"

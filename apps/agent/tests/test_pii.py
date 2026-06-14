@@ -1,0 +1,24 @@
+"""Tests for PII masking + masked grounding writes (issue #10)."""
+
+from __future__ import annotations
+
+from kikitori_agent.pii import mask_pii
+from kikitori_agent.retrieval import GroundingStore
+
+
+def test_masks_email_and_phone() -> None:
+    masked = mask_pii("alice@example.com / 090-1234-5678")
+    assert "[EMAIL]" in masked
+    assert "[PHONE]" in masked
+
+
+def test_keeps_ordinary_text() -> None:
+    assert mask_pii("レイテンシは1秒以内") == "レイテンシは1秒以内"
+
+
+def test_grounding_store_masks_before_indexing() -> None:
+    store = GroundingStore()
+    store.index_passage("連絡先は carol@example.com", "utt:1", "utterance", "sess-1")
+    hits = store.search("連絡先", k=3)
+    assert hits
+    assert all("carol@example.com" not in h.text for h in hits)

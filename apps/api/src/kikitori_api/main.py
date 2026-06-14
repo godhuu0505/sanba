@@ -60,6 +60,8 @@ class CreateSessionRequest(BaseModel):
     title: str = "要件インタビュー"
     # Roles to mint invites for (owner shares these links with participants).
     roles: list[str] = ["pm", "engineer", "customer"]
+    # Explicit consent to recording + AI processing (issue #10).
+    consent_acknowledged: bool = False
 
 
 class CreateSessionResponse(BaseModel):
@@ -96,6 +98,11 @@ def healthz() -> dict[str, str]:
 @app.post("/api/sessions", response_model=CreateSessionResponse)
 def create_session(req: CreateSessionRequest) -> CreateSessionResponse:
     """Create an interview room and mint a signed invite per role."""
+    if settings.require_consent and not req.consent_acknowledged:
+        raise HTTPException(
+            status_code=400,
+            detail="consent required: recording and AI processing must be acknowledged",
+        )
     session_id = f"sess-{uuid.uuid4().hex[:8]}"
     invites = {
         role: create_invite(

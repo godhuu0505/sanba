@@ -19,15 +19,17 @@ export default function Home() {
   const [name, setName] = useState("");
   const [role, setRole] = useState("pm");
   const [context, setContext] = useState("");
+  const [consent, setConsent] = useState(false);
   const [conn, setConn] = useState<JoinResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function handleJoin() {
     try {
       setError(null);
-      // Owner flow for the demo: create a session, optionally register reference
-      // material (RAG grounding, issue #6), then redeem the role invite (#8).
-      const session = await createSession([role]);
+      // Owner flow for the demo: create a session (with consent, issue #10),
+      // optionally register reference material (RAG grounding, #6), then redeem
+      // the role invite (#8).
+      const session = await createSession([role], consent);
       if (context.trim()) {
         await addSessionContext(session.session_id, context, "貼り付け資料");
       }
@@ -85,7 +87,20 @@ export default function Home() {
           style={inputStyle}
         />
       </label>
-      <button onClick={handleJoin} style={buttonStyle}>インタビューを始める</button>
+      <label style={{ display: "flex", gap: 8, alignItems: "flex-start", margin: "8px 0 16px" }}>
+        <input
+          type="checkbox"
+          checked={consent}
+          onChange={(e) => setConsent(e.target.checked)}
+        />
+        <span>
+          会話の録音と AI による処理に同意します。発話・要件は最大{" "}
+          {process.env.NEXT_PUBLIC_RETENTION_DAYS ?? "30"} 日保持され、保存前に個人情報はマスクされます。
+        </span>
+      </label>
+      <button onClick={handleJoin} style={buttonStyle} disabled={!consent}>
+        インタビューを始める
+      </button>
       {error && <p style={{ color: "crimson" }}>{error}</p>}
     </main>
   );
