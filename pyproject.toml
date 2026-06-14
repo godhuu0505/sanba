@@ -21,6 +21,8 @@ known-first-party = ["interviewer"]
 [tool.pytest.ini_options]
 addopts = "-q"
 testpaths = ["tests"]
+# Make the repo root importable so `import interviewer` works under pytest.
+pythonpath = ["."]
 
 [tool.mypy]
 python_version = "3.11"
