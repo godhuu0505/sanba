@@ -19,6 +19,7 @@
 | **Voice Agent Worker** | LiveKit ルームに「参加」し、Gemini Live で対話する司会者 | LiveKit Agents + `google.beta.realtime` |
 | **ADK Agent Team** | 要件の構造化・矛盾検知・専門深掘り | Google ADK |
 | **Firestore** | セッション状態・確定要件・発話ログ | Firestore (emulator in dev) |
+| **Elasticsearch** | RAG 根拠付け・過去セッション検索（BM25 + kNN ハイブリッド） | Elasticsearch 8.x |
 | **Observability** | トレース/メトリクス/ログ | OTel Collector → Prometheus / Loki / Tempo / Cloud Ops |
 | **Langfuse** | プロンプト管理・LLM評価・回帰テスト | Langfuse |
 
@@ -60,6 +61,8 @@ flowchart TD
 ```
 
 - **Interview Lead Agent**: 会話履歴と確定要件から「次に深掘りすべき1問」を決める（grill-me の核）。
+  Elasticsearch の知識ベースを `search_grounding` で参照し、問いに**引用元つきの根拠**を持たせる。
+  過去セッションも検索し「以前似た議論がありました」と能動的に呼び戻す（ADR-0003）。
 - **非機能要件 Agent**: 機能要件に偏りがちな会話で、非機能（SLO・セキュリティ・コスト）を補完。
 - **スコープ&優先度 Agent**: MoSCoW で要件を分類し、過剰スコープを警告。
 - **矛盾&抜け検知 Agent**: 過去の発話と矛盾する回答や、未回答の必須項目を検出。

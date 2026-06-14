@@ -90,6 +90,7 @@ flowchart LR
 | バックエンド | **FastAPI**（Python） | LiveKit トークン発行・オーケストレーション |
 | フロント | **Next.js** + LiveKit React Components | 本番品質UX（Cloud Run） |
 | 永続化 | **Firestore**（セッション/要件）+ Cloud Storage（アーティファクト） | 運用想定の状態管理 |
+| 検索/RAG | **Elasticsearch**（BM25 + ベクトルのハイブリッド） | 根拠付け・過去セッション検索（佐藤一憲氏 Agentic RAG） |
 | 実行基盤 | **Cloud Run**（必須） | スケーラブルな本番デプロイ |
 | IaC | **Terraform** | 再現可能なインフラ |
 | CI/CD | **GitHub Actions** + Cloud Build | 「まわす」軸 |

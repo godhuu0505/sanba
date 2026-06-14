@@ -24,6 +24,11 @@ class Settings(BaseSettings):
     # Firestore
     firestore_emulator_host: str = ""
 
+    # Elasticsearch (RAG grounding + past-session search)
+    elasticsearch_url: str = ""
+    elasticsearch_api_key: str = ""
+    gemini_embed_model: str = "text-embedding-004"
+
     # Observability
     otel_exporter_otlp_endpoint: str = ""
     otel_service_name: str = "kikitori-agent"
