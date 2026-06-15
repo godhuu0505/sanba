@@ -8,20 +8,31 @@ import {
   BarVisualizer,
 } from "@livekit/components-react";
 import { useState } from "react";
-import { createSession, joinSession, type JoinResponse } from "../lib/api";
+import {
+  addSessionContext,
+  createSession,
+  joinSession,
+  type JoinResponse,
+} from "../lib/api";
 
 export default function Home() {
   const [name, setName] = useState("");
   const [role, setRole] = useState("pm");
+  const [context, setContext] = useState("");
+  const [consent, setConsent] = useState(false);
   const [conn, setConn] = useState<JoinResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function handleJoin() {
     try {
       setError(null);
-      // Owner flow for the demo: create a session, then redeem the role invite.
-      // (Multi-participant flow shares these invite links — see issue #8.)
-      const session = await createSession([role]);
+      // Owner flow for the demo: create a session (with consent, issue #10),
+      // optionally register reference material (RAG grounding, #6), then redeem
+      // the role invite (#8).
+      const session = await createSession([role], consent);
+      if (context.trim()) {
+        await addSessionContext(session.session_id, context, "貼り付け資料");
+      }
       const invite = session.invites[role];
       setConn(await joinSession({ invite, participantName: name || "ゲスト" }));
     } catch (e) {
@@ -40,7 +51,7 @@ export default function Home() {
         style={{ height: "100dvh" }}
       >
         <main style={{ padding: 24, maxWidth: 640, margin: "0 auto" }}>
-          <h1>🎙️ Kikitori — 要件インタビュー中</h1>
+          <h1>🎙️ SANBA — 要件インタビュー中</h1>
           <p>セッション: <code>{conn.session_id}</code></p>
           <InterviewView />
           <RoomAudioRenderer />
@@ -52,8 +63,8 @@ export default function Home() {
 
   return (
     <main style={{ padding: 24, maxWidth: 480, margin: "0 auto" }}>
-      <h1>🎙️ Kikitori</h1>
-      <p>音声で要件を聞き取るマルチエージェント。話しかけると、AIが一問ずつ質問します。</p>
+      <h1>🎙️ SANBA</h1>
+      <p>解像度高く、要件を生み出す音声マルチエージェント。話しかけると、AIが一問ずつ質問し、要件を少しずつ明確にしていきます。</p>
       <label>
         お名前
         <input value={name} onChange={(e) => setName(e.target.value)} style={inputStyle} />
@@ -66,7 +77,30 @@ export default function Home() {
           <option value="customer">顧客</option>
         </select>
       </label>
-      <button onClick={handleJoin} style={buttonStyle}>インタビューを始める</button>
+      <label>
+        参考資料（任意・要件のヒントになる既存メモやPRDなど）
+        <textarea
+          value={context}
+          onChange={(e) => setContext(e.target.value)}
+          rows={5}
+          placeholder="ここに貼り付けた内容はAIが事前に読み込み、既知の事項は質問しません。"
+          style={inputStyle}
+        />
+      </label>
+      <label style={{ display: "flex", gap: 8, alignItems: "flex-start", margin: "8px 0 16px" }}>
+        <input
+          type="checkbox"
+          checked={consent}
+          onChange={(e) => setConsent(e.target.checked)}
+        />
+        <span>
+          会話の録音と AI による処理に同意します。発話・要件は最大{" "}
+          {process.env.NEXT_PUBLIC_RETENTION_DAYS ?? "30"} 日保持され、保存前に個人情報はマスクされます。
+        </span>
+      </label>
+      <button onClick={handleJoin} style={buttonStyle} disabled={!consent}>
+        インタビューを始める
+      </button>
       {error && <p style={{ color: "crimson" }}>{error}</p>}
     </main>
   );

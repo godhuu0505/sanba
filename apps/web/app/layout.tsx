@@ -3,8 +3,8 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
 export const metadata: Metadata = {
-  title: "Kikitori — 音声で要件を聞き取る",
-  description: "Voice multi-agent that interviews you to define requirements.",
+  title: "SANBA — 解像度高く、要件を生み出す",
+  description: "Voice multi-agent that interviews you to bring your requirements into focus.",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

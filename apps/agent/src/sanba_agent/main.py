@@ -5,7 +5,7 @@ Gemini Live. During the conversation it calls the ADK agent team (as a tool) to
 plan the next question and to persist confirmed requirements.
 
 Run locally:
-    python -m kikitori_agent.main dev
+    python -m sanba_agent.main dev
 """
 
 from __future__ import annotations
@@ -34,7 +34,7 @@ from .tools.analysis import analyze_transcript, make_requirement_id
 log = structlog.get_logger(__name__)
 
 
-class KikitoriAgent(Agent):
+class SANBAAgent(Agent):
     """The voice interviewer. Owns the tools that bridge to the ADK team."""
 
     def __init__(
@@ -148,6 +148,22 @@ class KikitoriAgent(Agent):
             ]
         }
 
+    @function_tool
+    async def export_requirements_to_github(self, _ctx: RunContext) -> dict:
+        """確定した要件を GitHub Issue として書き出す(コネクタが有効な場合のみ)。
+
+        インタビューの締めくくりで、合意した要件を実装チームに引き継ぐときに使う。
+        """
+        if not _github_ready():
+            return {"exported": False, "reason": "github connector disabled"}
+        from .connectors import GitHubConnector, requirements_to_issue_body
+
+        requirements = self._repo.list_requirements(self._session_id)
+        title, body = requirements_to_issue_body(requirements, self._session_id)
+        url = GitHubConnector(settings.github_token, settings.github_repo).create_issue(title, body)
+        log.info("requirements_exported", session=self._session_id, url=url)
+        return {"exported": url is not None, "url": url, "count": len(requirements)}
+
 
 # Requirements-engineering knowledge base used to ground the agent's questions.
 # In production this is seeded once into Elasticsearch (see scripts/seed_kb); in
@@ -173,6 +189,31 @@ def seed_knowledge_base(grounding: GroundingStore) -> None:
         grounding.index_passage(text=text, source=source, kind="knowledge")
 
 
+def _github_ready() -> bool:
+    return bool(
+        settings.github_connector_enabled
+        and settings.github_token
+        and settings.github_repo
+    )
+
+
+def seed_github_context(grounding: GroundingStore, session_id: str) -> None:
+    """Pull a configured GitHub repo's issues/README into grounding (issue #7).
+
+    OFF unless the connector is explicitly enabled, so it never affects the demo path.
+    """
+    if not _github_ready():
+        return
+    try:
+        from .connectors import GitHubConnector
+
+        connector = GitHubConnector(settings.github_token, settings.github_repo)
+        for text, source in connector.fetch_context_passages():
+            grounding.index_passage(text=text, source=source, kind="context", session_id=session_id)
+    except Exception as exc:  # pragma: no cover - network/optional
+        log.warning("github_seed_failed", error=str(exc))
+
+
 async def entrypoint(ctx: JobContext) -> None:
     """LiveKit job entrypoint: one invocation per room."""
     setup_observability()
@@ -182,7 +223,8 @@ async def entrypoint(ctx: JobContext) -> None:
     repo = SessionRepository()
     grounding = GroundingStore()
     seed_knowledge_base(grounding)
-    agent = KikitoriAgent(session_id=session_id, repo=repo, grounding=grounding)
+    seed_github_context(grounding, session_id)
+    agent = SANBAAgent(session_id=session_id, repo=repo, grounding=grounding)
 
     session = AgentSession(
         llm=google.beta.realtime.RealtimeModel(

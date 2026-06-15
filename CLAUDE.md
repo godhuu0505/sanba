@@ -1,10 +1,10 @@
-# CLAUDE.md — Kikitori 開発ガイド (AIコーディング規約)
+# CLAUDE.md — SANBA 開発ガイド (AIコーディング規約)
 
 このリポジトリで AI コーディングエージェント（Claude Code / Gemini CLI 等）が守るべきルール。
 人間レビュアーも同じ基準で運用する。
 
 ## プロダクト
-- **Kikitori**: 音声(speech-to-speech)で要件を聞き取るマルチエージェント。
+- **SANBA**: 音声(speech-to-speech)で対話し、要件を解像度高く生み出すマルチエージェント。名前の由来は「産婆術（Socratic maieutics）」＝相手の中にある答えを問いで引き出す技法。
 - 詳細: `README.md` / `docs/architecture.md`。
 
 ## 原則

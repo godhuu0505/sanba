@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     # Google / Gemini
     google_api_key: str = ""
     google_genai_use_vertexai: bool = False
-    google_cloud_project: str = "kikitori-dev"
+    google_cloud_project: str = "sanba-dev"
     google_cloud_location: str = "us-central1"
     gemini_live_model: str = "gemini-2.0-flash-live-001"
     gemini_reasoning_model: str = "gemini-2.5-flash"
@@ -29,12 +29,21 @@ class Settings(BaseSettings):
     elasticsearch_api_key: str = ""
     gemini_embed_model: str = "text-embedding-004"
 
+    # Data governance (issue #10)
+    mask_pii_before_index: bool = True
+    data_retention_days: int = 30
+
     # Observability
     otel_exporter_otlp_endpoint: str = ""
-    otel_service_name: str = "kikitori-agent"
+    otel_service_name: str = "sanba-agent"
     langfuse_host: str = ""
     langfuse_public_key: str = ""
     langfuse_secret_key: str = ""
+
+    # External connectors (issue #7). OFF by default — never affects the demo path.
+    github_connector_enabled: bool = False
+    github_token: str = ""
+    github_repo: str = ""  # "owner/name"
 
 
 settings = Settings()

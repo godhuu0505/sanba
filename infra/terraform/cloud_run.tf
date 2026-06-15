@@ -3,11 +3,11 @@
 # (min_instances >= 1 to keep the worker registered).
 
 locals {
-  image_base = "${var.region}-docker.pkg.dev/${var.project_id}/kikitori"
+  image_base = "${var.region}-docker.pkg.dev/${var.project_id}/sanba"
 }
 
 resource "google_cloud_run_v2_service" "api" {
-  name     = "kikitori-api"
+  name     = "sanba-api"
   location = var.region
   template {
     service_account = google_service_account.runtime.email
@@ -27,7 +27,7 @@ resource "google_cloud_run_v2_service" "api" {
 }
 
 resource "google_cloud_run_v2_service" "agent" {
-  name     = "kikitori-agent"
+  name     = "sanba-agent"
   location = var.region
   template {
     service_account = google_service_account.runtime.email
@@ -47,7 +47,7 @@ resource "google_cloud_run_v2_service" "agent" {
 }
 
 resource "google_cloud_run_v2_service" "web" {
-  name     = "kikitori-web"
+  name     = "sanba-web"
   location = var.region
   template {
     scaling {

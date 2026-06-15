@@ -14,7 +14,7 @@ jobs:
         working-directory: apps/agent
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v3
+      - uses: astral-sh/setup-uv@v7
       - run: uv python install 3.12
       - run: uv sync --all-extras --dev
       - run: uv run ruff check .
@@ -28,7 +28,21 @@ jobs:
         working-directory: apps/api
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v3
+      - uses: astral-sh/setup-uv@v7
+      - run: uv python install 3.12
+      - run: uv sync --all-extras --dev
+      - run: uv run ruff check .
+      - run: uv run pytest -q
+
+  four-keys:
+    name: four-keys (lint + test)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra/four-keys/collector
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v7
       - run: uv python install 3.12
       - run: uv sync --all-extras --dev
       - run: uv run ruff check .
