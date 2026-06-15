@@ -28,11 +28,17 @@ build:
 test:
     cd apps/agent && uv run pytest -q
     cd apps/api && uv run pytest -q
+    cd infra/four-keys/collector && uv run pytest -q
 
 # lint + 型チェック
 lint:
     cd apps/agent && uv run ruff check . && uv run mypy src
     cd apps/api && uv run ruff check . && uv run mypy src
+    cd infra/four-keys/collector && uv run ruff check . && uv run mypy src
+
+# Four Keys メトリクスを一度だけ表示 (DORA 自己計測)
+four-keys:
+    cd infra/four-keys/collector && uv run python -m fourkeys collect --json
 
 # フォーマット
 fmt:
