@@ -25,7 +25,7 @@ jobs:
       LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
       LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: astral-sh/setup-uv@v7
       - run: uv python install 3.12
       - run: uv sync --all-extras --dev
