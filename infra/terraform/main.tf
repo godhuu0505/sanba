@@ -5,6 +5,10 @@ terraform {
       source  = "hashicorp/google"
       version = "~> 5.0"
     }
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.6"
+    }
   }
   # backend "gcs" { bucket = "sanba-tfstate" prefix = "terraform/state" }
 }
@@ -31,11 +35,29 @@ resource "google_project_service" "services" {
 }
 
 # ---- Artifact Registry for container images ----
+# Cleanup policy で直近 N 個だけ残し、古いイメージのストレージ課金を抑える (コスト最適化)。
 resource "google_artifact_registry_repository" "images" {
   location      = var.region
   repository_id = "sanba"
   format        = "DOCKER"
   depends_on    = [google_project_service.services]
+
+  cleanup_policy_dry_run = false
+  cleanup_policies {
+    id     = "keep-recent"
+    action = "KEEP"
+    most_recent_versions {
+      keep_count = var.image_keep_count
+    }
+  }
+  cleanup_policies {
+    id     = "delete-old"
+    action = "DELETE"
+    condition {
+      tag_state  = "ANY"
+      older_than = "2592000s" # 30 日より古いものは削除候補 (keep-recent が優先)
+    }
+  }
 }
 
 # ---- Firestore (Native mode) ----

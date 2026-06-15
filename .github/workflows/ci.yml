@@ -5,6 +5,11 @@ on:
     branches: [main]
   pull_request:
 
+# 同一ブランチの古い実行はキャンセルして Actions 分を節約する (コスト最適化)。
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   agent:
     name: agent (lint + test)

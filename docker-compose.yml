@@ -1,47 +1,97 @@
-# SANBA local development stack.
-# つくる(agent/api/web) を まわす(observability) 基盤の上で動かす。
+# SANBA — アプリケーション必須スタック (local development)
+#
+# このファイルだけで「つくる」アプリ一式が動く:
+#   web (Next.js) ─→ api (FastAPI) ─→ livekit / firestore
+#   agent (LiveKit worker) ─→ livekit / firestore / elasticsearch
+#
+# 可観測性・LLMOps・DORA など「必須ではないが あったら便利」なコンポーネントは
+# docker-compose.tools.yml に分離している (overlay として重ねて起動する)。
+#
+#   just up          # このファイルだけ (アプリ最小構成)
+#   just up-full     # docker-compose.tools.yml を重ねて全部入り
+#
+# Rancher Desktop (dockerd / moby) を想定。`docker compose` が CLI として使えること。
 name: sanba
 
 services:
-  # ---- Application ----
-  agent:
-    build: ./apps/agent
+  # ============================ Application ============================
+  web:
+    build:
+      context: ./apps/web
+      args:
+        # NEXT_PUBLIC_* は Next.js のビルド時にバンドルへ焼き込まれる。
+        # ブラウザから見たエンドポイントなので localhost を既定にする。
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8080}
+        NEXT_PUBLIC_LIVEKIT_URL: ${NEXT_PUBLIC_LIVEKIT_URL:-ws://localhost:7880}
+        NEXT_PUBLIC_RETENTION_DAYS: ${DATA_RETENTION_DAYS:-30}
     env_file: .env
-    depends_on: [livekit, otel-collector, firestore, elasticsearch]
-    command: ["python", "-m", "sanba_agent.main", "start"]
+    ports: ["3000:3000"]
+    depends_on:
+      api:
+        condition: service_healthy
     restart: unless-stopped
+    healthcheck:
+      # node:slim には curl が無いので node 組み込みの fetch で確認する。
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
 
   api:
     build: ./apps/api
     env_file: .env
     ports: ["8080:8080"]
-    depends_on: [livekit, firestore]
+    depends_on:
+      livekit:
+        condition: service_started
+      elasticsearch:
+        condition: service_healthy
     restart: unless-stopped
+    healthcheck:
+      # python:slim には curl が無いので標準ライブラリで /healthz を叩く。
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8080/healthz').status==200 else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
 
-  web:
-    build: ./apps/web
+  agent:
+    build: ./apps/agent
     env_file: .env
-    ports: ["3000:3000"]
-    depends_on: [api]
+    command: ["start"]
+    depends_on:
+      livekit:
+        condition: service_started
+      firestore:
+        condition: service_started
+      elasticsearch:
+        condition: service_healthy
     restart: unless-stopped
 
-  # ---- Realtime media ----
+  # ============================ Realtime media ============================
   livekit:
     image: livekit/livekit-server:latest
     command: ["--dev", "--bind", "0.0.0.0"]
-    ports: ["7880:7880", "7881:7881", "7882:7882/udp"]
+    ports:
+      - "7880:7880"
+      - "7881:7881"
+      - "7882:7882/udp"
     environment:
+      # --dev は devkey/secret を有効化する。.env の LIVEKIT_API_KEY/SECRET と一致させる。
       LIVEKIT_KEYS: "devkey: secret"
+    restart: unless-stopped
 
-  # ---- State ----
+  # ============================ State (Firestore emulator) ============================
   firestore:
     image: google/cloud-sdk:emulators
     command: >
       gcloud emulators firestore start
-      --host-port=0.0.0.0:8200 --project=sanba-dev
+      --host-port=0.0.0.0:8200 --project=${GOOGLE_CLOUD_PROJECT:-sanba-dev}
     ports: ["8200:8200"]
+    restart: unless-stopped
 
-  # ---- Search / RAG grounding ----
+  # ============================ Search / RAG grounding ============================
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.14.3
     environment:
@@ -49,84 +99,15 @@ services:
       xpack.security.enabled: "false"
       ES_JAVA_OPTS: "-Xms512m -Xmx512m"
     ports: ["9200:9200"]
+    volumes:
+      - es-data:/usr/share/elasticsearch/data
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health || exit 1"]
       interval: 10s
       timeout: 5s
-      retries: 10
-
-  # ---- Observability stack ----
-  otel-collector:
-    image: otel/opentelemetry-collector-contrib:latest
-    command: ["--config=/etc/otel/config.yaml"]
-    volumes:
-      - ./infra/observability/otel/config.yaml:/etc/otel/config.yaml:ro
-    ports: ["4317:4317", "4318:4318"]
-    depends_on: [prometheus, loki, tempo]
-
-  prometheus:
-    image: prom/prometheus:latest
-    volumes:
-      - ./infra/observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-    ports: ["9090:9090"]
-    depends_on: [four-keys]
-
-  # ---- DevOps self-measurement (まわす) ----
-  four-keys:
-    build: ./infra/four-keys/collector
-    environment:
-      # Reads this repo's deploy.yml runs + incident issues. GITHUB_TOKEN raises
-      # the API rate limit; without it, falls back to bundled sample data.
-      GITHUB_REPOSITORY: "${GITHUB_REPOSITORY:-godhuu0505/ai-hackathon2}"
-      GITHUB_TOKEN: "${GITHUB_TOKEN:-}"
-    command: ["serve", "--port", "9301", "--window-days", "30"]
-    ports: ["9301:9301"]
+      retries: 12
+      start_period: 20s
     restart: unless-stopped
 
-  loki:
-    image: grafana/loki:latest
-    command: ["-config.file=/etc/loki/config.yaml"]
-    volumes:
-      - ./infra/observability/loki/config.yaml:/etc/loki/config.yaml:ro
-    ports: ["3100:3100"]
-
-  tempo:
-    image: grafana/tempo:latest
-    command: ["-config.file=/etc/tempo/config.yaml"]
-    volumes:
-      - ./infra/observability/tempo/config.yaml:/etc/tempo/config.yaml:ro
-    ports: ["3200:3200"]
-
-  grafana:
-    image: grafana/grafana:latest
-    environment:
-      GF_AUTH_ANONYMOUS_ENABLED: "true"
-      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
-      GF_SECURITY_ALLOW_EMBEDDING: "true"
-    volumes:
-      - ./infra/observability/grafana/provisioning:/etc/grafana/provisioning:ro
-    ports: ["3001:3000"]
-    depends_on: [prometheus, loki, tempo]
-
-  # ---- LLMOps ----
-  langfuse-db:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_USER: langfuse
-      POSTGRES_PASSWORD: langfuse
-      POSTGRES_DB: langfuse
-    volumes:
-      - langfuse-db:/var/lib/postgresql/data
-
-  langfuse:
-    image: langfuse/langfuse:latest
-    depends_on: [langfuse-db]
-    environment:
-      DATABASE_URL: postgresql://langfuse:langfuse@langfuse-db:5432/langfuse
-      NEXTAUTH_SECRET: local-dev-secret
-      NEXTAUTH_URL: http://localhost:3030
-      SALT: local-dev-salt
-    ports: ["3030:3000"]
-
 volumes:
-  langfuse-db:
+  es-data:
