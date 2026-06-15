@@ -40,17 +40,17 @@ jobs:
         github.event.review.state != 'approved'
       }}
     steps:
-      # API キー未設定の環境ではスキップし CI を止めない。
-      - name: Check ANTHROPIC_API_KEY
+      # サブスク(OAuth)トークン未設定の環境ではスキップし CI を止めない。
+      - name: Check CLAUDE_CODE_OAUTH_TOKEN
         id: guard
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
         run: |
-          if [ -n "$ANTHROPIC_API_KEY" ]; then
+          if [ -n "$CLAUDE_CODE_OAUTH_TOKEN" ]; then
             echo "ok=true" >> "$GITHUB_OUTPUT"
           else
             echo "ok=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::ANTHROPIC_API_KEY 未設定のため Claude 対応をスキップします。"
+            echo "::notice::CLAUDE_CODE_OAUTH_TOKEN 未設定のため Claude 対応をスキップします。"
           fi
 
       - uses: actions/checkout@v4
@@ -62,7 +62,9 @@ jobs:
         if: ${{ steps.guard.outputs.ok == 'true' }}
         uses: anthropics/claude-code-action@v1
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Claude Pro/Max サブスク枠で実行（API 従量課金を避ける）。
+          # トークンはローカルで `claude setup-token` を実行して生成し、Secret に登録する。
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # Codex の Bot review を起点に Claude を起動できるよう明示許可する。
           allowed_bots: "chatgpt-codex-connector[bot]"
           # Bash はデフォルト無効。gh/git とテスト・lint コマンドを明示許可する。
