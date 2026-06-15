@@ -31,7 +31,7 @@ jobs:
     runs-on: ubuntu-latest
     if: ${{ vars.GCP_PROJECT_ID != '' }}
     outputs:
-      apps: ${{ steps.filter.outputs.changes }}
+      apps: ${{ steps.decide.outputs.apps }}
     steps:
       - uses: actions/checkout@v6
       - uses: dorny/paths-filter@v3
@@ -41,6 +41,15 @@ jobs:
             agent: ['apps/agent/**']
             api: ['apps/api/**']
             web: ['apps/web/**']
+      - id: decide
+        # 手動トリガー (workflow_dispatch) は差分が無く paths-filter が空を返すため、
+        # ロールバック/強制再デプロイ用途では全 app を対象にする。
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo 'apps=["agent","api","web"]' >> "$GITHUB_OUTPUT"
+          else
+            echo 'apps=${{ steps.filter.outputs.changes }}' >> "$GITHUB_OUTPUT"
+          fi
 
   deploy:
     needs: changes

@@ -26,6 +26,7 @@ from pydantic import BaseModel
 from .auth import InvalidInvite, create_invite, verify_invite
 from .config import settings
 from .ingestion import ContextIndexer, chunk_text, extract_text_from_upload
+from .observability import setup_observability
 
 log = structlog.get_logger(__name__)
 
@@ -36,6 +37,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+# OTLP エンドポイントが設定されていれば分散トレースを有効化する (未設定なら no-op)。
+setup_observability(app)
 
 # In-memory per-IP rate limiter for the join endpoint. Stateless workers can use
 # a shared store (Redis/Firestore) later; this is enough to blunt abuse in the MVP.

@@ -82,5 +82,6 @@ jobs:
         with:
           context: apps/${{ matrix.app }}
           push: false
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # scope を app 単位で分け、deploy.yml のキャッシュと共有する。
+          cache-from: type=gha,scope=${{ matrix.app }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.app }}

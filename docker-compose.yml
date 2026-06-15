@@ -42,6 +42,7 @@ services:
     build: ./apps/api
     env_file: .env
     ports: ["8080:8080"]
+    # api は Firestore を直接使わない (永続化は agent 経由)。依存は livekit と ES のみ。
     depends_on:
       livekit:
         condition: service_started

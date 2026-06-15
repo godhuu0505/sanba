@@ -12,13 +12,14 @@ locals {
 
   # agent / api 共通の平文 env。
   common_env = {
-    GOOGLE_CLOUD_PROJECT      = var.project_id
-    GOOGLE_CLOUD_LOCATION     = var.region
-    GOOGLE_GENAI_USE_VERTEXAI = tostring(var.use_vertexai)
-    LIVEKIT_URL               = var.livekit_url
-    ELASTICSEARCH_URL         = var.elasticsearch_url
-    MASK_PII_BEFORE_INDEX     = "true"
-    DATA_RETENTION_DAYS       = tostring(var.data_retention_days)
+    GOOGLE_CLOUD_PROJECT        = var.project_id
+    GOOGLE_CLOUD_LOCATION       = var.region
+    GOOGLE_GENAI_USE_VERTEXAI   = tostring(var.use_vertexai)
+    LIVEKIT_URL                 = var.livekit_url
+    ELASTICSEARCH_URL           = var.elasticsearch_url
+    MASK_PII_BEFORE_INDEX       = "true"
+    DATA_RETENTION_DAYS         = tostring(var.data_retention_days)
+    OTEL_EXPORTER_OTLP_ENDPOINT = var.otel_exporter_otlp_endpoint
   }
 
   agent_env = merge(local.common_env, {
@@ -132,6 +133,8 @@ resource "google_cloud_run_v2_service" "web" {
   name     = "sanba-web"
   location = var.region
   template {
+    # web も最小権限の runtime SA で動かす (デフォルト compute SA の roles/editor を避ける)。
+    service_account = google_service_account.runtime.email
     scaling {
       min_instance_count = 0
       max_instance_count = var.service_max_instances

@@ -87,6 +87,12 @@ variable "elasticsearch_url" {
   description = "Managed Elasticsearch endpoint. Empty = agent falls back to in-memory grounding."
 }
 
+variable "otel_exporter_otlp_endpoint" {
+  type        = string
+  default     = ""
+  description = "OTLP/gRPC endpoint for traces (e.g. an OpenTelemetry Collector sidecar that forwards to Cloud Trace). Empty = tracing is skipped."
+}
+
 # ---- Secrets (Secret Manager) ------------------------------------------------
 # 空文字のものはシークレットを作らない。session_signing_secret は空なら自動生成する。
 variable "session_signing_secret" {
