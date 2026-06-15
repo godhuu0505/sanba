@@ -1,60 +1,30 @@
-# grill-me
+# grill-me（日本語版）
 
-A Claude Code skill for structured interrogation of plans, designs, and ideas. It acts as a sharp, collegial interviewer that stress-tests your thinking by probing assumptions, surfacing risks, and tracking decisions.
+プラン・設計・アイデアを「容赦ないインタビュアー」として一問一答で検証する Claude Code スキル。前提を疑い、リスクを洗い出し、決定を詰めることで、コードを書く前に共通理解を作ります。
 
-In this repository the skill is committed under `.claude/skills/grill-me/` so it is available to every Claude Code session on this project — including Claude Code on the web — without per-machine installation.
+このリポジトリでは `.claude/skills/grill-me/` にコミットしているため、**CLI・デスクトップアプリ・Claude Code on the web** のどのセッションでも追加設定なしで自動検出されます（各自の `~/.claude/` への個別インストールは不要）。
 
-## Installation
+## 出どころ（トレンドで話題のものと同じ）
 
-This skill is already vendored into the repo at `.claude/skills/grill-me/`, so no installation is needed for sessions working in this repository. Claude Code automatically detects project-level skills.
+世の中でバズっている grill-me は [mattpocock/skills](https://github.com/mattpocock/skills/tree/main/skills/productivity/grill-me)（AIHero.dev の Matt Pocock 版）です。「**各質問に推奨回答を添える → ユーザーは "yes" で即答できる**」「**一問一答**」「**コードで分かることはコードを見る**」という、ごく短い指示が核心。本スキルはこの本家版に忠実に、**日本語メイン**で書き直したものです。
 
-To use it globally on your own machine, copy the directory into your personal skills folder instead:
+> 補足: stevegsax 版など長い派生も存在しますが、トレンドの本体は上記 mattpocock 版です。本リポジトリの README にある「問いには必ず推奨例を 1 つ添える(grill-me 流)」という方針もこの版に由来します。
 
-```
-~/.claude/skills/grill-me/
-├── SKILL.md
-└── README.md
-```
+## 使い方
 
-Claude Code will automatically detect the skill. No additional configuration is required.
+セッション中に以下のいずれかで起動します:
 
-## Compatibility
+- `grill me`
+- `詰めて` / `問い詰めて`
+- `このプランを壁打ちして` / `このプランの穴を突いて`
 
-This skill works with:
+短いセッション名を尋ねられた後、設計のディシジョンツリーを枝ごとに一問一答で掘り下げ、各質問に推奨回答を添えます。長いセッションでは `grill-me-sessions/<プラン名>.grill.md` に決定・保留・未解決を記録します。
 
-- Claude Code CLI (terminal)
-- Claude Code desktop app (the Code tab in Claude Desktop on Mac/Windows)
-- Claude Code on the web
+## やること / やらないこと
 
-It does **not** work with the regular Claude desktop app or claude.ai — skills are a Claude Code-specific feature.
+- やる: 前提の検証、リスクと抜け漏れの指摘、依存関係の解消、決定の記録（すべて日本語）
+- やらない: コードの実装・スクリプト生成・リファクタ・コードレビュー（それらは別ツールで）
 
-## Usage
+## 互換性
 
-Invoke the skill by saying any of:
-
-- "grill me"
-- "grill me about [topic]"
-- "stress test my plan"
-- "poke holes in this"
-
-The skill will ask for a short session name, then walk through your plan branch by branch — challenging assumptions, finding gaps, and recording decisions in a persistent session file at `grill-me-sessions/<plan-name>.grill.md`.
-
-## What it does
-
-- Interviews you about your plan without executing it
-- Tracks decisions, deferred items, and open threads in a session file
-- Reads relevant code and docs to ask informed questions
-- Resumes previous sessions where you left off
-
-## What it does not do
-
-- Write code, scripts, or deliverables
-- Execute the plan being discussed
-- Review or refactor existing code (use code review tools for that)
-
-## Attribution
-
-This skill is vendored from [stevegsax/grill-me](https://github.com/stevegsax/grill-me). Per that project's notes, the prompt was inspired by several seen on the web; multiple people claim authorship, among them:
-
-- [mattpocock](https://github.com/mattpocock/skills/tree/main)
-- [AIHero.dev](https://www.aihero.dev/my-grill-me-skill-has-gone-viral)
+Claude Code（CLI / デスクトップ / web）専用の機能です。通常の Claude デスクトップアプリや claude.ai では動作しません。
