@@ -75,6 +75,14 @@ jobs:
 
       - uses: docker/setup-buildx-action@v4
 
+      # web は NEXT_PUBLIC_API_URL をビルド時に焼き込む。未設定だと「空」で焼かれ、
+      # ブラウザが web 自身のオリジンに /api を投げて本番が壊れるため fail fast する。
+      - name: Require web build config
+        if: ${{ matrix.app == 'web' && vars.NEXT_PUBLIC_API_URL == '' }}
+        run: |
+          echo "::error::vars.NEXT_PUBLIC_API_URL を API の Cloud Run URL に設定してください (web ビルドに必須)" >&2
+          exit 1
+
       - name: Build & push (with layer cache)
         uses: docker/build-push-action@v6
         with:
@@ -83,10 +91,11 @@ jobs:
           tags: ${{ env.REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ env.REPO }}/${{ matrix.app }}:${{ github.sha }}
           cache-from: type=gha,scope=${{ matrix.app }}
           cache-to: type=gha,mode=max,scope=${{ matrix.app }}
-          # web はブラウザから見た API URL をビルド時に焼き込む (任意の repo 変数で上書き)。
+          # web のみ NEXT_PUBLIC_* を渡す。空文字を渡すと Dockerfile の既定を上書きして
+          # しまうため、変数が設定されている行だけを生成する (未設定なら Dockerfile 既定)。
           build-args: |
-            NEXT_PUBLIC_API_URL=${{ vars.NEXT_PUBLIC_API_URL }}
-            NEXT_PUBLIC_LIVEKIT_URL=${{ vars.NEXT_PUBLIC_LIVEKIT_URL }}
+            ${{ vars.NEXT_PUBLIC_API_URL != '' && format('NEXT_PUBLIC_API_URL={0}', vars.NEXT_PUBLIC_API_URL) || '' }}
+            ${{ vars.NEXT_PUBLIC_LIVEKIT_URL != '' && format('NEXT_PUBLIC_LIVEKIT_URL={0}', vars.NEXT_PUBLIC_LIVEKIT_URL) || '' }}
 
       - name: Deploy to Cloud Run (image only; env/secret は Terraform 管理)
         run: |

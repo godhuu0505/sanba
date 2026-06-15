@@ -20,6 +20,6 @@ output "image_repository" {
 }
 
 output "managed_secrets" {
-  value       = keys(local.secrets)
+  value       = tolist(local.secret_keys)
   description = "Secret Manager secrets created for Cloud Run (values are not exposed)."
 }

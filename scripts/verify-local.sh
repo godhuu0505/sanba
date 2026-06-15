@@ -44,12 +44,26 @@ check_container() {
   fi
 }
 
+check_port() {
+  # TCP ポートが接続を受け付けているかだけ確認する (HTTP の成功エンドポイントを問わない)。
+  local name="$1" host="$2" port="$3"
+  printf '  %-26s ' "$name"
+  if timeout 5 bash -c "exec 3<>/dev/tcp/${host}/${port}" 2>/dev/null; then
+    echo "OK"
+    pass=$((pass + 1))
+  else
+    echo "FAIL (port closed)"
+    fail=$((fail + 1))
+  fi
+}
+
 echo "== アプリ最小構成 =="
 check "api /healthz"            "http://localhost:8080/healthz"            '"status":"ok"'
 check "web (Next.js)"          "http://localhost:3000"
 check "livekit"                "http://localhost:7880"
 check "elasticsearch"          "http://localhost:9200/_cluster/health"
-check "firestore emulator"     "http://localhost:8200"
+# Firestore エミュレータのルートは HTTP 成功エンドポイントではないため、ポート疎通で確認する。
+check_port "firestore emulator" localhost 8200
 check_container "agent"
 
 if $FULL; then
