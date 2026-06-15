@@ -1,0 +1,18 @@
+{
+  "_comment": "Fallback demo data, used only when GitHub is unreachable or has no deploy history yet. Surfaced as source=sample so it is never mistaken for real production metrics.",
+  "deployments": [
+    {"id": "s1", "deployed_at": "2026-05-22T09:14:00+00:00", "success": true, "lead_time_seconds": 7200},
+    {"id": "s2", "deployed_at": "2026-05-25T11:02:00+00:00", "success": true, "lead_time_seconds": 5400},
+    {"id": "s3", "deployed_at": "2026-05-28T16:40:00+00:00", "success": true, "lead_time_seconds": 9600},
+    {"id": "s4", "deployed_at": "2026-06-01T08:30:00+00:00", "success": false, "lead_time_seconds": 4800},
+    {"id": "s5", "deployed_at": "2026-06-03T10:05:00+00:00", "success": true, "lead_time_seconds": 6300},
+    {"id": "s6", "deployed_at": "2026-06-06T13:20:00+00:00", "success": true, "lead_time_seconds": 4200},
+    {"id": "s7", "deployed_at": "2026-06-09T09:45:00+00:00", "success": true, "lead_time_seconds": 8100},
+    {"id": "s8", "deployed_at": "2026-06-11T15:10:00+00:00", "success": true, "lead_time_seconds": 5000},
+    {"id": "s9", "deployed_at": "2026-06-13T12:00:00+00:00", "success": true, "lead_time_seconds": 6900},
+    {"id": "s10", "deployed_at": "2026-06-14T18:25:00+00:00", "success": true, "lead_time_seconds": 4500}
+  ],
+  "incidents": [
+    {"id": "101", "opened_at": "2026-06-01T08:45:00+00:00", "closed_at": "2026-06-01T10:30:00+00:00"}
+  ]
+}

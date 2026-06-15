@@ -69,6 +69,19 @@ services:
     volumes:
       - ./infra/observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
     ports: ["9090:9090"]
+    depends_on: [four-keys]
+
+  # ---- DevOps self-measurement (まわす) ----
+  four-keys:
+    build: ./infra/four-keys/collector
+    environment:
+      # Reads this repo's deploy.yml runs + incident issues. GITHUB_TOKEN raises
+      # the API rate limit; without it, falls back to bundled sample data.
+      GITHUB_REPOSITORY: "${GITHUB_REPOSITORY:-godhuu0505/ai-hackathon2}"
+      GITHUB_TOKEN: "${GITHUB_TOKEN:-}"
+    command: ["serve", "--port", "9301", "--window-days", "30"]
+    ports: ["9301:9301"]
+    restart: unless-stopped
 
   loki:
     image: grafana/loki:latest

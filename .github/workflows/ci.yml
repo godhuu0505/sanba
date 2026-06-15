@@ -13,7 +13,7 @@ jobs:
       run:
         working-directory: apps/agent
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: astral-sh/setup-uv@v7
       - run: uv python install 3.12
       - run: uv sync --all-extras --dev
@@ -27,7 +27,21 @@ jobs:
       run:
         working-directory: apps/api
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v7
+      - run: uv python install 3.12
+      - run: uv sync --all-extras --dev
+      - run: uv run ruff check .
+      - run: uv run pytest -q
+
+  four-keys:
+    name: four-keys (lint + test)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra/four-keys/collector
+    steps:
+      - uses: actions/checkout@v6
       - uses: astral-sh/setup-uv@v7
       - run: uv python install 3.12
       - run: uv sync --all-extras --dev
@@ -41,7 +55,7 @@ jobs:
       run:
         working-directory: apps/web
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -57,7 +71,7 @@ jobs:
       matrix:
         app: [agent, api, web]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: docker/setup-buildx-action@v3
       - uses: docker/build-push-action@v6
         with:
