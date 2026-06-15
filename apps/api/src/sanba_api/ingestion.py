@@ -20,7 +20,7 @@ from .pii import mask_pii
 
 log = structlog.get_logger(__name__)
 
-INDEX = "kikitori-grounding"
+INDEX = "sanba-grounding"
 EMBED_DIM = 768  # text-embedding-004
 
 

@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     livekit_api_secret: str = "secret"
 
     otel_exporter_otlp_endpoint: str = ""
-    otel_service_name: str = "kikitori-api"
+    otel_service_name: str = "sanba-api"
 
     # CORS allowlist for the web client
     allowed_origins: str = "http://localhost:3000"

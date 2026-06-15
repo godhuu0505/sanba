@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from kikitori_api.ingestion import ContextIndexer
-from kikitori_api.pii import mask_pii
+from sanba_api.ingestion import ContextIndexer
+from sanba_api.pii import mask_pii
 
 
 def test_masks_email() -> None:

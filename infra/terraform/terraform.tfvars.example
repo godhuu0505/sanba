@@ -1,4 +1,4 @@
-project_id         = "kikitori-prod"
+project_id         = "sanba-prod"
 region             = "us-central1"
 image_tag          = "latest"
 billing_account    = ""        # e.g. "0123AB-456789-CDEF01" to enable budget alerts

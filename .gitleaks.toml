@@ -1,7 +1,7 @@
-# gitleaks configuration for Kikitori.
+# gitleaks configuration for SANBA.
 # Extends the default ruleset; allowlists local-dev placeholder secrets so the
 # scan stays green while still catching real leaked credentials.
-title = "Kikitori gitleaks config"
+title = "SANBA gitleaks config"
 
 [extend]
 useDefault = true

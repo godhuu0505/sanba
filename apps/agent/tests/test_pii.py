@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from kikitori_agent.pii import mask_pii
-from kikitori_agent.retrieval import GroundingStore
+from sanba_agent.pii import mask_pii
+from sanba_agent.retrieval import GroundingStore
 
 
 def test_masks_email_and_phone() -> None:

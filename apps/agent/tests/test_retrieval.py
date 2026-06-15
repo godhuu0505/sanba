@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from kikitori_agent.retrieval import GroundingStore
+from sanba_agent.retrieval import GroundingStore
 
 
 def test_memory_store_is_used_without_elasticsearch() -> None:

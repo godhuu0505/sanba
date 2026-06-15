@@ -1,6 +1,6 @@
-# Kikitori local development stack.
+# SANBA local development stack.
 # つくる(agent/api/web) を まわす(observability) 基盤の上で動かす。
-name: kikitori
+name: sanba
 
 services:
   # ---- Application ----
@@ -8,7 +8,7 @@ services:
     build: ./apps/agent
     env_file: .env
     depends_on: [livekit, otel-collector, firestore, elasticsearch]
-    command: ["python", "-m", "kikitori_agent.main", "start"]
+    command: ["python", "-m", "sanba_agent.main", "start"]
     restart: unless-stopped
 
   api:
@@ -38,7 +38,7 @@ services:
     image: google/cloud-sdk:emulators
     command: >
       gcloud emulators firestore start
-      --host-port=0.0.0.0:8200 --project=kikitori-dev
+      --host-port=0.0.0.0:8200 --project=sanba-dev
     ports: ["8200:8200"]
 
   # ---- Search / RAG grounding ----

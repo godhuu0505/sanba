@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from kikitori_agent.connectors import issues_to_passages, requirements_to_issue_body
-from kikitori_agent.models import Priority, Requirement, RequirementCategory
+from sanba_agent.connectors import issues_to_passages, requirements_to_issue_body
+from sanba_agent.models import Priority, Requirement, RequirementCategory
 
 
 def test_issues_to_passages_skips_pull_requests() -> None:

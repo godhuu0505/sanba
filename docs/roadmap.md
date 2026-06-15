@@ -41,6 +41,6 @@
 - [ ] Zenn 提出記事（アーキテクチャ図 + DevOps サイクル図）
 
 ## 既知の判断保留事項（要相談）
-- プロダクト名（仮: Kikitori）の最終決定
+- プロダクト名（仮: SANBA）の最終決定
 - Gemini API か Vertex AI か（コスト/クォータで判断）
 - Cloud Run か Agent Engine か（提出直前に最新の推奨パターンを確認）

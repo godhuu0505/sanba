@@ -3,7 +3,7 @@
 「まわす」軸の実装 — AI を継続的に改善するサイクル。
 - online: セッション終了時にインタビュー品質を採点し Langfuse に記録する。
 - offline: 代表シナリオのデータセットを CI で回帰評価し、品質劣化を検出する。
-  (`python -m kikitori_agent.evaluation` を llm-eval ワークフローが実行)
+  (`python -m sanba_agent.evaluation` を llm-eval ワークフローが実行)
 
 Gemini が使えない環境ではヒューリスティック採点にフォールバックするので、
 鍵が無くてもパイプラインは動く(品質の絶対値ではなく回帰検出が目的)。
@@ -119,16 +119,16 @@ DEFAULT_SCENARIOS: list[dict] = [
         "name": "well_covered",
         "transcript": (
             "参加者: 社内の議事録を要約したい。\n"
-            "Kikitori: 想定する同時利用者数は？\n参加者: 50人です。\n"
-            "Kikitori: レイテンシ要件は？\n参加者: 5秒以内。\n"
-            "Kikitori: 個人情報の扱いとセキュリティは？\n参加者: 認証必須、社内のみ。\n"
-            "Kikitori: 予算規模は？\n参加者: 月10万円。\n"
-            "Kikitori: 矛盾がないか確認します。"
+            "SANBA: 想定する同時利用者数は？\n参加者: 50人です。\n"
+            "SANBA: レイテンシ要件は？\n参加者: 5秒以内。\n"
+            "SANBA: 個人情報の扱いとセキュリティは？\n参加者: 認証必須、社内のみ。\n"
+            "SANBA: 予算規模は？\n参加者: 月10万円。\n"
+            "SANBA: 矛盾がないか確認します。"
         ),
     },
     {
         "name": "shallow",
-        "transcript": "参加者: 要約機能がほしい。\nKikitori: わかりました、作ります。",
+        "transcript": "参加者: 要約機能がほしい。\nSANBA: わかりました、作ります。",
     },
 ]
 

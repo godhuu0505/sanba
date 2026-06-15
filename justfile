@@ -1,4 +1,4 @@
-# Kikitori task runner. `just` is the primary entrypoint; the Makefile remains as
+# SANBA task runner. `just` is the primary entrypoint; the Makefile remains as
 # a thin compatibility shim. https://github.com/casey/just
 set shell := ["bash", "-cu"]
 
@@ -41,11 +41,11 @@ fmt:
 
 # エージェントワーカーをローカル実行
 agent-dev:
-    cd apps/agent && uv run python -m kikitori_agent.main dev
+    cd apps/agent && uv run python -m sanba_agent.main dev
 
 # API をローカル実行
 api-dev:
-    cd apps/api && uv run uvicorn kikitori_api.main:app --reload --port 8080
+    cd apps/api && uv run uvicorn sanba_api.main:app --reload --port 8080
 
 # Web をローカル実行
 web-dev:

@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     # Google / Gemini
     google_api_key: str = ""
     google_genai_use_vertexai: bool = False
-    google_cloud_project: str = "kikitori-dev"
+    google_cloud_project: str = "sanba-dev"
     google_cloud_location: str = "us-central1"
     gemini_live_model: str = "gemini-2.0-flash-live-001"
     gemini_reasoning_model: str = "gemini-2.5-flash"
@@ -35,7 +35,7 @@ class Settings(BaseSettings):
 
     # Observability
     otel_exporter_otlp_endpoint: str = ""
-    otel_service_name: str = "kikitori-agent"
+    otel_service_name: str = "sanba-agent"
     langfuse_host: str = ""
     langfuse_public_key: str = ""
     langfuse_secret_key: str = ""

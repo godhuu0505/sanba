@@ -29,7 +29,7 @@ cosine)。Elasticsearch 非接続時は語の重なりスコアの in-memory フ
 - **Firestore だけで類似検索**: ベクトル検索に最適化されておらず、根拠提示には不足。
 
 ## 影響
-- `apps/agent/src/kikitori_agent/retrieval.py` に `GroundingStore` を追加。
+- `apps/agent/src/sanba_agent/retrieval.py` に `GroundingStore` を追加。
 - 確定要件・発話をインデックスし、`search_grounding` ツールで根拠/過去事例を返す。
 - 本番では知識ベースを一度だけ投入する seeding ジョブが必要(per-room seeding は重複の元)。
 - docker compose に `elasticsearch` を追加。本番は Elastic Cloud もしくは GKE 上の ECK を想定。
