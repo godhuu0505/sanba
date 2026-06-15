@@ -21,8 +21,8 @@ jobs:
       run:
         working-directory: apps/${{ matrix.app }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v3
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v7
       - run: uv python install 3.12
       - run: uv sync --all-extras --dev
       - name: pip-audit
@@ -35,7 +35,7 @@ jobs:
       run:
         working-directory: apps/web
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -47,7 +47,7 @@ jobs:
   secret-scan:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       # Run the gitleaks binary directly (the v2 action needs a license on private
       # org repos); scans the working tree against our allowlisted config.
       - name: Install gitleaks
@@ -64,9 +64,9 @@ jobs:
       matrix:
         app: [agent, api, web]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Build image
-        run: docker build -t kikitori-${{ matrix.app }}:scan apps/${{ matrix.app }}
+        run: docker build -t sanba-${{ matrix.app }}:scan apps/${{ matrix.app }}
       # Trivy is advisory: the docker build above is the gate. Install + scan are
       # both continue-on-error so a flaky install/scan never blocks the PR.
       - name: Install Trivy
@@ -76,4 +76,4 @@ jobs:
             | sudo sh -s -- -b /usr/local/bin v0.55.0
       - name: Trivy scan
         continue-on-error: true
-        run: trivy image --severity HIGH,CRITICAL --format table kikitori-${{ matrix.app }}:scan || true
+        run: trivy image --severity HIGH,CRITICAL --format table sanba-${{ matrix.app }}:scan || true

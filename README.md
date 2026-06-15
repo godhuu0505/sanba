@@ -1,7 +1,9 @@
-# Kikitori — 音声で「要件を聞き取る」マルチエージェント
+# SANBA — 解像度高く、要件を生み出す音声マルチエージェント
 
-> _動くものをつくる、ではなく、届くものをつくる。_
-> AIに全部丸投げするのではなく、**人とAIの協働で要件を磨き込む**ための音声インタビュー・エージェント。
+> _解像度高く、生み出す。_
+> 「動くもの」ではなく「届くもの」を。AIに丸投げするのではなく、**人とAIの協働で、聞く・話す・描く・見るを重ねながら要件の解像度を上げていく**ための音声インタビュー・エージェント。
+> 要件はテキスト・画像・動画など様々な形をとり、所作を重ねるたびに少しずつ明確になる。SANBA はその「誕生」に立ち会う。
+> 名前の由来は、相手の中にある答えを問いで引き出す「産婆術（Socratic maieutics）」。
 
 **DevOps × AI Agent Hackathon 2026** 応募プロジェクト（Findy 主催 / Google Cloud Japan 協賛）。
 
@@ -18,7 +20,7 @@
 
 という問題を抱えています。
 
-OSS のAIスキル [`grill-me`](https://github.com/stevegsax/grill-me)（一問一答で要件を相手から引き出す「容赦ないインタビュアー」）が話題になりました。Kikitori はこの発想を、
+OSS のAIスキル [`grill-me`](https://github.com/stevegsax/grill-me)（一問一答で要件を相手から引き出す「容赦ないインタビュアー」）が話題になりました。SANBA はこの発想を、
 
 1. **音声 speech-to-speech 化**（Gemini Live + LiveKit）でレイテンシを下げ、自然な対話で
 2. **多対多**（複数の専門エージェント × 複数の参加者）に拡張し
@@ -84,14 +86,14 @@ flowchart LR
 
 | レイヤー | 採用技術 | 評価上の狙い |
 |---|---|---|
-| 音声 I/O | **Gemini Live API** (speech-to-speech) + **LiveKit Agents** | 低レイテンシ・自然な多人数対話 |
+| 音声 I/O | **Gemini Live API** (speech-to-speech) + **LiveKit Agents**（LiveKit Cloud） | 低レイテンシ・自然な多人数対話（ADR-0006） |
 | エージェント | **Google ADK**（root + subagent + agent-as-a-tool） | 「エージェントの必然性」「マルチエージェント協調」 |
 | LLM | **Gemini 2.x**（Vertex AI / Gemini API） | 必須AI技術 |
 | バックエンド | **FastAPI**（Python） | LiveKit トークン発行・オーケストレーション |
 | フロント | **Next.js** + LiveKit React Components | 本番品質UX（Cloud Run） |
 | 永続化 | **Firestore**（セッション/要件）+ Cloud Storage（アーティファクト） | 運用想定の状態管理 |
 | 検索/RAG | **Elasticsearch**（BM25 + ベクトルのハイブリッド） | 根拠付け・過去セッション検索（佐藤一憲氏 Agentic RAG） |
-| 実行基盤 | **Cloud Run**（必須） | スケーラブルな本番デプロイ |
+| 実行基盤 | **Cloud Run**（必須・GKE は見送り） | スケーラブルな本番デプロイ（ADR-0006） |
 | IaC | **Terraform** | 再現可能なインフラ |
 | CI/CD | **GitHub Actions** + Cloud Build | 「まわす」軸 |
 | 可観測性 | **OpenTelemetry** → Cloud Trace/Logging + **Grafana / Prometheus / Loki / Tempo** | Observability |

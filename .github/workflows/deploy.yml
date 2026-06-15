@@ -8,7 +8,7 @@ on:
 
 env:
   REGION: us-central1
-  REPO: kikitori
+  REPO: sanba
 
 permissions:
   contents: read
@@ -23,7 +23,7 @@ jobs:
       matrix:
         app: [agent, api, web]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - id: auth
         uses: google-github-actions/auth@v2
@@ -45,7 +45,7 @@ jobs:
 
       - name: Deploy to Cloud Run
         run: |
-          gcloud run deploy kikitori-${{ matrix.app }} \
+          gcloud run deploy sanba-${{ matrix.app }} \
             --image "$IMAGE" \
             --region "$REGION" \
             --quiet

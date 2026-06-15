@@ -37,6 +37,9 @@ crash.log
 infra/observability/**/data/
 *.db
 
+# grill-me skill session files (runtime artifacts)
+grill-me-sessions/
+
 # OS / editor
 .DS_Store
 .idea/

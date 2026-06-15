@@ -16,10 +16,11 @@ from dataclasses import dataclass
 import structlog
 
 from .config import settings
+from .pii import mask_pii
 
 log = structlog.get_logger(__name__)
 
-INDEX = "kikitori-grounding"
+INDEX = "sanba-grounding"
 EMBED_DIM = 768  # text-embedding-004
 
 
@@ -96,6 +97,9 @@ class GroundingStore:
     def index_passage(
         self, text: str, source: str, kind: str, session_id: str | None = None
     ) -> None:
+        # Mask PII before anything is persisted to the grounding store (issue #10).
+        if settings.mask_pii_before_index:
+            text = mask_pii(text)
         embedding = embed_text(text)
         if self._client is not None:  # pragma: no cover - needs live ES
             doc = {"text": text, "source": source, "kind": kind, "session_id": session_id}
