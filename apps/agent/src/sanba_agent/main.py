@@ -5,7 +5,7 @@ Gemini Live. During the conversation it calls the ADK agent team (as a tool) to
 plan the next question and to persist confirmed requirements.
 
 Run locally:
-    python -m kikitori_agent.main dev
+    python -m sanba_agent.main dev
 """
 
 from __future__ import annotations
@@ -34,7 +34,7 @@ from .tools.analysis import analyze_transcript, make_requirement_id
 log = structlog.get_logger(__name__)
 
 
-class KikitoriAgent(Agent):
+class SANBAAgent(Agent):
     """The voice interviewer. Owns the tools that bridge to the ADK team."""
 
     def __init__(
@@ -224,7 +224,7 @@ async def entrypoint(ctx: JobContext) -> None:
     grounding = GroundingStore()
     seed_knowledge_base(grounding)
     seed_github_context(grounding, session_id)
-    agent = KikitoriAgent(session_id=session_id, repo=repo, grounding=grounding)
+    agent = SANBAAgent(session_id=session_id, repo=repo, grounding=grounding)
 
     session = AgentSession(
         llm=google.beta.realtime.RealtimeModel(

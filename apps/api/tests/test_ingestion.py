@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from kikitori_api.ingestion import ContextIndexer, chunk_text, extract_text_from_upload
-from kikitori_api.main import app
+from sanba_api.ingestion import ContextIndexer, chunk_text, extract_text_from_upload
+from sanba_api.main import app
 
 client = TestClient(app)
 

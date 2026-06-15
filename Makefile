@@ -32,10 +32,10 @@ fmt: ## フォーマット
 	cd apps/api && uv run ruff format .
 
 agent-dev: ## エージェントワーカーをローカル実行
-	cd apps/agent && uv run python -m kikitori_agent.main dev
+	cd apps/agent && uv run python -m sanba_agent.main dev
 
 api-dev: ## API をローカル実行
-	cd apps/api && uv run uvicorn kikitori_api.main:app --reload --port 8080
+	cd apps/api && uv run uvicorn sanba_api.main:app --reload --port 8080
 
 web-dev: ## Web をローカル実行
 	cd apps/web && npm run dev

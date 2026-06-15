@@ -1,9 +1,9 @@
 apiVersion: 1
 
 providers:
-  - name: Kikitori
+  - name: SANBA
     orgId: 1
-    folder: Kikitori
+    folder: SANBA
     type: file
     disableDeletion: false
     editable: true

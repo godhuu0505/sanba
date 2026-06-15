@@ -13,11 +13,11 @@ COPY src ./src
 RUN uv pip install --system --no-cache .
 
 # LiveKit Agents need plugin model files; download at build time when present.
-RUN python -m kikitori_agent.main download-files || true
+RUN python -m sanba_agent.main download-files || true
 
 # Run as an unprivileged user (defense in depth).
 RUN useradd --create-home --uid 10001 appuser
 USER appuser
 
-ENTRYPOINT ["python", "-m", "kikitori_agent.main"]
+ENTRYPOINT ["python", "-m", "sanba_agent.main"]
 CMD ["start"]

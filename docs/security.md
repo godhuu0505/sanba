@@ -1,4 +1,4 @@
-# セキュリティ & データガバナンス — Kikitori
+# セキュリティ & データガバナンス — SANBA
 
 「本番品質（届けるものをつくる）」の前提として、最低限のセキュリティとデータ取り扱いを定義する。
 （関連 issue: #8 アクセス制御 / #9 CIスキャン / #10 データガバナンス）
@@ -31,7 +31,7 @@
 ## 5. 保持期間（#10）
 - Firestore: 書き込み時に `expireAt` を付与。フィールド TTL ポリシーで期限切れを自動削除
   （`infra/terraform` の `google_firestore_field`）。
-- Elasticsearch: ILM で `kikitori-grounding` の古いドキュメントを削除（運用設定）。
+- Elasticsearch: ILM で `sanba-grounding` の古いドキュメントを削除（運用設定）。
 - 既定 `DATA_RETENTION_DAYS=30`。0 で無期限。
 
 ## 6. 暗号化 & 最小権限

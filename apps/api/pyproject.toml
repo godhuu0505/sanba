@@ -1,7 +1,7 @@
 [project]
-name = "kikitori-api"
+name = "sanba-api"
 version = "0.1.0"
-description = "Kikitori API: LiveKit token issuing and session orchestration"
+description = "SANBA API: LiveKit token issuing and session orchestration"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.111",
@@ -47,4 +47,4 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/kikitori_api"]
+packages = ["src/sanba_api"]

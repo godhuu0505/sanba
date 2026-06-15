@@ -29,7 +29,7 @@ from .ingestion import ContextIndexer, chunk_text, extract_text_from_upload
 
 log = structlog.get_logger(__name__)
 
-app = FastAPI(title="Kikitori API", version="0.2.0")
+app = FastAPI(title="SANBA API", version="0.2.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[o.strip() for o in settings.allowed_origins.split(",")],

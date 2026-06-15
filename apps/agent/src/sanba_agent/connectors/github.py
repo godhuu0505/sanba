@@ -53,7 +53,7 @@ def requirements_to_issue_body(
         Priority.WONT: "Won't",
     }
     lines = [
-        f"Kikitori の音声インタビューで確定した要件です（session `{session_id}`）。",
+        f"SANBA の音声インタビューで確定した要件です（session `{session_id}`）。",
         "",
     ]
     for pr in order:

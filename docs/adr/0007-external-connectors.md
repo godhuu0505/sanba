@@ -21,5 +21,5 @@
 - 実装エージェント起動（worktree 並列実装等）は**本ADRの範囲外**（別issueで検討）。
 
 ## 影響
-- `apps/agent/src/kikitori_agent/connectors/github.py` を追加、`httpx` 依存を追加。
+- `apps/agent/src/sanba_agent/connectors/github.py` を追加、`httpx` 依存を追加。
 - 有効化時のみ、セッション開始で GitHub コンテキストを取り込み、締めで Issue 書き戻し可能。

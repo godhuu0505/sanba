@@ -51,7 +51,7 @@ export default function Home() {
         style={{ height: "100dvh" }}
       >
         <main style={{ padding: 24, maxWidth: 640, margin: "0 auto" }}>
-          <h1>🎙️ Kikitori — 要件インタビュー中</h1>
+          <h1>🎙️ SANBA — 要件インタビュー中</h1>
           <p>セッション: <code>{conn.session_id}</code></p>
           <InterviewView />
           <RoomAudioRenderer />
@@ -63,8 +63,8 @@ export default function Home() {
 
   return (
     <main style={{ padding: 24, maxWidth: 480, margin: "0 auto" }}>
-      <h1>🎙️ Kikitori</h1>
-      <p>音声で要件を聞き取るマルチエージェント。話しかけると、AIが一問ずつ質問します。</p>
+      <h1>🎙️ SANBA</h1>
+      <p>解像度高く、要件を生み出す音声マルチエージェント。話しかけると、AIが一問ずつ質問し、要件を少しずつ明確にしていきます。</p>
       <label>
         お名前
         <input value={name} onChange={(e) => setName(e.target.value)} style={inputStyle} />

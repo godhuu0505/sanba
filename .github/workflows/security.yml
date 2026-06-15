@@ -66,7 +66,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Build image
-        run: docker build -t kikitori-${{ matrix.app }}:scan apps/${{ matrix.app }}
+        run: docker build -t sanba-${{ matrix.app }}:scan apps/${{ matrix.app }}
       # Trivy is advisory: the docker build above is the gate. Install + scan are
       # both continue-on-error so a flaky install/scan never blocks the PR.
       - name: Install Trivy
@@ -76,4 +76,4 @@ jobs:
             | sudo sh -s -- -b /usr/local/bin v0.55.0
       - name: Trivy scan
         continue-on-error: true
-        run: trivy image --severity HIGH,CRITICAL --format table kikitori-${{ matrix.app }}:scan || true
+        run: trivy image --severity HIGH,CRITICAL --format table sanba-${{ matrix.app }}:scan || true

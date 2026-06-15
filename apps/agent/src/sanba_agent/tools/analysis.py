@@ -71,9 +71,9 @@ async def _run_adk(transcript: str, open_topics: list[str]) -> AnalysisResult:
     from ..agent_team import build_interview_team
 
     team = build_interview_team()
-    runner = InMemoryRunner(agent=team, app_name="kikitori")
+    runner = InMemoryRunner(agent=team, app_name="sanba")
     session = await runner.session_service.create_session(
-        app_name="kikitori", user_id="voice-agent"
+        app_name="sanba", user_id="voice-agent"
     )
     prompt = (
         "以下はこれまでの要件インタビューの書き起こしです。\n"

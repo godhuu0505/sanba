@@ -6,7 +6,7 @@ terraform {
       version = "~> 5.0"
     }
   }
-  # backend "gcs" { bucket = "kikitori-tfstate" prefix = "terraform/state" }
+  # backend "gcs" { bucket = "sanba-tfstate" prefix = "terraform/state" }
 }
 
 provider "google" {
@@ -33,7 +33,7 @@ resource "google_project_service" "services" {
 # ---- Artifact Registry for container images ----
 resource "google_artifact_registry_repository" "images" {
   location      = var.region
-  repository_id = "kikitori"
+  repository_id = "sanba"
   format        = "DOCKER"
   depends_on    = [google_project_service.services]
 }
@@ -64,8 +64,8 @@ resource "google_firestore_field" "requirements_ttl" {
 
 # ---- Service account for Cloud Run workloads (least privilege) ----
 resource "google_service_account" "runtime" {
-  account_id   = "kikitori-runtime"
-  display_name = "Kikitori Cloud Run runtime"
+  account_id   = "sanba-runtime"
+  display_name = "SANBA Cloud Run runtime"
 }
 
 resource "google_project_iam_member" "runtime_roles" {
@@ -86,7 +86,7 @@ resource "google_project_iam_member" "runtime_roles" {
 resource "google_billing_budget" "monthly" {
   count           = var.billing_account == "" ? 0 : 1
   billing_account = var.billing_account
-  display_name    = "kikitori-monthly"
+  display_name    = "sanba-monthly"
   amount {
     specified_amount {
       currency_code = "JPY"

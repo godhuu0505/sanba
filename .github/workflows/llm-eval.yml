@@ -5,10 +5,10 @@ name: LLM Eval (LLMOps)
 on:
   pull_request:
     paths:
-      - "apps/agent/src/kikitori_agent/prompts/**"
-      - "apps/agent/src/kikitori_agent/agent_team.py"
-      - "apps/agent/src/kikitori_agent/tools/**"
-      - "apps/agent/src/kikitori_agent/evaluation.py"
+      - "apps/agent/src/sanba_agent/prompts/**"
+      - "apps/agent/src/sanba_agent/agent_team.py"
+      - "apps/agent/src/sanba_agent/tools/**"
+      - "apps/agent/src/sanba_agent/evaluation.py"
   workflow_dispatch:
 
 jobs:
@@ -30,4 +30,4 @@ jobs:
       - run: uv python install 3.12
       - run: uv sync --all-extras --dev
       # Regression eval: fails if quality drops below threshold or ordering breaks.
-      - run: uv run python -m kikitori_agent.evaluation
+      - run: uv run python -m sanba_agent.evaluation

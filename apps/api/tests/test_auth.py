@@ -6,7 +6,7 @@ import time
 
 import pytest
 
-from kikitori_api.auth import InvalidInvite, create_invite, verify_invite
+from sanba_api.auth import InvalidInvite, create_invite, verify_invite
 
 SECRET = "test-secret"
 

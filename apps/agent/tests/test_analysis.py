@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from kikitori_agent.tools.analysis import (
+from sanba_agent.tools.analysis import (
     heuristic_open_topics,
     make_requirement_id,
 )
@@ -35,7 +35,7 @@ def test_open_topics_drops_covered_topics() -> None:
 
 @pytest.mark.asyncio
 async def test_analyze_transcript_falls_back_without_adk() -> None:
-    from kikitori_agent.tools.analysis import analyze_transcript
+    from sanba_agent.tools.analysis import analyze_transcript
 
     result = await analyze_transcript("要約機能がほしい。")
     assert result.next_question
