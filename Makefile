@@ -1,7 +1,7 @@
 .DEFAULT_GOAL := help
 COMPOSE := docker compose
 
-.PHONY: help up down logs build test lint fmt agent-dev api-dev web-dev tf-plan tf-apply
+.PHONY: help up down logs build test lint fmt four-keys agent-dev api-dev web-dev tf-plan tf-apply
 
 help: ## このヘルプを表示
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -22,10 +22,15 @@ build: ## 全イメージをビルド
 test: ## 全テストを実行
 	cd apps/agent && uv run pytest -q
 	cd apps/api && uv run pytest -q
+	cd infra/four-keys/collector && uv run pytest -q
 
 lint: ## lint
 	cd apps/agent && uv run ruff check . && uv run mypy src
 	cd apps/api && uv run ruff check . && uv run mypy src
+	cd infra/four-keys/collector && uv run ruff check . && uv run mypy src
+
+four-keys: ## Four Keys メトリクスを表示 (DORA 自己計測)
+	cd infra/four-keys/collector && uv run python -m fourkeys collect --json
 
 fmt: ## フォーマット
 	cd apps/agent && uv run ruff format .

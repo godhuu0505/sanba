@@ -36,7 +36,7 @@
 
 ## Phase 4 — 仕上げ（提出）
 - [ ] LLM 評価データセットによる回帰テスト
-- [ ] Four Keys ダッシュボード
+- [x] Four Keys ダッシュボード（`infra/four-keys/collector` → Prometheus → Grafana。自リポジトリの DORA を自己計測）
 - [ ] デモ動画（1分・Before/After）
 - [ ] Zenn 提出記事（アーキテクチャ図 + DevOps サイクル図）
 
