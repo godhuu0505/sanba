@@ -115,24 +115,36 @@ class GroundingStore:
             return self._search_es(query, k, kinds)
         return self._search_mem(query, k, kinds)
 
-    def _search_es(  # pragma: no cover - needs live ES
-        self, query: str, k: int, kinds: list[str] | None
-    ) -> list[Passage]:
-        embedding = embed_text(query)
+    @staticmethod
+    def _build_search_params(
+        query: str, k: int, kinds: list[str] | None, embedding: list[float] | None
+    ) -> dict:
+        """Build elasticsearch ``search`` keyword arguments.
+
+        Passed via ``client.search(index=INDEX, **params)`` rather than the legacy
+        ``body=`` parameter, which was removed in elasticsearch-py 9.0.
+        """
         kind_filter = [{"terms": {"kind": kinds}}] if kinds else []
-        body: dict = {
+        params: dict = {
             "size": k,
             "query": {"bool": {"must": {"match": {"text": query}}, "filter": kind_filter}},
         }
         if embedding is not None:
-            body["knn"] = {
+            params["knn"] = {
                 "field": "embedding",
                 "query_vector": embedding,
                 "k": k,
                 "num_candidates": 50,
                 "filter": kind_filter,
             }
-        res = self._client.search(index=INDEX, body=body)
+        return params
+
+    def _search_es(  # pragma: no cover - needs live ES
+        self, query: str, k: int, kinds: list[str] | None
+    ) -> list[Passage]:
+        embedding = embed_text(query)
+        params = self._build_search_params(query, k, kinds, embedding)
+        res = self._client.search(index=INDEX, **params)
         return [
             Passage(
                 text=h["_source"]["text"],
@@ -153,9 +165,7 @@ class GroundingStore:
             overlap = len(tokens & _tokenize(doc.text))
             if overlap == 0:
                 continue
-            scored.append(
-                Passage(doc.text, doc.source, doc.kind, float(overlap), doc.session_id)
-            )
+            scored.append(Passage(doc.text, doc.source, doc.kind, float(overlap), doc.session_id))
         scored.sort(key=lambda p: p.score, reverse=True)
         return scored[:k]
 
@@ -178,9 +188,7 @@ def embed_text(text: str) -> list[float] | None:
         from google import genai
 
         client = genai.Client(api_key=settings.google_api_key or None)
-        resp = client.models.embed_content(
-            model=settings.gemini_embed_model, contents=text
-        )
+        resp = client.models.embed_content(model=settings.gemini_embed_model, contents=text)
         return list(resp.embeddings[0].values)
     except Exception as exc:  # pragma: no cover
         log.warning("embed_failed", error=str(exc))

@@ -28,3 +28,23 @@ def test_search_can_filter_by_kind() -> None:
     only_reqs = store.search("接続 要件", k=5, kinds=["requirement"])
     assert all(p.kind == "requirement" for p in only_reqs)
     assert only_reqs and only_reqs[0].session_id == "sess-1"
+
+
+def test_build_search_params_uses_keyword_args_not_legacy_body() -> None:
+    # `body=` was removed in elasticsearch-py 9.0; the params must be top-level
+    # keyword arguments so the ES path keeps working under elasticsearch>=8.14,<10.
+    params = GroundingStore._build_search_params("セキュリティ", k=3, kinds=None, embedding=None)
+    assert "body" not in params
+    assert params["size"] == 3
+    assert params["query"]["bool"]["must"]["match"]["text"] == "セキュリティ"
+    assert "knn" not in params
+
+
+def test_build_search_params_includes_knn_and_filter_when_available() -> None:
+    params = GroundingStore._build_search_params(
+        "接続", k=2, kinds=["requirement"], embedding=[0.1, 0.2, 0.3]
+    )
+    assert params["knn"]["field"] == "embedding"
+    assert params["knn"]["query_vector"] == [0.1, 0.2, 0.3]
+    assert params["knn"]["k"] == 2
+    assert params["query"]["bool"]["filter"] == [{"terms": {"kind": ["requirement"]}}]
