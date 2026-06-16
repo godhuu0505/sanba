@@ -1,0 +1,52 @@
+name: "🐛 バグ報告 / Bug report"
+description: 不具合を報告する
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ご報告ありがとうございます。**脆弱性は Issue ではなく [SECURITY.md](../blob/main/SECURITY.md) の手順**で報告してください。
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: 何が起きたか
+      description: 期待した挙動と実際の挙動
+      placeholder: 〜のはずが、〜になった
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: 再現手順
+      placeholder: |
+        1. `just up` で起動
+        2. http://localhost:3000 で …
+        3. …
+    validations:
+      required: true
+  - type: dropdown
+    id: component
+    attributes:
+      label: 影響コンポーネント
+      options:
+        - agent (LiveKit + Gemini Live + ADK)
+        - api (FastAPI)
+        - web (Next.js)
+        - infra (Terraform / observability / four-keys)
+        - docs / その他
+    validations:
+      required: true
+  - type: textarea
+    id: env
+    attributes:
+      label: 環境
+      description: OS / Docker ランタイム / ブラウザ / 関連する `.env` 設定（値は伏せる）
+    validations:
+      required: false
+  - type: textarea
+    id: logs
+    attributes:
+      label: ログ / スクショ
+      description: "`just logs` の関連部分など。シークレットや PII は必ず伏せてください。"
+    validations:
+      required: false

@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 💬 質問・相談
+    url: https://github.com/godhuu0505/sanba/discussions
+    about: バグや機能提案でない質問はこちら（Discussions）
+  - name: 🔒 脆弱性の報告
+    url: https://github.com/godhuu0505/sanba/security/advisories/new
+    about: セキュリティ脆弱性は公開 Issue ではなくこちらから非公開で報告してください
