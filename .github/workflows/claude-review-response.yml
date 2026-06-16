@@ -35,10 +35,18 @@ jobs:
     #  - Claude 自身（claude[bot]）や他 Bot の投稿では起動しない。
     #    Claude の対応コメント/修正コミットが自己再起動するのを根本から防ぐ。
     #  - 内容の無い approve はスキップ。
+    #  - claude[bot] は review.user.type が 'Bot' として渡らずガードをすり抜け、
+    #    action 本体の allowed_bots 検証で「ハードエラー（赤）」になる事例があった。
+    #    そのため review.user / github.actor の両面で claude を明示除外し、
+    #    自己再起動は「失敗」ではなく「skip（成功扱い）」で止める。
     # secrets はジョブ if で参照できないためステップで確認する。
     if: >-
       ${{
         github.event.review.state != 'approved' &&
+        github.actor != 'claude' &&
+        github.actor != 'claude[bot]' &&
+        github.event.review.user.login != 'claude' &&
+        github.event.review.user.login != 'claude[bot]' &&
         (
           github.event.review.user.login == 'chatgpt-codex-connector[bot]' ||
           github.event.review.user.type != 'Bot'
@@ -73,12 +81,14 @@ jobs:
           # Codex の Bot review を起点に Claude を起動できるよう明示許可する。
           allowed_bots: "chatgpt-codex-connector[bot]"
           # Bash はデフォルト無効。gh/git とテスト・lint コマンドを明示許可する。
+          # 読み取り系シェル（jq/cat/ls/grep）も許可し、`gh api` の JSON 整形等で
+          # permission 拒否が多発してターンを浪費するのを防ぐ。
           claude_args: |
             --model claude-sonnet-4-6
-            --max-turns 30
-            --allowedTools "Bash(gh:*),Bash(git:*),Bash(uv:*),Bash(npm:*),Bash(just:*),Edit,Write,Read,Glob,Grep"
+            --max-turns 60
+            --allowedTools "Bash(gh:*),Bash(git:*),Bash(uv:*),Bash(npm:*),Bash(just:*),Bash(jq:*),Bash(cat:*),Bash(ls:*),Bash(grep:*),Edit,Write,Read,Glob,Grep"
           prompt: |
-            あなたは Kikitori リポジトリの PR レビュー対応エージェントです。
+            あなたは SANBA リポジトリの PR レビュー対応エージェントです。
             トリガーとなったレビュー（Codex GitHub 連携の自動レビュー、または
             人間レビュアーのレビュー）を読み取り、対応してください。
 
