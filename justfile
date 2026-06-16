@@ -1,5 +1,6 @@
-# SANBA task runner. `just` is the primary entrypoint; the Makefile remains as
-# a thin compatibility shim. https://github.com/casey/just
+# SANBA task runner — the single entrypoint for local dev tasks.
+# Install with `uv tool install rust-just` (or brew / cargo / mise).
+# https://github.com/casey/just
 set shell := ["bash", "-cu"]
 
 # アプリ最小構成。compose は app だけ。
@@ -10,6 +11,22 @@ compose_full := "docker compose -f docker-compose.yml -f docker-compose.tools.ym
 # List available recipes
 default:
     @just --list
+
+# 初回ローカル環境構築: .env を用意し、全アプリの依存をインストールする (冪等)
+setup: _env
+    cd apps/agent && uv sync --all-extras --dev
+    cd apps/api && uv sync --all-extras --dev
+    cd infra/four-keys/collector && uv sync --all-extras --dev
+    cd apps/web && npm install --no-audit --no-fund
+    @echo ">> セットアップ完了。'just up' で起動、'just init' なら構築〜起動まで一気通貫。"
+
+# 初回構築から起動までを一気通貫 (ゼロから最小構成を立ち上げる)
+init: setup up
+    @echo ">> 起動完了。'just verify' で疎通確認、http://localhost:3000 を開いてください。"
+
+# .env が無ければ .env.example から作成する (既存の秘密情報は上書きしない)
+_env:
+    @if [ -f .env ]; then echo ">> .env は用意済み (上書きしません)"; else cp .env.example .env && echo ">> .env を .env.example から作成しました (GOOGLE_API_KEY / LIVEKIT_* を設定してください)"; fi
 
 # ローカルのアプリ最小構成を起動 (web/api/agent/livekit/firestore/elasticsearch)
 up:

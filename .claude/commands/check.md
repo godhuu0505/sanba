@@ -1,6 +1,6 @@
 ---
 description: CI と同じ検証（lint / 型 / テスト / build）をローカルで通す
-allowed-tools: Bash(uv run:*), Bash(npm run:*), Bash(just:*), Bash(make:*), Bash(cd:*)
+allowed-tools: Bash(uv run:*), Bash(npm run:*), Bash(just:*), Bash(cd:*)
 ---
 
 `.github/workflows/ci.yml` と等価な検証をローカルで実行し、push 前に必ず緑にする。
@@ -13,6 +13,6 @@ allowed-tools: Bash(uv run:*), Bash(npm run:*), Bash(just:*), Bash(make:*), Bash
 3. **web** — `cd apps/web && npm run typecheck && npm run build`
 
 補足:
-- まとめて回すなら `just lint && just test`（`just` 不在時は `make lint && make test`）でも可。
+- まとめて回すなら `just lint && just test` でも可（`just` 未導入なら `uv tool install rust-just`）。
 - フォーマット差分が出たら `uv run ruff format .` を当ててから再チェック。
 - 最後に「どの項目が緑/赤か」を簡潔に要約して報告する。

@@ -105,11 +105,13 @@ flowchart LR
 ## 🚀 クイックスタート（ローカル）
 
 ```bash
-cp .env.example .env   # GOOGLE_API_KEY / LIVEKIT_* などを設定（空でも最小構成は起動する）
-
+just setup             # 初回のみ: .env を用意し全依存をインストール (uv sync / npm install)
+                       #   └ GOOGLE_API_KEY / LIVEKIT_* を .env に設定（空でも最小構成は起動する）
 just up                # アプリ最小構成 (web/api/agent/livekit/firestore/elasticsearch)
 just verify            # 各コンポーネントの疎通スモークテスト
 open http://localhost:3000          # Web クライアント
+
+# ↑ をまとめて一発で: `just init`（= setup → up）
 
 just up-full           # 補助スタックも重ねて全部入り (+ observability / langfuse / four-keys)
 just verify-full
@@ -121,8 +123,10 @@ open http://localhost:3030          # Langfuse
 > 可観測性・LLMOps・DORA は `docker-compose.tools.yml`（overlay）に分離しています（ADR-0009）。
 > `just up` は最小構成、`just up-full` は全部入り。Rancher Desktop (dockerd) を想定。
 >
-> タスクランナーは [`just`](https://github.com/casey/just)（`justfile`）が標準です。
-> `just` 未導入の環境向けに `make` も同じターゲットで利用できます（`make up` 等）。
+> タスクランナーは [`just`](https://github.com/casey/just)（`justfile`）が単一の正で、
+> 唯一のエントリポイントです。未導入なら `uv tool install rust-just`（本リポジトリは `uv` 管理。
+> brew / cargo / mise でも可）で入れてください。Claude Code on the web では SessionStart hook が
+> 自動で用意します。
 
 詳細は [`docs/local-dev.md`](docs/local-dev.md) / [`docs/devops.md`](docs/devops.md)。
 
