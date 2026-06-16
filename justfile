@@ -75,6 +75,7 @@ lint:
     cd apps/agent && uv run ruff check . && uv run mypy src
     cd apps/api && uv run ruff check . && uv run mypy src
     cd infra/four-keys/collector && uv run ruff check . && uv run mypy src
+    cd apps/web && npm run lint && npm run typecheck
 
 # Four Keys メトリクスを一度だけ表示 (DORA 自己計測)
 four-keys:

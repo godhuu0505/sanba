@@ -36,8 +36,11 @@ just verify            # 各コンポーネントの疎通スモークテスト
 PR を出す前に、CI と同じ検証をローカルで通してください。
 
 ```bash
-just lint    # ruff / biome（lint + format）+ 型チェック（mypy / tsc --noEmit）
+just lint    # ruff（agent/api）+ eslint（web）+ 型チェック（mypy / tsc --noEmit）
 just test    # 単体 / 結合テスト（pytest）
+
+# web の build まで確認したいとき（CI の web ジョブ相当）
+cd apps/web && npm run build
 just build   # Docker イメージのビルド
 ```
 

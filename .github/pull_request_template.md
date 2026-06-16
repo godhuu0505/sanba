@@ -9,9 +9,9 @@
 
 ## テスト / How verified
 <!-- どう検証したか。`just lint` / `just test` の結果、手動確認の手順など -->
-- [ ] `just lint`（ruff / mypy）が通る
-- [ ] `apps/web` を変更した場合は `cd apps/web && npm run typecheck` が通る
+- [ ] `just lint`（ruff + eslint + mypy / tsc。web の lint/typecheck を含む）が通る
 - [ ] `just test`（単体 / 結合）が通る
+- [ ] web を変更した場合 `cd apps/web && npm run build` が通る
 - [ ] 必要なら `just verify` で疎通確認した
 
 ## 観測性 / Observability
