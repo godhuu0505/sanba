@@ -1,5 +1,27 @@
-project_id         = "sanba-prod"
-region             = "us-central1"
-image_tag          = "latest"
-billing_account    = ""        # e.g. "0123AB-456789-CDEF01" to enable budget alerts
-monthly_budget_jpy = 30000
+# cp terraform.tfvars.example terraform.tfvars して埋める。
+# terraform.tfvars は機微値を含むため gitignore 済 (コミット禁止)。
+
+# ---- 必須 ----
+project_id = "sanba-prod"
+region     = "us-central1"
+image_tag  = "latest" # CI が GITHUB_SHA を渡す。手動 apply 時は固定タグでも可。
+
+# ---- コスト ----
+billing_account     = ""    # e.g. "0123AB-456789-CDEF01" → 予算アラートを有効化
+monthly_budget_jpy  = 30000
+agent_min_instances = 1     # 0 にすると常駐ワーカーが消える代わりにコストを止められる
+image_keep_count    = 5     # Artifact Registry に残す直近イメージ数
+
+# ---- ランタイム設定 (平文) ----
+use_vertexai = true # 本番は Vertex AI でキーレス。AI Studio キーを使うなら false + google_api_key
+livekit_url  = ""   # 例: "wss://your-project.livekit.cloud" (実音声経路に必須)
+elasticsearch_url = "" # マネージド ES のエンドポイント。空なら in-memory にフォールバック
+otel_exporter_otlp_endpoint = "" # 例: "http://localhost:4317" (OTel Collector サイドカー)。空ならトレース無効
+
+# ---- シークレット (Secret Manager に格納される。空なら未作成) ----
+# session_signing_secret は空のままにすると強い値を自動生成する。
+session_signing_secret = ""
+livekit_api_key        = ""
+livekit_api_secret     = ""
+google_api_key         = "" # use_vertexai=false のときだけ必要
+elasticsearch_api_key  = ""

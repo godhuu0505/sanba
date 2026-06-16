@@ -8,6 +8,14 @@ FROM node:24-slim AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+# NEXT_PUBLIC_* はビルド時にバンドルへ焼き込まれるため、ビルド引数として受け取る。
+# 既定はローカル開発のブラウザから見たエンドポイント。本番は CI でビルド引数を上書きする。
+ARG NEXT_PUBLIC_API_URL=http://localhost:8080
+ARG NEXT_PUBLIC_LIVEKIT_URL=ws://localhost:7880
+ARG NEXT_PUBLIC_RETENTION_DAYS=30
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL \
+    NEXT_PUBLIC_LIVEKIT_URL=$NEXT_PUBLIC_LIVEKIT_URL \
+    NEXT_PUBLIC_RETENTION_DAYS=$NEXT_PUBLIC_RETENTION_DAYS
 RUN npm run build
 
 FROM node:24-slim AS runner

@@ -71,11 +71,27 @@ flowchart LR
 
 ## 7. ローカル開発
 
+アプリ必須スタックと補助スタックを二層に分離している（ADR-0009）。
+
 ```bash
-just up      # 全スタック起動
-just test    # 単体/結合テスト
-just lint    # lint + 型チェック
-just logs    # ログ追従
+just up        # アプリ最小構成 (web/api/agent/livekit/firestore/elasticsearch)
+just verify    # 疎通スモークテスト
+just up-full   # 補助スタックも重ねて全部入り (+ observability / langfuse / four-keys)
+just test      # 単体/結合テスト
+just lint      # lint + 型チェック
+just logs      # ログ追従
+just down      # 停止
 ```
 
 > `just` 未導入なら `make`（同名ターゲット）でも可。`justfile` が標準。
+> 詳細な手順・疎通確認・トラブルシュートは [`local-dev.md`](local-dev.md)。
+
+## 8. 本番デプロイのコスト設計
+
+- **Cloud Run**: api/web は `cpu_idle` + `min=0` で scale-to-zero（リクエスト時のみ課金）。
+  agent は常駐ワーカーのため `agent_min_instances`（既定 1）で制御し、不要時は 0 に絞れる。
+- **CI/CD**: 変更のあった app だけビルド&デプロイ（paths-filter）、Buildx GHA キャッシュ、
+  `concurrency` で古い実行をキャンセル。env/secret は Terraform が設定し CI は画像差し替えのみ。
+- **Secret Manager**: 機微情報は Terraform が宣言。本番は Vertex AI でキーレス（API キー不要）。
+- **Artifact Registry**: cleanup policy で直近 N 個のみ保持しストレージ課金を抑制。
+- **予算アラート**: `google_billing_budget` を Terraform で宣言（`monthly_budget_jpy`）。

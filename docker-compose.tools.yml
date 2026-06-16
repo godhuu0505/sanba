@@ -1,0 +1,124 @@
+# SANBA — 任意の補助スタック (observability / LLMOps / DORA)
+#
+# 「必須ではないが あったら便利」なコンポーネントをアプリ本体から分離したもの。
+# docker-compose.yml に *重ねて* 使う overlay。単体では起動できない (アプリの
+# network と agent/api サービス定義に依存する)。
+#
+#   just up-full      # = docker compose -f docker-compose.yml -f docker-compose.tools.yml up
+#   just tools-down   # 補助スタックだけ落とす
+#
+# 含むもの:
+#   - OpenTelemetry Collector → Prometheus / Loki / Tempo → Grafana  (可観測性)
+#   - Langfuse (+ Postgres)                                          (LLMOps / プロンプト評価)
+#   - four-keys                                                      (DORA 自己計測)
+#
+# overlay を有効にすると、agent / api に OTLP・Langfuse のエンドポイントを注入する。
+# アプリ最小構成 (just up) では未設定 → テレメトリは graceful にスキップされ、雑音が出ない。
+
+services:
+  # ---- アプリ側にテレメトリ送信先を注入 (overlay 適用時のみ) ----
+  agent:
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      LANGFUSE_HOST: http://langfuse:3000
+    depends_on:
+      otel-collector:
+        condition: service_started
+
+  api:
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+    depends_on:
+      otel-collector:
+        condition: service_started
+
+  # ============================ Observability ============================
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    command: ["--config=/etc/otel/config.yaml"]
+    volumes:
+      - ./infra/observability/otel/config.yaml:/etc/otel/config.yaml:ro
+    ports: ["4317:4317", "4318:4318"]
+    depends_on: [prometheus, loki, tempo]
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+      - ./infra/observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports: ["9090:9090"]
+    restart: unless-stopped
+
+  loki:
+    image: grafana/loki:latest
+    command: ["-config.file=/etc/loki/config.yaml"]
+    volumes:
+      - ./infra/observability/loki/config.yaml:/etc/loki/config.yaml:ro
+    ports: ["3100:3100"]
+    restart: unless-stopped
+
+  tempo:
+    image: grafana/tempo:latest
+    command: ["-config.file=/etc/tempo/config.yaml"]
+    volumes:
+      - ./infra/observability/tempo/config.yaml:/etc/tempo/config.yaml:ro
+    ports: ["3200:3200"]
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_SECURITY_ALLOW_EMBEDDING: "true"
+    volumes:
+      - ./infra/observability/grafana/provisioning:/etc/grafana/provisioning:ro
+    ports: ["3001:3000"]
+    depends_on: [prometheus, loki, tempo]
+    restart: unless-stopped
+
+  # ============================ DORA self-measurement (まわす) ============================
+  four-keys:
+    build: ./infra/four-keys/collector
+    environment:
+      # このリポジトリの deploy.yml run + incident issue を読む。GITHUB_TOKEN があると
+      # API レート上限が上がる。無い場合は同梱のサンプルデータにフォールバックする。
+      GITHUB_REPOSITORY: "${GITHUB_REPOSITORY:-godhuu0505/sanba}"
+      GITHUB_TOKEN: "${GITHUB_TOKEN:-}"
+    command: ["serve", "--port", "9301", "--window-days", "30"]
+    ports: ["9301:9301"]
+    restart: unless-stopped
+
+  # ============================ LLMOps (Langfuse) ============================
+  langfuse-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: langfuse
+      POSTGRES_PASSWORD: langfuse
+      POSTGRES_DB: langfuse
+    volumes:
+      - langfuse-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U langfuse"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  langfuse:
+    # v3 は Clickhouse/Redis/S3 が必要。ローカルは Postgres だけで完結する v2 に固定する。
+    image: langfuse/langfuse:2
+    depends_on:
+      langfuse-db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://langfuse:langfuse@langfuse-db:5432/langfuse
+      NEXTAUTH_SECRET: local-dev-secret
+      NEXTAUTH_URL: http://localhost:3030
+      SALT: local-dev-salt
+      TELEMETRY_ENABLED: "false"
+    ports: ["3030:3000"]
+    restart: unless-stopped
+
+volumes:
+  langfuse-db:

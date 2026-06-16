@@ -1,10 +1,21 @@
 name: Deploy (Cloud Run)
 
 # main へのマージで Cloud Run にデプロイ。鍵レス認証は Workload Identity Federation。
+#
+# コスト最適化:
+#   - 変更のあった app だけビルド & デプロイ (paths-filter) → Actions 分・AR ストレージ節約。
+#   - Buildx の GHA キャッシュでビルド時間短縮。
+#   - 古い実行は concurrency でキャンセル。
+#   - env/secret/スケールは Terraform が一度だけ設定。ここは画像の差し替えのみ
+#     (gcloud run deploy --image は既存の env/secret 設定を保持する)。
 on:
   push:
     branches: [main]
   workflow_dispatch:
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   REGION: us-central1
@@ -12,16 +23,42 @@ env:
 
 permissions:
   contents: read
-  id-token: write   # Workload Identity Federation
+  id-token: write # Workload Identity Federation
 
 jobs:
-  deploy:
+  # 変更のあった app を検出する。app コード・Dockerfile が変わったものだけ後段で回す。
+  changes:
     runs-on: ubuntu-latest
-    # Secrets/vars must be configured in the repo; skip gracefully if absent.
     if: ${{ vars.GCP_PROJECT_ID != '' }}
+    outputs:
+      apps: ${{ steps.decide.outputs.apps }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            agent: ['apps/agent/**']
+            api: ['apps/api/**']
+            web: ['apps/web/**']
+      - id: decide
+        # 手動トリガー (workflow_dispatch) は差分が無く paths-filter が空を返すため、
+        # ロールバック/強制再デプロイ用途では全 app を対象にする。
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo 'apps=["agent","api","web"]' >> "$GITHUB_OUTPUT"
+          else
+            echo 'apps=${{ steps.filter.outputs.changes }}' >> "$GITHUB_OUTPUT"
+          fi
+
+  deploy:
+    needs: changes
+    if: ${{ needs.changes.outputs.apps != '[]' && needs.changes.outputs.apps != '' }}
+    runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        app: [agent, api, web]
+        app: ${{ fromJSON(needs.changes.outputs.apps) }}
     steps:
       - uses: actions/checkout@v6
 
@@ -36,16 +73,33 @@ jobs:
       - name: Configure Docker
         run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
 
-      - name: Build & push
-        run: |
-          IMAGE="${REGION}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${REPO}/${{ matrix.app }}:${GITHUB_SHA}"
-          docker build -t "$IMAGE" apps/${{ matrix.app }}
-          docker push "$IMAGE"
-          echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
+      - uses: docker/setup-buildx-action@v4
 
-      - name: Deploy to Cloud Run
+      # web は NEXT_PUBLIC_API_URL をビルド時に焼き込む。未設定だと「空」で焼かれ、
+      # ブラウザが web 自身のオリジンに /api を投げて本番が壊れるため fail fast する。
+      - name: Require web build config
+        if: ${{ matrix.app == 'web' && vars.NEXT_PUBLIC_API_URL == '' }}
+        run: |
+          echo "::error::vars.NEXT_PUBLIC_API_URL を API の Cloud Run URL に設定してください (web ビルドに必須)" >&2
+          exit 1
+
+      - name: Build & push (with layer cache)
+        uses: docker/build-push-action@v6
+        with:
+          context: apps/${{ matrix.app }}
+          push: true
+          tags: ${{ env.REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ env.REPO }}/${{ matrix.app }}:${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.app }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.app }}
+          # web のみ NEXT_PUBLIC_* を渡す。空文字を渡すと Dockerfile の既定を上書きして
+          # しまうため、変数が設定されている行だけを生成する (未設定なら Dockerfile 既定)。
+          build-args: |
+            ${{ vars.NEXT_PUBLIC_API_URL != '' && format('NEXT_PUBLIC_API_URL={0}', vars.NEXT_PUBLIC_API_URL) || '' }}
+            ${{ vars.NEXT_PUBLIC_LIVEKIT_URL != '' && format('NEXT_PUBLIC_LIVEKIT_URL={0}', vars.NEXT_PUBLIC_LIVEKIT_URL) || '' }}
+
+      - name: Deploy to Cloud Run (image only; env/secret は Terraform 管理)
         run: |
           gcloud run deploy sanba-${{ matrix.app }} \
-            --image "$IMAGE" \
+            --image "${REGION}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${REPO}/${{ matrix.app }}:${GITHUB_SHA}" \
             --region "$REGION" \
             --quiet

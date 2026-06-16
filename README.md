@@ -105,19 +105,26 @@ flowchart LR
 ## 🚀 クイックスタート（ローカル）
 
 ```bash
-cp .env.example .env   # GOOGLE_API_KEY / LIVEKIT_* などを設定
-just up                # docker compose で agent / api / web / 可観測性スタックを起動
-just logs              # ログ確認
+cp .env.example .env   # GOOGLE_API_KEY / LIVEKIT_* などを設定（空でも最小構成は起動する）
+
+just up                # アプリ最小構成 (web/api/agent/livekit/firestore/elasticsearch)
+just verify            # 各コンポーネントの疎通スモークテスト
 open http://localhost:3000          # Web クライアント
+
+just up-full           # 補助スタックも重ねて全部入り (+ observability / langfuse / four-keys)
+just verify-full
 open http://localhost:3001          # Grafana
 open http://localhost:3030          # Langfuse
 ```
 
+> **二層構成**: アプリ必須スタックは `docker-compose.yml`、「必須ではないが あったら便利」な
+> 可観測性・LLMOps・DORA は `docker-compose.tools.yml`（overlay）に分離しています（ADR-0009）。
+> `just up` は最小構成、`just up-full` は全部入り。Rancher Desktop (dockerd) を想定。
+>
 > タスクランナーは [`just`](https://github.com/casey/just)（`justfile`）が標準です。
 > `just` 未導入の環境向けに `make` も同じターゲットで利用できます（`make up` 等）。
-> レシピ一覧は `just`（引数なし）。
 
-詳細は [`docs/devops.md`](docs/devops.md)。
+詳細は [`docs/local-dev.md`](docs/local-dev.md) / [`docs/devops.md`](docs/devops.md)。
 
 ## 🗺️ ロードマップ（段階的に多対多へ）
 

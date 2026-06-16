@@ -5,6 +5,11 @@ on:
     branches: [main]
   pull_request:
 
+# 同一ブランチの古い実行はキャンセルして Actions 分を節約する (コスト最適化)。
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   agent:
     name: agent (lint + test)
@@ -77,5 +82,6 @@ jobs:
         with:
           context: apps/${{ matrix.app }}
           push: false
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # scope を app 単位で分け、deploy.yml のキャッシュと共有する。
+          cache-from: type=gha,scope=${{ matrix.app }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.app }}
