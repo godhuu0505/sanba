@@ -86,15 +86,47 @@ ADR-0010 では「Codex が指摘 → Claude が一次対応」を `pull_request
 - 予算枠の枯渇（§8）→ **自動で issue を起票**する。
 - それ以外 → **GitHub 標準のメール通知**に委ねる。外部連携・追加コストはゼロ。
 
-### 8. 予算 = spending limit ＋ 失敗通知
-- GitHub Actions / API の **spending limit を設定**して暴走コストを上限で止める。
-- 失敗・枠枯渇は §7 の GitHub ネイティブ通知で気づける状態にする。
+### 8. 予算 = quota 保護 ＋ 失敗通知
+- **リポジトリは public** のため **GitHub Actions 分は実質無料**になった。よって予算の主眼は
+  Actions 分から **LLM 系 quota（Claude サブスク / Codex サブスク / Google・Langfuse API）** へ移る。
+- これらの **spending limit / 上限アラートを設定**し、暴走コストを上限で止める。
+- 加えて、後述 §10 の「信頼ユーザ限定起動」で**未信頼者による quota 濫用そのものを断つ**。
+- 失敗・枠枯渇は §7 の GitHub ネイティブ通知（枯渇 → 自動 issue）で気づける状態にする。
 
 ### 9. LLM eval（Langfuse）= main マージ後 ＋ 週次のみ
 - LLM 回帰評価は API 課金が高いため **PR ゲートから外す**。
 - **main マージ後**と **週次 schedule** で全体回帰を定点観測する。
 - 残リスク: プロンプト回帰は PR では止まらず main で検出される。P1（ユーザー無し）では
   許容。**stg/prd が出現する P2/P3 で PR ゲート化への再昇格を再検討**する。
+- **public 観点の補強**: fork PR には Secret（GOOGLE/LANGFUSE）が渡らず PR で eval しても
+  heuristic 落ちで無意味、かつ未信頼コードを実行することになる。post-merge(main)＋schedule
+  なら**信頼コードのみ＋Secret 有効**で回せる。public 化はこの決定をむしろ補強する。
+
+### 10. public リポジトリの脅威モデル（信頼チーム専用運用・当面）
+public 化により Actions 分は無料になった一方、**未信頼の第三者が自動化を起動できる**面が増える。
+当面は **外部 fork PR を実質受け付けない「信頼チーム専用」運用**とし、軽量ハードニングで守る。
+将来 OSS コントリビューションを開く場合は「特権/無特権ジョブ分離・二段階承認」へ拡張する。
+
+- **特権トリガーは信頼ユーザ限定**:
+  - `pull_request_review` / `issue_comment` / `workflow_run` 等は **base リポジトリの Secret と
+    書込 GITHUB_TOKEN を伴う特権イベント**で、public では**第三者が他人の PR にレビュー/コメントを
+    投稿して起動**できてしまう。
+  - 自動化（`claude-review-response` / babysitter / `@codex` 駆動）は
+    **`author_association ∈ {OWNER, MEMBER, COLLABORATOR}` でガード**し、未信頼ユーザの起動を弾く。
+  - これにより §4 の App トークン / OAuth トークンを**未信頼入力の処理経路に晒さない**。
+- **fork PR では特権ステップを実行しない**（Secret/書込トークンを使うジョブを回さない）。
+  babysitter の App トークンはそもそも fork ブランチへ push 不可だが、設計として明示する。
+- **リポジトリ設定のハードニング**（一度設定・運用記録）:
+  - Settings→Actions: **first-time / outside contributor の実行承認を必須**化（未信頼コードの
+    CI / `docker build` / scan 実行＝計算資源濫用を止める）。
+  - 既定 **GITHUB_TOKEN を read-only**、Actions による PR 作成/承認を禁止。
+  - **Secret Scanning ＋ Push Protection を有効**（public は無料。CI の gitleaks と多層化）。
+  - branch protection は §2（人間1承認＋quality-gate 必須＋bot は approve/merge 不可）を維持。
+- **サプライチェーン**: GitHub 製以外の Action（`astral-sh/*` `dorny/*` `docker/*`
+  `google-github-actions/*` `anthropics/claude-code-action` 等）と素の `curl | sh` 取得（gitleaks）は
+  **commit SHA ピン**を基本とする。
+- **WIF の信頼条件**: `deploy.yml` の WIF は attribute condition を **`repository` ＋ `ref=main`** に
+  限定し、他リポジトリ/ブランチから `DEPLOY_SA` を引けないことを確認（infra/terraform）。
 
 ## 検討したが採用しなかった選択肢
 - **常時 in-Actions で babysitter を回す**: Actions 分を恒常消費しコストが嵩む。
@@ -107,11 +139,14 @@ ADR-0010 では「Codex が指摘 → Claude が一次対応」を `pull_request
 - **`GITHUB_TOKEN` で push**: 下流 WF を起動せずループが死ぬため不可。
 
 ## 影響 / 移行
-- 新規: GitHub App（§4）、`quality-gate` 集約必須チェック（§2）、branch protection（§2）、
-  共有挙動仕様 `docs/automation/pr-babysitter-spec.md`（§3）、watchdog cron（§3）、
-  `needs-human` 等のラベル（§6）。
-- 改修: `claude-review-response.yml` を「App トークン・spec 参照・needs-human・
-  セキュリティパスガード」対応のフォールバックへ。`llm-eval.yml` を PR から
-  post-merge＋週次へ（§9）。
+- 新規: GitHub App（§4）、`quality-gate` 集約必須チェック（§2。**Python は mypy も含める**＝
+  現状 `ci.yml` は `ruff` のみで型検査が抜けているため `uv run mypy src` を追加）、
+  branch protection（§2）、共有挙動仕様 `docs/automation/pr-babysitter-spec.md`（§3）、
+  watchdog cron（§3）、`needs-human` 等のラベル（§6）、**public 化ハードニング**（§10：
+  リポジトリ設定・特権トリガーの author_association ガード・Action の SHA ピン）。
+- 改修: `claude-review-response.yml` を「**author_association ガード（§10）**・App トークン・
+  spec 参照・needs-human・セキュリティパスガード」対応のフォールバックへ。
+  `llm-eval.yml` を PR から post-merge＋週次へ（§9）。予算は Actions 分から
+  **LLM 系 quota 保護**へ軸足（§8）。
 - ADR-0010 は本 ADR に置換される（Codex 公式 GitHub 連携・サブスク認証の前提は踏襲）。
 - 実装は依存関係つきの GitHub Issue（本 ADR を親トラッキングに紐付け）に分割して進める。
