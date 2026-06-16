@@ -1,0 +1,38 @@
+name: "✨ 機能提案 / Feature request"
+description: 新機能・改善を提案する
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: 解決したい課題
+      description: どんな困りごと・ユースケースか（要件ヒアリングのどの場面か）
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 提案する解決策
+      description: 実現したい挙動。可能なら画面 / 対話の流れも
+    validations:
+      required: true
+  - type: dropdown
+    id: phase
+    attributes:
+      label: 関連フェーズ（ロードマップ）
+      description: docs/roadmap.md 参照
+      options:
+        - Phase 1 — 1:1 音声インタビュー MVP
+        - Phase 2 — 多人数 (N:1)
+        - Phase 3 — 多エージェント協調 (N:M)
+        - 横断機能 / 基盤
+        - わからない
+    validations:
+      required: false
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 検討した代替案
+      description: 捨てた選択肢があれば（採用時は ADR 化を検討）
+    validations:
+      required: false

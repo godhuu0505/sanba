@@ -1,0 +1,19 @@
+# コードオーナー — PR 時に自動でレビュー依頼される
+# 参考: https://docs.github.com/articles/about-code-owners
+
+# 既定のオーナー（全体）
+*                       @godhuu0505
+
+# アプリ
+/apps/agent/            @godhuu0505
+/apps/api/              @godhuu0505
+/apps/web/              @godhuu0505
+
+# インフラ・CI（変更は必ずレビュー）
+/infra/                 @godhuu0505
+/.github/               @godhuu0505
+
+# 設計ドキュメント・規約
+/docs/                  @godhuu0505
+/CLAUDE.md              @godhuu0505
+/AGENTS.md              @godhuu0505
