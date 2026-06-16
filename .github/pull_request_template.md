@@ -9,7 +9,8 @@
 
 ## テスト / How verified
 <!-- どう検証したか。`just lint` / `just test` の結果、手動確認の手順など -->
-- [ ] `just lint`（ruff / biome + mypy / tsc）が通る
+- [ ] `just lint`（ruff / mypy）が通る
+- [ ] `apps/web` を変更した場合は `cd apps/web && npm run typecheck` が通る
 - [ ] `just test`（単体 / 結合）が通る
 - [ ] 必要なら `just verify` で疎通確認した
 

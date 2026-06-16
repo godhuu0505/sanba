@@ -8,7 +8,7 @@ SANBA は音声で要件をヒアリングする性質上、会話に PII が含
 **脆弱性は公開 Issue に書かないでください。** 次のいずれかで非公開に報告してください。
 
 - GitHub の **[Security Advisories](https://github.com/godhuu0505/sanba/security/advisories/new)**（推奨。"Report a vulnerability"）
-- それが使えない場合は、リポジトリ管理者へ直接連絡。
+- それが使えない場合は、[@godhuu0505](https://github.com/godhuu0505)（GitHub プロフィールより DM）へ直接連絡。
 
 報告には、再現手順・影響範囲・想定される深刻度を含めてください。
 受領後すぐに確認し、修正方針と公開タイミングを相談します。
