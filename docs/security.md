@@ -41,8 +41,9 @@
 
 ## 7. CI セキュリティ（#9）
 - Dependabot / pip-audit / npm audit / gitleaks / Trivy / CodeQL。
-- **CodeQL の結果アップロードにはリポジトリ設定で「Code scanning（GitHub Advanced Security）」の
-  有効化が必要**。有効化までは advisory（CIは緑のまま）。
+- **CodeQL**: public リポジトリでは Code scanning が有効で SARIF アップロードが成功するため、
+  `codeql.yml` は gating（init/analyze/upload の失敗で CI を赤にする）。Code scanning を無効化すると
+  アップロードが失敗して merge を塞ぐため、その際は再度 advisory（`continue-on-error`）に戻す。
 
 ## 8. public リポジトリでの Actions ハードニング
 リポジトリを public 化すると、第三者が fork から PR・レビュー・コメントを送れる。
