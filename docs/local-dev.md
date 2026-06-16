@@ -1,13 +1,15 @@
 # ローカル開発ガイド — 全コンポーネントを立ち上げて実働確認する
 
 Rancher Desktop (dockerd / moby) + `docker compose` を前提とする。
-タスクランナーは `just` が標準 (`make` も同名ターゲットで可)。
+タスクランナーは `just` が単一の正 (`Makefile` は just へ委譲する薄いシム。`just` 未導入なら
+`make` が `uv tool install rust-just` で用意してから同じターゲットを実行する)。
 
 ## 0. 前提
 
 - Rancher Desktop を起動し、Container Engine を **dockerd (moby)** にする。
 - `docker compose version` が通ること。
-- `cp .env.example .env` して必要な値を埋める (最小構成は空のままでも起動する)。
+- **初回セットアップ**: `just setup` で `.env` の用意と全依存のインストール (uv sync / npm install) が
+  まとめて走る (冪等)。`.env` の `GOOGLE_API_KEY` / `LIVEKIT_*` などを埋める (最小構成は空のままでも起動する)。
 
 ## 1. 二層構成
 
@@ -21,6 +23,9 @@ Rancher Desktop (dockerd / moby) + `docker compose` を前提とする。
 ## 2. 起動
 
 ```bash
+just setup       # 初回のみ: .env 用意 + 全依存インストール (uv sync / npm install)
+just init        # 初回を一発で: setup → up (最小構成) まで一気通貫
+
 just up          # アプリ最小構成だけ (軽い)
 just verify      # 各コンポーネントの疎通スモークテスト
 

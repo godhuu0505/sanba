@@ -1,69 +1,33 @@
+# SANBA タスクランナー — このファイルは `just` への薄い互換シムです。
+# タスク定義の単一の正は justfile（https://github.com/casey/just）。
+# `just` 未導入の環境でも `make <target>` で同じレシピを実行できるよう、
+# 必要なら uv で just をローカルへ用意してから委譲します（レシピの重複を持ちません）。
+#
+#   make setup   # 初回ローカル環境構築 (= just setup)
+#   make init    # 構築〜起動まで一気通貫 (= just init)
+#   make up      # アプリ最小構成を起動 (= just up)
+#   make         # ヘルプ (just --list)
 .DEFAULT_GOAL := help
-# アプリ最小構成 / 補助スタック込みの全部入り。
-COMPOSE := docker compose
-COMPOSE_FULL := docker compose -f docker-compose.yml -f docker-compose.tools.yml
 
-.PHONY: help up up-full down tools-down ps logs build verify verify-full test lint fmt four-keys agent-dev api-dev web-dev tf-plan tf-apply
+# uv tool install rust-just の配置先 (~/.local/bin) を PATH に含めて just を解決する。
+export PATH := $(HOME)/.local/bin:$(PATH)
 
-help: ## このヘルプを表示
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
-		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
+.PHONY: ensure-just help
 
-up: ## アプリ最小構成を起動 (web/api/agent/livekit/firestore/elasticsearch)
-	$(COMPOSE) up -d --build
+# just が無ければ uv 経由で用意する（.claude/hooks/session-start.sh と同じ方式）。
+ensure-just:
+	@command -v just >/dev/null 2>&1 || { \
+	  command -v uv >/dev/null 2>&1 || { echo "just も uv も見つかりません。https://just.systems からインストールしてください。"; exit 1; }; \
+	  echo ">> just をインストールします (uv tool install rust-just)"; \
+	  uv tool install rust-just; \
+	}
 
-up-full: ## 補助スタック込みで全部入り起動 (+ observability / langfuse / four-keys)
-	$(COMPOSE_FULL) up -d --build
+help: ensure-just
+	@just --list
 
-down: ## スタックを停止 (補助スタック込みで確実に落とす)
-	$(COMPOSE_FULL) down
+# 既知・未知を問わず、全ターゲットを just に委譲する（justfile が単一の正）。
+%: ensure-just
+	@just $@
 
-tools-down: ## 補助スタックだけ落とす (アプリは残す)
-	$(COMPOSE_FULL) stop otel-collector prometheus loki tempo grafana four-keys langfuse langfuse-db
-
-ps: ## 起動中サービス一覧
-	$(COMPOSE_FULL) ps
-
-logs: ## ログを追従
-	$(COMPOSE_FULL) logs -f --tail=100
-
-build: ## 全イメージをビルド
-	$(COMPOSE_FULL) build
-
-verify: ## ローカルスタックの疎通スモークテスト (アプリ最小構成)
-	./scripts/verify-local.sh
-
-verify-full: ## 疎通スモークテスト (補助スタック込み)
-	./scripts/verify-local.sh --full
-
-test: ## 全テストを実行
-	cd apps/agent && uv run pytest -q
-	cd apps/api && uv run pytest -q
-	cd infra/four-keys/collector && uv run pytest -q
-
-lint: ## lint
-	cd apps/agent && uv run ruff check . && uv run mypy src
-	cd apps/api && uv run ruff check . && uv run mypy src
-	cd infra/four-keys/collector && uv run ruff check . && uv run mypy src
-
-four-keys: ## Four Keys メトリクスを表示 (DORA 自己計測)
-	cd infra/four-keys/collector && uv run python -m fourkeys collect --json
-
-fmt: ## フォーマット
-	cd apps/agent && uv run ruff format .
-	cd apps/api && uv run ruff format .
-
-agent-dev: ## エージェントワーカーをローカル実行
-	cd apps/agent && uv run python -m sanba_agent.main dev
-
-api-dev: ## API をローカル実行
-	cd apps/api && uv run uvicorn sanba_api.main:app --reload --port 8080
-
-web-dev: ## Web をローカル実行
-	cd apps/web && npm run dev
-
-tf-plan: ## Terraform plan
-	cd infra/terraform && terraform plan
-
-tf-apply: ## Terraform apply
-	cd infra/terraform && terraform apply
+# catch-all (`%`) ルールが Makefile 自身を作り直そうとするのを防ぐ。
+Makefile: ;
