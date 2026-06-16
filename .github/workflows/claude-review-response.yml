@@ -71,7 +71,7 @@ jobs:
           claude_args: |
             --model claude-sonnet-4-6
             --max-turns 30
-            --allowedTools "Bash(gh:*),Bash(git:*),Bash(uv:*),Bash(npm:*),Bash(make:*),Edit,Write,Read,Glob,Grep"
+            --allowedTools "Bash(gh:*),Bash(git:*),Bash(uv:*),Bash(npm:*),Bash(just:*),Edit,Write,Read,Glob,Grep"
           prompt: |
             あなたは Kikitori リポジトリの PR レビュー対応エージェントです。
             トリガーとなったレビュー（Codex GitHub 連携の自動レビュー、または

@@ -1,8 +1,7 @@
 # ローカル開発ガイド — 全コンポーネントを立ち上げて実働確認する
 
 Rancher Desktop (dockerd / moby) + `docker compose` を前提とする。
-タスクランナーは `just` が単一の正 (`Makefile` は just へ委譲する薄いシム。`just` 未導入なら
-`make` が `uv tool install rust-just` で用意してから同じターゲットを実行する)。
+タスクランナーは `just` が唯一のエントリポイント (未導入なら `uv tool install rust-just`)。
 
 ## 0. 前提
 

@@ -123,9 +123,10 @@ open http://localhost:3030          # Langfuse
 > 可観測性・LLMOps・DORA は `docker-compose.tools.yml`（overlay）に分離しています（ADR-0009）。
 > `just up` は最小構成、`just up-full` は全部入り。Rancher Desktop (dockerd) を想定。
 >
-> タスクランナーは [`just`](https://github.com/casey/just)（`justfile`）が単一の正です。
-> `Makefile` は `just` へ委譲する薄い互換シムで、`just` 未導入の環境では `make` が
-> `uv tool install rust-just` で just を用意してから同じターゲットを実行します（`make setup` / `make up` 等）。
+> タスクランナーは [`just`](https://github.com/casey/just)（`justfile`）が単一の正で、
+> 唯一のエントリポイントです。未導入なら `uv tool install rust-just`（本リポジトリは `uv` 管理。
+> brew / cargo / mise でも可）で入れてください。Claude Code on the web では SessionStart hook が
+> 自動で用意します。
 
 詳細は [`docs/local-dev.md`](docs/local-dev.md) / [`docs/devops.md`](docs/devops.md)。
 

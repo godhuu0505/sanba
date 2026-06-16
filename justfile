@@ -1,6 +1,5 @@
-# SANBA task runner. This justfile is the single source of truth for tasks.
-# The Makefile is only a thin shim that forwards to `just` (no duplicated
-# recipes), so `make <target>` keeps working where just isn't installed yet.
+# SANBA task runner — the single entrypoint for local dev tasks.
+# Install with `uv tool install rust-just` (or brew / cargo / mise).
 # https://github.com/casey/just
 set shell := ["bash", "-cu"]
 

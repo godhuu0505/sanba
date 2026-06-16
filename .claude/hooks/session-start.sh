@@ -30,7 +30,7 @@ fi
 # --- just: ドキュメント上の主要エントリポイント（ベストエフォート）---
 if ! command -v just >/dev/null 2>&1; then
   log "just をインストール (uv tool install rust-just)"
-  uv tool install rust-just >/dev/null 2>&1 || log "just のインストールに失敗（make で代替可）"
+  uv tool install rust-just >/dev/null 2>&1 || log "just のインストールに失敗（手動で 'uv tool install rust-just' を）"
 fi
 
 # --- Web: Next.js (npm) ---

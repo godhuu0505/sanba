@@ -83,7 +83,7 @@ just logs      # ログ追従
 just down      # 停止
 ```
 
-> `just` 未導入なら `make`（同名ターゲット）でも可。`justfile` が標準。
+> `just` 未導入なら `uv tool install rust-just`。`justfile` が唯一のエントリポイント。
 > 詳細な手順・疎通確認・トラブルシュートは [`local-dev.md`](local-dev.md)。
 
 ## 8. 本番デプロイのコスト設計
