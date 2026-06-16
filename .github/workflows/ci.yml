@@ -10,6 +10,10 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# 最小権限。CI はチェックアウトと読み取りのみで足りる (public 化に伴う既定権限の明示)。
+permissions:
+  contents: read
+
 jobs:
   agent:
     name: agent (lint + test)
