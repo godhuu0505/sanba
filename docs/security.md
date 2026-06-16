@@ -44,6 +44,24 @@
 - **CodeQL の結果アップロードにはリポジトリ設定で「Code scanning（GitHub Advanced Security）」の
   有効化が必要**。有効化までは advisory（CIは緑のまま）。
 
+## 8. public リポジトリでの Actions ハードニング
+リポジトリを public 化すると、第三者が fork から PR・レビュー・コメントを送れる。
+特権を持つワークフローが外部入力で起動しないよう、次を守る。
+
+- **特権ワークフローの起動を信頼済みアクターに限定**: `claude-review-response.yml` は
+  secrets（Claude OAuth）と write 権限を持つため、人間レビュー経路を
+  `author_association ∈ {OWNER, MEMBER, COLLABORATOR}` に限定する。外部の第三者の
+  レビューでは起動しない（プロンプトインジェクション経由のトークン窃取・改ざん防止）。
+- **最小権限の明示**: 各ワークフローに top-level `permissions:`（既定 `contents: read`）を置き、
+  書き込みが必要なジョブだけ昇格する。
+- **fork PR と secrets**: `pull_request` で fork から起動した場合、GitHub は secrets を渡さない。
+  `llm-eval.yml` はこの場合 heuristic 評価に自動フォールバックする（gate は維持）。
+- **デプロイ経路の分離**: `deploy.yml` は `push:[main]` と `workflow_dispatch` のみ。fork PR からは
+  起動できず、GCP 認証は WIF（鍵レス）。
+- **未対応の推奨（フォローアップ）**: ブランチ保護（main への直 push 禁止・必須チェック・必須レビュー）、
+  Actions の third-party action を full SHA ピン留め（供給網対策、Dependabot が更新）、
+  GitHub Secret scanning / push protection の有効化。
+
 ## 残課題
 - 完全な IdP 連携（Firebase Auth / Identity Platform）。
 - 録音を保持する場合の保管設計と削除リクエスト対応。

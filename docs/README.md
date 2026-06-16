@@ -20,6 +20,7 @@
 
 - [ローカル開発ガイド](local-dev.md) — 全コンポーネントの起動・疎通確認・トラブルシュート。
 - [DevOps サイクル](devops.md) — CI/CD・可観測性・LLMOps・Four Keys の回し方。
+- [Figma MCP](figma-mcp.md) — UI/UX を Figma で検討・実装・修正するデザインループ（リモート MCP）。
 
 ## 📖 リファレンス（確認する）
 
@@ -47,6 +48,7 @@
 | [0008](adr/0008-product-concept.md) | プロダクトコンセプト | 多対多 / 出所メタ配線の前提 |
 | [0009](adr/0009-local-compose-split-and-cost.md) | ローカル compose の二層分割とコスト | base / tools overlay の分離 |
 | [0010](adr/0010-ai-pr-review-automation.md) | AI による PR 自動レビュー | レビュー自動化と対応フロー |
+| [0011](adr/0011-figma-mcp-design-loop.md) | Figma MCP デザインループ | リモート MCP 採用と双方向の UI/UX 連携 |
 
 新しい ADR は [`/adr`](../CLAUDE.md) スキル、または既存ファイルを雛形にして `docs/adr/NNNN-*.md` で追加する。
 
