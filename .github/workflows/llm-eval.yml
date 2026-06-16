@@ -11,6 +11,11 @@ on:
       - "apps/agent/src/sanba_agent/evaluation.py"
   workflow_dispatch:
 
+# 最小権限。評価ジョブは読み取りのみ (public 化に伴う既定権限の明示)。
+# fork PR には secrets が渡らない GitHub 仕様のため、その場合は heuristic 評価に自動フォールバックする。
+permissions:
+  contents: read
+
 jobs:
   eval:
     runs-on: ubuntu-latest
