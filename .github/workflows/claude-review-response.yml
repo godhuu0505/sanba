@@ -31,13 +31,18 @@ jobs:
     name: Claude triage
     runs-on: ubuntu-latest
     # 対象限定とループ防止:
-    #  - Codex(Bot) と人間レビューを対象にし、Claude 自身の投稿元 github-actions[bot] は除外。
-    #  - 内容の無い approve はスキップ（state == approved を除外）。
+    #  - 起動するのは Codex(Bot) の review か、人間レビュアーの review のみ。
+    #  - Claude 自身（claude[bot]）や他 Bot の投稿では起動しない。
+    #    Claude の対応コメント/修正コミットが自己再起動するのを根本から防ぐ。
+    #  - 内容の無い approve はスキップ。
     # secrets はジョブ if で参照できないためステップで確認する。
     if: >-
       ${{
-        github.event.review.user.login != 'github-actions[bot]' &&
-        github.event.review.state != 'approved'
+        github.event.review.state != 'approved' &&
+        (
+          github.event.review.user.login == 'chatgpt-codex-connector[bot]' ||
+          github.event.review.user.type != 'Bot'
+        )
       }}
     steps:
       # サブスク(OAuth)トークン未設定の環境ではスキップし CI を止めない。
