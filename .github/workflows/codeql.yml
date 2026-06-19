@@ -1,9 +1,9 @@
 name: CodeQL
 
-# NOTE: Uploading results requires "Code scanning" (GitHub Advanced Security) to be
-# enabled in repo Settings → Security. Until then the upload step reports a
-# configuration error, so the analyze step is advisory (continue-on-error) to keep
-# CI green. Once Code scanning is enabled, drop the continue-on-error to make it gating.
+# NOTE: Code scanning is enabled for this (public) repo, so the SARIF upload
+# succeeds and this workflow is gating: a failed init/analyze/upload turns CI red.
+# If Code scanning is ever disabled, the upload step will error and block merges —
+# re-enable it (or restore continue-on-error) before that happens.
 on:
   push:
     branches: [main]
@@ -26,10 +26,8 @@ jobs:
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
       - uses: github/codeql-action/init@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4
-        continue-on-error: true
         with:
           languages: ${{ matrix.language }}
       - uses: github/codeql-action/analyze@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4
-        continue-on-error: true
         with:
           category: /language:${{ matrix.language }}
