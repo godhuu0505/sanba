@@ -27,6 +27,7 @@ jobs:
       - run: uv python install 3.13
       - run: uv sync --all-extras --dev
       - run: uv run ruff check .
+      - run: uv run mypy src # 型を quality-gate に実在させる (#58)
       - run: uv run pytest -q
 
   api:
@@ -41,6 +42,7 @@ jobs:
       - run: uv python install 3.13
       - run: uv sync --all-extras --dev
       - run: uv run ruff check .
+      - run: uv run mypy src # 型を quality-gate に実在させる (#58)
       - run: uv run pytest -q
 
   four-keys:
@@ -55,6 +57,7 @@ jobs:
       - run: uv python install 3.12
       - run: uv sync --all-extras --dev
       - run: uv run ruff check .
+      - run: uv run mypy src # 型を quality-gate に実在させる (#58)
       - run: uv run pytest -q
 
   web:
@@ -89,3 +92,22 @@ jobs:
           # scope を app 単位で分け、deploy.yml のキャッシュと共有する。
           cache-from: type=gha,scope=${{ matrix.app }}
           cache-to: type=gha,mode=max,scope=${{ matrix.app }}
+
+  # ループ終端条件「mergeable」を 1 つの必須チェックに集約する (#58 / ADR-0011 §2)。
+  # branch protection (#62) はこの quality-gate だけを必須にすればよく、構成が単純になる。
+  # docker は重いため集約対象外 (web の npm run build で build は担保済み)。
+  quality-gate:
+    name: quality-gate
+    needs: [agent, api, four-keys, web]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify required jobs passed
+        # 失敗・キャンセル・スキップのいずれかがあれば緑にしない。
+        # skipped も失敗扱い (path フィルタ等で必須ジョブが化けて緑になるのを防ぐ保険)。
+        run: |
+          if [ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || contains(needs.*.result, 'skipped') }}" = "true" ]; then
+            echo "::error::必須ジョブが失敗/キャンセル/スキップされました"
+            exit 1
+          fi
+          echo "全必須ジョブ (agent/api/four-keys/web) が成功"
