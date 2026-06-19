@@ -40,12 +40,17 @@ jobs:
     #    そのため review.user / github.actor の両面で claude を明示除外し、
     #    自己再起動は「失敗」ではなく「skip（成功扱い）」で止める。
     #  - public リポジトリでは誰でも fork→PR→自分の PR にレビューを投稿できる。
-    #    本ジョブは secrets(OAuth) と write 権限を持つため、人間経路は
-    #    author_association を OWNER/MEMBER/COLLABORATOR に限定し、外部の第三者が
-    #    特権ジョブ（トークン窃取・改ざんのリスク）を起動できないようにする。
+    #    本ジョブは secrets(OAuth) と write 権限を持つため、多層で守る:
+    #    (a) fork PR（head が別リポジトリ）は信頼チーム専用方針の対象外として
+    #        ジョブごと起動しない。これにより secrets/書込トークンを使うステップが
+    #        fork 由来の文脈では一切走らない（最も確実な一次防御）。
+    #    (b) 人間経路は author_association を OWNER/MEMBER/COLLABORATOR に限定し、
+    #        外部の第三者が特権ジョブ（トークン窃取・改ざんのリスク）を起動できない
+    #        ようにする。
     # secrets はジョブ if で参照できないためステップで確認する。
     if: >-
       ${{
+        github.event.pull_request.head.repo.fork == false &&
         github.event.review.state != 'approved' &&
         github.actor != 'claude' &&
         github.actor != 'claude[bot]' &&
