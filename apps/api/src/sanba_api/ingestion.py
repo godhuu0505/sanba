@@ -102,7 +102,7 @@ class ContextIndexer:
             text = mask_pii(chunk) if settings.mask_pii_before_index else chunk
             embedding = _embed(text)
             if self._client is not None:  # pragma: no cover - needs live ES
-                doc = {
+                doc: dict[str, object] = {
                     "text": text,
                     "source": source,
                     "kind": "context",
@@ -127,7 +127,10 @@ def _embed(text: str) -> list[float] | None:
 
         client = genai.Client(api_key=settings.google_api_key or None)
         resp = client.models.embed_content(model=settings.gemini_embed_model, contents=text)
-        return list(resp.embeddings[0].values)
+        embeddings = resp.embeddings
+        if not embeddings or embeddings[0].values is None:
+            return None
+        return list(embeddings[0].values)
     except Exception as exc:  # pragma: no cover
         log.warning("embed_failed", error=str(exc))
         return None
