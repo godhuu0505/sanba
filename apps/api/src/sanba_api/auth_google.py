@@ -148,7 +148,7 @@ def require_user(
         record_auth_event("rejected")
         raise HTTPException(status_code=401, detail="invalid id token") from exc
 
-    log.info("auth_verified", sub=user.sub, email=user.email)
+    log.info("auth_verified", sub=user.sub)
     record_auth_event("verified")
     return user
 
