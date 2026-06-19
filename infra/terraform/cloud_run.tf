@@ -31,8 +31,10 @@ locals {
   api_env = merge(local.common_env, {
     OTEL_SERVICE_NAME = "sanba-api"
     REQUIRE_CONSENT   = "true"
-    # CORS は実際にデプロイされた web の URL に限定する。
-    ALLOWED_ORIGINS = google_cloud_run_v2_service.web.uri
+    # CORS は web のオリジンに限定する。独自ドメイン有効時は sanba.com / www.sanba.com を、
+    # 未設定時は Cloud Run 既定の web URL を許可する (web → api は別オリジンになるため必須)。
+    # api.sanba.com 自身はブラウザのオリジンにならないため許可リストには含めない。
+    ALLOWED_ORIGINS = local.domain_enabled ? "https://${var.domain},https://www.${var.domain}" : google_cloud_run_v2_service.web.uri
   })
 }
 

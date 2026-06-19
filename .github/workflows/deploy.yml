@@ -11,7 +11,19 @@ name: Deploy (Cloud Run)
 on:
   push:
     branches: [main]
+  # 手動トリガー。GitHub Mobile の Actions → Run workflow からも実行できる。
+  # ブランチ/タグは Run workflow 画面で選択 (その ref の HEAD = GITHUB_SHA をデプロイ)。
   workflow_dispatch:
+    inputs:
+      apps:
+        description: "デプロイ対象 (mobile から選択)"
+        type: choice
+        default: all
+        options: [all, web, api, agent]
+      reason:
+        description: "デプロイ理由 (任意・監査ログ用)"
+        type: string
+        required: false
 
 concurrency:
   group: deploy-${{ github.ref }}
@@ -43,10 +55,23 @@ jobs:
             web: ['apps/web/**']
       - id: decide
         # 手動トリガー (workflow_dispatch) は差分が無く paths-filter が空を返すため、
-        # ロールバック/強制再デプロイ用途では全 app を対象にする。
+        # 入力 `apps` で対象を決める (all = 全 app 再デプロイ。ロールバック/強制再デプロイ用途)。
+        # push トリガーは従来どおり変更のあった app だけをデプロイする。
+        env:
+          APPS_INPUT: ${{ github.event.inputs.apps }}
+          REASON: ${{ github.event.inputs.reason }}
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo 'apps=["agent","api","web"]' >> "$GITHUB_OUTPUT"
+            APPS_INPUT="${APPS_INPUT:-all}"
+            # 監査用に Summary タブへ恒久的に残す (誰が何をなぜ再デプロイしたか)。
+            echo "### 手動デプロイ" >> "$GITHUB_STEP_SUMMARY"
+            echo "- apps: \`${APPS_INPUT}\` / reason: ${REASON:-<none>} / actor: ${{ github.actor }}" >> "$GITHUB_STEP_SUMMARY"
+            # 許可リスト照合 (choice はサーバ側で強制されないため、JSON 生成前に必ず検証する)。
+            case "$APPS_INPUT" in
+              all)           echo 'apps=["agent","api","web"]' >> "$GITHUB_OUTPUT" ;;
+              web|api|agent) echo "apps=[\"${APPS_INPUT}\"]" >> "$GITHUB_OUTPUT" ;;
+              *)             echo "::error::invalid apps input: ${APPS_INPUT}" >&2; exit 1 ;;
+            esac
           else
             echo 'apps=${{ steps.filter.outputs.changes }}' >> "$GITHUB_OUTPUT"
           fi

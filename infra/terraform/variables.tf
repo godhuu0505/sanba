@@ -93,6 +93,31 @@ variable "otel_exporter_otlp_endpoint" {
   description = "OTLP/gRPC endpoint for traces (e.g. an OpenTelemetry Collector sidecar that forwards to Cloud Trace). Empty = tracing is skipped."
 }
 
+# ---- Custom domain / Load Balancer ------------------------------------------
+# 本番 URL を Cloud Run 既定の *.run.app から独自ドメインへ。Global 外部 HTTPS LB +
+# Serverless NEG + Google 管理 SSL 証明書で配信する (本番志向: WAF/CDN 拡張余地)。
+# domain が空のときは LB 関連リソースを一切作らない (既定の run.app 運用のまま)。
+variable "domain" {
+  type        = string
+  default     = ""
+  description = "Apex domain for production (e.g. \"sanba.com\"). Empty = no LB/custom domain (use *.run.app)."
+}
+
+# Cloud DNS をこの Terraform で管理するか。true ならゾーンを作り、A レコードを LB IP に
+# 向ける。ドメイン取得後、レジストラの NS をこのゾーンの NS に向ければ証明書が発行される。
+# 既に別 DNS で運用する場合は false にし、出力された LB IP を手動で A レコードに設定する。
+variable "manage_dns" {
+  type        = bool
+  default     = true
+  description = "Create a Cloud DNS managed zone + A records for `domain`. false = bring your own DNS."
+}
+
+variable "dns_managed_zone_name" {
+  type        = string
+  default     = "sanba"
+  description = "Cloud DNS managed zone resource name (used only when manage_dns = true)."
+}
+
 # ---- Secrets (Secret Manager) ------------------------------------------------
 # 空文字のものはシークレットを作らない。session_signing_secret は空なら自動生成する。
 variable "session_signing_secret" {
