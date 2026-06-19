@@ -78,14 +78,14 @@ jobs:
             echo "::notice::CLAUDE_CODE_OAUTH_TOKEN 未設定のため Claude 対応をスキップします。"
           fi
 
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         if: ${{ steps.guard.outputs.ok == 'true' }}
         with:
           fetch-depth: 0
 
       - name: Claude triage and respond
         if: ${{ steps.guard.outputs.ok == 'true' }}
-        uses: anthropics/claude-code-action@4d7e1f0cd85743fdc93b1c8040ab54395da024e2 # v1
+        uses: anthropics/claude-code-action@51705da45eecce209d4700538bf8377d5b5fc695 # v1
         with:
           # Claude Pro/Max サブスク枠で実行（API 従量課金を避ける）。
           # トークンはローカルで `claude setup-token` を実行して生成し、Secret に登録する。
