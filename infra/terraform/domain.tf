@@ -66,6 +66,11 @@ resource "google_compute_backend_service" "web" {
   name                  = "sanba-web-be"
   load_balancing_scheme = "EXTERNAL_MANAGED"
   backend { group = google_compute_region_network_endpoint_group.web[0].id }
+  # LB のリクエストログを Cloud Logging に流す (host ルーティング/4xx/5xx を追えるように)。
+  log_config {
+    enable      = true
+    sample_rate = 1.0
+  }
   depends_on = [google_project_service.lb]
 }
 
@@ -74,6 +79,10 @@ resource "google_compute_backend_service" "api" {
   name                  = "sanba-api-be"
   load_balancing_scheme = "EXTERNAL_MANAGED"
   backend { group = google_compute_region_network_endpoint_group.api[0].id }
+  log_config {
+    enable      = true
+    sample_rate = 1.0
+  }
   depends_on = [google_project_service.lb]
 }
 
@@ -109,6 +118,8 @@ resource "google_compute_managed_ssl_certificate" "default" {
   count = local.domain_enabled ? 1 : 0
   name  = "sanba-cert"
   managed { domains = local.cert_domains }
+  # 他リソースを参照しないため、Compute API 有効化を明示的に待つ。
+  depends_on = [google_project_service.lb]
 }
 
 resource "google_compute_target_https_proxy" "default" {
@@ -136,6 +147,8 @@ resource "google_compute_url_map" "redirect" {
     redirect_response_code = "MOVED_PERMANENTLY_DEFAULT"
     strip_query            = false
   }
+  # backend を参照しないため、Compute API 有効化を明示的に待つ。
+  depends_on = [google_project_service.lb]
 }
 
 resource "google_compute_target_http_proxy" "redirect" {

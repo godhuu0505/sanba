@@ -202,6 +202,64 @@ gcloud compute ssl-certificates describe sanba-cert --global --format='value(man
 
 ---
 
+## 6.6. Terraform を CI/CD で回す（PR で plan・GitHub Mobile で apply）
+
+`infra/terraform` の変更を **PR で `terraform plan` 自動確認**し、**GitHub Mobile から `apply`** で
+本番反映するためのワークフロー `.github/workflows/terraform.yml`。`deploy.yml`（イメージ差し替え）
+とは別物で、こちらは env/secret/LB/DNS など**インフラそのもの**を反映する。
+
+### フロー
+- **PR（`infra/terraform/**` を変更）** → `plan` を実行し、結果を PR にコメント。人間が plan を
+  確認してマージ。
+- **本番反映** → GitHub Mobile の **Actions → Terraform (infra) → Run workflow → `action=apply`**。
+  その場で plan → 保存した plan を `apply`（＝「plan で問題なければ apply」）。
+- 安全弁: `production` 環境に **required reviewers** を付ければ、apply 実行時に承認ゲートが入る
+  （**Settings → Environments → New environment `production`** で設定）。
+
+### 事前準備（一度きりの手作業）
+
+**(a) Terraform state 用 GCS バケット**（リモート state・ロック）
+```bash
+gsutil mb -l "$REGION" -b on "gs://${PROJECT_ID}-tfstate"
+gsutil versioning set on "gs://${PROJECT_ID}-tfstate"
+```
+
+**(b) Terraform 用 SA（apply は LB/DNS/Secret/IAM を作るので deploy 用より広い権限）**
+```bash
+gcloud iam service-accounts create tf-deployer --display-name="Terraform Deployer"
+export TF_SA=tf-deployer@${PROJECT_ID}.iam.gserviceaccount.com
+for ROLE in roles/run.admin roles/compute.admin roles/dns.admin \
+            roles/secretmanager.admin roles/datastore.owner \
+            roles/artifactregistry.admin roles/iam.serviceAccountAdmin \
+            roles/resourcemanager.projectIamAdmin roles/serviceusage.serviceUsageAdmin \
+            roles/storage.admin roles/billing.viewer; do
+  gcloud projects add-iam-policy-binding "$PROJECT_ID" --member="serviceAccount:$TF_SA" --role="$ROLE"
+done
+# WIF からこの SA を借用できるよう許可（§3 の POOL/REPO を流用）
+gcloud iam service-accounts add-iam-policy-binding "$TF_SA" \
+  --role=roles/iam.workloadIdentityUser \
+  --member="principalSet://iam.googleapis.com/projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/${POOL}/attribute.repository/${REPO}"
+```
+
+### 環境変数・シークレットの格納場所（提案）
+**「設定値は GitHub Variables、機微は GitHub Secrets、ランタイムの真実は Secret Manager」** の3層。
+
+| 種別 | 置き場所 | 例 |
+|---|---|---|
+| 非機微の設定 | **GitHub → Variables（`vars.*`）** | `GCP_PROJECT_ID` / `GCP_REGION` / `TF_STATE_BUCKET`（=`<project>-tfstate`）/ `PROD_DOMAIN`（`sanba.com`）/ `LIVEKIT_URL` / `ELASTICSEARCH_URL` / `OTEL_EXPORTER_OTLP_ENDPOINT` / `BILLING_ACCOUNT` |
+| CI 認証 | **GitHub → Secrets（`secrets.*`）** | `WIF_PROVIDER` / `TF_DEPLOY_SA`（=`tf-deployer@…`。未設定なら `DEPLOY_SA` にフォールバック） |
+| アプリの機微値 | **GitHub → Secrets（`secrets.*`）→ `TF_VAR_*` で Terraform に渡す** | `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` / `ELASTICSEARCH_API_KEY` / `GCP_GOOGLE_API_KEY`（`use_vertexai=false` のときのみ）/ `SESSION_SIGNING_SECRET`（空可・自動生成） |
+| ランタイム参照の真実 | **GCP Secret Manager**（`secrets.tf` が作成） | Cloud Run はここを参照。値の出所は上の `TF_VAR_*`。`apply` で同期される |
+
+> 注意:
+> - `apply` 時に機微 `TF_VAR_*` を渡し忘れると、`secrets.tf` の任意シークレットが空になり
+>   **Secret Manager から消える**。CI で apply する場合は GitHub Secrets に必ず登録しておく。
+> - `SESSION_SIGNING_SECRET` は空のままで良い（state に保存された乱数が再利用され、毎回ローテート
+>   されない）。リモート state（GCS）が前提。
+> - シークレットの値そのものは**コミットしない**（`terraform.tfvars` は gitignore 済）。
+
+---
+
 ## 7. public 化に伴う GitHub 設定ハードニング（#68）
 
 リポジトリを public にする**前後**に、GUI で以下を有効化する（コード化されない運用手順）。
