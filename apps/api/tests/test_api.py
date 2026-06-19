@@ -1,18 +1,42 @@
-"""API tests for the invite-gated session flow (issue #8)."""
+"""API tests for the invite-gated session flow (issue #8).
+
+These exercise the invite/authorization logic; the Google identity layer
+(ADR-0012) is stubbed via a dependency override so a verified user is assumed.
+Authentication enforcement itself is covered in test_auth_integration.py.
+"""
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
+import pytest
 from fastapi.testclient import TestClient
 
+from sanba_api.auth_google import AuthUser, require_user
 from sanba_api.main import app
 
 client = TestClient(app)
 
 
+def _fake_user() -> AuthUser:
+    return AuthUser(
+        sub="owner-123456789",
+        email="owner@example.com",
+        email_verified=True,
+        name="Owner",
+    )
+
+
+@pytest.fixture(autouse=True)
+def _assume_logged_in() -> Iterator[None]:
+    """全テストで「検証済みユーザーがログイン済み」を仮定する。"""
+    app.dependency_overrides[require_user] = _fake_user
+    yield
+    app.dependency_overrides.pop(require_user, None)
+
+
 def _create(roles: list[str]) -> dict:
-    return client.post(
-        "/api/sessions", json={"roles": roles, "consent_acknowledged": True}
-    ).json()
+    return client.post("/api/sessions", json={"roles": roles, "consent_acknowledged": True}).json()
 
 
 def test_healthz() -> None:
@@ -48,7 +72,8 @@ def test_create_then_join_happy_path() -> None:
     body = res.json()
     assert body["token"]
     assert body["session_id"] == created["session_id"]
-    assert body["identity"].startswith("pm-")
+    # identity は検証済み sub 由来 (self-申告名ではない)。
+    assert body["identity"] == "pm-owner-12"
 
 
 def test_join_without_valid_invite_is_rejected() -> None:

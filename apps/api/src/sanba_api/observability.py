@@ -9,11 +9,28 @@ from __future__ import annotations
 
 import structlog
 from fastapi import FastAPI
+from opentelemetry import metrics
 
 from .config import settings
 
 log = structlog.get_logger(__name__)
 _initialised = False
+
+# 認証イベントのカウンタ。MeterProvider 未設定でも OTel API は no-op meter を返すため
+# 常に安全に呼べる (OTLP 未設定のローカルでは送信されないだけ)。新しい認証経路を必ず
+# メトリクスに通すための一点 (CLAUDE.md: 観測できないものは運用できない)。
+_auth_counter = metrics.get_meter("sanba_api.auth").create_counter(
+    "sanba_auth_events_total",
+    description="Google ログイン検証イベント数 (result ごと)",
+)
+
+
+def record_auth_event(result: str) -> None:
+    """認証経路のイベントを計上する (result=verified/rejected/dev_bypass/...)。"""
+    try:
+        _auth_counter.add(1, {"result": result})
+    except Exception:  # pragma: no cover - メトリクスは本処理を止めない
+        pass
 
 
 def setup_observability(app: FastAPI) -> None:

@@ -31,6 +31,8 @@ locals {
   api_env = merge(local.common_env, {
     OTEL_SERVICE_NAME = "sanba-api"
     REQUIRE_CONSENT   = "true"
+    # Google ログイン (ADR-0012)。ID トークン検証の aud。秘匿物ではないので平文 env。
+    GOOGLE_OAUTH_CLIENT_ID = var.google_oauth_client_id
     # CORS は実際にデプロイされた web の URL に限定する。
     ALLOWED_ORIGINS = google_cloud_run_v2_service.web.uri
   })

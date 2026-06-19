@@ -29,6 +29,11 @@ class Settings(BaseSettings):
     # Simple per-IP rate limit on join (requests per minute).
     join_rate_per_minute: int = 30
 
+    # ---- Identity: Google ログイン (ADR-0012) ----
+    # OAuth 2.0 Web クライアント ID。ID トークン検証の `aud` に使う (秘匿物ではない)。
+    # 未設定かつ auth_dev_bypass=false の本番構成では認証経路をフェイルクローズする。
+    google_oauth_client_id: str = ""
+
     # ---- Context ingestion -> RAG grounding (issue #6) ----
     # Shared with the agent's grounding store (same Elasticsearch index).
     elasticsearch_url: str = ""
