@@ -102,7 +102,12 @@ class GroundingStore:
             text = mask_pii(text)
         embedding = embed_text(text)
         if self._client is not None:  # pragma: no cover - needs live ES
-            doc = {"text": text, "source": source, "kind": kind, "session_id": session_id}
+            doc: dict[str, object] = {
+                "text": text,
+                "source": source,
+                "kind": kind,
+                "session_id": session_id,
+            }
             if embedding is not None:
                 doc["embedding"] = embedding
             self._client.index(index=INDEX, document=doc)
@@ -189,7 +194,10 @@ def embed_text(text: str) -> list[float] | None:
 
         client = genai.Client(api_key=settings.google_api_key or None)
         resp = client.models.embed_content(model=settings.gemini_embed_model, contents=text)
-        return list(resp.embeddings[0].values)
+        embeddings = resp.embeddings
+        if not embeddings or embeddings[0].values is None:
+            return None
+        return list(embeddings[0].values)
     except Exception as exc:  # pragma: no cover
         log.warning("embed_failed", error=str(exc))
         return None

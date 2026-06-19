@@ -37,9 +37,7 @@ log = structlog.get_logger(__name__)
 class SANBAAgent(Agent):
     """The voice interviewer. Owns the tools that bridge to the ADK team."""
 
-    def __init__(
-        self, session_id: str, repo: SessionRepository, grounding: GroundingStore
-    ) -> None:
+    def __init__(self, session_id: str, repo: SessionRepository, grounding: GroundingStore) -> None:
         super().__init__(instructions=VOICE_AGENT_INSTRUCTIONS)
         self._session_id = session_id
         self._repo = repo
@@ -55,7 +53,9 @@ class SANBAAgent(Agent):
         self._repo.add_utterance(self._session_id, Utterance(speaker=speaker, text=text))
         # Index for later past-session retrieval.
         self._grounding.index_passage(
-            text=text, source=f"{self._session_id}:{speaker}", kind="utterance",
+            text=text,
+            source=f"{self._session_id}:{speaker}",
+            kind="utterance",
             session_id=self._session_id,
         )
 
@@ -101,7 +101,9 @@ class SANBAAgent(Agent):
         )
         self._repo.save_requirement(self._session_id, requirement)
         self._grounding.index_passage(
-            text=statement, source=f"requirement:{requirement.id}", kind="requirement",
+            text=statement,
+            source=f"requirement:{requirement.id}",
+            kind="requirement",
             session_id=self._session_id,
         )
         log.info("requirement_saved", session=self._session_id, id=requirement.id)
@@ -126,7 +128,8 @@ class SANBAAgent(Agent):
         self._repo.save_requirement(self._session_id, requirement)
         self._grounding.index_passage(
             text=f"{statement}（画面観察: {observation}）",
-            source=f"visual:{requirement.id}", kind="requirement",
+            source=f"visual:{requirement.id}",
+            kind="requirement",
             session_id=self._session_id,
         )
         log.info("visual_requirement", session=self._session_id, id=requirement.id)
@@ -169,16 +172,26 @@ class SANBAAgent(Agent):
 # In production this is seeded once into Elasticsearch (see scripts/seed_kb); in
 # local/dev (memory-backed store) we seed inline so grounding works out of the box.
 KNOWLEDGE_BASE: list[tuple[str, str]] = [
-    ("非機能要件は性能・可用性・セキュリティ・拡張性・運用性・コストの観点で確認する。",
-     "rfc:nfr-checklist"),
-    ("要件は MoSCoW(Must/Should/Could/Won't)で優先度付けし、MVPのスコープを最初に固定する。",
-     "guide:moscow"),
-    ("個人情報(PII)を扱う場合は、保存時/通信時の暗号化・最小権限・保持期間を要件化する。",
-     "guide:privacy"),
-    ("性能要件は『誰が・何を・どれくらいの頻度で・どの応答時間で』の形で定量化する。",
-     "guide:performance"),
-    ("曖昧な語(速い・使いやすい等)は測定可能な受け入れ基準に言い換える。",
-     "guide:acceptance-criteria"),
+    (
+        "非機能要件は性能・可用性・セキュリティ・拡張性・運用性・コストの観点で確認する。",
+        "rfc:nfr-checklist",
+    ),
+    (
+        "要件は MoSCoW(Must/Should/Could/Won't)で優先度付けし、MVPのスコープを最初に固定する。",
+        "guide:moscow",
+    ),
+    (
+        "個人情報(PII)を扱う場合は、保存時/通信時の暗号化・最小権限・保持期間を要件化する。",
+        "guide:privacy",
+    ),
+    (
+        "性能要件は『誰が・何を・どれくらいの頻度で・どの応答時間で』の形で定量化する。",
+        "guide:performance",
+    ),
+    (
+        "曖昧な語(速い・使いやすい等)は測定可能な受け入れ基準に言い換える。",
+        "guide:acceptance-criteria",
+    ),
 ]
 
 
@@ -191,9 +204,7 @@ def seed_knowledge_base(grounding: GroundingStore) -> None:
 
 def _github_ready() -> bool:
     return bool(
-        settings.github_connector_enabled
-        and settings.github_token
-        and settings.github_repo
+        settings.github_connector_enabled and settings.github_token and settings.github_repo
     )
 
 
@@ -226,7 +237,7 @@ async def entrypoint(ctx: JobContext) -> None:
     seed_github_context(grounding, session_id)
     agent = SANBAAgent(session_id=session_id, repo=repo, grounding=grounding)
 
-    session = AgentSession(
+    session: AgentSession = AgentSession(
         llm=google.beta.realtime.RealtimeModel(
             model=settings.gemini_live_model,
             voice="Puck",
