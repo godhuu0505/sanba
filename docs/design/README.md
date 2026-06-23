@@ -19,6 +19,17 @@ open docs/design/mockups/sanba-ux.html        # macOS
 xdg-open docs/design/mockups/sanba-ux.html     # Linux
 ```
 
+### Figma（ADR-0011 のデザインループ）
+
+Figma MCP で実際の Figma 成果物も作成済み（要 Figma ログイン）：
+
+| 種別 | 内容 | リンク |
+|---|---|---|
+| 🎨 Design | 核となる「ライブ対話」画面（3分割・デザイントークン適用） | [figma.com/design/eI6QvvCEO021zpdMmxr8Iq](https://www.figma.com/design/eI6QvvCEO021zpdMmxr8Iq) |
+| 🧩 FigJam | 情報設計 / ユーザーフロー図 | [figma.com/board/suTkSZdCrixD4DiONzMBPO](https://www.figma.com/board/suTkSZdCrixD4DiONzMBPO) |
+
+> Figma → コード（`apps/web` 実装）、コード → Figma（同期）の双方向ループは ADR-0011 の通り MCP で回す。
+
 ---
 
 ## 1. 設計原則（認知負荷ミニマム）
