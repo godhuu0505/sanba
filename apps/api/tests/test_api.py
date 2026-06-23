@@ -72,8 +72,8 @@ def test_create_then_join_happy_path() -> None:
     body = res.json()
     assert body["token"]
     assert body["session_id"] == created["session_id"]
-    # identity は検証済み sub 由来 (self-申告名ではない)。
-    assert body["identity"] == "pm-owner-12"
+    # identity は検証済み sub 由来 (self-申告名ではない) + ルーム内一意の nonce。
+    assert body["identity"].startswith("pm-owner-12-")
 
 
 def test_join_without_valid_invite_is_rejected() -> None:
