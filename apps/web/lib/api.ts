@@ -1,5 +1,13 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
 
+// 検証済み identity を API に運ぶ (ADR-0012)。idToken が null (dev モード) のときは
+// Authorization を付けず、API 側の AUTH_DEV_BYPASS に委ねる。
+function authHeaders(idToken: string | null): Record<string, string> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (idToken) headers.Authorization = `Bearer ${idToken}`;
+  return headers;
+}
+
 export interface CreateSessionResponse {
   session_id: string;
   invites: Record<string, string>;
@@ -15,10 +23,11 @@ export interface JoinResponse {
 export async function createSession(
   roles: string[],
   consentAcknowledged: boolean,
+  idToken: string | null,
 ): Promise<CreateSessionResponse> {
   const res = await fetch(`${API_URL}/api/sessions`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: authHeaders(idToken),
     body: JSON.stringify({ roles, consent_acknowledged: consentAcknowledged }),
   });
   if (!res.ok) throw new Error(`create session failed: ${res.status}`);
@@ -42,10 +51,11 @@ export async function addSessionContext(
 export async function joinSession(params: {
   invite: string;
   participantName: string;
+  idToken: string | null;
 }): Promise<JoinResponse> {
   const res = await fetch(`${API_URL}/api/sessions/join`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: authHeaders(params.idToken),
     body: JSON.stringify({
       invite: params.invite,
       participant_name: params.participantName,

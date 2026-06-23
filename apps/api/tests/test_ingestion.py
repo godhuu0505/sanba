@@ -2,12 +2,26 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
+import pytest
 from fastapi.testclient import TestClient
 
+from sanba_api.auth_google import AuthUser, require_user
 from sanba_api.ingestion import ContextIndexer, chunk_text, extract_text_from_upload
 from sanba_api.main import app
 
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def _assume_logged_in() -> Iterator[None]:
+    """セッション作成に必要な検証済みユーザーをスタブする (ADR-0012)。"""
+    app.dependency_overrides[require_user] = lambda: AuthUser(
+        sub="owner-123456789", email="owner@example.com", email_verified=True, name="Owner"
+    )
+    yield
+    app.dependency_overrides.pop(require_user, None)
 
 
 def test_chunk_text_splits_on_paragraphs() -> None:

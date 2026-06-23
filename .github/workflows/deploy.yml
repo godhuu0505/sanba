@@ -96,6 +96,7 @@ jobs:
           build-args: |
             ${{ vars.NEXT_PUBLIC_API_URL != '' && format('NEXT_PUBLIC_API_URL={0}', vars.NEXT_PUBLIC_API_URL) || '' }}
             ${{ vars.NEXT_PUBLIC_LIVEKIT_URL != '' && format('NEXT_PUBLIC_LIVEKIT_URL={0}', vars.NEXT_PUBLIC_LIVEKIT_URL) || '' }}
+            ${{ vars.NEXT_PUBLIC_GOOGLE_CLIENT_ID != '' && format('NEXT_PUBLIC_GOOGLE_CLIENT_ID={0}', vars.NEXT_PUBLIC_GOOGLE_CLIENT_ID) || '' }}
 
       - name: Deploy to Cloud Run (image only; env/secret は Terraform 管理)
         run: |
