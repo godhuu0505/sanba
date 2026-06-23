@@ -1,0 +1,433 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SANBA — マルチモーダル I/O（画像・動画の提供 ⇄ 完成イメージ生成）</title>
+<style>
+  :root{
+    --bg:#0C0E1B;--bg-2:#0F1224;--surface:#161A30;--surface-2:#1E2340;--surface-3:#272D52;
+    --line:rgba(255,255,255,.09);--line-strong:rgba(255,255,255,.16);
+    --ink:#ECEEF9;--ink-2:#AEB4D6;--ink-3:#7B82AB;
+    --primary:#8E75B2;--primary-2:#6C5CE7;--live:#1FD5A3;--warn:#F5A524;--danger:#FF6B6B;
+    --grad:linear-gradient(135deg,#6C5CE7 0%,#8E75B2 45%,#1FD5A3 130%);
+    --font:'Inter','Noto Sans JP',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;font-family:var(--font);color:var(--ink);line-height:1.65;-webkit-font-smoothing:antialiased;
+    background:radial-gradient(1200px 700px at 80% -10%,rgba(108,92,231,.22),transparent 60%),
+      radial-gradient(900px 600px at -10% 20%,rgba(31,213,163,.10),transparent 55%),var(--bg);}
+  .wrap{max-width:1180px;margin:0 auto;padding:0 28px}
+  h1,h2,h3,h4{margin:0;font-weight:700;line-height:1.3}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+
+  .hero{padding:74px 0 46px;border-bottom:1px solid var(--line)}
+  .eyebrow{display:inline-flex;gap:8px;align-items:center;font-size:12px;font-weight:700;letter-spacing:.14em;
+    color:var(--ink-2);text-transform:uppercase;border:1px solid var(--line-strong);padding:7px 14px;border-radius:999px;background:var(--surface)}
+  .hero h1{font-size:clamp(30px,4.6vw,50px);margin:20px 0 6px;letter-spacing:-.02em}
+  .hero h1 .accent{background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .hero .lede{font-size:clamp(15px,1.8vw,18px);color:var(--ink-2);max-width:760px;margin-top:12px}
+  .metarow{display:flex;flex-wrap:wrap;gap:10px;margin-top:24px}
+  .pill{font-size:12.5px;font-weight:600;color:var(--ink-2);background:var(--surface);border:1px solid var(--line);padding:8px 14px;border-radius:999px}
+  .pill b{color:var(--ink)}
+
+  section{padding:54px 0;border-bottom:1px solid var(--line)}
+  .kicker{font-size:12px;font-weight:800;letter-spacing:.18em;text-transform:uppercase}
+  .kicker.in{color:var(--live)} .kicker.out{color:#B7AAFF} .kicker.n{color:var(--warn)}
+  .sec-h{font-size:clamp(22px,3vw,30px);margin:10px 0 8px;letter-spacing:-.01em}
+  .sec-sub{color:var(--ink-2);max-width:780px;font-size:15px}
+
+  .grid{display:grid;gap:16px}
+  .g4{grid-template-columns:repeat(4,1fr)}.g3{grid-template-columns:repeat(3,1fr)}.g2{grid-template-columns:repeat(2,1fr)}
+  @media(max-width:880px){.g4,.g3,.g2{grid-template-columns:1fr}}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:18px}
+  .card .num{font-size:12px;font-weight:800;letter-spacing:.1em}
+  .card.in .num{color:var(--live)}.card.out .num{color:#B7AAFF}
+  .card h4{font-size:15px;margin:6px 0 4px}
+  .card p{color:var(--ink-2);font-size:13.5px;margin:0}
+
+  /* loop diagram */
+  .loop{display:flex;align-items:stretch;gap:10px;flex-wrap:wrap;margin-top:24px}
+  .lnode{flex:1;min-width:150px;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px;position:relative}
+  .lnode .ic{font-size:20px}
+  .lnode b{display:block;margin:6px 0 3px;font-size:14.5px}
+  .lnode small{color:var(--ink-2);font-size:12px;line-height:1.45;display:block}
+  .lnode.inn{border-color:rgba(31,213,163,.45);background:linear-gradient(180deg,rgba(31,213,163,.09),var(--surface))}
+  .lnode.core{border-color:rgba(255,107,107,.4);background:linear-gradient(180deg,rgba(255,107,107,.08),var(--surface))}
+  .lnode.outn{border-color:rgba(108,92,231,.5);background:linear-gradient(180deg,rgba(108,92,231,.12),var(--surface))}
+  .larrow{align-self:center;color:var(--ink-3);font-size:20px;font-weight:700}
+  .loopback{margin-top:12px;font-size:12.5px;color:var(--ink-3);display:flex;align-items:center;gap:8px}
+  .loopback b{color:#B7AAFF}
+
+  /* board (artboard) */
+  .board{margin-top:28px;border:1px solid var(--line-strong);border-radius:20px;overflow:hidden;background:var(--bg-2);box-shadow:0 24px 60px -24px rgba(0,0,0,.7)}
+  .board>.cap{display:flex;align-items:center;gap:12px;padding:13px 18px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,rgba(255,255,255,.03),transparent)}
+  .dots{display:flex;gap:7px}.dot{width:11px;height:11px;border-radius:50%}
+  .board .cap .t{font-size:13px;font-weight:700;color:var(--ink-2)}
+  .board .cap .u{margin-left:auto;font-size:11.5px;color:var(--ink-3);background:var(--bg);border:1px solid var(--line);padding:5px 12px;border-radius:999px}
+  .screen{padding:22px}
+
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;border:none;cursor:pointer;font-family:inherit;font-weight:700;font-size:13.5px;padding:11px 16px;border-radius:11px;color:#fff;background:var(--grad)}
+  .btn.ghost{background:var(--surface-2);color:var(--ink);border:1px solid var(--line-strong)}
+  .btn.sm{padding:8px 13px;font-size:12.5px;border-radius:9px}
+  .chip{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;padding:4px 9px;border-radius:999px;border:1px solid var(--line)}
+  .chip.live{color:#062;background:var(--live);border-color:transparent}
+  .chip.gen{color:#cabaff;background:rgba(108,92,231,.18);border-color:rgba(108,92,231,.5)}
+  .chip.warn{color:#FFD79A;background:rgba(245,165,36,.1);border-color:rgba(245,165,36,.4)}
+  .chip.contra{color:#FF9D9D;background:rgba(255,107,107,.1);border-color:rgba(255,107,107,.4)}
+  .chip.gray{color:var(--ink-2)}
+  .tag{font-size:9.5px;font-weight:800;letter-spacing:.05em;padding:3px 7px;border-radius:5px}
+  .tag.scope{background:rgba(31,213,163,.14);color:#7FE6CB}
+  .tag.nfr{background:rgba(108,92,231,.16);color:#B7AAFF}
+  .tag.img{background:rgba(31,213,163,.12);color:#7FE6CB}
+  .tag.vid{background:rgba(245,165,36,.14);color:#FFC76B}
+  .tag.share{background:rgba(108,92,231,.16);color:#B7AAFF}
+
+  /* share grid */
+  .share{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .shitem{display:flex;gap:12px;align-items:center;padding:16px;border:1px dashed var(--line-strong);border-radius:14px;background:var(--bg);cursor:pointer}
+  .shitem .ic{width:42px;height:42px;border-radius:11px;display:grid;place-items:center;font-size:20px;background:var(--surface-2);border:1px solid var(--line)}
+  .shitem b{font-size:14px;display:block}
+  .shitem small{font-size:11.5px;color:var(--ink-3)}
+
+  /* media tray */
+  .tray{display:flex;gap:14px;overflow-x:auto;padding:4px 2px 10px}
+  .asset{flex:none;width:210px;background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+  .asset .thumb{height:118px;position:relative;background:linear-gradient(135deg,#23284a,#161a30)}
+  .asset .thumb .badge{position:absolute;top:8px;left:8px}
+  .asset .thumb .dur{position:absolute;bottom:8px;right:8px;font-size:10.5px;background:rgba(0,0,0,.6);padding:2px 7px;border-radius:6px;color:#fff;font-weight:700}
+  .asset .thumb .play{position:absolute;inset:0;display:grid;place-items:center;font-size:30px;color:rgba(255,255,255,.85)}
+  .asset .meta{padding:11px 13px}
+  .asset .meta .nm{font-size:12.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .asset .meta .ex{font-size:10.5px;color:var(--ink-3);margin:5px 0 8px}
+  .ph-ui{position:absolute;inset:10px;border-radius:8px;border:1px solid rgba(255,255,255,.08);display:flex;flex-direction:column;gap:5px;padding:8px}
+  .ph-ui .bar{height:8px;border-radius:3px;background:rgba(255,255,255,.12)}
+  .ph-ui .bar.s{width:55%}.ph-ui .grid3{display:flex;gap:5px;margin-top:auto}.ph-ui .grid3 i{flex:1;height:26px;border-radius:5px;background:rgba(255,255,255,.08)}
+
+  /* image overlay detail */
+  .overlay{position:relative;border:1px solid var(--line);border-radius:14px;overflow:hidden;background:linear-gradient(135deg,#20254406,#161a30);height:300px}
+  .overlay .ph-ui{inset:18px}
+  .pin{position:absolute;display:flex;align-items:center;gap:7px}
+  .pin .dotp{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font-size:11px;font-weight:800;color:#fff;flex:none;box-shadow:0 0 0 4px rgba(0,0,0,.25)}
+  .pin.c .dotp{background:var(--danger)} .pin.g .dotp{background:var(--warn)}
+  .pin .lbl{font-size:11px;background:rgba(12,14,27,.92);border:1px solid var(--line);border-radius:8px;padding:5px 9px;color:var(--ink);max-width:200px}
+  .pin.c .lbl{border-color:rgba(255,107,107,.5)} .pin.g .lbl{border-color:rgba(245,165,36,.5)}
+  .ring{position:absolute;border-radius:8px}
+  .ring.c{border:2px solid var(--danger);box-shadow:0 0 0 4px rgba(255,107,107,.14)}
+  .ring.g{border:2px dashed var(--warn)}
+
+  /* video timeline */
+  .vtl{margin-top:6px}
+  .vbar{position:relative;height:10px;border-radius:6px;background:var(--surface-3);margin:14px 0 10px}
+  .vbar .head{position:absolute;top:-4px;width:3px;height:18px;border-radius:2px;background:var(--ink)}
+  .vbar .mk{position:absolute;top:-3px;width:14px;height:16px;border-radius:4px;display:grid;place-items:center;font-size:9px;font-weight:800;color:#fff;transform:translateX(-50%)}
+  .vbar .mk.c{background:var(--danger)} .vbar .mk.g{background:var(--warn)}
+  .moment{display:flex;gap:10px;padding:9px 0;border-bottom:1px solid var(--line)}
+  .moment:last-child{border-bottom:none}
+  .moment .ts{font-size:11px;font-weight:800;color:var(--ink-2);font-family:ui-monospace,monospace;flex:none;width:42px}
+  .moment p{margin:0;font-size:12.5px}
+  .moment .w{font-size:10.5px;color:var(--ink-3);margin-top:2px}
+
+  /* generated completion mockup */
+  .genwrap{display:grid;grid-template-columns:1.1fr 1fr;gap:20px;align-items:start}
+  @media(max-width:880px){.genwrap{grid-template-columns:1fr}}
+  .genframe{border:1px solid var(--line-strong);border-radius:16px;overflow:hidden;background:var(--bg);position:relative}
+  .genframe .gbadge{position:absolute;top:10px;right:10px;z-index:3}
+  .genwatermark{position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(135deg,rgba(108,92,231,.05) 0 16px,transparent 16px 32px)}
+  .gen-top{padding:14px 16px;border-bottom:1px solid var(--line);background:var(--surface)}
+  .gen-search{display:flex;align-items:center;gap:9px;background:var(--bg-2);border:1px solid var(--primary-2);border-radius:11px;padding:11px 13px;color:var(--ink-2);font-size:13px}
+  .gen-search .g-an{margin-left:auto}
+  .gen-sort{display:flex;gap:7px;margin-top:11px;align-items:center}
+  .gen-seg{display:inline-flex;background:var(--bg-2);border:1px solid var(--line);border-radius:9px;padding:2px}
+  .gen-seg b{font-size:11px;padding:5px 11px;border-radius:7px;font-weight:700}
+  .gen-seg b.on{background:var(--surface-3);color:var(--ink)} .gen-seg b.off{color:var(--ink-3)}
+  .gen-list{padding:8px 16px 16px}
+  .gres{display:flex;gap:11px;padding:11px 0;border-bottom:1px solid var(--line);align-items:center}
+  .gres .gthumb{width:46px;height:46px;border-radius:9px;background:linear-gradient(135deg,#2a2f55,#1a1e38);flex:none}
+  .gres .gt{font-size:13px;font-weight:600}
+  .gres .gm{font-size:11px;color:var(--ink-3)}
+  .gres.ghost{opacity:.55}
+  .gres.ghost .gt{color:var(--warn)}
+  .g-an{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:50%;background:var(--primary-2);color:#fff;font-size:11px;font-weight:800}
+
+  .traceitem{display:flex;gap:9px;align-items:flex-start;padding:9px 0;border-bottom:1px solid var(--line)}
+  .traceitem:last-child{border-bottom:none}
+  .traceitem p{margin:0;font-size:12.5px}
+  .traceitem .src{font-size:10.5px;color:var(--ink-3);margin-top:2px}
+
+  .feedbar{display:flex;gap:10px;margin-top:14px}
+  .feedbar .fb{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;padding:13px;border-radius:12px;border:1px solid var(--line);background:var(--surface);cursor:pointer;font-size:12.5px;font-weight:700}
+  .feedbar .fb.ok{border-color:rgba(31,213,163,.4)} .feedbar .fb.no{border-color:rgba(245,165,36,.4)}
+  .feedbar .fb .e{font-size:20px}
+
+  .callout{display:flex;gap:11px;padding:13px 15px;border:1px solid rgba(245,165,36,.4);background:rgba(245,165,36,.07);border-radius:13px;margin-top:14px}
+  .callout .n{flex:none;width:24px;height:24px;border-radius:50%;background:var(--warn);color:#1a1205;display:grid;place-items:center;font-weight:800;font-size:13px}
+  .callout p{margin:0;font-size:12.5px;color:var(--ink)}
+  .callout .sub{font-size:11px;color:var(--ink-3);margin-top:3px}
+
+  .annot{display:grid;gap:12px;grid-template-columns:repeat(4,1fr);margin-top:22px}
+  @media(max-width:880px){.annot{grid-template-columns:1fr}}
+  .annot .a{background:var(--surface);border:1px solid var(--line);border-radius:13px;padding:14px 16px}
+  .annot .a .n{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:50%;background:var(--primary-2);color:#fff;font-size:12px;font-weight:800;margin-bottom:7px}
+  .annot .a b{font-size:13px;display:block;margin-bottom:2px}
+  .annot .a p{font-size:12px;color:var(--ink-2);margin:0}
+  .annot .a .ref{font-size:10.5px;color:var(--ink-3);margin-top:6px;display:block}
+
+  footer{padding:40px 0 64px;color:var(--ink-3);font-size:13px}
+  footer code{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:2px 7px;font-size:12px;color:var(--ink-2)}
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <span class="eyebrow">● マルチモーダル I/O — 提供 ⇄ 提示</span>
+    <h1>見せて、聴いて、<span class="accent">描いて返す</span>。</h1>
+    <p class="lede">
+      要件は言葉だけに宿らない。SANBA はユーザーから<b>画像・動画・画面共有</b>を受け取って要件を抽出し、
+      逆に確定要件から<b>完成イメージのビジュアルを生成して提示</b>する。「これで合ってますか？」と問い返すことで、
+      言葉にならない差分まで引き出す ── ビジュアルを道具にした産婆術。
+    </p>
+    <div class="metarow">
+      <span class="pill">入力 <b>画像 / 動画 / 画面共有 / カメラ</b></span>
+      <span class="pill">核 <b>言葉 × ビジュアルの矛盾検知</b></span>
+      <span class="pill">出力 <b>完成イメージ生成（仮説）</b></span>
+      <span class="pill">還流 <b>「違う」→ 要件更新</b></span>
+    </div>
+  </div>
+</header>
+
+<!-- LOOP CONCEPT -->
+<section>
+  <div class="wrap">
+    <div class="kicker n">01 — The Multimodal Loop</div>
+    <h2 class="sec-h">受け取る → 検知する → 描いて返す → 直す</h2>
+    <p class="sec-sub">音声・ビジュアルの入力が要件を太らせ、要件が完成イメージを生み、そのイメージへのフィードバックがまた要件を磨く。一方通行でなく循環させる。</p>
+    <div class="loop">
+      <div class="lnode inn"><span class="ic">🎤🖼🎥</span><b>入力（提供）</b><small>音声＋画像/動画/画面共有。ビジュアルから要件を抽出</small></div>
+      <div class="larrow">→</div>
+      <div class="lnode core"><span class="ic">⚡</span><b>矛盾・抜け検知</b><small>言葉 × ビジュアルの食い違いを検出（核）</small></div>
+      <div class="larrow">→</div>
+      <div class="lnode"><span class="ic">📋</span><b>確定要件</b><small>出所・確信度つきで構造化</small></div>
+      <div class="larrow">→</div>
+      <div class="lnode outn"><span class="ic">✨</span><b>完成イメージ生成（提示）</b><small>「こんな画面になりそうです」を可視化</small></div>
+    </div>
+    <div class="loopback">↩︎ <b>フィードバックの還流</b>：生成イメージの「ここが違う」を新しい発話として取り込み、検知 → 要件更新へ戻す（産婆術のループ）。</div>
+  </div>
+</section>
+
+<!-- ===================== INPUT ===================== -->
+<section>
+  <div class="wrap">
+    <div class="kicker in">02 — INPUT ｜ ユーザーからの情報提供</div>
+    <h2 class="sec-h">どんな形でも受け取る</h2>
+    <p class="sec-sub">準備時にも対話中にも、画像・動画・画面共有・カメラで素材を渡せる。SANBA はそこから要件を抽出し、言葉との矛盾を検知する（ADR-0004）。</p>
+
+    <div class="grid g4" style="margin-top:22px">
+      <div class="card in"><div class="num">I1</div><h4>形を問わない</h4><p>画像・動画・ライブ画面共有・カメラ撮影（ホワイトボード/スケッチ）に対応。</p></div>
+      <div class="card in"><div class="num">I2</div><h4>ビジュアル→要件</h4><p>画面要素・画面内テキストを要件化。出所は「どのアセットの何秒か」まで保持。</p></div>
+      <div class="card in"><div class="num">I3</div><h4>言葉×画の矛盾</h4><p>「検索したいと言ったが画面に検索バーが無い」を検知し核に接続。</p></div>
+      <div class="card in"><div class="num">I4</div><h4>動画は時間軸で</h4><p>フレーム/モーメント単位に検知マーカー。タイムラインで根拠を指し示す。</p></div>
+    </div>
+
+    <!-- Board IN-1: share + tray -->
+    <div class="board">
+      <div class="cap"><div class="dots"><span class="dot" style="background:#FF6B6B"></span><span class="dot" style="background:#F5A524"></span><span class="dot" style="background:#1FD5A3"></span></div>
+        <span class="t">対話中 — 素材を共有</span><span class="u">app.sanba.dev/session/abc123 · 共有</span></div>
+      <div class="screen">
+        <div class="grid g2" style="gap:22px">
+          <div>
+            <h4 style="font-size:15px;margin-bottom:4px">＋ 素材を渡す</h4>
+            <p style="font-size:12.5px;color:var(--ink-3);margin:0 0 14px">貼った素材から AI が要件を抽出し、言葉との食い違いを検知します。</p>
+            <div class="share">
+              <div class="shitem"><span class="ic">🖼</span><div><b>画像をアップロード</b><small>モック・スクショ・写真</small></div></div>
+              <div class="shitem"><span class="ic">🎥</span><div><b>動画をアップロード</b><small>操作録画・画面収録</small></div></div>
+              <div class="shitem"><span class="ic">🖥</span><div><b>画面を共有</b><small>ライブ（Figma 等）</small></div></div>
+              <div class="shitem"><span class="ic">📷</span><div><b>カメラで撮影</b><small>ホワイトボード/手書き</small></div></div>
+            </div>
+          </div>
+          <div>
+            <h4 style="font-size:13px;color:var(--ink-2);margin-bottom:12px">提供済みの素材 — AI抽出つき</h4>
+            <div class="tray">
+              <div class="asset">
+                <div class="thumb"><span class="badge"><span class="tag img">画像</span></span>
+                  <div class="ph-ui"><div class="bar s"></div><div class="grid3"><i></i><i></i><i></i></div></div></div>
+                <div class="meta"><div class="nm">一覧画面_モック.png</div><div class="ex">抽出: 3カラム一覧 / フィルタ</div>
+                  <span class="chip contra">⚠ 検索バー無し</span></div>
+              </div>
+              <div class="asset">
+                <div class="thumb"><span class="badge"><span class="tag vid">動画</span></span><span class="dur">0:48</span><span class="play">▶</span></div>
+                <div class="meta"><div class="nm">現行フロー録画.mov</div><div class="ex">抽出: 削除導線 / 並び替え</div>
+                  <span class="chip warn">◯ 0:34 抜け</span></div>
+              </div>
+              <div class="asset">
+                <div class="thumb"><span class="badge"><span class="tag share">画面共有</span></span>
+                  <div class="ph-ui"><div class="bar"></div><div class="bar s"></div><div class="grid3"><i></i><i></i><i></i></div></div></div>
+                <div class="meta"><div class="nm">Figma（ライブ）</div><div class="ex">共有中 · リアルタイム解析</div>
+                  <span class="chip live" style="font-size:10px">● 解析中</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Board IN-2: image overlay + video timeline -->
+    <div class="board">
+      <div class="cap"><div class="dots"><span class="dot" style="background:#FF6B6B"></span><span class="dot" style="background:#F5A524"></span><span class="dot" style="background:#1FD5A3"></span></div>
+        <span class="t">素材の解析 — 言葉 × ビジュアルの突き合わせ</span><span class="u">素材ビュー</span></div>
+      <div class="screen">
+        <div class="grid g2" style="gap:22px">
+          <!-- image overlay -->
+          <div>
+            <h4 style="font-size:13px;color:var(--ink-2);margin-bottom:10px">🖼 一覧画面_モック.png</h4>
+            <div class="overlay">
+              <div class="ph-ui"><div class="bar"></div><div class="bar s"></div>
+                <div class="grid3" style="margin-top:14px"><i style="height:46px"></i><i style="height:46px"></i><i style="height:46px"></i></div>
+                <div class="grid3"><i style="height:46px"></i><i style="height:46px"></i><i style="height:46px"></i></div></div>
+              <div class="ring c" style="top:24px;left:18px;right:18px;height:26px"></div>
+              <div class="pin c" style="top:14px;left:200px"><span class="dotp">!</span><span class="lbl">ここに検索バーが無いが「検索したい」と発言 → 要追加</span></div>
+              <div class="pin g" style="bottom:18px;left:24px"><span class="dotp">◯</span><span class="lbl">並び替えの導線が未配置（抜け）</span></div>
+            </div>
+            <p style="font-size:11px;color:var(--ink-3);margin-top:9px">赤=言葉との矛盾 / 琥珀=抜け。ピンは画面領域に対応し、確定要件の根拠になる。</p>
+          </div>
+          <!-- video timeline -->
+          <div>
+            <h4 style="font-size:13px;color:var(--ink-2);margin-bottom:10px">🎥 現行フロー録画.mov — タイムライン解析</h4>
+            <div class="overlay" style="height:150px"><span class="play" style="position:absolute;inset:0;display:grid;place-items:center;font-size:34px;color:rgba(255,255,255,.8)">▶</span>
+              <span class="dur" style="position:absolute;bottom:8px;right:10px;font-size:10.5px;background:rgba(0,0,0,.6);padding:2px 7px;border-radius:6px;color:#fff;font-weight:700">0:48</span></div>
+            <div class="vtl">
+              <div class="vbar">
+                <div class="mk c" style="left:25%">!</div>
+                <div class="mk g" style="left:70%">◯</div>
+                <div class="head" style="left:42%"></div>
+              </div>
+              <div class="moment"><span class="ts">0:12</span><div><p style="color:#FFB4B4">削除導線が2箇所あり挙動が異なる（矛盾の可能性）</p><div class="w">矛盾検知 Agent · フレーム抽出</div></div></div>
+              <div class="moment"><span class="ts">0:34</span><div><p style="color:#FFD79A">並び替え後の状態保持が映像で確認できない（抜け）</p><div class="w">抜け検知 Agent</div></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="annot">
+      <div class="a"><span class="n">1</span><b>共有は4手段</b><p>画像/動画/画面共有/カメラ。準備時の資料投入とも一貫したエントリ。</p><span class="ref">↳ ADR-0004</span></div>
+      <div class="a"><span class="n">2</span><b>抽出を可視化</b><p>各アセットに「何を読み取ったか」をチップ表示。AIの理解を透明化。</p><span class="ref">↳ P3 根拠</span></div>
+      <div class="a"><span class="n">3</span><b>領域・時刻で指す</b><p>画像はピン、動画はタイムラインマーカーで矛盾/抜けを正確に指し示す。</p><span class="ref">↳ ADR-0008 #7</span></div>
+      <div class="a"><span class="n">4</span><b>出所を保持</b><p>抽出要件は「どの素材の・どこか」を source として確定要件に残す。</p><span class="ref">↳ ADR-0008</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== OUTPUT ===================== -->
+<section>
+  <div class="wrap">
+    <div class="kicker out">03 — OUTPUT ｜ SANBA からの完成イメージ提示</div>
+    <h2 class="sec-h">確定要件から、画面を描いて返す</h2>
+    <p class="sec-sub">「現時点の要件だと、こんな画面になりそうです」。生成したビジュアルを問いの道具として提示し、言葉にならない差分を引き出す。要件→画面イメージ→コードを地続きにする（ADR-0011）。</p>
+
+    <div class="grid g4" style="margin-top:22px">
+      <div class="card out"><div class="num">O1</div><h4>生成物は「仮説」</h4><p>「AI生成・推測」を必ず明示。事実や確定として提示しない。</p></div>
+      <div class="card out"><div class="num">O2</div><h4>要素をたどれる</h4><p>各UI要素が「どの要件から来たか」を明示。未確定はゴースト表示。</p></div>
+      <div class="card out"><div class="num">O3</div><h4>問い返しの道具</h4><p>「ここが違う」を引き出し、差分を発話＝要件として還流させる。</p></div>
+      <div class="card out"><div class="num">O4</div><h4>確定は人間</h4><p>採用判断・Figma/実装への受け渡しは人手のレビュー後（CLAUDE.md）。</p></div>
+    </div>
+
+    <!-- Board OUT: generated completion image -->
+    <div class="board">
+      <div class="cap"><div class="dots"><span class="dot" style="background:#FF6B6B"></span><span class="dot" style="background:#F5A524"></span><span class="dot" style="background:#1FD5A3"></span></div>
+        <span class="t">完成イメージ・プレビュー（生成）</span><span class="u">app.sanba.dev/session/abc123/preview</span></div>
+      <div class="screen">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+          <span class="chip gen">✨ AI生成・推測</span>
+          <span style="font-size:13px;color:var(--ink-2)">現時点の要件 12 件から生成した「検索結果画面」</span>
+          <div style="margin-left:auto;display:flex;gap:8px">
+            <span class="chip gray">案A</span><span class="chip gray" style="opacity:.5">案B</span>
+            <button class="btn ghost sm">↻ 再生成</button>
+          </div>
+        </div>
+
+        <div class="genwrap">
+          <!-- generated mockup -->
+          <div class="genframe">
+            <span class="gbadge chip gen" style="font-size:10px">✨ 生成</span>
+            <div class="genwatermark"></div>
+            <div class="gen-top">
+              <div class="gen-search">🔍 <span>キーワードで検索…</span><span class="g-an gen" style="background:var(--primary-2)">3</span></div>
+              <div class="gen-sort"><span style="font-size:11px;color:var(--ink-3)">並び替え</span>
+                <span class="gen-seg"><b class="on">関連度順</b><b class="off">新着順</b></span>
+                <span class="g-an" style="margin-left:6px">1</span></div>
+            </div>
+            <div class="gen-list">
+              <div class="gres"><div class="gthumb"></div><div style="flex:1"><div class="gt">検索結果アイテム 1</div><div class="gm">関連度 98% · タグ</div></div></div>
+              <div class="gres"><div class="gthumb"></div><div style="flex:1"><div class="gt">検索結果アイテム 2</div><div class="gm">関連度 91% · タグ</div></div></div>
+              <div class="gres"><div class="gthumb"></div><div style="flex:1"><div class="gt">検索結果アイテム 3</div><div class="gm">関連度 87% · タグ</div></div><span class="g-an">2</span></div>
+              <div class="gres ghost"><div class="gthumb" style="background:none;border:1px dashed var(--warn)"></div><div style="flex:1"><div class="gt">空状態（0件）の表示 — 未確定</div><div class="gm">要件が未定のためプレースホルダ</div></div><span class="chip warn" style="font-size:10px">抜け</span></div>
+            </div>
+          </div>
+
+          <!-- traceability + feedback -->
+          <div>
+            <h4 style="font-size:13px;color:var(--ink-2);margin-bottom:8px">この画面に反映した要件</h4>
+            <div class="traceitem"><span class="g-an">1</span><div><p>並び順は関連度順を既定（新着順は切替）</p><div class="src">← 矛盾解消済 · 確信度 88%</div></div></div>
+            <div class="traceitem"><span class="g-an">2</span><div><p>結果は無限スクロールで表示</p><div class="src">← スコープ要件 · PdM 12:46</div></div></div>
+            <div class="traceitem"><span class="g-an">3</span><div><p>キーワード検索バーを新設</p><div class="src">← 画像の矛盾検知から起票</div></div></div>
+
+            <div class="callout">
+              <span class="n">!</span>
+              <div><p><b>未確定が1件あります。</b>「検索結果0件」の空状態UIが要件に無いため、ゴーストで表示しています。</p>
+                <div class="sub">この部分を一緒に決めますか？ →（音声インタビューに戻る）</div></div>
+            </div>
+
+            <div class="feedbar">
+              <div class="fb ok"><span class="e">👍</span>イメージ通り</div>
+              <div class="fb no"><span class="e">✏️</span>ここが違う</div>
+            </div>
+            <div style="display:flex;gap:8px;margin-top:12px">
+              <button class="btn sm" style="flex:1">⎘ Figma へ書き出す</button>
+              <button class="btn ghost sm" style="flex:1">→ 実装へ渡す</button>
+            </div>
+            <p style="font-size:11px;color:var(--ink-3);margin-top:10px">「ここが違う」で領域をタップ → 修正コメントが新しい発話として取り込まれ、検知 → 要件更新に還流します。</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="annot">
+      <div class="a"><span class="n">1</span><b>仮説として提示</b><p>watermark＋「AI生成・推測」バッジ。確定物と誤認させない誠実な見せ方。</p><span class="ref">↳ O1 / CLAUDE.md</span></div>
+      <div class="a"><span class="n">2</span><b>要素⇄要件の線</b><p>UI要素に番号、横に対応要件。生成の根拠を一目で検証できる。</p><span class="ref">↳ O2 / P3</span></div>
+      <div class="a"><span class="n">3</span><b>未確定はゴースト</b><p>抜けている要件はプレースホルダで可視化し「決めましょう」へ誘導。</p><span class="ref">↳ 核（抜け検知）</span></div>
+      <div class="a"><span class="n">4</span><b>還流とハンドオフ</b><p>「違う」は要件へ戻し、確定後は Figma/実装へ。要件→デザイン→コードを接続。</p><span class="ref">↳ ADR-0011 / Issue #39</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- arch note -->
+<section style="border-bottom:none">
+  <div class="wrap">
+    <div class="kicker n">04 — 実装メモ（設計の接続）</div>
+    <h2 class="sec-h">既存アーキテクチャへの載せ方</h2>
+    <div class="grid g3" style="margin-top:22px">
+      <div class="card"><h4 style="font-size:14px">入力経路</h4><p style="margin-top:8px">画面共有/カメラは既存の LiveKit 映像トラック（ADR-0004）。画像/動画アップロードは API → Cloud Storage → Gemini マルチモーダル解析。出所メタを付与し確定要件へ。</p></div>
+      <div class="card"><h4 style="font-size:14px">生成経路</h4><p style="margin-top:8px">確定要件（Firestore）→ プロンプト整形 → 画像/UI生成 → プレビュー。<b style="color:var(--ink)">生成は非同期</b>で会話を止めない（二層構造を踏襲, ADR-0002）。</p></div>
+      <div class="card"><h4 style="font-size:14px">観測 & 誠実さ</h4><p style="margin-top:8px">生成の所要時間/コストは Langfuse で観測。生成物は「仮説」ラベル必須・確定は人間（薄い実装の禁止／成果物責任は人間, CLAUDE.md）。要 ADR 化。</p></div>
+    </div>
+    <p style="font-size:12.5px;color:var(--ink-3);margin-top:18px">
+      ※「完成イメージ生成」はプロダクト/アーキの拡張のため、採用時は <code style="background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:2px 7px">docs/adr/NNNN-generative-preview.md</code> として設計判断を記録する想定。
+    </p>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+      <div style="width:26px;height:26px;border-radius:8px;background:var(--grad)"></div>
+      <b style="color:var(--ink)">SANBA</b> — マルチモーダル I/O（提供 ⇄ 提示）
+    </div>
+    自己完結HTML（外部リクエストなし）· 関連: <code>sanba-ux.html</code>（デスクトップ）/ <code>sanba-ux-responsive.html</code>（スマホ・タブレット）
+  </div>
+</footer>
+
+</body>
+</html>
