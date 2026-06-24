@@ -23,9 +23,11 @@ from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from livekit import api
 from pydantic import BaseModel
+from sanba_shared.models import Requirement, RequirementStatus, SessionMeta
+from sanba_shared.repository import RequirementNotFound, SessionRepository
 
 from .auth import InvalidInvite, create_invite, verify_invite
-from .auth_google import AuthUser, require_user
+from .auth_google import AuthUser, require_admin, require_user
 from .config import settings
 from .ingestion import ContextIndexer, chunk_text, extract_text_from_upload
 from .observability import setup_observability
@@ -48,6 +50,9 @@ _join_hits: dict[str, deque[float]] = defaultdict(deque)
 
 # Context indexer shares the agent's Elasticsearch grounding index (issue #6).
 _indexer = ContextIndexer()
+
+# セッション/要件の永続化境界 (ADR-0014)。agent と同じ sanba_shared を使う。
+_repo = SessionRepository(data_retention_days=settings.data_retention_days)
 
 
 def _rate_limit(client_ip: str) -> None:
@@ -121,6 +126,16 @@ def create_session(
         )
         for role in req.roles
     }
+    # セッションメタを永続化する (ADR-0014 §4)。管理画面の一覧/閲覧/承認の土台になる。
+    _repo.create_session_doc(
+        SessionMeta(
+            id=session_id,
+            title=req.title,
+            owner_sub=user.sub,
+            owner_email=user.email,
+            roles=req.roles,
+        )
+    )
     log.info("session_created", session=session_id, roles=req.roles, owner=user.sub)
     return CreateSessionResponse(session_id=session_id, invites=invites)
 
@@ -203,3 +218,92 @@ def join_session(
         session_id=session_id,
         identity=identity,
     )
+
+
+# ---- Admin: 運用画面 (ADR-0014) -------------------------------------------
+# すべて require_admin でガードする。閲覧は requirements のみ。生の発話 (utterances) は
+# プライバシー方針 (issue #10 / ADR-0014 §3) のため一切返さない。
+class UpdateRequirementRequest(BaseModel):
+    """要件の編集/承認リクエスト。
+
+    statement/priority/category は上書き (None は据え置き)。出所メタは変更できない (§10)。
+    status を指定すると承認/却下/差し戻しを行う (§11)。両方を一度に指定してもよい。
+    """
+
+    statement: str | None = None
+    priority: str | None = None
+    category: str | None = None
+    status: RequirementStatus | None = None
+
+
+@app.get("/api/admin/sessions", response_model=list[SessionMeta])
+def admin_list_sessions(admin: AuthUser = Depends(require_admin)) -> list[SessionMeta]:
+    """全セッションのメタ一覧 (MVP: ページングなし / ADR-0014 保留事項)。"""
+    sessions = _repo.list_sessions()
+    log.info("admin_list_sessions", admin=admin.email, count=len(sessions))
+    return sessions
+
+
+@app.get(
+    "/api/admin/sessions/{session_id}/requirements",
+    response_model=list[Requirement],
+)
+def admin_list_requirements(
+    session_id: str, admin: AuthUser = Depends(require_admin)
+) -> list[Requirement]:
+    """セッションの要件一覧。発話 (utterances) は返さない。"""
+    if _repo.get_session(session_id) is None:
+        raise HTTPException(status_code=404, detail="session not found")
+    reqs = _repo.list_requirements(session_id)
+    log.info("admin_list_requirements", admin=admin.email, session=session_id, count=len(reqs))
+    return reqs
+
+
+@app.patch(
+    "/api/admin/sessions/{session_id}/requirements/{rid}",
+    response_model=Requirement,
+)
+def admin_update_requirement(
+    session_id: str,
+    rid: str,
+    req: UpdateRequirementRequest,
+    admin: AuthUser = Depends(require_admin),
+) -> Requirement:
+    """要件を編集・承認する (ADR-0014 §10,§11)。
+
+    編集 (statement/priority/category) を先に適用してから status 遷移を行う。
+    承認時は TTL を解除し成果物として保全する。
+    """
+    try:
+        if req.statement is not None or req.priority is not None or req.category is not None:
+            current = _repo.update_requirement(
+                session_id,
+                rid,
+                statement=req.statement,
+                priority=req.priority,
+                category=req.category,
+            )
+        else:
+            found = _repo.get_requirement(session_id, rid)
+            if found is None:
+                raise RequirementNotFound(rid)
+            current = found
+
+        if req.status is not None:
+            current = _repo.set_requirement_status(
+                session_id, rid, req.status, approved_by=admin.email
+            )
+    except RequirementNotFound as exc:
+        raise HTTPException(status_code=404, detail="requirement not found") from exc
+    except ValueError as exc:
+        # enum 不正など (priority/category の不正値) は 422 相当。
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    log.info(
+        "admin_update_requirement",
+        admin=admin.email,
+        session=session_id,
+        rid=rid,
+        status=current.status,
+    )
+    return current
