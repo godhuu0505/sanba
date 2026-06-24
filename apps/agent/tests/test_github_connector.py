@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from sanba_shared.models import Priority, Requirement, RequirementCategory
+
 from sanba_agent.connectors import issues_to_passages, requirements_to_issue_body
-from sanba_agent.models import Priority, Requirement, RequirementCategory
 
 
 def test_issues_to_passages_skips_pull_requests() -> None:
@@ -22,11 +23,15 @@ def test_issues_to_passages_skips_pull_requests() -> None:
 def test_requirements_to_issue_body_groups_by_priority() -> None:
     reqs = [
         Requirement(
-            id="r1", statement="同時5人接続", category=RequirementCategory.NON_FUNCTIONAL,
+            id="r1",
+            statement="同時5人接続",
+            category=RequirementCategory.NON_FUNCTIONAL,
             priority=Priority.MUST,
         ),
         Requirement(
-            id="r2", statement="ダークモード", category=RequirementCategory.FUNCTIONAL,
+            id="r2",
+            statement="ダークモード",
+            category=RequirementCategory.FUNCTIONAL,
             priority=Priority.COULD,
         ),
     ]

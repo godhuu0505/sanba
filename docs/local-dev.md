@@ -42,6 +42,8 @@ just tools-down  # 補助スタックだけ停止 (アプリは残す)
 | URL | 何 | スタック |
 |---|---|---|
 | http://localhost:3000 | Web クライアント | 必須 |
+| http://localhost:3000/login | ログイン画面 (Google / dev) | 必須 |
+| http://localhost:3000/admin | 管理画面 (セッション/要件の確認・承認) | 必須 |
 | http://localhost:8080/healthz | API ヘルスチェック | 必須 |
 | ws://localhost:7880 | LiveKit (dev) | 必須 |
 | http://localhost:9200 | Elasticsearch | 必須 |
@@ -66,6 +68,11 @@ just tools-down  # 補助スタックだけ停止 (アプリは残す)
 
 `GOOGLE_API_KEY` を `.env` に入れて `just up` し直すと、音声を除く AI 経路が実物になる。
 音声 S2S は実機マイク + ブラウザ (http://localhost:3000) で確認する。
+
+ログイン/管理画面: 既定の `.env.example` は `AUTH_DEV_BYPASS=true` かつ
+`ADMIN_EMAILS=dev@sanba.local` なので、`/login` で「開発用ログイン」を押すと固定 dev
+identity (dev@sanba.local) になり、`/admin` がそのまま開ける (ADR-0014)。本番は
+`AUTH_DEV_BYPASS=false`・`GOOGLE_OAUTH_CLIENT_ID`・`ADMIN_EMAILS` を実値で設定する。
 
 ## 5. ネイティブ実行 (docker を介さない)
 

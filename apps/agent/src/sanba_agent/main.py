@@ -11,6 +11,8 @@ Run locally:
 from __future__ import annotations
 
 import asyncio
+import os
+from typing import Any
 
 import structlog
 from livekit.agents import (
@@ -24,23 +26,30 @@ from livekit.agents import (
 )
 from livekit.agents.llm import function_tool
 from livekit.plugins import google
+from sanba_shared.models import Priority, Requirement, RequirementCategory, Utterance
+from sanba_shared.repository import SessionRepository
 
 from .config import settings
 from .events import (
     DETECTOR_NFR,
+    RESOLUTION_AGENT_RESOLVED,
+    RESOLUTION_USER_SELECTED,
     WEB_EVENTS_TOPIC,
     EventPublisher,
     LiveKitTransport,
     decode_user_selection,
 )
-from .models import Priority, Requirement, RequirementCategory, Utterance
 from .observability import setup_observability
 from .prompts.interview import VOICE_AGENT_INSTRUCTIONS
-from .repository import SessionRepository
 from .retrieval import GroundingStore
 from .tools.analysis import analyze_transcript, make_requirement_id
 
 log = structlog.get_logger(__name__)
+
+# Firestore SDK は OS 環境変数 FIRESTORE_EMULATOR_HOST を直接読む。config 経由で指定された
+# 場合に SDK へ橋渡しする (api/main.py と同じパターン)。未設定なら本番の実 Firestore に接続。
+if settings.firestore_emulator_host:
+    os.environ.setdefault("FIRESTORE_EMULATOR_HOST", settings.firestore_emulator_host)
 
 
 class SANBAAgent(Agent):
@@ -63,6 +72,8 @@ class SANBAAgent(Agent):
         self._utterance_seq = 0
         # 既に publish 済みの検知 id（open_topic の重複 gap を抑止）。
         self._published_gaps: set[str] = set()
+        # fire-and-forget の publish タスクを保持（GC による途中消滅を防ぐ）。
+        self._publish_tasks: set[asyncio.Task[Any]] = set()
 
     @property
     def transcript(self) -> list[str]:
@@ -73,7 +84,16 @@ class SANBAAgent(Agent):
         if self._publisher is None:
             coro.close()
             return
-        asyncio.create_task(coro)
+        # create_task の戻り値を保持しないとタスクが GC で途中消滅し得る（CPython の既知挙動）。
+        # 集合で強参照を保ち、完了時に取り除く。
+        task = asyncio.create_task(coro)
+        self._publish_tasks.add(task)
+        task.add_done_callback(self._on_publish_done)
+
+    def _on_publish_done(self, task: asyncio.Task[Any]) -> None:
+        self._publish_tasks.discard(task)
+        if not task.cancelled() and task.exception() is not None:
+            log.warning("publish_task_failed", error=str(task.exception()))
 
     def record_utterance(self, speaker: str, text: str) -> str:
         self._transcript.append(f"{speaker}: {text}")
@@ -102,11 +122,13 @@ class SANBAAgent(Agent):
         """
         self._transcript.append(f"[選択] {detection_id} → {selected_value}")
         # 永続化して open スナップショットから外す（リロード後も未解消に戻さない）。
-        self._repo.resolve_detection(self._session_id, detection_id, "user_selected")
+        self._repo.resolve_detection(self._session_id, detection_id, RESOLUTION_USER_SELECTED)
         self._published_gaps.discard(detection_id)
         if self._publisher is not None:
             await self._publisher.detection_resolved(
-                detection_id, resolution="user_selected", selected_value=selected_value
+                detection_id,
+                resolution=RESOLUTION_USER_SELECTED,
+                selected_value=selected_value,
             )
             self._repo.set_session_seq(self._session_id, self._publisher.seq)
         log.info(
@@ -164,8 +186,12 @@ class SANBAAgent(Agent):
             for gap_id in list(self._published_gaps):
                 if gap_id not in current:
                     self._published_gaps.discard(gap_id)
-                    self._repo.resolve_detection(self._session_id, gap_id, "agent_resolved")
-                    await self._publisher.detection_resolved(gap_id, resolution="agent_resolved")
+                    self._repo.resolve_detection(
+                        self._session_id, gap_id, RESOLUTION_AGENT_RESOLVED
+                    )
+                    await self._publisher.detection_resolved(
+                        gap_id, resolution=RESOLUTION_AGENT_RESOLVED
+                    )
             await self._publisher.status("listening")
             self._repo.set_session_seq(self._session_id, self._publisher.seq)
         return result.model_dump(mode="json")
@@ -273,10 +299,11 @@ class SANBAAgent(Agent):
         url = GitHubConnector(settings.github_token, settings.github_repo).create_issue(title, body)
         log.info("requirements_exported", session=self._session_id, url=url)
         if self._publisher is not None and url is not None:
-            # ループの締め（09→10）。スタッツは publish 済みの実数から組み立てる。
+            # ループの締め（09→10）。スタッツは publish 済みの実測から組み立てる
+            # （gaps_found は抜けのみ、contradictions_resolved は解消済みの矛盾のみ）。
             await self._publisher.session_completed(
-                contradictions_resolved=0,
-                gaps_found=self._publisher.detections_published,
+                contradictions_resolved=self._publisher.contradictions_resolved,
+                gaps_found=self._publisher.gaps_published,
                 issues_created=1,
                 artifacts=[{"kind": "issue", "url": url}],
             )
@@ -346,7 +373,7 @@ async def entrypoint(ctx: JobContext) -> None:
     await ctx.connect()
 
     session_id = ctx.room.name
-    repo = SessionRepository()
+    repo = SessionRepository(data_retention_days=settings.data_retention_days)
     grounding = GroundingStore()
     seed_knowledge_base(grounding)
     seed_github_context(grounding, session_id)

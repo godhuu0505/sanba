@@ -6,7 +6,7 @@ Firestore 無しのメモリモードで、検知の保存・解消・seq 永続
 
 from __future__ import annotations
 
-from sanba_agent.repository import SessionRepository
+from sanba_shared.repository import SessionRepository
 
 
 def _mem_repo() -> SessionRepository:

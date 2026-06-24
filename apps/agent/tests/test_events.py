@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 
 import pytest
+from sanba_shared.models import Priority, Requirement, RequirementCategory
 
 from sanba_agent.events import (
     EVENTS_TOPIC,
@@ -16,7 +17,6 @@ from sanba_agent.events import (
     decode_user_selection,
     requirement_to_contract,
 )
-from sanba_agent.models import Priority, Requirement, RequirementCategory
 
 ENVELOPE_KEYS = {"v", "type", "seq", "ts", "session_id"}
 
@@ -98,7 +98,42 @@ async def test_counters_track_detections() -> None:
     pub = EventPublisher("s1", t)
     await pub.detection_gap("d1", "性能が未確認", "non_functional", [])
     await pub.detection_contradiction("d2", "食い違い", refs=[])
+    # 種別ごとに分けて計測し、detections_published は合算（後方互換）。
+    assert pub.gaps_published == 1
+    assert pub.contradictions_published == 1
     assert pub.detections_published == 2
+
+
+@pytest.mark.asyncio
+async def test_resolution_counters_distinguish_user_and_agent() -> None:
+    t = RecordingTransport()
+    pub = EventPublisher("s1", t)
+    # 抜けの自動解消（agent）は contradictions_resolved に数えない。
+    await pub.detection_resolved("d1", resolution="agent_resolved")
+    # 矛盾カードのユーザー解消のみ contradictions_resolved。
+    await pub.detection_resolved("d2", resolution="user_selected", selected_value="relevance")
+    assert pub.detections_resolved == 2
+    assert pub.contradictions_resolved == 1
+
+
+@pytest.mark.asyncio
+async def test_session_completed_summary_uses_real_counts() -> None:
+    t = RecordingTransport()
+    pub = EventPublisher("s1", t)
+    await pub.detection_gap("g1", "抜け1", "non_functional", [])
+    await pub.detection_gap("g2", "抜け2", "scope", [])
+    await pub.detection_contradiction("c1", "矛盾", refs=[])
+    await pub.detection_resolved("c1", resolution="user_selected", selected_value="v")
+    await pub.session_completed(
+        contradictions_resolved=pub.contradictions_resolved,
+        gaps_found=pub.gaps_published,
+        issues_created=1,
+        artifacts=[{"kind": "issue", "url": "http://x"}],
+    )
+    summary = t.sent[-1]["event"]["summary"]
+    # gaps_found は抜けのみ（矛盾を二重計上しない）、contradictions_resolved は解消済みの矛盾のみ。
+    assert summary["gaps_found"] == 2
+    assert summary["contradictions_resolved"] == 1
 
 
 def test_decode_user_selection_valid() -> None:
