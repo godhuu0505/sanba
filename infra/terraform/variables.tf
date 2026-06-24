@@ -129,35 +129,29 @@ variable "dns_managed_zone_name" {
 }
 
 # ---- Secrets (Secret Manager) ------------------------------------------------
-# 空文字のものはシークレットを作らない。session_signing_secret は空なら自動生成する。
+# 方針: Secret Manager を値の唯一の置き場にする。terraform は箱 (secret) と Cloud Run 参照だけを
+# 管理し、アプリ秘匿値そのものは管理しない (gcloud で SM に直接投入)。よって livekit/elasticsearch/
+# google の「値」変数は持たない (GitHub Secrets / state に秘匿値を残さないため)。詳細は secrets.tf。
+
+# session-signing-secret は自動生成のため例外的に値を扱う。空なら強い値を生成して SM に格納する。
 variable "session_signing_secret" {
   type        = string
   default     = ""
   sensitive   = true
-  description = "Signs session invites. Empty = a strong value is generated and stored."
+  description = "Signs session invites. Empty = a strong value is generated and stored. 通常は空のまま。"
 }
 
-variable "livekit_api_key" {
-  type      = string
-  default   = ""
-  sensitive = true
+# Secret Manager に作成する「箱」の集合。値は terraform 管理外 (gcloud で投入)。
+variable "app_secret_ids" {
+  type        = list(string)
+  default     = ["livekit-api-key", "livekit-api-secret", "elasticsearch-api-key"]
+  description = "Secret Manager に作成する app secret の id (sanba- 接頭辞は自動付与)。値は管理しない。"
 }
 
-variable "livekit_api_secret" {
-  type      = string
-  default   = ""
-  sensitive = true
-}
-
-variable "google_api_key" {
-  type        = string
-  default     = ""
-  sensitive   = true
-  description = "Only needed when use_vertexai = false (AI Studio key). Prefer Vertex (keyless)."
-}
-
-variable "elasticsearch_api_key" {
-  type      = string
-  default   = ""
-  sensitive = true
+# 値を投入済みで Cloud Run に注入する app secret。値を SM に入れてからここへ追加して apply する。
+# 空コンテナを Cloud Run が参照すると起動失敗するため、active なものだけ紐付ける。
+variable "active_app_secret_ids" {
+  type        = list(string)
+  default     = []
+  description = "値投入済みで Cloud Run に注入する app secret id。app_secret_ids の部分集合。"
 }
