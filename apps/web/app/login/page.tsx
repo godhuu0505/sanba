@@ -1,73 +1,156 @@
 "use client";
 
-// ログイン画面 (ADR-0014 §1)。既存の Google OIDC (GIS) を画面化しただけで、認証基盤は
-// 追加していない。ログイン後はインタビュー (/) と管理画面 (/admin) への導線を出す。
-// 管理者かどうかは API 側 (ADMIN_EMAILS) が源泉なので、ここでは判定しない (§2,§7)。
+// ログイン／ログアウト ユースケース (ADR-0014 §1 / Figma 正本 31:2・黄金テーマ 73-3..6)。
+// 4 状態の一本道: 11 未認証 → 12 サインイン中 → 13 ログイン済み導線 → 14 ログアウト完了。
+//
+// 認証ロジックと認可（管理者判定は API 側の ADMIN_EMAILS が源泉）は変えず、意匠とフローのみ
+// 拡張する (CLAUDE.md「スキン」方針)。SANBA デザインシステム（components/sanba/*）を再利用。
+// GIS は「サインイン開始」イベントを出さないため、12 は loggedIn の false→true 立ち上がりを
+// 契機に短時間だけ見せ、自動で 13 へ送る。
 
 import Link from "next/link";
+import { useEffect, useRef, useState } from "react";
 
+import { Button, Card, CardDescription, CardTitle, Divider, Screen } from "@/components/sanba";
 import { useGoogleAuth } from "@/lib/auth";
-import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+
+// 12「本人確認中」を見せる時間。実機・dev とも同じ間で 13 へ遷移する。
+const WELCOME_MS = 1000;
 
 export default function LoginPage() {
-  const auth = useGoogleAuth();
-  const { loggedIn, profile, devMode, buttonRef, devSignIn, signOut } = auth;
+  const { loggedIn, profile, devMode, buttonRef, devSignIn, signOut } = useGoogleAuth();
 
+  const [justLoggedOut, setJustLoggedOut] = useState(false);
+  const [welcoming, setWelcoming] = useState(false);
+  const prevLoggedIn = useRef(loggedIn);
+
+  // loggedIn が false→true に立ち上がった時だけ 12 を見せる。マウント時点で既に loggedIn
+  // (auto_select による静かな再取得) なら立ち上がり扱いせず 13 へ直行する。
+  useEffect(() => {
+    if (loggedIn && !prevLoggedIn.current) {
+      prevLoggedIn.current = true;
+      setWelcoming(true);
+      const t = setTimeout(() => setWelcoming(false), WELCOME_MS);
+      return () => clearTimeout(t);
+    }
+    prevLoggedIn.current = loggedIn;
+  }, [loggedIn]);
+
+  function handleLogout() {
+    signOut();
+    setWelcoming(false);
+    setJustLoggedOut(true);
+  }
+
+  // ── 14 ログアウト完了 ──────────────────────────────────────────
+  if (justLoggedOut) {
+    return (
+      <Screen className="items-center justify-center px-6 py-10 text-center">
+        <div className="mx-auto flex w-full max-w-md flex-col items-center gap-3">
+          <p className="text-[13px] tracking-[0.4em] text-[var(--sanba-gold-text)]">
+            ✦ またのお越しを ✦
+          </p>
+          <h1 className="text-[30px] font-bold text-[var(--sanba-gold-text)]">
+            おつかれさまでした
+          </h1>
+          <p className="text-[13px] leading-relaxed text-[var(--sanba-muted)]">
+            ログアウトしました。問答の記録は安全に保たれています。
+          </p>
+          <Button variant="outline" className="mt-3" onClick={() => setJustLoggedOut(false)}>
+            再びログインする
+          </Button>
+        </div>
+      </Screen>
+    );
+  }
+
+  // ── 12 サインイン中（本人確認） ────────────────────────────────
+  if (loggedIn && welcoming) {
+    return (
+      <Screen className="items-center justify-center px-6 py-10 text-center">
+        <div className="mx-auto flex w-full max-w-md flex-col items-center gap-4">
+          <div
+            role="status"
+            aria-label="本人確認中"
+            className="size-16 animate-spin rounded-full border-4 border-[var(--sanba-border)] border-t-[var(--sanba-gold)]"
+          />
+          <p className="text-[17px] font-bold text-[var(--sanba-cream)]">
+            Google アカウントを確認しています
+          </p>
+          <p className="text-[13px] leading-relaxed text-[var(--sanba-muted)]">
+            本人確認のため、Google のポップアップでアカウントを選択してください。
+          </p>
+        </div>
+      </Screen>
+    );
+  }
+
+  // ── 13 ログイン済み（導線） ────────────────────────────────────
+  if (loggedIn) {
+    return (
+      <Screen className="justify-center px-6 py-10">
+        <div className="mx-auto w-full max-w-md">
+          <div className="mb-4 flex flex-col gap-1.5">
+            <h1 className="text-[24px] font-bold text-[var(--sanba-gold-text)]">
+              ようこそ戻られました
+            </h1>
+            <p className="text-[13px] leading-relaxed text-[var(--sanba-muted)]">
+              問答を始めるも、要件を検めるも、御心のままに。
+            </p>
+          </div>
+          <Card>
+            <CardTitle>🎙️ SANBA にログイン</CardTitle>
+            <p className="text-[13px] text-[var(--sanba-cream)]">
+              ✅ ログイン中: <strong>{profile?.email ?? "dev@sanba.local"}</strong>
+            </p>
+            <Button asChild variant="gold" block>
+              <Link href="/">🎙️ インタビューを始める</Link>
+            </Button>
+            <Button asChild variant="outline" block>
+              <Link href="/admin">🛠 管理画面へ</Link>
+            </Button>
+            <Divider />
+            <Button variant="ghost" className="self-start" onClick={handleLogout}>
+              ログアウト
+            </Button>
+          </Card>
+        </div>
+      </Screen>
+    );
+  }
+
+  // ── 11 未認証 ──────────────────────────────────────────────────
   return (
-    <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-6">
-      <Card>
-        <CardHeader>
+    <Screen className="justify-center px-6 py-10">
+      <div className="mx-auto w-full max-w-md">
+        <div className="mb-4 flex flex-col gap-1.5">
+          <h1 className="text-[24px] font-bold text-[var(--sanba-gold-text)]">
+            問答の間へ、ようこそ
+          </h1>
+          <p className="text-[13px] leading-relaxed text-[var(--sanba-muted)]">
+            声で要件を産み出す前に、まずは本人を確かめます。
+          </p>
+        </div>
+        <Card>
           <CardTitle>🎙️ SANBA にログイン</CardTitle>
           <CardDescription>
             解像度高く、要件を生み出す音声マルチエージェント。Google アカウントで本人確認します。
           </CardDescription>
-        </CardHeader>
-
-        <CardContent className="flex flex-col gap-4">
-          {loggedIn ? (
-            <div className="flex flex-col gap-3">
-              <p className="text-sm">
-                ✅ ログイン中:{" "}
-                <strong>{profile?.email ?? "dev@sanba.local"}</strong>
-              </p>
-              <div className="flex flex-wrap gap-2">
-                <Button asChild>
-                  <Link href="/">インタビューを始める</Link>
-                </Button>
-                <Button asChild variant="outline">
-                  <Link href="/admin">管理画面</Link>
-                </Button>
-              </div>
-            </div>
-          ) : devMode ? (
-            <div className="flex flex-col gap-2">
-              <p className="text-sm text-[var(--color-muted-foreground)]">
-                開発モード（GOOGLE_CLIENT_ID 未設定）。
-              </p>
-              <Button onClick={devSignIn}>開発用ログイン（bypass）</Button>
-            </div>
-          ) : (
-            // GIS がこの div にログインボタンを描画する。
-            <div ref={buttonRef} />
-          )}
-        </CardContent>
-
-        {loggedIn && (
-          <CardFooter>
-            <Button variant="ghost" size="sm" onClick={signOut}>
-              ログアウト
+          {devMode ? (
+            <Button variant="gold" block onClick={devSignIn}>
+              開発用ログイン（bypass）
             </Button>
-          </CardFooter>
-        )}
-      </Card>
-    </main>
+          ) : (
+            // GIS がこの div に純正のサインインボタンを描画する。
+            <div ref={buttonRef} className="flex justify-center" />
+          )}
+          <p className="text-[11px] leading-relaxed text-[var(--sanba-muted)]">
+            {devMode
+              ? "※ 開発モード（GOOGLE_CLIENT_ID 未設定）。API の AUTH_DEV_BYPASS で通します。"
+              : "※ 未ログイン時は Google のサインインがこの位置に開きます。"}
+          </p>
+        </Card>
+      </div>
+    </Screen>
   );
 }
