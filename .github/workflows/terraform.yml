@@ -1,0 +1,133 @@
+name: Terraform (infra)
+
+# 本番インフラ (Cloud Run / LB / DNS / Secret Manager 等) の IaC を CI で回す。
+#   - main 向け PR で infra/terraform を触ったら `terraform plan` を実行し、結果を PR に貼る
+#     (人間が plan を確認してからマージ → 本番反映、というフローを担保)。
+#   - GitHub Mobile の Actions → Run workflow で `apply` を選ぶと本番反映できる。
+#     その場で plan を出し、保存した plan を適用するので「plan で問題なければ apply」になる。
+#
+# 認証は deploy.yml と同じ Workload Identity Federation (キーレス)。ただし apply は
+# LB/DNS/Secret/IAM を作るため、deploy 用 SA より広い権限を持つ Terraform 用 SA を使う
+# (secrets.TF_DEPLOY_SA。runbook 参照)。
+on:
+  pull_request:
+    paths:
+      - "infra/terraform/**"
+      - ".github/workflows/terraform.yml"
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "plan か apply を選択 (mobile から)。apply は本番反映。"
+        type: choice
+        default: plan
+        options: [plan, apply]
+
+permissions:
+  contents: read
+  id-token: write # Workload Identity Federation
+  pull-requests: write # plan を PR コメントに貼る
+
+# apply の取りこぼし/重複適用を避ける。apply は途中キャンセルしない。
+concurrency:
+  group: terraform-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  TF_VERSION: "1.9.8"
+  WORKDIR: infra/terraform
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    # GCP 未配線 (project 未設定) のうちは skip して赤くしない (deploy.yml と同じ方針)。
+    if: ${{ vars.GCP_PROJECT_ID != '' }}
+    # apply のときだけ production 環境を要求する。リポジトリ設定で production に
+    # required reviewers を付ければ「モバイルで実行 → 承認 → 反映」の承認ゲートになる。
+    environment: ${{ (github.event_name == 'workflow_dispatch' && inputs.action == 'apply') && 'production' || '' }}
+    defaults:
+      run:
+        working-directory: ${{ env.WORKDIR }}
+    env:
+      # --- 非機微の設定 (GitHub Variables から) ---
+      TF_VAR_project_id:                  ${{ vars.GCP_PROJECT_ID }}
+      TF_VAR_region:                      ${{ vars.GCP_REGION || 'us-central1' }}
+      TF_VAR_billing_account:             ${{ vars.BILLING_ACCOUNT }}
+      TF_VAR_domain:                      ${{ vars.PROD_DOMAIN }}
+      TF_VAR_livekit_url:                 ${{ vars.LIVEKIT_URL }}
+      TF_VAR_elasticsearch_url:           ${{ vars.ELASTICSEARCH_URL }}
+      TF_VAR_otel_exporter_otlp_endpoint: ${{ vars.OTEL_EXPORTER_OTLP_ENDPOINT }}
+      # --- 機微 (GitHub Secrets から。空なら terraform の既定/自動生成にフォールバック) ---
+      TF_VAR_livekit_api_key:             ${{ secrets.LIVEKIT_API_KEY }}
+      TF_VAR_livekit_api_secret:          ${{ secrets.LIVEKIT_API_SECRET }}
+      TF_VAR_google_api_key:              ${{ secrets.GCP_GOOGLE_API_KEY }}
+      TF_VAR_elasticsearch_api_key:       ${{ secrets.ELASTICSEARCH_API_KEY }}
+      TF_VAR_session_signing_secret:      ${{ secrets.SESSION_SIGNING_SECRET }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - id: auth
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          # apply は広い権限が要るため専用 SA。未設定なら deploy 用 SA にフォールバック。
+          service_account: ${{ secrets.TF_DEPLOY_SA || secrets.DEPLOY_SA }}
+
+      # 第三者アクションの SHA を固定できない環境のため、バージョン固定 + 公式
+      # SHA256SUMS 照合で Terraform を入れる (改ざん検知込みで再現性を担保)。
+      - name: Install Terraform (pinned + checksum)
+        working-directory: /tmp
+        run: |
+          set -euo pipefail
+          base="https://releases.hashicorp.com/terraform/${TF_VERSION}"
+          curl -fsSLO "${base}/terraform_${TF_VERSION}_linux_amd64.zip"
+          curl -fsSLO "${base}/terraform_${TF_VERSION}_SHA256SUMS"
+          sha256sum --ignore-missing -c "terraform_${TF_VERSION}_SHA256SUMS"
+          unzip -o "terraform_${TF_VERSION}_linux_amd64.zip"
+          sudo mv terraform /usr/local/bin/terraform
+          terraform version
+
+      # state は GCS リモートバックエンド (bucket は vars.TF_STATE_BUCKET)。
+      - name: Terraform Init
+        run: |
+          terraform init -input=false \
+            -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
+            -backend-config="prefix=terraform/state"
+
+      - name: Terraform Format Check
+        continue-on-error: true # フォーマット差は警告に留め、plan/validate を本ゲートにする
+        run: terraform fmt -check -recursive
+
+      - name: Terraform Validate
+        run: terraform validate -no-color
+
+      - name: Terraform Plan
+        id: plan
+        continue-on-error: true # 失敗してもコメントを残してから落とす
+        run: |
+          set -o pipefail
+          terraform plan -no-color -input=false -out=tfplan 2>&1 | tee plan.txt
+
+      - name: Comment plan on PR
+        if: ${{ always() && github.event_name == 'pull_request' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            echo "#### Terraform Plan (\`${WORKDIR}\`) — ${{ steps.plan.outcome }}"
+            echo
+            echo '```hcl'
+            tail -c 60000 plan.txt
+            echo '```'
+          } > body.md
+          gh pr comment "${{ github.event.pull_request.number }}" --body-file body.md
+
+      - name: Fail if plan failed
+        if: ${{ steps.plan.outcome == 'failure' }}
+        run: |
+          echo "::error::terraform plan が失敗しました。上のログ/PRコメントを確認してください。"
+          exit 1
+
+      # 保存した plan をそのまま適用 = 「plan で問題なければ apply」。
+      - name: Terraform Apply
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.action == 'apply' }}
+        run: terraform apply -input=false -auto-approve tfplan

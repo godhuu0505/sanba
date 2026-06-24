@@ -21,6 +21,13 @@ otel_exporter_otlp_endpoint = "" # 例: "http://localhost:4317" (OTel Collector 
 # web 側は CI の vars.NEXT_PUBLIC_GOOGLE_CLIENT_ID に同じ値を設定する。
 google_oauth_client_id = "" # 例: "1234567890-abcdef.apps.googleusercontent.com"
 
+# ---- 独自ドメイン (Global 外部 HTTPS LB + Google 管理証明書) ----
+# domain が空なら LB を作らず Cloud Run 既定の *.run.app で運用。
+# domain を入れると sanba.com/www/api を 1 IP・1 証明書で配信する。
+domain                = ""        # 例: "sanba.com"（取得後に設定）
+manage_dns            = true      # Cloud DNS ゾーンを作り A レコードを LB IP に向ける。別 DNS 運用なら false
+dns_managed_zone_name = "sanba"   # manage_dns=true のときのゾーン名
+
 # ---- シークレット (Secret Manager に格納される。空なら未作成) ----
 # session_signing_secret は空のままにすると強い値を自動生成する。
 session_signing_secret = ""

@@ -10,7 +10,10 @@ terraform {
       version = "~> 3.6"
     }
   }
-  # backend "gcs" { bucket = "sanba-tfstate" prefix = "terraform/state" }
+  # リモート state (チーム/CI で共有・ロック)。bucket は環境差を避けるためコードに固定せず
+  # init 時に渡す: terraform init -backend-config="bucket=<TF_STATE_BUCKET>" -backend-config="prefix=terraform/state"
+  # ローカルで state を使わず検証だけしたいときは `terraform init -backend=false` でよい。
+  backend "gcs" {}
 }
 
 provider "google" {
