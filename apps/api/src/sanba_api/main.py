@@ -17,18 +17,29 @@ import time
 import uuid
 from collections import defaultdict, deque
 from datetime import timedelta
+from typing import Any
 
 import structlog
-from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile
+from fastapi import Depends, FastAPI, File, Header, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from livekit import api
 from pydantic import BaseModel
 
-from .auth import InvalidInvite, create_invite, verify_invite
+from . import github_export
+from .auth import (
+    InvalidInvite,
+    InvalidSessionToken,
+    SessionAccess,
+    create_invite,
+    create_session_token,
+    verify_invite,
+    verify_session_token,
+)
 from .auth_google import AuthUser, require_user
 from .config import settings
 from .ingestion import ContextIndexer, chunk_text, extract_text_from_upload
 from .observability import setup_observability
+from .repository import ReadRepository
 
 log = structlog.get_logger(__name__)
 
@@ -48,6 +59,36 @@ _join_hits: dict[str, deque[float]] = defaultdict(deque)
 
 # Context indexer shares the agent's Elasticsearch grounding index (issue #6).
 _indexer = ContextIndexer()
+
+# Read-side store for hydration APIs（契約 §4 / #100）。agent が書いた要件・検知を読む。
+_read_repo = ReadRepository()
+
+
+def require_session_access(
+    session_id: str, authorization: str | None = Header(default=None)
+) -> SessionAccess:
+    """Hydration/export を「join 済みトークン」で保護する（契約 §4）。
+
+    `session_id` をパスに含むだけでは参加者以外に漏洩するため、join 時に発行した
+    署名付きセッショントークン（Bearer）を検証し、パスの session_id と一致させる。
+    """
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="missing session token")
+    token = authorization[len("Bearer ") :]
+    try:
+        access = verify_session_token(token, settings.session_signing_secret)
+    except InvalidSessionToken as exc:
+        log.warning("session_token_rejected", reason=str(exc))
+        raise HTTPException(status_code=403, detail=f"invalid session token: {exc}") from exc
+    if access.session_id != session_id:
+        raise HTTPException(status_code=403, detail="session mismatch")
+    return access
+
+
+def _github_ready() -> bool:
+    return bool(
+        settings.github_connector_enabled and settings.github_token and settings.github_repo
+    )
 
 
 def _rate_limit(client_ip: str) -> None:
@@ -93,6 +134,27 @@ class JoinResponse(BaseModel):
     livekit_url: str
     session_id: str
     identity: str
+    # 契約 §4: ハイドレーション/起票 API を保護する「join 済みトークン」。
+    session_token: str
+
+
+class RequirementsResponse(BaseModel):
+    items: list[dict[str, Any]]
+    # 適用済み連番の境界。API は publish seq を持たないため 0 を返し、web 側の
+    # (type,id) 冪等 upsert に合流を委ねる（重複・空白は出ない）。
+    seq: int = 0
+
+
+class DetectionsResponse(BaseModel):
+    items: list[dict[str, Any]]
+
+
+class ExportResponse(BaseModel):
+    exported: bool
+    issue_url: str | None = None
+    count: int | None = None
+    doc_url: str | None = None
+    reason: str | None = None
 
 
 @app.get("/healthz")
@@ -196,10 +258,68 @@ def join_session(
         log.error("token_issue_failed", error=str(exc))
         raise HTTPException(status_code=500, detail="failed to issue token") from exc
 
+    # ハイドレーション/起票 API を保護する署名トークン（契約 §4）。LiveKit トークンと
+    # 同じ寿命にして、リロード時の GET /requirements が同じ間だけ通るようにする。
+    session_token = create_session_token(
+        session_id,
+        user.sub,
+        role,
+        settings.session_signing_secret,
+        ttl_seconds=settings.livekit_token_ttl_minutes * 60,
+    )
+
     log.info("session_join", session=session_id, identity=identity, role=role, sub=user.sub)
     return JoinResponse(
         token=token,
         livekit_url=settings.livekit_url,
         session_id=session_id,
         identity=identity,
+        session_token=session_token,
     )
+
+
+# ── ハイドレーション & 起票 API（契約 §4 / Issue #100）─────────────────────────
+
+
+@app.get("/api/sessions/{session_id}/requirements", response_model=RequirementsResponse)
+def get_requirements(
+    session_id: str, access: SessionAccess = Depends(require_session_access)
+) -> RequirementsResponse:
+    """確定/下書き要件のスナップショット（契約 §4 P0）。08/09 のハイドレーション前提。"""
+    items = _read_repo.list_requirements(session_id)
+    log.info("requirements_hydrated", session=session_id, count=len(items), sub=access.sub)
+    return RequirementsResponse(items=items, seq=0)
+
+
+@app.get("/api/sessions/{session_id}/detections", response_model=DetectionsResponse)
+def get_detections(
+    session_id: str,
+    open: int = 1,
+    access: SessionAccess = Depends(require_session_access),
+) -> DetectionsResponse:
+    """未解消の矛盾/抜け（契約 §4 P1）。05/08 の途中参加復元に使う。"""
+    items = _read_repo.list_open_detections(session_id)
+    log.info("detections_hydrated", session=session_id, count=len(items), open=open)
+    return DetectionsResponse(items=items)
+
+
+@app.post("/api/sessions/{session_id}/export", response_model=ExportResponse)
+def export_requirements(
+    session_id: str, access: SessionAccess = Depends(require_session_access)
+) -> ExportResponse:
+    """確定要件を GitHub Issue として起票する（契約 §4 P1 / #39 ループ）。"""
+    if not _github_ready():
+        return ExportResponse(exported=False, reason="github connector disabled")
+    requirements = _read_repo.list_requirements(session_id)
+    title, body = github_export.requirements_to_issue_body(requirements, session_id)
+    url = github_export.create_issue(settings.github_token, settings.github_repo, title, body)
+    if url is None:
+        return ExportResponse(exported=False, reason="issue creation failed")
+    log.info(
+        "requirements_exported",
+        session=session_id,
+        count=len(requirements),
+        url=url,
+        sub=access.sub,
+    )
+    return ExportResponse(exported=True, issue_url=url, count=len(requirements))

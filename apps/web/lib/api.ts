@@ -20,6 +20,9 @@ export interface JoinResponse {
   livekit_url: string;
   session_id: string;
   identity: string;
+  // 契約 §4: ハイドレーション/起票 API（GET /requirements 等）を保護する
+  // 「join 済みトークン」。Google idToken ではなくこれを Bearer に使う。
+  session_token: string;
 }
 
 export async function createSession(
@@ -64,13 +67,15 @@ export interface DetectionsSnapshot {
   seq?: number;
 }
 
+// 以下のハイドレーション/起票 API は join 済みトークン（session_token）を Bearer に渡す。
+
 /** GET /api/sessions/{id}/requirements（P0）。確定/下書き要件のスナップショット。 */
 export async function fetchRequirements(
   sessionId: string,
-  idToken: string | null,
+  sessionToken: string | null,
 ): Promise<RequirementsSnapshot> {
   const res = await fetch(`${API_URL}/api/sessions/${sessionId}/requirements`, {
-    headers: authHeaders(idToken),
+    headers: authHeaders(sessionToken),
   });
   if (!res.ok) throw new Error(`fetch requirements failed: ${res.status}`);
   return res.json();
@@ -79,11 +84,11 @@ export async function fetchRequirements(
 /** GET /api/sessions/{id}/detections?open=1（P1）。未解消の矛盾/抜け。 */
 export async function fetchDetections(
   sessionId: string,
-  idToken: string | null,
+  sessionToken: string | null,
 ): Promise<DetectionsSnapshot> {
   const res = await fetch(
     `${API_URL}/api/sessions/${sessionId}/detections?open=1`,
-    { headers: authHeaders(idToken) },
+    { headers: authHeaders(sessionToken) },
   );
   if (!res.ok) throw new Error(`fetch detections failed: ${res.status}`);
   return res.json();
@@ -100,11 +105,11 @@ export interface ExportResult {
 /** POST /api/sessions/{id}/export（P1）。要件を GitHub Issue に書き戻す（#39）。 */
 export async function exportRequirements(
   sessionId: string,
-  idToken: string | null,
+  sessionToken: string | null,
 ): Promise<ExportResult> {
   const res = await fetch(`${API_URL}/api/sessions/${sessionId}/export`, {
     method: "POST",
-    headers: authHeaders(idToken),
+    headers: authHeaders(sessionToken),
   });
   if (!res.ok) throw new Error(`export failed: ${res.status}`);
   return res.json();
