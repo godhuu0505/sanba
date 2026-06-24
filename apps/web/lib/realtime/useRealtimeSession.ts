@@ -11,7 +11,13 @@
 //   - fixture: backend 非依存で契約フィクスチャを再生（静的 UI 先行着手用）
 
 import { useDataChannel } from "@livekit/components-react";
-import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useSyncExternalStore,
+} from "react";
 import { fetchDetections, fetchRequirements } from "../api";
 import { contractEventFixture } from "./fixtures";
 import { RealtimeMetrics, type RealtimeMetricsSnapshot } from "./metrics";
@@ -33,24 +39,26 @@ interface LiveOptions {
   hydrateDetections?: boolean;
 }
 
-/** ストアと metrics を生成し、React に購読させる土台。 */
+/** ストアと metrics を生成し、両方を React に購読させる土台。 */
 function useStore(): {
   store: RealtimeStore;
   state: SessionState;
   metrics: RealtimeMetricsSnapshot;
 } {
-  // metrics は変更通知でストアを invalidate しないよう、独立の購読を持つ。
-  const metricsRef = useRef<RealtimeMetrics | null>(null);
   const storeRef = useRef<RealtimeStore | null>(null);
   if (storeRef.current === null) {
-    const metrics = new RealtimeMetrics();
-    metricsRef.current = metrics;
-    storeRef.current = new RealtimeStore(metrics);
+    storeRef.current = new RealtimeStore(new RealtimeMetrics());
   }
   const store = storeRef.current;
 
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
-  const metrics = store.metrics.read();
+  // メトリクスも購読する。recordDropped/recordDuplicate のようにストア状態が変わらない
+  // 更新でも観測値の変化として再描画される（不正/重複が UI に即反映される）。
+  const metrics = useSyncExternalStore(
+    store.metrics.subscribe,
+    store.metrics.getSnapshot,
+    store.metrics.getSnapshot,
+  );
   return { store, state, metrics };
 }
 
@@ -66,6 +74,7 @@ export function useRealtimeSession(opts: LiveOptions): UseRealtimeSessionResult 
   const onMessage = useCallback(
     (msg: { payload: Uint8Array }) => {
       const { event } = decodeServerEvent(msg.payload);
+      // session_id 照合・整列・冪等はストアが一括で担う（store.apply）。
       if (event) store.apply(event);
       else store.metrics.recordDropped();
     },
@@ -74,29 +83,38 @@ export function useRealtimeSession(opts: LiveOptions): UseRealtimeSessionResult 
   useDataChannel(EVENTS_TOPIC, onMessage);
 
   // 2) スナップショット取得 → seq 境界を確定。以後ライブ差分のみ適用される。
+  //    欠番検知時にも同じ取得を再実行し、欠落分を復元する（契約 §4）。
+  const hydrate = useCallback(async () => {
+    if (!sessionId) return;
+    try {
+      const snap = await fetchRequirements(sessionId, idToken);
+      store.hydrateRequirements(snap.items, snap.seq);
+    } catch {
+      // backend 未完/失敗でもライブ差分で前進できる（ハイドレーションは補助）。
+    }
+    if (hydrateDetections) {
+      try {
+        const snap = await fetchDetections(sessionId, idToken);
+        store.hydrateDetections(snap.items, snap.seq ?? 0);
+      } catch {
+        /* P1・任意 */
+      }
+    }
+  }, [sessionId, idToken, hydrateDetections, store]);
+
   useEffect(() => {
     if (!sessionId) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const snap = await fetchRequirements(sessionId, idToken);
-        if (!cancelled) store.hydrateRequirements(snap.items, snap.seq);
-      } catch {
-        // backend 未完/失敗でもライブ差分で前進できる（ハイドレーションは補助）。
-      }
-      if (hydrateDetections) {
-        try {
-          const snap = await fetchDetections(sessionId, idToken);
-          if (!cancelled) store.hydrateDetections(snap.items, snap.seq ?? 0);
-        } catch {
-          /* P1・任意 */
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [sessionId, idToken, hydrateDetections, store]);
+    // セッションが変わったら前セッションの状態を持ち越さない（混在防止）。
+    store.clear();
+    store.setExpectedSessionId(sessionId);
+    void hydrate();
+    // 欠番検知で再ハイドレーション（切断中に逃した差分を GET で取り直す）。
+    const off = store.onGapDetected(() => {
+      store.metrics.recordReconnect();
+      void hydrate();
+    });
+    return off;
+  }, [sessionId, store, hydrate]);
 
   return { state, metrics, store };
 }

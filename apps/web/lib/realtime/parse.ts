@@ -19,8 +19,45 @@ const KNOWN_TYPES: ReadonlySet<string> = new Set<ServerEventType>([
 
 export interface DecodeResult {
   event: ServerEvent | null;
-  /** 破棄理由（観測性・デバッグ用）。null なら成功。 */
-  reason: "ok" | "not-json" | "bad-envelope" | "unknown-type" | "version" | null;
+  /** 破棄理由（観測性・デバッグ用）。null なし。 */
+  reason:
+    | "ok"
+    | "not-json"
+    | "bad-envelope"
+    | "unknown-type"
+    | "version"
+    | "bad-payload";
+}
+
+// 種別ごとの必須フィールド（契約 §3）。エンベロープが正しくても、ここを満たさない
+// 不完全メッセージは ServerEvent として通さない（store.apply が落ちるのを防ぐ）。
+const REQUIRED_FIELDS: Record<ServerEventType, readonly string[]> = {
+  status: ["phase"],
+  "transcript.partial": ["speaker", "role", "utterance_id", "text"],
+  "transcript.final": ["speaker", "role", "utterance_id", "text"],
+  "detection.contradiction": ["id", "summary", "refs", "detector"],
+  "detection.gap": ["id", "summary", "category", "refs", "detector"],
+  "detection.resolved": ["detection_id", "resolution"],
+  "requirement.upserted": ["requirement"],
+  "analysis.progress": ["asset_id", "pct", "stage"],
+  "analysis.visual": ["asset_id", "extracted", "conflicts"],
+  "session.completed": ["summary", "artifacts"],
+};
+
+// requirement.upserted の入れ子 requirement の必須フィールド。
+const REQUIREMENT_FIELDS = [
+  "id",
+  "statement",
+  "category",
+  "priority",
+  "confidence",
+  "source_speaker",
+  "citations",
+  "status",
+] as const;
+
+function hasFields(obj: Record<string, unknown>, fields: readonly string[]): boolean {
+  return fields.every((f) => obj[f] !== undefined && obj[f] !== null);
 }
 
 const decoder = new TextDecoder();
@@ -55,6 +92,22 @@ export function decodeServerEvent(payload: Uint8Array | string): DecodeResult {
   }
   if (!KNOWN_TYPES.has(obj.type)) {
     return { event: null, reason: "unknown-type" };
+  }
+
+  // 種別ごとの必須ペイロードまで検証してから ok にする（受信境界の堅牢化）。
+  const type = obj.type as ServerEventType;
+  if (!hasFields(obj, REQUIRED_FIELDS[type])) {
+    return { event: null, reason: "bad-payload" };
+  }
+  if (type === "requirement.upserted") {
+    const req = obj.requirement;
+    if (
+      typeof req !== "object" ||
+      req === null ||
+      !hasFields(req as Record<string, unknown>, REQUIREMENT_FIELDS)
+    ) {
+      return { event: null, reason: "bad-payload" };
+    }
   }
 
   return { event: obj as unknown as ServerEvent, reason: "ok" };

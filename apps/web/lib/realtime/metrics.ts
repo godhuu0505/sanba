@@ -1,15 +1,16 @@
 // 受信基盤の観測性（CLAUDE.md 原則3 / 契約 §5）。
 // 「観測できないものは運用できない」— 受信数・破棄・欠番・再接続・適用遅延を数える。
 //
-// バックエンド非依存で動くよう、ここでは軽量なカウンタとして保持し、必要なら
-// onFlush コールバックで OTel / ログ基盤へ転送する（送信先は環境側で差し替え可能）。
+// React から購読できるよう useSyncExternalStore 互換の subscribe / getSnapshot を持つ。
+// recordDropped() / recordDuplicate() のようにストア状態が変わらない更新でも、観測値の
+// 変化として再描画されるようにする（不正 JSON・重複が UI のメトリクスに即反映される）。
 
 export interface RealtimeMetricsSnapshot {
   /** デコードに成功し適用対象になった受信イベント数。 */
   received: number;
   /** seq ≤ 適用済み、または (type,id) 重複で適用しなかった件数。 */
   duplicates: number;
-  /** デコード失敗（不正 JSON / エンベロープ / 未知種別 / 版不一致）。 */
+  /** デコード失敗（不正 JSON / エンベロープ / 未知種別 / 版不一致 / 別セッション）。 */
   dropped: number;
   /** seq の欠番（連続性が途切れた）を検知した回数。 */
   gaps: number;
@@ -32,11 +33,21 @@ function emptySnapshot(): RealtimeMetricsSnapshot {
 
 export class RealtimeMetrics {
   private snapshot = emptySnapshot();
+  private cached: RealtimeMetricsSnapshot = this.snapshot;
+  private listeners = new Set<() => void>();
 
-  constructor(private readonly onChange?: (s: RealtimeMetricsSnapshot) => void) {}
+  subscribe = (listener: () => void): (() => void) => {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  };
+
+  /** useSyncExternalStore 用。変化が無ければ同一参照を返す（再レンダーループ防止）。 */
+  getSnapshot = (): RealtimeMetricsSnapshot => this.cached;
 
   private touch(): void {
-    this.onChange?.(this.read());
+    // 不変スナップショットを作り直し、購読者へ通知する。
+    this.cached = { ...this.snapshot };
+    for (const l of this.listeners) l();
   }
 
   recordReceived(): void {
@@ -70,7 +81,7 @@ export class RealtimeMetrics {
   }
 
   read(): RealtimeMetricsSnapshot {
-    return { ...this.snapshot };
+    return this.cached;
   }
 
   reset(): void {
