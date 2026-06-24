@@ -26,7 +26,13 @@ from livekit.agents.llm import function_tool
 from livekit.plugins import google
 
 from .config import settings
-from .events import DETECTOR_NFR, EventPublisher, LiveKitTransport
+from .events import (
+    DETECTOR_NFR,
+    WEB_EVENTS_TOPIC,
+    EventPublisher,
+    LiveKitTransport,
+    decode_user_selection,
+)
 from .models import Priority, Requirement, RequirementCategory, Utterance
 from .observability import setup_observability
 from .prompts.interview import VOICE_AGENT_INSTRUCTIONS
@@ -87,6 +93,29 @@ class SANBAAgent(Agent):
             self._publish(self._publisher.transcript_final(speaker, role, utterance_id, text))
         return utterance_id
 
+    async def resolve_detection(self, detection_id: str, selected_value: str) -> None:
+        """ユーザーの選択（user.selection, 契約 §4.5）を受けて検知を解消する（#102）。
+
+        web の検知カードで選択肢がタップされると呼ばれ、当該検知を解消済みにして
+        detection.resolved を web へ返す（カードが閉じ、リロードでも未解消に戻らない）。
+        選択内容は以後の会話の前提として記録しておく。
+        """
+        self._transcript.append(f"[選択] {detection_id} → {selected_value}")
+        # 永続化して open スナップショットから外す（リロード後も未解消に戻さない）。
+        self._repo.resolve_detection(self._session_id, detection_id, "user_selected")
+        self._published_gaps.discard(detection_id)
+        if self._publisher is not None:
+            await self._publisher.detection_resolved(
+                detection_id, resolution="user_selected", selected_value=selected_value
+            )
+            self._repo.set_session_seq(self._session_id, self._publisher.seq)
+        log.info(
+            "detection_resolved",
+            session=self._session_id,
+            detection=detection_id,
+            value=selected_value,
+        )
+
     @function_tool
     async def analyze_requirements(self, _ctx: RunContext) -> dict:
         """これまでの会話から確定要件を点検し、次に聞くべき1問を返す。
@@ -105,19 +134,40 @@ class SANBAAgent(Agent):
         )
         # 抜け（未確認の論点）を detection.gap として web に上げる（05/08 の黄土）。
         if self._publisher is not None:
-            for topic in result.open_topics:
-                gap_id = make_requirement_id(f"gap:{topic}")
+            current = {make_requirement_id(f"gap:{t}"): t for t in result.open_topics}
+            # 新規の抜けを永続化 + publish（リロードでも復元できるよう Firestore に保存）。
+            for gap_id, topic in current.items():
                 if gap_id in self._published_gaps:
                     continue
                 self._published_gaps.add(gap_id)
+                summary = f"{topic}が未確認です。"
+                self._repo.save_detection(
+                    self._session_id,
+                    {
+                        "id": gap_id,
+                        "kind": "gap",
+                        "summary": summary,
+                        "category": "non_functional",
+                        "refs": [],
+                        "detector": DETECTOR_NFR,
+                        "resolved": False,
+                    },
+                )
                 await self._publisher.detection_gap(
                     gap_id,
-                    summary=f"{topic}が未確認です。",
+                    summary=summary,
                     category="non_functional",
                     refs=[],
                     detector=DETECTOR_NFR,
                 )
+            # 会話で埋まり open_topics から外れた抜けは agent_resolved で閉じる（音声回答の反映）。
+            for gap_id in list(self._published_gaps):
+                if gap_id not in current:
+                    self._published_gaps.discard(gap_id)
+                    self._repo.resolve_detection(self._session_id, gap_id, "agent_resolved")
+                    await self._publisher.detection_resolved(gap_id, resolution="agent_resolved")
             await self._publisher.status("listening")
+            self._repo.set_session_seq(self._session_id, self._publisher.seq)
         return result.model_dump(mode="json")
 
     @function_tool
@@ -153,6 +203,7 @@ class SANBAAgent(Agent):
         )
         if self._publisher is not None:
             await self._publisher.requirement_upserted(requirement, status="confirmed")
+            self._repo.set_session_seq(self._session_id, self._publisher.seq)
         log.info("requirement_saved", session=self._session_id, id=requirement.id)
         return {"saved": requirement.id}
 
@@ -187,6 +238,7 @@ class SANBAAgent(Agent):
                 conflicts=[],
             )
             await self._publisher.requirement_upserted(requirement, status="confirmed")
+            self._repo.set_session_seq(self._session_id, self._publisher.seq)
         log.info("visual_requirement", session=self._session_id, id=requirement.id)
         return {"saved": requirement.id, "from": "screen-share"}
 
@@ -316,6 +368,18 @@ async def entrypoint(ctx: JobContext) -> None:
         if getattr(ev, "is_final", False) and ev.transcript:
             speaker = "participant"
             agent.record_utterance(speaker, ev.transcript)
+
+    # web → agent の user.selection を受信し、検知を解消する（契約 §4.5 / #102）。
+    def _on_data(packet) -> None:  # type: ignore[no-untyped-def]
+        if getattr(packet, "topic", None) != WEB_EVENTS_TOPIC:
+            return
+        parsed = decode_user_selection(getattr(packet, "data", b""))
+        if parsed is None:
+            return
+        detection_id, selected_value = parsed
+        asyncio.create_task(agent.resolve_detection(detection_id, selected_value))
+
+    ctx.room.on("data_received", _on_data)
 
     # video_enabled=True forwards screen-share / camera frames to Gemini Live,
     # so the agent can read mockups and whiteboards (multimodal grounding).
