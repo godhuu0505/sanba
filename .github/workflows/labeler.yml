@@ -1,0 +1,21 @@
+name: PR Auto-label
+
+# 変更パスから area:* を自動付与する。
+# 同一リポジトリのブランチ PR（信頼チーム運用・ADR-0015 §10）を対象とし、
+# pull_request_target は使わない（fork の未信頼コードに書込トークンを晒さない）。
+# 既定 GITHUB_TOKEN を read-only にしているため、ここで pull-requests:write を明示付与する。
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  label:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/labeler@f27b608878404679385c85cfa523b85ccb86e213 # v6.1.0
+        with:
+          sync-labels: true # 該当しなくなった area:* は外す（area 軸を path と一致させる）
