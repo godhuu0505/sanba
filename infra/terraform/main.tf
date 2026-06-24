@@ -41,6 +41,7 @@ resource "google_project_service" "services" {
     "iamcredentials.googleapis.com",       # WIF / SA インパーソネーション
     "sts.googleapis.com",                  # WIF トークン交換
     "storage.googleapis.com",              # GCS リモート state
+    "billingbudgets.googleapis.com",       # 予算アラート (google_billing_budget)
   ])
   service            = each.value
   disable_on_destroy = false
@@ -132,4 +133,5 @@ resource "google_billing_budget" "monthly" {
   threshold_rules { threshold_percent = 0.5 }
   threshold_rules { threshold_percent = 0.9 }
   threshold_rules { threshold_percent = 1.0 }
+  depends_on = [google_project_service.services] # billingbudgets API 有効化を待つ
 }

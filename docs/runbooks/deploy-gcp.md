@@ -232,9 +232,13 @@ for ROLE in roles/run.admin roles/compute.admin roles/dns.admin \
             roles/secretmanager.admin roles/datastore.owner \
             roles/artifactregistry.admin roles/iam.serviceAccountAdmin \
             roles/resourcemanager.projectIamAdmin roles/serviceusage.serviceUsageAdmin \
-            roles/storage.admin roles/billing.viewer; do
+            roles/storage.admin; do
   gcloud projects add-iam-policy-binding "$PROJECT_ID" --member="serviceAccount:$TF_SA" --role="$ROLE"
 done
+# 予算アラート (google_billing_budget) を CI で管理する場合のみ。billing 系ロールは
+# プロジェクトではなく「課金アカウント」スコープなので別コマンドで付与する。
+gcloud billing accounts add-iam-policy-binding "$BILLING_ACCOUNT" \
+  --member="serviceAccount:$TF_SA" --role="roles/billing.costsManager"
 # WIF からこの SA を借用できるよう許可（§3 の POOL/REPO を流用）
 gcloud iam service-accounts add-iam-policy-binding "$TF_SA" \
   --role=roles/iam.workloadIdentityUser \
