@@ -59,6 +59,9 @@ class Requirement(BaseModel):
     priority: Priority = Priority.SHOULD
     source_speaker: str | None = None
     confidence: float = Field(default=0.7, ge=0.0, le=1.0)
+    # 根拠となった発話 id（"u3" 等。transcript.* / detection.refs と同じ id 空間）。
+    # 契約 §3 の citations:[{kind, ref}] へ整形して web に送る（要件カードの引用表示）。
+    citations: list[str] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=_now)
 
     # ---- レビュー状態 (ADR-0014) ----

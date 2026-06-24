@@ -6,6 +6,7 @@ Firestore 無しのメモリモードで、検知の保存・解消・seq 永続
 
 from __future__ import annotations
 
+from sanba_shared.models import Utterance
 from sanba_shared.repository import SessionRepository
 
 
@@ -13,6 +14,15 @@ def _mem_repo() -> SessionRepository:
     repo = SessionRepository()
     repo._client = None  # force in-memory path
     return repo
+
+
+def test_add_utterance_masks_pii_before_persist() -> None:
+    """発話は永続化前に PII マスキングされる（issue #10 / mask_pii_before_index）。"""
+    repo = _mem_repo()
+    repo.add_utterance("s1", Utterance(speaker="participant", text="連絡は bob@example.com まで"))
+    stored = repo._mem_utterances["s1"][0]
+    assert "bob@example.com" not in stored.text
+    assert "[EMAIL]" in stored.text
 
 
 def test_save_and_resolve_detection() -> None:

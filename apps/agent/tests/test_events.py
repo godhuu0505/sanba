@@ -93,6 +93,25 @@ async def test_requirement_upserted_matches_contract_schema() -> None:
 
 
 @pytest.mark.asyncio
+async def test_requirement_citations_map_to_contract() -> None:
+    """citations（根拠発話 id）が契約 §3 の [{kind, ref}] 形へ整形される（#133）。"""
+    t = RecordingTransport()
+    pub = EventPublisher("s1", t)
+    req = Requirement(
+        id="req_y",
+        statement="検索結果は1秒以内に返す",
+        category=RequirementCategory.NON_FUNCTIONAL,
+        citations=["u3", "u5"],
+    )
+    await pub.requirement_upserted(req, status="confirmed")
+    payload = t.sent[0]["event"]["requirement"]
+    assert payload["citations"] == [
+        {"kind": "utterance", "ref": "u3"},
+        {"kind": "utterance", "ref": "u5"},
+    ]
+
+
+@pytest.mark.asyncio
 async def test_counters_track_detections() -> None:
     t = RecordingTransport()
     pub = EventPublisher("s1", t)
@@ -161,6 +180,33 @@ def test_decode_user_selection_rejects_missing_fields() -> None:
 
 def test_decode_user_selection_rejects_bad_json() -> None:
     assert decode_user_selection(b"\xff\xfe not json") is None
+
+
+def test_decode_user_selection_accepts_matching_session() -> None:
+    payload = json.dumps(
+        {
+            "v": 1,
+            "type": "user.selection",
+            "session_id": "s1",
+            "detection_id": "d1",
+            "selected_value": "relevance",
+        }
+    ).encode()
+    assert decode_user_selection(payload, expected_session_id="s1") == ("d1", "relevance")
+
+
+def test_decode_user_selection_rejects_other_session() -> None:
+    """別セッション向け selection の混入を弾く（#132）。"""
+    payload = json.dumps(
+        {
+            "v": 1,
+            "type": "user.selection",
+            "session_id": "s-other",
+            "detection_id": "d1",
+            "selected_value": "relevance",
+        }
+    ).encode()
+    assert decode_user_selection(payload, expected_session_id="s1") is None
 
 
 def test_requirement_to_contract_handles_missing_speaker() -> None:

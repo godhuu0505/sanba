@@ -87,7 +87,10 @@ if settings.firestore_emulator_host:
     os.environ.setdefault("FIRESTORE_EMULATOR_HOST", settings.firestore_emulator_host)
 
 # セッション/要件の永続化境界 (ADR-0014)。agent と同じ sanba_shared を使う。
-_repo = SessionRepository(data_retention_days=settings.data_retention_days)
+_repo = SessionRepository(
+    data_retention_days=settings.data_retention_days,
+    mask_pii_before_persist=settings.mask_pii_before_index,
+)
 
 # Read-side store for hydration APIs（契約 §4 / #100）。agent が書いた要件・検知を読む。
 _read_repo = ReadRepository()
@@ -233,18 +236,34 @@ def create_session(
 
 
 @app.post("/api/sessions/{session_id}/context", response_model=ContextResponse)
-def add_context(session_id: str, req: ContextRequest) -> ContextResponse:
-    """Register reference text for a session; chunks go to RAG grounding."""
+def add_context(
+    session_id: str,
+    req: ContextRequest,
+    access: SessionAccess = Depends(require_session_access),
+) -> ContextResponse:
+    """Register reference text for a session; chunks go to RAG grounding.
+
+    認可（契約 §4）: join 済みセッショントークン必須。これが無いと匿名で任意
+    session_id の RAG グラウンディングを汚染できてしまう（参加者以外の書き込み禁止）。
+    """
     if len(req.text) > settings.max_context_chars:
         raise HTTPException(status_code=413, detail="context too large")
     chunks = chunk_text(req.text)
     n = _indexer.index_context(session_id, chunks, req.source_name)
+    log.info("context_indexed", session=session_id, chunks=n, sub=access.sub)
     return ContextResponse(indexed_chunks=n)
 
 
 @app.post("/api/sessions/{session_id}/context/file", response_model=ContextResponse)
-async def add_context_file(session_id: str, file: UploadFile = File(...)) -> ContextResponse:
+async def add_context_file(
+    session_id: str,
+    file: UploadFile = File(...),
+    access: SessionAccess = Depends(require_session_access),
+) -> ContextResponse:
     """Register an uploaded file as session context.
+
+    認可（契約 §4）: join 済みセッショントークン必須（text 版と同じく参加者限定）。これが
+    無いと匿名で任意 session_id の grounding を汚染できてしまう。
 
     txt/md/pdf はテキストとして grounding 索引に入れる（既存）。画像/動画は Cloud Storage に
     保存し、安定 `asset_id` を返す（issue #103 / ADR-0004）。画像は Gemini で観察を抽出して
@@ -292,7 +311,13 @@ async def add_context_file(session_id: str, file: UploadFile = File(...)) -> Con
         # 動画解析は未実装: 保存のみ済ませ、web には「準備中」を返す。
         if kind == "video" and not settings.enable_video_analysis:
             record_asset_upload("video", "pending")
-            log.info("asset_pending", session=session_id, asset_id=asset.asset_id, kind=kind)
+            log.info(
+                "asset_pending",
+                session=session_id,
+                asset_id=asset.asset_id,
+                kind=kind,
+                sub=access.sub,
+            )
             return ContextResponse(
                 indexed_chunks=0,
                 asset_id=asset.asset_id,
@@ -312,6 +337,7 @@ async def add_context_file(session_id: str, file: UploadFile = File(...)) -> Con
             asset_id=asset.asset_id,
             kind=kind,
             observations=len(observations),
+            sub=access.sub,
         )
         return ContextResponse(
             indexed_chunks=indexed,
