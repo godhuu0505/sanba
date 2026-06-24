@@ -1,3 +1,4 @@
+import "./globals.css";
 import "@livekit/components-styles";
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
@@ -10,7 +11,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="ja">
-      <body style={{ margin: 0, fontFamily: "system-ui, sans-serif" }}>{children}</body>
+      <body className="m-0 min-h-screen">{children}</body>
     </html>
   );
 }
