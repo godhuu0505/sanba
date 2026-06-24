@@ -12,6 +12,7 @@ import structlog
 
 from .config import settings
 from .models import Requirement, Utterance
+from .pii import mask_pii
 
 log = structlog.get_logger(__name__)
 
@@ -48,8 +49,14 @@ class SessionRepository:
             return None
 
     def add_utterance(self, session_id: str, utterance: Utterance) -> None:
+        # PII を含みうる発話は永続化前にマスクする（issue #10 / mask_pii_before_index）。
+        # grounding 索引は retrieval 側でマスク済みだが、Firestore 保存経路でも同じ方針を
+        # 適用し、生 PII が at-rest で残らないようにする（マスキング欠落の是正）。
+        stored = utterance
+        if settings.mask_pii_before_index:
+            stored = utterance.model_copy(update={"text": mask_pii(utterance.text)})
         if self._client is not None:
-            doc = utterance.model_dump(mode="json")
+            doc = stored.model_dump(mode="json")
             if (exp := _expire_at()) is not None:
                 doc["expireAt"] = exp
             (
@@ -59,7 +66,7 @@ class SessionRepository:
                 .add(doc)
             )
             return
-        self._mem_utterances.setdefault(session_id, []).append(utterance)
+        self._mem_utterances.setdefault(session_id, []).append(stored)
 
     def save_requirement(self, session_id: str, requirement: Requirement) -> None:
         if self._client is not None:

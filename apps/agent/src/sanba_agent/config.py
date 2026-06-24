@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     # Observability
     otel_exporter_otlp_endpoint: str = ""
     otel_service_name: str = "sanba-agent"
+    # OTLP 転送の TLS。localhost collector sidecar 構成では true（平文 gRPC）、
+    # TLS 終端された外部 OTLP（Cloud Trace / Grafana Cloud 直送）では false（既定）。
+    otel_exporter_insecure: bool = False
     langfuse_host: str = ""
     langfuse_public_key: str = ""
     langfuse_secret_key: str = ""

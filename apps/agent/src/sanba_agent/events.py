@@ -266,15 +266,20 @@ def requirement_to_contract(requirement: Requirement, status: str) -> dict[str, 
         "priority": str(requirement.priority),
         "confidence": requirement.confidence,
         "source_speaker": requirement.source_speaker or "",
-        "citations": [],
+        "citations": [{"kind": "utterance", "ref": ref} for ref in requirement.citations],
         "status": status,
     }
 
 
-def decode_user_selection(payload: bytes | str) -> tuple[str, str] | None:
+def decode_user_selection(
+    payload: bytes | str, *, expected_session_id: str | None = None
+) -> tuple[str, str] | None:
     """web → agent の user.selection（契約 §4.5）をデコードする。
 
     検証に通れば ``(detection_id, selected_value)`` を返す。不正なら None。
+    ``expected_session_id`` を渡すと、エンベロープの ``session_id`` が一致しない
+    メッセージを破棄する（同一 LiveKit ルーム内の別セッション向け selection 混入を防ぐ。
+    web 側 store の ``expectedSessionId`` 照合と対称な受信境界）。
     LiveKit ランタイムに依存しないので単体テストできる（#102）。
     """
     try:
@@ -283,6 +288,8 @@ def decode_user_selection(payload: bytes | str) -> tuple[str, str] | None:
     except (UnicodeDecodeError, json.JSONDecodeError):
         return None
     if not isinstance(obj, dict) or obj.get("type") != "user.selection":
+        return None
+    if expected_session_id is not None and obj.get("session_id") != expected_session_id:
         return None
     detection_id = obj.get("detection_id")
     selected_value = obj.get("selected_value")
