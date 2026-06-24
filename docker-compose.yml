@@ -69,6 +69,11 @@ services:
       context: .
       dockerfile: apps/agent/Dockerfile
     env_file: .env.local
+    environment:
+      # agent は LiveKit worker として server に接続する。コンテナ内から localhost は
+      # 自分自身を指すため、.env.local の ws://localhost:7880 では届かない。docker の
+      # サービス名で上書きする (api/web が返す/焼き込む URL はブラウザ向けの localhost のまま)。
+      LIVEKIT_URL: ws://livekit:7880
     command: ["start"]
     depends_on:
       livekit:

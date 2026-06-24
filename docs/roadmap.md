@@ -6,7 +6,7 @@
 - [x] モノレポ構成・設計ドキュメント・ADR
 - [x] docker compose（agent/api/web/observability/langfuse）
 - [x] CI/CD・Terraform・可観測性スタックの雛形
-- [ ] `.env.local` を設定して `just up` が通ることの確認
+- [x] `.env.local` を設定して `just up` / `just up-full` が通ることを確認（issue #38。verify-full 12/12、agent→livekit 配線修正込み）
 
 ## Phase 1 — 1:1 音声インタビュー MVP
 - [ ] LiveKit + Gemini Live で 1 参加者と speech-to-speech 対話
