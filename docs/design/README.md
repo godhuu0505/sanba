@@ -16,6 +16,7 @@
 - 📱📐 **スマホ / タブレット版**：➡️ **[`mockups/sanba-ux-responsive.html`](mockups/sanba-ux-responsive.html)**（デバイスフレーム入り）
 - 🖼✨ **マルチモーダル I/O 版**：➡️ **[`mockups/sanba-ux-multimodal.html`](mockups/sanba-ux-multimodal.html)**（画像・動画の提供 ⇄ 完成イメージ生成）
 - 🏛✨ **テーマ原典「産婆術アトリエ」**：➡️ **[`mockups/sanba-ux-atelier.html`](mockups/sanba-ux-atelier.html)**（テーマの定義・写像・典拠。下記 §0）
+- 📱📐💻 **デバイス実寸モック**：➡️ **[`mockups/sanba-ux-devices.html`](mockups/sanba-ux-devices.html)**（iPhone 13 Pro 390×844 / iPad mini 7 744×1133 / MacBook Pro 14" 1512×982 を実寸アートボード化。会話中・結果・素材を渡す・ダッシュボード）
 
 ```bash
 # ローカルで開く（macOS は open / Linux は xdg-open）
