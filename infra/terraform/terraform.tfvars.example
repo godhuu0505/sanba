@@ -22,11 +22,16 @@ otel_exporter_otlp_endpoint = "" # 例: "http://localhost:4317" (OTel Collector 
 google_oauth_client_id = "" # 例: "1234567890-abcdef.apps.googleusercontent.com"
 
 # ---- 独自ドメイン (Global 外部 HTTPS LB + Google 管理証明書) ----
+# OSS なのでドメインはコードに焼かず、各自ここ (または CI の GitHub Variables) で設定する。
 # domain が空なら LB を作らず Cloud Run 既定の *.run.app で運用。
-# domain を入れると sanba.com/www/api を 1 IP・1 証明書で配信する。
-domain                = ""        # 例: "sanba.com"（取得後に設定）
-manage_dns            = true      # Cloud DNS ゾーンを作り A レコードを LB IP に向ける。別 DNS 運用なら false
-dns_managed_zone_name = "sanba"   # manage_dns=true のときのゾーン名
+# - web_subdomain="" : <domain>/www/api を配信 (apex 配信・従来挙動)。
+# - web_subdomain="x": x.<domain> で web を配信、api.x.<domain> で api を配信、
+#                      apex/www は x.<domain> へ 301 リダイレクト。
+# 例 (メンテナ環境): domain="sanba.net", web_subdomain="youken" → ログインは https://youken.sanba.net。
+domain                = ""           # 例: "example.com"（取得後に設定）
+web_subdomain         = ""           # 例: "youken"（web をサブドメインに置くとき。空=apex 配信）
+manage_dns            = true         # Cloud DNS ゾーンを作り A レコードを LB IP に向ける。別 DNS 運用なら false
+dns_managed_zone_name = "sanba"      # manage_dns=true のときのゾーン名
 
 # ---- シークレット (Secret Manager を値の唯一の置き場にする) ----
 # アプリ秘匿値 (livekit/elasticsearch/google) は terraform では扱わない。値は gcloud で

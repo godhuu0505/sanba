@@ -107,10 +107,20 @@ variable "otel_exporter_otlp_endpoint" {
 # 本番 URL を Cloud Run 既定の *.run.app から独自ドメインへ。Global 外部 HTTPS LB +
 # Serverless NEG + Google 管理 SSL 証明書で配信する (本番志向: WAF/CDN 拡張余地)。
 # domain が空のときは LB 関連リソースを一切作らない (既定の run.app 運用のまま)。
+# OSS なのでドメインはハードコードせず、デプロイ側 (GitHub Variables / tfvars) で各自が設定する。
 variable "domain" {
   type        = string
   default     = ""
-  description = "Apex domain for production (e.g. \"sanba.com\"). Empty = no LB/custom domain (use *.run.app)."
+  description = "Apex domain you own for production (e.g. \"example.com\"). Empty = no LB/custom domain (use *.run.app)."
+}
+
+# web をサブドメインに置きたい場合に設定する (例: "youken" → web は youken.<domain>)。
+# 空 = apex (<domain> と www.<domain>) で web を配信する従来の挙動。
+# 設定すると: web=<sub>.<domain> / api=api.<sub>.<domain> / apex と www は web へ 301 リダイレクト。
+variable "web_subdomain" {
+  type        = string
+  default     = ""
+  description = "Optional subdomain to serve the web app at (e.g. \"app\" → app.<domain>). Empty = serve at apex. When set, apex/www 301-redirect to it and api lives at api.<web_subdomain>.<domain>."
 }
 
 # Cloud DNS をこの Terraform で管理するか。true ならゾーンを作り、A レコードを LB IP に

@@ -37,9 +37,10 @@ output "dns_name_servers" {
 
 output "public_urls" {
   value = local.domain_enabled ? {
-    web = "https://${var.domain}"
-    www = "https://www.${var.domain}"
-    api = "https://api.${var.domain}"
+    web         = "https://${local.web_host}"                      # ログイン/アプリの主 URL
+    api         = "https://${local.api_host}"                      # API
+    web_aliases = [for h in local.web_hosts : "https://${h}"]      # web を直接配信するホスト (apex モードでは apex+www)
+    redirects   = [for h in local.redirect_hosts : "https://${h}"] # web へ 301 されるホスト (subdomain モードの apex/www)
   } : {}
   description = "Production URLs once DNS + managed certificate are active."
 }

@@ -56,6 +56,9 @@ jobs:
       # 既定 0。LiveKit を入れたら GitHub Variable AGENT_MIN_INSTANCES=1 にする。
       TF_VAR_agent_min_instances:         ${{ vars.AGENT_MIN_INSTANCES || '0' }}
       TF_VAR_domain:                      ${{ vars.PROD_DOMAIN }}
+      # web をサブドメインで配信する場合のみ設定 (例: "youken" → youken.<PROD_DOMAIN>)。
+      # 空/未設定なら apex 配信 (従来挙動)。OSS なのでドメインはコードに焼かず Variable で各自設定。
+      TF_VAR_web_subdomain:               ${{ vars.PROD_WEB_SUBDOMAIN }}
       TF_VAR_livekit_url:                 ${{ vars.LIVEKIT_URL }}
       # Google ログインの OAuth Web クライアント ID。web (NEXT_PUBLIC) と API (aud 検証) で同値を使う。
       # 未設定だと API は認証経路を 503 でフェイルクローズする (apps/api auth_google.py)。

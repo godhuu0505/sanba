@@ -33,11 +33,12 @@ locals {
     REQUIRE_CONSENT   = "true"
     # Google ログイン (ADR-0012)。ID トークン検証の aud。秘匿物ではないので平文 env。
     GOOGLE_OAUTH_CLIENT_ID = var.google_oauth_client_id
-    # CORS は web のオリジンに限定する。独自ドメイン有効時は sanba.com / www.sanba.com に加え、
-    # カットオーバー中も現行の run.app web が落ちないよう web.uri も併許可する
-    # (DNS 伝播・証明書 ACTIVE・web 再デプロイが終わるまで run.app からの API 呼び出しが続くため)。
-    # 未設定時は Cloud Run 既定の web URL のみ。api.sanba.com 自身はオリジンにならないため除外。
-    ALLOWED_ORIGINS = local.domain_enabled ? "https://${var.domain},https://www.${var.domain},${google_cloud_run_v2_service.web.uri}" : google_cloud_run_v2_service.web.uri
+    # CORS は web のオリジンに限定する。独自ドメイン有効時は web を配信するホスト (local.web_hosts:
+    # apex モードは apex+www、subdomain モードは <sub>.<domain>) に加え、カットオーバー中も現行の
+    # run.app web が落ちないよう web.uri も併許可する (DNS 伝播・証明書 ACTIVE・web 再デプロイが
+    # 終わるまで run.app からの API 呼び出しが続くため)。apex/www は web へ 301 されオリジンには
+    # ならないため redirect_hosts は含めない。未設定時は Cloud Run 既定の web URL のみ。
+    ALLOWED_ORIGINS = local.domain_enabled ? join(",", concat([for h in local.web_hosts : "https://${h}"], [google_cloud_run_v2_service.web.uri])) : google_cloud_run_v2_service.web.uri
   })
 }
 
