@@ -107,7 +107,21 @@ gcloud iam service-accounts add-iam-policy-binding "$DEPLOY_SA" \
 echo "projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/${POOL}/providers/${PROVIDER}"
 ```
 
-> セキュリティ: `attribute-condition` で `repository` を固定。より厳格にするなら `attribute.ref=='refs/heads/main'` も条件に加える。
+> セキュリティ: `attribute-condition` で `repository` を固定する。
+>
+> ただし fork PR の判別はここではできない。`pull_request` イベントの OIDC token の
+> `assertion.repository` クレームは **base リポジトリ** (`godhuu0505/sanba`) になるため、
+> fork からの PR でも条件を満たしうる。fork 由来の改変コードに plan を走らせない一次防御は
+> **ワークフロー側の起動ガード** (`terraform.yml` / `deploy.yml` の job `if:` に
+> `github.event.pull_request.head.repo.fork == false`) で担保する (#149)。WIF はあくまで
+> 「正規リポジトリの token か」を担保する多層防御の一段目と位置づける。
+>
+> さらに厳格化する場合の選択肢:
+> - `&& assertion.ref=='refs/heads/main'` を加えると **PR 文脈の token をすべて拒否**できる
+>   (fork/同一リポジトリを問わず)。ただし PR での `terraform plan` も GCP 認証できなくなり、
+>   plan コメント機能が使えなくなるトレードオフがある。plan-on-PR を捨てて apply を main 限定に
+>   寄せる運用ならこちらが最も堅い。
+> - plan-on-PR を残す場合は本書の構成 (repository 固定 + ワークフロー起動ガード) を用いる。
 
 ---
 
@@ -130,7 +144,7 @@ echo "projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/${POOL}/
 | `GCP_PROJECT_ID` | `$PROJECT_ID`（**これが空だと `deploy.yml` は skip される**） |
 | `NEXT_PUBLIC_API_URL` | §2 の `terraform output api_url`（web ビルドに必須・空だと fail fast） |
 | `NEXT_PUBLIC_LIVEKIT_URL` | §4 の `wss://...` |
-| `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | Google OAuth Web クライアント ID（API の `GOOGLE_OAUTH_CLIENT_ID` にも同値を注入。**空だと認証経路が 503**） |
+| `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | Google OAuth Web クライアント ID（API の `GOOGLE_OAUTH_CLIENT_ID` にも同値を注入。web ビルドに必須・**空だと fail fast**。焼き漏らすと web が dev モード化し認証経路が 401/503） |
 | `WIF_PROVIDER` | §3 末尾で出力した WIF プロバイダの完全パス（秘匿値ではなく識別子なので Variable） |
 | `DEPLOY_SA` | §3 の `$DEPLOY_SA`（`gh-deployer@...iam.gserviceaccount.com`。SA email は公開識別子） |
 | `TF_DEPLOY_SA` | §6.6 の `tf-deployer@…`（未設定なら `DEPLOY_SA` にフォールバック） |
