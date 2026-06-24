@@ -8,17 +8,14 @@ and is exercised only when the connector is explicitly enabled.
 from __future__ import annotations
 
 import structlog
-
-from ..models import Priority, Requirement
+from sanba_shared.models import Priority, Requirement
 
 log = structlog.get_logger(__name__)
 
 _API = "https://api.github.com"
 
 
-def issues_to_passages(
-    issues: list[dict], repo: str
-) -> list[tuple[str, str]]:
+def issues_to_passages(issues: list[dict], repo: str) -> list[tuple[str, str]]:
     """Map GitHub issues to (text, source) grounding passages.
 
     Pull requests (which the issues endpoint also returns) are skipped.
@@ -37,9 +34,7 @@ def issues_to_passages(
     return passages
 
 
-def requirements_to_issue_body(
-    requirements: list[Requirement], session_id: str
-) -> tuple[str, str]:
+def requirements_to_issue_body(requirements: list[Requirement], session_id: str) -> tuple[str, str]:
     """Render confirmed requirements into a GitHub issue (title, body)."""
     title = f"要件定義: {session_id}"
     if not requirements:

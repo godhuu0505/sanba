@@ -22,12 +22,12 @@ from livekit.agents import (
 )
 from livekit.agents.llm import function_tool
 from livekit.plugins import google
+from sanba_shared.models import Priority, Requirement, RequirementCategory, Utterance
+from sanba_shared.repository import SessionRepository
 
 from .config import settings
-from .models import Priority, Requirement, RequirementCategory, Utterance
 from .observability import setup_observability
 from .prompts.interview import VOICE_AGENT_INSTRUCTIONS
-from .repository import SessionRepository
 from .retrieval import GroundingStore
 from .tools.analysis import analyze_transcript, make_requirement_id
 
@@ -231,7 +231,7 @@ async def entrypoint(ctx: JobContext) -> None:
     await ctx.connect()
 
     session_id = ctx.room.name
-    repo = SessionRepository()
+    repo = SessionRepository(data_retention_days=settings.data_retention_days)
     grounding = GroundingStore()
     seed_knowledge_base(grounding)
     seed_github_context(grounding, session_id)

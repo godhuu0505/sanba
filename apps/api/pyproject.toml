@@ -19,7 +19,13 @@ dependencies = [
     "opentelemetry-instrumentation-fastapi>=0.46b0",
     "opentelemetry-sdk>=1.25",
     "opentelemetry-exporter-otlp>=1.25",
+    "sanba-shared",
 ]
+
+# モノレポ内の共有パッケージを path 依存で解決する (ADR-0014 §8)。
+# Docker は build context をリポジトリ直下にし、この相対パスを保ったまま COPY する (§9)。
+[tool.uv.sources]
+sanba-shared = { path = "../../packages/sanba_shared", editable = true }
 
 [dependency-groups]
 dev = [
