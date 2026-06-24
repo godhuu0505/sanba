@@ -173,7 +173,8 @@ def require_admin(user: Annotated[AuthUser, Depends(require_user)]) -> AuthUser:
         raise HTTPException(status_code=503, detail="service temporarily unavailable")
 
     if user.email.lower() not in allow:
-        log.warning("admin_denied", sub=user.sub)
+        # 監査時に「誰が」拒否されたか追えるよう email も残す (admin_granted と対称)。
+        log.warning("admin_denied", sub=user.sub, email=user.email)
         record_auth_event("admin_denied")
         raise HTTPException(status_code=403, detail="admin privileges required")
 

@@ -162,6 +162,7 @@ class SessionRepository:
         updated = Requirement.model_validate(data)
 
         if self._client is not None:
+            # merge=True は必須: model に無い expireAt (TTL センチネル) を消さず温存する。
             self._req_doc(session_id, rid).set(updated.model_dump(mode="json"), merge=True)
         else:
             self._mem_requirements.setdefault(session_id, {})[rid] = updated

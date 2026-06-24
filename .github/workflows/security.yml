@@ -16,10 +16,11 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        app: [agent, api]
+        # 共有ドメイン層 (sanba_shared) も独自依存 (google-cloud-firestore 等) を持つため監査対象。
+        dir: [apps/agent, apps/api, packages/sanba_shared]
     defaults:
       run:
-        working-directory: apps/${{ matrix.app }}
+        working-directory: ${{ matrix.dir }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0

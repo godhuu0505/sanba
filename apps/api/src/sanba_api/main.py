@@ -354,6 +354,9 @@ def admin_update_requirement(
     編集 (statement/priority/category) を先に適用してから status 遷移を行う。
     承認時は TTL を解除し成果物として保全する。
     """
+    # セッション ID 誤りと要件 ID 誤りを区別する (admin_list_requirements と対称)。
+    if _repo.get_session(session_id) is None:
+        raise HTTPException(status_code=404, detail="session not found")
     try:
         if req.statement is not None or req.priority is not None or req.category is not None:
             current = _repo.update_requirement(

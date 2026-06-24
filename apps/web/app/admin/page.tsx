@@ -97,7 +97,7 @@ export default function AdminPage() {
     return (
       <Gate title="管理者権限がありません">
         <p className="text-sm text-[var(--color-muted-foreground)]">
-          このアカウントは管理者として登録されていません（ADMIN_EMAILS）。
+          このアカウントには管理者権限がありません。必要な場合はシステム管理者にお問い合わせください。
         </p>
       </Gate>
     );

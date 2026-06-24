@@ -15,6 +15,21 @@ permissions:
   contents: read
 
 jobs:
+  shared:
+    name: shared (lint + test)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/sanba_shared
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+      - run: uv python install 3.13
+      - run: uv sync --all-extras --dev
+      - run: uv run ruff check .
+      - run: uv run mypy src # 型を quality-gate に実在させる (#58)
+      - run: uv run pytest -q
+
   agent:
     name: agent (lint + test)
     runs-on: ubuntu-latest
@@ -79,7 +94,7 @@ jobs:
   docker:
     name: docker build
     runs-on: ubuntu-latest
-    needs: [agent, api, web]
+    needs: [shared, agent, api, web]
     strategy:
       matrix:
         # agent/api は共有パッケージを同梱するため context=リポジトリ直下 (ADR-0014 §9)。
@@ -111,7 +126,7 @@ jobs:
   # docker は重いため集約対象外 (web の npm run build で build は担保済み)。
   quality-gate:
     name: quality-gate
-    needs: [agent, api, four-keys, web]
+    needs: [shared, agent, api, four-keys, web]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:
@@ -123,4 +138,4 @@ jobs:
             echo "::error::必須ジョブが失敗/キャンセル/スキップされました"
             exit 1
           fi
-          echo "全必須ジョブ (agent/api/four-keys/web) が成功"
+          echo "全必須ジョブ (shared/agent/api/four-keys/web) が成功"
