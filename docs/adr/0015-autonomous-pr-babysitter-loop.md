@@ -1,4 +1,4 @@
-# ADR-0011: 自律 PR babysitter ループ（issue 起点〜マージ可能まで）
+# ADR-0015: 自律 PR babysitter ループ（issue 起点〜マージ可能まで）
 
 - ステータス: Proposed
 - 日付: 2026-06-16

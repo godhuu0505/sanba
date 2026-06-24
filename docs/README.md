@@ -49,6 +49,10 @@
 | [0009](adr/0009-local-compose-split-and-cost.md) | ローカル compose の二層分割とコスト | base / tools overlay の分離 |
 | [0010](adr/0010-ai-pr-review-automation.md) | AI による PR 自動レビュー | レビュー自動化と対応フロー |
 | [0011](adr/0011-figma-mcp-design-loop.md) | Figma MCP デザインループ | リモート MCP 採用と双方向の UI/UX 連携 |
+| [0012](adr/0012-google-login.md) | Google ログイン (OAuth / OIDC) | ID トークンの API 一元検証 |
+| [0013](adr/0013-custom-domain-load-balancer.md) | 本番ドメインと外部 HTTPS LB | sanba.com を Global LB で配信 |
+| [0014](adr/0014-admin-and-login-screens.md) | ログイン画面と管理画面 | 要件の確認・承認の運用 UI / 共有パッケージ化 |
+| [0015](adr/0015-autonomous-pr-babysitter-loop.md) | 自律 PR babysitter ループ | issue 起点〜マージ可能までの自動化 |
 
 新しい ADR は [`/adr`](../CLAUDE.md) スキル、または既存ファイルを雛形にして `docs/adr/NNNN-*.md` で追加する。
 
