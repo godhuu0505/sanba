@@ -1,19 +1,58 @@
 "use client";
 
-// 06 素材を渡す — マルチモーダルの入口（Issue #98 / ADR-0004）。
+// 06 素材を渡す — マルチモーダルの入口（Issue #103 / #98 / ADR-0004）。
 //
-// 言葉以外の情報（画像・動画・画面共有・カメラ）を渡す入口。本 issue では API 追加不要で
-// 独立着手できる **画面共有・カメラ**（既存 LiveKit 映像トラック）を実装する。
-// 画像/動画アップロードは API 拡張（#103）が前提のため「準備中」でグレーアウトし、誤操作を防ぐ。
+// 言葉以外の情報（画像・動画・画面共有・カメラ）を渡す入口。
+// - 画像アップロード: context/file へ送り asset_id を受け取る（#103 API 拡張）。非対応拡張子は弾く。
+//   アップロード後の解析進捗は asset_id 経由で 08 解析（analysis.progress / analysis.visual）に対応付く。
+// - 動画アップロード: 解析が未実装のため「準備中」でグレーアウトし誤操作を防ぐ（API は保存のみ対応）。
+// - 画面共有・カメラ: 既存 LiveKit 映像トラック（API 追加不要）。
 
 import { useLocalParticipant } from "@livekit/components-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { ACCEPTED_IMAGE, classifyUpload, uploadContextFile } from "../lib/api";
 
-export function MaterialView() {
+interface UploadedAsset {
+  asset_id: string;
+  name: string;
+  kind: "image" | "video";
+}
+
+export function MaterialView({ sessionId }: { sessionId: string }) {
   const { localParticipant } = useLocalParticipant();
   const [sharing, setSharing] = useState(false);
   const [camera, setCamera] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [uploaded, setUploaded] = useState<UploadedAsset[]>([]);
+  const imageInput = useRef<HTMLInputElement>(null);
+
+  async function onImagePicked(e: React.ChangeEvent<HTMLInputElement>) {
+    setError(null);
+    const file = e.target.files?.[0];
+    // 同じファイルを連続で選べるよう値はリセットする。
+    e.target.value = "";
+    if (!file) return;
+    // ピッカの accept をすり抜けた非対応拡張子はここで弾く（API でも 415）。
+    if (classifyUpload(file.name) !== "image") {
+      setError("対応していない形式です。PNG または JPG を選んでください。");
+      return;
+    }
+    setBusy(true);
+    try {
+      const res = await uploadContextFile(sessionId, file);
+      if (res.asset_id) {
+        setUploaded((prev) => [
+          { asset_id: res.asset_id!, name: file.name, kind: "image" },
+          ...prev,
+        ]);
+      }
+    } catch (err) {
+      setError(String(err instanceof Error ? err.message : err));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function toggleScreenShare() {
     setError(null);
@@ -44,13 +83,23 @@ export function MaterialView() {
         情報を渡す手段を選ぶ。テキスト・音声に加え、画像/動画/画面共有も渡せます。
       </p>
 
-      {/* 画像/動画は API 拡張（#103）が前提。準備中でグレーアウトし誤操作を防ぐ。 */}
+      {/* 画像: 隠し input をクリックで開く。非対応拡張子はピッカ accept + 上のガードで弾く。 */}
+      <input
+        ref={imageInput}
+        type="file"
+        accept={ACCEPTED_IMAGE}
+        onChange={onImagePicked}
+        style={{ display: "none" }}
+        data-testid="image-input"
+      />
       <MaterialRow
         icon="🖼"
-        title="画像をアップロード"
+        title={busy ? "アップロード中…" : "画像をアップロード"}
         sub="モック・スクショ・写真（PNG/JPG）"
-        pending
+        disabled={busy}
+        onClick={() => imageInput.current?.click()}
       />
+      {/* 動画解析は未実装（#103）。準備中でグレーアウトし誤操作を防ぐ。 */}
       <MaterialRow
         icon="🎥"
         title="動画をアップロード"
@@ -72,6 +121,25 @@ export function MaterialView() {
         onClick={toggleCamera}
       />
 
+      {uploaded.length > 0 && (
+        <div style={{ marginTop: 16 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "#444", marginBottom: 6 }}>
+            アップロード済みの素材
+          </div>
+          {uploaded.map((a) => (
+            <div key={a.asset_id} style={assetRow}>
+              <span aria-hidden="true">🖼</span>
+              <span style={{ flex: 1, fontSize: 14 }}>{a.name}</span>
+              {/* asset_id で「解析」タブの analysis.* と対応付く（07/08）。 */}
+              <span style={{ fontSize: 12, color: "#1F9E8B" }}>解析待ち</span>
+            </div>
+          ))}
+          <p style={{ fontSize: 12, color: "#888", margin: "8px 0 0" }}>
+            解析の進捗と結果は「解析」タブで確認できます。
+          </p>
+        </div>
+      )}
+
       {error && <p style={{ color: "crimson", fontSize: 14 }}>{error}</p>}
     </section>
   );
@@ -84,6 +152,7 @@ function MaterialRow({
   onClick,
   pending,
   active,
+  disabled,
 }: {
   icon: string;
   title: string;
@@ -91,12 +160,14 @@ function MaterialRow({
   onClick?: () => void;
   pending?: boolean;
   active?: boolean;
+  disabled?: boolean;
 }) {
+  const off = pending || disabled;
   return (
     <button
       onClick={onClick}
-      disabled={pending}
-      aria-disabled={pending}
+      disabled={off}
+      aria-disabled={off}
       style={{
         display: "flex",
         alignItems: "center",
@@ -107,9 +178,9 @@ function MaterialRow({
         margin: "8px 0",
         borderRadius: 12,
         border: active ? "1px solid #2F6FED" : "1px solid #eee",
-        background: pending ? "#f6f6f6" : "#fff",
-        color: pending ? "#aaa" : "#222",
-        cursor: pending ? "not-allowed" : "pointer",
+        background: off ? "#f6f6f6" : "#fff",
+        color: off ? "#aaa" : "#222",
+        cursor: off ? "not-allowed" : "pointer",
       }}
     >
       <span aria-hidden="true" style={{ fontSize: 22 }}>
@@ -147,4 +218,11 @@ const activeBadge = {
   background: "#2F6FED",
   borderRadius: 999,
   padding: "1px 8px",
+};
+const assetRow = {
+  display: "flex",
+  alignItems: "center",
+  gap: 10,
+  padding: "8px 0",
+  borderBottom: "1px solid #f2f2f2",
 };

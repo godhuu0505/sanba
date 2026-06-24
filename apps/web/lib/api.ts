@@ -53,6 +53,50 @@ export async function addSessionContext(
   return res.json();
 }
 
+// ── 画像/動画アップロード（Issue #103 / ADR-0004）───────────────────────
+// 画像/動画を context/file へ送り、安定 asset_id を受け取る。web はこの asset_id で
+// analysis.progress / analysis.visual（契約 §3）をファイル行へ対応付ける。
+
+/** 受理する拡張子 → MIME（要件票 06: 画像 PNG/JPG・動画 MP4/MOV）。 */
+export const ACCEPTED_IMAGE = ".png,.jpg,.jpeg,image/png,image/jpeg";
+export const ACCEPTED_VIDEO = ".mp4,.mov,video/mp4,video/quicktime";
+
+const IMAGE_EXT = [".png", ".jpg", ".jpeg"];
+const VIDEO_EXT = [".mp4", ".mov"];
+
+/** 拡張子からアップロード種別を判定（非対応は null）。ピッカ前段の早期弾き用。 */
+export function classifyUpload(filename: string): "image" | "video" | null {
+  const name = filename.toLowerCase();
+  if (IMAGE_EXT.some((e) => name.endsWith(e))) return "image";
+  if (VIDEO_EXT.some((e) => name.endsWith(e))) return "video";
+  return null;
+}
+
+export interface UploadResult {
+  indexed_chunks: number;
+  asset_id?: string;
+  asset_kind?: "image" | "video";
+  analysis_pending?: boolean;
+}
+
+/** POST /api/sessions/{id}/context/file（画像/動画）。FormData で送る。 */
+export async function uploadContextFile(
+  sessionId: string,
+  file: File,
+): Promise<UploadResult> {
+  const form = new FormData();
+  form.append("file", file);
+  // multipart の boundary はブラウザに任せる（Content-Type を手で付けない）。
+  const res = await fetch(`${API_URL}/api/sessions/${sessionId}/context/file`, {
+    method: "POST",
+    body: form,
+  });
+  if (res.status === 415) throw new Error("対応していない形式です（PNG/JPG・MP4/MOV）");
+  if (res.status === 413) throw new Error("ファイルが大きすぎます");
+  if (!res.ok) throw new Error(`upload failed: ${res.status}`);
+  return res.json();
+}
+
 // ── ハイドレーション（契約 §4 / Issue #100）─────────────────────────────
 // リロード・途中参加時に現在状態を取得し、データチャネルのライブ差分と合流させる。
 

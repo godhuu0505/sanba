@@ -33,6 +33,22 @@ def record_auth_event(result: str) -> None:
         pass
 
 
+# マルチモーダル素材（画像/動画）アップロードのカウンタ（issue #103）。kind/result で分類し、
+# 「何枚の素材が、解析まで通ったか」を計測する（契約 §5 / CLAUDE.md 原則3）。
+_asset_counter = metrics.get_meter("sanba_api.assets").create_counter(
+    "sanba_asset_uploads_total",
+    description="画像/動画アップロード数 (kind/result ごと)",
+)
+
+
+def record_asset_upload(kind: str, result: str) -> None:
+    """素材アップロードを計上する (kind=image/video, result=analyzed/stored/pending/rejected)。"""
+    try:
+        _asset_counter.add(1, {"kind": kind, "result": result})
+    except Exception:  # pragma: no cover - メトリクスは本処理を止めない
+        pass
+
+
 def setup_observability(app: FastAPI) -> None:
     """Configure OTel tracing + FastAPI instrumentation. Safe to call once."""
     global _initialised

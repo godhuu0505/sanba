@@ -12,6 +12,7 @@ agent worker is dispatched to the same room name automatically.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import time
 import uuid
@@ -38,10 +39,23 @@ from .auth import (
 from .auth_google import AuthUser, require_user
 from .config import settings
 from .ingestion import ContextIndexer, chunk_text, extract_text_from_upload
-from .observability import setup_observability
+from .observability import record_asset_upload, setup_observability
 from .repository import ReadRepository
+from .storage import AssetStore, asset_kind, is_text_upload, resolve_content_type
+from .vision import analyze_image
 
 log = structlog.get_logger(__name__)
+
+
+def _get_tracer() -> Any:
+    """OTel トレーサ（未設定なら None で no-op）。アップロード〜解析を span 化する。"""
+    try:
+        from opentelemetry import trace
+
+        return trace.get_tracer("sanba_api.assets")
+    except Exception:  # pragma: no cover - otel optional
+        return None
+
 
 app = FastAPI(title="SANBA API", version="0.2.0")
 app.add_middleware(
@@ -59,6 +73,9 @@ _join_hits: dict[str, deque[float]] = defaultdict(deque)
 
 # Context indexer shares the agent's Elasticsearch grounding index (issue #6).
 _indexer = ContextIndexer()
+
+# 画像/動画アセットの保存層（issue #103）。GCS 未設定なら in-memory にフォールバック。
+_asset_store = AssetStore()
 
 # Read-side store for hydration APIs（契約 §4 / #100）。agent が書いた要件・検知を読む。
 _read_repo = ReadRepository()
@@ -122,6 +139,12 @@ class ContextRequest(BaseModel):
 
 class ContextResponse(BaseModel):
     indexed_chunks: int
+    # 画像/動画アップロード時のみ付与（issue #103 / 契約 §3）。web は asset_id で
+    # analysis.progress / analysis.visual をファイル行へ対応付ける。
+    asset_id: str | None = None
+    asset_kind: str | None = None  # "image" | "video"
+    # 解析が未実装（例: 動画）で保存のみ済んだ場合 true（web は「準備中」を表示）。
+    analysis_pending: bool = False
 
 
 class JoinRequest(BaseModel):
@@ -199,14 +222,80 @@ def add_context(session_id: str, req: ContextRequest) -> ContextResponse:
 
 @app.post("/api/sessions/{session_id}/context/file", response_model=ContextResponse)
 async def add_context_file(session_id: str, file: UploadFile = File(...)) -> ContextResponse:
-    """Register an uploaded document (txt/md/pdf) as session context."""
+    """Register an uploaded file as session context.
+
+    txt/md/pdf はテキストとして grounding 索引に入れる（既存）。画像/動画は Cloud Storage に
+    保存し、安定 `asset_id` を返す（issue #103 / ADR-0004）。画像は Gemini で観察を抽出して
+    grounding に流し、agent が問いの根拠にできるようにする。動画解析は未実装のため保存のみ
+    （`analysis_pending=true`、web では「準備中」）。非対応形式は 415 で弾く。
+
+    観測性: アップロード〜解析を span/log で追い、素材数を kind/result で計測する（契約 §5）。
+    """
+    filename = file.filename or "upload"
     raw = await file.read()
-    if len(raw) > settings.max_context_chars * 4:  # bytes guard (~utf-8 worst case)
+
+    # 既存のテキスト経路（txt/md/pdf）。
+    if is_text_upload(filename, file.content_type):
+        if len(raw) > settings.max_context_chars * 4:  # bytes guard (~utf-8 worst case)
+            raise HTTPException(status_code=413, detail="file too large")
+        text = extract_text_from_upload(filename, raw)
+        chunks = chunk_text(text)
+        n = _indexer.index_context(session_id, chunks, filename)
+        return ContextResponse(indexed_chunks=n)
+
+    kind = asset_kind(filename, file.content_type)
+    if kind is None:
+        # 非対応拡張子（web ピッカでも弾くが、API でもフェイルクローズ）。
+        record_asset_upload("unknown", "rejected")
+        raise HTTPException(
+            status_code=415, detail="unsupported file type (allowed: png/jpg/mp4/mov, txt/md/pdf)"
+        )
+    if len(raw) > settings.max_asset_bytes:
+        record_asset_upload(kind, "rejected")
         raise HTTPException(status_code=413, detail="file too large")
-    text = extract_text_from_upload(file.filename or "upload", raw)
-    chunks = chunk_text(text)
-    n = _indexer.index_context(session_id, chunks, file.filename or "upload")
-    return ContextResponse(indexed_chunks=n)
+
+    tracer = _get_tracer()
+    span_cm = (
+        tracer.start_as_current_span("context.file.asset") if tracer else contextlib.nullcontext()
+    )
+    with span_cm as span:
+        if span is not None:
+            span.set_attribute("sanba.asset.kind", kind)
+            span.set_attribute("sanba.asset.size", len(raw))
+        content_type = resolve_content_type(filename, file.content_type, kind)
+        asset = _asset_store.store(session_id, kind, content_type, raw)
+        if span is not None:
+            span.set_attribute("sanba.asset.id", asset.asset_id)
+
+        # 動画解析は未実装: 保存のみ済ませ、web には「準備中」を返す。
+        if kind == "video" and not settings.enable_video_analysis:
+            record_asset_upload("video", "pending")
+            log.info("asset_pending", session=session_id, asset_id=asset.asset_id, kind=kind)
+            return ContextResponse(
+                indexed_chunks=0,
+                asset_id=asset.asset_id,
+                asset_kind=kind,
+                analysis_pending=True,
+            )
+
+        # 画像: Gemini で観察を抽出し、grounding 索引へ（asset を出所に紐づける）。
+        observations = analyze_image(raw, content_type)
+        indexed = 0
+        if observations:
+            indexed = _indexer.index_context(session_id, observations, f"asset:{asset.asset_id}")
+        record_asset_upload(kind, "analyzed")
+        log.info(
+            "asset_analyzed",
+            session=session_id,
+            asset_id=asset.asset_id,
+            kind=kind,
+            observations=len(observations),
+        )
+        return ContextResponse(
+            indexed_chunks=indexed,
+            asset_id=asset.asset_id,
+            asset_kind=kind,
+        )
 
 
 @app.post("/api/sessions/join", response_model=JoinResponse)
