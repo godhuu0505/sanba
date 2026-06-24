@@ -62,6 +62,10 @@ jobs:
       # Cloud DNS マネージドゾーンの resource 名。Cloud Domains が自動作成したゾーン (例 "sanba-net")
       # を使う場合はその名前を指定して既存ゾーンを import する。未設定なら既定 "sanba"。
       TF_VAR_dns_managed_zone_name:       ${{ vars.PROD_DNS_ZONE_NAME || 'sanba' }}
+      # 管理ゾーンの DNSSEC 状態。Cloud Domains 由来の DNSSEC 有効ゾーンを import した場合は "on"。
+      # 未設定なら "off" (新規ゾーン)。誤って "off" のまま on のゾーンに apply すると DNSSEC 無効化を
+      # 試みて失敗する (安全側) ので、import 済みゾーンでは必ず PROD_DNS_DNSSEC_STATE=on を設定する。
+      TF_VAR_dns_dnssec_state:            ${{ vars.PROD_DNS_DNSSEC_STATE || 'off' }}
       TF_VAR_livekit_url:                 ${{ vars.LIVEKIT_URL }}
       # Google ログインの OAuth Web クライアント ID。web (NEXT_PUBLIC) と API (aud 検証) で同値を使う。
       # 未設定だと API は認証経路を 503 でフェイルクローズする (apps/api auth_google.py)。

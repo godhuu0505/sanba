@@ -211,7 +211,17 @@ resource "google_dns_managed_zone" "primary" {
   name        = var.dns_managed_zone_name
   dns_name    = "${var.domain}."
   description = "SANBA production zone"
-  depends_on  = [google_project_service.lb]
+
+  # DNSSEC。Cloud Domains で登録すると既定で DNSSEC が on になり DS レコードも登録される。
+  # その既存ゾーンを import した場合、ここで state を明示しないと Terraform が DNSSEC を無効化
+  # しようとし (a) GCP が "dnssecConfig is required" で 400、(b) 仮に通れば DS と不整合で名前解決が壊れる。
+  # よって既存ゾーンの状態に合わせる (Cloud Domains 由来なら dns_dnssec_state="on")。
+  # 自前で新規ゾーンを作る場合は既定 "off" のままでよい。
+  dnssec_config {
+    state = var.dns_dnssec_state
+  }
+
+  depends_on = [google_project_service.lb]
 }
 
 # LB で終端する全ホスト (web / www / api / apex redirect) を 1 つの A レコード集合として作る。
