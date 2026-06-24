@@ -1,0 +1,452 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SANBA — 産婆術アトリエ（Gilded Maieutics）</title>
+<style>
+  :root{
+    /* 油彩キアロスクーロの闇 */
+    --bg:#140F08; --bg-2:#1B140B; --panel:#241A0F; --panel-2:#2E2214; --panel-3:#3A2C18;
+    /* 金箔（マツケンサンバ／テンペラの神の光） */
+    --gold-1:#8A5A14; --gold-2:#D4AF37; --gold-3:#F6E6AC; --gold-4:#C8951F;
+    --gold:linear-gradient(135deg,#8A5A14 0%,#D4AF37 36%,#F6E6AC 56%,#C8951F 100%);
+    --gold-soft:linear-gradient(135deg,#6E4A12,#C29A33 55%,#E7CE82);
+    /* 古典絵具の土と血 */
+    --crimson:#D2564B;   /* oxblood / caput mortuum — 矛盾 */
+    --ochre:#E0A93B;     /* yellow ochre — 抜け */
+    --olive:#A9BE6E;     /* Greek olive / verdaccio — 息づく・発話中 */
+    --azure:#5C97B0;     /* Egyptian blue — 補助 */
+    /* 羊皮紙とインク */
+    --ink:#EFE6C9; --ink-2:#CBB98D; --ink-3:#9A875E;
+    --parch:#ECDFB8; --parch-2:#E2D2A2; --sepia:#3E2C12; --sepia-2:#6A4E22;
+    --line:rgba(214,184,110,.18); --line-strong:rgba(214,184,110,.34);
+    --serif:"Hiragino Mincho ProN","Yu Mincho",YuMincho,"Noto Serif JP","Songti SC",Georgia,"Times New Roman",serif;
+    --radius:14px;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;font-family:var(--serif);color:var(--ink);line-height:1.75;-webkit-font-smoothing:antialiased;
+    background:
+      radial-gradient(1100px 640px at 78% -8%,rgba(212,175,55,.16),transparent 58%),
+      radial-gradient(900px 560px at -8% 14%,rgba(168,120,40,.12),transparent 56%),
+      radial-gradient(1200px 900px at 50% 120%,rgba(120,76,20,.10),transparent 60%),
+      var(--bg);
+  }
+  body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+    background:radial-gradient(120% 120% at 50% 30%,transparent 55%,rgba(0,0,0,.55) 100%)}
+  .wrap{max-width:1180px;margin:0 auto;padding:0 28px;position:relative;z-index:1}
+  h1,h2,h3,h4{margin:0;font-weight:700;line-height:1.3;letter-spacing:.02em}
+  .gold{background:var(--gold);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+
+  /* 雷文（メアンダー）の罫 */
+  .meander{display:block;width:100%;height:16px;opacity:.85}
+  hr.rule{border:none;height:1px;background:linear-gradient(90deg,transparent,var(--line-strong),transparent);margin:0}
+
+  /* 金縁の額（gilded frame） */
+  .gframe{padding:3px;border-radius:calc(var(--radius) + 3px);background:var(--gold);
+    box-shadow:0 0 0 1px rgba(0,0,0,.5), 0 26px 60px -26px rgba(0,0,0,.85), inset 0 0 0 1px rgba(255,245,210,.4)}
+  .gframe>.inner{background:var(--panel);border-radius:var(--radius);overflow:hidden}
+
+  /* 羊皮紙の巻物 */
+  .scroll{background:linear-gradient(180deg,var(--parch),var(--parch-2));color:var(--sepia);
+    border-radius:10px;padding:16px 18px;box-shadow:inset 0 0 36px rgba(120,80,30,.30), inset 0 0 0 1px rgba(120,80,30,.18);font-family:var(--serif)}
+  .scroll .who{color:var(--sepia-2);font-weight:700;font-size:12px;letter-spacing:.04em}
+  .scroll .who.ai{color:#7A4E12}
+  .scroll p{margin:3px 0 12px;font-size:14px;line-height:1.6}
+  .scroll p:last-child{margin-bottom:0}
+  .drop{float:left;font-size:34px;line-height:.8;padding:2px 8px 0 0;color:#7A4E12;font-weight:800}
+
+  /* 金の印章・seal */
+  .seal{display:inline-flex;align-items:center;justify-content:center;border-radius:999px;background:var(--gold);
+    color:#3A2A0C;font-weight:800;box-shadow:0 2px 8px rgba(0,0,0,.4),inset 0 0 0 1px rgba(255,245,210,.5)}
+  /* 四角スパンコール（マツケンの近年仕様） */
+  .sequin{position:absolute;width:11px;height:11px;background:var(--gold);transform:rotate(45deg);border-radius:2px;
+    box-shadow:0 0 10px rgba(246,230,172,.75);opacity:.92}
+
+  /* chips / tags */
+  .chip{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:700;padding:4px 11px;border-radius:999px;border:1px solid var(--line-strong);font-family:var(--serif)}
+  .chip.must{color:#F2B0A8;border-color:rgba(210,86,75,.5);background:rgba(210,86,75,.12)}
+  .chip.should{color:#F2CE86;border-color:rgba(224,169,59,.5);background:rgba(224,169,59,.12)}
+  .chip.could{color:#CEDDA0;border-color:rgba(169,190,110,.45);background:rgba(169,190,110,.12)}
+  .chip.gold{color:#2A1E08;background:var(--gold);border-color:transparent}
+  .tag{font-size:10px;font-weight:800;letter-spacing:.06em;padding:3px 8px;border-radius:5px}
+  .tag.lead{background:rgba(212,175,55,.18);color:#F0D67A}
+  .tag.nfr{background:rgba(92,151,176,.18);color:#A7CADd}
+  .tag.scope{background:rgba(169,190,110,.18);color:#CEDDA0}
+  .tag.contra{background:rgba(210,86,75,.18);color:#F2B0A8}
+
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:none;cursor:pointer;font-family:var(--serif);
+    font-weight:700;font-size:14px;padding:12px 20px;border-radius:11px;color:#2A1E08;background:var(--gold);
+    box-shadow:0 6px 18px -6px rgba(212,175,55,.6),inset 0 0 0 1px rgba(255,245,210,.5)}
+  .btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--line-strong);box-shadow:none}
+  .btn.sm{padding:8px 14px;font-size:12.5px}
+
+  /* hero */
+  .hero{padding:78px 0 8px;position:relative;overflow:hidden}
+  .eyebrow{display:inline-flex;align-items:center;gap:9px;font-size:12px;font-weight:700;letter-spacing:.2em;
+    color:#E7CE82;text-transform:uppercase;border:1px solid var(--line-strong);padding:8px 16px;border-radius:999px;background:rgba(212,175,55,.06)}
+  .hero h1{font-size:clamp(38px,6.4vw,76px);margin:22px 0 4px;letter-spacing:.04em;text-shadow:0 2px 30px rgba(212,175,55,.25)}
+  .hero .sub{font-size:clamp(15px,2vw,19px);color:var(--ink-2);max-width:760px;margin-top:14px}
+  .hero .laurel{display:flex;align-items:center;gap:18px;margin-top:10px}
+  .quote{margin-top:26px;font-style:italic;color:#E7CE82;font-size:clamp(15px,2vw,19px);max-width:740px;
+    padding-left:18px;border-left:3px solid;border-image:var(--gold) 1}
+  .metarow{display:flex;flex-wrap:wrap;gap:10px;margin-top:28px}
+  .pill{font-size:12.5px;font-weight:600;color:var(--ink-2);background:rgba(212,175,55,.06);border:1px solid var(--line);padding:8px 14px;border-radius:999px}
+  .pill b{color:#F0D67A}
+
+  section{padding:58px 0}
+  .kicker{font-size:12px;font-weight:800;letter-spacing:.22em;color:#E7CE82;text-transform:uppercase}
+  .sec-h{font-size:clamp(26px,3.6vw,40px);margin:12px 0 8px;letter-spacing:.03em}
+  .sec-sub{color:var(--ink-2);max-width:780px;font-size:15.5px}
+
+  .grid{display:grid;gap:18px}
+  .g4{grid-template-columns:repeat(4,1fr)}.g3{grid-template-columns:repeat(3,1fr)}.g2{grid-template-columns:repeat(2,1fr)}
+  @media(max-width:900px){.g4,.g3,.g2{grid-template-columns:1fr}}
+  .card{background:linear-gradient(180deg,rgba(212,175,55,.05),transparent),var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px}
+  .card h4{font-size:16px;margin:6px 0 5px}
+  .card p{color:var(--ink-2);font-size:13.5px;margin:0}
+  .card .n{font-size:12px;font-weight:800;letter-spacing:.12em;color:#E7CE82}
+
+  /* mapping table */
+  .map{border:1px solid var(--line);border-radius:14px;overflow:hidden;margin-top:24px}
+  .map .row{display:grid;grid-template-columns:200px 1fr;gap:0;border-top:1px solid var(--line)}
+  .map .row:first-child{border-top:none}
+  .map .th{padding:15px 18px;background:rgba(212,175,55,.06);font-weight:700;color:#F0D67A;display:flex;align-items:center;gap:10px}
+  .map .td{padding:15px 18px;color:var(--ink-2);font-size:14px}
+  @media(max-width:680px){.map .row{grid-template-columns:1fr}}
+
+  /* swatches */
+  .sw{height:72px;border-radius:11px;border:1px solid var(--line);margin-bottom:9px;box-shadow:inset 0 0 0 1px rgba(255,245,210,.06)}
+  .tok b{display:block;color:var(--ink);font-size:13px}.tok span{font-size:11px;color:var(--ink-3)}
+
+  /* artboard */
+  .board-cap{display:flex;align-items:center;gap:12px;padding:14px 18px;background:linear-gradient(180deg,rgba(212,175,55,.08),transparent);border-bottom:1px solid var(--line)}
+  .board-cap .seal{width:22px;height:22px;font-size:12px}
+  .board-cap .t{font-size:14px;font-weight:700;color:#F0D67A;letter-spacing:.04em}
+  .board-cap .u{margin-left:auto;font-size:11.5px;color:var(--ink-3);border:1px solid var(--line);border-radius:999px;padding:5px 12px}
+  .screen{padding:22px;background:
+    radial-gradient(700px 380px at 50% -10%,rgba(212,175,55,.07),transparent 60%),var(--panel)}
+
+  .live{display:grid;grid-template-columns:1fr 1.1fr 1fr;gap:16px}
+  @media(max-width:980px){.live{grid-template-columns:1fr}}
+  .panel{background:var(--panel-2);border:1px solid var(--line);border-radius:13px;padding:16px;display:flex;flex-direction:column}
+  .panel .ph{display:flex;align-items:center;gap:9px;font-size:13px;font-weight:700;color:#F0D67A;margin-bottom:14px;letter-spacing:.04em}
+  .panel .ph .cnt{margin-left:auto;font-size:11px;color:var(--ink-3);font-weight:600}
+
+  /* gilded oculus + laurel */
+  .oculus{position:relative;width:170px;height:170px;margin:8px auto 6px;display:grid;place-items:center}
+  .halo{position:absolute;inset:18px;border-radius:50%;
+    background:radial-gradient(circle at 50% 42%,rgba(246,230,172,.92),rgba(212,175,55,.5) 46%,rgba(138,90,20,.15) 70%,transparent 76%);
+    box-shadow:0 0 60px rgba(212,175,55,.5)}
+  .listening{text-align:center;font-size:12.5px;color:var(--olive);font-weight:700;margin:2px 0 12px;letter-spacing:.04em}
+
+  /* illuminated marginalia (detection) */
+  .illum{border-radius:12px;padding:13px 15px 13px 14px;border:1px solid;margin-bottom:11px;position:relative;background:var(--panel)}
+  .illum.contra{border-color:rgba(210,86,75,.5);background:linear-gradient(180deg,rgba(210,86,75,.10),var(--panel))}
+  .illum.gap{border-color:rgba(224,169,59,.5);background:linear-gradient(180deg,rgba(224,169,59,.10),var(--panel))}
+  .illum .lab{font-size:10.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}
+  .illum.contra .lab{color:var(--crimson)}.illum.gap .lab{color:var(--ochre)}
+  .illum p{margin:5px 0 0;font-size:13px;line-height:1.55;color:var(--ink)}
+  .illum .why{font-size:11px;color:var(--ink-3);margin-top:7px}
+
+  /* agent trace = 金継ぎ seals */
+  .kintsugi{display:flex;align-items:center;gap:7px;flex-wrap:wrap;background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:11px 13px}
+  .knode{display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border-radius:999px;background:rgba(212,175,55,.08);border:1px solid var(--line);font-size:11.5px;font-weight:700;color:var(--ink)}
+  .karrow{color:#C29A33}
+
+  /* requirement gold tablets */
+  .tablet{display:flex;gap:11px;padding:11px 0;border-bottom:1px solid var(--line)}
+  .tablet:last-child{border-bottom:none}
+  .tablet p{margin:0;font-size:13px}
+  .tablet .src{font-size:10.5px;color:var(--ink-3);margin-top:4px}
+  .gauge{height:6px;border-radius:4px;background:var(--panel-3);overflow:hidden;margin-top:7px;width:120px;box-shadow:inset 0 0 0 1px rgba(0,0,0,.3)}
+  .gauge i{display:block;height:100%;background:var(--gold)}
+
+  /* celebration */
+  .fest{position:relative;border-radius:14px;overflow:hidden;border:1px solid var(--line-strong);
+    background:radial-gradient(800px 360px at 50% 0%,rgba(212,175,55,.22),transparent 60%),linear-gradient(180deg,var(--panel-2),var(--panel))}
+  .fest .curtain{position:absolute;top:0;bottom:0;width:60px;background:
+    repeating-linear-gradient(90deg,#7A4E12,#C8951F 8px,#F6E6AC 14px,#C8951F 20px,#7A4E12 28px);opacity:.5}
+  .fest .curtain.l{left:0}.fest .curtain.r{right:0;transform:scaleX(-1)}
+  .fest-in{position:relative;padding:34px 26px;text-align:center;z-index:2}
+  .ole{font-size:clamp(30px,5vw,52px);letter-spacing:.06em;margin:6px 0 2px}
+  .born{font-size:14px;color:var(--ink-2)}
+  .fest-doc{margin:22px auto 0;max-width:560px;text-align:left}
+
+  .annot{display:grid;gap:12px;grid-template-columns:repeat(4,1fr);margin-top:22px}
+  @media(max-width:900px){.annot{grid-template-columns:1fr}}
+  .annot .a{background:var(--panel);border:1px solid var(--line);border-radius:13px;padding:14px 16px}
+  .annot .a .s{display:inline-grid;place-items:center;width:24px;height:24px;border-radius:50%;background:var(--gold);color:#2A1E08;font-size:12px;font-weight:800;margin-bottom:8px}
+  .annot .a b{font-size:13.5px;display:block;margin-bottom:2px}
+  .annot .a p{font-size:12.5px;color:var(--ink-2);margin:0}
+  .annot .a .ref{font-size:11px;color:var(--ink-3);margin-top:6px;display:block}
+
+  footer{padding:46px 0 70px;color:var(--ink-3);font-size:13px}
+  footer .gold{font-weight:700}
+</style>
+</head>
+<body>
+
+<!-- 金グラデ & 雷文パターンの定義 -->
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#8A5A14"/><stop offset=".38" stop-color="#D4AF37"/>
+      <stop offset=".58" stop-color="#F6E6AC"/><stop offset="1" stop-color="#C8951F"/>
+    </linearGradient>
+    <pattern id="gk" width="24" height="16" patternUnits="userSpaceOnUse">
+      <path d="M0 14 H24 M3 14 V3 H18 V11 H9 V7 H13" fill="none" stroke="url(#gold)" stroke-width="1.5"/>
+    </pattern>
+  </defs>
+</svg>
+
+<header class="hero">
+  <!-- 四角スパンコール（マツケンサンバ） -->
+  <span class="sequin" style="top:60px;left:8%"></span>
+  <span class="sequin" style="top:130px;left:86%;width:8px;height:8px"></span>
+  <span class="sequin" style="top:220px;left:74%"></span>
+  <span class="sequin" style="top:90px;left:64%;width:7px;height:7px;opacity:.7"></span>
+  <span class="sequin" style="top:260px;left:14%;width:8px;height:8px;opacity:.7"></span>
+  <span class="sequin" style="top:40px;left:46%;width:7px;height:7px;opacity:.6"></span>
+  <div class="wrap">
+    <span class="eyebrow">✦ 産婆術アトリエ ｜ Gilded Maieutics</span>
+    <div class="laurel">
+      <!-- 月桂冠 + ソクラテスのトンド -->
+      <svg width="92" height="92" viewBox="0 0 92 92" aria-hidden="true">
+        <circle cx="46" cy="46" r="30" fill="none" stroke="url(#gold)" stroke-width="2.4"/>
+        <g stroke="url(#gold)" stroke-width="2" fill="none" stroke-linecap="round">
+          <path d="M46 78 C30 74 22 60 22 46"/><path d="M46 78 C62 74 70 60 70 46"/>
+          <path d="M27 58 l-7 3 M25 52 l-8 1 M25 46 l-8 -2 M28 39 l-7 -4"/>
+          <path d="M65 58 l7 3 M67 52 l8 1 M67 46 l8 -2 M64 39 l7 -4"/>
+        </g>
+        <text x="46" y="54" text-anchor="middle" font-size="26" fill="url(#gold)" font-family="Georgia,serif" font-weight="700">産</text>
+      </svg>
+      <h1 class="gold">SANBA</h1>
+    </div>
+    <p class="sub">
+      ソクラテスの<b style="color:#F0D67A">問答（産婆術）</b>で答えを引き出し、テンペラの下塗りから油彩のグレーズへと
+      <b style="color:#F0D67A">層を重ねるように要件の解像度を上げ</b>、産まれた要件を金箔の輝きで照らす。
+      そして完成の瞬間は ── マツケンサンバの黄金の祝祭で、<b style="color:#F0D67A">オーレ！</b>
+    </p>
+    <blockquote class="quote">「わたしは知恵を産ませる助産師である。自ら知を生むのではなく、あなたの裡なる答えを取り上げるのだ。」<br>— ソクラテス『テアイテトス』より（産婆術の喩え）</blockquote>
+    <div class="metarow">
+      <span class="pill">画題 <b>問答 × 受胎 × 黄金</b></span>
+      <span class="pill">技法 <b>テンペラ下塗り → 油彩グレーズ</b></span>
+      <span class="pill">光 <b>金箔（神の光／マツケンの煌めき）</b></span>
+      <span class="pill">幕切れ <b>完成の祝祭・オーレ！</b></span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap" style="margin:38px auto 0"><svg class="meander" viewBox="0 0 1120 16" preserveAspectRatio="none"><rect width="1120" height="16" fill="url(#gk)"/></svg></div>
+
+<!-- CONCEPT MAPPING -->
+<section>
+  <div class="wrap">
+    <div class="kicker">01 — 画題と意匠の写像</div>
+    <h2 class="sec-h"><span class="gold">六つの主題</span>を、一つのアトリエに</h2>
+    <p class="sec-sub">バラバラに見える6つのモチーフは、すべて「対話で産み出し、層を重ね、黄金で祝う」という SANBA の所作に重なる。意匠は飾りでなく、プロダクトの核の比喩になっている。</p>
+    <div class="map">
+      <div class="row"><div class="th">🏛 ソクラテス / 産婆術</div><div class="td">一問一答で<b style="color:var(--ink)">相手の裡なる答えを取り上げる</b>。= 音声インタビューの核。UIは問答の「間（ま）」を主役に。</div></div>
+      <div class="row"><div class="th">🥚 テンペラ（下塗り）</div><div class="td">卵テンペラの <span class="mono">verdaccio</span> 下塗り・黄土の土色。= 要件の<b style="color:var(--ink)">下地</b>。粗い確信度から塗り起こす。</div></div>
+      <div class="row"><div class="th">🎨 油彩（グレーズ）</div><div class="td">透明な層を何度も重ね深みを出すキアロスクーロ。= <b style="color:var(--ink)">解像度を重ねる</b>所作そのもの。暗がりに光を差す画面。</div></div>
+      <div class="row"><div class="th">✨ 金箔</div><div class="td">イコンの金地＝<b style="color:var(--ink)">神の光</b>。確定した要件を金の銘板で照らし、根拠（出所）を後光のように添える。</div></div>
+      <div class="row"><div class="th">💃 マツケンサンバ</div><div class="td">絢爛たる黄金と<b style="color:var(--ink)">四角スパンコール</b>の祝祭。= 要件が「産まれた」瞬間の歓喜の演出（完成の幕切れ）。</div></div>
+      <div class="row"><div class="th">🗡 松平健</div><div class="td">時代劇の<b style="color:var(--ink)">格調と所作</b>。明朝体・金縁の額・雷文で「軽薄でない品位」を全体に通す。</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- DESIGN SYSTEM -->
+<section>
+  <div class="wrap">
+    <div class="kicker">02 — 絵具と意匠（Design System）</div>
+    <h2 class="sec-h">古典絵具の<span class="gold">パレット</span></h2>
+    <p class="sec-sub">背景は油彩の闇（burnt umber）。主役は金箔。状態色は古代の鉱物・土の絵具に対応させ、意味と色を一貫させる。</p>
+
+    <div class="grid g4" style="margin-top:24px">
+      <div><div class="sw" style="background:var(--gold)"></div><div class="tok"><b>金箔 / Gold</b><span class="mono">#D4AF37 · 神の光・祝祭</span></div></div>
+      <div><div class="sw" style="background:var(--crimson)"></div><div class="tok"><b>oxblood 緋 / 矛盾</b><span class="mono">#D2564B · caput mortuum</span></div></div>
+      <div><div class="sw" style="background:var(--ochre)"></div><div class="tok"><b>黄土 / 抜け</b><span class="mono">#E0A93B · yellow ochre</span></div></div>
+      <div><div class="sw" style="background:var(--olive)"></div><div class="tok"><b>橄欖 / 発話中</b><span class="mono">#A9BE6E · verdaccio・olive</span></div></div>
+    </div>
+
+    <div class="grid g3" style="margin-top:26px">
+      <div class="card">
+        <h4>書体 — 明朝 / Serif</h4>
+        <p style="margin-bottom:10px">和は明朝、欧文は Garamond 系。時代劇の格調と古典絵画の品位。</p>
+        <div style="font-size:34px;font-weight:700" class="gold">産婆 Aa 解像度 漆</div>
+        <div class="scroll" style="margin-top:12px;padding:12px 14px"><span class="who ai">羊皮紙の地</span><p style="margin:2px 0 0">問いを重ね、答えを取り上げる。</p></div>
+      </div>
+      <div class="card">
+        <h4>金縁の額 & 雷文</h4>
+        <p style="margin-bottom:12px">画面は美術館の額装のように金縁で囲い、境界は雷文（メアンダー）で締める。</p>
+        <div class="gframe"><div class="inner" style="padding:16px;background:var(--panel)"><svg class="meander" viewBox="0 0 360 16" preserveAspectRatio="none"><rect width="360" height="16" fill="url(#gk)"/></svg></div></div>
+      </div>
+      <div class="card">
+        <h4>四角スパンコール</h4>
+        <p style="margin-bottom:14px">マツケン仕様（丸→四角に進化）の煌めきを「祝祭」要素として点綴。多用は禁物、要所のみ。</p>
+        <div style="display:flex;gap:14px;flex-wrap:wrap">
+          <span class="chip must">Must 緋</span><span class="chip should">Should 黄土</span><span class="chip could">Could 橄欖</span><span class="chip gold">確定 金</span>
+        </div>
+        <div style="position:relative;height:34px;margin-top:14px">
+          <span class="sequin" style="top:4px;left:4%"></span><span class="sequin" style="top:14px;left:26%;width:8px;height:8px"></span>
+          <span class="sequin" style="top:2px;left:50%;width:9px;height:9px"></span><span class="sequin" style="top:16px;left:74%;width:8px;height:8px"></span>
+          <span class="sequin" style="top:6px;left:92%"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="wrap"><svg class="meander" viewBox="0 0 1120 16" preserveAspectRatio="none"><rect width="1120" height="16" fill="url(#gk)"/></svg></div>
+
+<!-- CORE SCREEN: 対話の間 -->
+<section>
+  <div class="wrap">
+    <div class="kicker">03 — 核 ｜ 問答の画面</div>
+    <h2 class="sec-h"><span class="gold">対話の間（ま）</span></h2>
+    <p class="sec-sub">左＝問答（ソクラテスの声）、中央＝吟味（矛盾・抜けの検知を写本の傍注のように）、右＝産まれし要件（金の銘板）。暗がりに金の光が差す油彩の構図。</p>
+
+    <div class="gframe" style="margin-top:28px">
+      <div class="inner">
+        <div class="board-cap">
+          <span class="seal">産</span><span class="t">SANBA — 産婆、問答のさなか</span>
+          <span class="u">✦ 記録中 一二刻四八</span>
+        </div>
+        <div class="screen">
+          <div class="live">
+
+            <!-- LEFT: 問答 -->
+            <div class="panel">
+              <div class="ph">🏛 問答 <span class="cnt">声 · S2S</span></div>
+              <div class="oculus"><div class="halo"></div>
+                <svg width="170" height="170" viewBox="0 0 170 170" style="position:relative" aria-hidden="true">
+                  <circle cx="85" cy="85" r="66" fill="none" stroke="url(#gold)" stroke-width="2" opacity=".8"/>
+                  <g stroke="url(#gold)" stroke-width="1.6" fill="none" stroke-linecap="round" opacity=".9">
+                    <path d="M85 151 C56 146 44 122 44 96"/><path d="M85 151 C114 146 126 122 126 96"/>
+                    <path d="M50 118 l-8 4 M47 108 l-9 2 M47 98 l-9 -2 M51 86 l-8 -5"/>
+                    <path d="M120 118 l8 4 M123 108 l9 2 M123 98 l9 -2 M119 86 l8 -5"/>
+                  </g>
+                </svg>
+              </div>
+              <div class="listening">◉ 産婆、聴いております…</div>
+              <div class="scroll">
+                <span class="who ai">産婆</span><p><span class="drop">問</span>結果の並び順は、何を規矩（きく）といたしましょう。新しき順か、ゆかりの深き順か。</p>
+                <span class="who">あなた · 企画</span><p>関連度順で…いや、さきほど新着順とも申したやもしれぬ。</p>
+                <span class="who ai">産婆</span><p>その二つ、先ほどより相和しませぬ。いずれを先と。</p>
+              </div>
+            </div>
+
+            <!-- CENTER: 吟味（検知） -->
+            <div class="panel" style="background:linear-gradient(180deg,rgba(210,86,75,.05),var(--panel-2))">
+              <div class="ph">⚖ 吟味 — 矛盾と抜け <span class="cnt">二件 未決</span></div>
+              <div class="illum contra">
+                <span class="lab">緋 — 矛盾を検知</span>
+                <p>並び順に「関連度順」と「新着順」の両説あり。いずれを規矩とすべきか。</p>
+                <div class="why">一二刻三一「関連度順」 ↔ 一二刻四六「新着順」 — 矛盾検知の侍</div>
+              </div>
+              <div class="illum gap">
+                <span class="lab">黄土 — 抜けを検知</span>
+                <p>「該当なし（零件）」の佇まいが未だ定まらず。空（くう）の景色を決められませ。</p>
+                <div class="why">必須の項、未だ満たず — 抜け検知の侍</div>
+              </div>
+              <div class="ph" style="margin-top:auto">⛓ 侍たちの連携（金継ぎ）</div>
+              <div class="kintsugi">
+                <span class="knode"><span class="tag lead">主</span>計画</span><span class="karrow">→</span>
+                <span class="knode"><span class="tag contra">矛盾</span>検知</span><span class="karrow">→</span>
+                <span class="knode"><span class="tag lead">主</span>再計画</span>
+                <span style="margin-left:auto;color:var(--ink-3);font-size:11px">三二〇粍秒</span>
+              </div>
+            </div>
+
+            <!-- RIGHT: 産まれし要件 -->
+            <div class="panel">
+              <div class="ph">📜 産まれし要件 <span class="cnt">一二件</span></div>
+              <div style="display:flex;gap:6px;margin-bottom:12px">
+                <span class="chip must">Must 5</span><span class="chip should">Should 4</span><span class="chip could">Could 3</span>
+              </div>
+              <div class="tablet"><span class="tag scope">境界</span><div style="flex:1"><p>結果は無限の巻物（スクロール）にて顕（あらわ）す</p><div class="src">出所: 企画 · 一二刻四六</div><div class="gauge"><i style="width:88%"></i></div></div></div>
+              <div class="tablet"><span class="tag nfr">非機能</span><div style="flex:1"><p>一度の検索で数百件の結果を許容す</p><div class="src">出所: 企画 · 性能に影響</div><div class="gauge"><i style="width:72%"></i></div></div></div>
+              <div class="tablet"><span class="tag contra">要決</span><div style="flex:1"><p style="color:#F2B0A8">並び順の規矩（関連度 / 新着）</p><div class="src">矛盾につき保留 — 裁定待ち</div><div class="gauge"><i style="width:30%"></i></div></div></div>
+              <button class="btn ghost sm" style="margin-top:14px;justify-content:center">要件の絵巻を見る →</button>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="annot">
+      <div class="a"><span class="s">壱</span><b>油彩の構図</b><p>暗がり（burnt umber）に金の光を差すキアロスクーロ。視線が自然と「検知」と「金の要件」へ向く。</p><span class="ref">↳ 油彩 / ADR-0008 #2</span></div>
+      <div class="a"><span class="s">弐</span><b>羊皮紙の問答</b><p>対話は明朝の羊皮紙巻物に。AIの声に頭文字（ドロップキャップ）。古文書のような可読性と品位。</p><span class="ref">↳ ソクラテス / テンペラ</span></div>
+      <div class="a"><span class="s">参</span><b>金継ぎの連携</b><p>侍（エージェント）の協調を金継ぎの鎖で。矛盾→主の再計画の相互作用を金で可視化。</p><span class="ref">↳ ADR-0002</span></div>
+      <div class="a"><span class="s">肆</span><b>金の銘板</b><p>確定要件は金箔の銘板に出所・確信度つきで刻む。「神の光」で根拠を後光のように添える。</p><span class="ref">↳ 金箔 / ADR-0008</span></div>
+    </div>
+  </div>
+</section>
+
+<div class="wrap"><svg class="meander" viewBox="0 0 1120 16" preserveAspectRatio="none"><rect width="1120" height="16" fill="url(#gk)"/></svg></div>
+
+<!-- CELEBRATION: 完成の祝祭 -->
+<section>
+  <div class="wrap">
+    <div class="kicker">04 — 幕切れ ｜ マツケンサンバの祝祭</div>
+    <h2 class="sec-h"><span class="gold">完成の祝祭</span> — オーレ！</h2>
+    <p class="sec-sub">要件が「産まれた」瞬間は、ただの完了画面ではない。黄金の幕が上がり、四角スパンコールが舞う。要件の絵巻を金縁で掲げ、GitHub へ送り出す祝祭の所作。</p>
+
+    <div class="fest" style="margin-top:28px">
+      <div class="curtain l"></div><div class="curtain r"></div>
+      <span class="sequin" style="top:24px;left:18%"></span><span class="sequin" style="top:54px;left:30%;width:8px;height:8px"></span>
+      <span class="sequin" style="top:18px;left:70%;width:9px;height:9px"></span><span class="sequin" style="top:60px;left:82%;width:8px;height:8px"></span>
+      <span class="sequin" style="top:90px;left:24%;width:7px;height:7px;opacity:.7"></span><span class="sequin" style="top:96px;left:76%;width:7px;height:7px;opacity:.7"></span>
+      <div class="fest-in">
+        <div style="font-size:13px;letter-spacing:.3em;color:#E7CE82">✦ 要件、産まれました ✦</div>
+        <div class="ole gold">オーレ！ 検索機能の要件、一二件 確定</div>
+        <div class="born">矛盾 2 を裁定し、抜け 4 を取り上げ、根拠つきで金の絵巻に刻みました。</div>
+
+        <div class="fest-doc">
+          <div class="gframe"><div class="inner">
+            <div class="scroll" style="border-radius:0">
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><span class="seal" style="width:22px;height:22px;font-size:12px">巻</span><b style="color:#7A4E12;font-size:14px">要件絵巻 — 検索機能リニューアル</b></div>
+              <p style="margin:0 0 8px"><b style="color:#7A4E12">Must｜</b>キーワード検索を新設し、結果を無限の巻物にて顕す。<span style="color:var(--sepia-2);font-size:11px">（出所 企画／確信 88%）</span></p>
+              <p style="margin:0 0 8px"><b style="color:#7A4E12">Must｜</b>並び順は関連度順を既定とし、新着順は切替とす。<span style="color:var(--sepia-2);font-size:11px">（矛盾を裁定済）</span></p>
+              <p style="margin:0"><b style="color:#7A4E12">Should｜</b>「該当なし」の空（くう）の景色を設（しつら）える。<span style="color:var(--sepia-2);font-size:11px">（抜けより起票）</span></p>
+            </div>
+          </div></div>
+        </div>
+
+        <div style="display:flex;gap:10px;justify-content:center;margin-top:22px;flex-wrap:wrap">
+          <button class="btn">⎘ GitHub へ Issue を奉る（6件）</button>
+          <button class="btn ghost">⬇ 絵巻（Markdown）を持ち帰る</button>
+          <button class="btn ghost">✨ 完成イメージを描かせる</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="annot">
+      <div class="a"><span class="s">壱</span><b>黄金の幕</b><p>左右に金の緞帳（どんちょう）、四角スパンコールが舞う。完了を「祝祭」として体験させる。</p><span class="ref">↳ マツケンサンバ</span></div>
+      <div class="a"><span class="s">弐</span><b>要件絵巻</b><p>確定要件を金縁の羊皮紙に。MoSCoW・出所・確信度を品位ある古文書として掲げる。</p><span class="ref">↳ 金箔 / 松平健</span></div>
+      <div class="a"><span class="s">参</span><b>奉る所作</b><p>「GitHub へ Issue を奉る」。DevOps ループへの受け渡しを格調ある所作の言葉で。</p><span class="ref">↳ Issue #39</span></div>
+      <div class="a"><span class="s">肆</span><b>節度ある祝祭</b><p>煌めきは要所のみ。常用画面は油彩の落ち着き、完成時だけ黄金が爆ぜる ── 緩急で品位を保つ。</p><span class="ref">↳ 認知負荷ミニマム</span></div>
+    </div>
+  </div>
+</section>
+
+<div class="wrap"><svg class="meander" viewBox="0 0 1120 16" preserveAspectRatio="none"><rect width="1120" height="16" fill="url(#gk)"/></svg></div>
+
+<footer>
+  <div class="wrap">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+      <span class="seal" style="width:26px;height:26px;font-size:13px">産</span>
+      <b class="gold" style="font-size:15px">SANBA — 産婆術アトリエ（Gilded Maieutics）</b>
+    </div>
+    意匠の典拠は Web 調査に基づく（テンペラ／ビザンチンの金地・黄土、レンブラントのキアロスクーロと土色、ギリシャの雷文・大理石、マツケンサンバの黄金と四角スパンコール）。
+    画像は外部参照せず CSS／インライン SVG で再現（自己完結・外部リクエストなし）。関連: <span class="mono">sanba-ux.html</span> ほか。
+  </div>
+</footer>
+
+</body>
+</html>
