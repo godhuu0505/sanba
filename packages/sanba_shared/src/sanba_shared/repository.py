@@ -10,6 +10,7 @@ Falls back to an in-memory store when Firestore is unavailable (e.g. unit tests)
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import structlog
 
@@ -41,6 +42,9 @@ class SessionRepository:
         self._mem_sessions: dict[str, SessionMeta] = {}
         self._mem_utterances: dict[str, list[Utterance]] = {}
         self._mem_requirements: dict[str, dict[str, Requirement]] = {}
+        # 検知 (矛盾/抜け) と適用済み最大 seq (#94/#100)。ハイドレーションの土台。
+        self._mem_detections: dict[str, dict[str, dict[str, Any]]] = {}
+        self._mem_seq: dict[str, int] = {}
 
     @staticmethod
     def _init_client():  # type: ignore[no-untyped-def]
@@ -203,6 +207,55 @@ class SessionRepository:
         else:
             self._mem_requirements.setdefault(session_id, {})[rid] = updated
         return updated
+
+    # ---- Detections (#94/#100) ---------------------------------------------
+    def save_detection(self, session_id: str, detection: dict[str, Any]) -> None:
+        """検知 (矛盾/抜け) を Firestore に upsert する (#94/#100)。
+
+        ハイドレーション (GET /detections?open=1) でリロード/途中参加時に未解消検知を
+        復元できるよう、publish だけでなく永続化する (Codex review 対応)。
+        """
+        detection_id = detection["id"]
+        if self._client is not None:
+            doc = dict(detection)
+            if (exp := self._expire_at()) is not None:
+                doc["expireAt"] = exp
+            (
+                self._client.collection("sessions")
+                .document(session_id)
+                .collection("detections")
+                .document(detection_id)
+                .set(doc, merge=True)
+            )
+            return
+        self._mem_detections.setdefault(session_id, {})[detection_id] = dict(detection)
+
+    def resolve_detection(self, session_id: str, detection_id: str, resolution: str) -> None:
+        """検知を解消済みに更新する。open スナップショットから外れるようにする。"""
+        patch: dict[str, Any] = {"resolved": True, "resolution": resolution}
+        if self._client is not None:
+            (
+                self._client.collection("sessions")
+                .document(session_id)
+                .collection("detections")
+                .document(detection_id)
+                .set(patch, merge=True)
+            )
+            return
+        existing = self._mem_detections.setdefault(session_id, {}).get(detection_id)
+        if existing is not None:
+            existing.update(patch)
+
+    def set_session_seq(self, session_id: str, seq: int) -> None:
+        """セッションの適用済み最大 seq を保存する (ハイドレーション境界, 契約 §4)。"""
+        if self._client is not None:
+            (
+                self._client.collection("sessions")
+                .document(session_id)
+                .set({"last_seq": seq}, merge=True)
+            )
+            return
+        self._mem_seq[session_id] = seq
 
     # ---- internal ----------------------------------------------------------
     def _req_doc(self, session_id: str, rid: str):  # type: ignore[no-untyped-def]

@@ -20,9 +20,22 @@ class InvalidInvite(Exception):
     """Raised when an invite token is malformed, tampered, or expired."""
 
 
+class InvalidSessionToken(Exception):
+    """Raised when a session-access token is malformed, tampered, or expired."""
+
+
 @dataclass(frozen=True)
 class Invite:
     session_id: str
+    role: str
+
+
+@dataclass(frozen=True)
+class SessionAccess:
+    """Proof that the bearer joined a specific session (read-side authorization)."""
+
+    session_id: str
+    sub: str
     role: str
 
 
@@ -40,9 +53,7 @@ def _sign(payload_b64: str, secret: str) -> str:
     return _b64url_encode(sig)
 
 
-def create_invite(
-    session_id: str, role: str, secret: str, ttl_seconds: int = 3600
-) -> str:
+def create_invite(session_id: str, role: str, secret: str, ttl_seconds: int = 3600) -> str:
     """Mint a signed invite for `session_id` valid for `ttl_seconds`."""
     payload = {"sid": session_id, "role": role, "exp": int(time.time()) + ttl_seconds}
     payload_b64 = _b64url_encode(json.dumps(payload, separators=(",", ":")).encode())
@@ -69,3 +80,52 @@ def verify_invite(token: str, secret: str) -> Invite:
         raise InvalidInvite("expired")
 
     return Invite(session_id=payload["sid"], role=payload.get("role", "participant"))
+
+
+# ── Session-access tokens（契約 §4 / Issue #100）─────────────────────────────
+# ハイドレーション・起票 API は「join 済みトークン」で保護する。join 時に発行し、
+# web は Bearer として GET /requirements 等に付与する。`session_id` をパスに含むだけ
+# では参加者以外に要件・検知が漏洩するため、必ずこの署名トークンを検証する。
+
+
+def create_session_token(
+    session_id: str, sub: str, role: str, secret: str, ttl_seconds: int = 3600
+) -> str:
+    """Mint a signed session-access token bound to session_id + verified sub."""
+    payload = {
+        "sid": session_id,
+        "sub": sub,
+        "role": role,
+        "scope": "session",
+        "exp": int(time.time()) + ttl_seconds,
+    }
+    payload_b64 = _b64url_encode(json.dumps(payload, separators=(",", ":")).encode())
+    return f"{payload_b64}.{_sign(payload_b64, secret)}"
+
+
+def verify_session_token(token: str, secret: str) -> SessionAccess:
+    """Validate signature + expiry + scope and return the bound session/sub."""
+    try:
+        payload_b64, sig = token.split(".", 1)
+    except ValueError as exc:
+        raise InvalidSessionToken("malformed token") from exc
+
+    expected = _sign(payload_b64, secret)
+    if not hmac.compare_digest(sig, expected):
+        raise InvalidSessionToken("bad signature")
+
+    try:
+        payload = json.loads(_b64url_decode(payload_b64))
+    except Exception as exc:
+        raise InvalidSessionToken("malformed payload") from exc
+
+    if payload.get("scope") != "session":
+        raise InvalidSessionToken("wrong scope")
+    if int(payload.get("exp", 0)) < int(time.time()):
+        raise InvalidSessionToken("expired")
+
+    return SessionAccess(
+        session_id=payload["sid"],
+        sub=payload.get("sub", ""),
+        role=payload.get("role", "participant"),
+    )

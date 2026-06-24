@@ -60,6 +60,12 @@ class Settings(BaseSettings):
     # Max characters accepted per context upload (guards memory/cost).
     max_context_chars: int = 200_000
 
+    # ---- Requirement export -> GitHub Issue (契約 §4 POST /export, #39) ----
+    # OFF by default. Enable + provide a token/repo to let 09 要件絵巻 起票する。
+    github_connector_enabled: bool = False
+    github_token: str = ""
+    github_repo: str = ""  # "owner/name"
+
     # ---- Data governance (issue #10) ----
     # Mask PII before context is written to the shared grounding index.
     mask_pii_before_index: bool = True

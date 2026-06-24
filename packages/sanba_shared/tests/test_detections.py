@@ -1,0 +1,38 @@
+"""Tests for detection/seq persistence (Issue #94/#100 — Codex review).
+
+Firestore 無しのメモリモードで、検知の保存・解消・seq 永続化を検証する。
+これにより GET /detections?open=1 のハイドレーションとリロード復元が成立する。
+"""
+
+from __future__ import annotations
+
+from sanba_shared.repository import SessionRepository
+
+
+def _mem_repo() -> SessionRepository:
+    repo = SessionRepository()
+    repo._client = None  # force in-memory path
+    return repo
+
+
+def test_save_and_resolve_detection() -> None:
+    repo = _mem_repo()
+    repo.save_detection("s1", {"id": "d1", "kind": "gap", "summary": "x", "resolved": False})
+    assert repo._mem_detections["s1"]["d1"]["resolved"] is False
+
+    repo.resolve_detection("s1", "d1", "agent_resolved")
+    assert repo._mem_detections["s1"]["d1"]["resolved"] is True
+    assert repo._mem_detections["s1"]["d1"]["resolution"] == "agent_resolved"
+
+
+def test_save_detection_upserts_by_id() -> None:
+    repo = _mem_repo()
+    repo.save_detection("s1", {"id": "d1", "summary": "first", "resolved": False})
+    repo.save_detection("s1", {"id": "d1", "summary": "second", "resolved": False})
+    assert repo._mem_detections["s1"]["d1"]["summary"] == "second"
+
+
+def test_set_session_seq() -> None:
+    repo = _mem_repo()
+    repo.set_session_seq("s1", 7)
+    assert repo._mem_seq["s1"] == 7
