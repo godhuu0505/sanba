@@ -19,6 +19,11 @@ terraform {
 provider "google" {
   project = var.project_id
   region  = var.region
+  # billingbudgets 等「quota project 必須」の API 用。ADC に quota_project_id があっても
+  # provider はこれが無いと X-Goog-User-Project を送らず、リクエストが gcloud 既定 project
+  # (764086051850) に落ちて 403 (SERVICE_DISABLED) になる。CI の SA 認証とも整合する。
+  user_project_override = true
+  billing_project       = var.project_id
 }
 
 # ---- Required APIs ----
