@@ -43,14 +43,17 @@ export async function createSession(
   return res.json();
 }
 
+// context 投稿は join 済みトークン（session_token）で認可される（契約 §4）。
+// 匿名アクセスを塞ぐため、join 後に取得した session_token を Bearer に渡す。
 export async function addSessionContext(
   sessionId: string,
   text: string,
+  sessionToken: string | null,
   sourceName = "uploaded",
 ): Promise<{ indexed_chunks: number }> {
   const res = await fetch(`${API_URL}/api/sessions/${sessionId}/context`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: authHeaders(sessionToken),
     body: JSON.stringify({ text, source_name: sourceName }),
   });
   if (!res.ok) throw new Error(`add context failed: ${res.status}`);

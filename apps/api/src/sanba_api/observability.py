@@ -72,7 +72,10 @@ def setup_observability(app: FastAPI) -> None:
         provider = TracerProvider(resource=resource)
         provider.add_span_processor(
             BatchSpanProcessor(
-                OTLPSpanExporter(endpoint=settings.otel_exporter_otlp_endpoint, insecure=True)
+                OTLPSpanExporter(
+                    endpoint=settings.otel_exporter_otlp_endpoint,
+                    insecure=settings.otel_exporter_insecure,
+                )
             )
         )
         trace.set_tracer_provider(provider)

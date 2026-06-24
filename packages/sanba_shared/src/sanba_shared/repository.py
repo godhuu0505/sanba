@@ -20,6 +20,7 @@ from .models import (
     SessionMeta,
     Utterance,
 )
+from .pii import mask_pii
 
 log = structlog.get_logger(__name__)
 
@@ -35,8 +36,11 @@ class RequirementNotFound(Exception):
 class SessionRepository:
     """Persistence boundary. Swap the backend without touching agent/api logic."""
 
-    def __init__(self, data_retention_days: int = 30) -> None:
+    def __init__(self, data_retention_days: int = 30, mask_pii_before_persist: bool = True) -> None:
         self._retention_days = data_retention_days
+        # 発話を永続化する前に PII をマスクするか（issue #10 / mask_pii_before_index）。
+        # ドメイン層は app config に依存しないので、呼び出し側 (agent/api) が注入する。
+        self._mask_pii = mask_pii_before_persist
         self._client = self._init_client()
         # In-memory fallback used when Firestore is not configured.
         self._mem_sessions: dict[str, SessionMeta] = {}
@@ -89,8 +93,14 @@ class SessionRepository:
 
     # ---- Utterances --------------------------------------------------------
     def add_utterance(self, session_id: str, utterance: Utterance) -> None:
+        # PII を含みうる発話は永続化前にマスクする（issue #10 / #130 / mask_pii_before_index）。
+        # grounding 索引は retrieval/ingestion 側でマスク済みだが、Firestore 保存経路でも
+        # 同じ方針を適用し、生 PII が at-rest で残らないようにする。
+        stored = utterance
+        if self._mask_pii:
+            stored = utterance.model_copy(update={"text": mask_pii(utterance.text)})
         if self._client is not None:
-            doc = utterance.model_dump(mode="json")
+            doc = stored.model_dump(mode="json")
             if (exp := self._expire_at()) is not None:
                 doc["expireAt"] = exp
             (
@@ -100,7 +110,7 @@ class SessionRepository:
                 .add(doc)
             )
             return
-        self._mem_utterances.setdefault(session_id, []).append(utterance)
+        self._mem_utterances.setdefault(session_id, []).append(stored)
 
     # ---- Requirements ------------------------------------------------------
     def save_requirement(self, session_id: str, requirement: Requirement) -> None:

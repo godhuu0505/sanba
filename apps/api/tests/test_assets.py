@@ -12,7 +12,9 @@ from collections.abc import Iterator
 import pytest
 from fastapi.testclient import TestClient
 
+from sanba_api.auth import create_session_token
 from sanba_api.auth_google import AuthUser, require_user
+from sanba_api.config import settings
 from sanba_api.main import app
 from sanba_api.storage import (
     AssetStore,
@@ -39,6 +41,14 @@ def _assume_logged_in() -> Iterator[None]:
 def _new_session() -> str:
     created = client.post("/api/sessions", json={"roles": ["pm"], "consent_acknowledged": True})
     return created.json()["session_id"]
+
+
+def _session_auth(session_id: str, role: str = "pm") -> dict[str, str]:
+    """context/file 投稿は join 済みトークン必須（契約 §4）。テスト用の Bearer を作る。"""
+    token = create_session_token(
+        session_id, "owner-123456789", role, settings.session_signing_secret, 3600
+    )
+    return {"Authorization": f"Bearer {token}"}
 
 
 # ── 分類 ────────────────────────────────────────────────────────────────
@@ -115,6 +125,7 @@ def test_upload_image_returns_asset_id() -> None:
     res = client.post(
         f"/api/sessions/{sid}/context/file",
         files={"file": ("mock.png", b"\x89PNG\r\n\x1a\n", "image/png")},
+        headers=_session_auth(sid),
     )
     assert res.status_code == 200
     body = res.json()
@@ -130,6 +141,7 @@ def test_upload_video_is_pending() -> None:
     res = client.post(
         f"/api/sessions/{sid}/context/file",
         files={"file": ("rec.mp4", b"\x00\x00\x00\x18ftypmp42", "video/mp4")},
+        headers=_session_auth(sid),
     )
     assert res.status_code == 200
     body = res.json()
@@ -143,6 +155,7 @@ def test_upload_unsupported_type_rejected() -> None:
     res = client.post(
         f"/api/sessions/{sid}/context/file",
         files={"file": ("evil.exe", b"MZ\x90\x00", "application/octet-stream")},
+        headers=_session_auth(sid),
     )
     assert res.status_code == 415
 
@@ -152,6 +165,7 @@ def test_upload_text_still_indexes() -> None:
     res = client.post(
         f"/api/sessions/{sid}/context/file",
         files={"file": ("prd.md", "要約機能が必要。\n\n対象は社内。".encode(), "text/markdown")},
+        headers=_session_auth(sid),
     )
     assert res.status_code == 200
     body = res.json()

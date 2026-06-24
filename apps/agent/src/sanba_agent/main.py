@@ -96,7 +96,11 @@ class SANBAAgent(Agent):
             log.warning("publish_task_failed", error=str(task.exception()))
 
     def record_utterance(self, speaker: str, text: str) -> str:
-        self._transcript.append(f"{speaker}: {text}")
+        # 発話 id を先に採番し、本文に前置して LLM に見せる。これにより
+        # save_requirement の citations（根拠発話 id）を LLM が実際に参照できる（#133）。
+        self._utterance_seq += 1
+        utterance_id = f"u{self._utterance_seq}"
+        self._transcript.append(f"[{utterance_id}] {speaker}: {text}")
         self._repo.add_utterance(self._session_id, Utterance(speaker=speaker, text=text))
         # Index for later past-session retrieval.
         self._grounding.index_passage(
@@ -106,8 +110,6 @@ class SANBAAgent(Agent):
             session_id=self._session_id,
         )
         # 確定発話を web へ（04/05 のトランスクリプト・detection.refs の ID 空間）。
-        self._utterance_seq += 1
-        utterance_id = f"u{self._utterance_seq}"
         if self._publisher is not None:
             role = "participant"
             self._publish(self._publisher.transcript_final(speaker, role, utterance_id, text))
@@ -204,6 +206,7 @@ class SANBAAgent(Agent):
         category: str = "functional",
         priority: str = "should",
         source_speaker: str | None = None,
+        citations: list[str] | None = None,
     ) -> dict:
         """確定した要件を1件記録する。
 
@@ -212,6 +215,8 @@ class SANBAAgent(Agent):
             category: functional / non_functional / constraint / scope / open_question
             priority: must / should / could / wont
             source_speaker: その要件を述べた参加者の識別子(任意)。
+            citations: その要件の根拠となった発話 id のリスト(例 ["u3", "u5"])。
+                会話本文の各行頭にある [u..] を参照する。要件カードの引用表示に使う。
         """
         requirement = Requirement(
             id=make_requirement_id(statement),
@@ -219,6 +224,7 @@ class SANBAAgent(Agent):
             category=RequirementCategory(category),
             priority=Priority(priority),
             source_speaker=source_speaker,
+            citations=citations or [],
         )
         self._repo.save_requirement(self._session_id, requirement)
         self._grounding.index_passage(
@@ -373,7 +379,10 @@ async def entrypoint(ctx: JobContext) -> None:
     await ctx.connect()
 
     session_id = ctx.room.name
-    repo = SessionRepository(data_retention_days=settings.data_retention_days)
+    repo = SessionRepository(
+        data_retention_days=settings.data_retention_days,
+        mask_pii_before_persist=settings.mask_pii_before_index,
+    )
     grounding = GroundingStore()
     seed_knowledge_base(grounding)
     seed_github_context(grounding, session_id)
@@ -397,14 +406,25 @@ async def entrypoint(ctx: JobContext) -> None:
             agent.record_utterance(speaker, ev.transcript)
 
     # web → agent の user.selection を受信し、検知を解消する（契約 §4.5 / #102）。
+    # fire-and-forget タスクは set に退避して GC を防ぐ（#128。完了時に除去・例外をログ）。
+    _bg_tasks: set[asyncio.Task] = set()
+
+    def _on_bg_done(task: asyncio.Task) -> None:
+        _bg_tasks.discard(task)
+        if not task.cancelled() and (exc := task.exception()):
+            log.warning("selection_task_failed", error=str(exc))
+
     def _on_data(packet) -> None:  # type: ignore[no-untyped-def]
         if getattr(packet, "topic", None) != WEB_EVENTS_TOPIC:
             return
-        parsed = decode_user_selection(getattr(packet, "data", b""))
+        # session_id を照合し、同室の別セッション向け selection 混入を弾く（#132）。
+        parsed = decode_user_selection(getattr(packet, "data", b""), expected_session_id=session_id)
         if parsed is None:
             return
         detection_id, selected_value = parsed
-        asyncio.create_task(agent.resolve_detection(detection_id, selected_value))
+        task = asyncio.create_task(agent.resolve_detection(detection_id, selected_value))
+        _bg_tasks.add(task)
+        task.add_done_callback(_on_bg_done)
 
     ctx.room.on("data_received", _on_data)
 

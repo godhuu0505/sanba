@@ -14,6 +14,9 @@ class Settings(BaseSettings):
 
     otel_exporter_otlp_endpoint: str = ""
     otel_service_name: str = "sanba-api"
+    # OTLP 転送の TLS。localhost collector sidecar では true（平文 gRPC）、
+    # TLS 終端された外部 OTLP 直送では false（既定）。
+    otel_exporter_insecure: bool = False
 
     # CORS allowlist for the web client
     allowed_origins: str = "http://localhost:3000"
