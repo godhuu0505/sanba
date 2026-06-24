@@ -24,6 +24,7 @@
 
 ## 📖 リファレンス（確認する）
 
+- [ユビキタス言語](ubiquitous-language.md) — プロダクト・設計・コード・UI で同じ言葉を同じ意味で使う用語集。
 - [アーキテクチャ設計](architecture.md) — コンポーネント / 二層構造 / データモデル / 非機能要件。
 - [セキュリティ & データガバナンス](security.md) — アクセス制御・PII マスキング・保持期間・CI スキャン。
 - アプリ別 README — [agent](../apps/agent/README.md) / [api](../apps/api/README.md) / [web](../apps/web/README.md)
