@@ -18,7 +18,7 @@
 - 主 CTA: **「⎘ GitHub Issue を奉る（6件）」**（Figma 古語→現代語「GitHub Issue を作成（6件）」）。
 
 ## 状態 / 遷移
-- データ: `requirement.upserted`（category=must/should/could/wont, confidence, source, citations, status）。
+- データ: `requirement.upserted`（**priority**=must/should/could/wont, category=functional/non_functional/constraint/scope/open_question, confidence, source, citations, status）。
 - グルーピング: MoSCoW でセクション化。各要件にタグ（境界/解消 等）と出所・確信度を併記。
 - 遷移: Issue 作成 CTA → 起票実行 → 10 完了（Issue URL を引き渡す）。
 

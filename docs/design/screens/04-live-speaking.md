@@ -21,6 +21,7 @@
 ## 連携
 - データチャネル購読: `status`（agents_active）、`transcript.partial`、`transcript.final`。
 - 録音タイマーはクライアント時計でなくセッション開始時刻基準（再接続でズレないよう `session_id` の開始から算出）。
+  `POST /api/sessions` レスポンスまたはハイドレーション GET に `started_at`（ISO8601）を含める契約が必要（実装は別PR）。
 
 ## 受け入れ基準（AC）
 - [ ] 波形が実際の音量入力に反応する（無音時は静止）。

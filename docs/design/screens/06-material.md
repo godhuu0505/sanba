@@ -26,6 +26,8 @@
 ## 連携
 - 画像/動画アップロード: `POST /api/sessions/{id}/context/file`（既存）。**現状は PDF/MD/TXT 対応**のため、
   画像/動画の受理・保存（Cloud Storage）・Gemini 解析経路は**別PRで拡張が必要**（API 側 P0 連動）。
+  画像/動画拡張時は API レスポンスに `asset_id`（安定識別子）を含める契約にすること。
+  web はこの `asset_id` で `analysis.progress` / `analysis.visual` のイベントをファイル行に対応付ける。
 - 画面共有: LiveKit 映像トラック（API 追加不要）。
 - データチャネル: アップロード後の解析進捗は `analysis.progress`（07）、結果は `analysis.visual`（08）。
 
