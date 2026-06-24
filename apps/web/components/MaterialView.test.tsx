@@ -31,7 +31,7 @@ function imageInput() {
 
 describe("MaterialView 画像アップロード (#103)", () => {
   it("動画アップロードは準備中でグレーアウトされる", () => {
-    render(<MaterialView sessionId="s1" />);
+    render(<MaterialView sessionId="s1" sessionToken="tok-1" />);
     const video = screen.getByText("動画をアップロード").closest("button");
     expect(video).toBeTruthy();
     expect((video as HTMLButtonElement).disabled).toBe(true);
@@ -45,19 +45,19 @@ describe("MaterialView 画像アップロード (#103)", () => {
       asset_kind: "image",
       analysis_pending: false,
     });
-    render(<MaterialView sessionId="s1" />);
+    render(<MaterialView sessionId="s1" sessionToken="tok-1" />);
     const file = new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], "mock.png", {
       type: "image/png",
     });
     fireEvent.change(imageInput(), { target: { files: [file] } });
 
-    await waitFor(() => expect(uploadContextFile).toHaveBeenCalledWith("s1", file));
+    await waitFor(() => expect(uploadContextFile).toHaveBeenCalledWith("s1", file, "tok-1"));
     expect(await screen.findByText("mock.png")).toBeTruthy();
     expect(screen.getByText("解析待ち")).toBeTruthy();
   });
 
   it("非対応拡張子は弾いてアップロードしない", async () => {
-    render(<MaterialView sessionId="s1" />);
+    render(<MaterialView sessionId="s1" sessionToken="tok-1" />);
     const file = new File([new Uint8Array([1, 2, 3])], "evil.exe", {
       type: "application/octet-stream",
     });

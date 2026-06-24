@@ -90,12 +90,17 @@ export interface UploadResult {
 export async function uploadContextFile(
   sessionId: string,
   file: File,
+  sessionToken: string | null,
 ): Promise<UploadResult> {
   const form = new FormData();
   form.append("file", file);
-  // multipart の boundary はブラウザに任せる（Content-Type を手で付けない）。
+  // context/file は join 済みトークン必須（契約 §4）。multipart の boundary はブラウザに
+  // 任せるため Content-Type は付けず、Authorization だけ手で付ける。
+  const headers: Record<string, string> = {};
+  if (sessionToken) headers.Authorization = `Bearer ${sessionToken}`;
   const res = await fetch(`${API_URL}/api/sessions/${sessionId}/context/file`, {
     method: "POST",
+    headers,
     body: form,
   });
   if (res.status === 415) throw new Error("対応していない形式です（PNG/JPG・MP4/MOV）");

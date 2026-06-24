@@ -18,7 +18,14 @@ interface UploadedAsset {
   kind: "image" | "video";
 }
 
-export function MaterialView({ sessionId }: { sessionId: string }) {
+export function MaterialView({
+  sessionId,
+  sessionToken,
+}: {
+  sessionId: string;
+  // context/file 認可用の join 済みトークン（契約 §4）。null 時は dev バイパスに委ねる。
+  sessionToken: string | null;
+}) {
   const { localParticipant } = useLocalParticipant();
   const [sharing, setSharing] = useState(false);
   const [camera, setCamera] = useState(false);
@@ -40,7 +47,7 @@ export function MaterialView({ sessionId }: { sessionId: string }) {
     }
     setBusy(true);
     try {
-      const res = await uploadContextFile(sessionId, file);
+      const res = await uploadContextFile(sessionId, file, sessionToken);
       if (res.asset_id) {
         setUploaded((prev) => [
           { asset_id: res.asset_id!, name: file.name, kind: "image" },
