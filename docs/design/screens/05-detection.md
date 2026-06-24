@@ -20,7 +20,7 @@
 - 入力イベント: `detection.contradiction` / `detection.gap`（[contract](../realtime-contract.md) §3）。
 - シート状態: hidden → peek（検知到着）→ expanded（タップ）→ dismissed/resolved。
 - 複数検知: スタック（最新を前面、件数バッジ）。`(type,id)` で重複排除、`seq` で順序。
-- 解消: 選択肢タップは当面 agent 側の発話/ツールで反映（web は表示主体、書き込みはスコープ外）。
+- 解消: 選択肢タップで `user.selection` を送信（[contract §4.5](../realtime-contract.md)）。agent が受信後にツールを呼び出して resolved に遷移（実装は別PR）。
 
 ## 連携
 - データチャネル購読: `detection.contradiction`, `detection.gap`, `status`。

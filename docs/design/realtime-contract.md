@@ -44,11 +44,11 @@ web 側の適用規則: **`(type, id)` で冪等**（同じ要件/検知は upse
 | `type` | 主な画面 | ペイロード（`v/type/seq/ts/session_id` に加えて） |
 |---|---|---|
 | `status` | 03/04/05 | `phase`: `idle`\|`listening`\|`recognizing`\|`deliberating`、`agents_active?`: int（"検討中"の体数） |
-| `transcript.partial` | 04 | `speaker`, `role`, `text`（確定前の認識中テキスト） |
-| `transcript.final` | 04/05 | `speaker`, `role`, `text` |
+| `transcript.partial` | 04 | `speaker`, `role`, `utterance_id`（仮払い出し）, `text`（確定前の認識中テキスト） |
+| `transcript.final` | 04/05 | `speaker`, `role`, `utterance_id`（確定ID・`detection.*.refs` と同一ID空間）, `text` |
 | `detection.contradiction` | 05/08 | `id`, `summary`, `refs`:[utterance_id...], `options?`:[{`label`,`value`}], `detector`:`"contradiction_detector"` |
 | `detection.gap` | 05/08 | `id`, `summary`, `category`, `detector`:`"scope_specialist"`\|`"nfr_specialist"` |
-| `requirement.upserted` | 08/09 | `requirement`:{`id`,`statement`,`category`(`must`\|`should`\|`could`\|`wont`),`confidence`(0–1),`source_speaker`,`citations`:[{`kind`,`ref`}],`status`(`draft`\|`confirmed`)} |
+| `requirement.upserted` | 08/09 | `requirement`:{`id`,`statement`,`category`(`functional`\|`non_functional`\|`constraint`),`priority`(`must`\|`should`\|`could`\|`wont`),`confidence`(0–1),`source_speaker`,`citations`:[{`kind`,`ref`}],`status`(`draft`\|`confirmed`)} |
 | `analysis.progress` | 07 | `asset_id`, `pct`(0–100), `stage`（領域検出/OCR/突合 等の人間可読ラベル） |
 | `analysis.visual` | 08 | `asset_id`, `extracted`:[string...], `conflicts`:[{`summary`,`refs`}] |
 | `session.completed` | 09/10 | `summary`:{`contradictions_resolved`,`gaps_found`,`issues_created`}, `artifacts`:[{`kind`,`url`}] |
@@ -62,21 +62,43 @@ web 側の適用規則: **`(type, id)` で冪等**（同じ要件/検知は upse
 
 ```
 [web 接続/再接続]
-   1. GET /api/sessions/{id}/requirements        → 確定/下書き要件の現在スナップショット
-   2. GET /api/sessions/{id}/detections?open=1   → 未解消の矛盾/抜け（任意・08で使用）
-   3. データチャネル購読を開始し、(type,id) で upsert / seq で整列
+   1. データチャネル購読を開始しイベントをバッファ（欠落防止のため購読を先行）
+   2. GET /api/sessions/{id}/requirements        → 確定/下書き要件のスナップショット（seq=N を返す）
+   3. GET /api/sessions/{id}/detections?open=1   → 未解消の矛盾/抜け（任意・08で使用）
+   4. バッファから seq ≤ N のイベントを破棄、seq > N のみ (type,id) で upsert
 ```
 
 ### 追加が必要な API（要件・別PRで実装）
 
-| メソッド | パス | 返却 | 優先度 |
-|---|---|---|---|
-| GET | `/api/sessions/{id}/requirements` | `{items:[requirement...], seq}` 現在の要件一覧（`seq` は適用済み連番） | **P0**（08/09 の前提） |
-| GET | `/api/sessions/{id}/detections?open=1` | `{items:[detection...]}` 未解消検知 | P1（08 の途中参加補強） |
-| POST | `/api/sessions/{id}/export` | `{issue_url, doc_url}` 確定要件→GitHub Issue/Markdown（agent の `export_requirements_to_github` を web から起動） | P1（09→10） |
+| メソッド | パス | 返却 | 認可 | 優先度 |
+|---|---|---|---|---|
+| GET | `/api/sessions/{id}/requirements` | `{items:[requirement...], seq}` 現在の要件一覧（`seq` は適用済み連番） | join 済みトークン（Bearer / Cookie）。`session_id` 単体では不可 | **P0**（08/09 の前提） |
+| GET | `/api/sessions/{id}/detections?open=1` | `{items:[detection...]}` 未解消検知 | 同上 | P1（08 の途中参加補強） |
+| POST | `/api/sessions/{id}/export` | `{issue_url, doc_url}` 確定要件→GitHub Issue/Markdown（agent の `export_requirements_to_github` を web から起動） | 同上 | P1（09→10） |
 
 - `seq` を併せて返すことで、スナップショット取得とライブ差分の**境界**が分かる（取得 seq 以下のイベントは破棄）。
-- これらの GET は読み取り専用。書き込み（要件確定・矛盾の選択）は当面 agent 側のツールが担い、web は表示に徹する。
+- 認可: 既存の署名付き招待トークンと同等の条件を適用する。`session_id` をパスに含むだけでは参加者以外に要件・検知が漏洩するため、実装時は必ずトークン検証を入れること。
+
+## 4.5 web → agent 送信（ユーザー選択操作）
+
+画面 05（検知カード）でユーザーが選択肢をタップした場合、web は選択結果を agent へ送信する。
+
+| `type` | 発火条件 | ペイロード |
+|---|---|---|
+| `user.selection` | 検知カードの選択肢ボタンタップ | `detection_id`（対象 detection の `id`）, `selected_value`（選択した `options[].value`）, `session_id` |
+
+```
+apps/web
+   │  room.localParticipant.publishData(payload, {reliable:true, topic:"sanba.events.web"})
+   ▼
+LiveKit ルーム（agent→web とは逆方向）
+   │  DataReceived（topic="sanba.events.web"）
+   ▼
+apps/agent — 受信後に対応ツール（解消・確定など）を呼び出す（実装は別PR）
+```
+
+- topic を `sanba.events.web` と分けることで agent→web トラフィックと混在しない。
+- 実装前の段階でもこのイベント定義を契約に含めることで、画面 05 のボタンが「音声回答の視覚補助」ではなく**実際に操作可能な選択 UI** として実装できる。
 
 ## 5. 観測性（CLAUDE.md 原則3）
 
@@ -86,5 +108,5 @@ web 側の適用規則: **`(type, id)` で冪等**（同じ要件/検知は upse
 
 ## 6. 非対象（今フェーズ）
 
-- 書き込み系のリアルタイム（web → agent の確定操作）は**スコープ外**。data channel は agent→web の一方向。
+- 書き込み系のリアルタイム（web → agent）は §4.5 の `user.selection` のみを対象とし、要件確定・矛盾の強制解消など全般的な双方向操作は**スコープ外**。
 - オフライン永続キュー・E2E 暗号化は扱わない（ルームの既存セキュリティに準ずる）。
