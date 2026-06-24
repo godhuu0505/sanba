@@ -157,6 +157,9 @@ class SANBAAgent(Agent):
             next_question=result.next_question,
         )
         # 抜け（未確認の論点）を detection.gap として web に上げる（05/08 の黄土）。
+        # TODO: open_topics の種別（機能/非機能）を判定して category/detector を振り分ける。
+        #       現状は暫定で一律 non_functional / DETECTOR_NFR を使用しており、
+        #       機能スコープの抜けも NFR として表示される点に注意。
         if self._publisher is not None:
             current = {make_requirement_id(f"gap:{t}"): t for t in result.open_topics}
             # 新規の抜けを永続化 + publish（リロードでも復元できるよう Firestore に保存）。
