@@ -23,6 +23,35 @@
   --input: oklch(0.922 0 0);
   --ring: oklch(0.708 0 0);
   --radius: 0.625rem;
+
+  /* ── SANBA ブランドトークン（dark + gold）─────────────────────────────
+     Figma「SANBA — UI/UX 機能拡張デザイン」正本（node 31:2）から抽出。
+     産婆術の世界観に合わせた漆黒×金の配色。light テーマ（admin/login）を
+     壊さないよう独立した名前空間（--sanba-*）で定義し、SANBA 体験を担う
+     コンポーネント（components/sanba/*）だけが参照する。 */
+  --sanba-bg: #0e0a05;            /* 画面下地（最暗部） */
+  --sanba-bg-mid: #221910;        /* 放射グラデの中間 */
+  --sanba-bg-glow: #3e2e16;       /* 放射グラデの中心（ほのかな金の灯り） */
+  --sanba-surface: #2e2214;       /* カード/入力の面 */
+  --sanba-surface-strong: #2e2a16;/* ユーザー吹き出しの面 */
+  --sanba-border: #4a3a1e;        /* 標準の境界・区切り線 */
+  --sanba-border-strong: #5a4a2e; /* ユーザー吹き出しの境界 */
+  --sanba-frame: #8a5a14;         /* 端末フレームの金枠 */
+  --sanba-cream: #efe6c9;         /* 主要テキスト（生成り） */
+  --sanba-cream-bubble: #ecdfb8;  /* エージェント吹き出しの面 */
+  --sanba-ink: #2a1e08;           /* 金面上の濃色テキスト */
+  --sanba-ink-bubble: #3e2c12;    /* 生成り吹き出し上のテキスト */
+  --sanba-muted: #cbb98d;         /* 補助テキスト（鈍い金） */
+  --sanba-gold-text: #f0d67a;     /* 見出しの金 */
+  --sanba-gold-deep: #8a5a14;     /* 金グラデの起点 */
+  --sanba-gold: #d4af37;          /* 金グラデの主色 */
+  --sanba-gold-light: #f6e6ac;    /* 金グラデのハイライト */
+  --sanba-gold-amber: #c8951f;    /* 金グラデの終点 */
+  --sanba-rec: #d2564b;           /* 録音中・矛盾（緋） */
+  --sanba-speak: #a9be6e;         /* 発話認識中（萌黄） */
+  --sanba-radius-card: 14px;
+  --sanba-radius-control: 12px;
+  --sanba-radius-bubble: 14px;
 }
 
 @theme inline {
@@ -47,6 +76,27 @@
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
+
+  /* SANBA トークンを Tailwind ユーティリティに橋渡し（bg-sanba-surface 等）。 */
+  --color-sanba-bg: var(--sanba-bg);
+  --color-sanba-surface: var(--sanba-surface);
+  --color-sanba-surface-strong: var(--sanba-surface-strong);
+  --color-sanba-border: var(--sanba-border);
+  --color-sanba-border-strong: var(--sanba-border-strong);
+  --color-sanba-frame: var(--sanba-frame);
+  --color-sanba-cream: var(--sanba-cream);
+  --color-sanba-cream-bubble: var(--sanba-cream-bubble);
+  --color-sanba-ink: var(--sanba-ink);
+  --color-sanba-ink-bubble: var(--sanba-ink-bubble);
+  --color-sanba-muted: var(--sanba-muted);
+  --color-sanba-gold-text: var(--sanba-gold-text);
+  --color-sanba-gold-deep: var(--sanba-gold-deep);
+  --color-sanba-gold: var(--sanba-gold);
+  --color-sanba-gold-light: var(--sanba-gold-light);
+  --color-sanba-gold-amber: var(--sanba-gold-amber);
+  --color-sanba-rec: var(--sanba-rec);
+  --color-sanba-speak: var(--sanba-speak);
+  --font-serif-jp: var(--font-noto-serif-jp), "Noto Serif JP", serif;
 }
 
 * {
@@ -57,4 +107,60 @@ body {
   background-color: var(--background);
   color: var(--foreground);
   font-family: system-ui, sans-serif;
+}
+
+/* ── SANBA 共通ユーティリティ ───────────────────────────────────────────
+   グラデーションは色トークン単体では表せないためクラスとして提供する。
+   コンポーネントからは className で合成して使う（cn(...) と併用可）。 */
+
+/* 金の箔グラデ（CTA・ロゴ・波形）。--gold-angle で向きだけ差し替え可能。 */
+.sanba-gold-gradient {
+  background-image: linear-gradient(
+    var(--gold-angle, 110deg),
+    var(--sanba-gold-deep) 0%,
+    var(--sanba-gold) 28.571%,
+    var(--sanba-gold-light) 42.857%,
+    var(--sanba-gold-amber) 71.429%
+  );
+}
+
+/* 端末の下地：中央下からほのかに金が灯る放射グラデ（Figma 正本に準拠）。 */
+.sanba-screen-bg {
+  background-color: var(--sanba-bg);
+  background-image: radial-gradient(
+    ellipse 217px 681px at 50% 74%,
+    var(--sanba-bg-glow) 0%,
+    var(--sanba-bg-mid) 42%,
+    var(--sanba-bg) 100%
+  );
+}
+
+.sanba-font {
+  font-family: var(--font-serif-jp);
+}
+
+/* 細い金のスクロールバー（会話・要件絵巻などの縦スクロール領域用）。 */
+.sanba-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--sanba-border) transparent;
+}
+.sanba-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+.sanba-scroll::-webkit-scrollbar-thumb {
+  background-color: var(--sanba-border);
+  border-radius: 999px;
+}
+
+/* 集音中の波形バーの息づかい。各バーに animation-delay をずらして当てる。 */
+@keyframes sanba-wave {
+  0%, 100% { transform: scaleY(0.45); }
+  50% { transform: scaleY(1); }
+}
+.sanba-wave-bar {
+  transform-origin: center;
+  animation: sanba-wave 1s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sanba-wave-bar { animation: none; }
 }
