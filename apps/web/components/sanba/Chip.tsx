@@ -65,6 +65,9 @@ export const Chip = React.forwardRef<HTMLElement, ChipProps>(
       <Comp
         ref={ref as never}
         data-selected={selected ? "" : undefined}
+        // asChild かつ selected が明示されたとき aria-pressed でトグル状態をスクリーンリーダーへ通知する。
+        // asChild=false の span は非インタラクティブなので aria-pressed は付けない。
+        aria-pressed={asChild && selected !== undefined ? selected : undefined}
         className={cn(
           "inline-flex items-center justify-center rounded-full font-bold leading-none transition-colors",
           SIZES[size],
@@ -73,7 +76,8 @@ export const Chip = React.forwardRef<HTMLElement, ChipProps>(
         )}
         {...props}
       >
-        {dot && <span aria-hidden>●</span>}
+        {/* asChild=true のとき Slot は単一子しか受け取れないため dot を出さない。 */}
+        {!asChild && dot && <span aria-hidden>●</span>}
         {children}
       </Comp>
     );

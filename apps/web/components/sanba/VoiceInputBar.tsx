@@ -62,7 +62,7 @@ export function VoiceInputBar({
         type="button"
         onClick={onToggle}
         aria-pressed={muted}
-        aria-label={muted ? "ミュートを解除" : "ミュートにする"}
+        aria-label="マイクのミュート切替"
         className={cn(
           "flex size-[56px] shrink-0 items-center justify-center rounded-full border border-[var(--sanba-border)] transition-opacity",
           muted

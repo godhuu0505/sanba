@@ -66,15 +66,22 @@ export function RequirementCard({
       {meta != null && <p className="text-[12px] text-[var(--sanba-muted)]">{meta}</p>}
       {hasActions && (
         <div className="flex gap-[8px] pt-[2px]">
-          <Button variant="outline" size="sm" onClick={onRevise}>
-            改める
-          </Button>
-          <Button variant="gold" size="sm" onClick={onApprove}>
-            認める
-          </Button>
-          <Button variant="ghost" size="sm" onClick={onReject}>
-            退ける
-          </Button>
+          {/* showActions はショーケース用で全ボタンを強制表示。通常は handler が渡された分だけ描く。 */}
+          {(showActions || onRevise) && (
+            <Button variant="outline" size="sm" onClick={onRevise}>
+              改める
+            </Button>
+          )}
+          {(showActions || onApprove) && (
+            <Button variant="gold" size="sm" onClick={onApprove}>
+              認める
+            </Button>
+          )}
+          {(showActions || onReject) && (
+            <Button variant="ghost" size="sm" onClick={onReject}>
+              退ける
+            </Button>
+          )}
         </div>
       )}
     </div>

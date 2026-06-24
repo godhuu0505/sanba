@@ -31,9 +31,13 @@ export interface FieldProps extends React.HTMLAttributes<HTMLDivElement> {
 
 export function Field({ className, label, htmlFor, hint, children, ...props }: FieldProps) {
   const autoId = React.useId();
-  const fieldId = htmlFor ?? autoId;
+  // htmlFor が未指定のとき、先頭の子が既に id を持つならそれを採用する。
+  // こうしないと label の htmlFor が autoId を指す一方で子は独自 id を持ち、関連付けが壊れる。
+  const firstChild = React.Children.toArray(children)[0];
+  const childId =
+    React.isValidElement<{ id?: string }>(firstChild) ? firstChild.props.id : undefined;
+  const fieldId = htmlFor ?? childId ?? autoId;
   const clonedChildren = React.Children.map(children, (child, i) => {
-    // 先頭の子が id 未指定なら label と紐づくよう id を注入する（a11y）。
     // React 19 では isValidElement に props 型を渡さないと child.props が unknown になる。
     if (i === 0 && React.isValidElement<{ id?: string }>(child) && !child.props.id) {
       return React.cloneElement(child, { id: fieldId });
