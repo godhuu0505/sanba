@@ -4,8 +4,6 @@ import {
   LiveKitRoom,
   RoomAudioRenderer,
   StartAudio,
-  useVoiceAssistant,
-  BarVisualizer,
 } from "@livekit/components-react";
 import { useState } from "react";
 import {
@@ -15,6 +13,7 @@ import {
   type JoinResponse,
 } from "../lib/api";
 import { useGoogleAuth } from "../lib/auth";
+import { SessionView } from "../components/SessionView";
 
 export default function Home() {
   const [name, setName] = useState("");
@@ -59,9 +58,11 @@ export default function Home() {
         style={{ height: "100dvh" }}
       >
         <main style={{ padding: 24, maxWidth: 640, margin: "0 auto" }}>
-          <h1>🎙️ SANBA — 要件インタビュー中</h1>
-          <p>セッション: <code>{conn.session_id}</code></p>
-          <InterviewView />
+          <h1 style={{ fontSize: 20 }}>🎙️ SANBA — 要件インタビュー中</h1>
+          <p style={{ fontSize: 13, color: "#666" }}>
+            セッション: <code>{conn.session_id}</code>
+          </p>
+          <SessionView sessionId={conn.session_id} sessionToken={conn.session_token} />
           <RoomAudioRenderer />
           <StartAudio label="🔊 音声を有効にする" />
         </main>
@@ -153,16 +154,6 @@ function LoginPanel({ auth }: { auth: ReturnType<typeof useGoogleAuth> }) {
         // GIS がこの div にログインボタンを描画する。
         <div ref={buttonRef} />
       )}
-    </div>
-  );
-}
-
-function InterviewView() {
-  const { state, audioTrack } = useVoiceAssistant();
-  return (
-    <div style={{ marginTop: 16 }}>
-      <p>状態: {state}</p>
-      <BarVisualizer state={state} trackRef={audioTrack} style={{ height: 96 }} />
     </div>
   );
 }
