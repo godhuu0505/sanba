@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 
 import pytest
+from sanba_shared.models import Priority, Requirement, RequirementCategory
 
 from sanba_agent.events import (
     EVENTS_TOPIC,
@@ -16,7 +17,6 @@ from sanba_agent.events import (
     decode_user_selection,
     requirement_to_contract,
 )
-from sanba_agent.models import Priority, Requirement, RequirementCategory
 
 ENVELOPE_KEYS = {"v", "type", "seq", "ts", "session_id"}
 

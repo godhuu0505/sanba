@@ -11,6 +11,7 @@ Run locally:
 from __future__ import annotations
 
 import asyncio
+import os
 from typing import Any
 
 import structlog
@@ -25,6 +26,8 @@ from livekit.agents import (
 )
 from livekit.agents.llm import function_tool
 from livekit.plugins import google
+from sanba_shared.models import Priority, Requirement, RequirementCategory, Utterance
+from sanba_shared.repository import SessionRepository
 
 from .config import settings
 from .events import (
@@ -36,14 +39,17 @@ from .events import (
     LiveKitTransport,
     decode_user_selection,
 )
-from .models import Priority, Requirement, RequirementCategory, Utterance
 from .observability import setup_observability
 from .prompts.interview import VOICE_AGENT_INSTRUCTIONS
-from .repository import SessionRepository
 from .retrieval import GroundingStore
 from .tools.analysis import analyze_transcript, make_requirement_id
 
 log = structlog.get_logger(__name__)
+
+# Firestore SDK は OS 環境変数 FIRESTORE_EMULATOR_HOST を直接読む。config 経由で指定された
+# 場合に SDK へ橋渡しする (api/main.py と同じパターン)。未設定なら本番の実 Firestore に接続。
+if settings.firestore_emulator_host:
+    os.environ.setdefault("FIRESTORE_EMULATOR_HOST", settings.firestore_emulator_host)
 
 
 class SANBAAgent(Agent):
@@ -367,7 +373,7 @@ async def entrypoint(ctx: JobContext) -> None:
     await ctx.connect()
 
     session_id = ctx.room.name
-    repo = SessionRepository()
+    repo = SessionRepository(data_retention_days=settings.data_retention_days)
     grounding = GroundingStore()
     seed_knowledge_base(grounding)
     seed_github_context(grounding, session_id)

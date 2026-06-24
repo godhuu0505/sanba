@@ -42,7 +42,20 @@ uv run ruff check . && uv run mypy .
 | `FIRESTORE_*` | セッション/要件 |
 | `ELASTICSEARCH_URL` | 資料索引・RAG |
 | `GOOGLE_API_KEY` / Vertex 設定 | 埋め込み生成 |
+| `GOOGLE_OAUTH_CLIENT_ID` | Google ログイン ID トークン検証の aud（ADR-0012） |
+| `ADMIN_EMAILS` | 管理画面 (`/admin`) を使える email 許可リスト（ADR-0014） |
 | `ALLOWED_ORIGINS` | CORS 許可ドメイン |
 | `REQUIRE_CONSENT` / `MASK_PII_BEFORE_INDEX` / `DATA_RETENTION_DAYS` | データガバナンス |
+
+## 管理 API（ADR-0014）
+
+`require_admin`（`ADMIN_EMAILS` 照合）でガードする運用エンドポイント。閲覧は requirements のみで、
+生の発話（utterances）は返さない。
+
+| メソッド | パス | 用途 |
+|---|---|---|
+| `GET` | `/api/admin/sessions` | セッション一覧 |
+| `GET` | `/api/admin/sessions/{id}/requirements` | セッションの要件一覧 |
+| `PATCH` | `/api/admin/sessions/{id}/requirements/{rid}` | 要件の編集（statement/priority/category）・承認/却下 |
 
 `.env.example` が正。アクセス制御・データ取り扱いは [`docs/security.md`](../../docs/security.md)。

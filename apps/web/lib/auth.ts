@@ -30,6 +30,7 @@ interface GoogleIdentity {
     auto_select?: boolean;
   }): void;
   renderButton(parent: HTMLElement, options: Record<string, unknown>): void;
+  prompt(): void;
   disableAutoSelect(): void;
 }
 
@@ -89,13 +90,18 @@ export function useGoogleAuth(): GoogleAuth {
     function setup() {
       const id = window.google?.accounts.id;
       if (!id || !buttonRef.current || cancelled) return;
-      id.initialize({ client_id: CLIENT_ID, callback: onCredential, auto_select: false });
+      // auto_select: リロード時に直前の単一アカウントを One Tap で静かに再取得する (ADR-0014 §7)。
+      // ID トークンは localStorage に保存しない (XSS リスク回避)。再取得できなければ
+      // 明示ログイン (ボタン) に委ねる。
+      id.initialize({ client_id: CLIENT_ID, callback: onCredential, auto_select: true });
       id.renderButton(buttonRef.current, {
         theme: "outline",
         size: "large",
         text: "signin_with",
         shape: "pill",
       });
+      // One Tap を表示して自動再取得を試みる (未ログイン時のみ意味を持つ)。
+      id.prompt();
     }
 
     if (window.google?.accounts.id) {

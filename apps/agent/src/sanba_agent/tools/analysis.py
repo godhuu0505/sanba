@@ -8,7 +8,7 @@ from __future__ import annotations
 import hashlib
 import re
 
-from ..models import AnalysisResult
+from sanba_shared.models import AnalysisResult
 
 
 def make_requirement_id(statement: str) -> str:
@@ -72,9 +72,7 @@ async def _run_adk(transcript: str, open_topics: list[str]) -> AnalysisResult:
 
     team = build_interview_team()
     runner = InMemoryRunner(agent=team, app_name="sanba")
-    session = await runner.session_service.create_session(
-        app_name="sanba", user_id="voice-agent"
-    )
+    session = await runner.session_service.create_session(app_name="sanba", user_id="voice-agent")
     prompt = (
         "以下はこれまでの要件インタビューの書き起こしです。\n"
         f"---\n{transcript}\n---\n"

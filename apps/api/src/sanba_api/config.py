@@ -34,6 +34,22 @@ class Settings(BaseSettings):
     # 未設定かつ auth_dev_bypass=false の本番構成では認証経路をフェイルクローズする。
     google_oauth_client_id: str = ""
 
+    # ---- 管理者 (ADR-0014 §2) ----
+    # 管理画面を使える Google アカウントの email 許可リスト (カンマ区切り)。
+    # 検証済み identity の email をサーバ側で照合する。dev bypass でも照合する (§13)。
+    admin_emails: str = ""
+
+    # ---- Firestore (ADR-0014 §15) ----
+    # api はセッション/要件のリーダー兼ライターになった。emulator 利用時は接続先を
+    # FIRESTORE_EMULATOR_HOST で指定する (compose ではローカルの firestore:8200)。
+    firestore_emulator_host: str = ""
+    google_cloud_project: str = "sanba-dev"
+
+    @property
+    def admin_email_set(self) -> frozenset[str]:
+        """正規化済みの管理者 email 集合 (小文字・前後空白除去)。"""
+        return frozenset(e.strip().lower() for e in self.admin_emails.split(",") if e.strip())
+
     # ---- Context ingestion -> RAG grounding (issue #6) ----
     # Shared with the agent's grounding store (same Elasticsearch index).
     elasticsearch_url: str = ""

@@ -24,8 +24,7 @@ from datetime import UTC, datetime
 from typing import Any, Protocol
 
 import structlog
-
-from .models import Requirement
+from sanba_shared.models import Requirement
 
 log = structlog.get_logger(__name__)
 

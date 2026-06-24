@@ -1,0 +1,99 @@
+"""SessionRepository のメモリ fallback 単体テスト (Firestore 不要)。
+
+create/list/get、要件の編集 (3 フィールドのみ)、承認/却下と出所メタの保全を検証する。
+"""
+
+from __future__ import annotations
+
+import pytest
+
+from sanba_shared.models import (
+    Priority,
+    Requirement,
+    RequirementCategory,
+    RequirementStatus,
+    SessionMeta,
+)
+from sanba_shared.repository import RequirementNotFound, SessionRepository
+
+
+def _repo() -> SessionRepository:
+    # client が None (= メモリ fallback) になることを前提にする。
+    repo = SessionRepository(data_retention_days=30)
+    assert repo._client is None, "テストは Firestore 非接続のメモリ fallback で走る前提"
+    return repo
+
+
+def _seed_requirement(repo: SessionRepository, session_id: str) -> Requirement:
+    req = Requirement(
+        id="r1",
+        category=RequirementCategory.FUNCTIONAL,
+        statement="ログインできること",
+        priority=Priority.MUST,
+        source_speaker="customer",
+        confidence=0.9,
+    )
+    repo.save_requirement(session_id, req)
+    return req
+
+
+def test_create_and_list_sessions() -> None:
+    repo = _repo()
+    meta = SessionMeta(
+        id="sess-1", title="t", owner_sub="sub", owner_email="o@example.com", roles=["pm"]
+    )
+    repo.create_session_doc(meta)
+    assert repo.get_session("sess-1") == meta
+    assert repo.list_sessions() == [meta]
+
+
+def test_update_requirement_only_touches_allowed_fields() -> None:
+    repo = _repo()
+    original = _seed_requirement(repo, "sess-1")
+    updated = repo.update_requirement(
+        "sess-1",
+        "r1",
+        statement="SSO でログインできること",
+        priority="should",
+        category="non_functional",
+    )
+    assert updated.statement == "SSO でログインできること"
+    assert updated.priority is Priority.SHOULD
+    assert updated.category is RequirementCategory.NON_FUNCTIONAL
+    # 出所メタは不変。
+    assert updated.id == original.id
+    assert updated.created_at == original.created_at
+    assert updated.source_speaker == original.source_speaker
+    assert updated.confidence == original.confidence
+    assert updated.status is RequirementStatus.DRAFT
+
+
+def test_update_missing_requirement_raises() -> None:
+    repo = _repo()
+    with pytest.raises(RequirementNotFound):
+        repo.update_requirement("sess-1", "nope", statement="x")
+
+
+def test_approve_sets_approver_and_timestamp() -> None:
+    repo = _repo()
+    _seed_requirement(repo, "sess-1")
+    approved = repo.set_requirement_status(
+        "sess-1", "r1", RequirementStatus.APPROVED, approved_by="admin@example.com"
+    )
+    assert approved.status is RequirementStatus.APPROVED
+    assert approved.approved_by == "admin@example.com"
+    assert approved.approved_at is not None
+
+
+def test_reject_clears_approval_fields() -> None:
+    repo = _repo()
+    _seed_requirement(repo, "sess-1")
+    repo.set_requirement_status(
+        "sess-1", "r1", RequirementStatus.APPROVED, approved_by="admin@example.com"
+    )
+    rejected = repo.set_requirement_status(
+        "sess-1", "r1", RequirementStatus.REJECTED, approved_by="admin@example.com"
+    )
+    assert rejected.status is RequirementStatus.REJECTED
+    assert rejected.approved_by is None
+    assert rejected.approved_at is None

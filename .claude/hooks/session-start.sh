@@ -17,7 +17,7 @@ log() { printf '\033[36m[session-start]\033[0m %s\n' "$1"; }
 
 # --- Python: agent / api (uv 管理) ---
 if command -v uv >/dev/null 2>&1; then
-  for app in apps/agent apps/api; do
+  for app in packages/sanba_shared apps/agent apps/api; do
     if [ -f "$app/pyproject.toml" ]; then
       log "uv sync ($app)"
       (cd "$app" && uv sync --all-extras --dev)

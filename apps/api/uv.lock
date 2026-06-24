@@ -1687,6 +1687,7 @@ dependencies = [
     { name = "pydantic-settings" },
     { name = "pypdf" },
     { name = "python-multipart" },
+    { name = "sanba-shared" },
     { name = "structlog" },
     { name = "uvicorn", extra = ["standard"] },
 ]
@@ -1714,6 +1715,7 @@ requires-dist = [
     { name = "pydantic-settings", specifier = ">=2.3" },
     { name = "pypdf", specifier = ">=4.2" },
     { name = "python-multipart", specifier = ">=0.0.9" },
+    { name = "sanba-shared", editable = "../../packages/sanba_shared" },
     { name = "structlog", specifier = ">=24.1" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30" },
 ]
@@ -1721,6 +1723,30 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "httpx", specifier = ">=0.27" },
+    { name = "mypy", specifier = ">=1.10" },
+    { name = "pytest", specifier = ">=8.2" },
+    { name = "ruff", specifier = ">=0.5" },
+]
+
+[[package]]
+name = "sanba-shared"
+version = "0.1.0"
+source = { editable = "../../packages/sanba_shared" }
+dependencies = [
+    { name = "google-cloud-firestore" },
+    { name = "pydantic" },
+    { name = "structlog" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "google-cloud-firestore", specifier = ">=2.16.0" },
+    { name = "pydantic", specifier = ">=2.7" },
+    { name = "structlog", specifier = ">=24.1" },
+]
+
+[package.metadata.requires-dev]
+dev = [
     { name = "mypy", specifier = ">=1.10" },
     { name = "pytest", specifier = ">=8.2" },
     { name = "ruff", specifier = ">=0.5" },
