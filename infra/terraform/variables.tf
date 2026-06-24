@@ -138,6 +138,19 @@ variable "dns_managed_zone_name" {
   description = "Cloud DNS managed zone resource name (used only when manage_dns = true)."
 }
 
+# 管理ゾーンの DNSSEC 状態。新規作成なら既定 "off"。Cloud Domains が自動作成した DNSSEC 有効ゾーンを
+# import して使う場合は "on" にする (そうしないと Terraform が DNSSEC を無効化しようとして apply が
+# 失敗、または DS と不整合で名前解決が壊れる)。
+variable "dns_dnssec_state" {
+  type        = string
+  default     = "off"
+  description = "DNSSEC state of the managed zone (\"off\" for a fresh zone; \"on\" to match a Cloud Domains zone with DNSSEC enabled)."
+  validation {
+    condition     = contains(["off", "on"], var.dns_dnssec_state)
+    error_message = "dns_dnssec_state must be \"off\" or \"on\"."
+  }
+}
+
 # ---- Secrets (Secret Manager) ------------------------------------------------
 # 方針: Secret Manager を値の唯一の置き場にする。terraform は箱 (secret) と Cloud Run 参照だけを
 # 管理し、アプリ秘匿値そのものは管理しない (gcloud で SM に直接投入)。よって livekit/elasticsearch/
