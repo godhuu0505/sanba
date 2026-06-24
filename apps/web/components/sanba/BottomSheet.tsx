@@ -23,9 +23,11 @@ export function BottomSheet({
   children,
   ...props
 }: BottomSheetProps) {
+  const titleId = React.useId();
   return (
     <div
       role="dialog"
+      aria-labelledby={title != null ? titleId : undefined}
       className={cn(
         "flex w-full flex-col gap-[12px] rounded-t-[18px] border border-[var(--sanba-border)] bg-[var(--sanba-surface)] px-[18px] pb-[20px] pt-[10px]",
         className,
@@ -38,6 +40,7 @@ export function BottomSheet({
       />
       {title != null && (
         <h2
+          id={titleId}
           className={cn(
             "text-[15px] font-bold",
             tone === "danger" ? "text-[var(--sanba-rec)]" : "text-[var(--sanba-cream)]",

@@ -30,12 +30,20 @@ export interface FieldProps extends React.HTMLAttributes<HTMLDivElement> {
 }
 
 export function Field({ className, label, htmlFor, hint, children, ...props }: FieldProps) {
+  const autoId = React.useId();
+  const fieldId = htmlFor ?? autoId;
+  const clonedChildren = React.Children.map(children, (child, i) => {
+    if (i === 0 && React.isValidElement(child) && !child.props.id) {
+      return React.cloneElement(child as React.ReactElement<{ id?: string }>, { id: fieldId });
+    }
+    return child;
+  });
   return (
     <div className={cn("flex w-full flex-col gap-[6px]", className)} {...props}>
-      <label htmlFor={htmlFor} className="text-[13px] font-bold text-[var(--sanba-muted)]">
+      <label htmlFor={fieldId} className="text-[13px] font-bold text-[var(--sanba-muted)]">
         {label}
       </label>
-      {children}
+      {clonedChildren}
       {hint && <p className="text-[12px] text-[var(--sanba-muted)]/80">{hint}</p>}
     </div>
   );
