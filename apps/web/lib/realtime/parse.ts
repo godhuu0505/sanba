@@ -65,6 +65,60 @@ function hasFields(obj: Record<string, unknown>, fields: readonly string[]): boo
   return fields.every((f) => obj[f] !== undefined && obj[f] !== null);
 }
 
+// enum 値の許可集合（契約 §3）。型外の値は後段（selectRequirementsByPriority 等）で
+// 実行時例外になるため、受信境界で弾く。
+const PHASES = new Set(["idle", "listening", "recognizing", "deliberating"]);
+const CATEGORIES = new Set([
+  "functional",
+  "non_functional",
+  "constraint",
+  "scope",
+  "open_question",
+]);
+const PRIORITIES = new Set(["must", "should", "could", "wont"]);
+const STATUSES = new Set(["draft", "confirmed"]);
+const RESOLUTIONS = new Set(["user_selected", "agent_resolved"]);
+
+const isArray = Array.isArray;
+const isStr = (v: unknown): v is string => typeof v === "string";
+const isNum = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
+
+/** 種別ごとの enum・配列・数値範囲まで検証する。妥当なら true。 */
+function validateTypes(type: ServerEventType, obj: Record<string, unknown>): boolean {
+  switch (type) {
+    case "status":
+      return PHASES.has(obj.phase as string);
+    case "detection.contradiction":
+    case "detection.gap":
+      return isArray(obj.refs) && (obj.options === undefined || isArray(obj.options));
+    case "detection.resolved":
+      return RESOLUTIONS.has(obj.resolution as string);
+    case "requirement.upserted": {
+      const r = obj.requirement as Record<string, unknown> | null;
+      return (
+        !!r &&
+        isStr(r.id) &&
+        isStr(r.statement) &&
+        CATEGORIES.has(r.category as string) &&
+        PRIORITIES.has(r.priority as string) &&
+        STATUSES.has(r.status as string) &&
+        isNum(r.confidence) &&
+        (r.confidence as number) >= 0 &&
+        (r.confidence as number) <= 1 &&
+        isArray(r.citations)
+      );
+    }
+    case "analysis.progress":
+      return isNum(obj.pct);
+    case "analysis.visual":
+      return isArray(obj.extracted) && isArray(obj.conflicts);
+    case "session.completed":
+      return isArray(obj.artifacts) && typeof obj.summary === "object" && obj.summary !== null;
+    default:
+      return true;
+  }
+}
+
 const decoder = new TextDecoder();
 
 /** 生バイト列（または文字列）を 1 件の ServerEvent にデコードする。 */
@@ -113,6 +167,11 @@ export function decodeServerEvent(payload: Uint8Array | string): DecodeResult {
     ) {
       return { event: null, reason: "bad-payload" };
     }
+  }
+
+  // enum・配列・数値範囲まで検証してから ServerEvent として通す。
+  if (!validateTypes(type, obj)) {
+    return { event: null, reason: "bad-payload" };
   }
 
   return { event: obj as unknown as ServerEvent, reason: "ok" };

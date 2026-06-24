@@ -189,6 +189,78 @@ describe("RealtimeStore — gap recovery", () => {
   });
 });
 
+describe("RealtimeStore — lossy gap does not trigger re-hydration", () => {
+  it("counts the gap but does not fire listeners for a lossy status gap", () => {
+    const s = new RealtimeStore();
+    let fired = 0;
+    s.onGapDetected(() => {
+      fired += 1;
+    });
+    s.apply(reqEvent(1, "r1"));
+    s.apply({ v: 1, type: "status", seq: 3, ts: "t", session_id: SESSION, phase: "listening" });
+    expect(s.metrics.read().gaps).toBe(1);
+    expect(fired).toBe(0);
+  });
+});
+
+describe("RealtimeStore — session.completed ordering", () => {
+  it("does not roll back a newer completed with a stale one", () => {
+    const s = new RealtimeStore();
+    const completed = (seq: number, issues: number): ServerEvent => ({
+      v: 1,
+      type: "session.completed",
+      seq,
+      ts: "t",
+      session_id: SESSION,
+      summary: { contradictions_resolved: 0, gaps_found: 0, issues_created: issues },
+      artifacts: [],
+    });
+    s.apply(completed(5, 6));
+    s.apply(completed(2, 1));
+    expect(s.getSnapshot().completed?.issues_created).toBe(6);
+  });
+});
+
+describe("RealtimeStore — open snapshot authority", () => {
+  it("resolves an existing open detection absent from the open snapshot", () => {
+    const s = new RealtimeStore();
+    s.apply(contradiction(1, "d1"));
+    s.hydrateDetections([], 3);
+    expect(s.getSnapshot().detections[0].resolved).toBe(true);
+  });
+});
+
+describe("RealtimeStore — resolved-before-detection merge", () => {
+  it("merges later creation details into an earlier resolved placeholder", () => {
+    const s = new RealtimeStore();
+    s.apply({
+      v: 1,
+      type: "detection.resolved",
+      seq: 5,
+      ts: "t",
+      session_id: SESSION,
+      detection_id: "d1",
+      resolution: "user_selected",
+    });
+    s.apply({
+      v: 1,
+      type: "detection.gap",
+      seq: 2,
+      ts: "t",
+      session_id: SESSION,
+      id: "d1",
+      summary: "抜けの本文",
+      category: "scope",
+      refs: ["u1"],
+      detector: "scope_specialist",
+    });
+    const d = s.getSnapshot().detections[0];
+    expect(d.kind).toBe("gap");
+    expect(d.summary).toBe("抜けの本文");
+    expect(d.resolved).toBe(true);
+  });
+});
+
 describe("RealtimeStore — fixture replay", () => {
   it("replays the contract fixture to a coherent end state", () => {
     const s = new RealtimeStore();

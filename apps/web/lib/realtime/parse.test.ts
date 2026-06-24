@@ -66,6 +66,47 @@ describe("decodeServerEvent", () => {
     expect(reason).toBe("bad-payload");
   });
 
+  it("rejects an out-of-enum priority", () => {
+    const { reason } = decodeServerEvent(
+      bytes({
+        v: 1,
+        type: "requirement.upserted",
+        seq: 1,
+        ts: "t",
+        session_id: "s1",
+        requirement: {
+          id: "r1",
+          statement: "x",
+          category: "functional",
+          priority: "urgent",
+          confidence: 0.5,
+          source_speaker: "PM",
+          citations: [],
+          status: "draft",
+        },
+      }),
+    );
+    expect(reason).toBe("bad-payload");
+  });
+
+  it("rejects a non-array refs on a detection", () => {
+    const { reason } = decodeServerEvent(
+      bytes({
+        v: 1,
+        type: "detection.gap",
+        seq: 1,
+        ts: "t",
+        session_id: "s1",
+        id: "d1",
+        summary: "x",
+        category: "scope",
+        refs: "u1",
+        detector: "scope_specialist",
+      }),
+    );
+    expect(reason).toBe("bad-payload");
+  });
+
   it("decodes a string payload too", () => {
     const json = JSON.stringify({
       v: 1,

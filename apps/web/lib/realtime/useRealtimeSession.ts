@@ -105,20 +105,27 @@ export function useRealtimeSession(opts: LiveOptions): UseRealtimeSessionResult 
     [send, sessionId],
   );
 
+  // ハイドレーション世代。セッション切替時に進め、遅れて完了した前セッションの
+  // GET レスポンスを現在のストアへ適用しないようにする（A→B 競合の混入防止）。
+  const genRef = useRef(0);
+  const lastHydrateAtRef = useRef(0);
+
   // 2) スナップショット取得 → seq 境界を確定。以後ライブ差分のみ適用される。
   //    欠番検知時にも同じ取得を再実行し、欠落分を復元する（契約 §4）。
   const hydrate = useCallback(async () => {
     if (!sessionId) return;
+    const gen = genRef.current;
+    const fresh = () => gen === genRef.current; // 現セッションの結果だけ適用する
     try {
       const snap = await fetchRequirements(sessionId, sessionToken);
-      store.hydrateRequirements(snap.items, snap.seq);
+      if (fresh()) store.hydrateRequirements(snap.items, snap.seq);
     } catch {
       // backend 未完/失敗でもライブ差分で前進できる（ハイドレーションは補助）。
     }
     if (hydrateDetections) {
       try {
         const snap = await fetchDetections(sessionId, sessionToken);
-        store.hydrateDetections(snap.items, snap.seq ?? 0);
+        if (fresh()) store.hydrateDetections(snap.items, snap.seq ?? 0);
       } catch {
         /* P1・任意 */
       }
@@ -127,12 +134,18 @@ export function useRealtimeSession(opts: LiveOptions): UseRealtimeSessionResult 
 
   useEffect(() => {
     if (!sessionId) return;
-    // セッションが変わったら前セッションの状態を持ち越さない（混在防止）。
+    // セッションが変わったら世代を進め、前セッションの状態/遅延レスポンスを持ち越さない。
+    genRef.current += 1;
     store.clear();
     store.setExpectedSessionId(sessionId);
+    lastHydrateAtRef.current = Date.now();
     void hydrate();
     // 欠番検知で再ハイドレーション（切断中に逃した差分を GET で取り直す）。
+    // ただし最低 5 秒間隔にコアレスし、欠番連発時の API 暴発を防ぐ。
     const off = store.onGapDetected(() => {
+      const now = Date.now();
+      if (now - lastHydrateAtRef.current < 5000) return;
+      lastHydrateAtRef.current = now;
       store.metrics.recordReconnect();
       void hydrate();
     });

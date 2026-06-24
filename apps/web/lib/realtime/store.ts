@@ -18,8 +18,16 @@ import type {
   Detection,
   Requirement,
   ServerEvent,
+  ServerEventType,
   SessionPhase,
 } from "./types";
+
+// reliable=false で送られる lossy 種別（契約 §1）。通常欠落するため、これ単体の
+// 欠番では再ハイドレーションを発火しない。
+const LOSSY_TYPES: ReadonlySet<ServerEventType> = new Set([
+  "status",
+  "transcript.partial",
+]);
 
 export interface AnalysisState {
   asset_id: string;
@@ -93,6 +101,8 @@ export class RealtimeStore {
   private maxSeq = 0;
   /** 最後に適用した status の seq。古い status による phase 巻き戻しを防ぐ。 */
   private lastStatusSeq = 0;
+  /** 最後に適用した session.completed の seq。古い完了イベントの巻き戻しを防ぐ。 */
+  private lastCompletedSeq = 0;
   /** このストアが受理するセッション ID。不一致イベントは破棄（同室の偽装対策）。 */
   private expectedSessionId: string | null = null;
 
@@ -149,12 +159,26 @@ export class RealtimeStore {
     this.invalidate();
   }
 
-  /** GET /detections?open=1 の未解消検知を取り込む（契約 §4 P1）。 */
+  /**
+   * GET /detections?open=1 の未解消検知を取り込む（契約 §4 P1）。
+   * open スナップショットを境界 seq 以前の未解消集合の権威として扱う: 切断中に
+   * detection.resolved を取り逃して残った既存 open 検知が結果に無ければ resolved 扱いにする。
+   */
   hydrateDetections(items: Detection[], seq: number): void {
+    const openIds = new Set(items.map((d) => d.id));
     for (const d of items) {
       const prev = this.detections.get(d.id);
       if (prev && prev.seq > seq) continue;
       this.detections.set(d.id, { seq, value: d });
+    }
+    // スナップショット境界以前に作られた既存 open 検知が結果に無い → 別経路で解消済み。
+    for (const [id, entry] of this.detections) {
+      if (entry.seq <= seq && !entry.value.resolved && !openIds.has(id)) {
+        this.detections.set(id, {
+          seq,
+          value: { ...entry.value, resolved: true, resolution: "agent_resolved" },
+        });
+      }
     }
     this.maxSeq = Math.max(this.maxSeq, seq);
     this.invalidate();
@@ -179,9 +203,14 @@ export class RealtimeStore {
 
     // 欠番検知: 期待する次 seq を飛ばして届いたら gap。契約 §4 に従い、欠落差分を
     // GET で取り直す契機として購読者（hook）へ通知する。
+    // ただし status/transcript.partial は lossy（reliable=false）で通常欠落するため、
+    // それ単体での欠番では再ハイドレーションを発火しない（API 負荷の暴発を防ぐ）。
+    // reliable イベントで欠番が露呈したときだけ取り直す。
     if (this.maxSeq > 0 && event.seq > this.maxSeq + 1) {
       this.metrics.recordGap();
-      for (const l of this.gapListeners) l();
+      if (!LOSSY_TYPES.has(event.type)) {
+        for (const l of this.gapListeners) l();
+      }
     }
 
     const applied = this.reduce(event);
@@ -221,7 +250,7 @@ export class RealtimeStore {
       }
 
       case "detection.contradiction":
-        return this.upsert(this.detections, event.id, event.seq, {
+        return this.upsertDetection(event.id, event.seq, {
           id: event.id,
           kind: "contradiction",
           summary: event.summary,
@@ -232,7 +261,7 @@ export class RealtimeStore {
         });
 
       case "detection.gap":
-        return this.upsert(this.detections, event.id, event.seq, {
+        return this.upsertDetection(event.id, event.seq, {
           id: event.id,
           kind: "gap",
           summary: event.summary,
@@ -296,6 +325,10 @@ export class RealtimeStore {
       }
 
       case "session.completed":
+        // id を持たないため upsert の seq ガードを通らない。古い完了イベントの後着で
+        // issues_created/artifacts が巻き戻らないよう、最後に適用した seq を保持する。
+        if (event.seq <= this.lastCompletedSeq) return false;
+        this.lastCompletedSeq = event.seq;
         this.completed = {
           contradictions_resolved: event.summary.contradictions_resolved,
           gaps_found: event.summary.gaps_found,
@@ -304,6 +337,27 @@ export class RealtimeStore {
         };
         return true;
     }
+  }
+
+  /**
+   * 検知の (type は kind で表現) id 冪等 upsert。先着した解消マーカ（resolved かつ
+   * summary 空）には、後着の作成イベント（contradiction/gap）の詳細をマージする。
+   */
+  private upsertDetection(id: string, seq: number, value: Detection): boolean {
+    const prev = this.detections.get(id);
+    if (prev?.value.resolved && prev.value.summary === "") {
+      this.detections.set(id, {
+        seq: Math.max(prev.seq, seq),
+        value: {
+          ...value,
+          resolved: true,
+          resolution: prev.value.resolution,
+          selected_value: prev.value.selected_value,
+        },
+      });
+      return true;
+    }
+    return this.upsert(this.detections, id, seq, value);
   }
 
   /**
@@ -352,6 +406,7 @@ export class RealtimeStore {
     this.hydrationSeq = 0;
     this.maxSeq = 0;
     this.lastStatusSeq = 0;
+    this.lastCompletedSeq = 0;
     this.metrics.reset();
     this.invalidate();
   }
