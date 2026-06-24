@@ -64,7 +64,7 @@ export function SessionView({
       {screen === "live" && (
         <LiveScreen phase={state.phase} agentsActive={state.agentsActive} transcript={state.transcript} />
       )}
-      {screen === "material" && <MaterialView />}
+      {screen === "material" && <MaterialView sessionId={sessionId} />}
       {screen === "analysis" && (
         <AnalysisView state={state} onNext={() => setScreen("scroll")} />
       )}

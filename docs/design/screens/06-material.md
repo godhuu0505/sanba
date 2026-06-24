@@ -39,8 +39,11 @@
 - [ ] 対応していない経路（例: 動画解析が未実装）はグレーアウト＋「準備中」を明示し、誤操作で失敗させない。
 
 ## 現状差分
-- Web UI は**未実装**（テキスト貼付のみ）。`<input type=file>` + FormData、画面共有トラック開始を新規実装。
-- API は `context/file` がテキスト系のみ。画像/動画の取り込み・解析は API 拡張が前提（要件として明記）。
+- 画像アップロードは実装済み（#103）。Web は `<input type=file>` + FormData でピッカを開き、
+  非対応拡張子を弾く。API は `context/file` を画像（PNG/JPG）に拡張し、Cloud Storage 保存 +
+  安定 `asset_id` 返却 + Gemini 解析（観察抽出 → grounding 索引）を行う。
+- 動画アップロードは API が保存まで対応するが、解析は未実装のため Web では「準備中」でグレーアウト
+  （`analysis_pending=true`）。画面共有・カメラは既存 LiveKit 映像トラックで動作。
 
 ## 根拠
 マルチモーダル（ADR-0004）の入口として P0。ただし画像/動画は API 拡張（Cloud Storage 保存・Gemini 解析）が必須のため単独の quick win ではない。画面共有のみ既存 LiveKit で追加インフラなしに動く。

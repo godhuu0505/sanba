@@ -60,6 +60,16 @@ class Settings(BaseSettings):
     # Max characters accepted per context upload (guards memory/cost).
     max_context_chars: int = 200_000
 
+    # ---- Multimodal assets: 画像/動画アップロード (issue #103 / ADR-0004) ----
+    # Cloud Storage バケット名。未設定なら in-memory にフォールバック（ローカル/テスト）。
+    gcs_bucket: str = ""
+    # 画像/動画 1 件あたりのバイト上限（メモリ/コスト/帯域のガード）。既定 25MB。
+    max_asset_bytes: int = 25_000_000
+    # 画像解析に使う Gemini マルチモーダルモデル。
+    gemini_vision_model: str = "gemini-2.5-flash"
+    # 動画解析は未実装（web では「準備中」でグレーアウト）。有効化は別 PR。
+    enable_video_analysis: bool = False
+
     # ---- Requirement export -> GitHub Issue (契約 §4 POST /export, #39) ----
     # OFF by default. Enable + provide a token/repo to let 09 要件絵巻 起票する。
     github_connector_enabled: bool = False
