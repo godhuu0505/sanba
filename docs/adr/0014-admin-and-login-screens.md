@@ -1,6 +1,6 @@
 # ADR-0014: ログイン画面と管理画面（セッション/要件の運用UI）
 
-- ステータス: Proposed
+- ステータス: Accepted
 - 日付: 2026-06-24
 - 関連: ADR-0012（Google ログイン）、ADR-0008（製品コンセプト / 出所メタ）、ADR-0001（技術スタック）、issue #8（招待トークン）、issue #10（同意/データガバナンス）
 
@@ -140,6 +140,27 @@ web は Next 16.2 / React 19.2。shadcn 現行標準の Tailwind v4（`@tailwind
 ### 14. テスト
 `SessionRepository` のメモリ fallback で単体テスト、docker-compose の Firestore emulator で
 結合テスト（セッション永続化・一覧・要件の編集/承認・TTL 解除）を担保する。
+
+### 15. API が初めて Firestore クライアントになる（実装計画レビューで判明）
+現状 `apps/api` は `google-cloud-firestore` を依存に持つが**ランタイムで未使用**で、compose の
+`api` サービスは `firestore` に `depends_on` していない（「API は Firestore を直接使わない」前提
+だった）。本 ADR で API がセッション/要件のリーダー兼ライターになるため、次を追加する:
+- `docker-compose.yml` の `api.depends_on` に `firestore` を追加。
+- `apps/api/config.py` に `firestore_emulator_host` / `google_cloud_project` を追加し、
+  `FIRESTORE_EMULATOR_HOST` を api コンテナにも効かせる。
+- terraform で **API runtime SA に `roles/datastore.user`** が付くことを確認（agent と同一 SA なら
+  確認のみ）。
+
+### 16. `deploy.yml` の paths-filter に共有パッケージを追加
+共有パッケージ化に伴い、`deploy.yml` の paths-filter を
+`agent: ['apps/agent/**', 'packages/sanba_shared/**']` / `api: ['apps/api/**',
+'packages/sanba_shared/**']` に拡張する。これを怠ると「`sanba_shared` だけ変更して push →
+agent/api が再デプロイされず本番が古いまま」という事故になる。
+
+### 17. `expireAt` 解除は `firestore.DELETE_FIELD` センチネルで
+承認時の TTL 解除は None 代入や merge では「null フィールドが残り TTL が効き続ける」懸念がある
+ため、`firestore.DELETE_FIELD` でフィールドを明示削除する。メモリ fallback には expireAt 概念が
+無いため分岐し、テストも分離する。
 
 ## 却下案
 - **メール+パスワード認証の新設 / Firebase・Supabase Auth への移行**: 実装・運用負荷が大きく、
