@@ -75,6 +75,16 @@ variable "data_retention_days" {
   default = 30
 }
 
+# Google ログイン (ADR-0012)。ID トークン検証の aud に使う OAuth Web クライアント ID。
+# 秘匿物ではないので Secret Manager ではなく平文 env で注入する。空のままだと API は
+# 認証経路をフェイルクローズする (AUTH_DEV_BYPASS=false 前提)。client secret は本方式
+# (ID トークン検証のみ) では不要なので変数化しない。
+variable "google_oauth_client_id" {
+  type        = string
+  default     = ""
+  description = "OAuth 2.0 Web client ID for Google login. Verified as the id_token audience by the API."
+}
+
 variable "livekit_url" {
   type        = string
   default     = ""

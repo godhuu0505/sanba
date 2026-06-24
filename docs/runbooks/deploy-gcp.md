@@ -154,7 +154,7 @@ gcloud run services list --region="$REGION"   # sanba-api / sanba-agent / sanba-
 
 ---
 
-## 6.5. 本番ドメイン（sanba.com）を当てる（ADR-0012）
+## 6.5. 本番ドメイン（sanba.com）を当てる（ADR-0013）
 
 Global 外部 HTTPS LB + Google 管理証明書 + Cloud DNS。`infra/terraform/domain.tf` が実装済みで、
 ここの手作業は **ドメイン取得とレジストラ設定だけ**。

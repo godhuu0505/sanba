@@ -12,18 +12,20 @@ agent worker is dispatched to the same room name automatically.
 
 from __future__ import annotations
 
+import json
 import time
 import uuid
 from collections import defaultdict, deque
 from datetime import timedelta
 
 import structlog
-from fastapi import FastAPI, File, HTTPException, Request, UploadFile
+from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from livekit import api
 from pydantic import BaseModel
 
 from .auth import InvalidInvite, create_invite, verify_invite
+from .auth_google import AuthUser, require_user
 from .config import settings
 from .ingestion import ContextIndexer, chunk_text, extract_text_from_upload
 from .observability import setup_observability
@@ -99,8 +101,14 @@ def healthz() -> dict[str, str]:
 
 
 @app.post("/api/sessions", response_model=CreateSessionResponse)
-def create_session(req: CreateSessionRequest) -> CreateSessionResponse:
-    """Create an interview room and mint a signed invite per role."""
+def create_session(
+    req: CreateSessionRequest, user: AuthUser = Depends(require_user)
+) -> CreateSessionResponse:
+    """Create an interview room and mint a signed invite per role.
+
+    Requires a verified Google identity (ADR-0012): only a logged-in owner can
+    open a room. The invite still scopes which room/role a guest may join.
+    """
     if settings.require_consent and not req.consent_acknowledged:
         raise HTTPException(
             status_code=400,
@@ -113,7 +121,7 @@ def create_session(req: CreateSessionRequest) -> CreateSessionResponse:
         )
         for role in req.roles
     }
-    log.info("session_created", session=session_id, roles=req.roles)
+    log.info("session_created", session=session_id, roles=req.roles, owner=user.sub)
     return CreateSessionResponse(session_id=session_id, invites=invites)
 
 
@@ -140,8 +148,16 @@ async def add_context_file(session_id: str, file: UploadFile = File(...)) -> Con
 
 
 @app.post("/api/sessions/join", response_model=JoinResponse)
-def join_session(req: JoinRequest, request: Request) -> JoinResponse:
-    """Exchange a valid invite for a scoped, short-lived LiveKit token."""
+def join_session(
+    req: JoinRequest, request: Request, user: AuthUser = Depends(require_user)
+) -> JoinResponse:
+    """Exchange a valid invite for a scoped, short-lived LiveKit token.
+
+    Two complementary checks (ADR-0012): the invite proves *which room/role*,
+    the verified Google identity proves *who*. Both must hold. The LiveKit
+    participant identity is derived from the verified `sub` (not a self-reported
+    name) so the provenance metadata on captured requirements is trustworthy.
+    """
     _rate_limit(request.client.host if request.client else "unknown")
 
     if settings.auth_dev_bypass and req.invite.startswith("dev:"):
@@ -155,13 +171,16 @@ def join_session(req: JoinRequest, request: Request) -> JoinResponse:
             raise HTTPException(status_code=403, detail=f"invalid invite: {exc}") from exc
         session_id, role = invite.session_id, invite.role
 
-    identity = f"{role}-{uuid.uuid4().hex[:6]}"
+    # 検証済み identity に束ねる: self-申告名ではなく Google の sub を出所にする。
+    identity = f"{role}-{user.sub[:8]}"
+    display_name = req.participant_name or user.name
+    metadata = json.dumps({"role": role, "sub": user.sub, "email": user.email})
     try:
         token = (
             api.AccessToken(settings.livekit_api_key, settings.livekit_api_secret)
             .with_identity(identity)
-            .with_name(req.participant_name)
-            .with_metadata(f'{{"role":"{role}"}}')
+            .with_name(display_name)
+            .with_metadata(metadata)
             .with_ttl(timedelta(minutes=settings.livekit_token_ttl_minutes))
             .with_grants(
                 api.VideoGrants(
@@ -177,7 +196,7 @@ def join_session(req: JoinRequest, request: Request) -> JoinResponse:
         log.error("token_issue_failed", error=str(exc))
         raise HTTPException(status_code=500, detail="failed to issue token") from exc
 
-    log.info("session_join", session=session_id, identity=identity, role=role)
+    log.info("session_join", session=session_id, identity=identity, role=role, sub=user.sub)
     return JoinResponse(
         token=token,
         livekit_url=settings.livekit_url,

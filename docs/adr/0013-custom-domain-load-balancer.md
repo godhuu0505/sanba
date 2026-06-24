@@ -1,4 +1,4 @@
-# ADR-0012: 本番ドメイン (sanba.com) を Global 外部 HTTPS LB で配信
+# ADR-0013: 本番ドメイン (sanba.com) を Global 外部 HTTPS LB で配信
 
 - ステータス: Accepted
 - 日付: 2026-06-19

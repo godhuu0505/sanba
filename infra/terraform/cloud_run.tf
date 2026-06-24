@@ -31,6 +31,8 @@ locals {
   api_env = merge(local.common_env, {
     OTEL_SERVICE_NAME = "sanba-api"
     REQUIRE_CONSENT   = "true"
+    # Google ログイン (ADR-0012)。ID トークン検証の aud。秘匿物ではないので平文 env。
+    GOOGLE_OAUTH_CLIENT_ID = var.google_oauth_client_id
     # CORS は web のオリジンに限定する。独自ドメイン有効時は sanba.com / www.sanba.com に加え、
     # カットオーバー中も現行の run.app web が落ちないよう web.uri も併許可する
     # (DNS 伝播・証明書 ACTIVE・web 再デプロイが終わるまで run.app からの API 呼び出しが続くため)。
