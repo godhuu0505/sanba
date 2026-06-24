@@ -101,10 +101,14 @@ class SANBAAgent(Agent):
         選択内容は以後の会話の前提として記録しておく。
         """
         self._transcript.append(f"[選択] {detection_id} → {selected_value}")
+        # 永続化して open スナップショットから外す（リロード後も未解消に戻さない）。
+        self._repo.resolve_detection(self._session_id, detection_id, "user_selected")
+        self._published_gaps.discard(detection_id)
         if self._publisher is not None:
             await self._publisher.detection_resolved(
                 detection_id, resolution="user_selected", selected_value=selected_value
             )
+            self._repo.set_session_seq(self._session_id, self._publisher.seq)
         log.info(
             "detection_resolved",
             session=self._session_id,
@@ -130,19 +134,40 @@ class SANBAAgent(Agent):
         )
         # 抜け（未確認の論点）を detection.gap として web に上げる（05/08 の黄土）。
         if self._publisher is not None:
-            for topic in result.open_topics:
-                gap_id = make_requirement_id(f"gap:{topic}")
+            current = {make_requirement_id(f"gap:{t}"): t for t in result.open_topics}
+            # 新規の抜けを永続化 + publish（リロードでも復元できるよう Firestore に保存）。
+            for gap_id, topic in current.items():
                 if gap_id in self._published_gaps:
                     continue
                 self._published_gaps.add(gap_id)
+                summary = f"{topic}が未確認です。"
+                self._repo.save_detection(
+                    self._session_id,
+                    {
+                        "id": gap_id,
+                        "kind": "gap",
+                        "summary": summary,
+                        "category": "non_functional",
+                        "refs": [],
+                        "detector": DETECTOR_NFR,
+                        "resolved": False,
+                    },
+                )
                 await self._publisher.detection_gap(
                     gap_id,
-                    summary=f"{topic}が未確認です。",
+                    summary=summary,
                     category="non_functional",
                     refs=[],
                     detector=DETECTOR_NFR,
                 )
+            # 会話で埋まり open_topics から外れた抜けは agent_resolved で閉じる（音声回答の反映）。
+            for gap_id in list(self._published_gaps):
+                if gap_id not in current:
+                    self._published_gaps.discard(gap_id)
+                    self._repo.resolve_detection(self._session_id, gap_id, "agent_resolved")
+                    await self._publisher.detection_resolved(gap_id, resolution="agent_resolved")
             await self._publisher.status("listening")
+            self._repo.set_session_seq(self._session_id, self._publisher.seq)
         return result.model_dump(mode="json")
 
     @function_tool
@@ -178,6 +203,7 @@ class SANBAAgent(Agent):
         )
         if self._publisher is not None:
             await self._publisher.requirement_upserted(requirement, status="confirmed")
+            self._repo.set_session_seq(self._session_id, self._publisher.seq)
         log.info("requirement_saved", session=self._session_id, id=requirement.id)
         return {"saved": requirement.id}
 
@@ -212,6 +238,7 @@ class SANBAAgent(Agent):
                 conflicts=[],
             )
             await self._publisher.requirement_upserted(requirement, status="confirmed")
+            self._repo.set_session_seq(self._session_id, self._publisher.seq)
         log.info("visual_requirement", session=self._session_id, id=requirement.id)
         return {"saved": requirement.id, "from": "screen-share"}
 
