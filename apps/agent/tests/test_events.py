@@ -5,12 +5,15 @@ LiveKit ランタイム無しで、契約 §2/§3 のエンベロープ・種別
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from sanba_agent.events import (
     EVENTS_TOPIC,
     EventPublisher,
     RecordingTransport,
+    decode_user_selection,
     requirement_to_contract,
 )
 from sanba_agent.models import Priority, Requirement, RequirementCategory
@@ -96,6 +99,33 @@ async def test_counters_track_detections() -> None:
     await pub.detection_gap("d1", "性能が未確認", "non_functional", [])
     await pub.detection_contradiction("d2", "食い違い", refs=[])
     assert pub.detections_published == 2
+
+
+def test_decode_user_selection_valid() -> None:
+    payload = json.dumps(
+        {
+            "v": 1,
+            "type": "user.selection",
+            "session_id": "s1",
+            "detection_id": "d1",
+            "selected_value": "relevance",
+        }
+    ).encode()
+    assert decode_user_selection(payload) == ("d1", "relevance")
+
+
+def test_decode_user_selection_rejects_wrong_type() -> None:
+    payload = json.dumps({"type": "status", "detection_id": "d1"}).encode()
+    assert decode_user_selection(payload) is None
+
+
+def test_decode_user_selection_rejects_missing_fields() -> None:
+    payload = json.dumps({"type": "user.selection", "detection_id": "d1"}).encode()
+    assert decode_user_selection(payload) is None
+
+
+def test_decode_user_selection_rejects_bad_json() -> None:
+    assert decode_user_selection(b"\xff\xfe not json") is None
 
 
 def test_requirement_to_contract_handles_missing_speaker() -> None:
