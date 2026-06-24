@@ -48,9 +48,8 @@ cp terraform.tfvars.example terraform.tfvars   # terraform.tfvars は gitignore 
 | `project_id` | 上の `$PROJECT_ID` |
 | `region` | `us-central1`（`deploy.yml` の `REGION` と一致） |
 | `billing_account` | 予算アラートを使うなら課金アカウント ID |
-| `use_vertexai` | `true`（本番はキーレス推奨。`false` なら `google_api_key` 必須） |
+| `use_vertexai` | `true`（本番はキーレス推奨。`false` なら SM に `google-api-key` を別途投入） |
 | `livekit_url` | LiveKit Cloud の `wss://...`（§4 で取得） |
-| `livekit_api_key` / `livekit_api_secret` | LiveKit Cloud のキー（§4） |
 | `session_signing_secret` | 空でよい（空なら強い値を自動生成して Secret Manager に格納） |
 
 ```bash
@@ -117,7 +116,7 @@ echo "projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/${POOL}/
 1. [LiveKit Cloud](https://cloud.livekit.io/) でプロジェクトを作成。
 2. **Settings → Keys** で API Key / Secret を発行。
 3. WebSocket URL（`wss://<project>.livekit.cloud`）を控える。
-4. これらを §2 の `terraform.tfvars`（`livekit_url` / `livekit_api_key` / `livekit_api_secret`）に入れて `terraform apply` し直す（Secret Manager に格納される）。
+4. `livekit_url` は §2 の `terraform.tfvars` に記載。API Key / Secret は **§6.7 の `gcloud secrets versions add`** で Secret Manager に直接投入する（terraform.tfvars に書かない。`livekit_api_key` / `livekit_api_secret` 変数は廃止済み）。
 
 ---
 
@@ -289,17 +288,45 @@ ACTIVE_APP_SECRET_IDS = ["livekit-api-key","livekit-api-secret"]
 
 > ローテーション: 新しい値を `gcloud secrets versions add` で足すだけ（Cloud Run は `latest` 参照）。
 > terraform 再 apply は不要。
+>
+> **注意 — 即時反映が必要な場合**: Cloud Run の secret env はインスタンス起動時に解決される。
+> `min_instance_count=1` など常駐インスタンスがいる場合は、古い値をキャッシュし続ける。
+> 古いキーを無効化するなどで即時切り替えが必要なら、新 version 追加後に新 revision をデプロイして
+> インスタンスを入れ替える:
+> ```bash
+> gcloud run services update sanba-agent --region=us-central1 --no-traffic  # revision 作成
+> gcloud run services update-traffic sanba-agent --to-latest --region=us-central1
+> ```
 
 ### 旧構成からの一度きりの state 移行
-以前は値を `TF_VAR_*` から version に書き込んでいた。`session-signing-secret` の version を
-destroy/recreate せず引き継ぐため、**この構成の初回 apply の前に**一度だけ実行する:
+以前は値を `TF_VAR_*` から version に書き込んでいた。**この構成の初回 apply の前に**一度だけ実行する:
 
 ```bash
 cd infra/terraform
+
+# 1. livekit / elasticsearch / google-api-key の app version を管理外に外す
+#    （新構成では version を管理しないので、destroy されないよう state rm する）
+terraform state rm 'google_secret_manager_secret_version.app["livekit-api-key"]'     2>/dev/null || true
+terraform state rm 'google_secret_manager_secret_version.app["livekit-api-secret"]'  2>/dev/null || true
+terraform state rm 'google_secret_manager_secret_version.app["elasticsearch-api-key"]' 2>/dev/null || true
+terraform state rm 'google_secret_manager_secret_version.app["google-api-key"]'      2>/dev/null || true
+
+# 2. session-signing-secret の version を新リソース名に引き継ぐ（destroy/recreate を回避）
 terraform state mv \
   'google_secret_manager_secret_version.app["session-signing-secret"]' \
   google_secret_manager_secret_version.session_signing
 ```
+
+> **session-signing-secret のローテーションに注意**: `state mv` 後の初回 apply では
+> `random_password.session_signing` が新規作成されランダム値を生成する。
+> もし旧 SM version のペイロードと異なれば terraform が新 version を作成し、
+> **既存の招待トークン・セッション署名が無効になる**。
+> 既存値を保持したい場合は初回 apply 前に `terraform.tfvars` へ一時的に設定する:
+> ```hcl
+> # 現在の値を確認してから設定（apply 後は削除してよい）
+> # gcloud secrets versions access latest --secret=sanba-session-signing-secret
+> session_signing_secret = "<current_value>"
+> ```
 
 ---
 

@@ -144,7 +144,7 @@ variable "session_signing_secret" {
 # Secret Manager に作成する「箱」の集合。値は terraform 管理外 (gcloud で投入)。
 variable "app_secret_ids" {
   type        = list(string)
-  default     = ["livekit-api-key", "livekit-api-secret", "elasticsearch-api-key"]
+  default     = ["livekit-api-key", "livekit-api-secret", "elasticsearch-api-key", "google-api-key"]
   description = "Secret Manager に作成する app secret の id (sanba- 接頭辞は自動付与)。値は管理しない。"
 }
 
