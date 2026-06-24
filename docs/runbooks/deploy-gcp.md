@@ -130,6 +130,7 @@ echo "projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/${POOL}/
 | `GCP_PROJECT_ID` | `$PROJECT_ID`（**これが空だと `deploy.yml` は skip される**） |
 | `NEXT_PUBLIC_API_URL` | §2 の `terraform output api_url`（web ビルドに必須・空だと fail fast） |
 | `NEXT_PUBLIC_LIVEKIT_URL` | §4 の `wss://...` |
+| `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | Google OAuth Web クライアント ID（API の `GOOGLE_OAUTH_CLIENT_ID` にも同値を注入。**空だと認証経路が 503**） |
 | `WIF_PROVIDER` | §3 末尾で出力した WIF プロバイダの完全パス（秘匿値ではなく識別子なので Variable） |
 | `DEPLOY_SA` | §3 の `$DEPLOY_SA`（`gh-deployer@...iam.gserviceaccount.com`。SA email は公開識別子） |
 | `TF_DEPLOY_SA` | §6.6 の `tf-deployer@…`（未設定なら `DEPLOY_SA` にフォールバック） |
@@ -296,8 +297,10 @@ ACTIVE_APP_SECRET_IDS = ["livekit-api-key","livekit-api-secret"]
 > ```bash
 > REGION=us-central1
 > for svc in sanba-agent sanba-api; do
->   gcloud run services update "$svc" --region="$REGION" --no-traffic  # revision 作成
->   gcloud run services update-traffic "$svc" --to-latest --region="$REGION"
+>   # 現在と同じイメージで再デプロイ → 新 revision が secret の最新 version を解決する
+>   IMAGE=$(gcloud run services describe "$svc" --region="$REGION" \
+>     --format='value(spec.template.spec.containers[0].image)')
+>   gcloud run deploy "$svc" --image="$IMAGE" --region="$REGION" --quiet
 > done
 > ```
 
