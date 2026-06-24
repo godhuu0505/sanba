@@ -59,6 +59,14 @@
   `llm-eval.yml` はこの場合 heuristic 評価に自動フォールバックする（gate は維持）。
 - **デプロイ経路の分離**: `deploy.yml` は `push:[main]` と `workflow_dispatch` のみ。fork PR からは
   起動できず、GCP 認証は WIF（鍵レス）。
+- **terraform plan の fork ガード**: `terraform.yml` は `pull_request` で plan を走らせるため、
+  job `if:` に `github.event.pull_request.head.repo.fork == false` を置き、fork 由来の改変コードに
+  対する plan（WIF 認証 → data source 経由で既存インフラを読む）を起動段階で止める。WIF の
+  `attribute-condition` は `pull_request` の OIDC token では `repository` が base になり fork を
+  判別できないため、この一次防御をワークフロー側に置く（多層防御。詳細は
+  `docs/runbooks/deploy-gcp.md §3`）。plan コメントは `terraform show` の出力をそのまま貼るが、
+  秘匿リソース属性（`random_password.result` / `secret_data` 等）は provider が `sensitive` 扱いで
+  `(sensitive value)` に伏せるため、同一リポジトリ PR でも値は露出しない。
 - **未対応の推奨（フォローアップ）**: ブランチ保護（main への直 push 禁止・必須チェック・必須レビュー）、
   Actions の third-party action を full SHA ピン留め（供給網対策、Dependabot が更新）、
   GitHub Secret scanning / push protection の有効化。
