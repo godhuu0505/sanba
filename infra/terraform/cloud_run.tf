@@ -101,6 +101,9 @@ resource "google_cloud_run_v2_service" "agent" {
     }
     containers {
       image = "${local.image_base}/agent:${var.image_tag}"
+      # LiveKit Agents ワーカーの health server は既定で :8081 を listen する。Cloud Run の
+      # 起動プローブをそのポートに合わせる (未指定だと 8080 を probe して起動失敗する)。
+      ports { container_port = 8081 }
       resources {
         limits   = { cpu = "2", memory = "1Gi" }
         cpu_idle = false # 常駐ワーカーなので常時 CPU 割当
