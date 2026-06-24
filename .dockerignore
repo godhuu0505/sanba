@@ -1,0 +1,34 @@
+# build context = リポジトリ直下 (api/agent ビルド)。重い/不要なものを送らない。
+# これが無いと node_modules や .venv, .git が丸ごとビルドコンテキストに乗る (ADR-0014 §9)。
+
+# VCS / メタ
+.git
+.gitignore
+**/.github
+
+# Python 仮想環境・キャッシュ
+**/.venv
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+
+# Node (web は別 context だが念のため)
+**/node_modules
+**/.next
+
+# ローカル設定・秘匿物
+.env
+**/.env
+**/.env.*
+
+# 他アプリ・周辺 (api/agent イメージには不要)
+apps/web
+infra
+docs
+scripts
+**/tests
+*.md
+**/*.md
+.claude

@@ -14,6 +14,7 @@ default:
 
 # 初回ローカル環境構築: .env を用意し、全アプリの依存をインストールする (冪等)
 setup: _env
+    cd packages/sanba_shared && uv sync --all-extras --dev
     cd apps/agent && uv sync --all-extras --dev
     cd apps/api && uv sync --all-extras --dev
     cd infra/four-keys/collector && uv sync --all-extras --dev
@@ -66,12 +67,14 @@ verify-full:
 
 # 全テストを実行
 test:
+    cd packages/sanba_shared && uv run pytest -q
     cd apps/agent && uv run pytest -q
     cd apps/api && uv run pytest -q
     cd infra/four-keys/collector && uv run pytest -q
 
 # lint + 型チェック
 lint:
+    cd packages/sanba_shared && uv run ruff check . && uv run mypy src
     cd apps/agent && uv run ruff check . && uv run mypy src
     cd apps/api && uv run ruff check . && uv run mypy src
     cd infra/four-keys/collector && uv run ruff check . && uv run mypy src
