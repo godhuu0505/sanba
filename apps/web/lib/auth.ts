@@ -54,6 +54,8 @@ export interface GoogleAuth {
   /** dev モードのログイン (トークン無しで通す)。 */
   devSignIn: () => void;
   signOut: () => void;
+  /** ログアウト→再ログイン導線で GIS ボタンを再描画させる。state 14 → 11 への遷移時に呼ぶ。 */
+  resetButton: () => void;
 }
 
 /** ID トークン (JWT) の payload を表示用にデコードする。署名検証はしない。 */
@@ -124,6 +126,7 @@ export function useGoogleAuth(): GoogleAuth {
     };
   }, [devMode, onCredential, renderCount]);
 
+  const resetButton = useCallback(() => setRenderCount((c) => c + 1), []);
   const devSignIn = useCallback(() => setDevLoggedIn(true), []);
   const signOut = useCallback(() => {
     setCredential(null);
@@ -140,5 +143,6 @@ export function useGoogleAuth(): GoogleAuth {
     buttonRef,
     devSignIn,
     signOut,
+    resetButton,
   };
 }

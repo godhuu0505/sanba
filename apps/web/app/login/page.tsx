@@ -18,7 +18,7 @@ import { useGoogleAuth } from "@/lib/auth";
 const WELCOME_MS = 1000;
 
 export default function LoginPage() {
-  const { loggedIn, profile, devMode, buttonRef, devSignIn, signOut } = useGoogleAuth();
+  const { loggedIn, profile, devMode, buttonRef, devSignIn, signOut, resetButton } = useGoogleAuth();
 
   const [justLoggedOut, setJustLoggedOut] = useState(false);
   const [welcoming, setWelcoming] = useState(false);
@@ -56,7 +56,7 @@ export default function LoginPage() {
           <p className="text-[13px] leading-relaxed text-[var(--sanba-muted)]">
             ログアウトしました。問答の記録は安全に保たれています。
           </p>
-          <Button variant="outline" className="mt-3" onClick={() => setJustLoggedOut(false)}>
+          <Button variant="outline" className="mt-3" onClick={() => { setJustLoggedOut(false); resetButton(); }}>
             再びログインする
           </Button>
         </div>
