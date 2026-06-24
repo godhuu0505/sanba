@@ -7,33 +7,33 @@
 <style>
   /* ============ Design Tokens ============ */
   :root{
-    --bg:#0C0E1B;            /* deep night indigo */
-    --bg-2:#0F1224;
-    --surface:#161A30;
-    --surface-2:#1E2340;
-    --surface-3:#272D52;
-    --line:rgba(255,255,255,.09);
-    --line-strong:rgba(255,255,255,.16);
-    --ink:#ECEEF9;
-    --ink-2:#AEB4D6;
-    --ink-3:#7B82AB;
-    --primary:#8E75B2;       /* Gemini violet */
-    --primary-2:#6C5CE7;
-    --live:#1FD5A3;          /* LiveKit teal — active / speaking */
-    --warn:#F5A524;          /* amber — gaps (抜け) */
-    --danger:#FF6B6B;        /* red — contradiction (矛盾) */
+    --bg:#140f08;            /* deep night indigo */
+    --bg-2:#1b140b;
+    --surface:#241a0f;
+    --surface-2:#2e2214;
+    --surface-3:#3a2c18;
+    --line:rgba(214,184,110,.09);
+    --line-strong:rgba(214,184,110,.16);
+    --ink:#efe6c9;
+    --ink-2:#cbb98d;
+    --ink-3:#9a875e;
+    --primary:#c8951f;       /* Gemini violet */
+    --primary-2:#d4af37;
+    --live:#a9be6e;          /* LiveKit teal — active / speaking */
+    --warn:#e0a93b;          /* amber — gaps (抜け) */
+    --danger:#d2564b;        /* red — contradiction (矛盾) */
     --radius:18px;
     --radius-sm:12px;
     --shadow:0 24px 60px -24px rgba(0,0,0,.7);
-    --grad:linear-gradient(135deg,#6C5CE7 0%,#8E75B2 45%,#1FD5A3 130%);
+    --grad:linear-gradient(135deg,#d4af37 0%,#c8951f 45%,#a9be6e 130%);
     --font:'Inter','Noto Sans JP',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   }
   *{box-sizing:border-box}
   html{scroll-behavior:smooth}
   body{
     margin:0;font-family:var(--font);background:
-      radial-gradient(1200px 700px at 80% -10%,rgba(108,92,231,.22),transparent 60%),
-      radial-gradient(900px 600px at -10% 20%,rgba(31,213,163,.10),transparent 55%),
+      radial-gradient(1200px 700px at 80% -10%,rgba(212,175,55,.22),transparent 60%),
+      radial-gradient(900px 600px at -10% 20%,rgba(169,190,110,.10),transparent 55%),
       var(--bg);
     color:var(--ink);line-height:1.7;-webkit-font-smoothing:antialiased;
   }
@@ -45,7 +45,7 @@
   /* ============ Layout: sidebar + main ============ */
   .shell{display:grid;grid-template-columns:248px 1fr;gap:0}
   .toc{position:sticky;top:0;height:100dvh;padding:30px 22px;border-right:1px solid var(--line);
-       background:linear-gradient(180deg,rgba(255,255,255,.02),transparent);backdrop-filter:blur(6px)}
+       background:linear-gradient(180deg,rgba(214,184,110,.02),transparent);backdrop-filter:blur(6px)}
   .toc .brand{display:flex;align-items:center;gap:10px;margin-bottom:26px}
   .toc .logo{width:34px;height:34px;border-radius:10px;background:var(--grad);display:grid;place-items:center;font-size:18px}
   .toc .brand b{font-size:17px}
@@ -103,13 +103,13 @@
   .ianode .step{font-size:11px;font-weight:800;color:var(--ink-3);letter-spacing:.1em}
   .ianode b{display:block;margin:6px 0 4px;font-size:15px}
   .ianode small{color:var(--ink-2);font-size:12.5px;line-height:1.5;display:block}
-  .ianode.core{border-color:rgba(31,213,163,.5);background:linear-gradient(180deg,rgba(31,213,163,.10),var(--surface))}
+  .ianode.core{border-color:rgba(169,190,110,.5);background:linear-gradient(180deg,rgba(169,190,110,.10),var(--surface))}
   .ianode.core .step{color:var(--live)}
 
   /* ============ Artboard (screen mock) ============ */
   .board{margin-top:30px;border:1px solid var(--line-strong);border-radius:22px;overflow:hidden;background:var(--bg-2);box-shadow:var(--shadow)}
   .board > .caption{display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid var(--line);
-                    background:linear-gradient(180deg,rgba(255,255,255,.03),transparent)}
+                    background:linear-gradient(180deg,rgba(214,184,110,.03),transparent)}
   .dot{width:11px;height:11px;border-radius:50%}
   .dots{display:flex;gap:7px;margin-right:6px}
   .caption .title{font-size:13px;font-weight:700;color:var(--ink-2)}
@@ -124,7 +124,7 @@
   .navlinks{display:flex;gap:6px;margin-left:8px}
   .navlinks a{font-size:12.5px;color:var(--ink-3);padding:6px 11px;border-radius:8px;text-decoration:none}
   .navlinks a.on{color:var(--ink);background:var(--surface-2)}
-  .avatar{margin-left:auto;width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,#6C5CE7,#1FD5A3)}
+  .avatar{margin-left:auto;width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,#d4af37,#a9be6e)}
 
   .btn{display:inline-flex;align-items:center;gap:8px;border:none;cursor:pointer;font-family:inherit;
        font-weight:700;font-size:13.5px;padding:11px 18px;border-radius:11px;color:#fff;background:var(--grad)}
@@ -132,17 +132,17 @@
   .btn.sm{padding:8px 13px;font-size:12.5px;border-radius:9px}
 
   .chip{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:999px;border:1px solid var(--line)}
-  .chip.must{color:#FFB4B4;border-color:rgba(255,107,107,.4);background:rgba(255,107,107,.08)}
-  .chip.should{color:#FFD79A;border-color:rgba(245,165,36,.4);background:rgba(245,165,36,.08)}
-  .chip.could{color:#9FE8D2;border-color:rgba(31,213,163,.35);background:rgba(31,213,163,.07)}
-  .chip.live{color:#062;background:var(--live);border-color:transparent}
+  .chip.must{color:#f2b0a8;border-color:rgba(210,86,75,.4);background:rgba(210,86,75,.08)}
+  .chip.should{color:#f2ce86;border-color:rgba(224,169,59,.4);background:rgba(224,169,59,.08)}
+  .chip.could{color:#cedda0;border-color:rgba(169,190,110,.35);background:rgba(169,190,110,.07)}
+  .chip.live{color:#243010;background:var(--live);border-color:transparent}
   .chip.gray{color:var(--ink-2)}
 
   .tag{font-size:10.5px;font-weight:800;letter-spacing:.06em;padding:3px 8px;border-radius:6px;text-transform:uppercase}
-  .tag.nfr{background:rgba(108,92,231,.16);color:#B7AAFF}
-  .tag.scope{background:rgba(31,213,163,.14);color:#7FE6CB}
-  .tag.contra{background:rgba(255,107,107,.14);color:#FF9D9D}
-  .tag.lead{background:rgba(245,165,36,.14);color:#FFC76B}
+  .tag.nfr{background:rgba(212,175,55,.16);color:#f0d67a}
+  .tag.scope{background:rgba(169,190,110,.14);color:#cedda0}
+  .tag.contra{background:rgba(210,86,75,.14);color:#f2b0a8}
+  .tag.lead{background:rgba(224,169,59,.14);color:#f0d67a}
 
   /* annotation list under a board */
   .annot{display:grid;gap:12px;grid-template-columns:repeat(3,1fr);margin-top:18px}
@@ -168,9 +168,9 @@
   .sessionrow .meta{font-size:11.5px;color:var(--ink-3)}
 
   .orb{width:150px;height:150px;border-radius:50%;margin:6px auto 14px;position:relative;
-       background:radial-gradient(circle at 50% 40%,rgba(31,213,163,.5),rgba(108,92,231,.25) 60%,transparent 72%);
-       box-shadow:0 0 70px rgba(31,213,163,.35)}
-  .orb::after{content:"";position:absolute;inset:30px;border-radius:50%;border:2px solid rgba(255,255,255,.25)}
+       background:radial-gradient(circle at 50% 40%,rgba(169,190,110,.5),rgba(212,175,55,.25) 60%,transparent 72%);
+       box-shadow:0 0 70px rgba(169,190,110,.35)}
+  .orb::after{content:"";position:absolute;inset:30px;border-radius:50%;border:2px solid rgba(214,184,110,.25)}
   .bars{display:flex;align-items:flex-end;justify-content:center;gap:5px;height:46px;margin-top:6px}
   .bars i{width:6px;background:var(--live);border-radius:3px;display:inline-block;opacity:.9}
 
@@ -183,8 +183,8 @@
   .utt .src{font-size:10.5px;color:var(--ink-3);margin-left:6px;font-weight:600}
 
   .alert{border-radius:13px;padding:13px 15px;border:1px solid;margin-bottom:10px;position:relative}
-  .alert.contra{background:rgba(255,107,107,.08);border-color:rgba(255,107,107,.35)}
-  .alert.gap{background:rgba(245,165,36,.08);border-color:rgba(245,165,36,.35)}
+  .alert.contra{background:rgba(210,86,75,.08);border-color:rgba(210,86,75,.35)}
+  .alert.gap{background:rgba(224,169,59,.08);border-color:rgba(224,169,59,.35)}
   .alert .lab{font-size:10.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}
   .alert.contra .lab{color:var(--danger)}
   .alert.gap .lab{color:var(--warn)}
@@ -212,9 +212,9 @@
   .panel .ph .cnt{margin-left:auto;font-size:11px;color:var(--ink-3);font-weight:700}
 
   .mock-figma{border:1px dashed var(--line-strong);border-radius:12px;height:120px;position:relative;background:
-     repeating-linear-gradient(45deg,rgba(255,255,255,.02) 0 10px,transparent 10px 20px),var(--bg);overflow:hidden}
+     repeating-linear-gradient(45deg,rgba(214,184,110,.02) 0 10px,transparent 10px 20px),var(--bg);overflow:hidden}
   .mock-figma .lbl{position:absolute;top:8px;left:10px;font-size:10.5px;color:var(--ink-3);font-weight:700}
-  .mock-figma .ring{position:absolute;border:2px solid var(--danger);border-radius:8px;box-shadow:0 0 0 4px rgba(255,107,107,.15)}
+  .mock-figma .ring{position:absolute;border:2px solid var(--danger);border-radius:8px;box-shadow:0 0 0 4px rgba(210,86,75,.15)}
 
   /* doc / summary screen */
   .doc{background:var(--bg);border:1px solid var(--line);border-radius:14px;padding:20px 22px}
@@ -256,9 +256,81 @@
   @media(max-width:680px){.reflist{grid-template-columns:1fr}}
   .reflist .r{font-size:12.5px;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px 13px;color:var(--ink-2)}
   .reflist .r b{color:var(--ink)}
+
+/* ===== 産婆術アトリエ・スキン適用（構造は不変・意匠のみ差替え） ===== */
+:root{ --font:"Hiragino Mincho ProN","Yu Mincho",YuMincho,"Noto Serif JP","Songti SC",Georgia,"Times New Roman",serif; }
+body{ background:
+  radial-gradient(1300px 820px at 50% 24%, rgba(216,168,80,.20), transparent 60%),
+  radial-gradient(1000px 760px at 50% 120%, rgba(92,56,18,.34), transparent 62%),
+  radial-gradient(900px 600px at 12% 8%, rgba(150,96,34,.14), transparent 58%),
+  linear-gradient(180deg,#0E0A05 0%,#17100A 48%,#0B0704 100%) !important; }
+.refectory{position:fixed;inset:0;z-index:-3;pointer-events:none;opacity:.5}
+.refectory svg{width:100%;height:100%;display:block}
+.craquelure{position:fixed;inset:0;z-index:-2;pointer-events:none;opacity:.5;mix-blend-mode:overlay}
+.craquelure svg{width:100%;height:100%;display:block}
+body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:-2;
+  background:radial-gradient(125% 120% at 50% 26%, transparent 44%, rgba(0,0,0,.66) 100%)}
+.btn{color:#2A1E08}
+.g-an,.numb{color:#2A1E08}
 </style>
 </head>
 <body>
+<!-- ◆ 産婆術アトリエ・スキン：金グラデ/三連窓/後光/ニスのひび の定義 -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <linearGradient id="atl-gold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#8A5A14"/><stop offset=".38" stop-color="#D4AF37"/>
+      <stop offset=".58" stop-color="#F6E6AC"/><stop offset="1" stop-color="#C8951F"/>
+    </linearGradient>
+    <linearGradient id="atl-sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#39536A"/><stop offset=".5" stop-color="#9A8A63"/>
+      <stop offset=".82" stop-color="#E8C878"/><stop offset="1" stop-color="#F4E2A1"/>
+    </linearGradient>
+    <radialGradient id="atl-halo" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#F6E6AC" stop-opacity=".82"/>
+      <stop offset=".4" stop-color="#D4AF37" stop-opacity=".38"/>
+      <stop offset="1" stop-color="#8A5A14" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="atl-craq" x="0" y="0" width="100%" height="100%">
+      <feTurbulence type="turbulence" baseFrequency="0.016 0.024" numOctaves="2" seed="11" stitchTiles="stitch" result="t"/>
+      <feColorMatrix in="t" type="matrix" values="0 0 0 0 0.05  0 0 0 0 0.03  0 0 0 0 0.01  0 0 0 2.4 -1.05"/>
+    </filter>
+  </defs>
+</svg>
+<!-- ◆ 背景：最後の晩餐の内陣（テンペラ＋油彩・一点透視） -->
+<div class="refectory" aria-hidden="true">
+  <svg viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice">
+    <circle cx="720" cy="330" r="250" fill="url(#atl-halo)"/>
+    <g stroke="#C28F2E" stroke-width="1" opacity=".42" fill="none">
+      <path d="M0 0 L720 330 M160 0 L720 330 M320 0 L720 330 M480 0 L720 330 M640 0 L720 330 M800 0 L720 330 M960 0 L720 330 M1120 0 L720 330 M1280 0 L720 330 M1440 0 L720 330"/>
+      <path d="M153 70 H1287 M327 150 H1113 M513 235 H927"/>
+    </g>
+    <g stroke="#B07E2A" stroke-width="1" opacity=".4" fill="none">
+      <path d="M0 900 L720 330 M240 900 L720 330 M480 900 L720 330 M720 900 L720 330 M960 900 L720 330 M1200 900 L720 330 M1440 900 L720 330"/>
+      <path d="M50 860 H1390 M151 780 H1289 M278 680 H1162 M429 560 H1011 M568 450 H872"/>
+    </g>
+    <g stroke="#9A6A22" stroke-width="1" opacity=".3" fill="none">
+      <path d="M150 80 V740 M300 150 V720 M1290 80 V740 M1140 150 V720"/>
+    </g>
+    <g opacity=".85">
+      <path d="M600 372 V322 Q600 300 626 300 Q652 300 652 322 V372 Z" fill="url(#atl-sky)"/>
+      <path d="M688 374 V300 Q688 273 715 273 Q742 273 742 300 V374 Z" fill="url(#atl-sky)"/>
+      <path d="M778 372 V322 Q778 300 804 300 Q830 300 830 322 V372 Z" fill="url(#atl-sky)"/>
+      <g stroke="#7A5A1E" stroke-width="1" opacity=".7" fill="none">
+        <path d="M626 300 V372 M600 340 H652 M715 273 V374 M688 332 H742 M804 300 V372 M778 340 H830 M590 380 H840"/>
+      </g>
+    </g>
+    <g opacity=".5">
+      <path d="M300 748 L1140 748 L1000 702 L440 702 Z" fill="#3A2A14" stroke="#C28F2E" stroke-width="1.2"/>
+      <path d="M300 748 H1140 V832 H300 Z" fill="#241A0F" stroke="#9A6A22" stroke-width="1"/>
+      <g stroke="#7A5A1E" stroke-width="1" opacity=".6">
+        <path d="M380 748 V832 M470 748 V832 M560 748 V832 M650 748 V832 M740 748 V832 M830 748 V832 M920 748 V832 M1010 748 V832 M1080 748 V832"/>
+      </g>
+    </g>
+  </svg>
+</div>
+<div class="craquelure" aria-hidden="true"><svg><rect width="100%" height="100%" filter="url(#atl-craq)"/></svg></div>
+
 <div class="shell">
 
   <!-- ===================== TOC ===================== -->
@@ -334,9 +406,9 @@
 
         <div class="grid g4" style="margin-top:24px">
           <div><div class="swatch" style="background:var(--grad)"></div><div class="tok"><b>Brand / AI</b><span class="mono">violet→teal gradient</span></div></div>
-          <div><div class="swatch" style="background:var(--live)"></div><div class="tok"><b>Live / 発話中</b><span class="mono">#1FD5A3</span></div></div>
-          <div><div class="swatch" style="background:var(--warn)"></div><div class="tok"><b>抜け (Gap)</b><span class="mono">#F5A524</span></div></div>
-          <div><div class="swatch" style="background:var(--danger)"></div><div class="tok"><b>矛盾 (Contradiction)</b><span class="mono">#FF6B6B</span></div></div>
+          <div><div class="swatch" style="background:var(--live)"></div><div class="tok"><b>Live / 発話中</b><span class="mono">#a9be6e</span></div></div>
+          <div><div class="swatch" style="background:var(--warn)"></div><div class="tok"><b>抜け (Gap)</b><span class="mono">#e0a93b</span></div></div>
+          <div><div class="swatch" style="background:var(--danger)"></div><div class="tok"><b>矛盾 (Contradiction)</b><span class="mono">#d2564b</span></div></div>
         </div>
 
         <div class="grid g3" style="margin-top:26px">
@@ -402,7 +474,7 @@
 
         <div class="board">
           <div class="caption">
-            <div class="dots"><span class="dot" style="background:#FF6B6B"></span><span class="dot" style="background:#F5A524"></span><span class="dot" style="background:#1FD5A3"></span></div>
+            <div class="dots"><span class="dot" style="background:#d2564b"></span><span class="dot" style="background:#e0a93b"></span><span class="dot" style="background:#a9be6e"></span></div>
             <span class="title">SANBA — ホーム</span>
             <span class="url">app.sanba.dev/home</span>
           </div>
@@ -415,7 +487,7 @@
 
             <div class="dash-grid">
               <div>
-                <div class="card" style="background:linear-gradient(135deg,rgba(108,92,231,.18),var(--surface));border-color:var(--line-strong)">
+                <div class="card" style="background:linear-gradient(135deg,rgba(212,175,55,.18),var(--surface));border-color:var(--line-strong)">
                   <h4 style="font-size:18px">会議の前に、5分だけ壁打ちしませんか？</h4>
                   <p style="margin:6px 0 16px">SANBA が一問ずつ問いかけ、抜け漏れと矛盾をその場で潰します。</p>
                   <button class="btn">＋ 新しい壁打ちを始める</button>
@@ -478,7 +550,7 @@
 
         <div class="board">
           <div class="caption">
-            <div class="dots"><span class="dot" style="background:#FF6B6B"></span><span class="dot" style="background:#F5A524"></span><span class="dot" style="background:#1FD5A3"></span></div>
+            <div class="dots"><span class="dot" style="background:#d2564b"></span><span class="dot" style="background:#e0a93b"></span><span class="dot" style="background:#a9be6e"></span></div>
             <span class="title">SANBA — 準備</span>
             <span class="url">app.sanba.dev/session/new</span>
           </div>
@@ -495,7 +567,7 @@
 
                 <label style="font-size:12.5px;font-weight:700;color:var(--ink-2)">あなたの役割</label>
                 <div class="palette" style="margin:8px 0 16px">
-                  <span class="chip" style="border-color:var(--primary-2);color:#B7AAFF;background:rgba(108,92,231,.12)">● PdM</span>
+                  <span class="chip" style="border-color:var(--primary-2);color:#f0d67a;background:rgba(212,175,55,.12)">● PdM</span>
                   <span class="chip gray">エンジニア</span>
                   <span class="chip gray">デザイナー</span>
                   <span class="chip gray">顧客</span>
@@ -514,7 +586,7 @@
               </div>
 
               <div>
-                <div class="card" style="background:linear-gradient(180deg,rgba(31,213,163,.08),var(--surface))">
+                <div class="card" style="background:linear-gradient(180deg,rgba(169,190,110,.08),var(--surface))">
                   <h4 style="font-size:14px">準備が整いました</h4>
                   <p style="margin:6px 0 14px">SANBA は資料から <b style="color:var(--ink)">8つの既知事項</b> を把握。重複を避け、未確定の論点から問いを始めます。</p>
                   <div style="display:flex;flex-direction:column;gap:8px">
@@ -525,7 +597,7 @@
                 </div>
 
                 <label style="display:flex;gap:11px;align-items:flex-start;margin:18px 0;font-size:12.5px;color:var(--ink-2)">
-                  <span style="width:20px;height:20px;border-radius:6px;background:var(--live);display:inline-grid;place-items:center;color:#062;font-weight:800;flex:none">✓</span>
+                  <span style="width:20px;height:20px;border-radius:6px;background:var(--live);display:inline-grid;place-items:center;color:#243010;font-weight:800;flex:none">✓</span>
                   <span>会話の録音と AI 処理に同意します。発話・要件は最大 30 日保持され、保存前に個人情報はマスクされます。</span>
                 </label>
                 <button class="btn" style="width:100%;justify-content:center;padding:14px">🎙️ インタビューを始める</button>
@@ -552,7 +624,7 @@
 
         <div class="board">
           <div class="caption">
-            <div class="dots"><span class="dot" style="background:#FF6B6B"></span><span class="dot" style="background:#F5A524"></span><span class="dot" style="background:#1FD5A3"></span></div>
+            <div class="dots"><span class="dot" style="background:#d2564b"></span><span class="dot" style="background:#e0a93b"></span><span class="dot" style="background:#a9be6e"></span></div>
             <span class="title">SANBA — 要件インタビュー中</span>
             <span class="url"><span class="chip live" style="font-size:10px">● REC 12:48</span></span>
           </div>
@@ -578,7 +650,7 @@
               </div>
 
               <!-- CENTER: detection + trace -->
-              <div class="panel" style="background:linear-gradient(180deg,rgba(255,107,107,.04),var(--surface))">
+              <div class="panel" style="background:linear-gradient(180deg,rgba(210,86,75,.04),var(--surface))">
                 <div class="ph">⚡ リアルタイム検知 <span class="cnt">2 件 未解決</span></div>
 
                 <div class="alert contra">
@@ -596,7 +668,7 @@
                 <div class="mock-figma" style="margin:6px 0 14px">
                   <span class="lbl">🖼 共有中のモック — 言葉 × 画面の矛盾</span>
                   <div class="ring" style="top:42px;left:30px;width:90px;height:30px"></div>
-                  <div style="position:absolute;bottom:8px;left:10px;right:10px;font-size:10.5px;color:#FF9D9D">
+                  <div style="position:absolute;bottom:8px;left:10px;right:10px;font-size:10.5px;color:#f2b0a8">
                     画面には検索バーが無いが「検索したい」と発言 →要追加
                   </div>
                 </div>
@@ -639,7 +711,7 @@
                 <div class="reqitem">
                   <span class="tag contra">要確認</span>
                   <div class="body">
-                    <p style="color:#FFB4B4">並び順の基準（関連度 / 新着）</p>
+                    <p style="color:#f2b0a8">並び順の基準（関連度 / 新着）</p>
                     <div class="sub">矛盾により保留中 — 確定待ち</div>
                     <div class="conf"><i style="width:30%"></i></div>
                   </div>
@@ -679,7 +751,7 @@
 
         <div class="board">
           <div class="caption">
-            <div class="dots"><span class="dot" style="background:#FF6B6B"></span><span class="dot" style="background:#F5A524"></span><span class="dot" style="background:#1FD5A3"></span></div>
+            <div class="dots"><span class="dot" style="background:#d2564b"></span><span class="dot" style="background:#e0a93b"></span><span class="dot" style="background:#a9be6e"></span></div>
             <span class="title">SANBA — 要件ドキュメント</span>
             <span class="url">app.sanba.dev/session/abc123/requirements</span>
           </div>
@@ -705,7 +777,7 @@
               </div>
 
               <div>
-                <div class="card" style="margin-bottom:16px;background:linear-gradient(180deg,rgba(108,92,231,.10),var(--surface))">
+                <div class="card" style="margin-bottom:16px;background:linear-gradient(180deg,rgba(212,175,55,.10),var(--surface))">
                   <h4 style="font-size:13px">このセッションで防いだ手戻り</h4>
                   <div style="display:flex;gap:18px;margin-top:12px">
                     <div><div style="font-size:26px;font-weight:800;color:var(--danger)">2</div><div style="font-size:11px;color:var(--ink-3)">矛盾を会議前に解消</div></div>
@@ -744,7 +816,7 @@
 
         <div class="board">
           <div class="caption">
-            <div class="dots"><span class="dot" style="background:#FF6B6B"></span><span class="dot" style="background:#F5A524"></span><span class="dot" style="background:#1FD5A3"></span></div>
+            <div class="dots"><span class="dot" style="background:#d2564b"></span><span class="dot" style="background:#e0a93b"></span><span class="dot" style="background:#a9be6e"></span></div>
             <span class="title">SANBA — 評価</span>
             <span class="url">app.sanba.dev/eval</span>
           </div>
@@ -798,7 +870,7 @@
 
         <div class="board">
           <div class="caption">
-            <div class="dots"><span class="dot" style="background:#FF6B6B"></span><span class="dot" style="background:#F5A524"></span><span class="dot" style="background:#1FD5A3"></span></div>
+            <div class="dots"><span class="dot" style="background:#d2564b"></span><span class="dot" style="background:#e0a93b"></span><span class="dot" style="background:#a9be6e"></span></div>
             <span class="title">SANBA — 会議モード（プレビュー）</span>
             <span class="url"><span class="chip live" style="font-size:10px">● 3名 参加</span></span>
           </div>
@@ -807,15 +879,15 @@
               <div>
                 <div class="ph" style="font-size:12px;font-weight:800;color:var(--ink-2);margin-bottom:12px">🧑‍🤝‍🧑 話者レーン（識別）</div>
                 <div class="lane">
-                  <div class="lh"><span class="av" style="background:linear-gradient(135deg,#6C5CE7,#8E75B2)"></span>田中（PdM）<span class="chip live" style="margin-left:auto;font-size:10px">● 発話中</span></div>
+                  <div class="lh"><span class="av" style="background:linear-gradient(135deg,#d4af37,#c8951f)"></span>田中（PdM）<span class="chip live" style="margin-left:auto;font-size:10px">● 発話中</span></div>
                   <p style="font-size:12px;color:var(--ink-2);margin:0">「権限まわりは後で詰めればいいかな」</p>
                 </div>
                 <div class="lane">
-                  <div class="lh"><span class="av" style="background:linear-gradient(135deg,#1FD5A3,#6C5CE7)"></span>佐藤（エンジニア）</div>
+                  <div class="lh"><span class="av" style="background:linear-gradient(135deg,#a9be6e,#d4af37)"></span>佐藤（エンジニア）</div>
                   <p style="font-size:12px;color:var(--ink-2);margin:0">「いや、それは初期から決めないと手戻ります」</p>
                 </div>
                 <div class="lane">
-                  <div class="lh"><span class="av" style="background:linear-gradient(135deg,#F5A524,#FF6B6B)"></span>山本（顧客）</div>
+                  <div class="lh"><span class="av" style="background:linear-gradient(135deg,#e0a93b,#d2564b)"></span>山本（顧客）</div>
                   <p style="font-size:12px;color:var(--ink-2);margin:0">（発話なし）</p>
                 </div>
               </div>

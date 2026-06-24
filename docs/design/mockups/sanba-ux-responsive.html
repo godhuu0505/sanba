@@ -6,18 +6,18 @@
 <title>SANBA — スマホ / タブレット版 UI/UX</title>
 <style>
   :root{
-    --bg:#0C0E1B;--bg-2:#0F1224;--surface:#161A30;--surface-2:#1E2340;--surface-3:#272D52;
-    --line:rgba(255,255,255,.09);--line-strong:rgba(255,255,255,.16);
-    --ink:#ECEEF9;--ink-2:#AEB4D6;--ink-3:#7B82AB;
-    --primary:#8E75B2;--primary-2:#6C5CE7;--live:#1FD5A3;--warn:#F5A524;--danger:#FF6B6B;
-    --grad:linear-gradient(135deg,#6C5CE7 0%,#8E75B2 45%,#1FD5A3 130%);
+    --bg:#140f08;--bg-2:#1b140b;--surface:#241a0f;--surface-2:#2e2214;--surface-3:#3a2c18;
+    --line:rgba(214,184,110,.09);--line-strong:rgba(214,184,110,.16);
+    --ink:#efe6c9;--ink-2:#cbb98d;--ink-3:#9a875e;
+    --primary:#c8951f;--primary-2:#d4af37;--live:#a9be6e;--warn:#e0a93b;--danger:#d2564b;
+    --grad:linear-gradient(135deg,#d4af37 0%,#c8951f 45%,#a9be6e 130%);
     --font:'Inter','Noto Sans JP',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   }
   *{box-sizing:border-box}
   html{scroll-behavior:smooth}
   body{margin:0;font-family:var(--font);color:var(--ink);line-height:1.65;-webkit-font-smoothing:antialiased;
-    background:radial-gradient(1200px 700px at 80% -10%,rgba(108,92,231,.22),transparent 60%),
-      radial-gradient(900px 600px at -10% 20%,rgba(31,213,163,.10),transparent 55%),var(--bg);}
+    background:radial-gradient(1200px 700px at 80% -10%,rgba(212,175,55,.22),transparent 60%),
+      radial-gradient(900px 600px at -10% 20%,rgba(169,190,110,.10),transparent 55%),var(--bg);}
   .wrap{max-width:1180px;margin:0 auto;padding:0 28px}
   h1,h2,h3,h4{margin:0;font-weight:700;line-height:1.3}
   .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
@@ -54,7 +54,7 @@
   .devcap span{display:block;font-size:11px;color:var(--ink-3);font-weight:500;margin-top:2px}
 
   /* phone frame */
-  .phone{width:316px;height:680px;border-radius:46px;border:11px solid #1b1f36;background:#000;
+  .phone{width:316px;height:680px;border-radius:46px;border:11px solid #241a0f;background:#000;
     box-shadow:0 30px 70px -28px rgba(0,0,0,.8);position:relative;flex:none}
   .phone .scr{position:absolute;inset:0;border-radius:35px;overflow:hidden;background:var(--bg);display:flex;flex-direction:column}
   .notch{position:absolute;top:8px;left:50%;transform:translateX(-50%);width:120px;height:26px;background:#000;border-radius:0 0 16px 16px;z-index:5}
@@ -62,7 +62,7 @@
   .sbar .r{display:flex;gap:5px;align-items:center}
 
   /* tablet frame */
-  .tablet{width:760px;height:560px;border-radius:30px;border:13px solid #1b1f36;background:#000;
+  .tablet{width:760px;height:560px;border-radius:30px;border:13px solid #241a0f;background:#000;
     box-shadow:0 30px 70px -28px rgba(0,0,0,.8);position:relative;flex:none}
   .tablet .scr{position:absolute;inset:0;border-radius:18px;overflow:hidden;background:var(--bg);display:flex;flex-direction:column}
 
@@ -76,17 +76,17 @@
   .btn.ghost{background:var(--surface-2);color:var(--ink);border:1px solid var(--line-strong)}
   .btn.block{width:100%}
   .chip{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;padding:4px 9px;border-radius:999px;border:1px solid var(--line)}
-  .chip.must{color:#FFB4B4;border-color:rgba(255,107,107,.4);background:rgba(255,107,107,.08)}
-  .chip.should{color:#FFD79A;border-color:rgba(245,165,36,.4);background:rgba(245,165,36,.08)}
-  .chip.could{color:#9FE8D2;border-color:rgba(31,213,163,.35);background:rgba(31,213,163,.07)}
-  .chip.live{color:#062;background:var(--live);border-color:transparent}
-  .chip.on{color:#B7AAFF;border-color:var(--primary-2);background:rgba(108,92,231,.12)}
+  .chip.must{color:#f2b0a8;border-color:rgba(210,86,75,.4);background:rgba(210,86,75,.08)}
+  .chip.should{color:#f2ce86;border-color:rgba(224,169,59,.4);background:rgba(224,169,59,.08)}
+  .chip.could{color:#cedda0;border-color:rgba(169,190,110,.35);background:rgba(169,190,110,.07)}
+  .chip.live{color:#243010;background:var(--live);border-color:transparent}
+  .chip.on{color:#f0d67a;border-color:var(--primary-2);background:rgba(212,175,55,.12)}
   .chip.gray{color:var(--ink-2)}
   .tag{font-size:9.5px;font-weight:800;letter-spacing:.05em;padding:3px 7px;border-radius:5px;text-transform:uppercase}
-  .tag.nfr{background:rgba(108,92,231,.16);color:#B7AAFF}
-  .tag.scope{background:rgba(31,213,163,.14);color:#7FE6CB}
-  .tag.contra{background:rgba(255,107,107,.14);color:#FF9D9D}
-  .tag.lead{background:rgba(245,165,36,.14);color:#FFC76B}
+  .tag.nfr{background:rgba(212,175,55,.16);color:#f0d67a}
+  .tag.scope{background:rgba(169,190,110,.14);color:#cedda0}
+  .tag.contra{background:rgba(210,86,75,.14);color:#f2b0a8}
+  .tag.lead{background:rgba(224,169,59,.14);color:#f0d67a}
 
   /* segmented control */
   .seg{display:flex;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:3px;gap:3px}
@@ -95,9 +95,9 @@
 
   /* voice */
   .orb{width:128px;height:128px;border-radius:50%;margin:10px auto 0;position:relative;
-    background:radial-gradient(circle at 50% 42%,rgba(31,213,163,.55),rgba(108,92,231,.28) 58%,transparent 72%);
-    box-shadow:0 0 60px rgba(31,213,163,.32)}
-  .orb::after{content:"";position:absolute;inset:26px;border-radius:50%;border:2px solid rgba(255,255,255,.22)}
+    background:radial-gradient(circle at 50% 42%,rgba(169,190,110,.55),rgba(212,175,55,.28) 58%,transparent 72%);
+    box-shadow:0 0 60px rgba(169,190,110,.32)}
+  .orb::after{content:"";position:absolute;inset:26px;border-radius:50%;border:2px solid rgba(214,184,110,.22)}
   .wbars{display:flex;align-items:flex-end;justify-content:center;gap:4px;height:34px;margin:10px 0}
   .wbars i{width:5px;background:var(--live);border-radius:3px;opacity:.9}
   .lis{text-align:center;font-size:12px;color:var(--live);font-weight:700;margin-top:2px}
@@ -115,8 +115,8 @@
   .sheet .sh .cnt{margin-left:auto;font-size:11px;color:var(--ink-3)}
 
   .alert{border-radius:12px;padding:11px 12px;border:1px solid;margin-bottom:9px}
-  .alert.contra{background:rgba(255,107,107,.08);border-color:rgba(255,107,107,.35)}
-  .alert.gap{background:rgba(245,165,36,.08);border-color:rgba(245,165,36,.35)}
+  .alert.contra{background:rgba(210,86,75,.08);border-color:rgba(210,86,75,.35)}
+  .alert.gap{background:rgba(224,169,59,.08);border-color:rgba(224,169,59,.35)}
   .alert .lab{font-size:10px;font-weight:800;letter-spacing:.05em;text-transform:uppercase}
   .alert.contra .lab{color:var(--danger)}.alert.gap .lab{color:var(--warn)}
   .alert p{margin:5px 0 0;font-size:12px;line-height:1.45}
@@ -130,7 +130,7 @@
   .tabbar .tb.on{color:var(--live)}
   .tabbar .tb .ico{font-size:17px}
   .tabbar .mic{width:54px;height:54px;border-radius:50%;background:var(--grad);display:grid;place-items:center;font-size:22px;
-    margin-top:-22px;box-shadow:0 10px 26px -8px rgba(108,92,231,.7);border:3px solid var(--bg)}
+    margin-top:-22px;box-shadow:0 10px 26px -8px rgba(212,175,55,.7);border:3px solid var(--bg)}
   .badge{position:relative}
   .badge::after{content:attr(data-n);position:absolute;top:-4px;right:-9px;font-size:9px;font-weight:800;background:var(--danger);color:#fff;border-radius:999px;padding:1px 5px}
 
@@ -167,9 +167,81 @@
   .hint{font-size:12.5px;color:var(--ink-3);margin-top:14px}
   .hint code{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:2px 7px;font-size:12px;color:var(--ink-2)}
   footer{padding:40px 0 64px;color:var(--ink-3);font-size:13px}
+
+/* ===== 産婆術アトリエ・スキン適用（構造は不変・意匠のみ差替え） ===== */
+:root{ --font:"Hiragino Mincho ProN","Yu Mincho",YuMincho,"Noto Serif JP","Songti SC",Georgia,"Times New Roman",serif; }
+body{ background:
+  radial-gradient(1300px 820px at 50% 24%, rgba(216,168,80,.20), transparent 60%),
+  radial-gradient(1000px 760px at 50% 120%, rgba(92,56,18,.34), transparent 62%),
+  radial-gradient(900px 600px at 12% 8%, rgba(150,96,34,.14), transparent 58%),
+  linear-gradient(180deg,#0E0A05 0%,#17100A 48%,#0B0704 100%) !important; }
+.refectory{position:fixed;inset:0;z-index:-3;pointer-events:none;opacity:.5}
+.refectory svg{width:100%;height:100%;display:block}
+.craquelure{position:fixed;inset:0;z-index:-2;pointer-events:none;opacity:.5;mix-blend-mode:overlay}
+.craquelure svg{width:100%;height:100%;display:block}
+body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:-2;
+  background:radial-gradient(125% 120% at 50% 26%, transparent 44%, rgba(0,0,0,.66) 100%)}
+.btn{color:#2A1E08}
+.g-an,.numb{color:#2A1E08}
 </style>
 </head>
 <body>
+<!-- ◆ 産婆術アトリエ・スキン：金グラデ/三連窓/後光/ニスのひび の定義 -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <linearGradient id="atl-gold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#8A5A14"/><stop offset=".38" stop-color="#D4AF37"/>
+      <stop offset=".58" stop-color="#F6E6AC"/><stop offset="1" stop-color="#C8951F"/>
+    </linearGradient>
+    <linearGradient id="atl-sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#39536A"/><stop offset=".5" stop-color="#9A8A63"/>
+      <stop offset=".82" stop-color="#E8C878"/><stop offset="1" stop-color="#F4E2A1"/>
+    </linearGradient>
+    <radialGradient id="atl-halo" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#F6E6AC" stop-opacity=".82"/>
+      <stop offset=".4" stop-color="#D4AF37" stop-opacity=".38"/>
+      <stop offset="1" stop-color="#8A5A14" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="atl-craq" x="0" y="0" width="100%" height="100%">
+      <feTurbulence type="turbulence" baseFrequency="0.016 0.024" numOctaves="2" seed="11" stitchTiles="stitch" result="t"/>
+      <feColorMatrix in="t" type="matrix" values="0 0 0 0 0.05  0 0 0 0 0.03  0 0 0 0 0.01  0 0 0 2.4 -1.05"/>
+    </filter>
+  </defs>
+</svg>
+<!-- ◆ 背景：最後の晩餐の内陣（テンペラ＋油彩・一点透視） -->
+<div class="refectory" aria-hidden="true">
+  <svg viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice">
+    <circle cx="720" cy="330" r="250" fill="url(#atl-halo)"/>
+    <g stroke="#C28F2E" stroke-width="1" opacity=".42" fill="none">
+      <path d="M0 0 L720 330 M160 0 L720 330 M320 0 L720 330 M480 0 L720 330 M640 0 L720 330 M800 0 L720 330 M960 0 L720 330 M1120 0 L720 330 M1280 0 L720 330 M1440 0 L720 330"/>
+      <path d="M153 70 H1287 M327 150 H1113 M513 235 H927"/>
+    </g>
+    <g stroke="#B07E2A" stroke-width="1" opacity=".4" fill="none">
+      <path d="M0 900 L720 330 M240 900 L720 330 M480 900 L720 330 M720 900 L720 330 M960 900 L720 330 M1200 900 L720 330 M1440 900 L720 330"/>
+      <path d="M50 860 H1390 M151 780 H1289 M278 680 H1162 M429 560 H1011 M568 450 H872"/>
+    </g>
+    <g stroke="#9A6A22" stroke-width="1" opacity=".3" fill="none">
+      <path d="M150 80 V740 M300 150 V720 M1290 80 V740 M1140 150 V720"/>
+    </g>
+    <g opacity=".85">
+      <path d="M600 372 V322 Q600 300 626 300 Q652 300 652 322 V372 Z" fill="url(#atl-sky)"/>
+      <path d="M688 374 V300 Q688 273 715 273 Q742 273 742 300 V374 Z" fill="url(#atl-sky)"/>
+      <path d="M778 372 V322 Q778 300 804 300 Q830 300 830 322 V372 Z" fill="url(#atl-sky)"/>
+      <g stroke="#7A5A1E" stroke-width="1" opacity=".7" fill="none">
+        <path d="M626 300 V372 M600 340 H652 M715 273 V374 M688 332 H742 M804 300 V372 M778 340 H830 M590 380 H840"/>
+      </g>
+    </g>
+    <g opacity=".5">
+      <path d="M300 748 L1140 748 L1000 702 L440 702 Z" fill="#3A2A14" stroke="#C28F2E" stroke-width="1.2"/>
+      <path d="M300 748 H1140 V832 H300 Z" fill="#241A0F" stroke="#9A6A22" stroke-width="1"/>
+      <g stroke="#7A5A1E" stroke-width="1" opacity=".6">
+        <path d="M380 748 V832 M470 748 V832 M560 748 V832 M650 748 V832 M740 748 V832 M830 748 V832 M920 748 V832 M1010 748 V832 M1080 748 V832"/>
+      </g>
+    </g>
+  </svg>
+</div>
+<div class="craquelure" aria-hidden="true"><svg><rect width="100%" height="100%" filter="url(#atl-craq)"/></svg></div>
+
 
 <header class="hero">
   <div class="wrap">
@@ -232,7 +304,7 @@
           <div class="sbar"><span>9:41</span><span class="r">📶 🔋</span></div>
           <div class="appbar"><div class="ic">🎙️</div><div class="t" style="flex:1">SANBA</div><div class="ic">👤</div></div>
           <div class="content">
-            <div class="card" style="padding:15px;background:linear-gradient(135deg,rgba(108,92,231,.20),var(--surface));border-color:var(--line-strong)">
+            <div class="card" style="padding:15px;background:linear-gradient(135deg,rgba(212,175,55,.20),var(--surface));border-color:var(--line-strong)">
               <h4 style="font-size:15px">会議の前に、5分の壁打ち</h4>
               <p style="font-size:12px;color:var(--ink-2);margin:5px 0 12px">一問ずつ問いかけ、抜け漏れと矛盾をその場で潰します。</p>
               <button class="btn block">＋ 壁打ちを始める</button>
@@ -271,7 +343,7 @@
             <div class="row" style="margin-bottom:6px"><span>📄</span><div style="flex:1"><div class="ttl" style="font-size:12px">PRD_検索改善_v2.md</div></div><span class="chip could">解析済</span></div>
             <div class="row"><span>🔗</span><div style="flex:1"><div class="ttl" style="font-size:12px">issues/142</div></div><span class="chip should">読込中</span></div>
             <div style="display:flex;gap:8px;align-items:flex-start;margin-top:12px">
-              <span style="width:18px;height:18px;border-radius:5px;background:var(--live);display:grid;place-items:center;color:#062;font-weight:800;font-size:11px;flex:none">✓</span>
+              <span style="width:18px;height:18px;border-radius:5px;background:var(--live);display:grid;place-items:center;color:#243010;font-weight:800;font-size:11px;flex:none">✓</span>
               <span style="font-size:11px;color:var(--ink-2)">録音と AI 処理に同意。30日保持・PIIマスク。</span>
             </div>
           </div>
@@ -297,7 +369,7 @@
           <!-- detection peek -->
           <div class="sheet" style="padding-bottom:8px">
             <div class="handle"></div>
-            <div class="sh">⚡ リアルタイム検知 <span class="chip live" style="font-size:9px;color:#062">2件</span><span class="cnt">上にスワイプ ↑</span></div>
+            <div class="sh">⚡ リアルタイム検知 <span class="chip live" style="font-size:9px;color:#243010">2件</span><span class="cnt">上にスワイプ ↑</span></div>
             <div class="alert contra" style="margin-bottom:0"><span class="lab">⚠ 矛盾を検知</span><p>「関連度順」と「新着順」が両方挙がっています。</p></div>
           </div>
         </div></div>
@@ -341,7 +413,7 @@
             <div style="display:flex;gap:6px;margin:4px 0 10px"><span class="chip must">Must 5</span><span class="chip should">Should 4</span><span class="chip could">Could 3</span></div>
             <div class="reqi"><span class="tag scope">スコープ</span><div style="flex:1"><p>検索結果は無限スクロールで表示</p><div class="sub">PdM · 12:46</div><div class="conf"><i style="width:88%"></i></div></div></div>
             <div class="reqi"><span class="tag nfr">非機能</span><div style="flex:1"><p>数百件規模の結果を許容</p><div class="sub">PdM · 12:44 · 性能影響</div><div class="conf"><i style="width:72%"></i></div></div></div>
-            <div class="reqi"><span class="tag contra">要確認</span><div style="flex:1"><p style="color:#FFB4B4">並び順の基準（関連/新着）</p><div class="sub">矛盾で保留中</div><div class="conf"><i style="width:30%"></i></div></div></div>
+            <div class="reqi"><span class="tag contra">要確認</span><div style="flex:1"><p style="color:#f2b0a8">並び順の基準（関連/新着）</p><div class="sub">矛盾で保留中</div><div class="conf"><i style="width:30%"></i></div></div></div>
             <div class="reqi"><span class="tag lead">根拠</span><div style="flex:1"><p>過去「商品一覧の検索」と類似</p><div class="sub">Elasticsearch 呼び戻し</div><div class="conf"><i style="width:64%"></i></div></div></div>
           </div>
           <div class="tabbar">
