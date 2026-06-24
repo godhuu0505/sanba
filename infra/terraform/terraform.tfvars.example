@@ -13,7 +13,7 @@ agent_min_instances = 1     # 0 にすると常駐ワーカーが消える代わ
 image_keep_count    = 5     # Artifact Registry に残す直近イメージ数
 
 # ---- ランタイム設定 (平文) ----
-use_vertexai = true # 本番は Vertex AI でキーレス。AI Studio キーを使うなら false + google_api_key
+use_vertexai = true # 本番は Vertex AI でキーレス。AI Studio キーを使うなら false → SM に google-api-key を投入 (§6.7)
 livekit_url  = ""   # 例: "wss://your-project.livekit.cloud" (実音声経路に必須)
 elasticsearch_url = "" # マネージド ES のエンドポイント。空なら in-memory にフォールバック
 otel_exporter_otlp_endpoint = "" # 例: "http://localhost:4317" (OTel Collector サイドカー)。空ならトレース無効
