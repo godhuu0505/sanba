@@ -10,6 +10,8 @@ Run locally:
 
 from __future__ import annotations
 
+import asyncio
+
 import structlog
 from livekit.agents import (
     Agent,
@@ -24,6 +26,7 @@ from livekit.agents.llm import function_tool
 from livekit.plugins import google
 
 from .config import settings
+from .events import DETECTOR_NFR, EventPublisher, LiveKitTransport
 from .models import Priority, Requirement, RequirementCategory, Utterance
 from .observability import setup_observability
 from .prompts.interview import VOICE_AGENT_INSTRUCTIONS
@@ -37,18 +40,36 @@ log = structlog.get_logger(__name__)
 class SANBAAgent(Agent):
     """The voice interviewer. Owns the tools that bridge to the ADK team."""
 
-    def __init__(self, session_id: str, repo: SessionRepository, grounding: GroundingStore) -> None:
+    def __init__(
+        self,
+        session_id: str,
+        repo: SessionRepository,
+        grounding: GroundingStore,
+        publisher: EventPublisher | None = None,
+    ) -> None:
         super().__init__(instructions=VOICE_AGENT_INSTRUCTIONS)
         self._session_id = session_id
         self._repo = repo
         self._grounding = grounding
         self._transcript: list[str] = []
+        # data channel publish（#94）。未設定でも会話は成立する（publish は付加価値）。
+        self._publisher = publisher
+        self._utterance_seq = 0
+        # 既に publish 済みの検知 id（open_topic の重複 gap を抑止）。
+        self._published_gaps: set[str] = set()
 
     @property
     def transcript(self) -> list[str]:
         return self._transcript
 
-    def record_utterance(self, speaker: str, text: str) -> None:
+    def _publish(self, coro) -> None:  # type: ignore[no-untyped-def]
+        """同期コンテキストから publish をスケジュールする（seq は publisher 側で直列化）。"""
+        if self._publisher is None:
+            coro.close()
+            return
+        asyncio.create_task(coro)
+
+    def record_utterance(self, speaker: str, text: str) -> str:
         self._transcript.append(f"{speaker}: {text}")
         self._repo.add_utterance(self._session_id, Utterance(speaker=speaker, text=text))
         # Index for later past-session retrieval.
@@ -58,6 +79,13 @@ class SANBAAgent(Agent):
             kind="utterance",
             session_id=self._session_id,
         )
+        # 確定発話を web へ（04/05 のトランスクリプト・detection.refs の ID 空間）。
+        self._utterance_seq += 1
+        utterance_id = f"u{self._utterance_seq}"
+        if self._publisher is not None:
+            role = "participant"
+            self._publish(self._publisher.transcript_final(speaker, role, utterance_id, text))
+        return utterance_id
 
     @function_tool
     async def analyze_requirements(self, _ctx: RunContext) -> dict:
@@ -66,6 +94,8 @@ class SANBAAgent(Agent):
         会話が一区切りついたとき、または論点が曖昧なときに呼び出す。
         """
         transcript = "\n".join(self._transcript)
+        if self._publisher is not None:
+            await self._publisher.status("deliberating")
         result = await analyze_transcript(transcript)
         log.info(
             "analysis",
@@ -73,6 +103,21 @@ class SANBAAgent(Agent):
             open_topics=result.open_topics,
             next_question=result.next_question,
         )
+        # 抜け（未確認の論点）を detection.gap として web に上げる（05/08 の黄土）。
+        if self._publisher is not None:
+            for topic in result.open_topics:
+                gap_id = make_requirement_id(f"gap:{topic}")
+                if gap_id in self._published_gaps:
+                    continue
+                self._published_gaps.add(gap_id)
+                await self._publisher.detection_gap(
+                    gap_id,
+                    summary=f"{topic}が未確認です。",
+                    category="non_functional",
+                    refs=[],
+                    detector=DETECTOR_NFR,
+                )
+            await self._publisher.status("listening")
         return result.model_dump(mode="json")
 
     @function_tool
@@ -106,6 +151,8 @@ class SANBAAgent(Agent):
             kind="requirement",
             session_id=self._session_id,
         )
+        if self._publisher is not None:
+            await self._publisher.requirement_upserted(requirement, status="confirmed")
         log.info("requirement_saved", session=self._session_id, id=requirement.id)
         return {"saved": requirement.id}
 
@@ -132,6 +179,14 @@ class SANBAAgent(Agent):
             kind="requirement",
             session_id=self._session_id,
         )
+        if self._publisher is not None:
+            # 言葉×画の解析結果（08）と、そこから起票した要件（08/09）を web へ。
+            await self._publisher.analysis_visual(
+                asset_id=f"visual:{requirement.id}",
+                extracted=[observation],
+                conflicts=[],
+            )
+            await self._publisher.requirement_upserted(requirement, status="confirmed")
         log.info("visual_requirement", session=self._session_id, id=requirement.id)
         return {"saved": requirement.id, "from": "screen-share"}
 
@@ -165,6 +220,14 @@ class SANBAAgent(Agent):
         title, body = requirements_to_issue_body(requirements, self._session_id)
         url = GitHubConnector(settings.github_token, settings.github_repo).create_issue(title, body)
         log.info("requirements_exported", session=self._session_id, url=url)
+        if self._publisher is not None and url is not None:
+            # ループの締め（09→10）。スタッツは publish 済みの実数から組み立てる。
+            await self._publisher.session_completed(
+                contradictions_resolved=0,
+                gaps_found=self._publisher.detections_published,
+                issues_created=1,
+                artifacts=[{"kind": "issue", "url": url}],
+            )
         return {"exported": url is not None, "url": url, "count": len(requirements)}
 
 
@@ -235,7 +298,9 @@ async def entrypoint(ctx: JobContext) -> None:
     grounding = GroundingStore()
     seed_knowledge_base(grounding)
     seed_github_context(grounding, session_id)
-    agent = SANBAAgent(session_id=session_id, repo=repo, grounding=grounding)
+    # data channel publish（#94）。音声と同一ルーム接続を再利用して web へ差分を流す。
+    publisher = EventPublisher(session_id, LiveKitTransport(ctx.room))
+    agent = SANBAAgent(session_id=session_id, repo=repo, grounding=grounding, publisher=publisher)
 
     session: AgentSession = AgentSession(
         llm=google.beta.realtime.RealtimeModel(
@@ -259,6 +324,8 @@ async def entrypoint(ctx: JobContext) -> None:
         room=ctx.room,
         room_input_options=RoomInputOptions(video_enabled=True),
     )
+    # 接続直後に web の状態表示を「聴いています」に同期する（03/04/05）。
+    await publisher.status("listening")
     await session.generate_reply(
         instructions=(
             "まず自己紹介し、これから要件を一緒に整理することを伝え、"
