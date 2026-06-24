@@ -33,8 +33,10 @@ export function Field({ className, label, htmlFor, hint, children, ...props }: F
   const autoId = React.useId();
   const fieldId = htmlFor ?? autoId;
   const clonedChildren = React.Children.map(children, (child, i) => {
-    if (i === 0 && React.isValidElement(child) && !child.props.id) {
-      return React.cloneElement(child as React.ReactElement<{ id?: string }>, { id: fieldId });
+    // 先頭の子が id 未指定なら label と紐づくよう id を注入する（a11y）。
+    // React 19 では isValidElement に props 型を渡さないと child.props が unknown になる。
+    if (i === 0 && React.isValidElement<{ id?: string }>(child) && !child.props.id) {
+      return React.cloneElement(child, { id: fieldId });
     }
     return child;
   });
