@@ -75,6 +75,15 @@ export default function AdminPage() {
     void loadSessions();
   }, [loadSessions]);
 
+  if (access === "loading") {
+    return (
+      <Gate title="読み込み中…">
+        <p className="text-sm text-[var(--color-muted-foreground)]">
+          アクセス権を確認しています。
+        </p>
+      </Gate>
+    );
+  }
   if (access === "unauthenticated") {
     return (
       <Gate title="ログインが必要です">
@@ -191,7 +200,7 @@ function CreateSessionCard({
       setBusy(true);
       setError(null);
       // owner 作成も consent 必須 (issue #10)。管理者が作るので明示同意済みとして渡す。
-      const res = await createSession(["pm", "engineer", "customer"], true, idToken);
+      const res = await createSession(["pm", "engineer", "customer"], true, idToken, title);
       setInvites(res.invites);
       onCreated();
     } catch (e) {

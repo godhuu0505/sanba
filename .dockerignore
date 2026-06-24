@@ -6,8 +6,9 @@
 .gitignore
 **/.github
 
-# Python 仮想環境・キャッシュ
+# Python 仮想環境・キャッシュ・lock (uv pip install では未使用)
 **/.venv
+**/uv.lock
 **/__pycache__
 **/*.pyc
 **/.pytest_cache

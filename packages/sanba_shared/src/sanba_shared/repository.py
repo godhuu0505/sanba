@@ -168,7 +168,7 @@ class SessionRepository:
         session_id: str,
         rid: str,
         status: RequirementStatus,
-        approved_by: str,
+        approved_by: str | None = None,
     ) -> Requirement:
         """承認/却下/差し戻しを行う (ADR-0014 §11)。
 

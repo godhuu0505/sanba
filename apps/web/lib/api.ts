@@ -24,11 +24,15 @@ export async function createSession(
   roles: string[],
   consentAcknowledged: boolean,
   idToken: string | null,
+  title?: string,
 ): Promise<CreateSessionResponse> {
+  const body: Record<string, unknown> = { roles, consent_acknowledged: consentAcknowledged };
+  // title 未指定なら API 既定 ("要件インタビュー") に委ねる。
+  if (title !== undefined) body.title = title;
   const res = await fetch(`${API_URL}/api/sessions`, {
     method: "POST",
     headers: authHeaders(idToken),
-    body: JSON.stringify({ roles, consent_acknowledged: consentAcknowledged }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error(`create session failed: ${res.status}`);
   return res.json();

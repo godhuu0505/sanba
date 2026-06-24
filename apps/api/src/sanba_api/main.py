@@ -13,6 +13,7 @@ agent worker is dispatched to the same room name automatically.
 from __future__ import annotations
 
 import json
+import os
 import time
 import uuid
 from collections import defaultdict, deque
@@ -50,6 +51,12 @@ _join_hits: dict[str, deque[float]] = defaultdict(deque)
 
 # Context indexer shares the agent's Elasticsearch grounding index (issue #6).
 _indexer = ContextIndexer()
+
+# Firestore SDK は OS 環境変数 FIRESTORE_EMULATOR_HOST を直接読む。config 経由で指定された
+# 場合に SDK へ橋渡しする (compose では .env で渡るが、config だけ変えた場合の取りこぼしを防ぐ)。
+# 未設定なら何もしない = 本番では実 Firestore に接続する。
+if settings.firestore_emulator_host:
+    os.environ.setdefault("FIRESTORE_EMULATOR_HOST", settings.firestore_emulator_host)
 
 # セッション/要件の永続化境界 (ADR-0014)。agent と同じ sanba_shared を使う。
 _repo = SessionRepository(data_retention_days=settings.data_retention_days)

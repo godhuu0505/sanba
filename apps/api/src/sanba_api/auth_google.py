@@ -167,9 +167,10 @@ def require_admin(user: Annotated[AuthUser, Depends(require_user)]) -> AuthUser:
     allow = settings.admin_email_set
     if not allow:
         # 設定漏れで管理画面が開く事故を防ぐ (フェイルクローズ)。
+        # 内部設定状態 (ADMIN_EMAILS 未設定) はクライアントに開示せず、ログにのみ残す。
         log.error("admin_misconfigured", reason="ADMIN_EMAILS 未設定")
         record_auth_event("admin_misconfigured")
-        raise HTTPException(status_code=503, detail="admin access not configured")
+        raise HTTPException(status_code=503, detail="service temporarily unavailable")
 
     if user.email.lower() not in allow:
         log.warning("admin_denied", sub=user.sub)
