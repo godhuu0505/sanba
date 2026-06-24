@@ -57,6 +57,7 @@ class ReadRepository:
         # テスト用インメモリ（_client が None のとき使用）。
         self._mem_requirements: dict[str, list[dict[str, Any]]] = {}
         self._mem_detections: dict[str, list[dict[str, Any]]] = {}
+        self._mem_seq: dict[str, int] = {}
 
     @staticmethod
     def _init_client():  # type: ignore[no-untyped-def]
@@ -74,6 +75,9 @@ class ReadRepository:
 
     def _seed_detection(self, session_id: str, doc: dict[str, Any]) -> None:
         self._mem_detections.setdefault(session_id, []).append(doc)
+
+    def _seed_seq(self, session_id: str, seq: int) -> None:
+        self._mem_seq[session_id] = seq
 
     # ── 読み出し ─────────────────────────────────────────────────────────
     def list_requirements(self, session_id: str) -> list[dict[str, Any]]:
@@ -103,3 +107,11 @@ class ReadRepository:
         items = [detection_doc_to_contract(d) for d in raw]
         # open=1: 未解消のみ返す（契約 §4）。
         return [d for d in items if not d["resolved"]]
+
+    def get_session_seq(self, session_id: str) -> int:
+        """適用済み最大 seq（ハイドレーション境界, 契約 §4）。未保存なら 0。"""
+        if self._client is not None:
+            doc = self._client.collection("sessions").document(session_id).get()
+            data = doc.to_dict() if doc.exists else None
+            return int(data.get("last_seq", 0)) if data else 0
+        return self._mem_seq.get(session_id, 0)

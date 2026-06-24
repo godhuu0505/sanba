@@ -99,6 +99,17 @@ def test_detections_returns_only_unresolved() -> None:
     assert [d["id"] for d in items] == ["d1"]
 
 
+def test_requirements_returns_persisted_seq_boundary() -> None:
+    # 適用済み最大 seq をハイドレーション境界として返す（seq=0 固定にしない）。
+    _read_repo._seed_requirement(
+        "sess-seq",
+        {"id": "r1", "statement": "x", "category": "functional", "priority": "must"},
+    )
+    _read_repo._seed_seq("sess-seq", 42)
+    res = client.get("/api/sessions/sess-seq/requirements", headers=_auth(_token("sess-seq")))
+    assert res.json()["seq"] == 42
+
+
 # ── POST /export（P1）──────────────────────────────────────────────────────
 def test_export_disabled_by_default() -> None:
     res = client.post("/api/sessions/sess-3/export", headers=_auth(_token("sess-3")))
@@ -106,3 +117,46 @@ def test_export_disabled_by_default() -> None:
     body = res.json()
     assert body["exported"] is False
     assert body["reason"]
+
+
+def test_export_uses_only_confirmed_requirements(monkeypatch: pytest.MonkeyPatch) -> None:
+    # draft を Issue 化せず、count は確定要件数に一致する。
+    from sanba_api import github_export, main
+
+    _read_repo._seed_requirement(
+        "sess-x",
+        {
+            "id": "c1",
+            "statement": "確定",
+            "category": "functional",
+            "priority": "must",
+            "status": "confirmed",
+        },
+    )
+    _read_repo._seed_requirement(
+        "sess-x",
+        {
+            "id": "d1",
+            "statement": "下書き",
+            "category": "scope",
+            "priority": "should",
+            "status": "draft",
+        },
+    )
+    monkeypatch.setattr(settings, "github_connector_enabled", True)
+    monkeypatch.setattr(settings, "github_token", "t")
+    monkeypatch.setattr(settings, "github_repo", "o/r")
+    captured: dict[str, object] = {}
+
+    def fake_create_issue(token: str, repo: str, title: str, body: str) -> str:
+        captured["body"] = body
+        return "https://github.com/o/r/issues/1"
+
+    monkeypatch.setattr(github_export, "create_issue", fake_create_issue)
+    monkeypatch.setattr(main.github_export, "create_issue", fake_create_issue)
+
+    res = client.post("/api/sessions/sess-x/export", headers=_auth(_token("sess-x")))
+    body = res.json()
+    assert body["exported"] is True
+    assert body["count"] == 1  # confirmed のみ
+    assert "下書き" not in str(captured["body"])

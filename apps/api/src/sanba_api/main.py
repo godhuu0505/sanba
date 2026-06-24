@@ -287,8 +287,9 @@ def get_requirements(
 ) -> RequirementsResponse:
     """確定/下書き要件のスナップショット（契約 §4 P0）。08/09 のハイドレーション前提。"""
     items = _read_repo.list_requirements(session_id)
-    log.info("requirements_hydrated", session=session_id, count=len(items), sub=access.sub)
-    return RequirementsResponse(items=items, seq=0)
+    seq = _read_repo.get_session_seq(session_id)
+    log.info("requirements_hydrated", session=session_id, count=len(items), seq=seq, sub=access.sub)
+    return RequirementsResponse(items=items, seq=seq)
 
 
 @app.get("/api/sessions/{session_id}/detections", response_model=DetectionsResponse)
@@ -310,16 +311,17 @@ def export_requirements(
     """確定要件を GitHub Issue として起票する（契約 §4 P1 / #39 ループ）。"""
     if not _github_ready():
         return ExportResponse(exported=False, reason="github connector disabled")
-    requirements = _read_repo.list_requirements(session_id)
-    title, body = github_export.requirements_to_issue_body(requirements, session_id)
+    # 確定要件のみを起票する（draft を Issue 化しない・UI の confirmed 件数と count を一致させる）。
+    confirmed = [r for r in _read_repo.list_requirements(session_id) if r["status"] == "confirmed"]
+    title, body = github_export.requirements_to_issue_body(confirmed, session_id)
     url = github_export.create_issue(settings.github_token, settings.github_repo, title, body)
     if url is None:
         return ExportResponse(exported=False, reason="issue creation failed")
     log.info(
         "requirements_exported",
         session=session_id,
-        count=len(requirements),
+        count=len(confirmed),
         url=url,
         sub=access.sub,
     )
-    return ExportResponse(exported=True, issue_url=url, count=len(requirements))
+    return ExportResponse(exported=True, issue_url=url, count=len(confirmed))
