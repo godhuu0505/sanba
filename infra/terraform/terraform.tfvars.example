@@ -31,7 +31,9 @@ google_oauth_client_id = "" # 例: "1234567890-abcdef.apps.googleusercontent.com
 domain                = ""           # 例: "example.com"（取得後に設定）
 web_subdomain         = ""           # 例: "youken"（web をサブドメインに置くとき。空=apex 配信）
 manage_dns            = true         # Cloud DNS ゾーンを作り A レコードを LB IP に向ける。別 DNS 運用なら false
-dns_managed_zone_name = "sanba"      # manage_dns=true のときのゾーン名
+# Cloud Domains で登録すると Cloud DNS ゾーンが自動作成され委任済みになる (例: 名前 "sanba-net")。
+# その場合は新規作成せず既存ゾーン名を指定して import する (terraform import google_dns_managed_zone.primary[0] …)。
+dns_managed_zone_name = "sanba"      # manage_dns=true のときのゾーン名 (既存ゾーンに合わせる)
 
 # ---- シークレット (Secret Manager を値の唯一の置き場にする) ----
 # アプリ秘匿値 (livekit/elasticsearch/google) は terraform では扱わない。値は gcloud で
