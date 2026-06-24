@@ -20,8 +20,8 @@ output "image_repository" {
 }
 
 output "managed_secrets" {
-  value       = tolist(local.secret_keys)
-  description = "Secret Manager secrets created for Cloud Run (values are not exposed)."
+  value       = tolist(local.all_secret_ids)
+  description = "Secret Manager に作成した箱 (値は terraform 管理外。gcloud で投入する)。"
 }
 
 # ---- Custom domain / Load Balancer (domain 設定時のみ意味を持つ) -------------

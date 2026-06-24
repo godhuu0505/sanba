@@ -57,23 +57,27 @@ jobs:
       TF_VAR_agent_min_instances:         ${{ vars.AGENT_MIN_INSTANCES || '0' }}
       TF_VAR_domain:                      ${{ vars.PROD_DOMAIN }}
       TF_VAR_livekit_url:                 ${{ vars.LIVEKIT_URL }}
+      # Google ログインの OAuth Web クライアント ID。web (NEXT_PUBLIC) と API (aud 検証) で同値を使う。
+      # 未設定だと API は認証経路を 503 でフェイルクローズする (apps/api auth_google.py)。
+      TF_VAR_google_oauth_client_id:      ${{ vars.NEXT_PUBLIC_GOOGLE_CLIENT_ID }}
       TF_VAR_elasticsearch_url:           ${{ vars.ELASTICSEARCH_URL }}
       TF_VAR_otel_exporter_otlp_endpoint: ${{ vars.OTEL_EXPORTER_OTLP_ENDPOINT }}
-      # --- 機微 (GitHub Secrets から。空なら terraform の既定/自動生成にフォールバック) ---
-      TF_VAR_livekit_api_key:             ${{ secrets.LIVEKIT_API_KEY }}
-      TF_VAR_livekit_api_secret:          ${{ secrets.LIVEKIT_API_SECRET }}
-      TF_VAR_google_api_key:              ${{ secrets.GCP_GOOGLE_API_KEY }}
-      TF_VAR_elasticsearch_api_key:       ${{ secrets.ELASTICSEARCH_API_KEY }}
-      TF_VAR_session_signing_secret:      ${{ secrets.SESSION_SIGNING_SECRET }}
+      # 値が投入済みで Cloud Run に注入する app secret の id (JSON 配列)。値そのものは GitHub には
+      # 置かず、Secret Manager に gcloud で直接投入する (secrets.tf / runbook 参照)。
+      TF_VAR_active_app_secret_ids:       ${{ vars.ACTIVE_APP_SECRET_IDS || '[]' }}
+      # 注: アプリ秘匿値 (livekit/elasticsearch 等) は TF_VAR で渡さない。Secret Manager が唯一の
+      # 置き場で、terraform は箱と参照だけを管理する (値を state / GitHub に残さない)。
+      # session-signing-secret も terraform が自動生成するため GitHub には置かない。
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - id: auth
         uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
         with:
-          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          # WIF プロバイダのパスと SA email は秘匿値ではなく公開識別子なので Variables で管理する。
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
           # apply は広い権限が要るため専用 SA。未設定なら deploy 用 SA にフォールバック。
-          service_account: ${{ secrets.TF_DEPLOY_SA || secrets.DEPLOY_SA }}
+          service_account: ${{ vars.TF_DEPLOY_SA || vars.DEPLOY_SA }}
 
       # 第三者アクションの SHA を固定できない環境のため、バージョン固定 + 公式
       # SHA256SUMS 照合で Terraform を入れる (改ざん検知込みで再現性を担保)。
