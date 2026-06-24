@@ -22,7 +22,7 @@
 - 遷移: CTA → セッション作成 → 03 待機（ルーム接続）。
 
 ## 連携
-- `POST /api/sessions`（既存 / 要 Google ID トークン）→ `session_id` + 役割別招待トークン。
+- `POST /api/sessions`（既存・認証不要の公開 API）→ `session_id` + 役割別招待トークン。
 - `POST /api/sessions/{id}/context`（既存・テキスト）/ `POST /api/sessions/{id}/context/file`（既存・PDF/MD/TXT）。
   添付の「✓ 解析済 Nchunk」はファイル取り込みのレスポンス（chunk 数）を表示する。
 - `POST /api/sessions/join`（既存）→ LiveKit 参加トークン → ルーム接続。
@@ -39,7 +39,7 @@
 ## 現状差分
 - `apps/web/app/page.tsx` L77–99 にフォームの原型あり（名前・役割・参考資料テキスト・同意）。
 - 差分: ①「ゴール」入力の明確化、② ファイル添付の解析状態バッジ（chunk 数）、③「既知N件を把握」のサマリ表示。
-- 「名前」入力は Figma に無い（役割中心）。Google ログインの identity を名前に流用し、フォームから省く方向で整理。
+- 「名前」入力は Figma に無い（役割中心）。名前フィールドは省き、役割選択のみとする（Google 認証は別要件として別途検討）。
 
 ## 根拠
 既存の中核フォーム。準備の質が対話の質を決めるため P1。資料 grounding は ADR-0003、同意は issue #10 と直結。
