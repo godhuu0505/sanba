@@ -3,16 +3,20 @@
 # https://github.com/casey/just
 set shell := ["bash", "-cu"]
 
-# アプリ最小構成。compose は app だけ。
-compose := "docker compose"
+# ローカル実行用の環境変数ファイル。初回 `just setup` で .env.example から自動生成する
+# (gitignore 済。シークレットはコミットしない)。
+env_file := ".env.local"
+# アプリ最小構成。compose は app だけ。--env-file で .env.local を読ませる
+# (各サービスの env_file: 指定に加え、compose ファイル内の ${VAR} 補間にも使われる)。
+compose := "docker compose --env-file " + env_file
 # 補助スタック (可観測性 / LLMOps / DORA) を重ねた全部入り。
-compose_full := "docker compose -f docker-compose.yml -f docker-compose.tools.yml"
+compose_full := "docker compose --env-file " + env_file + " -f docker-compose.yml -f docker-compose.tools.yml"
 
 # List available recipes
 default:
     @just --list
 
-# 初回ローカル環境構築: .env を用意し、全アプリの依存をインストールする (冪等)
+# 初回ローカル環境構築: .env.local を用意し、全アプリの依存をインストールする (冪等)
 setup: _env
     cd packages/sanba_shared && uv sync --all-extras --dev
     cd apps/agent && uv sync --all-extras --dev
@@ -25,9 +29,11 @@ setup: _env
 init: setup up
     @echo ">> 起動完了。'just verify' で疎通確認、http://localhost:3000 を開いてください。"
 
-# .env が無ければ .env.example から作成する (既存の秘密情報は上書きしない)
+# .env.local が無ければ .env.example から作成する (既存の秘密情報は上書きしない)。
+# .env.example はそのまま `just up` が通るローカル既定値 (devkey/secret / localhost /
+# AUTH_DEV_BYPASS=true 等) が入っているため、コピーした時点でローカル設定は自動で揃う。
 _env:
-    @if [ -f .env ]; then echo ">> .env は用意済み (上書きしません)"; else cp .env.example .env && echo ">> .env を .env.example から作成しました (GOOGLE_API_KEY / LIVEKIT_* を設定してください)"; fi
+    @if [ -f {{env_file}} ]; then echo ">> {{env_file}} は用意済み (上書きしません)"; else cp .env.example {{env_file}} && echo ">> {{env_file}} を .env.example から作成しました (そのまま 'just up' 可。GOOGLE_API_KEY / LIVEKIT_* は必要に応じて設定)"; fi
 
 # ローカルのアプリ最小構成を起動 (web/api/agent/livekit/firestore/elasticsearch)
 up:

@@ -147,8 +147,9 @@ flowchart LR
 ## 🚀 クイックスタート（ローカル）
 
 ```bash
-just setup             # 初回のみ: .env を用意し全依存をインストール (uv sync / npm install)
-                       #   └ GOOGLE_API_KEY / LIVEKIT_* を .env に設定（空でも最小構成は起動する）
+just setup             # 初回のみ: .env.local を用意し全依存をインストール (uv sync / npm install)
+                       #   └ .env.example のローカル既定値がそのまま入るので空でも最小構成は起動する
+                       #   └ GOOGLE_API_KEY / LIVEKIT_* は必要に応じて .env.local に設定
 just up                # アプリ最小構成 (web/api/agent/livekit/firestore/elasticsearch)
 just verify            # 各コンポーネントの疎通スモークテスト
 open http://localhost:3000          # Web クライアント
