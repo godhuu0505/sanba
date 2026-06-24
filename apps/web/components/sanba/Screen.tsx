@@ -21,7 +21,7 @@ export function Screen({ className, bordered = false, ...props }: ScreenProps) {
     <div
       data-sanba-screen=""
       className={cn(
-        "sanba-screen-bg sanba-font flex min-h-full w-full flex-col text-[var(--sanba-cream)]",
+        "sanba-screen-bg sanba-font flex min-h-dvh w-full flex-col text-[var(--sanba-cream)]",
         bordered && "border-[3px] border-[var(--sanba-frame)]",
         className,
       )}

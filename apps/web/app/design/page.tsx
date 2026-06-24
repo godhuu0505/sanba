@@ -1,3 +1,4 @@
+import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import {
   AppHeader,
@@ -34,6 +35,7 @@ export const metadata: Metadata = {
  * 「最適な使い回し」が成立しているかを目視で検証するための開発用ページ。
  */
 export default function DesignKitPage() {
+  if (process.env.NODE_ENV === "production") notFound();
   return (
     <main className="min-h-screen bg-neutral-900 px-6 py-10 text-neutral-200">
       <header className="mx-auto mb-8 max-w-6xl">
@@ -138,7 +140,7 @@ function LoginScreen() {
         <Card>
           <CardTitle>🎙️ SANBA にログイン</CardTitle>
           <CardDescription className="text-[var(--sanba-cream)]">
-            ✅ ログイン中: go.d.eye.0505@gmail.com
+            ✅ ログイン中: user@example.com
           </CardDescription>
           <Button variant="gold" block>
             🎙️ インタビューを始める
@@ -212,7 +214,7 @@ function AdminListScreen() {
         <p className="pt-[4px] text-[13px] font-bold text-[var(--sanba-muted)]">進行中の問答</p>
         <SessionRow
           title="検索機能の要件インタビュー"
-          meta="go.d.eye.0505@gmail.com ・ 2026-06-22"
+          meta="user@example.com ・ 2026-06-22"
         />
         <SessionRow title="オンボーディング改善" meta="pm@example.com ・ 2026-06-20" />
         <SessionRow title="決済フロー見直し" meta="customer@example.com ・ 2026-06-18" />
