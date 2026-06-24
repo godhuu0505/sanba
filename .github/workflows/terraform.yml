@@ -105,7 +105,20 @@ jobs:
         continue-on-error: true # 失敗してもコメントを残してから落とす
         run: |
           set -o pipefail
-          terraform plan -no-color -input=false -out=tfplan 2>&1 | tee plan.txt
+          # 生ログ (state refresh の進捗等) はジョブログ用に残す。PR コメントには使わない。
+          terraform plan -no-color -input=false -out=tfplan 2>&1 | tee plan_log.txt
+
+      - name: Render plan comment (diff only)
+        if: ${{ always() && github.event_name == 'pull_request' }}
+        run: |
+          if [ -f tfplan ]; then
+            # 保存した plan から差分・結果だけを描画する。state refresh / provider 取得などの
+            # ノイズを含まず「何が変わるか」と「Plan: x to add ...」だけになる。
+            terraform show -no-color tfplan > plan.txt
+          else
+            # init/validate/plan が失敗して tfplan が無いときはエラーログ末尾を見せる。
+            tail -c 20000 plan_log.txt > plan.txt
+          fi
 
       - name: Comment plan on PR
         if: ${{ always() && github.event_name == 'pull_request' }}
