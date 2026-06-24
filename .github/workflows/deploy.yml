@@ -101,13 +101,26 @@ jobs:
 
       - uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4
 
-      # web は NEXT_PUBLIC_API_URL をビルド時に焼き込む。未設定だと「空」で焼かれ、
-      # ブラウザが web 自身のオリジンに /api を投げて本番が壊れるため fail fast する。
+      # web の NEXT_PUBLIC_* はビルド時にバンドルへ焼き込まれるため、設定漏れに気づける
+      # 最後のタイミングはビルド前しかない。未設定だと本番を黙って壊す:
+      #   - NEXT_PUBLIC_API_URL: 「空」で焼かれ、ブラウザが web 自身のオリジンに /api を投げて壊れる
+      #   - NEXT_PUBLIC_GOOGLE_CLIENT_ID: dev モードで焼かれ、Bearer を送らず API が 401/503 になる
+      # どちらも Variables 設定漏れで発生するため、ビルド前にまとめて fail fast する。
       - name: Require web build config
-        if: ${{ matrix.app == 'web' && vars.NEXT_PUBLIC_API_URL == '' }}
+        if: ${{ matrix.app == 'web' }}
+        env:
+          # run へ直接展開せず env 経由で渡す (インジェクション安全なイディオム)。
+          NEXT_PUBLIC_API_URL: ${{ vars.NEXT_PUBLIC_API_URL }}
+          NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${{ vars.NEXT_PUBLIC_GOOGLE_CLIENT_ID }}
         run: |
-          echo "::error::vars.NEXT_PUBLIC_API_URL を API の Cloud Run URL に設定してください (web ビルドに必須)" >&2
-          exit 1
+          missing=0
+          for v in NEXT_PUBLIC_API_URL NEXT_PUBLIC_GOOGLE_CLIENT_ID; do
+            if [ -z "${!v}" ]; then
+              echo "::error::vars.${v} が未設定です (web ビルドに必須・空だと本番が壊れる)" >&2
+              missing=1
+            fi
+          done
+          [ "$missing" -eq 0 ] || exit 1
 
       - name: Build & push (with layer cache)
         uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
