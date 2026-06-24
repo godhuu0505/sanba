@@ -45,6 +45,7 @@ export function ChatBubble({
   );
   return (
     <div
+      aria-label={isAgent ? "SANBA" : "あなた"}
       className={cn(
         "flex w-full items-start gap-[8px]",
         isAgent ? "justify-start" : "flex-row-reverse",
