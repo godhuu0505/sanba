@@ -292,14 +292,29 @@ ACTIVE_APP_SECRET_IDS = ["livekit-api-key","livekit-api-secret"]
 > **注意 — 即時反映が必要な場合**: Cloud Run の secret env はインスタンス起動時に解決される。
 > `min_instance_count=1` など常駐インスタンスがいる場合は、古い値をキャッシュし続ける。
 > 古いキーを無効化するなどで即時切り替えが必要なら、新 version 追加後に新 revision をデプロイして
-> インスタンスを入れ替える:
+> インスタンスを入れ替える（`sanba-agent` と `sanba-api` の両方が同じ秘匿値を使うため、両方を再デプロイする）:
 > ```bash
-> gcloud run services update sanba-agent --region=us-central1 --no-traffic  # revision 作成
-> gcloud run services update-traffic sanba-agent --to-latest --region=us-central1
+> REGION=us-central1
+> for svc in sanba-agent sanba-api; do
+>   gcloud run services update "$svc" --region="$REGION" --no-traffic  # revision 作成
+>   gcloud run services update-traffic "$svc" --to-latest --region="$REGION"
+> done
 > ```
 
 ### 旧構成からの一度きりの state 移行
 以前は値を `TF_VAR_*` から version に書き込んでいた。**この構成の初回 apply の前に**一度だけ実行する:
+
+**ステップ 0: `ACTIVE_APP_SECRET_IDS` を GitHub Variable に設定する（apply 前に必須）**
+
+CI apply 時に `ACTIVE_APP_SECRET_IDS` が未設定だと `[]` として扱われ、Cloud Run から既存の
+`LIVEKIT_API_KEY` 等がすべて削除される。apply 前に旧構成で投入済みの secret id を Variable に設定する:
+
+```
+# 例: 旧構成で livekit/elasticsearch/google を SM に入れていた場合
+ACTIVE_APP_SECRET_IDS = ["livekit-api-key","livekit-api-secret","elasticsearch-api-key","google-api-key"]
+```
+
+GitHub リポジトリの Settings → Secrets and variables → Actions → Variables タブで設定する。
 
 ```bash
 cd infra/terraform
