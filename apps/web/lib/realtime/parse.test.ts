@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { decodeServerEvent } from "./parse";
+import { decodeServerEvent, encodeUserSelection } from "./parse";
 
 function bytes(obj: unknown): Uint8Array {
   return new TextEncoder().encode(JSON.stringify(obj));
@@ -76,5 +76,20 @@ describe("decodeServerEvent", () => {
       phase: "idle",
     });
     expect(decodeServerEvent(json).reason).toBe("ok");
+  });
+});
+
+describe("encodeUserSelection", () => {
+  it("builds a contract-shaped user.selection envelope (§4.5)", () => {
+    const bytes = encodeUserSelection("s1", "d1", "relevance", 1, "2026-06-24T00:00:00Z");
+    const obj = JSON.parse(new TextDecoder().decode(bytes));
+    expect(obj).toMatchObject({
+      v: 1,
+      type: "user.selection",
+      seq: 1,
+      session_id: "s1",
+      detection_id: "d1",
+      selected_value: "relevance",
+    });
   });
 });

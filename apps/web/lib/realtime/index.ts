@@ -4,7 +4,7 @@
 // ハイドレーション・マッピングはこのモジュールに一本化されている（衝突回避ルール）。
 
 export * from "./types";
-export { decodeServerEvent } from "./parse";
+export { decodeServerEvent, encodeUserSelection } from "./parse";
 export {
   RealtimeStore,
   emptySessionState,
@@ -21,6 +21,7 @@ export {
   useRealtimeSession,
   useFixtureSession,
   type UseRealtimeSessionResult,
+  type SendSelection,
 } from "./useRealtimeSession";
 export {
   detectionPresentation,

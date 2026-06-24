@@ -21,14 +21,19 @@ import {
 import { fetchDetections, fetchRequirements } from "../api";
 import { contractEventFixture } from "./fixtures";
 import { RealtimeMetrics, type RealtimeMetricsSnapshot } from "./metrics";
-import { decodeServerEvent } from "./parse";
+import { decodeServerEvent, encodeUserSelection } from "./parse";
 import { RealtimeStore, type SessionState } from "./store";
-import { EVENTS_TOPIC, type ServerEvent } from "./types";
+import { EVENTS_TOPIC, WEB_EVENTS_TOPIC, type ServerEvent } from "./types";
+
+/** 検知カードの選択肢タップを agent へ送る（契約 §4.5 / Issue #102）。 */
+export type SendSelection = (detectionId: string, selectedValue: string) => void;
 
 export interface UseRealtimeSessionResult {
   state: SessionState;
   metrics: RealtimeMetricsSnapshot;
   store: RealtimeStore;
+  /** live モードのみ。fixture モードでは no-op。 */
+  sendSelection: SendSelection;
 }
 
 interface LiveOptions {
@@ -82,6 +87,24 @@ export function useRealtimeSession(opts: LiveOptions): UseRealtimeSessionResult 
   );
   useDataChannel(EVENTS_TOPIC, onMessage);
 
+  // web → agent の送信チャネル（契約 §4.5）。逆方向 topic で混在を避ける。
+  const { send } = useDataChannel(WEB_EVENTS_TOPIC);
+  const selectionSeq = useRef(0);
+  const sendSelection = useCallback<SendSelection>(
+    (detectionId, selectedValue) => {
+      selectionSeq.current += 1;
+      const payload = encodeUserSelection(
+        sessionId,
+        detectionId,
+        selectedValue,
+        selectionSeq.current,
+        new Date().toISOString(),
+      );
+      send(payload, { reliable: true });
+    },
+    [send, sessionId],
+  );
+
   // 2) スナップショット取得 → seq 境界を確定。以後ライブ差分のみ適用される。
   //    欠番検知時にも同じ取得を再実行し、欠落分を復元する（契約 §4）。
   const hydrate = useCallback(async () => {
@@ -116,8 +139,10 @@ export function useRealtimeSession(opts: LiveOptions): UseRealtimeSessionResult 
     return off;
   }, [sessionId, store, hydrate]);
 
-  return { state, metrics, store };
+  return { state, metrics, store, sendSelection };
 }
+
+const noopSelection: SendSelection = () => {};
 
 /**
  * フィクスチャモード: backend 非依存で契約イベント列を再生する。
@@ -145,5 +170,5 @@ export function useFixtureSession(
     };
   }, [stable, stepMs, store]);
 
-  return { state, metrics, store };
+  return { state, metrics, store, sendSelection: noopSelection };
 }
