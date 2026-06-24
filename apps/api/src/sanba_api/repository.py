@@ -1,0 +1,105 @@
+"""Read-side persistence for hydration APIs (Issue #100).
+
+agent（apps/agent）が Firestore に書いた要件・検知を、web のハイドレーション
+（契約 §4）向けに読み出す。レスポンス schema は契約 §2/§3 の `requirement` /
+`detection` 形に揃える（source_speaker / confidence / citations / status を含む）。
+
+Firestore が無い環境（単体テスト）ではインメモリにフォールバックする。
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+import structlog
+
+log = structlog.get_logger(__name__)
+
+
+def requirement_doc_to_contract(doc: dict[str, Any]) -> dict[str, Any]:
+    """Firestore の requirement ドキュメントを契約 §3 の形へ整形する。
+
+    agent の `Requirement` モデル（id/category/statement/priority/source_speaker/
+    confidence）には citations/status が無いため、契約に合わせて補完する。
+    """
+    return {
+        "id": doc.get("id", ""),
+        "statement": doc.get("statement", ""),
+        "category": doc.get("category", "functional"),
+        "priority": doc.get("priority", "should"),
+        "confidence": doc.get("confidence", 0.7),
+        "source_speaker": doc.get("source_speaker") or "",
+        "citations": doc.get("citations", []),
+        # 保存された要件は save_requirement 経由の確定要件。明示が無ければ confirmed。
+        "status": doc.get("status", "confirmed"),
+    }
+
+
+def detection_doc_to_contract(doc: dict[str, Any]) -> dict[str, Any]:
+    """Firestore の detection ドキュメントを契約 §3（web 正規化形）へ整形する。"""
+    return {
+        "id": doc.get("id", ""),
+        "kind": doc.get("kind", "gap"),
+        "summary": doc.get("summary", ""),
+        "refs": doc.get("refs", []),
+        "category": doc.get("category"),
+        "options": doc.get("options"),
+        "detector": doc.get("detector", ""),
+        "resolved": doc.get("resolved", False),
+    }
+
+
+class ReadRepository:
+    """Hydration の読み出し境界。Firestore が無ければインメモリで動く。"""
+
+    def __init__(self) -> None:
+        self._client = self._init_client()
+        # テスト用インメモリ（_client が None のとき使用）。
+        self._mem_requirements: dict[str, list[dict[str, Any]]] = {}
+        self._mem_detections: dict[str, list[dict[str, Any]]] = {}
+
+    @staticmethod
+    def _init_client():  # type: ignore[no-untyped-def]
+        try:
+            from google.cloud import firestore
+
+            return firestore.Client()
+        except Exception as exc:  # pragma: no cover - depends on env
+            log.warning("firestore_unavailable_using_memory", error=str(exc))
+            return None
+
+    # ── seed（テスト用）──────────────────────────────────────────────────
+    def _seed_requirement(self, session_id: str, doc: dict[str, Any]) -> None:
+        self._mem_requirements.setdefault(session_id, []).append(doc)
+
+    def _seed_detection(self, session_id: str, doc: dict[str, Any]) -> None:
+        self._mem_detections.setdefault(session_id, []).append(doc)
+
+    # ── 読み出し ─────────────────────────────────────────────────────────
+    def list_requirements(self, session_id: str) -> list[dict[str, Any]]:
+        if self._client is not None:
+            docs = (
+                self._client.collection("sessions")
+                .document(session_id)
+                .collection("requirements")
+                .stream()
+            )
+            raw = [d.to_dict() for d in docs]
+        else:
+            raw = self._mem_requirements.get(session_id, [])
+        return [requirement_doc_to_contract(d) for d in raw]
+
+    def list_open_detections(self, session_id: str) -> list[dict[str, Any]]:
+        if self._client is not None:
+            docs = (
+                self._client.collection("sessions")
+                .document(session_id)
+                .collection("detections")
+                .stream()
+            )
+            raw = [d.to_dict() for d in docs]
+        else:
+            raw = self._mem_detections.get(session_id, [])
+        items = [detection_doc_to_contract(d) for d in raw]
+        # open=1: 未解消のみ返す（契約 §4）。
+        return [d for d in items if not d["resolved"]]
