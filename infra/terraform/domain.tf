@@ -215,10 +215,13 @@ resource "google_dns_managed_zone" "primary" {
   # DNSSEC。Cloud Domains で登録すると既定で DNSSEC が on になり DS レコードも登録される。
   # その既存ゾーンを import した場合、ここで state を明示しないと Terraform が DNSSEC を無効化
   # しようとし (a) GCP が "dnssecConfig is required" で 400、(b) 仮に通れば DS と不整合で名前解決が壊れる。
-  # よって既存ゾーンの状態に合わせる (Cloud Domains 由来なら dns_dnssec_state="on")。
-  # 自前で新規ゾーンを作る場合は既定 "off" のままでよい。
-  dnssec_config {
-    state = var.dns_dnssec_state
+  # dns_dnssec_state が未設定 (null / 空文字) の場合はブロックを送らず元のフェイルセーフ動作を維持する。
+  # Cloud Domains 由来のゾーンを import したら dns_dnssec_state="on" を明示すること。
+  dynamic "dnssec_config" {
+    for_each = (var.dns_dnssec_state != null && var.dns_dnssec_state != "") ? [var.dns_dnssec_state] : []
+    content {
+      state = dnssec_config.value
+    }
   }
 
   depends_on = [google_project_service.lb]
