@@ -93,6 +93,8 @@ export class RealtimeStore {
   private maxSeq = 0;
   /** 最後に適用した status の seq。古い status による phase 巻き戻しを防ぐ。 */
   private lastStatusSeq = 0;
+  /** 最後に適用した session.completed の seq。再配信による巻き戻しを防ぐ。 */
+  private lastCompletedSeq = 0;
   /** このストアが受理するセッション ID。不一致イベントは破棄（同室の偽装対策）。 */
   private expectedSessionId: string | null = null;
 
@@ -151,10 +153,20 @@ export class RealtimeStore {
 
   /** GET /detections?open=1 の未解消検知を取り込む（契約 §4 P1）。 */
   hydrateDetections(items: Detection[], seq: number): void {
+    const freshIds = new Set(items.map((d) => d.id));
     for (const d of items) {
       const prev = this.detections.get(d.id);
       if (prev && prev.seq > seq) continue;
       this.detections.set(d.id, { seq, value: d });
+    }
+    // GET から消えた open カードは resolved 扱いに同期する。
+    // （切断・gap 中に detection.resolved を取り逃した場合の補正。）
+    // seq <= seq の条件でスナップショット以前のエントリのみ対象にし、
+    // スナップショット取得後に届いた live イベント由来のカードには触れない。
+    for (const [key, entry] of this.detections.entries()) {
+      if (!entry.value.resolved && !freshIds.has(key) && entry.seq <= seq) {
+        this.detections.set(key, { seq, value: { ...entry.value, resolved: true } });
+      }
     }
     this.maxSeq = Math.max(this.maxSeq, seq);
     this.invalidate();
@@ -220,7 +232,23 @@ export class RealtimeStore {
         });
       }
 
-      case "detection.contradiction":
+      case "detection.contradiction": {
+        const existing = this.detections.get(event.id);
+        if (existing && existing.seq >= event.seq && existing.value.resolved) {
+          // resolved が先着している場合: 詳細だけマージして resolved 状態を保持する。
+          this.detections.set(event.id, {
+            seq: existing.seq,
+            value: {
+              ...existing.value,
+              kind: "contradiction",
+              summary: event.summary,
+              refs: event.refs,
+              options: event.options,
+              detector: event.detector,
+            },
+          });
+          return true;
+        }
         return this.upsert(this.detections, event.id, event.seq, {
           id: event.id,
           kind: "contradiction",
@@ -230,8 +258,25 @@ export class RealtimeStore {
           detector: event.detector,
           resolved: false,
         });
+      }
 
-      case "detection.gap":
+      case "detection.gap": {
+        const existing = this.detections.get(event.id);
+        if (existing && existing.seq >= event.seq && existing.value.resolved) {
+          // resolved が先着している場合: 詳細だけマージして resolved 状態を保持する。
+          this.detections.set(event.id, {
+            seq: existing.seq,
+            value: {
+              ...existing.value,
+              kind: "gap",
+              summary: event.summary,
+              category: event.category,
+              refs: event.refs,
+              detector: event.detector,
+            },
+          });
+          return true;
+        }
         return this.upsert(this.detections, event.id, event.seq, {
           id: event.id,
           kind: "gap",
@@ -241,6 +286,7 @@ export class RealtimeStore {
           detector: event.detector,
           resolved: false,
         });
+      }
 
       case "detection.resolved": {
         const prev = this.detections.get(event.detection_id);
@@ -296,6 +342,8 @@ export class RealtimeStore {
       }
 
       case "session.completed":
+        if (event.seq <= this.lastCompletedSeq) return false;
+        this.lastCompletedSeq = event.seq;
         this.completed = {
           contradictions_resolved: event.summary.contradictions_resolved,
           gaps_found: event.summary.gaps_found,
@@ -352,6 +400,7 @@ export class RealtimeStore {
     this.hydrationSeq = 0;
     this.maxSeq = 0;
     this.lastStatusSeq = 0;
+    this.lastCompletedSeq = 0;
     this.metrics.reset();
     this.invalidate();
   }
