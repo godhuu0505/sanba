@@ -35,12 +35,14 @@ output "dns_name_servers" {
   description = "Cloud DNS name servers. Set these at your registrar after buying the domain."
 }
 
+# 値はすべて文字列にして map(string) に保つ (リスト混在だと domain 無効時の `{}` と型統一できず
+# plan が "Inconsistent conditional result types" で落ちるため。複数ホストは ", " 区切りで連結)。
 output "public_urls" {
   value = local.domain_enabled ? {
-    web         = "https://${local.web_host}"                      # ログイン/アプリの主 URL
-    api         = "https://${local.api_host}"                      # API
-    web_aliases = [for h in local.web_hosts : "https://${h}"]      # web を直接配信するホスト (apex モードでは apex+www)
-    redirects   = [for h in local.redirect_hosts : "https://${h}"] # web へ 301 されるホスト (subdomain モードの apex/www)
+    web         = "https://${local.web_host}"                                  # ログイン/アプリの主 URL
+    api         = "https://${local.api_host}"                                  # API
+    web_aliases = join(", ", [for h in local.web_hosts : "https://${h}"])      # web を直接配信するホスト (apex モードでは apex+www)
+    redirects   = join(", ", [for h in local.redirect_hosts : "https://${h}"]) # web へ 301 されるホスト (subdomain モードの apex/www)
   } : {}
   description = "Production URLs once DNS + managed certificate are active."
 }
