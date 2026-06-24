@@ -69,6 +69,10 @@ DETECTOR_CONTRADICTION = "contradiction_detector"
 DETECTOR_SCOPE = "scope_specialist"
 DETECTOR_NFR = "nfr_specialist"
 
+# 解消理由（detection.resolved）。ユーザー選択＝矛盾カードの解消、agent＝抜けの自動解消。
+RESOLUTION_USER_SELECTED = "user_selected"
+RESOLUTION_AGENT_RESOLVED = "agent_resolved"
+
 
 class EventPublisher:
     """セッション 1 つ分の単調増加 seq を持ち、契約準拠イベントを publish する。"""
@@ -85,14 +89,23 @@ class EventPublisher:
         self._clock = clock
         self._seq = 0
         self._lock = asyncio.Lock()
-        # 観測性: 要件数・検知数を計測（契約 §5 / ADR-0005 評価へ）。
+        # 観測性: 要件数・検知数を種別ごとに計測（契約 §5 / ADR-0005 評価へ）。
+        # session.completed のサマリを実測から組み立てるため、抜け/矛盾/解消を分けて持つ。
         self.requirements_published = 0
-        self.detections_published = 0
+        self.gaps_published = 0
+        self.contradictions_published = 0
+        self.detections_resolved = 0
+        self.contradictions_resolved = 0
         self._tracer = _get_tracer()
 
     @property
     def seq(self) -> int:
         return self._seq
+
+    @property
+    def detections_published(self) -> int:
+        """検知（抜け＋矛盾）の publish 総数。"""
+        return self.gaps_published + self.contradictions_published
 
     async def _emit(
         self, type_: str, payload: dict[str, Any], *, reliable: bool = True
@@ -168,7 +181,7 @@ class EventPublisher:
         }
         if options:
             payload["options"] = options
-        self.detections_published += 1
+        self.contradictions_published += 1
         return await self._emit("detection.contradiction", payload)
 
     async def detection_gap(
@@ -180,7 +193,7 @@ class EventPublisher:
         *,
         detector: str = DETECTOR_SCOPE,
     ) -> dict[str, Any]:
-        self.detections_published += 1
+        self.gaps_published += 1
         return await self._emit(
             "detection.gap",
             {
@@ -205,6 +218,10 @@ class EventPublisher:
         }
         if selected_value is not None:
             payload["selected_value"] = selected_value
+        # 解消の実測。矛盾カードの解消（ユーザー選択）は session.completed のサマリへ。
+        self.detections_resolved += 1
+        if resolution == RESOLUTION_USER_SELECTED:
+            self.contradictions_resolved += 1
         return await self._emit("detection.resolved", payload)
 
     async def requirement_upserted(
