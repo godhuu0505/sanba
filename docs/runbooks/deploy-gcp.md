@@ -48,9 +48,8 @@ cp terraform.tfvars.example terraform.tfvars   # terraform.tfvars は gitignore 
 | `project_id` | 上の `$PROJECT_ID` |
 | `region` | `us-central1`（`deploy.yml` の `REGION` と一致） |
 | `billing_account` | 予算アラートを使うなら課金アカウント ID |
-| `use_vertexai` | `true`（本番はキーレス推奨。`false` なら `google_api_key` 必須） |
+| `use_vertexai` | `true`（本番はキーレス推奨。`false` なら SM に `google-api-key` を別途投入） |
 | `livekit_url` | LiveKit Cloud の `wss://...`（§4 で取得） |
-| `livekit_api_key` / `livekit_api_secret` | LiveKit Cloud のキー（§4） |
 | `session_signing_secret` | 空でよい（空なら強い値を自動生成して Secret Manager に格納） |
 
 ```bash
@@ -104,7 +103,7 @@ gcloud iam service-accounts add-iam-policy-binding "$DEPLOY_SA" \
   --role=roles/iam.workloadIdentityUser \
   --member="principalSet://iam.googleapis.com/projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/${POOL}/attribute.repository/${REPO}"
 
-# deploy.yml の secrets.WIF_PROVIDER に入れる完全パス
+# deploy.yml / terraform.yml の vars.WIF_PROVIDER に入れる完全パス（識別子なので Variable）
 echo "projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/${POOL}/providers/${PROVIDER}"
 ```
 
@@ -117,7 +116,7 @@ echo "projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/${POOL}/
 1. [LiveKit Cloud](https://cloud.livekit.io/) でプロジェクトを作成。
 2. **Settings → Keys** で API Key / Secret を発行。
 3. WebSocket URL（`wss://<project>.livekit.cloud`）を控える。
-4. これらを §2 の `terraform.tfvars`（`livekit_url` / `livekit_api_key` / `livekit_api_secret`）に入れて `terraform apply` し直す（Secret Manager に格納される）。
+4. `livekit_url` は §2 の `terraform.tfvars` に記載。API Key / Secret は **§6.7 の `gcloud secrets versions add`** で Secret Manager に直接投入する（terraform.tfvars に書かない。`livekit_api_key` / `livekit_api_secret` 変数は廃止済み）。
 
 ---
 
@@ -131,12 +130,17 @@ echo "projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/${POOL}/
 | `GCP_PROJECT_ID` | `$PROJECT_ID`（**これが空だと `deploy.yml` は skip される**） |
 | `NEXT_PUBLIC_API_URL` | §2 の `terraform output api_url`（web ビルドに必須・空だと fail fast） |
 | `NEXT_PUBLIC_LIVEKIT_URL` | §4 の `wss://...` |
+| `WIF_PROVIDER` | §3 末尾で出力した WIF プロバイダの完全パス（秘匿値ではなく識別子なので Variable） |
+| `DEPLOY_SA` | §3 の `$DEPLOY_SA`（`gh-deployer@...iam.gserviceaccount.com`。SA email は公開識別子） |
+| `TF_DEPLOY_SA` | §6.6 の `tf-deployer@…`（未設定なら `DEPLOY_SA` にフォールバック） |
 
 ### Repository secrets（`secrets.*`）
 | 名前 | 値 |
 |---|---|
-| `WIF_PROVIDER` | §3 末尾で出力した WIF プロバイダの完全パス |
-| `DEPLOY_SA` | §3 の `$DEPLOY_SA`（`gh-deployer@...iam.gserviceaccount.com`） |
+| （CI 認証に秘匿 Secret は不要） | WIF はキーレス。SA email / WIF パスは Variable。`CLAUDE_CODE_OAUTH_TOKEN` 等のみ Secret |
+
+> WIF プロバイダのパスと SA email は**公開識別子**であり秘匿値ではない（GitHub 公式 / Google も
+> Variable 推奨）。アプリの秘匿値は GitHub に置かず Secret Manager に直接投入する（§6.7）。
 
 ---
 
@@ -245,22 +249,99 @@ gcloud iam service-accounts add-iam-policy-binding "$TF_SA" \
   --member="principalSet://iam.googleapis.com/projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/${POOL}/attribute.repository/${REPO}"
 ```
 
-### 環境変数・シークレットの格納場所（提案）
-**「設定値は GitHub Variables、機微は GitHub Secrets、ランタイムの真実は Secret Manager」** の3層。
+### 環境変数・シークレットの格納場所
+**アプリの秘匿値は Secret Manager を唯一の置き場にする**（GitHub や terraform state に値を残さない）。
 
 | 種別 | 置き場所 | 例 |
 |---|---|---|
-| 非機微の設定 | **GitHub → Variables（`vars.*`）** | `GCP_PROJECT_ID` / `GCP_REGION` / `TF_STATE_BUCKET`（=`<project>-tfstate`）/ `PROD_DOMAIN`（`sanba.com`）/ `LIVEKIT_URL` / `ELASTICSEARCH_URL` / `OTEL_EXPORTER_OTLP_ENDPOINT` / `BILLING_ACCOUNT` |
-| CI 認証 | **GitHub → Secrets（`secrets.*`）** | `WIF_PROVIDER` / `TF_DEPLOY_SA`（=`tf-deployer@…`。未設定なら `DEPLOY_SA` にフォールバック） |
-| アプリの機微値 | **GitHub → Secrets（`secrets.*`）→ `TF_VAR_*` で Terraform に渡す** | `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` / `ELASTICSEARCH_API_KEY` / `GCP_GOOGLE_API_KEY`（`use_vertexai=false` のときのみ）/ `SESSION_SIGNING_SECRET`（空可・自動生成） |
-| ランタイム参照の真実 | **GCP Secret Manager**（`secrets.tf` が作成） | Cloud Run はここを参照。値の出所は上の `TF_VAR_*`。`apply` で同期される |
+| 非機微の設定 / 公開識別子 | **GitHub → Variables（`vars.*`）** | `GCP_PROJECT_ID` / `GCP_REGION` / `TF_STATE_BUCKET` / `PROD_DOMAIN` / `LIVEKIT_URL` / `NEXT_PUBLIC_*` / `OTEL_EXPORTER_OTLP_ENDPOINT` / `BILLING_ACCOUNT` / `AGENT_MIN_INSTANCES` / **`WIF_PROVIDER` / `DEPLOY_SA` / `TF_DEPLOY_SA`**（SA email・WIF パスは公開識別子） / `ACTIVE_APP_SECRET_IDS`（JSON 配列） |
+| CI 自身が使う秘匿値のみ | **GitHub → Secrets（`secrets.*`）** | `CLAUDE_CODE_OAUTH_TOKEN` / `LANGFUSE_*`（llm-eval 用）など、SM 経由にできないもの |
+| アプリの秘匿値（真実） | **GCP Secret Manager に直接投入**（§6.7） | `livekit-api-key` / `livekit-api-secret` / `elasticsearch-api-key` / `session-signing-secret`（自動生成） |
 
-> 注意:
-> - `apply` 時に機微 `TF_VAR_*` を渡し忘れると、`secrets.tf` の任意シークレットが空になり
->   **Secret Manager から消える**。CI で apply する場合は GitHub Secrets に必ず登録しておく。
-> - `SESSION_SIGNING_SECRET` は空のままで良い（state に保存された乱数が再利用され、毎回ローテート
->   されない）。リモート state（GCS）が前提。
+> ポイント:
+> - terraform は Secret Manager の**箱（secret）と Cloud Run 参照と IAM だけ**を管理し、**アプリ秘匿値の
+>   version は管理しない**。よって値は GitHub Secrets にも terraform state にも残らない（散在を防ぐ）。
+> - 値は `gcloud secrets versions add` で SM に投入し、投入済みの id を `ACTIVE_APP_SECRET_IDS`
+>   （= `var.active_app_secret_ids`）に足して `apply` すると Cloud Run に注入される。
+> - `session-signing-secret` だけは自動生成のため terraform が version まで作る（GitHub は経由しない）。
 > - シークレットの値そのものは**コミットしない**（`terraform.tfvars` は gitignore 済）。
+
+---
+
+## 6.7. アプリ秘匿値を Secret Manager に投入する（値の唯一の置き場）
+
+terraform apply で**空の箱**（`sanba-livekit-api-key` 等）と IAM は作られる。**値は手作業/別経路で SM に
+投入**し、Cloud Run に注入したいものを `ACTIVE_APP_SECRET_IDS` に足す。
+
+```bash
+# 例: LiveKit のキーを SM に投入（値は端末→SM へ直接。GitHub/state を経由しない）
+printf '%s' "$LIVEKIT_API_KEY"    | gcloud secrets versions add sanba-livekit-api-key    --data-file=-
+printf '%s' "$LIVEKIT_API_SECRET" | gcloud secrets versions add sanba-livekit-api-secret --data-file=-
+```
+
+その後、Cloud Run に注入する id を GitHub Variable `ACTIVE_APP_SECRET_IDS`（JSON 配列）に設定して
+`apply`（Actions → Terraform → `apply`）:
+
+```
+ACTIVE_APP_SECRET_IDS = ["livekit-api-key","livekit-api-secret"]
+```
+
+> ローテーション: 新しい値を `gcloud secrets versions add` で足すだけ（Cloud Run は `latest` 参照）。
+> terraform 再 apply は不要。
+>
+> **注意 — 即時反映が必要な場合**: Cloud Run の secret env はインスタンス起動時に解決される。
+> `min_instance_count=1` など常駐インスタンスがいる場合は、古い値をキャッシュし続ける。
+> 古いキーを無効化するなどで即時切り替えが必要なら、新 version 追加後に新 revision をデプロイして
+> インスタンスを入れ替える（`sanba-agent` と `sanba-api` の両方が同じ秘匿値を使うため、両方を再デプロイする）:
+> ```bash
+> REGION=us-central1
+> for svc in sanba-agent sanba-api; do
+>   gcloud run services update "$svc" --region="$REGION" --no-traffic  # revision 作成
+>   gcloud run services update-traffic "$svc" --to-latest --region="$REGION"
+> done
+> ```
+
+### 旧構成からの一度きりの state 移行
+以前は値を `TF_VAR_*` から version に書き込んでいた。**この構成の初回 apply の前に**一度だけ実行する:
+
+**ステップ 0: `ACTIVE_APP_SECRET_IDS` を GitHub Variable に設定する（apply 前に必須）**
+
+CI apply 時に `ACTIVE_APP_SECRET_IDS` が未設定だと `[]` として扱われ、Cloud Run から既存の
+`LIVEKIT_API_KEY` 等がすべて削除される。apply 前に旧構成で投入済みの secret id を Variable に設定する:
+
+```
+# 例: 旧構成で livekit/elasticsearch/google を SM に入れていた場合
+ACTIVE_APP_SECRET_IDS = ["livekit-api-key","livekit-api-secret","elasticsearch-api-key","google-api-key"]
+```
+
+GitHub リポジトリの Settings → Secrets and variables → Actions → Variables タブで設定する。
+
+```bash
+cd infra/terraform
+
+# 1. livekit / elasticsearch / google-api-key の app version を管理外に外す
+#    （新構成では version を管理しないので、destroy されないよう state rm する）
+terraform state rm 'google_secret_manager_secret_version.app["livekit-api-key"]'     2>/dev/null || true
+terraform state rm 'google_secret_manager_secret_version.app["livekit-api-secret"]'  2>/dev/null || true
+terraform state rm 'google_secret_manager_secret_version.app["elasticsearch-api-key"]' 2>/dev/null || true
+terraform state rm 'google_secret_manager_secret_version.app["google-api-key"]'      2>/dev/null || true
+
+# 2. session-signing-secret の version を新リソース名に引き継ぐ（destroy/recreate を回避）
+terraform state mv \
+  'google_secret_manager_secret_version.app["session-signing-secret"]' \
+  google_secret_manager_secret_version.session_signing
+```
+
+> **session-signing-secret のローテーションに注意**: `state mv` 後の初回 apply では
+> `random_password.session_signing` が新規作成されランダム値を生成する。
+> もし旧 SM version のペイロードと異なれば terraform が新 version を作成し、
+> **既存の招待トークン・セッション署名が無効になる**。
+> 既存値を保持したい場合は初回 apply 前に `terraform.tfvars` へ一時的に設定する:
+> ```hcl
+> # 現在の値を確認してから設定（apply 後は削除してよい）
+> # gcloud secrets versions access latest --secret=sanba-session-signing-secret
+> session_signing_secret = "<current_value>"
+> ```
 
 ---
 

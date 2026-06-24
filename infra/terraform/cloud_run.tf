@@ -80,7 +80,8 @@ resource "google_cloud_run_v2_service" "api" {
   }
   depends_on = [
     google_artifact_registry_repository.images,
-    google_secret_manager_secret_version.app,
+    google_secret_manager_secret.app,
+    google_secret_manager_secret_version.session_signing,
   ]
   # 画像タグは CI (deploy.yml) が更新する。terraform は env/secret/スケールのみ管理。
   lifecycle {
@@ -127,7 +128,8 @@ resource "google_cloud_run_v2_service" "agent" {
   }
   depends_on = [
     google_artifact_registry_repository.images,
-    google_secret_manager_secret_version.app,
+    google_secret_manager_secret.app,
+    google_secret_manager_secret_version.session_signing,
   ]
   lifecycle {
     ignore_changes = [template[0].containers[0].image]
