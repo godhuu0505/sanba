@@ -1,15 +1,21 @@
 # Custom domain via Global External Application Load Balancer.
 #
+# OSS なのでドメインはハードコードしない。`var.domain` (apex) と任意の `var.web_subdomain`
+# でデプロイ側が各自設定する。以下の例はメンテナ環境 (domain="sanba.net", web_subdomain="youken")。
+#
 # 構成 (domain != "" のときだけ作成):
-#   Internet
-#     └─ Global 外部 HTTPS LB (Anycast IP, Google 管理 SSL 証明書)
-#          ├─ sanba.com / www.sanba.com → web (Serverless NEG → Cloud Run sanba-web)
-#          └─ api.sanba.com             → api (Serverless NEG → Cloud Run sanba-api)
-#   HTTP(80) は 301 で HTTPS(443) へリダイレクト。
+#   A) web_subdomain = "" (既定: apex 配信)
+#        ├─ <domain> / www.<domain> → web (Serverless NEG → Cloud Run sanba-web)
+#        └─ api.<domain>            → api (Serverless NEG → Cloud Run sanba-api)
+#   B) web_subdomain = "youken" (例: サブドメイン配信)
+#        ├─ youken.sanba.net        → web
+#        ├─ api.youken.sanba.net    → api
+#        └─ sanba.net / www.sanba.net → youken.sanba.net へ 301 リダイレクト
+#   どちらも HTTP(80) は 301 で HTTPS(443) へリダイレクト。
 #
 # なぜ LB か (ドメインマッピングでなく):
 #   - 安定した Anycast IP・Cloud Armor(WAF)/Cloud CDN への拡張余地 = production-ready。
-#   - host ベースで web/api を 1 つの証明書・1 IP に集約できる。
+#   - host ベースで web/api/redirect を 1 つの証明書・1 IP に集約できる。
 #
 # ドメイン未取得からの流れ:
 #   1) terraform apply で Cloud DNS ゾーン + LB IP を作る。
@@ -20,9 +26,21 @@ locals {
   domain_enabled = var.domain != ""
   dns_enabled    = local.domain_enabled && var.manage_dns
 
-  web_hosts    = local.domain_enabled ? [var.domain, "www.${var.domain}"] : []
-  api_host     = local.domain_enabled ? "api.${var.domain}" : ""
-  cert_domains = local.domain_enabled ? concat(local.web_hosts, [local.api_host]) : []
+  has_web_subdomain = var.web_subdomain != ""
+
+  # web を配信する主ホスト。subdomain モードでは <sub>.<domain>、apex モードでは <domain>。
+  web_host = local.has_web_subdomain ? "${var.web_subdomain}.${var.domain}" : var.domain
+  # api は web_host の下に置く (apex モードでは api.<domain>、subdomain モードでは api.<sub>.<domain>)。
+  api_host = local.domain_enabled ? "api.${local.web_host}" : ""
+
+  # LB で web を直接配信するホスト群。apex モードは apex+www、subdomain モードは <sub>.<domain> のみ。
+  web_hosts = local.domain_enabled ? (local.has_web_subdomain ? [local.web_host] : [var.domain, "www.${var.domain}"]) : []
+  # web_host へ 301 リダイレクトするホスト群 (subdomain モードでの apex+www のみ)。
+  redirect_hosts = local.has_web_subdomain ? [var.domain, "www.${var.domain}"] : []
+
+  # 証明書・DNS は LB で終端する全ホスト (web + redirect + api) をカバーする。
+  cert_domains = local.domain_enabled ? distinct(concat(local.web_hosts, local.redirect_hosts, [local.api_host])) : []
+  lb_hostnames = local.domain_enabled ? distinct(concat(local.web_hosts, local.redirect_hosts, [local.api_host])) : []
 }
 
 # LB / DNS に必要な API。domain 無効時は有効化しない (compute 有効化は default network
@@ -95,7 +113,7 @@ resource "google_compute_url_map" "https" {
   default_service = google_compute_backend_service.web[0].id
 
   host_rule {
-    hosts        = local.web_hosts # sanba.com / www.sanba.com → web
+    hosts        = local.web_hosts # web_host (+ apex モードでは www) → web
     path_matcher = "web"
   }
   path_matcher {
@@ -104,12 +122,33 @@ resource "google_compute_url_map" "https" {
   }
 
   host_rule {
-    hosts        = [local.api_host] # api.sanba.com → api
+    hosts        = [local.api_host] # api.<web_host> → api
     path_matcher = "api"
   }
   path_matcher {
     name            = "api"
     default_service = google_compute_backend_service.api[0].id
+  }
+
+  # apex / www → web_host への 301 (subdomain モードのみ)。HTTPS 上の host リダイレクト。
+  dynamic "host_rule" {
+    for_each = length(local.redirect_hosts) > 0 ? [1] : []
+    content {
+      hosts        = local.redirect_hosts
+      path_matcher = "apexredirect"
+    }
+  }
+  dynamic "path_matcher" {
+    for_each = length(local.redirect_hosts) > 0 ? [1] : []
+    content {
+      name = "apexredirect"
+      default_url_redirect {
+        host_redirect          = local.web_host
+        https_redirect         = true
+        redirect_response_code = "MOVED_PERMANENTLY_DEFAULT"
+        strip_query            = false
+      }
+    }
   }
 }
 
@@ -175,27 +214,11 @@ resource "google_dns_managed_zone" "primary" {
   depends_on  = [google_project_service.lb]
 }
 
-resource "google_dns_record_set" "root" {
-  count        = local.dns_enabled ? 1 : 0
-  name         = "${var.domain}."
-  type         = "A"
-  ttl          = 300
-  managed_zone = google_dns_managed_zone.primary[0].name
-  rrdatas      = [google_compute_global_address.lb[0].address]
-}
-
-resource "google_dns_record_set" "www" {
-  count        = local.dns_enabled ? 1 : 0
-  name         = "www.${var.domain}."
-  type         = "A"
-  ttl          = 300
-  managed_zone = google_dns_managed_zone.primary[0].name
-  rrdatas      = [google_compute_global_address.lb[0].address]
-}
-
-resource "google_dns_record_set" "api" {
-  count        = local.dns_enabled ? 1 : 0
-  name         = "api.${var.domain}."
+# LB で終端する全ホスト (web / www / api / apex redirect) を 1 つの A レコード集合として作る。
+# 構成 (apex モード / subdomain モード) に応じて lb_hostnames が変わり、レコードも自動追従する。
+resource "google_dns_record_set" "lb" {
+  for_each     = local.dns_enabled ? toset(local.lb_hostnames) : toset([])
+  name         = "${each.value}."
   type         = "A"
   ttl          = 300
   managed_zone = google_dns_managed_zone.primary[0].name

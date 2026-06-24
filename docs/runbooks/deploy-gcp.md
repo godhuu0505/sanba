@@ -159,51 +159,89 @@ gcloud run services list --region="$REGION"   # sanba-api / sanba-agent / sanba-
 
 ---
 
-## 6.5. 本番ドメイン（sanba.com）を当てる（ADR-0013）
+## 6.5. 独自ドメインを当てる（ADR-0013）
 
 Global 外部 HTTPS LB + Google 管理証明書 + Cloud DNS。`infra/terraform/domain.tf` が実装済みで、
-ここの手作業は **ドメイン取得とレジストラ設定だけ**。
+ここの手作業は **ドメイン取得・GitHub Variable 設定・レジストラの NS 設定・Google OAuth 登録**。
+ログイン（Google Identity Services）を新ドメインで成立させるには **D の OAuth 登録が必須**。
 
-### A. ドメインを取得する（未取得なら）
-- [Cloud Domains](https://console.cloud.google.com/net-services/domains)（GCP 内で完結・Cloud DNS と統合が楽）
-  または任意のレジストラ（Google Domains 後継の Squarespace / お名前.com 等）で **sanba.com** を購入。
-- `.com` は誰でも取得可。商標・既存利用がないかは購入前に確認。
+> **OSS なのでドメインはコードに焼かない。** 各自が `PROD_DOMAIN`（apex）と任意の
+> `PROD_WEB_SUBDOMAIN` を GitHub Variables で設定する（`.github/workflows/terraform.yml` の
+> `TF_VAR_domain` / `TF_VAR_web_subdomain`）。
+> - `PROD_WEB_SUBDOMAIN` 空 = apex 配信（web=`<domain>`/`www`、api=`api.<domain>`）。
+> - 設定時 = web=`<sub>.<domain>`、api=`api.<sub>.<domain>`、apex/`www` は web へ 301。
+>
+> **以下はメンテナ環境の例**: `PROD_DOMAIN=sanba.net` / `PROD_WEB_SUBDOMAIN=youken`
+> → ログインは **`https://youken.sanba.net`**、API は `https://api.youken.sanba.net`、
+> `sanba.net`/`www.sanba.net` は `youken.sanba.net` へ 301。`.net` は HSTS preload TLD ではない
+> （証明書発行前も HTTP は通常どおり動く）。フォーク先は自分のドメインに読み替えること。
 
-### B. Terraform で LB と DNS ゾーンを作る
-`terraform.tfvars` に追記して `apply`:
-```hcl
-domain     = "sanba.com"
-manage_dns = true        # Cloud DNS でゾーン管理（A レコードを LB IP に自動で向ける）
-```
-```bash
-terraform apply
-terraform output lb_ip            # LB の Anycast IP
-terraform output dns_name_servers # Cloud DNS のネームサーバ（次で使う）
-terraform output public_urls
-```
+実施は **A → B → C → D → E → F → G** の順。証明書は DNS が LB を指してから発行されるため、順番が重要。
+
+### A. ドメインを取得する
+- 任意のレジストラ（Cloud Domains / Squarespace / お名前.com 等）で apex ドメインを購入する
+  （メンテナ環境は `sanba.net`、約 $14/年）。サブドメイン（`youken`）は購入不要・DNS レコードで足す。
+- 取得後すぐは DNS 未設定。NS の差し替えは C で行う。
+
+### B. GitHub Variable を設定して Terraform を apply（LB + DNS ゾーン作成）
+1. **Settings → Secrets and variables → Actions → Variables** で設定（メンテナ環境の例）:
+   | 名前 | 値 |
+   |---|---|
+   | `PROD_DOMAIN` | `sanba.net` |
+   | `PROD_WEB_SUBDOMAIN` | `youken`（apex 配信なら未設定/空） |
+   - `manage_dns` は既定 `true`、ゾーン名は既定 `sanba` のままでよい（変えるなら変数を追加）。
+2. **Actions → Terraform (infra) → Run workflow → `action=apply`** を実行（`production` 環境に
+   required reviewers があれば承認後に反映）。
+3. 反映後、出力を控える（GCP コンソール or ローカル `terraform output`）:
+   ```bash
+   terraform output lb_ip            # LB の Anycast IP（別 DNS 運用時に使う）
+   terraform output dns_name_servers # Cloud DNS のネームサーバ（次の C で使う）
+   terraform output public_urls      # web / api / (subdomain 時) apex リダイレクト元の URL
+   terraform output cert_domains     # 証明書がカバーするドメイン（youken/api.youken/apex/www）
+   ```
 
 ### C. レジストラのネームサーバを Cloud DNS に向ける（手作業）
-- レジストラの管理画面で、sanba.com の **NS レコード**を `terraform output dns_name_servers` の
+- レジストラの管理画面で、apex ドメイン（`sanba.net`）の **NS レコード**を `dns_name_servers` の
   4 つ（`ns-cloud-XX.googledomains.com.`）に置き換える。
-- Cloud Domains で買った場合は最初から Cloud DNS を使う設定にできる。
+- 各ホスト（`youken` / `api.youken` / apex / `www`）の A レコードは Terraform が Cloud DNS 側に
+  作成済み（すべて LB IP を指す）。レジストラ側で個別 A レコードを足す必要はない。
 - 反映（伝播）に最大 24〜48h。通常は数十分。
 
-> 別 DNS を使い続けたい場合は `manage_dns = false` にして、`terraform output lb_ip` の IP を
-> 自前 DNS に `A @ / www / api` として登録する。
+> 別 DNS を使い続けたい場合は `manage_dns = false`（変数追加が必要）にし、`terraform output lb_ip`
+> の IP を自前 DNS に各ホストの A レコードとして登録する（`cert_domains` の全ホスト）。
 
-### D. 証明書の発行を待つ
+### D. Google OAuth に web オリジンを登録（ログインの本体・手作業）
+ログインは Google Identity Services（ADR-0012、`apps/web/lib/auth.ts`）。**承認済み JavaScript
+生成元**に web のオリジンを足さないと、ドメインが繋がっても GIS が `origin not allowed` で失敗する。
+
+- **GCP Console → API とサービス → 認証情報** で、`NEXT_PUBLIC_GOOGLE_CLIENT_ID` に対応する
+  OAuth 2.0 クライアント ID を開く。
+- **承認済みの JavaScript 生成元**に **web を配信するオリジン**を追加（メンテナ環境）:
+  - `https://youken.sanba.net`
+  - ※ apex 配信構成なら `https://<domain>` と `https://www.<domain>` を入れる。
+  - ※ subdomain 構成では apex/`www` は 301 されオリジンにならないので入れなくてよい。
+- **OAuth 同意画面 → 承認済みドメイン**に apex（`sanba.net`）を追加。
+- リダイレクト URI は credential フローのため不要（追加しない）。
+
+### E. 証明書の発行を待つ
 A レコードが LB IP を指すと Google 管理証明書が自動発行される（`PROVISIONING` → `ACTIVE`、数分〜数十分）。
 ```bash
 gcloud compute ssl-certificates describe sanba-cert --global --format='value(managed.status)'
 ```
-`ACTIVE` になれば `https://sanba.com` / `https://api.sanba.com` が開く。
+`ACTIVE` になれば `https://youken.sanba.net` / `https://api.youken.sanba.net` が開く。
 
-### E. web ビルドを api.sanba.com に向け直す（手作業・GitHub Variables）
+### F. web ビルドを API ホストに向け直す（手作業・GitHub Variables）
+`NEXT_PUBLIC_*` はビルド時に焼き込まれるため、向き先変更には **web の再ビルドが必須**（`apps/web/Dockerfile`）。
 - **Settings → Secrets and variables → Actions** の `vars.NEXT_PUBLIC_API_URL` を
-  `https://api.sanba.com` に更新。
+  `https://api.youken.sanba.net`（apex 配信なら `https://api.<domain>`）に更新。
 - （任意）`vars.NEXT_PUBLIC_LIVEKIT_URL` はそのまま。
 - 更新後に **Actions → Deploy (Cloud Run) → Run workflow**（`apps=web`）で web を焼き直す。
-  CORS（`ALLOWED_ORIGINS`）は Terraform 側が `sanba.com` を許可済み。
+  CORS（`ALLOWED_ORIGINS`）は Terraform 側が web ホスト（`youken.sanba.net`）を許可済み。
+
+### G. 確認
+- `https://youken.sanba.net` を開く → Google ログインボタン表示 → ログイン成功。
+- `https://sanba.net` が `https://youken.sanba.net` へ 301 リダイレクトされる。
+- ログイン後の操作で `https://api.youken.sanba.net` への呼び出しが 200（401/CORS エラーが出ないこと）。
 
 ---
 
@@ -369,6 +407,7 @@ terraform state mv \
 - [ ] `deploy.yml` が GitHub Actions / GitHub Mobile から再現デプロイできる。
 - [ ] LiveKit 実キーで音声経路が通る（#35 と連携）。
 - [ ] #68 のリポジトリ設定が全て有効。PR #74（#67）がマージ済み。
-- [ ] （§6.5）sanba.com 取得・NS を Cloud DNS に向け済み・`sanba-cert` が `ACTIVE`。
-- [ ] （§6.5）`vars.NEXT_PUBLIC_API_URL` = `https://api.sanba.com` で web 再デプロイ済み。
+- [ ] （§6.5）apex 取得・`vars.PROD_DOMAIN`（+ 必要なら `vars.PROD_WEB_SUBDOMAIN`）設定・apply 済み・NS を Cloud DNS に向け済み・`sanba-cert` が `ACTIVE`。
+- [ ] （§6.5）Google OAuth の承認済み JavaScript 生成元に web オリジン（例 `https://youken.sanba.net`）を追加済み。
+- [ ] （§6.5）`vars.NEXT_PUBLIC_API_URL`（例 `https://api.youken.sanba.net`）で web 再デプロイ済み・ログイン疎通確認済み。
 </content>
