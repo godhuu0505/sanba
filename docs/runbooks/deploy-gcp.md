@@ -21,7 +21,7 @@ SANBA を Cloud Run に本番デプロイし、リポジトリを安全に publi
 ## 1. GCP プロジェクトと API
 
 ```bash
-export PROJECT_ID=sanba-prod          # 任意。Artifact Registry 等で使う
+export PROJECT_ID=sanba-prd            # 任意。Artifact Registry 等で使う
 export REGION=us-central1             # deploy.yml / tfvars と一致させること
 gcloud projects create "$PROJECT_ID"  # 既存を使うなら不要
 gcloud config set project "$PROJECT_ID"
@@ -48,9 +48,8 @@ cp terraform.tfvars.example terraform.tfvars   # terraform.tfvars は gitignore 
 | `project_id` | 上の `$PROJECT_ID` |
 | `region` | `us-central1`（`deploy.yml` の `REGION` と一致） |
 | `billing_account` | 予算アラートを使うなら課金アカウント ID |
-| `use_vertexai` | `true`（本番はキーレス推奨。`false` なら `google_api_key` 必須） |
+| `use_vertexai` | `true`（本番はキーレス推奨。`false` なら SM に `google-api-key` を別途投入） |
 | `livekit_url` | LiveKit Cloud の `wss://...`（§4 で取得） |
-| `livekit_api_key` / `livekit_api_secret` | LiveKit Cloud のキー（§4） |
 | `session_signing_secret` | 空でよい（空なら強い値を自動生成して Secret Manager に格納） |
 
 ```bash
@@ -104,7 +103,7 @@ gcloud iam service-accounts add-iam-policy-binding "$DEPLOY_SA" \
   --role=roles/iam.workloadIdentityUser \
   --member="principalSet://iam.googleapis.com/projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/${POOL}/attribute.repository/${REPO}"
 
-# deploy.yml の secrets.WIF_PROVIDER に入れる完全パス
+# deploy.yml / terraform.yml の vars.WIF_PROVIDER に入れる完全パス（識別子なので Variable）
 echo "projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/${POOL}/providers/${PROVIDER}"
 ```
 
@@ -117,7 +116,7 @@ echo "projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/${POOL}/
 1. [LiveKit Cloud](https://cloud.livekit.io/) でプロジェクトを作成。
 2. **Settings → Keys** で API Key / Secret を発行。
 3. WebSocket URL（`wss://<project>.livekit.cloud`）を控える。
-4. これらを §2 の `terraform.tfvars`（`livekit_url` / `livekit_api_key` / `livekit_api_secret`）に入れて `terraform apply` し直す（Secret Manager に格納される）。
+4. `livekit_url` は §2 の `terraform.tfvars` に記載。API Key / Secret は **§6.7 の `gcloud secrets versions add`** で Secret Manager に直接投入する（terraform.tfvars に書かない。`livekit_api_key` / `livekit_api_secret` 変数は廃止済み）。
 
 ---
 
@@ -131,12 +130,18 @@ echo "projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/${POOL}/
 | `GCP_PROJECT_ID` | `$PROJECT_ID`（**これが空だと `deploy.yml` は skip される**） |
 | `NEXT_PUBLIC_API_URL` | §2 の `terraform output api_url`（web ビルドに必須・空だと fail fast） |
 | `NEXT_PUBLIC_LIVEKIT_URL` | §4 の `wss://...` |
+| `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | Google OAuth Web クライアント ID（API の `GOOGLE_OAUTH_CLIENT_ID` にも同値を注入。**空だと認証経路が 503**） |
+| `WIF_PROVIDER` | §3 末尾で出力した WIF プロバイダの完全パス（秘匿値ではなく識別子なので Variable） |
+| `DEPLOY_SA` | §3 の `$DEPLOY_SA`（`gh-deployer@...iam.gserviceaccount.com`。SA email は公開識別子） |
+| `TF_DEPLOY_SA` | §6.6 の `tf-deployer@…`（未設定なら `DEPLOY_SA` にフォールバック） |
 
 ### Repository secrets（`secrets.*`）
 | 名前 | 値 |
 |---|---|
-| `WIF_PROVIDER` | §3 末尾で出力した WIF プロバイダの完全パス |
-| `DEPLOY_SA` | §3 の `$DEPLOY_SA`（`gh-deployer@...iam.gserviceaccount.com`） |
+| （CI 認証に秘匿 Secret は不要） | WIF はキーレス。SA email / WIF パスは Variable。`CLAUDE_CODE_OAUTH_TOKEN` 等のみ Secret |
+
+> WIF プロバイダのパスと SA email は**公開識別子**であり秘匿値ではない（GitHub 公式 / Google も
+> Variable 推奨）。アプリの秘匿値は GitHub に置かず Secret Manager に直接投入する（§6.7）。
 
 ---
 
@@ -151,6 +156,195 @@ echo "projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/${POOL}/
 gcloud run services list --region="$REGION"   # sanba-api / sanba-agent / sanba-web が Ready
 ```
 `terraform output web_url` をブラウザで開き、インタビューが開始できることを確認 → README の「公開 URL」に掲載。
+
+---
+
+## 6.5. 本番ドメイン（sanba.com）を当てる（ADR-0013）
+
+Global 外部 HTTPS LB + Google 管理証明書 + Cloud DNS。`infra/terraform/domain.tf` が実装済みで、
+ここの手作業は **ドメイン取得とレジストラ設定だけ**。
+
+### A. ドメインを取得する（未取得なら）
+- [Cloud Domains](https://console.cloud.google.com/net-services/domains)（GCP 内で完結・Cloud DNS と統合が楽）
+  または任意のレジストラ（Google Domains 後継の Squarespace / お名前.com 等）で **sanba.com** を購入。
+- `.com` は誰でも取得可。商標・既存利用がないかは購入前に確認。
+
+### B. Terraform で LB と DNS ゾーンを作る
+`terraform.tfvars` に追記して `apply`:
+```hcl
+domain     = "sanba.com"
+manage_dns = true        # Cloud DNS でゾーン管理（A レコードを LB IP に自動で向ける）
+```
+```bash
+terraform apply
+terraform output lb_ip            # LB の Anycast IP
+terraform output dns_name_servers # Cloud DNS のネームサーバ（次で使う）
+terraform output public_urls
+```
+
+### C. レジストラのネームサーバを Cloud DNS に向ける（手作業）
+- レジストラの管理画面で、sanba.com の **NS レコード**を `terraform output dns_name_servers` の
+  4 つ（`ns-cloud-XX.googledomains.com.`）に置き換える。
+- Cloud Domains で買った場合は最初から Cloud DNS を使う設定にできる。
+- 反映（伝播）に最大 24〜48h。通常は数十分。
+
+> 別 DNS を使い続けたい場合は `manage_dns = false` にして、`terraform output lb_ip` の IP を
+> 自前 DNS に `A @ / www / api` として登録する。
+
+### D. 証明書の発行を待つ
+A レコードが LB IP を指すと Google 管理証明書が自動発行される（`PROVISIONING` → `ACTIVE`、数分〜数十分）。
+```bash
+gcloud compute ssl-certificates describe sanba-cert --global --format='value(managed.status)'
+```
+`ACTIVE` になれば `https://sanba.com` / `https://api.sanba.com` が開く。
+
+### E. web ビルドを api.sanba.com に向け直す（手作業・GitHub Variables）
+- **Settings → Secrets and variables → Actions** の `vars.NEXT_PUBLIC_API_URL` を
+  `https://api.sanba.com` に更新。
+- （任意）`vars.NEXT_PUBLIC_LIVEKIT_URL` はそのまま。
+- 更新後に **Actions → Deploy (Cloud Run) → Run workflow**（`apps=web`）で web を焼き直す。
+  CORS（`ALLOWED_ORIGINS`）は Terraform 側が `sanba.com` を許可済み。
+
+---
+
+## 6.6. Terraform を CI/CD で回す（PR で plan・GitHub Mobile で apply）
+
+`infra/terraform` の変更を **PR で `terraform plan` 自動確認**し、**GitHub Mobile から `apply`** で
+本番反映するためのワークフロー `.github/workflows/terraform.yml`。`deploy.yml`（イメージ差し替え）
+とは別物で、こちらは env/secret/LB/DNS など**インフラそのもの**を反映する。
+
+### フロー
+- **PR（`infra/terraform/**` を変更）** → `plan` を実行し、結果を PR にコメント。人間が plan を
+  確認してマージ。
+- **本番反映** → GitHub Mobile の **Actions → Terraform (infra) → Run workflow → `action=apply`**。
+  その場で plan → 保存した plan を `apply`（＝「plan で問題なければ apply」）。
+- 安全弁: `production` 環境に **required reviewers** を付ければ、apply 実行時に承認ゲートが入る
+  （**Settings → Environments → New environment `production`** で設定）。
+
+### 事前準備（一度きりの手作業）
+
+**(a) Terraform state 用 GCS バケット**（リモート state・ロック）
+```bash
+gsutil mb -l "$REGION" -b on "gs://${PROJECT_ID}-tfstate"
+gsutil versioning set on "gs://${PROJECT_ID}-tfstate"
+```
+
+**(b) Terraform 用 SA（apply は LB/DNS/Secret/IAM を作るので deploy 用より広い権限）**
+```bash
+gcloud iam service-accounts create tf-deployer --display-name="Terraform Deployer"
+export TF_SA=tf-deployer@${PROJECT_ID}.iam.gserviceaccount.com
+for ROLE in roles/run.admin roles/compute.admin roles/dns.admin \
+            roles/secretmanager.admin roles/datastore.owner \
+            roles/artifactregistry.admin roles/iam.serviceAccountAdmin \
+            roles/resourcemanager.projectIamAdmin roles/serviceusage.serviceUsageAdmin \
+            roles/storage.admin; do
+  gcloud projects add-iam-policy-binding "$PROJECT_ID" --member="serviceAccount:$TF_SA" --role="$ROLE"
+done
+# 予算アラート (google_billing_budget) を CI で管理する場合のみ。billing 系ロールは
+# プロジェクトではなく「課金アカウント」スコープなので別コマンドで付与する。
+gcloud billing accounts add-iam-policy-binding "$BILLING_ACCOUNT" \
+  --member="serviceAccount:$TF_SA" --role="roles/billing.costsManager"
+# WIF からこの SA を借用できるよう許可（§3 の POOL/REPO を流用）
+gcloud iam service-accounts add-iam-policy-binding "$TF_SA" \
+  --role=roles/iam.workloadIdentityUser \
+  --member="principalSet://iam.googleapis.com/projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/${POOL}/attribute.repository/${REPO}"
+```
+
+### 環境変数・シークレットの格納場所
+**アプリの秘匿値は Secret Manager を唯一の置き場にする**（GitHub や terraform state に値を残さない）。
+
+| 種別 | 置き場所 | 例 |
+|---|---|---|
+| 非機微の設定 / 公開識別子 | **GitHub → Variables（`vars.*`）** | `GCP_PROJECT_ID` / `GCP_REGION` / `TF_STATE_BUCKET` / `PROD_DOMAIN` / `LIVEKIT_URL` / `NEXT_PUBLIC_*` / `OTEL_EXPORTER_OTLP_ENDPOINT` / `BILLING_ACCOUNT` / `AGENT_MIN_INSTANCES` / **`WIF_PROVIDER` / `DEPLOY_SA` / `TF_DEPLOY_SA`**（SA email・WIF パスは公開識別子） / `ACTIVE_APP_SECRET_IDS`（JSON 配列） |
+| CI 自身が使う秘匿値のみ | **GitHub → Secrets（`secrets.*`）** | `CLAUDE_CODE_OAUTH_TOKEN` / `LANGFUSE_*`（llm-eval 用）など、SM 経由にできないもの |
+| アプリの秘匿値（真実） | **GCP Secret Manager に直接投入**（§6.7） | `livekit-api-key` / `livekit-api-secret` / `elasticsearch-api-key` / `session-signing-secret`（自動生成） |
+
+> ポイント:
+> - terraform は Secret Manager の**箱（secret）と Cloud Run 参照と IAM だけ**を管理し、**アプリ秘匿値の
+>   version は管理しない**。よって値は GitHub Secrets にも terraform state にも残らない（散在を防ぐ）。
+> - 値は `gcloud secrets versions add` で SM に投入し、投入済みの id を `ACTIVE_APP_SECRET_IDS`
+>   （= `var.active_app_secret_ids`）に足して `apply` すると Cloud Run に注入される。
+> - `session-signing-secret` だけは自動生成のため terraform が version まで作る（GitHub は経由しない）。
+> - シークレットの値そのものは**コミットしない**（`terraform.tfvars` は gitignore 済）。
+
+---
+
+## 6.7. アプリ秘匿値を Secret Manager に投入する（値の唯一の置き場）
+
+terraform apply で**空の箱**（`sanba-livekit-api-key` 等）と IAM は作られる。**値は手作業/別経路で SM に
+投入**し、Cloud Run に注入したいものを `ACTIVE_APP_SECRET_IDS` に足す。
+
+```bash
+# 例: LiveKit のキーを SM に投入（値は端末→SM へ直接。GitHub/state を経由しない）
+printf '%s' "$LIVEKIT_API_KEY"    | gcloud secrets versions add sanba-livekit-api-key    --data-file=-
+printf '%s' "$LIVEKIT_API_SECRET" | gcloud secrets versions add sanba-livekit-api-secret --data-file=-
+```
+
+その後、Cloud Run に注入する id を GitHub Variable `ACTIVE_APP_SECRET_IDS`（JSON 配列）に設定して
+`apply`（Actions → Terraform → `apply`）:
+
+```
+ACTIVE_APP_SECRET_IDS = ["livekit-api-key","livekit-api-secret"]
+```
+
+> ローテーション: 新しい値を `gcloud secrets versions add` で足すだけ（Cloud Run は `latest` 参照）。
+> terraform 再 apply は不要。
+>
+> **注意 — 即時反映が必要な場合**: Cloud Run の secret env はインスタンス起動時に解決される。
+> `min_instance_count=1` など常駐インスタンスがいる場合は、古い値をキャッシュし続ける。
+> 古いキーを無効化するなどで即時切り替えが必要なら、新 version 追加後に新 revision をデプロイして
+> インスタンスを入れ替える（`sanba-agent` と `sanba-api` の両方が同じ秘匿値を使うため、両方を再デプロイする）:
+> ```bash
+> REGION=us-central1
+> for svc in sanba-agent sanba-api; do
+>   # 現在と同じイメージで再デプロイ → 新 revision が secret の最新 version を解決する
+>   IMAGE=$(gcloud run services describe "$svc" --region="$REGION" \
+>     --format='value(spec.template.spec.containers[0].image)')
+>   gcloud run deploy "$svc" --image="$IMAGE" --region="$REGION" --quiet
+> done
+> ```
+
+### 旧構成からの一度きりの state 移行
+以前は値を `TF_VAR_*` から version に書き込んでいた。**この構成の初回 apply の前に**一度だけ実行する:
+
+**ステップ 0: `ACTIVE_APP_SECRET_IDS` を GitHub Variable に設定する（apply 前に必須）**
+
+CI apply 時に `ACTIVE_APP_SECRET_IDS` が未設定だと `[]` として扱われ、Cloud Run から既存の
+`LIVEKIT_API_KEY` 等がすべて削除される。apply 前に旧構成で投入済みの secret id を Variable に設定する:
+
+```
+# 例: 旧構成で livekit/elasticsearch/google を SM に入れていた場合
+ACTIVE_APP_SECRET_IDS = ["livekit-api-key","livekit-api-secret","elasticsearch-api-key","google-api-key"]
+```
+
+GitHub リポジトリの Settings → Secrets and variables → Actions → Variables タブで設定する。
+
+```bash
+cd infra/terraform
+
+# 1. livekit / elasticsearch / google-api-key の app version を管理外に外す
+#    （新構成では version を管理しないので、destroy されないよう state rm する）
+terraform state rm 'google_secret_manager_secret_version.app["livekit-api-key"]'     2>/dev/null || true
+terraform state rm 'google_secret_manager_secret_version.app["livekit-api-secret"]'  2>/dev/null || true
+terraform state rm 'google_secret_manager_secret_version.app["elasticsearch-api-key"]' 2>/dev/null || true
+terraform state rm 'google_secret_manager_secret_version.app["google-api-key"]'      2>/dev/null || true
+
+# 2. session-signing-secret の version を新リソース名に引き継ぐ（destroy/recreate を回避）
+terraform state mv \
+  'google_secret_manager_secret_version.app["session-signing-secret"]' \
+  google_secret_manager_secret_version.session_signing
+```
+
+> **session-signing-secret のローテーションに注意**: `state mv` 後の初回 apply では
+> `random_password.session_signing` が新規作成されランダム値を生成する。
+> もし旧 SM version のペイロードと異なれば terraform が新 version を作成し、
+> **既存の招待トークン・セッション署名が無効になる**。
+> 既存値を保持したい場合は初回 apply 前に `terraform.tfvars` へ一時的に設定する:
+> ```hcl
+> # 現在の値を確認してから設定（apply 後は削除してよい）
+> # gcloud secrets versions access latest --secret=sanba-session-signing-secret
+> session_signing_secret = "<current_value>"
+> ```
 
 ---
 
@@ -172,7 +366,9 @@ gcloud run services list --region="$REGION"   # sanba-api / sanba-agent / sanba-
 
 - [ ] `terraform apply` 成功・3 サービスが Cloud Run で Ready。
 - [ ] 公開 URL でインタビュー開始できる（README に掲載）。
-- [ ] `deploy.yml` が GitHub Actions から再現デプロイできる。
+- [ ] `deploy.yml` が GitHub Actions / GitHub Mobile から再現デプロイできる。
 - [ ] LiveKit 実キーで音声経路が通る（#35 と連携）。
 - [ ] #68 のリポジトリ設定が全て有効。PR #74（#67）がマージ済み。
+- [ ] （§6.5）sanba.com 取得・NS を Cloud DNS に向け済み・`sanba-cert` が `ACTIVE`。
+- [ ] （§6.5）`vars.NEXT_PUBLIC_API_URL` = `https://api.sanba.com` で web 再デプロイ済み。
 </content>

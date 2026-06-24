@@ -2,7 +2,7 @@
 # terraform.tfvars は機微値を含むため gitignore 済 (コミット禁止)。
 
 # ---- 必須 ----
-project_id = "sanba-prod"
+project_id = "sanba-prd"
 region     = "us-central1"
 image_tag  = "latest" # CI が GITHUB_SHA を渡す。手動 apply 時は固定タグでも可。
 
@@ -13,15 +13,28 @@ agent_min_instances = 1     # 0 にすると常駐ワーカーが消える代わ
 image_keep_count    = 5     # Artifact Registry に残す直近イメージ数
 
 # ---- ランタイム設定 (平文) ----
-use_vertexai = true # 本番は Vertex AI でキーレス。AI Studio キーを使うなら false + google_api_key
+use_vertexai = true # 本番は Vertex AI でキーレス。AI Studio キーを使うなら false → SM に google-api-key を投入 (§6.7)
 livekit_url  = ""   # 例: "wss://your-project.livekit.cloud" (実音声経路に必須)
 elasticsearch_url = "" # マネージド ES のエンドポイント。空なら in-memory にフォールバック
 otel_exporter_otlp_endpoint = "" # 例: "http://localhost:4317" (OTel Collector サイドカー)。空ならトレース無効
+# Google ログイン (ADR-0012)。OAuth Web クライアント ID。秘匿物ではないので平文。
+# web 側は CI の vars.NEXT_PUBLIC_GOOGLE_CLIENT_ID に同じ値を設定する。
+google_oauth_client_id = "" # 例: "1234567890-abcdef.apps.googleusercontent.com"
 
-# ---- シークレット (Secret Manager に格納される。空なら未作成) ----
-# session_signing_secret は空のままにすると強い値を自動生成する。
+# ---- 独自ドメイン (Global 外部 HTTPS LB + Google 管理証明書) ----
+# domain が空なら LB を作らず Cloud Run 既定の *.run.app で運用。
+# domain を入れると sanba.com/www/api を 1 IP・1 証明書で配信する。
+domain                = ""        # 例: "sanba.com"（取得後に設定）
+manage_dns            = true      # Cloud DNS ゾーンを作り A レコードを LB IP に向ける。別 DNS 運用なら false
+dns_managed_zone_name = "sanba"   # manage_dns=true のときのゾーン名
+
+# ---- シークレット (Secret Manager を値の唯一の置き場にする) ----
+# アプリ秘匿値 (livekit/elasticsearch/google) は terraform では扱わない。値は gcloud で
+# Secret Manager に直接投入し、投入済みの id を active_app_secret_ids に入れて apply する。
+# 詳細は docs/runbooks/deploy-gcp.md「Secret Manager への値投入」。
+# session_signing_secret は通常空のまま (terraform が自動生成して SM に格納)。
 session_signing_secret = ""
-livekit_api_key        = ""
-livekit_api_secret     = ""
-google_api_key         = "" # use_vertexai=false のときだけ必要
-elasticsearch_api_key  = ""
+# 作成する箱の集合 (既定で OK)。値は管理しない。
+# app_secret_ids        = ["livekit-api-key", "livekit-api-secret", "elasticsearch-api-key"]
+# 値を SM に投入したら、その id をここへ足して apply すると Cloud Run に注入される。
+# active_app_secret_ids = ["livekit-api-key", "livekit-api-secret"]

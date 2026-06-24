@@ -24,6 +24,8 @@ services:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8080}
         NEXT_PUBLIC_LIVEKIT_URL: ${NEXT_PUBLIC_LIVEKIT_URL:-ws://localhost:7880}
         NEXT_PUBLIC_RETENTION_DAYS: ${DATA_RETENTION_DAYS:-30}
+        # 空なら web は dev モード (Google ログインを出さず bypass で進む / ADR-0012)。
+        NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${NEXT_PUBLIC_GOOGLE_CLIENT_ID:-}
     env_file: .env
     ports: ["3000:3000"]
     depends_on:

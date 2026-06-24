@@ -11,7 +11,19 @@ name: Deploy (Cloud Run)
 on:
   push:
     branches: [main]
+  # 手動トリガー。GitHub Mobile の Actions → Run workflow からも実行できる。
+  # ブランチ/タグは Run workflow 画面で選択 (その ref の HEAD = GITHUB_SHA をデプロイ)。
   workflow_dispatch:
+    inputs:
+      apps:
+        description: "デプロイ対象 (mobile から選択)"
+        type: choice
+        default: all
+        options: [all, web, api, agent]
+      reason:
+        description: "デプロイ理由 (任意・監査ログ用)"
+        type: string
+        required: false
 
 concurrency:
   group: deploy-${{ github.ref }}
@@ -33,8 +45,8 @@ jobs:
     outputs:
       apps: ${{ steps.decide.outputs.apps }}
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-      - uses: dorny/paths-filter@d1c1ffe0248fe513906c8e24db8ea791d46f8590 # v3
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
         id: filter
         with:
           filters: |
@@ -43,10 +55,23 @@ jobs:
             web: ['apps/web/**']
       - id: decide
         # 手動トリガー (workflow_dispatch) は差分が無く paths-filter が空を返すため、
-        # ロールバック/強制再デプロイ用途では全 app を対象にする。
+        # 入力 `apps` で対象を決める (all = 全 app 再デプロイ。ロールバック/強制再デプロイ用途)。
+        # push トリガーは従来どおり変更のあった app だけをデプロイする。
+        env:
+          APPS_INPUT: ${{ github.event.inputs.apps }}
+          REASON: ${{ github.event.inputs.reason }}
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo 'apps=["agent","api","web"]' >> "$GITHUB_OUTPUT"
+            APPS_INPUT="${APPS_INPUT:-all}"
+            # 監査用に Summary タブへ恒久的に残す (誰が何をなぜ再デプロイしたか)。
+            echo "### 手動デプロイ" >> "$GITHUB_STEP_SUMMARY"
+            echo "- apps: \`${APPS_INPUT}\` / reason: ${REASON:-<none>} / actor: ${{ github.actor }}" >> "$GITHUB_STEP_SUMMARY"
+            # 許可リスト照合 (choice はサーバ側で強制されないため、JSON 生成前に必ず検証する)。
+            case "$APPS_INPUT" in
+              all)           echo 'apps=["agent","api","web"]' >> "$GITHUB_OUTPUT" ;;
+              web|api|agent) echo "apps=[\"${APPS_INPUT}\"]" >> "$GITHUB_OUTPUT" ;;
+              *)             echo "::error::invalid apps input: ${APPS_INPUT}" >&2; exit 1 ;;
+            esac
           else
             echo 'apps=${{ steps.filter.outputs.changes }}' >> "$GITHUB_OUTPUT"
           fi
@@ -60,13 +85,14 @@ jobs:
       matrix:
         app: ${{ fromJSON(needs.changes.outputs.apps) }}
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - id: auth
         uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
         with:
-          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
-          service_account: ${{ secrets.DEPLOY_SA }}
+          # WIF パスと SA email は公開識別子なので Variables で管理する (秘匿値ではない)。
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.DEPLOY_SA }}
 
       - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3
 
@@ -84,7 +110,7 @@ jobs:
           exit 1
 
       - name: Build & push (with layer cache)
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
         with:
           context: apps/${{ matrix.app }}
           push: true
@@ -96,6 +122,7 @@ jobs:
           build-args: |
             ${{ vars.NEXT_PUBLIC_API_URL != '' && format('NEXT_PUBLIC_API_URL={0}', vars.NEXT_PUBLIC_API_URL) || '' }}
             ${{ vars.NEXT_PUBLIC_LIVEKIT_URL != '' && format('NEXT_PUBLIC_LIVEKIT_URL={0}', vars.NEXT_PUBLIC_LIVEKIT_URL) || '' }}
+            ${{ vars.NEXT_PUBLIC_GOOGLE_CLIENT_ID != '' && format('NEXT_PUBLIC_GOOGLE_CLIENT_ID={0}', vars.NEXT_PUBLIC_GOOGLE_CLIENT_ID) || '' }}
 
       - name: Deploy to Cloud Run (image only; env/secret は Terraform 管理)
         run: |

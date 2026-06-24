@@ -31,8 +31,13 @@ locals {
   api_env = merge(local.common_env, {
     OTEL_SERVICE_NAME = "sanba-api"
     REQUIRE_CONSENT   = "true"
-    # CORS は実際にデプロイされた web の URL に限定する。
-    ALLOWED_ORIGINS = google_cloud_run_v2_service.web.uri
+    # Google ログイン (ADR-0012)。ID トークン検証の aud。秘匿物ではないので平文 env。
+    GOOGLE_OAUTH_CLIENT_ID = var.google_oauth_client_id
+    # CORS は web のオリジンに限定する。独自ドメイン有効時は sanba.com / www.sanba.com に加え、
+    # カットオーバー中も現行の run.app web が落ちないよう web.uri も併許可する
+    # (DNS 伝播・証明書 ACTIVE・web 再デプロイが終わるまで run.app からの API 呼び出しが続くため)。
+    # 未設定時は Cloud Run 既定の web URL のみ。api.sanba.com 自身はオリジンにならないため除外。
+    ALLOWED_ORIGINS = local.domain_enabled ? "https://${var.domain},https://www.${var.domain},${google_cloud_run_v2_service.web.uri}" : google_cloud_run_v2_service.web.uri
   })
 }
 
@@ -75,7 +80,8 @@ resource "google_cloud_run_v2_service" "api" {
   }
   depends_on = [
     google_artifact_registry_repository.images,
-    google_secret_manager_secret_version.app,
+    google_secret_manager_secret.app,
+    google_secret_manager_secret_version.session_signing,
   ]
   # 画像タグは CI (deploy.yml) が更新する。terraform は env/secret/スケールのみ管理。
   lifecycle {
@@ -95,6 +101,9 @@ resource "google_cloud_run_v2_service" "agent" {
     }
     containers {
       image = "${local.image_base}/agent:${var.image_tag}"
+      # LiveKit Agents ワーカーの health server は既定で :8081 を listen する。Cloud Run の
+      # 起動プローブをそのポートに合わせる (未指定だと 8080 を probe して起動失敗する)。
+      ports { container_port = 8081 }
       resources {
         limits   = { cpu = "2", memory = "1Gi" }
         cpu_idle = false # 常駐ワーカーなので常時 CPU 割当
@@ -122,7 +131,8 @@ resource "google_cloud_run_v2_service" "agent" {
   }
   depends_on = [
     google_artifact_registry_repository.images,
-    google_secret_manager_secret_version.app,
+    google_secret_manager_secret.app,
+    google_secret_manager_secret_version.session_signing,
   ]
   lifecycle {
     ignore_changes = [template[0].containers[0].image]
