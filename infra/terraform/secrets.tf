@@ -23,7 +23,9 @@ locals {
     "google-api-key"        = var.google_api_key
     "elasticsearch-api-key" = var.elasticsearch_api_key
   }
-  optional_secrets = { for k, v in local.optional_secret_values : k => v if v != "" }
+  # 値そのものは sensitive だが「設定されているか否か」は秘匿情報ではない。空判定だけ
+  # nonsensitive() で取り出し、キー集合 (= secret_keys / for_each) を非 sensitive に保つ。
+  optional_secrets = { for k, v in local.optional_secret_values : k => v if nonsensitive(v) != "" }
 
   # 作成するシークレットのキー集合 (常設 + 任意)。plan 時に確定する。
   secret_keys = toset(concat(["session-signing-secret"], keys(local.optional_secrets)))

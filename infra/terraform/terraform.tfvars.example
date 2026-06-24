@@ -2,7 +2,7 @@
 # terraform.tfvars は機微値を含むため gitignore 済 (コミット禁止)。
 
 # ---- 必須 ----
-project_id = "sanba-prod"
+project_id = "sanba-prd"
 region     = "us-central1"
 image_tag  = "latest" # CI が GITHUB_SHA を渡す。手動 apply 時は固定タグでも可。
 

@@ -52,6 +52,9 @@ jobs:
       TF_VAR_project_id:                  ${{ vars.GCP_PROJECT_ID }}
       TF_VAR_region:                      ${{ vars.GCP_REGION || 'us-central1' }}
       TF_VAR_billing_account:             ${{ vars.BILLING_ACCOUNT }}
+      # LiveKit 未配線のうちは agent ワーカーの常駐は不要 (登録先が無く常時課金になるだけ)。
+      # 既定 0。LiveKit を入れたら GitHub Variable AGENT_MIN_INSTANCES=1 にする。
+      TF_VAR_agent_min_instances:         ${{ vars.AGENT_MIN_INSTANCES || '0' }}
       TF_VAR_domain:                      ${{ vars.PROD_DOMAIN }}
       TF_VAR_livekit_url:                 ${{ vars.LIVEKIT_URL }}
       TF_VAR_elasticsearch_url:           ${{ vars.ELASTICSEARCH_URL }}
@@ -105,21 +108,47 @@ jobs:
         continue-on-error: true # 失敗してもコメントを残してから落とす
         run: |
           set -o pipefail
-          terraform plan -no-color -input=false -out=tfplan 2>&1 | tee plan.txt
+          # 生ログ (state refresh の進捗等) はジョブログ用に残す。PR コメントには使わない。
+          terraform plan -no-color -input=false -out=tfplan 2>&1 | tee plan_log.txt
 
-      - name: Comment plan on PR
+      - name: Render plan comment (diff only)
+        if: ${{ always() && github.event_name == 'pull_request' }}
+        run: |
+          if [ -f tfplan ]; then
+            # 保存した plan から差分・結果だけを描画する。state refresh / provider 取得などの
+            # ノイズを含まず「何が変わるか」と「Plan: x to add ...」だけになる。
+            terraform show -no-color tfplan > plan.txt
+          else
+            # init/validate/plan が失敗して tfplan が無いときはエラーログ末尾を見せる。
+            tail -c 20000 plan_log.txt > plan.txt
+          fi
+
+      # 同じ PR への plan コメントは増やさず 1 つを更新し続ける。marker でこの workflow の
+      # コメントを一意に特定し、あれば PATCH、無ければ新規作成する。
+      - name: Comment plan on PR (update in place)
         if: ${{ always() && github.event_name == 'pull_request' }}
         env:
           GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
         run: |
+          marker="<!-- terraform-plan-comment -->"
           {
+            echo "$marker"
             echo "#### Terraform Plan (\`${WORKDIR}\`) — ${{ steps.plan.outcome }}"
             echo
             echo '```hcl'
             tail -c 60000 plan.txt
             echo '```'
           } > body.md
-          gh pr comment "${{ github.event.pull_request.number }}" --body-file body.md
+          cid=$(gh api --paginate "repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" \
+            --jq "map(select(.body | contains(\"${marker}\"))) | last | .id // empty")
+          if [ -n "$cid" ]; then
+            gh api -X PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${cid}" -F body=@body.md >/dev/null
+            echo "updated existing plan comment: $cid"
+          else
+            gh pr comment "$PR" --body-file body.md
+            echo "created new plan comment"
+          fi
 
       - name: Fail if plan failed
         if: ${{ steps.plan.outcome == 'failure' }}
