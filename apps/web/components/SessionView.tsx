@@ -10,9 +10,10 @@ import { exportRequirements, type ExportResult } from "../lib/api";
 import { useRealtimeSession } from "../lib/realtime/useRealtimeSession";
 import { AnalysisView } from "./AnalysisView";
 import { DetectionSheet } from "./DetectionSheet";
+import { MaterialView } from "./MaterialView";
 import { RequirementScroll } from "./RequirementScroll";
 
-type Screen = "live" | "analysis" | "scroll";
+type Screen = "live" | "material" | "analysis" | "scroll";
 
 const PHASE_LABEL: Record<string, string> = {
   idle: "待機中",
@@ -44,6 +45,11 @@ export function SessionView({
       <nav style={navRow}>
         <NavTab label="問答" active={screen === "live"} onClick={() => setScreen("live")} />
         <NavTab
+          label="素材"
+          active={screen === "material"}
+          onClick={() => setScreen("material")}
+        />
+        <NavTab
           label="解析"
           active={screen === "analysis"}
           onClick={() => setScreen("analysis")}
@@ -58,6 +64,7 @@ export function SessionView({
       {screen === "live" && (
         <LiveScreen phase={state.phase} agentsActive={state.agentsActive} transcript={state.transcript} />
       )}
+      {screen === "material" && <MaterialView />}
       {screen === "analysis" && (
         <AnalysisView state={state} onNext={() => setScreen("scroll")} />
       )}
