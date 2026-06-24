@@ -57,6 +57,9 @@ jobs:
       TF_VAR_agent_min_instances:         ${{ vars.AGENT_MIN_INSTANCES || '0' }}
       TF_VAR_domain:                      ${{ vars.PROD_DOMAIN }}
       TF_VAR_livekit_url:                 ${{ vars.LIVEKIT_URL }}
+      # Google ログインの OAuth Web クライアント ID。web (NEXT_PUBLIC) と API (aud 検証) で同値を使う。
+      # 未設定だと API は認証経路を 503 でフェイルクローズする (apps/api auth_google.py)。
+      TF_VAR_google_oauth_client_id:      ${{ vars.NEXT_PUBLIC_GOOGLE_CLIENT_ID }}
       TF_VAR_elasticsearch_url:           ${{ vars.ELASTICSEARCH_URL }}
       TF_VAR_otel_exporter_otlp_endpoint: ${{ vars.OTEL_EXPORTER_OTLP_ENDPOINT }}
       # 値が投入済みで Cloud Run に注入する app secret の id (JSON 配列)。値そのものは GitHub には
