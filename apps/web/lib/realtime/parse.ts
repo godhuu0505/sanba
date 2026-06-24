@@ -2,7 +2,12 @@
 // 契約 §2 のエンベロープ必須フィールド（v/type/seq/ts/session_id）を満たさない
 // メッセージは捨てる（不正な送信元・将来スキーマからの保護）。
 
-import { SCHEMA_VERSION, type ServerEvent, type ServerEventType } from "./types";
+import {
+  SCHEMA_VERSION,
+  type ServerEvent,
+  type ServerEventType,
+  type UserSelectionEvent,
+} from "./types";
 
 const KNOWN_TYPES: ReadonlySet<string> = new Set<ServerEventType>([
   "status",
@@ -111,4 +116,30 @@ export function decodeServerEvent(payload: Uint8Array | string): DecodeResult {
   }
 
   return { event: obj as unknown as ServerEvent, reason: "ok" };
+}
+
+const encoder = new TextEncoder();
+
+/**
+ * web → agent の user.selection をエンベロープ込みでエンコードする（契約 §4.5）。
+ * 検知カードの選択肢タップ時に topic="sanba.events.web" へ publish する。
+ * seq は web 発の単調増加（agent 側 seq とは別空間）。
+ */
+export function encodeUserSelection(
+  sessionId: string,
+  detectionId: string,
+  selectedValue: string,
+  seq: number,
+  ts: string,
+): Uint8Array {
+  const event: UserSelectionEvent = {
+    v: SCHEMA_VERSION,
+    type: "user.selection",
+    seq,
+    ts,
+    session_id: sessionId,
+    detection_id: detectionId,
+    selected_value: selectedValue,
+  };
+  return encoder.encode(JSON.stringify(event));
 }

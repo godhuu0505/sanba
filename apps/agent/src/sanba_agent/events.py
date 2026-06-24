@@ -271,6 +271,26 @@ def requirement_to_contract(requirement: Requirement, status: str) -> dict[str, 
     }
 
 
+def decode_user_selection(payload: bytes | str) -> tuple[str, str] | None:
+    """web → agent の user.selection（契約 §4.5）をデコードする。
+
+    検証に通れば ``(detection_id, selected_value)`` を返す。不正なら None。
+    LiveKit ランタイムに依存しないので単体テストできる（#102）。
+    """
+    try:
+        text = payload.decode("utf-8") if isinstance(payload, bytes) else payload
+        obj = json.loads(text)
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    if not isinstance(obj, dict) or obj.get("type") != "user.selection":
+        return None
+    detection_id = obj.get("detection_id")
+    selected_value = obj.get("selected_value")
+    if not isinstance(detection_id, str) or not isinstance(selected_value, str):
+        return None
+    return detection_id, selected_value
+
+
 def _get_tracer() -> Any:
     try:
         from opentelemetry import trace

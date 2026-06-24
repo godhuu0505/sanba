@@ -26,7 +26,13 @@ from livekit.agents.llm import function_tool
 from livekit.plugins import google
 
 from .config import settings
-from .events import DETECTOR_NFR, EventPublisher, LiveKitTransport
+from .events import (
+    DETECTOR_NFR,
+    WEB_EVENTS_TOPIC,
+    EventPublisher,
+    LiveKitTransport,
+    decode_user_selection,
+)
 from .models import Priority, Requirement, RequirementCategory, Utterance
 from .observability import setup_observability
 from .prompts.interview import VOICE_AGENT_INSTRUCTIONS
@@ -86,6 +92,25 @@ class SANBAAgent(Agent):
             role = "participant"
             self._publish(self._publisher.transcript_final(speaker, role, utterance_id, text))
         return utterance_id
+
+    async def resolve_detection(self, detection_id: str, selected_value: str) -> None:
+        """ユーザーの選択（user.selection, 契約 §4.5）を受けて検知を解消する（#102）。
+
+        web の検知カードで選択肢がタップされると呼ばれ、当該検知を解消済みにして
+        detection.resolved を web へ返す（カードが閉じ、リロードでも未解消に戻らない）。
+        選択内容は以後の会話の前提として記録しておく。
+        """
+        self._transcript.append(f"[選択] {detection_id} → {selected_value}")
+        if self._publisher is not None:
+            await self._publisher.detection_resolved(
+                detection_id, resolution="user_selected", selected_value=selected_value
+            )
+        log.info(
+            "detection_resolved",
+            session=self._session_id,
+            detection=detection_id,
+            value=selected_value,
+        )
 
     @function_tool
     async def analyze_requirements(self, _ctx: RunContext) -> dict:
@@ -316,6 +341,18 @@ async def entrypoint(ctx: JobContext) -> None:
         if getattr(ev, "is_final", False) and ev.transcript:
             speaker = "participant"
             agent.record_utterance(speaker, ev.transcript)
+
+    # web → agent の user.selection を受信し、検知を解消する（契約 §4.5 / #102）。
+    def _on_data(packet) -> None:  # type: ignore[no-untyped-def]
+        if getattr(packet, "topic", None) != WEB_EVENTS_TOPIC:
+            return
+        parsed = decode_user_selection(getattr(packet, "data", b""))
+        if parsed is None:
+            return
+        detection_id, selected_value = parsed
+        asyncio.create_task(agent.resolve_detection(detection_id, selected_value))
+
+    ctx.room.on("data_received", _on_data)
 
     # video_enabled=True forwards screen-share / camera frames to Gemini Live,
     # so the agent can read mockups and whiteboards (multimodal grounding).
