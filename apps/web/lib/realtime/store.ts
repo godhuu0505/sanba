@@ -91,11 +91,30 @@ export class RealtimeStore {
   private hydrationSeq = 0;
   /** 観測した最大 seq（欠番検知用）。 */
   private maxSeq = 0;
+  /** 最後に適用した status の seq。古い status による phase 巻き戻しを防ぐ。 */
+  private lastStatusSeq = 0;
+  /** このストアが受理するセッション ID。不一致イベントは破棄（同室の偽装対策）。 */
+  private expectedSessionId: string | null = null;
 
   private cached: SessionState | null = null;
   private listeners = new Set<() => void>();
+  private gapListeners = new Set<() => void>();
 
   constructor(readonly metrics: RealtimeMetrics = new RealtimeMetrics()) {}
+
+  /** 受理するセッション ID を固定する。設定後は他セッションのイベントを破棄する。 */
+  setExpectedSessionId(sessionId: string): void {
+    this.expectedSessionId = sessionId;
+  }
+
+  /**
+   * 欠番を検知したときに呼ばれる購読を登録する。契約 §4 では欠番時に GET で
+   * 取り直す前提なので、hook 側でここを使って再ハイドレーションを発火させる。
+   */
+  onGapDetected(listener: () => void): () => void {
+    this.gapListeners.add(listener);
+    return () => this.gapListeners.delete(listener);
+  }
 
   // ── React 連携（useSyncExternalStore） ─────────────────────────────
   subscribe = (listener: () => void): (() => void) => {
@@ -146,15 +165,23 @@ export class RealtimeStore {
   apply(event: ServerEvent): void {
     const startedAt = performance.now();
 
+    // 別セッションのイベントは破棄（同じ LiveKit ルームの参加者による汚染を防ぐ）。
+    if (this.expectedSessionId !== null && event.session_id !== this.expectedSessionId) {
+      this.metrics.recordDropped();
+      return;
+    }
+
     // ハイドレーション境界より古いライブ差分はスナップショットに含まれる → 破棄。
     if (event.seq <= this.hydrationSeq) {
       this.metrics.recordDuplicate();
       return;
     }
 
-    // 欠番検知: 期待する次 seq を飛ばして届いたら gap（再ハイドレーション契機）。
+    // 欠番検知: 期待する次 seq を飛ばして届いたら gap。契約 §4 に従い、欠落差分を
+    // GET で取り直す契機として購読者（hook）へ通知する。
     if (this.maxSeq > 0 && event.seq > this.maxSeq + 1) {
       this.metrics.recordGap();
+      for (const l of this.gapListeners) l();
     }
 
     const applied = this.reduce(event);
@@ -173,6 +200,10 @@ export class RealtimeStore {
   private reduce(event: ServerEvent): boolean {
     switch (event.type) {
       case "status":
+        // status は id を持たず upsert の seq ガードを通らない。最後に適用した
+        // status seq より古いものは破棄し、phase の巻き戻しを防ぐ（lossy 可・順序は seq）。
+        if (event.seq <= this.lastStatusSeq) return false;
+        this.lastStatusSeq = event.seq;
         this.phase = event.phase;
         this.agentsActive = event.agents_active ?? 0;
         return true;
@@ -320,6 +351,7 @@ export class RealtimeStore {
     this.completed = null;
     this.hydrationSeq = 0;
     this.maxSeq = 0;
+    this.lastStatusSeq = 0;
     this.metrics.reset();
     this.invalidate();
   }

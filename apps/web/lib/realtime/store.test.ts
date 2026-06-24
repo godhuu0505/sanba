@@ -140,6 +140,55 @@ describe("RealtimeStore — detection lifecycle", () => {
   });
 });
 
+describe("RealtimeStore — status ordering", () => {
+  it("does not roll back phase with a stale, lower-seq status", () => {
+    const s = new RealtimeStore();
+    s.apply({
+      v: 1,
+      type: "status",
+      seq: 5,
+      ts: "t",
+      session_id: SESSION,
+      phase: "deliberating",
+    });
+    s.apply({
+      v: 1,
+      type: "status",
+      seq: 2,
+      ts: "t",
+      session_id: SESSION,
+      phase: "listening",
+    });
+    expect(s.getSnapshot().phase).toBe("deliberating");
+  });
+});
+
+describe("RealtimeStore — session isolation", () => {
+  it("drops events whose session_id does not match the expected one", () => {
+    const s = new RealtimeStore();
+    s.setExpectedSessionId(SESSION);
+    s.apply({ ...contradiction(1, "d1"), session_id: "other" });
+    expect(s.getSnapshot().detections).toHaveLength(0);
+    expect(s.metrics.read().dropped).toBe(1);
+    // 正しいセッションのものは適用される。
+    s.apply(contradiction(2, "d2"));
+    expect(s.getSnapshot().detections).toHaveLength(1);
+  });
+});
+
+describe("RealtimeStore — gap recovery", () => {
+  it("notifies gap listeners when a seq is skipped", () => {
+    const s = new RealtimeStore();
+    let fired = 0;
+    s.onGapDetected(() => {
+      fired += 1;
+    });
+    s.apply(reqEvent(1, "r1"));
+    s.apply(reqEvent(4, "r4")); // 2,3 欠番
+    expect(fired).toBe(1);
+  });
+});
+
 describe("RealtimeStore — fixture replay", () => {
   it("replays the contract fixture to a coherent end state", () => {
     const s = new RealtimeStore();
