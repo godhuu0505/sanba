@@ -57,6 +57,8 @@ class SANBAAgent(Agent):
         self._utterance_seq = 0
         # 既に publish 済みの検知 id（open_topic の重複 gap を抑止）。
         self._published_gaps: set[str] = set()
+        # fire-and-forget タスクの強参照（GC 前に完了させる）。
+        self._tasks: set[asyncio.Task] = set()
 
     @property
     def transcript(self) -> list[str]:
@@ -67,7 +69,14 @@ class SANBAAgent(Agent):
         if self._publisher is None:
             coro.close()
             return
-        asyncio.create_task(coro)
+        task = asyncio.create_task(coro)
+        self._tasks.add(task)
+        task.add_done_callback(self._on_publish_done)
+
+    def _on_publish_done(self, task: asyncio.Task) -> None:
+        self._tasks.discard(task)
+        if not task.cancelled() and (exc := task.exception()):
+            log.warning("publish_task_failed", error=str(exc))
 
     def record_utterance(self, speaker: str, text: str) -> str:
         self._transcript.append(f"{speaker}: {text}")
@@ -80,6 +89,8 @@ class SANBAAgent(Agent):
             session_id=self._session_id,
         )
         # 確定発話を web へ（04/05 のトランスクリプト・detection.refs の ID 空間）。
+        # NOTE: sync コールバックから呼ぶため fire-and-forget。検知系 await との間で
+        #       seq 採番順と論理発生順がズレ得るが、web のハイドレーションで吸収される。
         self._utterance_seq += 1
         utterance_id = f"u{self._utterance_seq}"
         if self._publisher is not None:
@@ -104,6 +115,9 @@ class SANBAAgent(Agent):
             next_question=result.next_question,
         )
         # 抜け（未確認の論点）を detection.gap として web に上げる（05/08 の黄土）。
+        # TODO: open_topics の種別（機能/非機能）を判定して category/detector を振り分ける。
+        #       現状は暫定で一律 non_functional / DETECTOR_NFR を使用しており、
+        #       機能スコープの抜けも NFR として表示される点に注意。
         if self._publisher is not None:
             for topic in result.open_topics:
                 gap_id = make_requirement_id(f"gap:{topic}")
@@ -221,10 +235,10 @@ class SANBAAgent(Agent):
         url = GitHubConnector(settings.github_token, settings.github_repo).create_issue(title, body)
         log.info("requirements_exported", session=self._session_id, url=url)
         if self._publisher is not None and url is not None:
-            # ループの締め（09→10）。スタッツは publish 済みの実数から組み立てる。
+            # ループの締め（09→10）。スタッツは種別ごとのカウンタ実数から組み立てる。
             await self._publisher.session_completed(
-                contradictions_resolved=0,
-                gaps_found=self._publisher.detections_published,
+                contradictions_resolved=self._publisher.resolutions_published,
+                gaps_found=self._publisher.gaps_published,
                 issues_created=1,
                 artifacts=[{"kind": "issue", "url": url}],
             )

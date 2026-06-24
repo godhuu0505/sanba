@@ -85,9 +85,11 @@ class EventPublisher:
         self._clock = clock
         self._seq = 0
         self._lock = asyncio.Lock()
-        # 観測性: 要件数・検知数を計測（契約 §5 / ADR-0005 評価へ）。
+        # 観測性: 要件数・検知種別ごとの件数を計測（契約 §5 / ADR-0005 評価へ）。
         self.requirements_published = 0
-        self.detections_published = 0
+        self.gaps_published = 0
+        self.contradictions_published = 0
+        self.resolutions_published = 0
         self._tracer = _get_tracer()
 
     @property
@@ -168,7 +170,7 @@ class EventPublisher:
         }
         if options:
             payload["options"] = options
-        self.detections_published += 1
+        self.contradictions_published += 1
         return await self._emit("detection.contradiction", payload)
 
     async def detection_gap(
@@ -180,7 +182,7 @@ class EventPublisher:
         *,
         detector: str = DETECTOR_SCOPE,
     ) -> dict[str, Any]:
-        self.detections_published += 1
+        self.gaps_published += 1
         return await self._emit(
             "detection.gap",
             {
@@ -205,6 +207,7 @@ class EventPublisher:
         }
         if selected_value is not None:
             payload["selected_value"] = selected_value
+        self.resolutions_published += 1
         return await self._emit("detection.resolved", payload)
 
     async def requirement_upserted(

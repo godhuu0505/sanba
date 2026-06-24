@@ -90,12 +90,15 @@ async def test_requirement_upserted_matches_contract_schema() -> None:
 
 
 @pytest.mark.asyncio
-async def test_counters_track_detections() -> None:
+async def test_counters_track_detections_separately() -> None:
     t = RecordingTransport()
     pub = EventPublisher("s1", t)
     await pub.detection_gap("d1", "性能が未確認", "non_functional", [])
     await pub.detection_contradiction("d2", "食い違い", refs=[])
-    assert pub.detections_published == 2
+    await pub.detection_resolved("d2", "関連度順に統一")
+    assert pub.gaps_published == 1
+    assert pub.contradictions_published == 1
+    assert pub.resolutions_published == 1
 
 
 def test_requirement_to_contract_handles_missing_speaker() -> None:
