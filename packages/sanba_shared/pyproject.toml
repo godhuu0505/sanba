@@ -1,0 +1,38 @@
+[project]
+name = "sanba-shared"
+version = "0.1.0"
+description = "SANBA shared domain models and persistence (sessions, utterances, requirements)"
+requires-python = ">=3.12"
+dependencies = [
+    "pydantic>=2.7",
+    "google-cloud-firestore>=2.16.0",
+    "structlog>=24.1",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.2",
+    "ruff>=0.5",
+    "mypy>=1.10",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.mypy]
+python_version = "3.13"
+ignore_missing_imports = true
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/sanba_shared"]

@@ -155,3 +155,31 @@ def require_user(
 
 # create_session / join_session が結線する依存性エイリアス。
 CurrentUser = Annotated[AuthUser, Depends(require_user)]
+
+
+def require_admin(user: Annotated[AuthUser, Depends(require_user)]) -> AuthUser:
+    """FastAPI 依存性: 管理者 (ADMIN_EMAILS 許可リスト) のみ通す。それ以外は 403 (ADR-0014 §2)。
+
+    `auth_dev_bypass` でも許可リストを照合する (§13): dev identity (dev@sanba.local) を
+    `ADMIN_EMAILS` に入れておけば `just up` で管理画面が開く。本人確認は require_user
+    が済ませており、ここは認可 (誰が管理者か) だけを見る。
+    """
+    allow = settings.admin_email_set
+    if not allow:
+        # 設定漏れで管理画面が開く事故を防ぐ (フェイルクローズ)。
+        # 内部設定状態 (ADMIN_EMAILS 未設定) はクライアントに開示せず、ログにのみ残す。
+        log.error("admin_misconfigured", reason="ADMIN_EMAILS 未設定")
+        record_auth_event("admin_misconfigured")
+        raise HTTPException(status_code=503, detail="service temporarily unavailable")
+
+    if user.email.lower() not in allow:
+        # 監査時に「誰が」拒否されたか追えるよう email も残す (admin_granted と対称)。
+        log.warning("admin_denied", sub=user.sub, email=user.email)
+        record_auth_event("admin_denied")
+        raise HTTPException(status_code=403, detail="admin privileges required")
+
+    record_auth_event("admin_granted")
+    return user
+
+
+CurrentAdmin = Annotated[AuthUser, Depends(require_admin)]

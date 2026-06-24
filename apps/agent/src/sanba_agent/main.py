@@ -11,6 +11,8 @@ Run locally:
 from __future__ import annotations
 
 import asyncio
+import os
+from typing import Any
 
 import structlog
 from livekit.agents import (
@@ -24,17 +26,30 @@ from livekit.agents import (
 )
 from livekit.agents.llm import function_tool
 from livekit.plugins import google
+from sanba_shared.models import Priority, Requirement, RequirementCategory, Utterance
+from sanba_shared.repository import SessionRepository
 
 from .config import settings
-from .events import DETECTOR_NFR, EventPublisher, LiveKitTransport
-from .models import Priority, Requirement, RequirementCategory, Utterance
+from .events import (
+    DETECTOR_NFR,
+    RESOLUTION_AGENT_RESOLVED,
+    RESOLUTION_USER_SELECTED,
+    WEB_EVENTS_TOPIC,
+    EventPublisher,
+    LiveKitTransport,
+    decode_user_selection,
+)
 from .observability import setup_observability
 from .prompts.interview import VOICE_AGENT_INSTRUCTIONS
-from .repository import SessionRepository
 from .retrieval import GroundingStore
 from .tools.analysis import analyze_transcript, make_requirement_id
 
 log = structlog.get_logger(__name__)
+
+# Firestore SDK は OS 環境変数 FIRESTORE_EMULATOR_HOST を直接読む。config 経由で指定された
+# 場合に SDK へ橋渡しする (api/main.py と同じパターン)。未設定なら本番の実 Firestore に接続。
+if settings.firestore_emulator_host:
+    os.environ.setdefault("FIRESTORE_EMULATOR_HOST", settings.firestore_emulator_host)
 
 
 class SANBAAgent(Agent):
@@ -57,8 +72,8 @@ class SANBAAgent(Agent):
         self._utterance_seq = 0
         # 既に publish 済みの検知 id（open_topic の重複 gap を抑止）。
         self._published_gaps: set[str] = set()
-        # fire-and-forget タスクの強参照（GC 前に完了させる）。
-        self._tasks: set[asyncio.Task] = set()
+        # fire-and-forget の publish タスクを保持（GC による途中消滅を防ぐ）。
+        self._publish_tasks: set[asyncio.Task[Any]] = set()
 
     @property
     def transcript(self) -> list[str]:
@@ -69,17 +84,23 @@ class SANBAAgent(Agent):
         if self._publisher is None:
             coro.close()
             return
+        # create_task の戻り値を保持しないとタスクが GC で途中消滅し得る（CPython の既知挙動）。
+        # 集合で強参照を保ち、完了時に取り除く。
         task = asyncio.create_task(coro)
-        self._tasks.add(task)
+        self._publish_tasks.add(task)
         task.add_done_callback(self._on_publish_done)
 
-    def _on_publish_done(self, task: asyncio.Task) -> None:
-        self._tasks.discard(task)
-        if not task.cancelled() and (exc := task.exception()):
-            log.warning("publish_task_failed", error=str(exc))
+    def _on_publish_done(self, task: asyncio.Task[Any]) -> None:
+        self._publish_tasks.discard(task)
+        if not task.cancelled() and task.exception() is not None:
+            log.warning("publish_task_failed", error=str(task.exception()))
 
     def record_utterance(self, speaker: str, text: str) -> str:
-        self._transcript.append(f"{speaker}: {text}")
+        # 発話 id を先に採番し、本文に前置して LLM に見せる。これにより
+        # save_requirement の citations（根拠発話 id）を LLM が実際に参照できる（#133）。
+        self._utterance_seq += 1
+        utterance_id = f"u{self._utterance_seq}"
+        self._transcript.append(f"[{utterance_id}] {speaker}: {text}")
         self._repo.add_utterance(self._session_id, Utterance(speaker=speaker, text=text))
         # Index for later past-session retrieval.
         self._grounding.index_passage(
@@ -89,14 +110,35 @@ class SANBAAgent(Agent):
             session_id=self._session_id,
         )
         # 確定発話を web へ（04/05 のトランスクリプト・detection.refs の ID 空間）。
-        # NOTE: sync コールバックから呼ぶため fire-and-forget。検知系 await との間で
-        #       seq 採番順と論理発生順がズレ得るが、web のハイドレーションで吸収される。
-        self._utterance_seq += 1
-        utterance_id = f"u{self._utterance_seq}"
         if self._publisher is not None:
             role = "participant"
             self._publish(self._publisher.transcript_final(speaker, role, utterance_id, text))
         return utterance_id
+
+    async def resolve_detection(self, detection_id: str, selected_value: str) -> None:
+        """ユーザーの選択（user.selection, 契約 §4.5）を受けて検知を解消する（#102）。
+
+        web の検知カードで選択肢がタップされると呼ばれ、当該検知を解消済みにして
+        detection.resolved を web へ返す（カードが閉じ、リロードでも未解消に戻らない）。
+        選択内容は以後の会話の前提として記録しておく。
+        """
+        self._transcript.append(f"[選択] {detection_id} → {selected_value}")
+        # 永続化して open スナップショットから外す（リロード後も未解消に戻さない）。
+        self._repo.resolve_detection(self._session_id, detection_id, RESOLUTION_USER_SELECTED)
+        self._published_gaps.discard(detection_id)
+        if self._publisher is not None:
+            await self._publisher.detection_resolved(
+                detection_id,
+                resolution=RESOLUTION_USER_SELECTED,
+                selected_value=selected_value,
+            )
+            self._repo.set_session_seq(self._session_id, self._publisher.seq)
+        log.info(
+            "detection_resolved",
+            session=self._session_id,
+            detection=detection_id,
+            value=selected_value,
+        )
 
     @function_tool
     async def analyze_requirements(self, _ctx: RunContext) -> dict:
@@ -119,19 +161,44 @@ class SANBAAgent(Agent):
         #       現状は暫定で一律 non_functional / DETECTOR_NFR を使用しており、
         #       機能スコープの抜けも NFR として表示される点に注意。
         if self._publisher is not None:
-            for topic in result.open_topics:
-                gap_id = make_requirement_id(f"gap:{topic}")
+            current = {make_requirement_id(f"gap:{t}"): t for t in result.open_topics}
+            # 新規の抜けを永続化 + publish（リロードでも復元できるよう Firestore に保存）。
+            for gap_id, topic in current.items():
                 if gap_id in self._published_gaps:
                     continue
                 self._published_gaps.add(gap_id)
+                summary = f"{topic}が未確認です。"
+                self._repo.save_detection(
+                    self._session_id,
+                    {
+                        "id": gap_id,
+                        "kind": "gap",
+                        "summary": summary,
+                        "category": "non_functional",
+                        "refs": [],
+                        "detector": DETECTOR_NFR,
+                        "resolved": False,
+                    },
+                )
                 await self._publisher.detection_gap(
                     gap_id,
-                    summary=f"{topic}が未確認です。",
+                    summary=summary,
                     category="non_functional",
                     refs=[],
                     detector=DETECTOR_NFR,
                 )
+            # 会話で埋まり open_topics から外れた抜けは agent_resolved で閉じる（音声回答の反映）。
+            for gap_id in list(self._published_gaps):
+                if gap_id not in current:
+                    self._published_gaps.discard(gap_id)
+                    self._repo.resolve_detection(
+                        self._session_id, gap_id, RESOLUTION_AGENT_RESOLVED
+                    )
+                    await self._publisher.detection_resolved(
+                        gap_id, resolution=RESOLUTION_AGENT_RESOLVED
+                    )
             await self._publisher.status("listening")
+            self._repo.set_session_seq(self._session_id, self._publisher.seq)
         return result.model_dump(mode="json")
 
     @function_tool
@@ -142,6 +209,7 @@ class SANBAAgent(Agent):
         category: str = "functional",
         priority: str = "should",
         source_speaker: str | None = None,
+        citations: list[str] | None = None,
     ) -> dict:
         """確定した要件を1件記録する。
 
@@ -150,6 +218,8 @@ class SANBAAgent(Agent):
             category: functional / non_functional / constraint / scope / open_question
             priority: must / should / could / wont
             source_speaker: その要件を述べた参加者の識別子(任意)。
+            citations: その要件の根拠となった発話 id のリスト(例 ["u3", "u5"])。
+                会話本文の各行頭にある [u..] を参照する。要件カードの引用表示に使う。
         """
         requirement = Requirement(
             id=make_requirement_id(statement),
@@ -157,6 +227,7 @@ class SANBAAgent(Agent):
             category=RequirementCategory(category),
             priority=Priority(priority),
             source_speaker=source_speaker,
+            citations=citations or [],
         )
         self._repo.save_requirement(self._session_id, requirement)
         self._grounding.index_passage(
@@ -167,6 +238,7 @@ class SANBAAgent(Agent):
         )
         if self._publisher is not None:
             await self._publisher.requirement_upserted(requirement, status="confirmed")
+            self._repo.set_session_seq(self._session_id, self._publisher.seq)
         log.info("requirement_saved", session=self._session_id, id=requirement.id)
         return {"saved": requirement.id}
 
@@ -201,6 +273,7 @@ class SANBAAgent(Agent):
                 conflicts=[],
             )
             await self._publisher.requirement_upserted(requirement, status="confirmed")
+            self._repo.set_session_seq(self._session_id, self._publisher.seq)
         log.info("visual_requirement", session=self._session_id, id=requirement.id)
         return {"saved": requirement.id, "from": "screen-share"}
 
@@ -235,9 +308,10 @@ class SANBAAgent(Agent):
         url = GitHubConnector(settings.github_token, settings.github_repo).create_issue(title, body)
         log.info("requirements_exported", session=self._session_id, url=url)
         if self._publisher is not None and url is not None:
-            # ループの締め（09→10）。スタッツは種別ごとのカウンタ実数から組み立てる。
+            # ループの締め（09→10）。スタッツは publish 済みの実測から組み立てる
+            # （gaps_found は抜けのみ、contradictions_resolved は解消済みの矛盾のみ）。
             await self._publisher.session_completed(
-                contradictions_resolved=self._publisher.resolutions_published,
+                contradictions_resolved=self._publisher.contradictions_resolved,
                 gaps_found=self._publisher.gaps_published,
                 issues_created=1,
                 artifacts=[{"kind": "issue", "url": url}],
@@ -308,7 +382,10 @@ async def entrypoint(ctx: JobContext) -> None:
     await ctx.connect()
 
     session_id = ctx.room.name
-    repo = SessionRepository()
+    repo = SessionRepository(
+        data_retention_days=settings.data_retention_days,
+        mask_pii_before_persist=settings.mask_pii_before_index,
+    )
     grounding = GroundingStore()
     seed_knowledge_base(grounding)
     seed_github_context(grounding, session_id)
@@ -330,6 +407,29 @@ async def entrypoint(ctx: JobContext) -> None:
         if getattr(ev, "is_final", False) and ev.transcript:
             speaker = "participant"
             agent.record_utterance(speaker, ev.transcript)
+
+    # web → agent の user.selection を受信し、検知を解消する（契約 §4.5 / #102）。
+    # fire-and-forget タスクは set に退避して GC を防ぐ（#128。完了時に除去・例外をログ）。
+    _bg_tasks: set[asyncio.Task] = set()
+
+    def _on_bg_done(task: asyncio.Task) -> None:
+        _bg_tasks.discard(task)
+        if not task.cancelled() and (exc := task.exception()):
+            log.warning("selection_task_failed", error=str(exc))
+
+    def _on_data(packet) -> None:  # type: ignore[no-untyped-def]
+        if getattr(packet, "topic", None) != WEB_EVENTS_TOPIC:
+            return
+        # session_id を照合し、同室の別セッション向け selection 混入を弾く（#132）。
+        parsed = decode_user_selection(getattr(packet, "data", b""), expected_session_id=session_id)
+        if parsed is None:
+            return
+        detection_id, selected_value = parsed
+        task = asyncio.create_task(agent.resolve_detection(detection_id, selected_value))
+        _bg_tasks.add(task)
+        task.add_done_callback(_on_bg_done)
+
+    ctx.room.on("data_received", _on_data)
 
     # video_enabled=True forwards screen-share / camera frames to Gemini Live,
     # so the agent can read mockups and whiteboards (multimodal grounding).

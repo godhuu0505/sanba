@@ -17,7 +17,7 @@ log() { printf '\033[36m[session-start]\033[0m %s\n' "$1"; }
 
 # --- Python: agent / api (uv 管理) ---
 if command -v uv >/dev/null 2>&1; then
-  for app in apps/agent apps/api; do
+  for app in packages/sanba_shared apps/agent apps/api; do
     if [ -f "$app/pyproject.toml" ]; then
       log "uv sync ($app)"
       (cd "$app" && uv sync --all-extras --dev)
@@ -41,10 +41,11 @@ else
   log "npm または apps/web が無いため Web 依存関係をスキップ"
 fi
 
-# --- ローカル開発用の .env を用意（未作成時のみ）---
-if [ ! -f .env ] && [ -f .env.example ]; then
-  log ".env を .env.example から作成"
-  cp .env.example .env
+# --- ローカル開発用の .env.local を用意（未作成時のみ）---
+# .env.example はそのまま `just up` が通るローカル既定値が入っているため、コピーで設定が揃う。
+if [ ! -f .env.local ] && [ -f .env.example ]; then
+  log ".env.local を .env.example から作成"
+  cp .env.example .env.local
 fi
 
 log "セットアップ完了"

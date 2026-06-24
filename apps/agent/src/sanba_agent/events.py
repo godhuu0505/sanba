@@ -24,8 +24,7 @@ from datetime import UTC, datetime
 from typing import Any, Protocol
 
 import structlog
-
-from .models import Requirement
+from sanba_shared.models import Requirement
 
 log = structlog.get_logger(__name__)
 
@@ -69,6 +68,10 @@ DETECTOR_CONTRADICTION = "contradiction_detector"
 DETECTOR_SCOPE = "scope_specialist"
 DETECTOR_NFR = "nfr_specialist"
 
+# 解消理由（detection.resolved）。ユーザー選択＝矛盾カードの解消、agent＝抜けの自動解消。
+RESOLUTION_USER_SELECTED = "user_selected"
+RESOLUTION_AGENT_RESOLVED = "agent_resolved"
+
 
 class EventPublisher:
     """セッション 1 つ分の単調増加 seq を持ち、契約準拠イベントを publish する。"""
@@ -85,16 +88,23 @@ class EventPublisher:
         self._clock = clock
         self._seq = 0
         self._lock = asyncio.Lock()
-        # 観測性: 要件数・検知種別ごとの件数を計測（契約 §5 / ADR-0005 評価へ）。
+        # 観測性: 要件数・検知数を種別ごとに計測（契約 §5 / ADR-0005 評価へ）。
+        # session.completed のサマリを実測から組み立てるため、抜け/矛盾/解消を分けて持つ。
         self.requirements_published = 0
         self.gaps_published = 0
         self.contradictions_published = 0
-        self.resolutions_published = 0
+        self.detections_resolved = 0
+        self.contradictions_resolved = 0
         self._tracer = _get_tracer()
 
     @property
     def seq(self) -> int:
         return self._seq
+
+    @property
+    def detections_published(self) -> int:
+        """検知（抜け＋矛盾）の publish 総数。"""
+        return self.gaps_published + self.contradictions_published
 
     async def _emit(
         self, type_: str, payload: dict[str, Any], *, reliable: bool = True
@@ -207,7 +217,10 @@ class EventPublisher:
         }
         if selected_value is not None:
             payload["selected_value"] = selected_value
-        self.resolutions_published += 1
+        # 解消の実測。矛盾カードの解消（ユーザー選択）は session.completed のサマリへ。
+        self.detections_resolved += 1
+        if resolution == RESOLUTION_USER_SELECTED:
+            self.contradictions_resolved += 1
         return await self._emit("detection.resolved", payload)
 
     async def requirement_upserted(
@@ -269,9 +282,36 @@ def requirement_to_contract(requirement: Requirement, status: str) -> dict[str, 
         "priority": str(requirement.priority),
         "confidence": requirement.confidence,
         "source_speaker": requirement.source_speaker or "",
-        "citations": [],
+        "citations": [{"kind": "utterance", "ref": ref} for ref in requirement.citations],
         "status": status,
     }
+
+
+def decode_user_selection(
+    payload: bytes | str, *, expected_session_id: str | None = None
+) -> tuple[str, str] | None:
+    """web → agent の user.selection（契約 §4.5）をデコードする。
+
+    検証に通れば ``(detection_id, selected_value)`` を返す。不正なら None。
+    ``expected_session_id`` を渡すと、エンベロープの ``session_id`` が一致しない
+    メッセージを破棄する（同一 LiveKit ルーム内の別セッション向け selection 混入を防ぐ。
+    web 側 store の ``expectedSessionId`` 照合と対称な受信境界）。
+    LiveKit ランタイムに依存しないので単体テストできる（#102）。
+    """
+    try:
+        text = payload.decode("utf-8") if isinstance(payload, bytes) else payload
+        obj = json.loads(text)
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    if not isinstance(obj, dict) or obj.get("type") != "user.selection":
+        return None
+    if expected_session_id is not None and obj.get("session_id") != expected_session_id:
+        return None
+    detection_id = obj.get("detection_id")
+    selected_value = obj.get("selected_value")
+    if not isinstance(detection_id, str) or not isinstance(selected_value, str):
+        return None
+    return detection_id, selected_value
 
 
 def _get_tracer() -> Any:

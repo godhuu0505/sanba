@@ -85,6 +85,12 @@ variable "google_oauth_client_id" {
   description = "OAuth 2.0 Web client ID for Google login. Verified as the id_token audience by the API."
 }
 
+variable "admin_emails" {
+  type        = string
+  default     = ""
+  description = "Comma-separated allowlist of Google account emails that may use the admin UI (ADR-0014). Not a secret."
+}
+
 variable "livekit_url" {
   type        = string
   default     = ""

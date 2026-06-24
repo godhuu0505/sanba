@@ -2310,6 +2310,7 @@ dependencies = [
     { name = "opentelemetry-sdk" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
+    { name = "sanba-shared" },
     { name = "structlog" },
 ]
 
@@ -2334,6 +2335,7 @@ requires-dist = [
     { name = "opentelemetry-sdk", specifier = ">=1.25" },
     { name = "pydantic", specifier = ">=2.7" },
     { name = "pydantic-settings", specifier = ">=2.3" },
+    { name = "sanba-shared", editable = "../../packages/sanba_shared" },
     { name = "structlog", specifier = ">=24.1" },
 ]
 
@@ -2342,6 +2344,30 @@ dev = [
     { name = "mypy", specifier = ">=1.10" },
     { name = "pytest", specifier = ">=8.2" },
     { name = "pytest-asyncio", specifier = ">=0.23" },
+    { name = "ruff", specifier = ">=0.5" },
+]
+
+[[package]]
+name = "sanba-shared"
+version = "0.1.0"
+source = { editable = "../../packages/sanba_shared" }
+dependencies = [
+    { name = "google-cloud-firestore" },
+    { name = "pydantic" },
+    { name = "structlog" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "google-cloud-firestore", specifier = ">=2.16.0" },
+    { name = "pydantic", specifier = ">=2.7" },
+    { name = "structlog", specifier = ">=24.1" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "mypy", specifier = ">=1.10" },
+    { name = "pytest", specifier = ">=8.2" },
     { name = "ruff", specifier = ">=0.5" },
 ]
 

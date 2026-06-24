@@ -26,7 +26,7 @@ services:
         NEXT_PUBLIC_RETENTION_DAYS: ${DATA_RETENTION_DAYS:-30}
         # 空なら web は dev モード (Google ログインを出さず bypass で進む / ADR-0012)。
         NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${NEXT_PUBLIC_GOOGLE_CLIENT_ID:-}
-    env_file: .env
+    env_file: .env.local
     ports: ["3000:3000"]
     depends_on:
       api:
@@ -41,12 +41,17 @@ services:
       start_period: 20s
 
   api:
-    build: ./apps/api
-    env_file: .env
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    env_file: .env.local
     ports: ["8080:8080"]
-    # api は Firestore を直接使わない (永続化は agent 経由)。依存は livekit と ES のみ。
+    # api はセッション/要件のリーダー兼ライターになった (ADR-0014 §15)。
+    # 接続先は .env.local の FIRESTORE_EMULATOR_HOST で切り替わる。
     depends_on:
       livekit:
+        condition: service_started
+      firestore:
         condition: service_started
       elasticsearch:
         condition: service_healthy
@@ -60,8 +65,10 @@ services:
       start_period: 10s
 
   agent:
-    build: ./apps/agent
-    env_file: .env
+    build:
+      context: .
+      dockerfile: apps/agent/Dockerfile
+    env_file: .env.local
     command: ["start"]
     depends_on:
       livekit:
@@ -81,7 +88,7 @@ services:
       - "7881:7881"
       - "7882:7882/udp"
     environment:
-      # --dev は devkey/secret を有効化する。.env の LIVEKIT_API_KEY/SECRET と一致させる。
+      # --dev は devkey/secret を有効化する。.env.local の LIVEKIT_API_KEY/SECRET と一致させる。
       LIVEKIT_KEYS: "devkey: secret"
     restart: unless-stopped
 

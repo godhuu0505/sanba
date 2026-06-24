@@ -4,8 +4,6 @@ import {
   LiveKitRoom,
   RoomAudioRenderer,
   StartAudio,
-  useVoiceAssistant,
-  BarVisualizer,
 } from "@livekit/components-react";
 import { useState } from "react";
 import {
@@ -15,6 +13,7 @@ import {
   type JoinResponse,
 } from "../lib/api";
 import { useGoogleAuth } from "../lib/auth";
+import { SessionView } from "../components/SessionView";
 
 export default function Home() {
   const [name, setName] = useState("");
@@ -29,20 +28,26 @@ export default function Home() {
     try {
       setError(null);
       // Owner flow for the demo: create a session (with consent, issue #10),
-      // optionally register reference material (RAG grounding, #6), then redeem
-      // the role invite (#8). 本人確認は Google ログイン (ADR-0012)。
+      // redeem the role invite (#8) to get a join 済みトークン, then register
+      // reference material (RAG grounding, #6) using that token. context 投稿は
+      // 契約 §4 で参加者限定（session_token 必須）なので join 後に行う。
+      // 本人確認は Google ログイン (ADR-0012)。
       const session = await createSession([role], consent, auth.credential);
-      if (context.trim()) {
-        await addSessionContext(session.session_id, context, "貼り付け資料");
-      }
       const invite = session.invites[role];
-      setConn(
-        await joinSession({
-          invite,
-          participantName: name || auth.profile?.name || "ゲスト",
-          idToken: auth.credential,
-        }),
-      );
+      const conn = await joinSession({
+        invite,
+        participantName: name || auth.profile?.name || "ゲスト",
+        idToken: auth.credential,
+      });
+      if (context.trim()) {
+        await addSessionContext(
+          conn.session_id,
+          context,
+          conn.session_token,
+          "貼り付け資料",
+        );
+      }
+      setConn(conn);
     } catch (e) {
       setError(String(e));
     }
@@ -59,9 +64,11 @@ export default function Home() {
         style={{ height: "100dvh" }}
       >
         <main style={{ padding: 24, maxWidth: 640, margin: "0 auto" }}>
-          <h1>🎙️ SANBA — 要件インタビュー中</h1>
-          <p>セッション: <code>{conn.session_id}</code></p>
-          <InterviewView />
+          <h1 style={{ fontSize: 20 }}>🎙️ SANBA — 要件インタビュー中</h1>
+          <p style={{ fontSize: 13, color: "#666" }}>
+            セッション: <code>{conn.session_id}</code>
+          </p>
+          <SessionView sessionId={conn.session_id} sessionToken={conn.session_token} />
           <RoomAudioRenderer />
           <StartAudio label="🔊 音声を有効にする" />
         </main>
@@ -153,16 +160,6 @@ function LoginPanel({ auth }: { auth: ReturnType<typeof useGoogleAuth> }) {
         // GIS がこの div にログインボタンを描画する。
         <div ref={buttonRef} />
       )}
-    </div>
-  );
-}
-
-function InterviewView() {
-  const { state, audioTrack } = useVoiceAssistant();
-  return (
-    <div style={{ marginTop: 16 }}>
-      <p>状態: {state}</p>
-      <BarVisualizer state={state} trackRef={audioTrack} style={{ height: 96 }} />
     </div>
   );
 }

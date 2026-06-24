@@ -14,6 +14,9 @@ class Settings(BaseSettings):
 
     otel_exporter_otlp_endpoint: str = ""
     otel_service_name: str = "sanba-api"
+    # OTLP 転送の TLS。localhost collector sidecar では true（平文 gRPC）、
+    # TLS 終端された外部 OTLP 直送では false（既定）。
+    otel_exporter_insecure: bool = False
 
     # CORS allowlist for the web client
     allowed_origins: str = "http://localhost:3000"
@@ -34,6 +37,22 @@ class Settings(BaseSettings):
     # 未設定かつ auth_dev_bypass=false の本番構成では認証経路をフェイルクローズする。
     google_oauth_client_id: str = ""
 
+    # ---- 管理者 (ADR-0014 §2) ----
+    # 管理画面を使える Google アカウントの email 許可リスト (カンマ区切り)。
+    # 検証済み identity の email をサーバ側で照合する。dev bypass でも照合する (§13)。
+    admin_emails: str = ""
+
+    # ---- Firestore (ADR-0014 §15) ----
+    # api はセッション/要件のリーダー兼ライターになった。emulator 利用時は接続先を
+    # FIRESTORE_EMULATOR_HOST で指定する (compose ではローカルの firestore:8200)。
+    firestore_emulator_host: str = ""
+    google_cloud_project: str = "sanba-dev"
+
+    @property
+    def admin_email_set(self) -> frozenset[str]:
+        """正規化済みの管理者 email 集合 (小文字・前後空白除去)。"""
+        return frozenset(e.strip().lower() for e in self.admin_emails.split(",") if e.strip())
+
     # ---- Context ingestion -> RAG grounding (issue #6) ----
     # Shared with the agent's grounding store (same Elasticsearch index).
     elasticsearch_url: str = ""
@@ -43,6 +62,22 @@ class Settings(BaseSettings):
     gemini_embed_model: str = "text-embedding-004"
     # Max characters accepted per context upload (guards memory/cost).
     max_context_chars: int = 200_000
+
+    # ---- Multimodal assets: 画像/動画アップロード (issue #103 / ADR-0004) ----
+    # Cloud Storage バケット名。未設定なら in-memory にフォールバック（ローカル/テスト）。
+    gcs_bucket: str = ""
+    # 画像/動画 1 件あたりのバイト上限（メモリ/コスト/帯域のガード）。既定 25MB。
+    max_asset_bytes: int = 25_000_000
+    # 画像解析に使う Gemini マルチモーダルモデル。
+    gemini_vision_model: str = "gemini-2.5-flash"
+    # 動画解析は未実装（web では「準備中」でグレーアウト）。有効化は別 PR。
+    enable_video_analysis: bool = False
+
+    # ---- Requirement export -> GitHub Issue (契約 §4 POST /export, #39) ----
+    # OFF by default. Enable + provide a token/repo to let 09 要件絵巻 起票する。
+    github_connector_enabled: bool = False
+    github_token: str = ""
+    github_repo: str = ""  # "owner/name"
 
     # ---- Data governance (issue #10) ----
     # Mask PII before context is written to the shared grounding index.

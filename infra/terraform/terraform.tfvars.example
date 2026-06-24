@@ -21,6 +21,10 @@ otel_exporter_otlp_endpoint = "" # 例: "http://localhost:4317" (OTel Collector 
 # web 側は CI の vars.NEXT_PUBLIC_GOOGLE_CLIENT_ID に同じ値を設定する。
 google_oauth_client_id = "" # 例: "1234567890-abcdef.apps.googleusercontent.com"
 
+# 管理画面 (/admin) を使える Google アカウントの email 許可リスト (カンマ区切り / ADR-0014)。
+# 秘匿物ではないので平文。例: "alice@example.com,bob@example.com"
+admin_emails = ""
+
 # ---- 独自ドメイン (Global 外部 HTTPS LB + Google 管理証明書) ----
 # OSS なのでドメインはコードに焼かず、各自ここ (または CI の GitHub Variables) で設定する。
 # domain が空なら LB を作らず Cloud Run 既定の *.run.app で運用。

@@ -7,8 +7,9 @@ Rancher Desktop (dockerd / moby) + `docker compose` を前提とする。
 
 - Rancher Desktop を起動し、Container Engine を **dockerd (moby)** にする。
 - `docker compose version` が通ること。
-- **初回セットアップ**: `just setup` で `.env` の用意と全依存のインストール (uv sync / npm install) が
-  まとめて走る (冪等)。`.env` の `GOOGLE_API_KEY` / `LIVEKIT_*` などを埋める (最小構成は空のままでも起動する)。
+- **初回セットアップ**: `just setup` で `.env.local` の用意と全依存のインストール (uv sync / npm install) が
+  まとめて走る (冪等)。`.env.local` は `.env.example` から自動生成され、ローカル既定値が入っているため
+  そのまま `just up` できる。`GOOGLE_API_KEY` / `LIVEKIT_*` などは必要に応じて `.env.local` に埋める。
 
 ## 1. 二層構成
 
@@ -22,7 +23,7 @@ Rancher Desktop (dockerd / moby) + `docker compose` を前提とする。
 ## 2. 起動
 
 ```bash
-just setup       # 初回のみ: .env 用意 + 全依存インストール (uv sync / npm install)
+just setup       # 初回のみ: .env.local 用意 + 全依存インストール (uv sync / npm install)
 just init        # 初回を一発で: setup → up (最小構成) まで一気通貫
 
 just up          # アプリ最小構成だけ (軽い)
@@ -42,6 +43,8 @@ just tools-down  # 補助スタックだけ停止 (アプリは残す)
 | URL | 何 | スタック |
 |---|---|---|
 | http://localhost:3000 | Web クライアント | 必須 |
+| http://localhost:3000/login | ログイン画面 (Google / dev) | 必須 |
+| http://localhost:3000/admin | 管理画面 (セッション/要件の確認・承認) | 必須 |
 | http://localhost:8080/healthz | API ヘルスチェック | 必須 |
 | ws://localhost:7880 | LiveKit (dev) | 必須 |
 | http://localhost:9200 | Elasticsearch | 必須 |
@@ -64,8 +67,13 @@ just tools-down  # 補助スタックだけ停止 (アプリは残す)
 | Elasticsearch RAG | ES (既定で起動) | 語の重なり近似 |
 | Langfuse トレース | `LANGFUSE_*` + `just up-full` | 送信スキップ |
 
-`GOOGLE_API_KEY` を `.env` に入れて `just up` し直すと、音声を除く AI 経路が実物になる。
+`GOOGLE_API_KEY` を `.env.local` に入れて `just up` し直すと、音声を除く AI 経路が実物になる。
 音声 S2S は実機マイク + ブラウザ (http://localhost:3000) で確認する。
+
+ログイン/管理画面: 既定の `.env.example` は `AUTH_DEV_BYPASS=true` かつ
+`ADMIN_EMAILS=dev@sanba.local` なので、`/login` で「開発用ログイン」を押すと固定 dev
+identity (dev@sanba.local) になり、`/admin` がそのまま開ける (ADR-0014)。本番は
+`AUTH_DEV_BYPASS=false`・`GOOGLE_OAUTH_CLIENT_ID`・`ADMIN_EMAILS` を実値で設定する。
 
 ## 5. ネイティブ実行 (docker を介さない)
 
@@ -78,10 +86,10 @@ just agent-dev   # LiveKit worker (dev モード)
 ```
 
 依存 (livekit/firestore/elasticsearch) だけ docker で上げ、アプリはネイティブ、という
-混在も可能。その場合 `.env` の `*_HOST` / `*_URL` を `localhost` に向ける。
+混在も可能。その場合 `.env.local` の `*_HOST` / `*_URL` を `localhost` に向ける。
 
 ## 6. トラブルシュート
 
 - **Elasticsearch が unhealthy**: メモリ不足。Rancher Desktop の割当を 4GB 以上に。
 - **web のヘルスチェックが落ちる**: 初回ビルドに時間がかかる。`just logs` で進捗確認。
-- **agent がすぐ落ちる**: `.env` の `LIVEKIT_*` が livekit (`devkey/secret`) と一致しているか確認。
+- **agent がすぐ落ちる**: `.env.local` の `LIVEKIT_*` が livekit (`devkey/secret`) と一致しているか確認。
