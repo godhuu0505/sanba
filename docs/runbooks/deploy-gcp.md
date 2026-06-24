@@ -21,7 +21,7 @@ SANBA を Cloud Run に本番デプロイし、リポジトリを安全に publi
 ## 1. GCP プロジェクトと API
 
 ```bash
-export PROJECT_ID=sanba-prod          # 任意。Artifact Registry 等で使う
+export PROJECT_ID=sanba-prd            # 任意。Artifact Registry 等で使う
 export REGION=us-central1             # deploy.yml / tfvars と一致させること
 gcloud projects create "$PROJECT_ID"  # 既存を使うなら不要
 gcloud config set project "$PROJECT_ID"

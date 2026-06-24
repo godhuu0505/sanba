@@ -22,6 +22,9 @@ provider "google" {
 }
 
 # ---- Required APIs ----
+# アプリ稼働用 API に加え、terraform 自身が使う基盤 API も明示的に管理して新規プロジェクトでも
+# 再現可能にする (iam/cloudresourcemanager は SA/IAM リソースの前提)。state 用 GCS と WIF
+# (iamcredentials/sts/storage) はブートストラップ依存だが、実態と揃えるため列挙する。
 resource "google_project_service" "services" {
   for_each = toset([
     "run.googleapis.com",
@@ -32,6 +35,12 @@ resource "google_project_service" "services" {
     "cloudtrace.googleapis.com",
     "monitoring.googleapis.com",
     "logging.googleapis.com",
+    # --- terraform / CI 基盤 (実態に合わせて管理) ---
+    "cloudresourcemanager.googleapis.com", # project IAM 操作 (runtime_roles の前提)
+    "iam.googleapis.com",                  # service account 作成の前提
+    "iamcredentials.googleapis.com",       # WIF / SA インパーソネーション
+    "sts.googleapis.com",                  # WIF トークン交換
+    "storage.googleapis.com",              # GCS リモート state
   ])
   service            = each.value
   disable_on_destroy = false
@@ -91,6 +100,7 @@ resource "google_firestore_field" "requirements_ttl" {
 resource "google_service_account" "runtime" {
   account_id   = "sanba-runtime"
   display_name = "SANBA Cloud Run runtime"
+  depends_on   = [google_project_service.services] # iam API 有効化を待つ
 }
 
 resource "google_project_iam_member" "runtime_roles" {
@@ -102,9 +112,10 @@ resource "google_project_iam_member" "runtime_roles" {
     "roles/monitoring.metricWriter",
     "roles/secretmanager.secretAccessor",
   ])
-  project = var.project_id
-  role    = each.value
-  member  = "serviceAccount:${google_service_account.runtime.email}"
+  project    = var.project_id
+  role       = each.value
+  member     = "serviceAccount:${google_service_account.runtime.email}"
+  depends_on = [google_project_service.services] # cloudresourcemanager API 有効化を待つ
 }
 
 # ---- Budget alert (cost guardrail) ----
