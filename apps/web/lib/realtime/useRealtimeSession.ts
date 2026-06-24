@@ -33,8 +33,8 @@ export interface UseRealtimeSessionResult {
 
 interface LiveOptions {
   sessionId: string;
-  /** 認可トークン（Bearer）。dev モードでは null 可。 */
-  idToken: string | null;
+  /** join 済みトークン（JoinResponse.session_token）。GET の Bearer に使う。 */
+  sessionToken: string | null;
   /** detections もハイドレーションする（08 の途中参加補強, 契約 §4 P1）。 */
   hydrateDetections?: boolean;
 }
@@ -68,7 +68,7 @@ function useStore(): {
  */
 export function useRealtimeSession(opts: LiveOptions): UseRealtimeSessionResult {
   const { store, state, metrics } = useStore();
-  const { sessionId, idToken, hydrateDetections } = opts;
+  const { sessionId, sessionToken, hydrateDetections } = opts;
 
   // 1) 購読を先行（契約 §4: 欠落防止のため GET より前に購読を張る）。
   const onMessage = useCallback(
@@ -87,20 +87,20 @@ export function useRealtimeSession(opts: LiveOptions): UseRealtimeSessionResult 
   const hydrate = useCallback(async () => {
     if (!sessionId) return;
     try {
-      const snap = await fetchRequirements(sessionId, idToken);
+      const snap = await fetchRequirements(sessionId, sessionToken);
       store.hydrateRequirements(snap.items, snap.seq);
     } catch {
       // backend 未完/失敗でもライブ差分で前進できる（ハイドレーションは補助）。
     }
     if (hydrateDetections) {
       try {
-        const snap = await fetchDetections(sessionId, idToken);
+        const snap = await fetchDetections(sessionId, sessionToken);
         store.hydrateDetections(snap.items, snap.seq ?? 0);
       } catch {
         /* P1・任意 */
       }
     }
-  }, [sessionId, idToken, hydrateDetections, store]);
+  }, [sessionId, sessionToken, hydrateDetections, store]);
 
   useEffect(() => {
     if (!sessionId) return;
