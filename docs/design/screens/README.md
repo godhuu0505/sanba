@@ -18,7 +18,7 @@ Figma「📱 iPhone 13 Pro 操作フロー・正本」（fileKey `eI6QvvCEO021zp
 | 03 | 会話中・待機 | [`03-live-idle.md`](03-live-idle.md) | P1 | 部分実装（状態表示のみ） |
 | 04 | 会話中・発話中（音声入力） | [`04-live-speaking.md`](04-live-speaking.md) | P1 | 部分実装（波形のみ） |
 | 05 | 会話中・検知（音声の結果） | [`05-detection.md`](05-detection.md) | **P0** | 未実装（核の検知UI） |
-| 06 | 素材を渡す（バイナリ入力フォーム） | [`06-material.md`](06-material.md) | **P0** | API有・UI無（quick win） |
+| 06 | 素材を渡す（バイナリ入力フォーム） | [`06-material.md`](06-material.md) | **P0** | UI無・画像/動画は API 拡張込みの作業（画面共有のみ既存 LiveKit で動く） |
 | 07 | アップロード中 | [`07-uploading.md`](07-uploading.md) | P1 | 未実装（進捗イベント要） |
 | 08 | 解析結果 | [`08-analysis.md`](08-analysis.md) | **P0** | 未実装（最大ギャップ） |
 | 09 | 結果（要件絵巻） | [`09-scroll.md`](09-scroll.md) | **P0** | 未実装（要件ボード） |
