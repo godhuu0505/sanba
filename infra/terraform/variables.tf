@@ -138,16 +138,17 @@ variable "dns_managed_zone_name" {
   description = "Cloud DNS managed zone resource name (used only when manage_dns = true)."
 }
 
-# 管理ゾーンの DNSSEC 状態。新規作成なら既定 "off"。Cloud Domains が自動作成した DNSSEC 有効ゾーンを
-# import して使う場合は "on" にする (そうしないと Terraform が DNSSEC を無効化しようとして apply が
-# 失敗、または DS と不整合で名前解決が壊れる)。
+# 管理ゾーンの DNSSEC 状態。Cloud Domains が自動作成した DNSSEC 有効ゾーンを import する場合は "on"。
+# 明示的に DNSSEC を無効化するなら "off"。移行中ゾーンは "transfer"。
+# 未設定 (null / 空文字) の場合は dnssec_config ブロックを送らない。
+# これにより DNSSEC 有効ゾーンへの apply は GCP が 400 で止める元のフェイルセーフ動作を維持する。
 variable "dns_dnssec_state" {
   type        = string
-  default     = "off"
-  description = "DNSSEC state of the managed zone (\"off\" for a fresh zone; \"on\" to match a Cloud Domains zone with DNSSEC enabled)."
+  default     = null
+  description = "DNSSEC state of the managed zone: \"on\" (Cloud Domains zone), \"off\" (explicit disable), \"transfer\" (migration), or null/empty (omit block; fail-safe: GCP returns 400 if zone has DNSSEC enabled)."
   validation {
-    condition     = contains(["off", "on"], var.dns_dnssec_state)
-    error_message = "dns_dnssec_state must be \"off\" or \"on\"."
+    condition     = var.dns_dnssec_state == null || contains(["", "off", "on", "transfer"], var.dns_dnssec_state)
+    error_message = "dns_dnssec_state must be \"off\", \"on\", \"transfer\", or omitted."
   }
 }
 
