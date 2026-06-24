@@ -171,8 +171,8 @@ def join_session(
             raise HTTPException(status_code=403, detail=f"invalid invite: {exc}") from exc
         session_id, role = invite.session_id, invite.role
 
-    # 検証済み identity に束ねる: self-申告名ではなく Google の sub を出所にする。
-    identity = f"{role}-{user.sub[:8]}"
+    # 検証済み identity に束ねる: sub は metadata で追跡し、nonce で衝突を防ぐ。
+    identity = f"{role}-{user.sub[:8]}-{uuid.uuid4().hex[:4]}"
     display_name = req.participant_name or user.name
     metadata = json.dumps({"role": role, "sub": user.sub, "email": user.email})
     try:

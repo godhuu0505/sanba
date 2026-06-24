@@ -75,6 +75,7 @@ export function useGoogleAuth(): GoogleAuth {
   const devMode = CLIENT_ID === "";
   const [credential, setCredential] = useState<string | null>(null);
   const [devLoggedIn, setDevLoggedIn] = useState(false);
+  const [renderCount, setRenderCount] = useState(0);
   const buttonRef = useRef<HTMLDivElement | null>(null);
 
   const onCredential = useCallback((res: CredentialResponse) => {
@@ -115,12 +116,13 @@ export function useGoogleAuth(): GoogleAuth {
       cancelled = true;
       script?.removeEventListener("load", setup);
     };
-  }, [devMode, onCredential]);
+  }, [devMode, onCredential, renderCount]);
 
   const devSignIn = useCallback(() => setDevLoggedIn(true), []);
   const signOut = useCallback(() => {
     setCredential(null);
     setDevLoggedIn(false);
+    setRenderCount((c) => c + 1);
     if (!devMode) window.google?.accounts.id.disableAutoSelect();
   }, [devMode]);
 
