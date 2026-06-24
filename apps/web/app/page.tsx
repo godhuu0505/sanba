@@ -28,20 +28,26 @@ export default function Home() {
     try {
       setError(null);
       // Owner flow for the demo: create a session (with consent, issue #10),
-      // optionally register reference material (RAG grounding, #6), then redeem
-      // the role invite (#8). 本人確認は Google ログイン (ADR-0012)。
+      // redeem the role invite (#8) to get a join 済みトークン, then register
+      // reference material (RAG grounding, #6) using that token. context 投稿は
+      // 契約 §4 で参加者限定（session_token 必須）なので join 後に行う。
+      // 本人確認は Google ログイン (ADR-0012)。
       const session = await createSession([role], consent, auth.credential);
-      if (context.trim()) {
-        await addSessionContext(session.session_id, context, "貼り付け資料");
-      }
       const invite = session.invites[role];
-      setConn(
-        await joinSession({
-          invite,
-          participantName: name || auth.profile?.name || "ゲスト",
-          idToken: auth.credential,
-        }),
-      );
+      const conn = await joinSession({
+        invite,
+        participantName: name || auth.profile?.name || "ゲスト",
+        idToken: auth.credential,
+      });
+      if (context.trim()) {
+        await addSessionContext(
+          conn.session_id,
+          context,
+          conn.session_token,
+          "貼り付け資料",
+        );
+      }
+      setConn(conn);
     } catch (e) {
       setError(String(e));
     }

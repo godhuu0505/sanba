@@ -188,24 +188,41 @@ def create_session(
 
 
 @app.post("/api/sessions/{session_id}/context", response_model=ContextResponse)
-def add_context(session_id: str, req: ContextRequest) -> ContextResponse:
-    """Register reference text for a session; chunks go to RAG grounding."""
+def add_context(
+    session_id: str,
+    req: ContextRequest,
+    access: SessionAccess = Depends(require_session_access),
+) -> ContextResponse:
+    """Register reference text for a session; chunks go to RAG grounding.
+
+    認可（契約 §4）: join 済みセッショントークン必須。これが無いと匿名で任意
+    session_id の RAG グラウンディングを汚染できてしまう（参加者以外の書き込み禁止）。
+    """
     if len(req.text) > settings.max_context_chars:
         raise HTTPException(status_code=413, detail="context too large")
     chunks = chunk_text(req.text)
     n = _indexer.index_context(session_id, chunks, req.source_name)
+    log.info("context_indexed", session=session_id, chunks=n, sub=access.sub)
     return ContextResponse(indexed_chunks=n)
 
 
 @app.post("/api/sessions/{session_id}/context/file", response_model=ContextResponse)
-async def add_context_file(session_id: str, file: UploadFile = File(...)) -> ContextResponse:
-    """Register an uploaded document (txt/md/pdf) as session context."""
+async def add_context_file(
+    session_id: str,
+    file: UploadFile = File(...),
+    access: SessionAccess = Depends(require_session_access),
+) -> ContextResponse:
+    """Register an uploaded document (txt/md/pdf) as session context.
+
+    認可（契約 §4）: join 済みセッショントークン必須（text 版と同じく参加者限定）。
+    """
     raw = await file.read()
     if len(raw) > settings.max_context_chars * 4:  # bytes guard (~utf-8 worst case)
         raise HTTPException(status_code=413, detail="file too large")
     text = extract_text_from_upload(file.filename or "upload", raw)
     chunks = chunk_text(text)
     n = _indexer.index_context(session_id, chunks, file.filename or "upload")
+    log.info("context_file_indexed", session=session_id, chunks=n, sub=access.sub)
     return ContextResponse(indexed_chunks=n)
 
 
