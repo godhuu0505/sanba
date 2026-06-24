@@ -24,11 +24,13 @@ locals {
     "elasticsearch-api-key" = var.elasticsearch_api_key
   }
   # 値そのものは sensitive だが「設定されているか否か」は秘匿情報ではない。空判定だけ
-  # nonsensitive() で取り出し、キー集合 (= secret_keys / for_each) を非 sensitive に保つ。
+  # nonsensitive() で取り出し、値のフィルタに使う。
   optional_secrets = { for k, v in local.optional_secret_values : k => v if nonsensitive(v) != "" }
 
   # 作成するシークレットのキー集合 (常設 + 任意)。plan 時に確定する。
-  secret_keys = toset(concat(["session-signing-secret"], keys(local.optional_secrets)))
+  # sensitive な map から keys() を取るのではなく optional_secret_values から直接導出し、
+  # for_each に渡すセットが非 sensitive であることを明示する。
+  secret_keys = toset(concat(["session-signing-secret"], [for k, v in local.optional_secret_values : k if nonsensitive(v) != ""]))
 
   # 各サービスが参照する ENV名 => シークレットキー (存在するものだけ)。
   api_secret_env = { for env, key in {

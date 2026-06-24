@@ -226,6 +226,7 @@ gsutil versioning set on "gs://${PROJECT_ID}-tfstate"
 
 **(b) Terraform 用 SA（apply は LB/DNS/Secret/IAM を作るので deploy 用より広い権限）**
 ```bash
+export BILLING_ACCOUNT=XXXXXX-XXXXXX-XXXXXX  # gcloud beta billing accounts list で確認
 gcloud iam service-accounts create tf-deployer --display-name="Terraform Deployer"
 export TF_SA=tf-deployer@${PROJECT_ID}.iam.gserviceaccount.com
 for ROLE in roles/run.admin roles/compute.admin roles/dns.admin \
@@ -250,7 +251,7 @@ gcloud iam service-accounts add-iam-policy-binding "$TF_SA" \
 
 | 種別 | 置き場所 | 例 |
 |---|---|---|
-| 非機微の設定 | **GitHub → Variables（`vars.*`）** | `GCP_PROJECT_ID` / `GCP_REGION` / `TF_STATE_BUCKET`（=`<project>-tfstate`）/ `PROD_DOMAIN`（`sanba.com`）/ `LIVEKIT_URL` / `ELASTICSEARCH_URL` / `OTEL_EXPORTER_OTLP_ENDPOINT` / `BILLING_ACCOUNT` |
+| 非機微の設定 | **GitHub → Variables（`vars.*`）** | `GCP_PROJECT_ID` / `GCP_REGION` / `TF_STATE_BUCKET`（=`<project>-tfstate`）/ `PROD_DOMAIN`（`sanba.com`）/ `LIVEKIT_URL` / `ELASTICSEARCH_URL` / `OTEL_EXPORTER_OTLP_ENDPOINT` / `BILLING_ACCOUNT` / `AGENT_MIN_INSTANCES`（既定 `0`。LiveKit 接続後は `1` に設定） |
 | CI 認証 | **GitHub → Secrets（`secrets.*`）** | `WIF_PROVIDER` / `TF_DEPLOY_SA`（=`tf-deployer@…`。未設定なら `DEPLOY_SA` にフォールバック） |
 | アプリの機微値 | **GitHub → Secrets（`secrets.*`）→ `TF_VAR_*` で Terraform に渡す** | `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` / `ELASTICSEARCH_API_KEY` / `GCP_GOOGLE_API_KEY`（`use_vertexai=false` のときのみ）/ `SESSION_SIGNING_SECRET`（空可・自動生成） |
 | ランタイム参照の真実 | **GCP Secret Manager**（`secrets.tf` が作成） | Cloud Run はここを参照。値の出所は上の `TF_VAR_*`。`apply` で同期される |
