@@ -41,10 +41,11 @@ else
   log "npm または apps/web が無いため Web 依存関係をスキップ"
 fi
 
-# --- ローカル開発用の .env を用意（未作成時のみ）---
-if [ ! -f .env ] && [ -f .env.example ]; then
-  log ".env を .env.example から作成"
-  cp .env.example .env
+# --- ローカル開発用の .env.local を用意（未作成時のみ）---
+# .env.example はそのまま `just up` が通るローカル既定値が入っているため、コピーで設定が揃う。
+if [ ! -f .env.local ] && [ -f .env.example ]; then
+  log ".env.local を .env.example から作成"
+  cp .env.example .env.local
 fi
 
 log "セットアップ完了"
