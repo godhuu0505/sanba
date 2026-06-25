@@ -9,7 +9,7 @@ Figma「📱 iPhone 13 Pro 操作フロー・正本」（fileKey `eI6QvvCEO021zp
 >
 > **会話フェーズ（03〜08）改訂 v2（2026-06-25）**: 会話を止めずに情報面を横断する **3 タブ
 > （会話履歴 / 参考資料 / 要件絵巻）** へ再構成。詳細 [`../conversation-experience-v2.md`](../conversation-experience-v2.md)、
-> 決定 [ADR-0018](../adr/0018-conversation-experience-v2.md)（ADR-0017 navigation を一部改訂）。
+> 決定 [ADR-0018](../../adr/0018-conversation-experience-v2.md)（ADR-0017 navigation を一部改訂）。
 > 旧票（live-idle / live-speaking / detection / material / uploading / analysis / scroll / complete）は
 > v2 票へ統合（git 履歴に残置）。
 
@@ -53,6 +53,6 @@ Figma「📱 iPhone 13 Pro 操作フロー・正本」（fileKey `eI6QvvCEO021zp
 - **機能名で書く**：矛盾検知（`contradiction_detector`）/ 抜け検知（`scope_specialist`・`nfr_specialist`）/
   インタビュー統括（`interview_lead`）。
 - **表示コピーは全面古語**（デモ演出）。ただし**機能名・契約・コードは機能名**で書き、**a11y ラベルは現代語**
-  （[ADR-0017](../adr/0017-figma-canonical-onepath-archaic-copy.md)）。色トークン: **矛盾=緋 `#D2564B` / 抜け=黄土 `#E0A93B`**
+  （[ADR-0017](../../adr/0017-figma-canonical-onepath-archaic-copy.md)）。色トークン: **矛盾=緋 `#D2564B` / 抜け=黄土 `#E0A93B`**
   （意味↔色のマッピング・[`../README.md`](../README.md) §4 由来）。**色のみに依存せずラベル＋アイコン併記**。
 - アクセシビリティ：親指操作（タップ領域44px以上）、字幕の可読性、状態色は色のみに依存しない（アイコン/ラベル併記）。

@@ -3,7 +3,7 @@
 - **優先度**: P1（会話フェーズの入口・前提）
 - **Figma 正本（fileKey `eI6QvvCEO021zpdMmxr8Iq` / canvas `31:2`）**:
   03-0 開始前 `139:2` / 03-1 接続中 `139:79` / 03-2 録音許可 `139:156` / 03-3 失敗系 `139:233`
-- **仕様**: [conversation-experience-v2.md §3](../conversation-experience-v2.md) / [ADR-0018](../adr/0018-conversation-experience-v2.md)
+- **仕様**: [conversation-experience-v2.md §3](../conversation-experience-v2.md) / [ADR-0018](../../adr/0018-conversation-experience-v2.md)
 
 ## 目的
 準備（02）から会話フェーズへ橋渡しする。**接続とマイク許可を確実に取り**、失敗時は理由提示＋復帰導線を出す。
@@ -23,9 +23,10 @@
 タイムアウト・再接続中は 03-1 のバリエーション。
 
 ## 連携
-- 接続: LiveKit ルーム参加（[ADR-0006](../adr/0006-cloudrun-and-livekit.md)）。トークン発行は API（[realtime-contract](../realtime-contract.md)）。
+- 接続: LiveKit ルーム参加（[ADR-0006](../../adr/0006-cloudrun-and-livekit.md)）。トークン発行は API（[realtime-contract](../realtime-contract.md)）。
 - 権限: 端末マイク権限。拒否時は OS 設定への誘導文言（再要求は OS 制約に従う）。
-- 認証: 本人確認は Google ログイン（[ADR-0012](../adr/0012-google-login.md)）。**未ログインで保護ルート（`/` 準備・会話フェーズ）へアクセスした場合は `/login` へリダイレクト**（401＝未ログイン）。ログイン成功後は**元の遷移先（準備/会話）へ復帰**。管理者でない場合は 403（94 アクセスゲート）。
+- 認証: 本人確認は Google ログイン（[ADR-0012](../../adr/0012-google-login.md)）。**未ログインで保護ルート（`/` 準備・会話フェーズ）へアクセスした場合は `/login` へリダイレクト**（401＝未ログイン）。ログイン成功後は**元の遷移先（準備/会話）へ復帰**。管理者でない場合は 403（94 アクセスゲート）。
+- テキスト入力モードでの発話送信契約は未定義（[#185](https://github.com/godhuu0505/sanba/issues/185)）。
 
 ## 受け入れ基準（AC）
 - [ ] 03-0 にゴール/役割/参考資料のサマリが出る（02 の入力を引き継ぐ）。
