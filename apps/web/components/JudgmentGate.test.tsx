@@ -2,7 +2,19 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import type { Detection } from "@/lib/realtime/types";
+
 import { JudgmentGate } from "./JudgmentGate";
+
+const det = (over: Partial<Detection>): Detection => ({
+  id: "d1",
+  kind: "contradiction",
+  summary: "並び順の両論",
+  refs: [],
+  detector: "x",
+  resolved: false,
+  ...over,
+});
 
 function setup(over: Partial<React.ComponentProps<typeof JudgmentGate>> = {}) {
   const cb = { onBack: vi.fn(), onForceEnd: vi.fn(), onConfirm: vi.fn() };
@@ -35,5 +47,22 @@ describe("JudgmentGate（確定ゲート）", () => {
     expect(cb.onBack).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole("button", { name: /未解消のまま/ }));
     expect(cb.onForceEnd).toHaveBeenCalledTimes(1);
+  });
+
+  it("未解消の内訳を渡すと項目を表示し、会話で確認で onJump(検知id)", () => {
+    const onJump = vi.fn();
+    render(
+      <JudgmentGate
+        unresolved={1}
+        detections={[det({ id: "d3", kind: "contradiction" })]}
+        onJump={onJump}
+        onBack={vi.fn()}
+        onForceEnd={vi.fn()}
+        onConfirm={vi.fn()}
+      />,
+    );
+    expect(screen.getByText(/矛盾/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /会話で確認/ }));
+    expect(onJump).toHaveBeenCalledWith("d3");
   });
 });

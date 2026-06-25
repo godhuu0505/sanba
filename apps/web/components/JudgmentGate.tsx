@@ -4,17 +4,32 @@
 // 仕様: docs/design/conversation-experience.md §7 / screens/07-judgment.md。
 // 未解消が 1 件でも残れば確定不可（戻って解く / 未解消のまま終う）。0 件なら確定可。
 
+import type { Detection } from "@/lib/realtime/types";
+
+import { DeepDiveList } from "./DeepDiveList";
+
 export interface JudgmentGateProps {
   unresolved: number;
+  /** 未解消の内訳（矛盾/抜け）。渡すと件数だけでなく項目＋戻り先を表示する。 */
+  detections?: Detection[];
   /** 問答に戻って解く。 */
   onBack: () => void;
   /** 未解消のまま終う（不可逆・確定されない）。 */
   onForceEnd: () => void;
   /** 要件を確定する（全解消時のみ）。 */
   onConfirm: () => void;
+  /** 内訳項目の「会話で確認」押下（該当検知へ）。 */
+  onJump?: (detectionId: string) => void;
 }
 
-export function JudgmentGate({ unresolved, onBack, onForceEnd, onConfirm }: JudgmentGateProps) {
+export function JudgmentGate({
+  unresolved,
+  detections,
+  onBack,
+  onForceEnd,
+  onConfirm,
+  onJump,
+}: JudgmentGateProps) {
   const resolved = unresolved === 0;
 
   return (
@@ -53,6 +68,11 @@ export function JudgmentGate({ unresolved, onBack, onForceEnd, onConfirm }: Judg
               ひとつでも残れば、要件は確定できませぬ。
             </p>
           </div>
+          {detections && detections.length > 0 && onJump && (
+            <div className="mt-3 w-full">
+              <DeepDiveList detections={detections} onJump={onJump} />
+            </div>
+          )}
           <div className="flex-1" />
           <button
             type="button"
