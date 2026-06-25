@@ -54,3 +54,34 @@ export function selectStats(state: SessionState): SessionStats {
 }
 
 export { PRIORITY_ORDER };
+
+// ── ミニ状況（常時表示）─────────────────────────────────────────────
+// 仕様: docs/design/conversation-experience-v2.md §2（◆要件 N ・ ⚠未確定 N ・ 📎資料 N）。
+
+/** selectMiniStatus が必要とする SessionState の構造的サブセット（テスト容易性のため）。 */
+export interface MiniStatusInput {
+  requirements: readonly unknown[];
+  detections: readonly { resolved: boolean }[];
+  analysis: readonly { pct: number }[];
+}
+
+export interface MiniStatus {
+  /** ◆要件 N（要件絵巻の件数）。 */
+  requirements: number;
+  /** ⚠未確定 N（未解消の検知＝深掘り対象）。 */
+  unresolved: number;
+  /** 📎資料 N（投入済み素材）。 */
+  materials: number;
+  /** 解析中の素材があるか（pct < 100）。 */
+  analyzing: boolean;
+}
+
+/** 会話シェル上部のミニ状況を導出する。 */
+export function selectMiniStatus(s: MiniStatusInput): MiniStatus {
+  return {
+    requirements: s.requirements.length,
+    unresolved: s.detections.filter((d) => !d.resolved).length,
+    materials: s.analysis.length,
+    analyzing: s.analysis.some((a) => a.pct < 100),
+  };
+}
