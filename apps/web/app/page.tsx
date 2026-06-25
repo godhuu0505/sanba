@@ -131,7 +131,7 @@ export default function Home() {
               {ROLES.map((r) => {
                 const selected = role === r.value;
                 return (
-                  <Chip key={r.value} asChild tone="gold" size="md" selected={selected}>
+                  <Chip key={r.value} asChild tone="gold" size="md" solid={selected}>
                     <button
                       type="button"
                       role="radio"
