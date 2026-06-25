@@ -95,13 +95,13 @@
 | 用語 | 英語 / 識別子 | 定義 | 出典 |
 |---|---|---|---|
 | 検知 | detection / `Detection` | 会話・要件から見つけた問題提起。web 内部で `(type,id)` 冪等・`seq` 順に正規化する。 | [types.ts](../apps/web/lib/realtime/types.ts) |
-| 矛盾 | contradiction / `detection.contradiction` | 過去の発言・確定要件と食い違う回答。色＝**緋**。選択肢を添えて人に裁定を返せる。 | [events.py](../apps/agent/src/sanba_agent/events.py) / [screens/05-detection.md](design/screens/05-detection.md) |
+| 矛盾 | contradiction / `detection.contradiction` | 過去の発言・確定要件と食い違う回答。色＝**緋**。選択肢を添えて人に裁定を返せる。 | [events.py](../apps/agent/src/sanba_agent/events.py) / [screens/04-conversation.md](design/screens/04-conversation.md) |
 | 抜け | gap / `detection.gap` | まだ聞けていない／曖昧な必須論点。色＝**黄土**。`category` を持つ。 | [events.py](../apps/agent/src/sanba_agent/events.py) |
 | 検知器 | `detector` | 検知を出したエージェントの機能名。`contradiction_detector` / `scope_specialist` / `nfr_specialist`。 | [events.py](../apps/agent/src/sanba_agent/events.py) |
 | 根拠参照 | `refs` | 検知の根拠となった `utterance_id` の配列。発話までたどれる導線を UI に置く。 | [realtime-contract.md §3](design/realtime-contract.md) |
 | 選択肢 | options / `DetectionOption` | 矛盾カードのボタン（`label` / `value`）。タップで `user.selection` を返す。 | [types.ts](../apps/web/lib/realtime/types.ts) |
 | 解消 | resolution / `detection.resolved` | 検知が片付いた状態遷移。`user_selected`（ユーザー選択）／`agent_resolved`（自動解消）。 | [events.py](../apps/agent/src/sanba_agent/events.py) |
-| 検知ボトムシート | detection sheet | 検知時だけ peek→展開でせり上がる最小割り込み UI（`hidden→peek→expanded→dismissed/resolved`）。 | [screens/05-detection.md](design/screens/05-detection.md) / [DetectionSheet.tsx](../apps/web/components/DetectionSheet.tsx) |
+| 検知ボトムシート | detection sheet | 検知時だけ peek→展開でせり上がる最小割り込み UI（`hidden→peek→expanded→dismissed/resolved`）。 | [screens/04-conversation.md](design/screens/04-conversation.md) / [DetectionSheet.tsx](../apps/web/components/DetectionSheet.tsx) |
 | 検知率 | detection rate | 抜け漏れ／矛盾を捉えた割合。製品価値＝主指標（言葉×言葉に限定、Before/After + Langfuse 回帰）。 | [ADR-0008](adr/0008-product-concept.md) #6 / [ADR-0005](adr/0005-llm-judge-eval-loop.md) |
 
 ---
@@ -118,7 +118,7 @@
 | 優先度 | `priority` / `Priority` / MoSCoW | Must / Should / Could / Won't の優先度分類。 | [models.py](../packages/sanba_shared/src/sanba_shared/models.py) |
 | 確信度 | `confidence` | 0–1 の確からしさ（既定 0.7）。下地（黄土）から塗り起こす度合い。 | [models.py](../packages/sanba_shared/src/sanba_shared/models.py) |
 | 引用 | citation / `citations` | 要件の根拠発話。モデルは `utterance_id` の配列、契約は `[{kind, ref}]` に整形して送る。 | [events.py](../apps/agent/src/sanba_agent/events.py) |
-| 要件ボード／要件絵巻 | requirement board / scroll | MoSCoW で構造化した成果物ビュー。Figma 演出名「要件絵巻」＝機能名「要件ボード」。 | [screens/09-scroll.md](design/screens/09-scroll.md) / [RequirementScroll.tsx](../apps/web/components/RequirementScroll.tsx) |
+| 要件ボード／要件絵巻 | requirement board / scroll | MoSCoW で構造化した成果物ビュー。Figma 演出名「要件絵巻」＝機能名「要件ボード」。 | [screens/06-requirements-scroll.md](design/screens/06-requirements-scroll.md) / [RequirementScroll.tsx](../apps/web/components/RequirementScroll.tsx) |
 
 > ⚠️ **状態語の二系統に注意**（要対応の不一致）:
 > - **リアルタイム契約 / web 型**: `status` = `draft` | `confirmed`（会話中の確定状態）。
@@ -134,7 +134,7 @@
 
 | 用語 | 英語 / 識別子 | 定義 | 出典 |
 |---|---|---|---|
-| 素材を渡す | provide material | 画像・動画・画面共有・カメラ撮影で情報を渡す入口（Figma 08）。 | Figma `40:262` / [screens/06-material.md](design/screens/06-material.md) |
+| 素材を渡す | provide material | 画像・動画・画面共有・カメラ撮影で情報を渡す入口（v2 = 05-2 手段選択シート）。 | Figma `148:95` / [screens/05-materials.md](design/screens/05-materials.md) |
 | アセット | asset / `asset_id` / `asset_kind` | アップロードされた素材。安定 `asset_id` で解析イベントを行に対応付ける。種別は `image` / `video`。 | [api.ts](../apps/web/lib/api.ts) |
 | 資料（コンテキスト） | context / `kind="context"` | インタビュー前に登録する既存資料（PRD 草案・議事録）。同じ ES インデックスに入れ、既出論点は質問せず確認に切り替える。 | [ingestion.py](../apps/api/src/sanba_api/ingestion.py) |
 | 解析進捗 | `analysis.progress` | 素材解析の進捗（`pct` と人間可読 `stage`：領域検出／OCR／突合）。 | [events.py](../apps/agent/src/sanba_agent/events.py) |

@@ -1,38 +1,39 @@
-# 画面別要件票 — Figma モバイル正本（全10画面）
+# 画面別要件票 — Figma モバイル正本
 
 Figma「📱 iPhone 13 Pro 操作フロー・正本」（fileKey `eI6QvvCEO021zpdMmxr8Iq` / node `31:2`）を**唯一の正本**とし、
-各画面を実装可能な粒度の要件票に落とす。1ファイル＝1画面、Figma と 1:1 で対応する。
+各画面を実装可能な粒度の要件票に落とす。**1ファイル＝1系**（会話フェーズは系内の状態を票に内包）、Figma と対応する。
 
-> スコープ（grill 2026-06-24）: 今回は**モバイル縦・一本道フロー**が正本。デスクトップ3分割は
-> [`../README.md`](../README.md) の「次フェーズ（デスクトップ拡張）」へ退避。本票は**ドキュメント・要件のみ**で、
-> apps の実装は別PR/Issue。リアルタイム前提は [`../realtime-contract.md`](../realtime-contract.md)。
+> スコープ（grill 2026-06-24）: **モバイル縦・一本道フロー**が正本。デスクトップ3分割は
+> [`../README.md`](../README.md) の「次フェーズ（デスクトップ拡張）」へ退避。リアルタイム前提は
+> [`../realtime-contract.md`](../realtime-contract.md)。
+>
+> **会話フェーズ（03〜08）改訂 v2（2026-06-25）**: 会話を止めずに情報面を横断する **3 タブ
+> （会話履歴 / 参考資料 / 要件絵巻）** へ再構成。詳細 [`../conversation-experience-v2.md`](../conversation-experience-v2.md)、
+> 決定 [ADR-0018](../adr/0018-conversation-experience-v2.md)（ADR-0017 navigation を一部改訂）。
+> 旧票（live-idle / live-speaking / detection / material / uploading / analysis / scroll / complete）は
+> v2 票へ統合（git 履歴に残置）。
 
 ## 一覧と優先度
 
 優先度は「核となる差別化 × 未実装ギャップ」で決める。P0=最優先（核かつ未実装）/ P1=必要 / P2=既存で軽微差分。
 
-| # | 画面 | ファイル | 優先度 | 現状 |
+| # | 系 | ファイル | 優先度 | 現状 |
 |---|---|---|---|---|
 | 01 | ホーム | [`01-home.md`](01-home.md) | P2 | 実装済（差分小） |
-| 02 | 準備（テキスト入力フォーム） | [`02-prepare.md`](02-prepare.md) | P1 | 実装済（役割/同意/資料を精緻化） |
-| 03 | 会話中・待機 | [`03-live-idle.md`](03-live-idle.md) | P1 | 部分実装（状態表示のみ） |
-| 04 | 会話中・発話中（音声入力） | [`04-live-speaking.md`](04-live-speaking.md) | P1 | 部分実装（波形のみ） |
-| 05 | 会話中・検知（音声の結果） | [`05-detection.md`](05-detection.md) | **P0** | 未実装（核の検知UI） |
-| 06 | 素材を渡す（バイナリ入力フォーム） | [`06-material.md`](06-material.md) | **P0** | UI無・画像/動画は API 拡張込みの作業（画面共有のみ既存 LiveKit で動く） |
-| 07 | アップロード中 | [`07-uploading.md`](07-uploading.md) | P1 | 未実装（進捗イベント要） |
-| 08 | 解析結果 | [`08-analysis.md`](08-analysis.md) | **P0** | 未実装（最大ギャップ） |
-| 09 | 結果（要件絵巻） | [`09-scroll.md`](09-scroll.md) | **P0** | 未実装（要件ボード） |
-| 10 | 完了（オーレ！） | [`10-complete.md`](10-complete.md) | P1 | 未実装（締め＋Issue化） |
+| 02 | 準備 | [`02-prepare.md`](02-prepare.md) | P1 | 実装済（精緻化） |
+| 03 | 会話開始（開始前/接続/許可/失敗） | [`03-conversation-start.md`](03-conversation-start.md) | P1 | 未実装 |
+| 04 | 会話履歴（音声・選択肢3モード・検知） | [`04-conversation.md`](04-conversation.md) | **P0** | 未実装（核） |
+| 05 | 参考資料（一覧/詳細/追加・背景解析） | [`05-materials.md`](05-materials.md) | **P0** | 未実装（核） |
+| 06 | 要件絵巻と深掘り（閲覧のみ） | [`06-requirements-scroll.md`](06-requirements-scroll.md) | **P0** | 未実装（核） |
+| 07 | 判定（確定ゲート） | [`07-judgment.md`](07-judgment.md) | P1 | 未実装（新規） |
+| 08 | 結果（産婆結果＋出力） | [`08-result.md`](08-result.md) | P1 | 未実装 |
 
-## フロー（正本）
+## フロー（正本 v2）
 
 ```
-01 ホーム
-   └─►02 準備 ──►03 待機 ⇄ 04 発話中 ──►05 検知（矛盾/抜け）
-                    │                          │
-                    └─►06 素材を渡す ─►07 アップロード中 ─►08 解析結果
-                                                              │
-                                                03/05/08 ─────┴─►09 要件絵巻 ─►10 完了（Issue化）
+01 ホーム → 02 準備 →
+  03 会話開始 → 04 会話履歴 ⇄ 05 参考資料 ⇄ 06 要件絵巻 → 07 判定 → 08 結果
+                └ 04〜06 は「会話を止めない」3タブの同一シェル（素材は背景解析で随時合流）
 ```
 
 ## 要件票のフォーマット
@@ -51,6 +52,7 @@ Figma「📱 iPhone 13 Pro 操作フロー・正本」（fileKey `eI6QvvCEO021zp
 
 - **機能名で書く**：矛盾検知（`contradiction_detector`）/ 抜け検知（`scope_specialist`・`nfr_specialist`）/
   インタビュー統括（`interview_lead`）。
-- **緋/黄土/侍/産婆・古語ボイスはデモ演出**。コピーは現代日本語で明瞭に。色トークン（緋=矛盾/黄土=抜け）は
-  [`../README.md`](../README.md) §4 のデザインシステム由来で、**意味↔色のマッピング**として使う。
+- **表示コピーは全面古語**（デモ演出）。ただし**機能名・契約・コードは機能名**で書き、**a11y ラベルは現代語**
+  （[ADR-0017](../adr/0017-figma-canonical-onepath-archaic-copy.md)）。色トークン: **矛盾=緋 `#D2564B` / 抜け=黄土 `#E0A93B`**
+  （意味↔色のマッピング・[`../README.md`](../README.md) §4 由来）。**色のみに依存せずラベル＋アイコン併記**。
 - アクセシビリティ：親指操作（タップ領域44px以上）、字幕の可読性、状態色は色のみに依存しない（アイコン/ラベル併記）。
