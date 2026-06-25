@@ -26,6 +26,7 @@
 - 接続: LiveKit ルーム参加（[ADR-0006](../../adr/0006-cloudrun-and-livekit.md)）。トークン発行は API（[realtime-contract](../realtime-contract.md)）。
 - 権限: 端末マイク権限。拒否時は OS 設定への誘導文言（再要求は OS 制約に従う）。
 - 認証: 02 までで Google ログイン済み（[ADR-0012](../../adr/0012-google-login.md)）。
+- テキスト入力モードでの発話送信契約は未定義（[#185](https://github.com/godhuu0505/sanba/issues/185)）。
 
 ## 受け入れ基準（AC）
 - [ ] 03-0 にゴール/役割/参考資料のサマリが出る（02 の入力を引き継ぐ）。
