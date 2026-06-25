@@ -1,21 +1,21 @@
-# 会話体験 v2 — 画面設計 & UI/UX 仕様
+# 会話体験 — 画面設計 & UI/UX 仕様
 
 > 音声会話を**止めずに**、いま決まっていること（要件絵巻）・素材・履歴をタブで横断しながら、
 > 抜け・矛盾を解消して要件を「産む」までの会話フェーズの画面・相互作用仕様。
 
-- **ステータス**: **Accepted**（[ADR-0018](../adr/0018-conversation-experience-v2.md) で確定・2026-06-25 / 実装未着手）
+- **ステータス**: **Accepted**（[ADR-0018](../adr/0018-conversation-experience.md) で確定・2026-06-25 / 実装未着手）
 - **対象フェーズ**: 03 会話開始 〜 08 結果（旧 05〜12 を再構成）
 - **正本（UI/UX）**: Figma `eI6QvvCEO021zpdMmxr8Iq` / canvas `31:2`
   - 一本道（`y≈3200`）: 03〜08、状態バリエーション（`y≈4150`）
 - **関連**: [ADR-0017](../adr/0017-figma-canonical-onepath-archaic-copy.md)（一本道・古語・a11y現代語）/
-  [ADR-0018](../adr/0018-conversation-experience-v2.md)（本設計の決定記録）/
+  [ADR-0018](../adr/0018-conversation-experience.md)（本設計の決定記録）/
   [realtime-contract.md](realtime-contract.md) / [ubiquitous-language.md](../ubiquitous-language.md) /
   旧 [screens/](screens/)（現行実装の票）
 
 > ⚠️ **ADR-0017 との関係**: ADR-0017 は「`SessionView` のタブ切替を廃止し一本道に」とした。
-> 本 v2 は**会話フェーズ内に 3 タブ（会話履歴 / 参考資料 / 要件絵巻）を再導入**する。
+> 本設計は**会話フェーズ内に 3 タブ（会話履歴 / 参考資料 / 要件絵巻）を再導入**する。
 > ただしマクロのフローは一本道（03→…→08）を維持し、タブは「音声を止めずに情報面を横断する」ための
-> 同一シェル内サブ切替に限定する。これは [ADR-0018](../adr/0018-conversation-experience-v2.md)（**Accepted・2026-06-25**）で確定済み。
+> 同一シェル内サブ切替に限定する。これは [ADR-0018](../adr/0018-conversation-experience.md)（**Accepted・2026-06-25**）で確定済み。
 
 ---
 
@@ -186,7 +186,7 @@
 - **コピー = 全面古語**（演出）。ただし**機能名・契約・コードは機能名**（ubiquitous-language §13 対応表）。
 - **a11y は現代語で担保**（ADR-0017）: `aria-label`・状態のラベル＋アイコン併記・WCAG AA。
 
-> ⚠️ **トークン整合の TODO**: Figma v2 フレームは抜け/未確定に `#d2854b`(橙) を使用。正本トークン
+> ⚠️ **トークン整合の TODO**: Figma フレームは抜け/未確定に `#d2854b`(橙) を使用。正本トークン
 > **黄土 `#E0A93B`** に寄せる（実装時または磨きパスで統一）。
 
 ---
@@ -214,8 +214,8 @@
 ## 10. 旧 screens/ との関係・移行
 
 - 旧 03〜10 票（live-idle / live-speaking / detection / material / uploading / analysis / scroll / complete）は
-  **現行実装（タブ廃止・一本道）**の票で、v2 票（[screens/](screens/)）へ統合済み（git 履歴に残置）。
-- v2 は**会話フェーズを 3 タブのシェルに再構成**するため、05〜10 の IA を更新済み（screens/ は v2 へ改訂・ADR-0018 Accepted）。
+  **現行実装（タブ廃止・一本道）**の票で、現行票（[screens/](screens/)）へ統合済み（git 履歴に残置）。
+- 現行設計は**会話フェーズを 3 タブのシェルに再構成**するため、05〜10 の IA を更新済み（screens/ は 新設計へ改訂・ADR-0018 Accepted）。
 - 旧 Figma フレーム（旧 05〜12）は Figma ページ「🗄 旧フロー archive (v1)」へ退避済み（メインキャンバスから分離）。
   ※ 旧 05〜11 は本セッション中に消失しており、退避時点で実在したのは「12 完了」のみ。**必要なら Figma 版履歴（File ▸ Show version history）で復元可**。
 
@@ -226,6 +226,6 @@
 - [x] **ADR-0017 navigation を会話フェーズで改訂・確定**（ADR-0018 Accepted・2026-06-25）
 - [x] **最小構成 → 詳細の近道（chip 長押し）を採用**（§4・実演 Figma `167:2`）
 - [x] **「比較」モードを追加**（詳細から切替・Figma `165:2`・§4）
-- [x] **黄土トークン `#E0A93B` へ統一**（Figma v2 全フレーム＋docs）
+- [x] **黄土トークン `#E0A93B` へ統一**（Figma 全フレーム＋docs）
 - [x] **旧 05〜12 フレームを archive ページへ退避**（Figma「🗄 旧フロー archive (v1)」。退避時点で実在は「12 完了」のみ・旧05〜11は要 Figma 版履歴復元）
-- [ ] `apps/web`（`SessionView`/`DetectionSheet`）への実装反映（screens/ は v2 改訂済み）
+- [ ] `apps/web`（`SessionView`/`DetectionSheet`）への実装反映（screens/ は 改訂済み）

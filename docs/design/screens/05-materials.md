@@ -2,7 +2,7 @@
 
 - **優先度**: **P0**（マルチモーダル入力・差別化）
 - **Figma 正本**: 一覧 `135:80` / 詳細 `148:2` / 手段選択シート `148:95`
-- **仕様**: [conversation-experience-v2.md §3,§6](../conversation-experience-v2.md) / [ADR-0004](../../adr/0004-multimodal-input.md) / [ADR-0018](../../adr/0018-conversation-experience-v2.md)
+- **仕様**: [conversation-experience.md §3,§6](../conversation-experience.md) / [ADR-0004](../../adr/0004-multimodal-input.md) / [ADR-0018](../../adr/0018-conversation-experience.md)
 
 ## 目的
 画像/動画/画面/資料を**随時**投入し、**会話を止めずに背景解析**して要件絵巻へ合流させる。投入済み資料と解析状態をいつでも確認。
@@ -15,7 +15,7 @@
 | 05-1 詳細 | プレビュー（画像/動画/画面/カメラ 種別別）・メタ（名前/サイズ/✓解析済）・**抽出要件チップ**・**言葉×画の矛盾**カード（緋）「会話で確認・要件に起票」。PDF は現行 API がテキスト経路（`indexed_chunks`）のみで `asset_id` 未発行のためプレビュー不可・テキスト抽出チップのみ表示。 |
 | 05-2 追加 | 暗幕＋ボトムシート「資料の追加方法を選ぶ」: 📷カメラ / 📤アップロード / 🖥 画面を共有（[ADR-0004](../../adr/0004-multimodal-input.md) 承認済み LiveKit 映像トラック）/ キャンセル。☁️ Google ドライブは ADR-0007 で未承認・別チケット対応。 |
 
-## パイプライン（[§6](../conversation-experience-v2.md)）
+## パイプライン（[§6](../conversation-experience.md)）
 `05-2 手段選択 → アップロード(05-0 に進捗%) → 背景解析(領域検出/OCR/突合) → 05-1 詳細・06 要件絵巻へ反映 → 矛盾は 04 の選択肢カード(緋)で起票`。
 進捗はミニ状況「📎資料 N（解析中…）」にも反映。会話は止めない。
 

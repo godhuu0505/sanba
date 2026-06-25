@@ -3,7 +3,7 @@
 - **優先度**: P1（会話フェーズの入口・前提）
 - **Figma 正本（fileKey `eI6QvvCEO021zpdMmxr8Iq` / canvas `31:2`）**:
   03-0 開始前 `139:2` / 03-1 接続中 `139:79` / 03-2 録音許可 `139:156` / 03-3 失敗系 `139:233`
-- **仕様**: [conversation-experience-v2.md §3](../conversation-experience-v2.md) / [ADR-0018](../../adr/0018-conversation-experience-v2.md)
+- **仕様**: [conversation-experience.md §3](../conversation-experience.md) / [ADR-0018](../../adr/0018-conversation-experience.md)
 
 ## 目的
 準備（02）から会話フェーズへ橋渡しする。**接続とマイク許可を確実に取り**、失敗時は理由提示＋復帰導線を出す。

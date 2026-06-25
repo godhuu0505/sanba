@@ -2,7 +2,7 @@
 
 - **優先度**: **P0**（成果物・差別化）
 - **Figma 正本**: `135:157`
-- **仕様**: [conversation-experience-v2.md §3,§7](../conversation-experience-v2.md) / [ADR-0018](../../adr/0018-conversation-experience-v2.md)
+- **仕様**: [conversation-experience.md §3,§7](../conversation-experience.md) / [ADR-0018](../../adr/0018-conversation-experience.md)
 
 ## 目的
 いま決まっている要件を **MoSCoW＋確信度＋出所**で**閲覧**でき、**未解消（深掘り対象）**から会話へ戻れる。
@@ -32,7 +32,7 @@
 - [ ] 色のみに依存しない（黄土＝抜けはラベル併記）。
 
 ## 現状差分
-- 現行は要件絵巻が**終盤の独立画面**。v2 は**会話中に常時アクセスできるタブ**として、閲覧専用で再配置。
+- 現行は要件絵巻が**終盤の独立画面**。現行設計は**会話中に常時アクセスできるタブ**として、閲覧専用で再配置。
 
 ## 根拠
 ADR-0008（成果物＝要件絵巻）／ADR-0018（閲覧のみ・会話中タブ）。MoSCoW 化と出所提示が成果物の核 P0。
