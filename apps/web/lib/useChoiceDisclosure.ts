@@ -4,7 +4,7 @@
 // 純レデューサ choiceReducer をラップし、UI から呼ぶアクションを公開する。
 // 仕様: docs/design/conversation-experience.md §4。
 
-import { useReducer } from "react";
+import { useCallback, useReducer } from "react";
 
 import { choiceReducer, initialChoiceState, type ChoiceState } from "./choiceDisclosure";
 
@@ -34,17 +34,18 @@ export interface ChoiceDisclosure {
 
 export function useChoiceDisclosure(): ChoiceDisclosure {
   const [state, dispatch] = useReducer(choiceReducer, initialChoiceState);
+  // dispatch は安定。アクションも useCallback で安定参照にして、依存配列での無限ループを防ぐ。
   return {
     state,
-    setQuestion: (count) => dispatch({ type: "setQuestion", count }),
-    clear: () => dispatch({ type: "clearQuestion" }),
-    expand: () => dispatch({ type: "expand" }),
-    collapse: () => dispatch({ type: "collapse" }),
-    openDetail: (index) => dispatch({ type: "openDetail", index }),
-    openCompare: () => dispatch({ type: "openCompare" }),
-    closeOverlay: () => dispatch({ type: "closeOverlay" }),
-    next: () => dispatch({ type: "focusNext" }),
-    prev: () => dispatch({ type: "focusPrev" }),
-    select: (index) => dispatch({ type: "select", index }),
+    setQuestion: useCallback((count: number) => dispatch({ type: "setQuestion", count }), []),
+    clear: useCallback(() => dispatch({ type: "clearQuestion" }), []),
+    expand: useCallback(() => dispatch({ type: "expand" }), []),
+    collapse: useCallback(() => dispatch({ type: "collapse" }), []),
+    openDetail: useCallback((index: number) => dispatch({ type: "openDetail", index }), []),
+    openCompare: useCallback(() => dispatch({ type: "openCompare" }), []),
+    closeOverlay: useCallback(() => dispatch({ type: "closeOverlay" }), []),
+    next: useCallback(() => dispatch({ type: "focusNext" }), []),
+    prev: useCallback(() => dispatch({ type: "focusPrev" }), []),
+    select: useCallback((index: number) => dispatch({ type: "select", index }), []),
   };
 }
