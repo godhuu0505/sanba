@@ -42,6 +42,26 @@ describe("ChoicePin（フック＋strip/detail/compare の結線）", () => {
     expect(screen.queryByText("いずれを上座に据えまするか")).toBeNull();
   });
 
+  it("詳細表示中に選択肢が減ってもクラッシュしない（focused をクランプ）", () => {
+    const three: ChoiceOptionFull[] = [
+      { label: "甲", effect: "e1" },
+      { label: "乙", effect: "e2" },
+      { label: "丙", effect: "e3" },
+    ];
+    const { rerender } = render(<ChoicePin question="q" options={three} onAnswer={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /広げる/ }));
+    fireEvent.click(screen.getAllByRole("button", { name: /詳細/ })[2]); // focused = 2
+    expect(screen.getByText("選択肢の詳細")).toBeTruthy();
+    // 同一 question のまま選択肢が 2 件へ減る → focused=2 は範囲外
+    const two: ChoiceOptionFull[] = [
+      { label: "甲", effect: "e1" },
+      { label: "乙", effect: "e2" },
+    ];
+    expect(() =>
+      rerender(<ChoicePin question="q" options={two} onAnswer={vi.fn()} />),
+    ).not.toThrow();
+  });
+
   it("詳細→比較で ChoiceCompareSheet に切り替わる", () => {
     renderPin();
     fireEvent.click(screen.getByRole("button", { name: /広げる/ }));

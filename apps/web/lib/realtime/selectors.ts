@@ -61,7 +61,7 @@ export { PRIORITY_ORDER };
 /** selectMiniStatus が必要とする SessionState の構造的サブセット（テスト容易性のため）。 */
 export interface MiniStatusInput {
   requirements: readonly unknown[];
-  detections: readonly { resolved: boolean }[];
+  detections: readonly { resolved: boolean; summary: string }[];
   analysis: readonly { pct: number }[];
 }
 
@@ -80,7 +80,8 @@ export interface MiniStatus {
 export function selectMiniStatus(s: MiniStatusInput): MiniStatus {
   return {
     requirements: s.requirements.length,
-    unresolved: s.detections.filter((d) => !d.resolved).length,
+    // 深掘り一覧（selectOpenDetections）と同じ規則で数える：未解消かつ summary 到着済み。
+    unresolved: s.detections.filter((d) => !d.resolved && d.summary !== "").length,
     materials: s.analysis.length,
     analyzing: s.analysis.some((a) => a.pct < 100),
   };

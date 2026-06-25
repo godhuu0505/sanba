@@ -47,4 +47,21 @@ describe("BottomBar（常時2行：消音/マイク・テキスト/送信）", (
     fireEvent.click(screen.getByRole("button", { name: "送信" }));
     expect(cb.onSend).not.toHaveBeenCalled();
   });
+
+  it("Enter で送信できる（非変換時）", () => {
+    const cb = setup();
+    const input = screen.getByLabelText("テキストで入力");
+    fireEvent.change(input, { target: { value: "規矩は何か" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(cb.onSend).toHaveBeenCalledWith("規矩は何か");
+  });
+
+  it("IME 変換中（isComposing）の Enter では送信しない", () => {
+    const cb = setup();
+    const input = screen.getByLabelText("テキストで入力") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "かいぎ" } });
+    fireEvent.keyDown(input, { key: "Enter", isComposing: true });
+    expect(cb.onSend).not.toHaveBeenCalled();
+    expect(input.value).toBe("かいぎ"); // 変換途中なので消えない
+  });
 });

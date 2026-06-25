@@ -21,23 +21,27 @@ describe("ChatHistory（会話履歴タブ）", () => {
     expect(screen.getByText(/話しかけてください/)).toBeTruthy();
   });
 
-  it("SANBA(agent) と あなた(user) を author 区別で吹き出し表示する", () => {
+  it("SANBA(agent) と あなた(参加者) を author 区別で吹き出し表示する", () => {
+    // 実データの参加者ロールは participant / customer / pm（user は来ない）。
     render(
       <ChatHistory
         transcript={[
           line({ utterance_id: "u1", role: "assistant", text: "何を規矩としましょう" }),
-          line({ utterance_id: "u2", role: "user", text: "新しき順がよい" }),
+          line({ utterance_id: "u2", role: "participant", text: "新しき順がよい" }),
+          line({ utterance_id: "u4", role: "customer", text: "価格も大事" }),
         ]}
       />,
     );
     expect(screen.getByLabelText("SANBA").textContent).toContain("何を規矩としましょう");
-    expect(screen.getByLabelText("あなた").textContent).toContain("新しき順がよい");
+    const me = screen.getAllByLabelText("あなた");
+    expect(me.map((n) => n.textContent).join("")).toContain("新しき順がよい");
+    expect(me.map((n) => n.textContent).join("")).toContain("価格も大事");
   });
 
   it("partial（final=false）は「認識中」を示す", () => {
     render(
       <ChatHistory
-        transcript={[line({ utterance_id: "u3", role: "user", text: "価格の安き", final: false })]}
+        transcript={[line({ utterance_id: "u3", role: "participant", text: "価格の安き", final: false })]}
       />,
     );
     expect(screen.getByText(/認識中/)).toBeTruthy();

@@ -22,6 +22,13 @@ interface CredentialResponse {
   credential?: string;
 }
 
+// One Tap の表示結果通知（本フックが使う最小サブセット）。
+interface PromptMomentNotification {
+  isNotDisplayed(): boolean;
+  isSkippedMoment(): boolean;
+  isDismissedMoment(): boolean;
+}
+
 // GIS のうち本フックが使う最小サブセットだけを宣言する。
 interface GoogleIdentity {
   initialize(config: {
@@ -30,7 +37,7 @@ interface GoogleIdentity {
     auto_select?: boolean;
   }): void;
   renderButton(parent: HTMLElement, options: Record<string, unknown>): void;
-  prompt(): void;
+  prompt(momentListener?: (notification: PromptMomentNotification) => void): void;
   disableAutoSelect(): void;
 }
 
@@ -95,6 +102,16 @@ export function useGoogleAuth(): GoogleAuth {
     if (devMode) return; // dev モードでは GIS を読み込まない。
 
     let cancelled = false;
+    // フォールバック: スクリプトのロード失敗や通知の取りこぼしで解決できないと ready が永久に
+    // false のまま保護ページが空白になるため、一定時間で必ず解決済みにする（auto_select の
+    // credential はこれより速く届く想定の猶予）。
+    const settleTimer = window.setTimeout(() => {
+      if (!cancelled) setGisSettled(true);
+    }, 2500);
+    const cleanup = () => {
+      cancelled = true;
+      window.clearTimeout(settleTimer);
+    };
     function setup() {
       const id = window.google?.accounts.id;
       if (!id || cancelled) return;
@@ -114,16 +131,23 @@ export function useGoogleAuth(): GoogleAuth {
         });
       }
       // One Tap を表示して自動再取得を試みる (未ログイン時のみ意味を持つ)。
-      id.prompt();
-      // GIS の再取得試行をひと通り走らせた = 解決済みとみなす。auto_select で credential が
-      // 届く場合は onCredential が loggedIn を true にするため、ゲートは ready かつ未ログインの
-      // ときだけリダイレクトする。
-      if (!cancelled) setGisSettled(true);
+      // 表示されない/スキップ/閉じられた = auto_select で credential 復元できない確定なので
+      // そこで解決済みとする。credential が届く場合は onCredential が先に loggedIn を立てるため、
+      // ready かつ未ログインで誤リダイレクトする窓を作らない（Codex 指摘）。
+      id.prompt((notification) => {
+        if (
+          notification.isNotDisplayed() ||
+          notification.isSkippedMoment() ||
+          notification.isDismissedMoment()
+        ) {
+          if (!cancelled) setGisSettled(true);
+        }
+      });
     }
 
     if (window.google?.accounts.id) {
       setup();
-      return;
+      return cleanup;
     }
     // GIS スクリプトを一度だけ読み込む。
     let script = document.querySelector<HTMLScriptElement>(`script[src="${GSI_SRC}"]`);
@@ -136,7 +160,7 @@ export function useGoogleAuth(): GoogleAuth {
     }
     script.addEventListener("load", setup);
     return () => {
-      cancelled = true;
+      cleanup();
       script?.removeEventListener("load", setup);
     };
   }, [devMode, onCredential, renderCount]);

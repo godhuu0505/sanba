@@ -71,7 +71,8 @@ export function BottomBar({ micOn, muted, onToggleMic, onToggleMute, onSend }: B
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter") send();
+            // 日本語IMEの変換確定 Enter で誤送信しない（isComposing / keyCode 229 を除外）。
+            if (e.key === "Enter" && !e.nativeEvent.isComposing && e.keyCode !== 229) send();
           }}
           placeholder="テキストで入力…"
           className="flex-1 rounded-full border border-[var(--sanba-border)] bg-[#1b140b] px-[14px] py-[11px] text-[12.5px] text-[var(--sanba-cream)] placeholder:text-[var(--sanba-muted)]"

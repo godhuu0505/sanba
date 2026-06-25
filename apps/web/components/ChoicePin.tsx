@@ -63,6 +63,10 @@ export function ChoicePin({ question, options, detectionKind, onAnswer }: Choice
   }
 
   // detail / compare はオーバーレイ（暗幕＋ボトムシート）。
+  // リアルタイムに問いが差し替わり選択肢が縮むことがあるため、focused を現在の範囲へ丸める
+  // （リセット effect は commit 後に走るので、描画前にここで防御する）。空なら閉じる。
+  if (options.length === 0) return null;
+  const focused = Math.min(Math.max(d.state.focused, 0), options.length - 1);
   return (
     <div className="relative">
       <button
@@ -74,10 +78,10 @@ export function ChoicePin({ question, options, detectionKind, onAnswer }: Choice
       <div className="relative">
         {d.state.mode === "detail" ? (
           <ChoiceDetailSheet
-            option={options[d.state.focused]}
-            index={d.state.focused}
+            option={options[focused]}
+            index={focused}
             total={options.length}
-            onSelect={() => answer(d.state.focused)}
+            onSelect={() => answer(focused)}
             onPrev={d.prev}
             onNext={d.next}
             onClose={d.closeOverlay}
