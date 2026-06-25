@@ -34,4 +34,11 @@ describe("ChoiceCompareSheet（選択肢の比較）", () => {
     fireEvent.click(screen.getByRole("button", { name: /閉じる/ }));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
+
+  it("onDetail があれば各行に『詳細』を出し、押下で onDetail(index)", () => {
+    const onDetail = vi.fn();
+    render(<ChoiceCompareSheet rows={rows} onSelect={vi.fn()} onClose={vi.fn()} onDetail={onDetail} />);
+    fireEvent.click(screen.getAllByRole("button", { name: /詳細/ })[1]);
+    expect(onDetail).toHaveBeenCalledWith(1);
+  });
 });

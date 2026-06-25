@@ -8,6 +8,8 @@ export interface ResultViewProps {
   confirmedCount: number;
   /** Must/Should/Could の内訳（任意）。 */
   breakdown?: { must: number; should: number; could: number };
+  /** 未解消を残したまま終了した暫定結果か（07 の onForceEnd 経路）。確定済みと区別する。 */
+  provisional?: boolean;
   /** この絵巻を画面で確認する（既定動線・必須）。 */
   onView: () => void;
   /** 新しい問答を始める。 */
@@ -21,6 +23,7 @@ export interface ResultViewProps {
 export function ResultView({
   confirmedCount,
   breakdown,
+  provisional = false,
   onView,
   onRestart,
   onExportPdf,
@@ -40,11 +43,13 @@ export function ResultView({
         産
       </div>
       <p className="mt-[10px] text-center text-[18px] font-bold text-[var(--sanba-gold-text)]">
-        オーレ！ 要件、産まれました
+        {provisional ? "暫定で書き留めました" : "オーレ！ 要件、産まれました"}
       </p>
       <p className="mt-1 text-center text-[12px] text-[var(--sanba-muted)]">
-        確定要件 {confirmedCount} 件
+        {provisional ? "暫定要件 " : "確定要件 "}
+        {confirmedCount} 件
         {breakdown ? `（Must ${breakdown.must} ・ Should ${breakdown.should} ・ Could ${breakdown.could}）` : ""}
+        {provisional ? " ・ 未確定を残したまま終了" : ""}
       </p>
 
       <div className="flex-1" />

@@ -44,4 +44,11 @@ describe("ResultView（要件産婆結果）", () => {
     expect(screen.queryByRole("button", { name: /Drive/ })).toBeNull();
     expect(screen.getByRole("button", { name: /PDF/ })).toBeTruthy();
   });
+
+  it("provisional（未確定のまま終了）のときは確定でなく暫定の表記にする", () => {
+    setup({ provisional: true });
+    expect(screen.queryByText(/産まれました/)).toBeNull();
+    expect(screen.getAllByText(/暫定/).length).toBeGreaterThan(0);
+    expect(screen.getByText(/未確定を残したまま/)).toBeTruthy();
+  });
 });

@@ -13,9 +13,11 @@ export interface ChoiceCompareSheetProps {
   rows: CompareRow[];
   onSelect: (index: number) => void;
   onClose: () => void;
+  /** 各行から詳細へ深掘りする（任意）。 */
+  onDetail?: (index: number) => void;
 }
 
-export function ChoiceCompareSheet({ rows, onSelect, onClose }: ChoiceCompareSheetProps) {
+export function ChoiceCompareSheet({ rows, onSelect, onClose, onDetail }: ChoiceCompareSheetProps) {
   return (
     <div className="flex flex-col gap-[10px] rounded-t-[18px] border-t border-[var(--sanba-frame)] bg-[#221910] px-4 pb-[18px] pt-[10px]">
       <div className="flex items-center gap-2">
@@ -43,6 +45,15 @@ export function ChoiceCompareSheet({ rows, onSelect, onClose }: ChoiceCompareShe
           <div className="flex items-center gap-2">
             <span className="text-[13.5px] font-bold text-[var(--sanba-cream)]">{r.label}</span>
             <span className="flex-1" />
+            {onDetail && (
+              <button
+                type="button"
+                onClick={() => onDetail(i)}
+                className="rounded-full border border-[var(--sanba-frame)] px-[9px] py-[4px] text-[10.5px] font-bold text-[var(--sanba-gold-text)]"
+              >
+                詳細
+              </button>
+            )}
             <button
               type="button"
               onClick={() => onSelect(i)}
