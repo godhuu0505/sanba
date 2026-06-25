@@ -8,6 +8,8 @@ export interface ResultViewProps {
   confirmedCount: number;
   /** Must/Should/Could の内訳（任意）。 */
   breakdown?: { must: number; should: number; could: number };
+  /** 未解消のまま強制終了した暫定出力のとき true（確定とは区別して表示する）。 */
+  forced?: boolean;
   /** この絵巻を画面で確認する（既定動線・必須）。 */
   onView: () => void;
   /** 新しい問答を始める。 */
@@ -21,6 +23,7 @@ export interface ResultViewProps {
 export function ResultView({
   confirmedCount,
   breakdown,
+  forced = false,
   onView,
   onRestart,
   onExportPdf,
@@ -36,15 +39,18 @@ export function ResultView({
 
   return (
     <div className="flex h-full flex-col items-center px-4 pb-4 pt-5">
-      <div className="sanba-gold-gradient flex size-[78px] items-center justify-center rounded-full text-[28px] font-bold text-[var(--sanba-ink)]">
+      <div
+        className={`flex size-[78px] items-center justify-center rounded-full text-[28px] font-bold text-[var(--sanba-ink)] ${forced ? "bg-[#3a2e1a] border-2 border-[var(--sanba-frame)]" : "sanba-gold-gradient"}`}
+      >
         産
       </div>
       <p className="mt-[10px] text-center text-[18px] font-bold text-[var(--sanba-gold-text)]">
-        オーレ！ 要件、産まれました
+        {forced ? "暫定出力・未確定のまま終了" : "オーレ！ 要件、産まれました"}
       </p>
       <p className="mt-1 text-center text-[12px] text-[var(--sanba-muted)]">
-        確定要件 {confirmedCount} 件
-        {breakdown ? `（Must ${breakdown.must} ・ Should ${breakdown.should} ・ Could ${breakdown.could}）` : ""}
+        {forced ? "暫定要件" : "確定要件"} {confirmedCount} 件
+        {forced && "（未解消あり・確定されていません）"}
+        {!forced && breakdown ? `（Must ${breakdown.must} ・ Should ${breakdown.should} ・ Could ${breakdown.could}）` : ""}
       </p>
 
       <div className="flex-1" />

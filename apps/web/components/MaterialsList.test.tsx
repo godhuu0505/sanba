@@ -42,9 +42,14 @@ describe("MaterialsList（参考資料タブ・解析進捗つき）", () => {
     expect(screen.queryByRole("progressbar")).toBeNull();
   });
 
-  it("失敗は再試行ボタンを出す", () => {
-    render(<MaterialsList items={[item({ status: "failed" })]} onAdd={vi.fn()} />);
+  it("失敗 + onRetry あり → 再試行ボタンを出す", () => {
+    render(<MaterialsList items={[item({ status: "failed" })]} onAdd={vi.fn()} onRetry={vi.fn()} />);
     expect(screen.getByRole("button", { name: /再試行/ })).toBeTruthy();
+  });
+
+  it("失敗 + onRetry なし → 再試行ボタンを出さない", () => {
+    render(<MaterialsList items={[item({ status: "failed" })]} onAdd={vi.fn()} />);
+    expect(screen.queryByRole("button", { name: /再試行/ })).toBeNull();
   });
 
   it("『素材を追加』で onAdd が呼ばれる", () => {

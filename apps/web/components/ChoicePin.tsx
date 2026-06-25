@@ -63,6 +63,9 @@ export function ChoicePin({ question, options, detectionKind, onAnswer }: Choice
   }
 
   // detail / compare はオーバーレイ（暗幕＋ボトムシート）。
+  // 問い差替え直後に focused が範囲外になる描画サイクルを防ぐためクランプする。
+  const safeIndex = options.length > 0 ? Math.min(d.state.focused, options.length - 1) : 0;
+
   return (
     <div className="relative">
       <button
@@ -74,10 +77,10 @@ export function ChoicePin({ question, options, detectionKind, onAnswer }: Choice
       <div className="relative">
         {d.state.mode === "detail" ? (
           <ChoiceDetailSheet
-            option={options[d.state.focused]}
-            index={d.state.focused}
+            option={options[safeIndex]}
+            index={safeIndex}
             total={options.length}
-            onSelect={() => answer(d.state.focused)}
+            onSelect={() => answer(safeIndex)}
             onPrev={d.prev}
             onNext={d.next}
             onClose={d.closeOverlay}

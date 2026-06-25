@@ -38,7 +38,7 @@ export function MaterialsList({ items, onAdd, onRetry }: MaterialsListProps) {
         onClick={onAdd}
         className="rounded-[12px] border border-dashed border-[var(--sanba-frame)] bg-[#1b140b] px-3 py-[13px] text-[12.5px] font-bold text-[var(--sanba-gold-text)]"
       >
-        ＋ 素材を追加（カメラ・アップロード・Drive）
+        ＋ 素材を追加（カメラ・アップロード・画面共有）
       </button>
 
       {items.length === 0 ? (
@@ -80,13 +80,15 @@ export function MaterialsList({ items, onAdd, onRetry }: MaterialsListProps) {
               {it.status === "failed" && (
                 <div className="flex items-center gap-2">
                   <span className="text-[11px] font-bold text-[var(--sanba-rec)]">アップロード/解析に失敗</span>
-                  <button
-                    type="button"
-                    onClick={() => onRetry?.(it.id)}
-                    className="rounded-full border border-[var(--sanba-frame)] px-[9px] py-[3px] text-[11px] font-bold text-[var(--sanba-gold-text)]"
-                  >
-                    再試行
-                  </button>
+                  {onRetry && (
+                    <button
+                      type="button"
+                      onClick={() => onRetry(it.id)}
+                      className="rounded-full border border-[var(--sanba-frame)] px-[9px] py-[3px] text-[11px] font-bold text-[var(--sanba-gold-text)]"
+                    >
+                      再試行
+                    </button>
+                  )}
                 </div>
               )}
             </div>
