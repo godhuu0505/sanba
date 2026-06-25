@@ -47,6 +47,11 @@ export interface GoogleAuth {
   profile: GoogleProfile | null;
   /** ログイン済みか (dev モードでは devSignIn 後に true)。 */
   loggedIn: boolean;
+  /**
+   * 認証解決が済んだか。dev モードは即 true、real モードは GIS の再取得(One Tap)試行が
+   * 完了したら true。RequireAuth が解決前に /login へ早期リダイレクトするのを防ぐために使う。
+   */
+  ready: boolean;
   /** client_id 未設定のローカル開発モード。 */
   devMode: boolean;
   /** GIS ボタンを描画する div の ref (real モードのみ使用)。 */
@@ -79,6 +84,7 @@ export function useGoogleAuth(): GoogleAuth {
   const [credential, setCredential] = useState<string | null>(null);
   const [devLoggedIn, setDevLoggedIn] = useState(false);
   const [renderCount, setRenderCount] = useState(0);
+  const [gisSettled, setGisSettled] = useState(false);
   const buttonRef = useRef<HTMLDivElement | null>(null);
 
   const onCredential = useCallback((res: CredentialResponse) => {
@@ -109,6 +115,10 @@ export function useGoogleAuth(): GoogleAuth {
       }
       // One Tap を表示して自動再取得を試みる (未ログイン時のみ意味を持つ)。
       id.prompt();
+      // GIS の再取得試行をひと通り走らせた = 解決済みとみなす。auto_select で credential が
+      // 届く場合は onCredential が loggedIn を true にするため、ゲートは ready かつ未ログインの
+      // ときだけリダイレクトする。
+      if (!cancelled) setGisSettled(true);
     }
 
     if (window.google?.accounts.id) {
@@ -144,6 +154,7 @@ export function useGoogleAuth(): GoogleAuth {
     credential,
     profile: credential ? decodeProfile(credential) : null,
     loggedIn: devMode ? devLoggedIn : credential !== null,
+    ready: devMode ? true : credential !== null || gisSettled,
     devMode,
     buttonRef,
     devSignIn,
