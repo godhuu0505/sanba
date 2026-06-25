@@ -440,24 +440,27 @@ function RequirementRow({
   }
 
   return (
-    <RequirementCard
-      status={req.status}
-      confidence={`${req.source_speaker ?? "—"} ・ 確度 ${Math.round(req.confidence * 100)}%`}
-      statement={req.statement}
-      meta={
-        <>
-          優先度: {req.priority} ・ 分類: {req.category}
-          {req.approved_by ? ` ・ 認: ${req.approved_by}` : ""}
-        </>
-      }
-      onRevise={busy ? undefined : () => setEditing(true)}
-      onApprove={
-        busy || req.status === "approved" ? undefined : () => void persist({ status: "approved" })
-      }
-      onReject={
-        busy || req.status === "rejected" ? undefined : () => void persist({ status: "rejected" })
-      }
-    />
+    <>
+      {error && <p className="text-[13px] text-[var(--sanba-rec)]">{error}</p>}
+      <RequirementCard
+        status={req.status}
+        confidence={`${req.source_speaker ?? "—"} ・ 確度 ${Math.round(req.confidence * 100)}%`}
+        statement={req.statement}
+        meta={
+          <>
+            優先度: {req.priority} ・ 分類: {req.category}
+            {req.approved_by ? ` ・ 認: ${req.approved_by}` : ""}
+          </>
+        }
+        onRevise={busy ? undefined : () => setEditing(true)}
+        onApprove={
+          busy || req.status === "approved" ? undefined : () => void persist({ status: "approved" })
+        }
+        onReject={
+          busy || req.status === "rejected" ? undefined : () => void persist({ status: "rejected" })
+        }
+      />
+    </>
   );
 }
 

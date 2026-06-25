@@ -138,7 +138,7 @@ export default function Home() {
                       aria-checked={selected}
                       onClick={() => setRole(r.value)}
                     >
-                      {selected ? "● " : ""}
+                      {selected && <span aria-hidden="true">● </span>}
                       {r.label}
                     </button>
                   </Chip>
