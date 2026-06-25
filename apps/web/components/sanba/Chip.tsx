@@ -76,9 +76,16 @@ export const Chip = React.forwardRef<HTMLElement, ChipProps>(
         )}
         {...props}
       >
-        {/* asChild=true のとき Slot は単一子しか受け取れないため dot を出さない。 */}
-        {!asChild && dot && <span aria-hidden>●</span>}
-        {children}
+        {/* asChild=true のとき Slot は単一子しか受け取れない。dot を出さないだけでなく、
+            false 兄弟も Slot に渡さないよう children をそのまま 1 つだけ渡す。 */}
+        {asChild ? (
+          children
+        ) : (
+          <>
+            {dot && <span aria-hidden>●</span>}
+            {children}
+          </>
+        )}
       </Comp>
     );
   },

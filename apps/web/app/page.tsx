@@ -1,11 +1,30 @@
 "use client";
 
+// 入口フロー（01 ホーム → 02 準備）。Issue #140 / Figma 正本 40:2・40:19。
+// ADR-0017（一本道・Figma 正本準拠）に従い、価値訴求のホームと準備フォームを
+// 別ビューに分離する。タブ式ナビは持たず、戻る ‹ のみの一本道で進む。
+// 準備が整い接続すると 03 以降（SessionView）へ引き渡す（中身は #141 が担当）。
+//
+// 認証は /login へ寄せる（#140）。本ページはログイン状態を「開始ゲート」としてのみ参照し、
+// 未ログインなら理由提示＋/login への導線を出す（インラインのログインパネルは廃止）。
+
+import Link from "next/link";
 import {
   LiveKitRoom,
   RoomAudioRenderer,
   StartAudio,
 } from "@livekit/components-react";
 import { useState } from "react";
+
+import {
+  AppHeader,
+  Button,
+  Card,
+  Chip,
+  Field,
+  Screen,
+  Textarea,
+} from "@/components/sanba";
 import {
   addSessionContext,
   createSession,
@@ -15,44 +34,56 @@ import {
 import { useGoogleAuth } from "../lib/auth";
 import { SessionView } from "../components/SessionView";
 
+// 役割チップ。表示は日本語、value は API（POST /api/sessions の roles）に渡す既存値。
+// 既定は「企画(PdM)」= pm（02-prepare.md / #140）。
+const ROLES = [
+  { value: "pm", label: "企画(PdM)" },
+  { value: "engineer", label: "エンジニア" },
+  { value: "customer", label: "顧客" },
+] as const;
+
+const RETENTION_DAYS = process.env.NEXT_PUBLIC_RETENTION_DAYS ?? "30";
+
+type Step = "home" | "prepare";
+
 export default function Home() {
-  const [name, setName] = useState("");
-  const [role, setRole] = useState("pm");
-  const [context, setContext] = useState("");
+  const [step, setStep] = useState<Step>("home");
+  const [role, setRole] = useState<string>("pm");
+  const [goal, setGoal] = useState("");
   const [consent, setConsent] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [conn, setConn] = useState<JoinResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const auth = useGoogleAuth();
 
-  async function handleJoin() {
+  async function handleStart() {
+    if (busy) return; // 二重送信防止（#140 AC）。
     try {
+      setBusy(true);
       setError(null);
-      // Owner flow for the demo: create a session (with consent, issue #10),
-      // redeem the role invite (#8) to get a join 済みトークン, then register
-      // reference material (RAG grounding, #6) using that token. context 投稿は
-      // 契約 §4 で参加者限定（session_token 必須）なので join 後に行う。
-      // 本人確認は Google ログイン (ADR-0012)。
+      // 同意ゲート後にセッションを作成（issue #10）。createSession → join で
+      // 「join 済みトークン」を得てから、ゴール文を文脈として投稿する（契約 §4）。
+      // 本人確認は Google ログイン（ADR-0012）。
       const session = await createSession([role], consent, auth.credential);
       const invite = session.invites[role];
-      const conn = await joinSession({
+      const joined = await joinSession({
         invite,
-        participantName: name || auth.profile?.name || "ゲスト",
+        participantName: auth.profile?.name || "ゲスト",
         idToken: auth.credential,
       });
-      if (context.trim()) {
-        await addSessionContext(
-          conn.session_id,
-          context,
-          conn.session_token,
-          "貼り付け資料",
-        );
+      if (goal.trim()) {
+        // ゴールは RAG・会話初期文脈へ取り込む（source_name=goal / 02-prepare.md AC）。
+        await addSessionContext(joined.session_id, goal, joined.session_token, "goal");
       }
-      setConn(conn);
+      setConn(joined);
     } catch (e) {
       setError(String(e));
+    } finally {
+      setBusy(false);
     }
   }
 
+  // ── 03 以降: ルーム接続後はセッション体験へ引き渡す（#141 が中身を担当）──────
   if (conn) {
     return (
       <LiveKitRoom
@@ -63,124 +94,121 @@ export default function Home() {
         video={false}
         style={{ height: "100dvh" }}
       >
-        <main style={{ padding: 24, maxWidth: 640, margin: "0 auto" }}>
-          <h1 style={{ fontSize: 20 }}>🎙️ SANBA — 要件インタビュー中</h1>
-          <p style={{ fontSize: 13, color: "#666" }}>
-            セッション: <code>{conn.session_id}</code>
-          </p>
-          <SessionView sessionId={conn.session_id} sessionToken={conn.session_token} />
+        <Screen className="px-4 py-3">
+          <AppHeader brand right={<StartAudio label="🔊 音声を有効に" />} />
+          <main className="mx-auto w-full max-w-[640px] flex-1">
+            <p className="mb-2 text-[12px] text-[var(--sanba-muted)]">
+              セッション: <code>{conn.session_id}</code>
+            </p>
+            <SessionView sessionId={conn.session_id} sessionToken={conn.session_token} />
+          </main>
           <RoomAudioRenderer />
-          <StartAudio label="🔊 音声を有効にする" />
-        </main>
+        </Screen>
       </LiveKitRoom>
     );
   }
 
-  return (
-    <main style={{ padding: 24, maxWidth: 480, margin: "0 auto" }}>
-      <h1>🎙️ SANBA</h1>
-      <p>解像度高く、要件を生み出す音声マルチエージェント。話しかけると、AIが一問ずつ質問し、要件を少しずつ明確にしていきます。</p>
-      <LoginPanel auth={auth} />
-      <label>
-        お名前
-        <input value={name} onChange={(e) => setName(e.target.value)} style={inputStyle} />
-      </label>
-      <label>
-        役割
-        <select value={role} onChange={(e) => setRole(e.target.value)} style={inputStyle}>
-          <option value="pm">PM</option>
-          <option value="engineer">エンジニア</option>
-          <option value="customer">顧客</option>
-        </select>
-      </label>
-      <label>
-        参考資料（任意・要件のヒントになる既存メモやPRDなど）
-        <textarea
-          value={context}
-          onChange={(e) => setContext(e.target.value)}
-          rows={5}
-          placeholder="ここに貼り付けた内容はAIが事前に読み込み、既知の事項は質問しません。"
-          style={inputStyle}
-        />
-      </label>
-      <label style={{ display: "flex", gap: 8, alignItems: "flex-start", margin: "8px 0 16px" }}>
-        <input
-          type="checkbox"
-          checked={consent}
-          onChange={(e) => setConsent(e.target.checked)}
-        />
-        <span>
-          会話の録音と AI による処理に同意します。発話・要件は最大{" "}
-          {process.env.NEXT_PUBLIC_RETENTION_DAYS ?? "30"} 日保持され、保存前に個人情報はマスクされます。
-        </span>
-      </label>
-      <button
-        onClick={handleJoin}
-        style={buttonStyle}
-        disabled={!consent || !auth.loggedIn}
-      >
-        インタビューを始める
-      </button>
-      {!auth.loggedIn && (
-        <p style={{ color: "#555", fontSize: 13 }}>
-          開始するには、まず Google でログインしてください。
-        </p>
-      )}
-      {error && <p style={{ color: "crimson" }}>{error}</p>}
-    </main>
-  );
-}
-
-function LoginPanel({ auth }: { auth: ReturnType<typeof useGoogleAuth> }) {
-  const { loggedIn, profile, devMode, buttonRef, devSignIn, signOut } = auth;
-  if (loggedIn) {
+  // ── 02 準備 ───────────────────────────────────────────────────────────
+  if (step === "prepare") {
+    const canStart = consent && auth.loggedIn && !busy;
     return (
-      <div style={loginBoxStyle}>
-        <span>
-          ✅ ログイン中: <strong>{profile?.email ?? "dev@sanba.local"}</strong>
-        </span>
-        <button onClick={signOut} style={linkButtonStyle}>
-          ログアウト
-        </button>
-      </div>
+      <Screen className="px-4 py-3">
+        <AppHeader title="セッション準備" onBack={() => setStep("home")} />
+        <main className="mx-auto flex w-full max-w-[480px] flex-1 flex-col gap-[18px] pt-2">
+          <Field label="ゴール" htmlFor="goal" hint="例: 検索機能のリニューアル要件を固めたい">
+            <Textarea
+              id="goal"
+              value={goal}
+              onChange={(e) => setGoal(e.target.value)}
+              rows={3}
+              placeholder="タップしてテーマを入力…"
+            />
+          </Field>
+
+          <div className="flex flex-col gap-[8px]">
+            <span className="text-[13px] font-bold text-[var(--sanba-muted)]">あなたの役割</span>
+            <div role="radiogroup" aria-label="あなたの役割" className="flex flex-wrap gap-[8px]">
+              {ROLES.map((r) => {
+                const selected = role === r.value;
+                return (
+                  <Chip key={r.value} asChild tone="gold" size="md" selected={selected}>
+                    <button
+                      type="button"
+                      role="radio"
+                      aria-checked={selected}
+                      onClick={() => setRole(r.value)}
+                    >
+                      {selected ? "● " : ""}
+                      {r.label}
+                    </button>
+                  </Chip>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* 同意ゲート（issue #10）。保持日数・PII マスク文言を併記。 */}
+          <label className="flex items-start gap-[10px] text-[13px] leading-relaxed text-[var(--sanba-cream)]">
+            <input
+              type="checkbox"
+              checked={consent}
+              onChange={(e) => setConsent(e.target.checked)}
+              className="mt-[3px] size-[16px] accent-[var(--sanba-gold)]"
+            />
+            <span>
+              録音と AI 処理に同意します（最大 {RETENTION_DAYS} 日保持・保存前に個人情報をマスク）。
+            </span>
+          </label>
+
+          <div className="mt-1 flex flex-col gap-[8px]">
+            <Button
+              variant="gold"
+              size="lg"
+              block
+              onClick={handleStart}
+              disabled={!canStart}
+              aria-label="インタビューを始める"
+            >
+              {busy ? "準備しています…" : "🎙️ インタビューを始める"}
+            </Button>
+            {!auth.loggedIn && (
+              <p className="text-[12px] text-[var(--sanba-muted)]">
+                開始するには本人確認が必要です。
+                <Link href="/login" className="ml-1 text-[var(--sanba-gold-text)] underline">
+                  ログインへ
+                </Link>
+              </p>
+            )}
+            {auth.loggedIn && !consent && (
+              <p className="text-[12px] text-[var(--sanba-muted)]">
+                録音と AI 処理への同意が必要です。
+              </p>
+            )}
+            {error && <p className="text-[12px] text-[var(--sanba-rec)]">{error}</p>}
+          </div>
+        </main>
+      </Screen>
     );
   }
+
+  // ── 01 ホーム ─────────────────────────────────────────────────────────
+  // Figma 正本（40:2）に実績カードは無い（#140/#147）。ヒーロー＋一語 CTA のみ。
   return (
-    <div style={loginBoxStyle}>
-      {devMode ? (
-        <>
-          <span style={{ fontSize: 13, color: "#555" }}>
-            開発モード（GOOGLE_CLIENT_ID 未設定）。
-          </span>
-          <button onClick={devSignIn} style={buttonStyle}>
-            開発用ログイン（bypass）
-          </button>
-        </>
-      ) : (
-        // GIS がこの div にログインボタンを描画する。
-        <div ref={buttonRef} />
-      )}
-    </div>
+    <Screen className="px-4 py-3">
+      <AppHeader brand />
+      <main className="mx-auto flex w-full max-w-[480px] flex-1 flex-col pt-3">
+        <Card>
+          <h1 className="text-[22px] font-bold leading-snug text-[var(--sanba-gold-text)]">
+            会議の前に、五分の問答を
+          </h1>
+          <p className="text-[13px] leading-relaxed text-[var(--sanba-muted)]">
+            一問ずつ問いかけ、抜けと矛盾をその場で取り上げます。
+          </p>
+          <Button variant="gold" size="lg" block onClick={() => setStep("prepare")}>
+            ＋ 壁打ちを始める
+          </Button>
+        </Card>
+      </main>
+    </Screen>
   );
 }
-
-const inputStyle = { display: "block", width: "100%", padding: 8, margin: "6px 0 16px" };
-const buttonStyle = { padding: "10px 16px", fontSize: 16, cursor: "pointer" };
-const loginBoxStyle = {
-  display: "flex",
-  alignItems: "center",
-  gap: 12,
-  flexWrap: "wrap" as const,
-  padding: "12px 0 4px",
-  margin: "8px 0 16px",
-  borderBottom: "1px solid #eee",
-};
-const linkButtonStyle = {
-  background: "none",
-  border: "none",
-  color: "#1d76db",
-  cursor: "pointer",
-  textDecoration: "underline",
-  padding: 0,
-  fontSize: 14,
-};
