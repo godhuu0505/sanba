@@ -1,6 +1,6 @@
 name: "✨ 機能提案 / Feature request"
 description: 新機能・改善を提案する
-labels: ["enhancement"]
+labels: ["type:feature"]
 body:
   - type: textarea
     id: problem

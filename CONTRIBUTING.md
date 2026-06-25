@@ -57,6 +57,12 @@ just build   # Docker イメージのビルド
 5. 設計に関わる判断をしたら **ADR**（`docs/adr/NNNN-*.md`）を追加する。
 6. セキュリティ影響のある変更は `/security-review` を回し、指摘に対応する。
 
+## ラベル運用
+
+issue / PR のラベルは軸ベース（`type:` / `priority:` / `area:` / `status:` ...）で設計し、
+`.github/labels.yml` を単一の真実として IaC 管理する。手動で編集せず manifest を変更すること。
+詳細は [`docs/automation/labels.md`](docs/automation/labels.md)。
+
 ## やってはいけないこと
 
 - 単発の LLM 呼び出しを「エージェント」と称する薄い実装。
