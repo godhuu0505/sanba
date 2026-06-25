@@ -4,12 +4,8 @@
 // 仕様: docs/design/conversation-experience.md §7 / screens/06-requirements-scroll.md。
 // 色は意味の写像（矛盾=緋 / 抜け=黄土）。色のみに依存せずラベル併記（ADR-0017）。
 
-import type { Detection, DetectionKind } from "@/lib/realtime/types";
-
-const KIND: Record<DetectionKind, { label: string; color: string }> = {
-  contradiction: { label: "矛盾", color: "#d2564b" },
-  gap: { label: "抜け", color: "#e0a93b" },
-};
+import { detectionPresentation } from "@/lib/realtime/mapping";
+import type { Detection } from "@/lib/realtime/types";
 
 export interface DeepDiveListProps {
   /** 未解消の検知（深掘り対象）。 */
@@ -30,11 +26,11 @@ export function DeepDiveList({ detections, onJump }: DeepDiveListProps) {
   return (
     <div className="flex flex-col gap-[9px]">
       {detections.map((d) => {
-        const k = KIND[d.kind];
+        const k = detectionPresentation(d.kind);
         return (
           <div
             key={d.id}
-            aria-label={`深掘り ${k.label}`}
+            aria-label={`深掘り ${k.ariaLabel}`}
             className="flex flex-col gap-[6px] rounded-[12px] border bg-[#241a0f] px-3 py-[11px]"
             style={{ borderColor: k.color }}
           >
@@ -43,7 +39,7 @@ export function DeepDiveList({ detections, onJump }: DeepDiveListProps) {
                 className="rounded-full px-2 py-[2px] text-[10.5px] font-bold text-[var(--sanba-ink)]"
                 style={{ backgroundColor: k.color }}
               >
-                {k.label}
+                {k.icon} {k.label}
               </span>
               <p className="flex-1 text-[12.5px] text-[var(--sanba-cream)]">{d.summary}</p>
             </div>

@@ -7,6 +7,9 @@
 // 検知（矛盾/抜け）はバッジ＋枠色で示す（色のみ依存しない・ADR-0017）。
 // 詳細/比較のオーバーレイは別部品（ChoiceDetailSheet など）が担当する。
 
+import { detectionPresentation } from "@/lib/realtime/mapping";
+import type { DetectionKind } from "@/lib/realtime/types";
+
 export interface ChoiceOption {
   label: string;
   /** サブ説明（一覧で表示）。 */
@@ -14,8 +17,6 @@ export interface ChoiceOption {
   /** 常設選択肢（その他/保留など・詳細を持たない）。 */
   fixed?: boolean;
 }
-
-export type DetectionKind = "contradiction" | "gap";
 
 export interface ChoiceStripProps {
   mode: "min" | "list";
@@ -29,11 +30,6 @@ export interface ChoiceStripProps {
   detectionKind?: DetectionKind;
 }
 
-const DETECTION = {
-  contradiction: { label: "矛盾を検知", color: "#d2564b" },
-  gap: { label: "抜けを検知", color: "#e0a93b" },
-} as const;
-
 export function ChoiceStrip({
   mode,
   question,
@@ -46,7 +42,8 @@ export function ChoiceStrip({
 }: ChoiceStripProps) {
   if (options.length === 0) return null;
 
-  const accent = detectionKind ? DETECTION[detectionKind].color : "#7a5a1e";
+  const presentation = detectionKind ? detectionPresentation(detectionKind) : null;
+  const accent = presentation ? presentation.color : "#7a5a1e";
 
   return (
     <div
@@ -55,12 +52,13 @@ export function ChoiceStrip({
     >
       {/* 見出し：検知バッジ＋問い＋開閉 */}
       <div className="flex items-center gap-2">
-        {detectionKind && (
+        {presentation && (
           <span
+            aria-label={presentation.ariaLabel}
             className="rounded-full px-2 py-[2px] text-[10.5px] font-bold text-[var(--sanba-ink)]"
-            style={{ backgroundColor: DETECTION[detectionKind].color }}
+            style={{ backgroundColor: presentation.color }}
           >
-            {DETECTION[detectionKind].label}
+            {presentation.icon} {presentation.label}
           </span>
         )}
         <span className="text-[12px] font-bold text-[var(--sanba-gold-text)]">{question}</span>

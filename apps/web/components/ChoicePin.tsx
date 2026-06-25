@@ -9,9 +9,11 @@ import { useEffect } from "react";
 
 import { useChoiceDisclosure } from "@/lib/useChoiceDisclosure";
 
+import type { DetectionKind } from "@/lib/realtime/types";
+
 import { ChoiceCompareSheet } from "./ChoiceCompareSheet";
 import { ChoiceDetailSheet } from "./ChoiceDetailSheet";
-import { ChoiceStrip, type DetectionKind } from "./ChoiceStrip";
+import { ChoiceStrip } from "./ChoiceStrip";
 
 export interface ChoiceOptionFull {
   label: string;

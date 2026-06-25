@@ -31,14 +31,14 @@ describe("DeepDiveList（深掘り対象＝未解消検知）", () => {
         onJump={vi.fn()}
       />,
     );
-    expect(screen.getByText("矛盾")).toBeTruthy();
+    expect(screen.getByText(/矛盾/)).toBeTruthy();
     expect(screen.getByText("並び順の両論あり")).toBeTruthy();
     expect(screen.getByRole("button", { name: /会話で確認/ })).toBeTruthy();
   });
 
   it("抜けは『抜け』ラベルを出す", () => {
     render(<DeepDiveList detections={[det({ id: "d2", kind: "gap", summary: "並びが未定" })]} onJump={vi.fn()} />);
-    expect(screen.getByText("抜け")).toBeTruthy();
+    expect(screen.getByText(/抜け/)).toBeTruthy();
   });
 
   it("会話で確認で onJump(検知id) が呼ばれる", () => {

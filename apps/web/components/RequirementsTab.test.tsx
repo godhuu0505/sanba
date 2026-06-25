@@ -53,7 +53,7 @@ describe("RequirementsTab（要件絵巻タブ・閲覧のみ＋深掘り）", (
         onJump={onJump}
       />,
     );
-    expect(screen.getByText("矛盾")).toBeTruthy();
+    expect(screen.getByText(/矛盾/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /会話で確認/ }));
     expect(onJump).toHaveBeenCalledWith("d9");
   });
