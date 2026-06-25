@@ -2,7 +2,7 @@
 
 - **優先度**: P1（締め・成果物の受け渡し）
 - **Figma 正本**: `144:2`
-- **仕様**: [conversation-experience-v2.md §3,§7](../conversation-experience-v2.md) / [ADR-0018](../adr/0018-conversation-experience-v2.md)
+- **仕様**: [conversation-experience-v2.md §3,§7](../conversation-experience-v2.md) / [ADR-0018](../../adr/0018-conversation-experience-v2.md)
 
 ## 目的
 確定した要件を「産まれた成果物」として受け取る。**画面で確認＝必須**、外部出力は任意で提供。
@@ -26,7 +26,7 @@
 
 ## 連携
 - 確定要件のスナップショット（07 で確定）を表示・書き出し。
-- 外部出力は外部コネクタ（[ADR-0007](../adr/0007-external-connectors.md)）: Drive / GitHub Issue。PDF はレンダリング。
+- 外部出力は外部コネクタ（[ADR-0007](../../adr/0007-external-connectors.md)）: Drive / GitHub Issue。PDF はレンダリング。
 
 ## 受け入れ基準（AC）
 - [ ] 確定要件が MoSCoW で**画面上で全件確認**できる（必須動線）。

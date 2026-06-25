@@ -2,7 +2,7 @@
 
 - **優先度**: P1（確定の見極め）
 - **Figma 正本**: `143:2`
-- **仕様**: [conversation-experience-v2.md §3,§7](../conversation-experience-v2.md) / [ADR-0018](../adr/0018-conversation-experience-v2.md)
+- **仕様**: [conversation-experience-v2.md §3,§7](../conversation-experience-v2.md) / [ADR-0018](../../adr/0018-conversation-experience-v2.md)
 
 ## 目的
 要件を「確定してよいか」を**確定ゲート**で見極める。未解消（矛盾/抜け/不明瞭）が残る限り確定させない。

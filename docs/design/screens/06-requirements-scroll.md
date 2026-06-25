@@ -2,7 +2,7 @@
 
 - **優先度**: **P0**（成果物・差別化）
 - **Figma 正本**: `135:157`
-- **仕様**: [conversation-experience-v2.md §3,§7](../conversation-experience-v2.md) / [ADR-0018](../adr/0018-conversation-experience-v2.md)
+- **仕様**: [conversation-experience-v2.md §3,§7](../conversation-experience-v2.md) / [ADR-0018](../../adr/0018-conversation-experience-v2.md)
 
 ## 目的
 いま決まっている要件を **MoSCoW＋確信度＋出所**で**閲覧**でき、**未解消（深掘り対象）**から会話へ戻れる。
@@ -15,12 +15,12 @@
 - 空状態（要件 0）／フィルタ（区分別・未確定のみ）。
 
 ## 状態 / 遷移
-- リアルタイム更新: `requirement.upsert` 受信で要件カードを生成/修正（都度）。
+- リアルタイム更新: `requirement.upserted` 受信で要件カードを生成/修正（都度）。
 - 「会話で確認 ›」→ 04 会話履歴（該当の問い・選択肢へ）。
 - **編集不可**（閲覧のみ）。確定操作は 07 判定 → 08 結果で行う。
 
 ## 連携（[realtime-contract](../realtime-contract.md)）
-- 購読: `requirement.upsert`（確信度・出所・引用）。
+- 購読: `requirement.upserted`（確信度・出所・引用）。
 - ハイドレーション: `GET /api/sessions/{id}/requirements`（MoSCoW 構造化）。
 - 深掘り対象は未解消検知（`GET /detections?open=1`）と整合。
 
@@ -28,7 +28,7 @@
 - [ ] 要件が MoSCoW で分類され、各要件に**確信度・出所**が出る。
 - [ ] **閲覧のみ**で、ここでは編集できない（誤操作で要件が変わらない）。
 - [ ] 深掘り対象（矛盾/抜け/不明瞭）が**ラベル＋アイコン＋色**で判別でき、「会話で確認」で 04 へ戻れる。
-- [ ] `requirement.upsert` 受信で即時反映。リロードで `GET /requirements` から復元。
+- [ ] `requirement.upserted` 受信で即時反映。リロードで `GET /requirements` から復元。
 - [ ] 色のみに依存しない（黄土＝抜けはラベル併記）。
 
 ## 現状差分

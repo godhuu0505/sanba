@@ -2,7 +2,7 @@
 
 - **優先度**: **P0**（マルチモーダル入力・差別化）
 - **Figma 正本**: 一覧 `135:80` / 詳細 `148:2` / 手段選択シート `148:95`
-- **仕様**: [conversation-experience-v2.md §3,§6](../conversation-experience-v2.md) / [ADR-0004](../adr/0004-multimodal-input.md) / [ADR-0018](../adr/0018-conversation-experience-v2.md)
+- **仕様**: [conversation-experience-v2.md §3,§6](../conversation-experience-v2.md) / [ADR-0004](../../adr/0004-multimodal-input.md) / [ADR-0018](../../adr/0018-conversation-experience-v2.md)
 
 ## 目的
 画像/動画/画面/資料を**随時**投入し、**会話を止めずに背景解析**して要件絵巻へ合流させる。投入済み資料と解析状態をいつでも確認。
@@ -20,13 +20,13 @@
 進捗はミニ状況「📎資料 N（解析中…）」にも反映。会話は止めない。
 
 ## 連携（[realtime-contract](../realtime-contract.md)）
-- 投入: `POST /api/sessions/{id}/context/file`（[ADR-0004](../adr/0004-multimodal-input.md)）。
-- 解析: Gemini Vision / RAG grounding。完了で `requirement.upsert`（出所=画/言葉×画）→ 06 へ。
+- 投入: `POST /api/sessions/{id}/context/file`（[ADR-0004](../../adr/0004-multimodal-input.md)）。
+- 解析: Gemini Vision / RAG grounding。完了で `requirement.upserted`（出所=画/言葉×画）→ 06 へ。
 - 復元: 途中参加/リロードは投入済みファイルと解析状態を GET でハイドレーション。
-- Drive 連携は外部コネクタ（[ADR-0007](../adr/0007-external-connectors.md)）。
+- Drive 連携は外部コネクタ（[ADR-0007](../../adr/0007-external-connectors.md)）。
 
 ## 受け入れ基準（AC）
-- [ ] 「＋ 素材を追加」→ 手段選択（カメラ/アップロード/Drive）→ 投入できる。
+- [ ] 「＋ 素材を追加」→ 手段選択（カメラ/アップロード）→ 投入できる（Drive は ADR-0007 で未承認・別チケット対応）。
 - [ ] 一覧で各ファイルの**待機/アップロード%/解析中%/完了✓/失敗**がインラインで判別できる。
 - [ ] 解析は**バックグラウンド**で、会話タブへ戻っても進行し、完了で 06 要件絵巻に反映される。
 - [ ] 詳細で抽出要件と**言葉×画の矛盾**が出て、起票導線（→04/06）がある。
