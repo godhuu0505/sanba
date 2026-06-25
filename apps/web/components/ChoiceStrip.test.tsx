@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ChoiceStrip, type ChoiceOption } from "./ChoiceStrip";
@@ -52,6 +52,35 @@ describe("ChoiceStrip（問いピン・最小/一覧）", () => {
     expect(cb.onOpenDetail).toHaveBeenCalledWith(1);
     fireEvent.click(screen.getByRole("button", { name: /閉じる/ }));
     expect(cb.onCollapse).toHaveBeenCalledTimes(1);
+  });
+
+  it("最小: 動的chipの長押しで onOpenDetail(index)（一覧を経由しない近道）", () => {
+    vi.useFakeTimers();
+    try {
+      const cb = setup();
+      fireEvent.pointerDown(screen.getByRole("button", { name: /新しき順/ }));
+      act(() => vi.advanceTimersByTime(600));
+      expect(cb.onOpenDetail).toHaveBeenCalledWith(0);
+      expect(cb.onSelect).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("最小: 短いタップは onSelect（長押しにならない）", () => {
+    vi.useFakeTimers();
+    try {
+      const cb = setup();
+      const chip = screen.getByRole("button", { name: /新しき順/ });
+      fireEvent.pointerDown(chip);
+      act(() => vi.advanceTimersByTime(100));
+      fireEvent.pointerUp(chip);
+      fireEvent.click(chip);
+      expect(cb.onSelect).toHaveBeenCalledWith(0);
+      expect(cb.onOpenDetail).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("検知（矛盾）のときは検知バッジを出す", () => {

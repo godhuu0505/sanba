@@ -7,8 +7,12 @@
 // 検知（矛盾/抜け）はバッジ＋枠色で示す（色のみ依存しない・ADR-0017）。
 // 詳細/比較のオーバーレイは別部品（ChoiceDetailSheet など）が担当する。
 
+import { useRef } from "react";
+
 import { detectionPresentation } from "@/lib/realtime/mapping";
 import type { DetectionKind } from "@/lib/realtime/types";
+
+const LONG_PRESS_MS = 450;
 
 export interface ChoiceOption {
   label: string;
@@ -40,6 +44,25 @@ export function ChoiceStrip({
   onOpenDetail,
   detectionKind,
 }: ChoiceStripProps) {
+  // 最小chipの長押し近道：押下で計時、しきい値経過で詳細を開き、その後の click 回答を抑止する。
+  const pressTimer = useRef<number | undefined>(undefined);
+  const longPressed = useRef(false);
+  const startPress = (i: number) => {
+    longPressed.current = false;
+    pressTimer.current = window.setTimeout(() => {
+      longPressed.current = true;
+      onOpenDetail(i);
+    }, LONG_PRESS_MS);
+  };
+  const cancelPress = () => window.clearTimeout(pressTimer.current);
+  const chipClick = (i: number) => {
+    if (longPressed.current) {
+      longPressed.current = false;
+      return; // 長押しで詳細を開いた直後の click は回答にしない。
+    }
+    onSelect(i);
+  };
+
   if (options.length === 0) return null;
 
   const presentation = detectionKind ? detectionPresentation(detectionKind) : null;
@@ -74,20 +97,31 @@ export function ChoiceStrip({
 
       {mode === "min" ? (
         <div className="flex gap-[6px] overflow-x-auto">
-          {options.map((o, i) => (
-            <button
-              key={i}
-              type="button"
-              onClick={() => onSelect(i)}
-              className={`shrink-0 rounded-full border px-[11px] py-[6px] text-[12px] font-bold ${
-                o.fixed
-                  ? "border-dashed border-[#6b5836] text-[var(--sanba-muted)]"
-                  : "border-[var(--sanba-frame)] bg-[var(--sanba-surface)] text-[var(--sanba-gold-text)]"
-              }`}
-            >
-              {o.label}
-            </button>
-          ))}
+          {options.map((o, i) => {
+            // 常設（その他/保留）は詳細を持たないため長押し近道なし。
+            const longPress = o.fixed
+              ? {}
+              : {
+                  onPointerDown: () => startPress(i),
+                  onPointerUp: cancelPress,
+                  onPointerLeave: cancelPress,
+                };
+            return (
+              <button
+                key={i}
+                type="button"
+                onClick={() => chipClick(i)}
+                {...longPress}
+                className={`shrink-0 rounded-full border px-[11px] py-[6px] text-[12px] font-bold ${
+                  o.fixed
+                    ? "border-dashed border-[#6b5836] text-[var(--sanba-muted)]"
+                    : "border-[var(--sanba-frame)] bg-[var(--sanba-surface)] text-[var(--sanba-gold-text)]"
+                }`}
+              >
+                {o.label}
+              </button>
+            );
+          })}
         </div>
       ) : (
         <div className="flex flex-col gap-[6px]">
