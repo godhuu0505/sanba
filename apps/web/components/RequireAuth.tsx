@@ -1,6 +1,6 @@
 "use client";
 
-// 認証ゲート（ADR-0012 / docs/design/conversation-experience-v2.md §3 横断）。
+// 認証ゲート（ADR-0012 / docs/design/conversation-experience.md §3 横断）。
 // 未ログインで保護ルート（会話フェーズ等）に来たら /login?next= へリダイレクトする。
 // 認証解決前（ready=false）は何も描画せずリダイレクトもしない（解決待ち）。
 // ログイン後は next で元の遷移先へ復帰する想定（/login 側が next を読む）。

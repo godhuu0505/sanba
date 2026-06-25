@@ -1,7 +1,7 @@
 "use client";
 
 // 会話フェーズの共通シェル（04 会話履歴 / 05 参考資料 / 06 要件絵巻 のタブ違い）。
-// 仕様: docs/design/conversation-experience-v2.md §2。
+// 仕様: docs/design/conversation-experience.md §2。
 // 固定UI（ヘッダ・ミニ状況・タブ・問いピン・2行ボトムバー）は常時表示し、本文だけタブで切替える。
 // 音声会話はタブに依らず継続するため、問いピン/ボトムバーはどのタブでも描画し続ける。
 

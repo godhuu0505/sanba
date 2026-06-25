@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { choiceReducer, initialChoiceState } from "./choiceDisclosure";
 
 // 選択肢の開示レベル（最小 ⇄ 一覧 ⇄ 詳細 ⇄ 比較）の純レデューサ。
-// 仕様: docs/design/conversation-experience-v2.md §4。
+// 仕様: docs/design/conversation-experience.md §4。
 describe("choiceReducer（選択肢4モード切替）", () => {
   it("初期は hidden（問いが無い）", () => {
     expect(initialChoiceState.mode).toBe("hidden");

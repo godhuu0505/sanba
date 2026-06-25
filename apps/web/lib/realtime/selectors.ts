@@ -56,7 +56,7 @@ export function selectStats(state: SessionState): SessionStats {
 export { PRIORITY_ORDER };
 
 // ── ミニ状況（常時表示）─────────────────────────────────────────────
-// 仕様: docs/design/conversation-experience-v2.md §2（◆要件 N ・ ⚠未確定 N ・ 📎資料 N）。
+// 仕様: docs/design/conversation-experience.md §2（◆要件 N ・ ⚠未確定 N ・ 📎資料 N）。
 
 /** selectMiniStatus が必要とする SessionState の構造的サブセット（テスト容易性のため）。 */
 export interface MiniStatusInput {
