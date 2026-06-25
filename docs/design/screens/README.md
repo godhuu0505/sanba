@@ -7,11 +7,11 @@ Figma「📱 iPhone 13 Pro 操作フロー・正本」（fileKey `eI6QvvCEO021zp
 > [`../README.md`](../README.md) の「次フェーズ（デスクトップ拡張）」へ退避。リアルタイム前提は
 > [`../realtime-contract.md`](../realtime-contract.md)。
 >
-> **会話フェーズ（03〜08）改訂 v2（2026-06-25）**: 会話を止めずに情報面を横断する **3 タブ
-> （会話履歴 / 参考資料 / 要件絵巻）** へ再構成。詳細 [`../conversation-experience-v2.md`](../conversation-experience-v2.md)、
-> 決定 [ADR-0018](../../adr/0018-conversation-experience-v2.md)（ADR-0017 navigation を一部改訂）。
+> **会話フェーズ（03〜08）改訂（2026-06-25）**: 会話を止めずに情報面を横断する **3 タブ
+> （会話履歴 / 参考資料 / 要件絵巻）** へ再構成。詳細 [`../conversation-experience.md`](../conversation-experience.md)、
+> 決定 [ADR-0018](../../adr/0018-conversation-experience.md)（ADR-0017 navigation を一部改訂）。
 > 旧票（live-idle / live-speaking / detection / material / uploading / analysis / scroll / complete）は
-> v2 票へ統合（git 履歴に残置）。
+> 現行票へ統合（git 履歴に残置）。
 
 ## 一覧と優先度
 
@@ -28,7 +28,7 @@ Figma「📱 iPhone 13 Pro 操作フロー・正本」（fileKey `eI6QvvCEO021zp
 | 07 | 判定（確定ゲート） | [`07-judgment.md`](07-judgment.md) | P1 | 未実装（新規） |
 | 08 | 結果（産婆結果＋出力） | [`08-result.md`](08-result.md) | P1 | 未実装 |
 
-## フロー（正本 v2）
+## フロー（正本）
 
 ```
 01 ホーム → 02 準備 →

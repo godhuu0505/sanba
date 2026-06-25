@@ -134,7 +134,7 @@
 
 | 用語 | 英語 / 識別子 | 定義 | 出典 |
 |---|---|---|---|
-| 素材を渡す | provide material | 画像・動画・画面共有・カメラ撮影で情報を渡す入口（v2 = 05-2 手段選択シート）。 | Figma `148:95` / [screens/05-materials.md](design/screens/05-materials.md) |
+| 素材を渡す | provide material | 画像・動画・画面共有・カメラ撮影で情報を渡す入口（05-2 手段選択シート）。 | Figma `148:95` / [screens/05-materials.md](design/screens/05-materials.md) |
 | アセット | asset / `asset_id` / `asset_kind` | アップロードされた素材。安定 `asset_id` で解析イベントを行に対応付ける。種別は `image` / `video`。 | [api.ts](../apps/web/lib/api.ts) |
 | 資料（コンテキスト） | context / `kind="context"` | インタビュー前に登録する既存資料（PRD 草案・議事録）。同じ ES インデックスに入れ、既出論点は質問せず確認に切り替える。 | [ingestion.py](../apps/api/src/sanba_api/ingestion.py) |
 | 解析進捗 | `analysis.progress` | 素材解析の進捗（`pct` と人間可読 `stage`：領域検出／OCR／突合）。 | [events.py](../apps/agent/src/sanba_agent/events.py) |

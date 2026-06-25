@@ -2,7 +2,7 @@
 
 - **優先度**: P1（確定の見極め）
 - **Figma 正本**: `143:2`
-- **仕様**: [conversation-experience-v2.md §3,§7](../conversation-experience-v2.md) / [ADR-0018](../../adr/0018-conversation-experience-v2.md)
+- **仕様**: [conversation-experience.md §3,§7](../conversation-experience.md) / [ADR-0018](../../adr/0018-conversation-experience.md)
 
 ## 目的
 要件を「確定してよいか」を**確定ゲート**で見極める。未解消（矛盾/抜け/不明瞭）が残る限り確定させない。
@@ -14,7 +14,7 @@
 - `問答に戻って解く`（主・金）／`未解消のまま終う`（危険・緋枠）。
 - 全解消時のバリエーション: 「すべて解けました・確定できます」＋`要件を確定する`（→ 08）。
 
-## 発火タイミング（[§7](../conversation-experience-v2.md)）
+## 発火タイミング（[§7](../conversation-experience.md)）
 - 回答時・ファイルアップロード時に**裏で確定ゲートを更新**（ミニ状況の ⚠未確定 N に反映）。
 - **終了押下時**（04 の ⏹ → 終了確認ダイアログ）に本画面で提示。
 - ルール: 未解消 **0 件で確定可**、1 件でも残れば確定不可。

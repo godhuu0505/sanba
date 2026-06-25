@@ -2,7 +2,7 @@
 
 - **優先度**: P1（締め・成果物の受け渡し）
 - **Figma 正本**: `144:2`
-- **仕様**: [conversation-experience-v2.md §3,§7](../conversation-experience-v2.md) / [ADR-0018](../../adr/0018-conversation-experience-v2.md)
+- **仕様**: [conversation-experience.md §3,§7](../conversation-experience.md) / [ADR-0018](../../adr/0018-conversation-experience.md)
 
 ## 目的
 確定した要件を「産まれた成果物」として受け取る。**画面で確認＝必須**、外部出力は任意で提供。
@@ -15,7 +15,7 @@
 - **書き出す（任意）**: `📄 PDF` / `☁ Drive` / `🐙 Issue`。
 - `新しい問答を始める`。
 
-## 出力（[§7](../conversation-experience-v2.md)）
+## 出力（[§7](../conversation-experience.md)）
 | 出力 | 位置づけ |
 |---|---|
 | 画面で確認 | **必須**（既定動線） |
