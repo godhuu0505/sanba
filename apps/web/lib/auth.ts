@@ -91,17 +91,22 @@ export function useGoogleAuth(): GoogleAuth {
     let cancelled = false;
     function setup() {
       const id = window.google?.accounts.id;
-      if (!id || !buttonRef.current || cancelled) return;
+      if (!id || cancelled) return;
       // auto_select: リロード時に直前の単一アカウントを One Tap で静かに再取得する (ADR-0014 §7)。
       // ID トークンは localStorage に保存しない (XSS リスク回避)。再取得できなければ
       // 明示ログイン (ボタン) に委ねる。
+      // buttonRef の有無に関わらず initialize/prompt を呼ぶ: /login でログイン後に /
+      // へ戻った際、Home は buttonRef を描画しないが One Tap の auto_select で
+      // 直前セッションの credential を再取得できる必要がある (P1)。
       id.initialize({ client_id: CLIENT_ID, callback: onCredential, auto_select: true });
-      id.renderButton(buttonRef.current, {
-        theme: "outline",
-        size: "large",
-        text: "signin_with",
-        shape: "pill",
-      });
+      if (buttonRef.current) {
+        id.renderButton(buttonRef.current, {
+          theme: "outline",
+          size: "large",
+          text: "signin_with",
+          shape: "pill",
+        });
+      }
       // One Tap を表示して自動再取得を試みる (未ログイン時のみ意味を持つ)。
       id.prompt();
     }
