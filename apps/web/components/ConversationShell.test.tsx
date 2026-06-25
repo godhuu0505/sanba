@@ -63,6 +63,17 @@ describe("ConversationShell（共通シェル）", () => {
     expect(onEnd).toHaveBeenCalledTimes(1);
   });
 
+  it("onEnd が無いときは終了ボタンを無効化する", () => {
+    render(
+      <ConversationShell
+        mini={mini}
+        tabs={{ history: <div>h</div>, files: <div>f</div>, scroll: <div>s</div> }}
+        bottomBar={<div>bar</div>}
+      />,
+    );
+    expect((screen.getByRole("button", { name: "会話を終了" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
   it("ミニ状況の『資料』タップで参考資料、『要件』タップで要件絵巻タブへ移動", () => {
     renderShell();
     fireEvent.click(screen.getByRole("button", { name: /資料/ }));

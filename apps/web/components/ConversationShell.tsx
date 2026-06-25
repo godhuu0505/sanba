@@ -69,7 +69,8 @@ export function ConversationShell({
           type="button"
           aria-label="会話を終了"
           onClick={onEnd}
-          className="flex size-7 items-center justify-center rounded-full border border-[var(--sanba-border)] bg-[var(--sanba-surface)] text-[13px] text-[var(--sanba-muted)]"
+          disabled={!onEnd}
+          className="flex size-7 items-center justify-center rounded-full border border-[var(--sanba-border)] bg-[var(--sanba-surface)] text-[13px] text-[var(--sanba-muted)] disabled:opacity-40"
         >
           ⏹
         </button>
