@@ -26,7 +26,7 @@ export type { SanbaButtonProps } from "./Button";
 export { Card, CardTitle, CardDescription } from "./Card";
 export { Chip } from "./Chip";
 export type { ChipProps, ChipTone } from "./Chip";
-export { Input, Textarea, Field } from "./Field";
+export { Input, Textarea, Select, Field } from "./Field";
 export type { FieldProps } from "./Field";
 export { Divider } from "./Divider";
 export type { DividerProps } from "./Divider";

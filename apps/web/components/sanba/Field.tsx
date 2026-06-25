@@ -22,6 +22,16 @@ export const Textarea = React.forwardRef<
 ));
 Textarea.displayName = "SanbaTextarea";
 
+/** SANBA 配色の選択。要件編集の優先度/分類など。native select で軽量。 */
+export const Select = React.forwardRef<
+  HTMLSelectElement,
+  React.SelectHTMLAttributes<HTMLSelectElement>
+>(({ className, ...props }, ref) => (
+  // native の矢印は OS 描画に委ね（appearance はいじらない）、配色のみ baseControl で揃える。
+  <select ref={ref} className={cn(baseControl, "cursor-pointer", className)} {...props} />
+));
+Select.displayName = "SanbaSelect";
+
 /** ラベル＋任意の補助テキストで入力をくるむ最小フォーム行。 */
 export interface FieldProps extends React.HTMLAttributes<HTMLDivElement> {
   label: React.ReactNode;

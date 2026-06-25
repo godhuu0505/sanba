@@ -1,11 +1,14 @@
 "use client";
 
-// 管理画面 (ADR-0014 §3)。セッション一覧・要件の編集/承認・セッション作成を行う。
+// 管理画面「管理の間」(ADR-0014 §3 / Figma 正本 31:2・黄金テーマ 73-8..11)。
+// 91 一覧 → 92 作成（招待発行）→ 93 要件を検める（改める/認める/退ける）→ 94 アクセスゲート。
 // 閲覧は requirements のみ。生の発話 (utterances) は出さない (issue #10 / §3)。
 // 認可の源泉は API 側 (ADMIN_EMAILS)。クライアントのガードは UX 用で、真偽は 401/403 で判定する (§7)。
+// 意匠は SANBA デザインシステム（components/sanba/*）の金彩テーマを再利用し、ロジックは変えない。
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 
 import {
   ApiError,
@@ -18,21 +21,20 @@ import {
   updateRequirement,
 } from "@/lib/api";
 import { useGoogleAuth } from "@/lib/auth";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Select } from "@/components/ui/select";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { Textarea } from "@/components/ui/textarea";
+  AppHeader,
+  Button,
+  Card,
+  CardTitle,
+  Chip,
+  Field,
+  Input,
+  RequirementCard,
+  Screen,
+  Select,
+  SessionRow,
+  Textarea,
+} from "@/components/sanba";
 
 const PRIORITIES = ["must", "should", "could", "wont"] as const;
 const CATEGORIES = [
@@ -43,10 +45,18 @@ const CATEGORIES = [
   "open_question",
 ] as const;
 
+// 招く者の役割。selected の単一選択ではなく複数選択（既定は全員）。
+const ROLES: { value: string; label: string }[] = [
+  { value: "pm", label: "企画(PdM)" },
+  { value: "engineer", label: "エンジニア" },
+  { value: "customer", label: "顧客" },
+];
+
 type Access = "loading" | "ok" | "unauthenticated" | "forbidden" | "error";
 
 export default function AdminPage() {
   const auth = useGoogleAuth();
+  const router = useRouter();
   const idToken = auth.credential;
 
   const [access, setAccess] = useState<Access>("loading");
@@ -75,19 +85,23 @@ export default function AdminPage() {
     void loadSessions();
   }, [loadSessions]);
 
+  // ── 94 アクセスゲート（loading / 401 / 403 / error）──────────────
   if (access === "loading") {
     return (
-      <Gate title="読み込み中…">
-        <p className="text-sm text-[var(--color-muted-foreground)]">
-          アクセス権を確認しています。
+      <Gate title="読み込み中…" eyebrow="しばしお待ちを">
+        <p className="text-[13px] leading-relaxed text-[var(--sanba-muted)]">
+          アクセス権を確かめております。
         </p>
       </Gate>
     );
   }
   if (access === "unauthenticated") {
     return (
-      <Gate title="ログインが必要です">
-        <Button asChild>
+      <Gate title="ログインが必要です" eyebrow="401 — 本人を確かめます">
+        <p className="text-[13px] leading-relaxed text-[var(--sanba-muted)]">
+          問答と要件を検めるには、まず本人を確かめます。
+        </p>
+        <Button asChild variant="gold" block>
           <Link href="/login">ログインへ</Link>
         </Button>
       </Gate>
@@ -95,94 +109,107 @@ export default function AdminPage() {
   }
   if (access === "forbidden") {
     return (
-      <Gate title="管理者権限がありません">
-        <p className="text-sm text-[var(--color-muted-foreground)]">
-          このアカウントには管理者権限がありません。必要な場合はシステム管理者にお問い合わせください。
+      <Gate title="管理者権限がありませぬ" eyebrow="403 — 管理者でない">
+        <p className="text-[13px] leading-relaxed text-[var(--sanba-muted)]">
+          このアカウントには管理者権限がありませぬ。必要な場合はシステム管理者にお問い合わせください。
         </p>
       </Gate>
     );
   }
   if (access === "error") {
     return (
-      <Gate title="読み込みに失敗しました">
-        <Button onClick={() => void loadSessions()}>再試行</Button>
+      <Gate title="読み込みに失敗しました" eyebrow="しくじり">
+        <Button variant="gold" block onClick={() => void loadSessions()}>
+          再び試みる
+        </Button>
       </Gate>
     );
   }
 
+  // ── 91 管理ホーム（セッション一覧）─────────────────────────────
   return (
-    <main className="mx-auto max-w-5xl px-6 py-8">
-      <header className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">SANBA 管理画面</h1>
-        <Button asChild variant="ghost" size="sm">
-          <Link href="/login">ログイン状態</Link>
-        </Button>
-      </header>
-
-      <div className="flex flex-col gap-6">
+    <Screen className="sanba-scroll">
+      <AppHeader back onBack={() => router.push("/login")} title="管理の間" />
+      <main className="mx-auto flex w-full max-w-md flex-col gap-[18px] px-[16px] pb-[40px] pt-[6px]">
         <CreateSessionCard idToken={idToken} onCreated={() => void loadSessions()} />
 
-        <Card>
-          <CardHeader>
-            <CardTitle>セッション一覧</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {sessions.length === 0 ? (
-              <p className="text-sm text-[var(--color-muted-foreground)]">
-                セッションがまだありません。
-              </p>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>タイトル</TableHead>
-                    <TableHead>オーナー</TableHead>
-                    <TableHead>作成日時</TableHead>
-                    <TableHead className="text-right">操作</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {sessions.map((s) => (
-                    <TableRow key={s.id}>
-                      <TableCell className="font-medium">{s.title}</TableCell>
-                      <TableCell>{s.owner_email}</TableCell>
-                      <TableCell>{formatDate(s.created_at)}</TableCell>
-                      <TableCell className="text-right">
-                        <Button
-                          variant={selected === s.id ? "secondary" : "outline"}
-                          size="sm"
-                          onClick={() => setSelected(selected === s.id ? null : s.id)}
-                        >
-                          {selected === s.id ? "閉じる" : "要件を見る"}
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-          </CardContent>
-        </Card>
+        <section className="flex flex-col gap-[12px]">
+          <h2 className="text-[13px] font-bold tracking-[0.18em] text-[var(--sanba-gold-text)]">
+            進行中の問答
+          </h2>
+          {sessions.length === 0 ? (
+            <p className="text-[13px] text-[var(--sanba-muted)]">問答がまだございません。</p>
+          ) : (
+            <div className="flex flex-col gap-[10px]">
+              {sessions.map((s) => {
+                const open = selected === s.id;
+                const toggle = () => setSelected(open ? null : s.id);
+                return (
+                  // SessionRow は内部で複数の子（標題＋操作ピル）を描くため asChild(Slot) は使えない。
+                  // div のまま role/tabIndex/キー操作を載せてクリック可能な行にする。
+                  <SessionRow
+                    key={s.id}
+                    role="button"
+                    tabIndex={0}
+                    aria-expanded={open}
+                    onClick={toggle}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        toggle();
+                      }
+                    }}
+                    className="cursor-pointer text-left focus-visible:outline-none focus-visible:border-[var(--sanba-gold)]"
+                    title={s.title}
+                    meta={`${s.owner_email} ・ ${formatDate(s.created_at)}`}
+                    action={open ? "閉じる" : "検める ›"}
+                  />
+                );
+              })}
+            </div>
+          )}
+        </section>
 
-        {selected && <RequirementsPanel sessionId={selected} idToken={idToken} />}
-      </div>
-    </main>
+        {selected && (
+          <RequirementsPanel
+            sessionId={selected}
+            title={sessions.find((s) => s.id === selected)?.title ?? ""}
+            idToken={idToken}
+          />
+        )}
+      </main>
+    </Screen>
   );
 }
 
-function Gate({ title, children }: { title: string; children: React.ReactNode }) {
+// ── 94 ゲートの共通枠 ────────────────────────────────────────────
+function Gate({
+  title,
+  eyebrow,
+  children,
+}: {
+  title: string;
+  eyebrow?: string;
+  children: React.ReactNode;
+}) {
   return (
-    <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-6">
-      <Card>
-        <CardHeader>
+    <Screen className="items-center justify-center px-6 py-10">
+      <div className="mx-auto w-full max-w-md">
+        {eyebrow && (
+          <p className="mb-2 text-[12px] tracking-[0.2em] text-[var(--sanba-gold-text)]">
+            ✦ {eyebrow} ✦
+          </p>
+        )}
+        <Card>
           <CardTitle>{title}</CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-3">{children}</CardContent>
-      </Card>
-    </main>
+          {children}
+        </Card>
+      </div>
+    </Screen>
   );
 }
 
+// ── 92 セッションを興す（標題・役割・招待発行）─────────────────
 function CreateSessionCard({
   idToken,
   onCreated,
@@ -191,16 +218,25 @@ function CreateSessionCard({
   onCreated: () => void;
 }) {
   const [title, setTitle] = useState("要件インタビュー");
+  const [roles, setRoles] = useState<string[]>(ROLES.map((r) => r.value));
   const [busy, setBusy] = useState(false);
   const [invites, setInvites] = useState<Record<string, string> | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  function toggleRole(value: string) {
+    setRoles((prev) =>
+      prev.includes(value) ? prev.filter((r) => r !== value) : [...prev, value],
+    );
+  }
 
   async function handleCreate() {
     try {
       setBusy(true);
       setError(null);
       // owner 作成も consent 必須 (issue #10)。管理者が作るので明示同意済みとして渡す。
-      const res = await createSession(["pm", "engineer", "customer"], true, idToken, title);
+      // role は ROLES の並びに揃えて発行する（表示と招待の符の順を一致させる）。
+      const ordered = ROLES.map((r) => r.value).filter((v) => roles.includes(v));
+      const res = await createSession(ordered, true, idToken, title);
       setInvites(res.invites);
       onCreated();
     } catch (e) {
@@ -212,40 +248,58 @@ function CreateSessionCard({
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>セッションを作成</CardTitle>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-3">
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="title">タイトル</Label>
-          <Input id="title" value={title} onChange={(e) => setTitle(e.target.value)} />
+      <CardTitle>セッションを作成</CardTitle>
+      <Field label="標題（ゴール）" htmlFor="title">
+        <Input id="title" value={title} onChange={(e) => setTitle(e.target.value)} />
+      </Field>
+      <div className="flex flex-col gap-[6px]">
+        <span className="text-[13px] font-bold text-[var(--sanba-muted)]">招く者の役割</span>
+        <div className="flex flex-wrap gap-[8px]">
+          {ROLES.map((r) => (
+            <Chip key={r.value} asChild tone="gold" size="md" selected={roles.includes(r.value)}>
+              {/* asChild の Slot は単一子のみ。選択ドットは子の中で描く。 */}
+              <button type="button" onClick={() => toggleRole(r.value)}>
+                {roles.includes(r.value) && <span aria-hidden>● </span>}
+                {r.label}
+              </button>
+            </Chip>
+          ))}
         </div>
-        <div>
-          <Button onClick={() => void handleCreate()} disabled={busy}>
-            {busy ? "作成中…" : "作成して招待を発行"}
-          </Button>
+      </div>
+      <Button
+        variant="gold"
+        block
+        onClick={() => void handleCreate()}
+        disabled={busy || roles.length === 0}
+      >
+        {busy ? "発行しております…" : "作成して招待を発行"}
+      </Button>
+      {error && <p className="text-[13px] text-[var(--sanba-rec)]">{error}</p>}
+      {invites && (
+        <div className="flex flex-col gap-[6px] rounded-[12px] border border-[var(--sanba-border)] bg-[var(--sanba-bg)]/40 px-[14px] py-[12px]">
+          <p className="text-[13px] font-bold text-[var(--sanba-gold-text)]">
+            招待の符（role ごと）
+          </p>
+          {Object.entries(invites).map(([role, token]) => (
+            <p key={role} className="break-all text-[12px] text-[var(--sanba-cream)]">
+              <span className="font-bold">{role}:</span>{" "}
+              <code className="text-[var(--sanba-muted)]">{token}</code>
+            </p>
+          ))}
         </div>
-        {error && <p className="text-sm text-[var(--color-destructive)]">{error}</p>}
-        {invites && (
-          <div className="flex flex-col gap-1 rounded-md bg-[var(--color-muted)] p-3 text-sm">
-            <p className="font-medium">招待トークン（role ごと）</p>
-            {Object.entries(invites).map(([role, token]) => (
-              <p key={role} className="break-all">
-                <span className="font-medium">{role}:</span> <code>{token}</code>
-              </p>
-            ))}
-          </div>
-        )}
-      </CardContent>
+      )}
     </Card>
   );
 }
 
+// ── 93 要件を検める ─────────────────────────────────────────────
 function RequirementsPanel({
   sessionId,
+  title,
   idToken,
 }: {
   sessionId: string;
+  title: string;
   idToken: string | null;
 }) {
   const [reqs, setReqs] = useState<AdminRequirement[] | null>(null);
@@ -269,20 +323,24 @@ function RequirementsPanel({
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>要件（{sessionId}）</CardTitle>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-4">
-        {error && <p className="text-sm text-[var(--color-destructive)]">{error}</p>}
-        {reqs === null ? (
-          <p className="text-sm text-[var(--color-muted-foreground)]">読み込み中…</p>
-        ) : reqs.length === 0 ? (
-          <p className="text-sm text-[var(--color-muted-foreground)]">
-            この要件はまだ生成されていません。
-          </p>
-        ) : (
-          reqs.map((r) => (
+    <section className="flex flex-col gap-[12px]">
+      <div className="flex flex-col gap-[2px]">
+        <h2 className="text-[18px] font-bold text-[var(--sanba-cream)]">要件を検める</h2>
+        <p className="text-[12px] text-[var(--sanba-muted)]">
+          {sessionId}
+          {title ? ` ・ ${title}` : ""}
+        </p>
+      </div>
+      {error && <p className="text-[13px] text-[var(--sanba-rec)]">{error}</p>}
+      {reqs === null ? (
+        <p className="text-[13px] text-[var(--sanba-muted)]">読み込み中…</p>
+      ) : reqs.length === 0 ? (
+        <p className="text-[13px] text-[var(--sanba-muted)]">
+          この要件はまだ生まれておりませぬ。
+        </p>
+      ) : (
+        <div className="flex flex-col gap-[10px]">
+          {reqs.map((r) => (
             <RequirementRow
               key={r.id}
               sessionId={sessionId}
@@ -290,10 +348,10 @@ function RequirementsPanel({
               req={r}
               onChange={replace}
             />
-          ))
-        )}
-      </CardContent>
-    </Card>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -332,100 +390,75 @@ function RequirementRow({
     setEditing(false);
   }
 
-  return (
-    <div className="rounded-md border border-[var(--color-border)] p-4">
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <StatusBadge status={req.status} />
-        <span className="text-xs text-[var(--color-muted-foreground)]">
-          {req.source_speaker ?? "—"} / 確度 {Math.round(req.confidence * 100)}%
-        </span>
-      </div>
-
-      {editing ? (
-        <div className="flex flex-col gap-3">
-          <div className="flex flex-col gap-1.5">
-            <Label>記述</Label>
-            <Textarea value={statement} onChange={(e) => setStatement(e.target.value)} rows={3} />
-          </div>
-          <div className="flex flex-wrap gap-3">
-            <div className="flex flex-col gap-1.5">
-              <Label>優先度</Label>
-              <Select value={priority} onChange={(e) => setPriority(e.target.value)}>
-                {PRIORITIES.map((p) => (
-                  <option key={p} value={p}>
-                    {p}
-                  </option>
-                ))}
-              </Select>
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label>分類</Label>
-              <Select value={category} onChange={(e) => setCategory(e.target.value)}>
-                {CATEGORIES.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
-                ))}
-              </Select>
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <Button size="sm" onClick={() => void saveEdits()} disabled={busy}>
-              保存
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => {
-                setStatement(req.statement);
-                setPriority(req.priority);
-                setCategory(req.category);
-                setEditing(false);
-              }}
-            >
-              取消
-            </Button>
-          </div>
+  // 編集中は素の枠で編集フォームを描く。閲覧時は RequirementCard（状態チップ＋三択）。
+  if (editing) {
+    return (
+      <Card>
+        <Field label="記述">
+          <Textarea value={statement} onChange={(e) => setStatement(e.target.value)} rows={3} />
+        </Field>
+        <div className="flex flex-wrap gap-[12px]">
+          <Field label="優先度" className="min-w-[140px] flex-1">
+            <Select value={priority} onChange={(e) => setPriority(e.target.value)}>
+              {PRIORITIES.map((p) => (
+                <option key={p} value={p}>
+                  {p}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="分類" className="min-w-[140px] flex-1">
+            <Select value={category} onChange={(e) => setCategory(e.target.value)}>
+              {CATEGORIES.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </Select>
+          </Field>
         </div>
-      ) : (
-        <>
-          <p className="text-sm">{req.statement}</p>
-          <div className="mt-1 flex flex-wrap gap-2 text-xs text-[var(--color-muted-foreground)]">
-            <span>優先度: {req.priority}</span>
-            <span>分類: {req.category}</span>
-            {req.approved_by && <span>承認: {req.approved_by}</span>}
-          </div>
-          <div className="mt-3 flex flex-wrap gap-2">
-            <Button size="sm" variant="outline" onClick={() => setEditing(true)} disabled={busy}>
-              編集
-            </Button>
-            <Button
-              size="sm"
-              onClick={() => void persist({ status: "approved" })}
-              disabled={busy || req.status === "approved"}
-            >
-              承認
-            </Button>
-            <Button
-              size="sm"
-              variant="destructive"
-              onClick={() => void persist({ status: "rejected" })}
-              disabled={busy || req.status === "rejected"}
-            >
-              却下
-            </Button>
-          </div>
-        </>
-      )}
-      {error && <p className="mt-2 text-sm text-[var(--color-destructive)]">{error}</p>}
-    </div>
-  );
-}
+        <div className="flex gap-[8px]">
+          <Button variant="gold" size="sm" onClick={() => void saveEdits()} disabled={busy}>
+            奉る
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setStatement(req.statement);
+              setPriority(req.priority);
+              setCategory(req.category);
+              setEditing(false);
+            }}
+          >
+            取りやめる
+          </Button>
+        </div>
+        {error && <p className="text-[13px] text-[var(--sanba-rec)]">{error}</p>}
+      </Card>
+    );
+  }
 
-function StatusBadge({ status }: { status: RequirementStatus }) {
-  if (status === "approved") return <Badge variant="success">承認済み</Badge>;
-  if (status === "rejected") return <Badge variant="destructive">却下</Badge>;
-  return <Badge variant="secondary">下書き</Badge>;
+  return (
+    <RequirementCard
+      status={req.status}
+      confidence={`${req.source_speaker ?? "—"} ・ 確度 ${Math.round(req.confidence * 100)}%`}
+      statement={req.statement}
+      meta={
+        <>
+          優先度: {req.priority} ・ 分類: {req.category}
+          {req.approved_by ? ` ・ 認: ${req.approved_by}` : ""}
+        </>
+      }
+      onRevise={busy ? undefined : () => setEditing(true)}
+      onApprove={
+        busy || req.status === "approved" ? undefined : () => void persist({ status: "approved" })
+      }
+      onReject={
+        busy || req.status === "rejected" ? undefined : () => void persist({ status: "rejected" })
+      }
+    />
+  );
 }
 
 function formatDate(iso: string): string {
