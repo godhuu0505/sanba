@@ -62,4 +62,12 @@ describe("ConversationShell（共通シェル）", () => {
     fireEvent.click(screen.getByRole("button", { name: "会話を終了" }));
     expect(onEnd).toHaveBeenCalledTimes(1);
   });
+
+  it("ミニ状況の『資料』タップで参考資料、『要件』タップで要件絵巻タブへ移動", () => {
+    renderShell();
+    fireEvent.click(screen.getByRole("button", { name: /資料/ }));
+    expect(screen.getByText("ファイル本文")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /要件 8/ }));
+    expect(screen.getByText("絵巻本文")).toBeTruthy();
+  });
 });

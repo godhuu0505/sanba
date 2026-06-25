@@ -81,16 +81,21 @@ export function ConversationShell({
           aria-label="状況"
           className="flex items-center gap-2 rounded-[10px] border border-[var(--sanba-border)] bg-[#1b140b] px-3 py-2 text-[11.5px]"
         >
-          <span className="font-bold text-[var(--sanba-gold-text)]">◆ 要件 {mini.requirements}</span>
+          {/* タップで該当タブへ（要件/未確定→要件絵巻、資料→参考資料）。 */}
+          <button type="button" onClick={() => setTab("scroll")} className="font-bold text-[var(--sanba-gold-text)]">
+            ◆ 要件 {mini.requirements}
+          </button>
           <span className="text-[#6b5836]">・</span>
-          <span className="font-bold text-[#e0a93b]">⚠ 未確定 {mini.unresolved}</span>
+          <button type="button" onClick={() => setTab("scroll")} className="font-bold text-[#e0a93b]">
+            ⚠ 未確定 {mini.unresolved}
+          </button>
           <span className="text-[#6b5836]">・</span>
-          <span className="text-[var(--sanba-muted)]">
+          <button type="button" onClick={() => setTab("files")} className="text-[var(--sanba-muted)]">
             📎 資料 {mini.materials}
             {mini.analyzing ? "（解析中）" : ""}
-          </span>
+          </button>
           <span className="flex-1" />
-          <span className="text-[var(--sanba-gold-text)]">›</span>
+          <span aria-hidden className="text-[var(--sanba-gold-text)]">›</span>
         </div>
       </div>
 
