@@ -1,0 +1,70 @@
+name: Review status (label)
+
+# レビュー進行をラベルで可視化する。
+#  - ai:review-wait        … レビュー待ち（PR 更新で付与 / Codex・人間のレビューで除去）
+#  - ai:review-responding  … Claude 対応中（claude-review-response.yml が付け外し）
+#
+# 状態遷移（典型）:
+#   PR open/更新 → ai:review-wait
+#   Codex/人間 が review 投稿 → ai:review-wait を外す → Claude が対応開始で ai:review-responding
+#   Claude が修正 push（synchronize）→ ai:review-wait を付け直す（次のレビュー待ち）
+#   対応終了 → ai:review-responding を外す。指摘なし(LGTM)なら無ラベル＝完了。
+#
+# ラベルは .github/labels.yml が単一の真実。文字列一致で参照するため rename 禁止。
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+  pull_request_review:
+    types: [submitted]
+
+permissions:
+  pull-requests: write
+
+concurrency:
+  group: review-status-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  label:
+    name: Sync review-wait label
+    runs-on: ubuntu-latest
+    # fork PR は自動化対象外（ADR-0015 §10）。draft はレビュー待ちにしない。
+    if: >-
+      ${{
+        github.event.pull_request.head.repo.fork == false &&
+        github.event.pull_request.draft == false
+      }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PR: ${{ github.event.pull_request.number }}
+    steps:
+      # PR が更新された → レビュー待ちにする。add-label は冪等。
+      # PR が更新された → レビュー待ちにし、完了マーク（review-done）は無効化する。
+      # ただし needs-human（人間にエスカレ済み）が付いていれば待ちに戻さない。
+      # ラベルは labels.yml が別途同期する。同期前/drift で未作成でも red に
+      # しないよう || true（add-label は既存なら冪等）。
+      - name: Add review-wait on PR update
+        if: ${{ github.event_name == 'pull_request' }}
+        run: |
+          gh pr edit "$PR" --remove-label "ai:review-done" || true
+          if gh pr view "$PR" --json labels --jq '.labels[].name' | grep -qx "needs-human"; then
+            echo "::notice::needs-human のため review-wait は付けません。"
+          else
+            gh pr edit "$PR" --add-label "ai:review-wait" || true
+          fi
+
+      # Codex か人間（Bot/Claude 以外）が review を投稿 → レビュー待ち/完了を外す。
+      # 内容の無い approve は無視。remove-label は不在で失敗するため || true。
+      - name: Remove review-wait on review submitted
+        if: >-
+          ${{
+            github.event_name == 'pull_request_review' &&
+            github.event.review.state != 'approved' &&
+            github.event.review.user.login != 'claude' &&
+            github.event.review.user.login != 'claude[bot]' &&
+            (
+              github.event.review.user.login == 'chatgpt-codex-connector[bot]' ||
+              github.event.review.user.type != 'Bot'
+            )
+          }}
+        run: gh pr edit "$PR" --remove-label "ai:review-wait" --remove-label "ai:review-done" || true
