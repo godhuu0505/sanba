@@ -300,6 +300,18 @@ def test_decode_user_answered_rejects_missing_answer() -> None:
     assert decode_user_answered(payload) is None
 
 
+def test_decode_user_answered_truncates_oversized_text() -> None:
+    # 自由記述回答も user.text と同じ上限で切り詰める（防御の迂回を防ぐ / Codex P2）。
+    from sanba_agent.events import MAX_USER_TEXT_CHARS
+
+    payload = json.dumps(
+        {"type": "user.answered", "question_id": "q1", "text": "あ" * (MAX_USER_TEXT_CHARS + 100)}
+    ).encode()
+    result = decode_user_answered(payload)
+    assert result is not None
+    assert len(result[1]) == MAX_USER_TEXT_CHARS
+
+
 def test_requirement_to_contract_handles_missing_speaker() -> None:
     req = Requirement(
         id="r1",

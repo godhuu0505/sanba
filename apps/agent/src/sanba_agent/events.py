@@ -381,6 +381,8 @@ def decode_user_answered(
 
     通常質問（金枠）への回答。``(question_id, answer)`` を返す。answer は選択肢値
     （selected_value）優先、無ければ自由記述（text）。どちらも無ければ None。
+    自由記述は user.text と同じ上限（MAX_USER_TEXT_CHARS）で切り詰める（Codex P2）。
+    user.answered.text/selected_value が user.text の防御を迂回するのを防ぐ。
     """
     obj = _decode_web_event(payload, "user.answered", expected_session_id=expected_session_id)
     if obj is None:
@@ -393,7 +395,7 @@ def decode_user_answered(
     answer = selected if isinstance(selected, str) and selected else text
     if not isinstance(answer, str) or not answer.strip():
         return None
-    return question_id, answer.strip()
+    return question_id, answer.strip()[:MAX_USER_TEXT_CHARS]
 
 
 def _get_tracer() -> Any:

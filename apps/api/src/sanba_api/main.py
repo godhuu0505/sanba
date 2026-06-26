@@ -585,13 +585,22 @@ def finalize_session_requirements(
     会話を締めて要件を確定したとき、確定した要件件数のスナップショットを刻み、セッションを
     finalized にする（不可逆マーカ）。要件カードの draft→approved 承認は管理画面の責務
     （ADR-0014）なのでここでは行わない。確定後の export（GitHub Issue）はこの件数と一致する。
+
+    ガード（Codex P2）:
+      - 未解消検知が 1 件でも残るなら 409 で拒否する（07 判定の「未解消 0 件で確定可」を
+        サーバ側でも担保。有効トークンの直接 POST や古いクライアント状態での確定を防ぐ）。
+      - 既に finalized なら最初のスナップショット件数をそのまま返す（冪等・上書きしない）。
     """
+    if _read_repo.list_open_detections(session_id):
+        raise HTTPException(status_code=409, detail="unresolved detections remain")
     confirmed = [r for r in _read_repo.list_requirements(session_id) if r["status"] == "confirmed"]
     meta = _repo.finalize_session(session_id, confirmed_count=len(confirmed))
     if meta is None:
         raise HTTPException(status_code=404, detail="session not found")
-    log.info("session_finalized", session=session_id, confirmed=len(confirmed), sub=access.sub)
-    return FinalizeResponse(finalized=True, confirmed_count=len(confirmed))
+    # 既 finalized なら repo が最初のスナップショットを返す。件数は永続値を正とする（冪等）。
+    count = meta.finalized_count if meta.finalized_count is not None else len(confirmed)
+    log.info("session_finalized", session=session_id, confirmed=count, sub=access.sub)
+    return FinalizeResponse(finalized=True, confirmed_count=count)
 
 
 @app.post("/api/sessions/{session_id}/export", response_model=ExportResponse)

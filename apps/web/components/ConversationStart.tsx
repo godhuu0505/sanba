@@ -10,7 +10,7 @@
 
 import { LiveKitRoom, StartAudio, useConnectionState } from "@livekit/components-react";
 import { ConnectionState } from "livekit-client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { AppHeader, Button, Card, Screen } from "@/components/sanba";
 
@@ -101,9 +101,22 @@ export function ConversationStart({ conn, goal, roleLabel, onCancel }: Conversat
 /** ルーム接続が完了するまで 03-1 を出し、Connected で 04（SessionView）へ。 */
 function RoomGate({ conn, onCancel }: { conn: JoinResponse; onCancel: () => void }) {
   const state = useConnectionState();
-  if (state !== ConnectionState.Connected) {
+  // 一度でも接続が成立したか。初回接続前のみ全面ローディングを出し、以後の一時的な再接続では
+  // SessionView をアンマウントしない（store・回答済み質問・投入素材・判定/結果フェーズなどの
+  // ローカル状態を失わないため / Codex P2）。
+  const [hasConnected, setHasConnected] = useState(false);
+  useEffect(() => {
+    if (state === ConnectionState.Connected) setHasConnected(true);
+  }, [state]);
+
+  // 初回接続が成立するまでは接続中表示（03-1）。SessionView はまだ載せない。
+  if (!hasConnected) {
     return <ConnectingOverlay state={state} onCancel={onCancel} />;
   }
+
+  // 接続後は SessionView を載せたまま保持する。一時的な再接続中は状態を壊さないよう
+  // アンマウントせず、上から非破壊のオーバーレイ帯で知らせるだけにする。
+  const reconnecting = state !== ConnectionState.Connected;
   return (
     <Screen className="px-4 py-3">
       <AppHeader brand right={<StartAudio label="🔊 音声を有効に" />} />
@@ -113,6 +126,15 @@ function RoomGate({ conn, onCancel }: { conn: JoinResponse; onCancel: () => void
         </p>
         <SessionView sessionId={conn.session_id} sessionToken={conn.session_token} />
       </main>
+      {reconnecting && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed inset-x-0 top-0 z-50 bg-[var(--sanba-rec)]/90 py-1 text-center text-[12px] font-bold text-white"
+        >
+          繋ぎ直しております… しばらくお待ちください
+        </div>
+      )}
     </Screen>
   );
 }

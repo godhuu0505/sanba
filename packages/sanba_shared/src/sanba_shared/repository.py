@@ -104,6 +104,10 @@ class SessionRepository:
         meta = self.get_session(session_id)
         if meta is None:
             return None
+        # 不可逆マーカ: 既に finalized なら最初のスナップショット（件数・刻）を保持して
+        # 返す（Codex P2）。確定後に要件が増減/二重 POST されても初回確定値を変えない。
+        if meta.status == "finalized":
+            return meta
         updated = meta.model_copy(
             update={
                 "status": "finalized",

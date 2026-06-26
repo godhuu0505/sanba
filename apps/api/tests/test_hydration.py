@@ -176,6 +176,47 @@ def test_finalize_marks_session_and_counts_confirmed() -> None:
     assert meta.finalized_at is not None
 
 
+def test_finalize_rejects_when_unresolved_detections_remain() -> None:
+    # 07 判定の「未解消 0 件で確定可」をサーバ側でも担保（Codex P2）。
+    created = client.post("/api/sessions", json={"roles": ["pm"], "consent_acknowledged": True})
+    sid = created.json()["session_id"]
+    _read_repo._seed_detection(
+        sid, {"id": "d1", "kind": "gap", "summary": "性能未確認", "resolved": False}
+    )
+    res = client.post(f"/api/sessions/{sid}/finalize", headers=_auth(_token(sid)))
+    assert res.status_code == 409
+    # 拒否されたのでセッションは finalized にならない。
+    meta = _repo.get_session(sid)
+    assert meta is not None
+    assert meta.status != "finalized"
+
+
+def test_finalize_is_idempotent_and_keeps_first_snapshot() -> None:
+    # 再確定/二重 POST しても最初のスナップショット件数を保つ（上書きしない / Codex P2）。
+    created = client.post("/api/sessions", json={"roles": ["pm"], "consent_acknowledged": True})
+    sid = created.json()["session_id"]
+    _read_repo._seed_requirement(
+        sid, {"id": "c1", "statement": "確定", "category": "functional", "priority": "must"}
+    )
+    first = client.post(f"/api/sessions/{sid}/finalize", headers=_auth(_token(sid)))
+    assert first.json()["confirmed_count"] == 1
+    meta1 = _repo.get_session(sid)
+    assert meta1 is not None
+    first_at = meta1.finalized_at
+
+    # 確定後に要件が増えても、再 finalize は最初の件数・刻を変えない。
+    _read_repo._seed_requirement(
+        sid, {"id": "c2", "statement": "後から追加", "category": "scope", "priority": "should"}
+    )
+    second = client.post(f"/api/sessions/{sid}/finalize", headers=_auth(_token(sid)))
+    assert second.status_code == 200
+    assert second.json()["confirmed_count"] == 1  # 1 のまま（2 にならない）
+    meta2 = _repo.get_session(sid)
+    assert meta2 is not None
+    assert meta2.finalized_count == 1
+    assert meta2.finalized_at == first_at  # 刻も保持
+
+
 # ── POST /export（P1）──────────────────────────────────────────────────────
 def test_export_disabled_by_default() -> None:
     res = client.post("/api/sessions/sess-3/export", headers=_auth(_token("sess-3")))
