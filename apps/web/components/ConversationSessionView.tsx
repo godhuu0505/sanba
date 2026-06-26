@@ -12,13 +12,14 @@
 //   - 素材一覧の name/uploading/failed と再接続復元: #184 GET context/files
 //   - 確定の永続書き込み（finalize）: #186（onConfirm は結果遷移のみ・export は実 API）
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import {
   selectConfirmedRequirements,
   selectMaterials,
   selectMiniStatus,
   selectOpenDetections,
+  type MaterialItem,
 } from "@/lib/realtime/selectors";
 import type { RealtimeMetricsSnapshot } from "@/lib/realtime/metrics";
 import type { SessionState } from "@/lib/realtime/store";
@@ -51,6 +52,15 @@ export interface ConversationSessionViewProps {
   onExport: () => Promise<ExportResult>;
   /** 「＋ 素材を追加」（05-2 手段選択 / アップロード。親が所有・必須で偽ボタンを作らない）。 */
   onAddMaterial: () => void;
+  /**
+   * realtime の analysis 反映前に投入直後の素材を見せるローカル行（アップロード中/失敗）。
+   * 同 asset_id の realtime 行が来たらそちらを優先（#184 のハイドレーションが入るまでの橋渡し）。
+   */
+  extraMaterials?: MaterialItem[];
+  /** 失敗素材の再試行（親が再アップロードへ）。 */
+  onRetryMaterial?: (id: string) => void;
+  /** 会話フェーズを離れる（終了→判定）瞬間。親はここでマイク送信を止める。 */
+  onLeaveConversation?: () => void;
   /** 「新しい問答を始める」。 */
   onRestart?: () => void;
   /** 受信状況の観測値（取りこぼし調査の足場・CLAUDE.md 原則3）。 */
@@ -71,6 +81,9 @@ export function ConversationSessionView({
   onSendText,
   onExport,
   onAddMaterial,
+  extraMaterials,
+  onRetryMaterial,
+  onLeaveConversation,
   onRestart,
   metrics,
   recording = true,
@@ -80,10 +93,25 @@ export function ConversationSessionView({
   const [tab, setTab] = useState<ShellTab>("history");
   const [endOpen, setEndOpen] = useState(false);
   const [provisional, setProvisional] = useState(false);
+  // Issue 起票の二重送信を同期的に防ぐ（/export は毎回 GitHub Issue を作るため連打で重複起票になる）。
+  const exportingRef = useRef(false);
 
   const mini = selectMiniStatus(state);
   const openDetections = selectOpenDetections(state);
   const confirmed = selectConfirmedRequirements(state);
+
+  // 投入直後のローカル行（uploading/failed）＋ realtime 解析行。同 id は realtime を優先。
+  const realtimeMaterials = selectMaterials(state);
+  const realtimeIds = new Set(realtimeMaterials.map((m) => m.id));
+  const materials = [
+    ...(extraMaterials ?? []).filter((m) => !realtimeIds.has(m.id)),
+    ...realtimeMaterials,
+  ];
+
+  function leaveConversationTo(next: Phase) {
+    onLeaveConversation?.();
+    setPhase(next);
+  }
 
   // 問いピンは「選択肢を持つ未解消検知（緋/黄土）」を最新優先で1件出す。
   // 通常質問（金枠）の選択肢は #181 まで送られてこないため、本スコープでは検知ドリブンのみ。
@@ -136,8 +164,15 @@ export function ConversationSessionView({
         }}
         onRestart={() => onRestart?.()}
         onExportIssue={() => {
-          // 失敗は握りつぶさずログに残す（success/error の画面表示は #186 以降の seam）。
-          void onExport().catch((e) => console.error("export failed", e));
+          // 連打による重複起票を防ぐ（ref で同期ガード）。失敗は握りつぶさずログに残す。
+          // success URL / 失敗理由 / busy 表示は #186（finalize）と併せた seam（follow-up）。
+          if (exportingRef.current) return;
+          exportingRef.current = true;
+          void onExport()
+            .catch((e) => console.error("export failed", e))
+            .finally(() => {
+              exportingRef.current = false;
+            });
         }}
       />
     );
@@ -178,7 +213,7 @@ export function ConversationSessionView({
         }
         tabs={{
           history: <ChatHistory transcript={state.transcript} />,
-          files: <MaterialsList items={selectMaterials(state)} onAdd={onAddMaterial} />,
+          files: <MaterialsList items={materials} onAdd={onAddMaterial} onRetry={onRetryMaterial} />,
           scroll: (
             <RequirementsTab
               requirements={state.requirements}
@@ -206,7 +241,8 @@ export function ConversationSessionView({
             onContinue={() => setEndOpen(false)}
             onEnd={() => {
               setEndOpen(false);
-              setPhase("judgment");
+              // 会話を離れる: 親がマイク送信を止める（判定/結果画面はボトムバーが無く止められないため）。
+              leaveConversationTo("judgment");
             }}
           />
         </div>

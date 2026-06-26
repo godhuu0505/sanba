@@ -154,6 +154,46 @@ describe("ConversationSessionView（会話シェル結線）", () => {
     expect(screen.getByText(/確定要件 1 件/)).toBeTruthy();
   });
 
+  it("投入直後のローカル素材行を出し、同 id の realtime 解析行が来たら realtime を優先する", () => {
+    renderView({
+      state: baseState({ analysis: [{ asset_id: "a1", pct: 70, stage: "OCR", extracted: [], conflicts: [] }] }),
+      extraMaterials: [
+        { id: "a1", name: "重複.png", pct: 0, status: "uploading" },
+        { id: "local:1", name: "アップ中.png", pct: 0, status: "uploading" },
+      ],
+    });
+    fireEvent.click(screen.getByRole("tab", { name: "参考資料" }));
+    // a1 は realtime（aria-label は asset_id）を優先し、ローカルの「重複.png」は出さない。
+    expect(screen.getByLabelText("資料 a1")).toBeTruthy();
+    expect(screen.queryByLabelText("資料 重複.png")).toBeNull();
+    // realtime 未到達のローカル行はそのまま見える。
+    expect(screen.getByLabelText("資料 アップ中.png")).toBeTruthy();
+  });
+
+  it("終了→終了するで onLeaveConversation を呼ぶ（マイク送信停止のフック）", () => {
+    const onLeaveConversation = vi.fn();
+    renderView({ onLeaveConversation });
+    fireEvent.click(screen.getByRole("button", { name: "会話を終了" }));
+    fireEvent.click(screen.getByRole("button", { name: "終了する" }));
+    expect(onLeaveConversation).toHaveBeenCalledTimes(1);
+  });
+
+  it("結果画面の Issue 書き出しは連打しても1回しか起票しない（重複起票防止）", () => {
+    let resolve: () => void = () => {};
+    const onExport = vi.fn(
+      () => new Promise<{ exported: boolean }>((r) => { resolve = () => r({ exported: true }); }),
+    );
+    renderView({ state: baseState({ detections: [] }), onExport });
+    fireEvent.click(screen.getByRole("button", { name: "会話を終了" }));
+    fireEvent.click(screen.getByRole("button", { name: "終了する" }));
+    fireEvent.click(screen.getByRole("button", { name: "要件を確定する" }));
+    const issueBtn = screen.getByRole("button", { name: "🐙 Issue" });
+    fireEvent.click(issueBtn);
+    fireEvent.click(issueBtn); // 連打
+    expect(onExport).toHaveBeenCalledTimes(1);
+    resolve();
+  });
+
   it("深掘りの『会話で確認』で会話履歴タブへ戻す", () => {
     renderView();
     fireEvent.click(screen.getByRole("tab", { name: "要件絵巻" }));
