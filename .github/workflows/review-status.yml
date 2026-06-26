@@ -34,8 +34,12 @@ jobs:
         github.event.pull_request.head.repo.fork == false &&
         github.event.pull_request.draft == false
       }}
+    # GH_REPO は必須。このジョブは actions/checkout を実行しないためローカル .git が
+    # 無く、GH_REPO（または各コマンドの --repo）が無いと gh pr edit/view が対象
+    # リポジトリを特定できず失敗する（|| true で握り潰されラベルが実際には付かない）。
     env:
       GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
       PR: ${{ github.event.pull_request.number }}
     steps:
       # PR が更新された → レビュー待ちにする。add-label は冪等。
@@ -53,8 +57,12 @@ jobs:
             gh pr edit "$PR" --add-label "ai:review-wait" || true
           fi
 
-      # Codex か人間（Bot/Claude 以外）が review を投稿 → レビュー待ち/完了を外す。
-      # 内容の無い approve は無視。remove-label は不在で失敗するため || true。
+      # Codex か信頼済みの人間（OWNER/MEMBER/COLLABORATOR）が review を投稿 →
+      # レビュー待ち/完了を外す。内容の無い approve は無視。
+      # 人間経路は claude-review-response.yml と同じ author_association 制限を掛ける。
+      # これが無いと外部の第三者レビューでも待ちラベルが外れる一方、Claude 側は
+      # 信頼済みのみ起動するため、PR が「進行ラベルなし」で取り残される。
+      # remove-label は不在で失敗するため || true。
       - name: Remove review-wait on review submitted
         if: >-
           ${{
@@ -64,7 +72,10 @@ jobs:
             github.event.review.user.login != 'claude[bot]' &&
             (
               github.event.review.user.login == 'chatgpt-codex-connector[bot]' ||
-              github.event.review.user.type != 'Bot'
+              (
+                github.event.review.user.type != 'Bot' &&
+                contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.review.author_association)
+              )
             )
           }}
         run: gh pr edit "$PR" --remove-label "ai:review-wait" --remove-label "ai:review-done" || true
