@@ -20,6 +20,7 @@ import {
   selectMiniStatus,
   selectOpenDetections,
 } from "@/lib/realtime/selectors";
+import type { RealtimeMetricsSnapshot } from "@/lib/realtime/metrics";
 import type { SessionState } from "@/lib/realtime/store";
 import type { SendSelection } from "@/lib/realtime/useRealtimeSession";
 import type { ExportResult } from "@/lib/api";
@@ -48,10 +49,12 @@ export interface ConversationSessionViewProps {
   onSendText: (text: string) => void;
   /** 要件を GitHub Issue 等へ書き出す（08 結果・既存 API）。 */
   onExport: () => Promise<ExportResult>;
-  /** 「＋ 素材を追加」（05-2 手段選択 / アップロード。親が所有）。 */
-  onAddMaterial?: () => void;
+  /** 「＋ 素材を追加」（05-2 手段選択 / アップロード。親が所有・必須で偽ボタンを作らない）。 */
+  onAddMaterial: () => void;
   /** 「新しい問答を始める」。 */
   onRestart?: () => void;
+  /** 受信状況の観測値（取りこぼし調査の足場・CLAUDE.md 原則3）。 */
+  metrics?: RealtimeMetricsSnapshot;
   recording?: boolean;
   elapsed?: string;
 }
@@ -69,6 +72,7 @@ export function ConversationSessionView({
   onExport,
   onAddMaterial,
   onRestart,
+  metrics,
   recording = true,
   elapsed,
 }: ConversationSessionViewProps) {
@@ -85,6 +89,9 @@ export function ConversationSessionView({
   // 通常質問（金枠）の選択肢は #181 まで送られてこないため、本スコープでは検知ドリブンのみ。
   const activeChoice = openDetections.find((d) => d.options && d.options.length > 0);
 
+  // 深掘り/判定の「会話で確認」: 会話履歴タブへ戻す。問いピンは未解消検知を最新優先で
+  // 自動表示するため、該当検知が選択肢つきなら戻った先で前面に出る。検知 ID を使った
+  // 個別ハイライト/自動スクロールは follow-up（#181 の question 再提示と併せて）。
   function jumpToConversation() {
     setPhase("shell");
     setTab("history");
@@ -129,7 +136,8 @@ export function ConversationSessionView({
         }}
         onRestart={() => onRestart?.()}
         onExportIssue={() => {
-          void onExport();
+          // 失敗は握りつぶさずログに残す（success/error の画面表示は #186 以降の seam）。
+          void onExport().catch((e) => console.error("export failed", e));
         }}
       />
     );
@@ -170,7 +178,7 @@ export function ConversationSessionView({
         }
         tabs={{
           history: <ChatHistory transcript={state.transcript} />,
-          files: <MaterialsList items={selectMaterials(state)} onAdd={() => onAddMaterial?.()} />,
+          files: <MaterialsList items={selectMaterials(state)} onAdd={onAddMaterial} />,
           scroll: (
             <RequirementsTab
               requirements={state.requirements}
@@ -180,6 +188,16 @@ export function ConversationSessionView({
           ),
         }}
       />
+
+      {/* 観測性: 受信/重複/破棄/欠番を控えめに可視化（取りこぼし調査の足場・CLAUDE.md 原則3）。 */}
+      {metrics && (
+        <p
+          aria-hidden
+          className="pointer-events-none fixed bottom-1 left-1 z-40 text-[9px] text-[var(--sanba-muted)] opacity-40"
+        >
+          受信 {metrics.received}・重複 {metrics.duplicates}・破棄 {metrics.dropped}・欠番 {metrics.gaps}
+        </p>
+      )}
 
       {endOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 px-4">

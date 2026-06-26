@@ -53,10 +53,12 @@ export function ConversationShell({
   bottomBar,
 }: ConversationShellProps) {
   const [internalTab, setInternalTab] = useState<ShellTab>(defaultTab);
-  // 制御タブが渡されればそれを優先。非制御時は内部 state。どちらでも onTabChange は発火する。
-  const tab = controlledTab ?? internalTab;
+  // 制御/非制御を明確に二分する。制御時（tab 指定）は内部 state を書かず親を単一の真実とし、
+  // defaultTab/internalTab との二重管理を避ける。非制御時のみ内部 state を更新する。
+  const isControlled = controlledTab !== undefined;
+  const tab = isControlled ? controlledTab : internalTab;
   const setTab = (next: ShellTab) => {
-    setInternalTab(next);
+    if (!isControlled) setInternalTab(next);
     onTabChange?.(next);
   };
 

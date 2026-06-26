@@ -62,6 +62,7 @@ function renderView(props: Partial<React.ComponentProps<typeof ConversationSessi
   const onToggleMic = vi.fn();
   const onToggleMute = vi.fn();
   const onSendText = vi.fn();
+  const onAddMaterial = vi.fn();
   render(
     <ConversationSessionView
       state={baseState()}
@@ -71,11 +72,12 @@ function renderView(props: Partial<React.ComponentProps<typeof ConversationSessi
       onToggleMic={onToggleMic}
       onToggleMute={onToggleMute}
       onSendText={onSendText}
+      onAddMaterial={onAddMaterial}
       onExport={vi.fn(async () => ({ exported: true, issue_url: "u", count: 1 }))}
       {...props}
     />,
   );
-  return { sendSelection, onToggleMic, onToggleMute, onSendText };
+  return { sendSelection, onToggleMic, onToggleMute, onSendText, onAddMaterial };
 }
 
 describe("ConversationSessionView（会話シェル結線）", () => {
@@ -112,6 +114,12 @@ describe("ConversationSessionView（会話シェル結線）", () => {
     expect(screen.getByText("関連度順か新着順か。")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "関連度順にする" }));
     expect(sendSelection).toHaveBeenCalledWith("d1", "relevance");
+  });
+
+  it("回答インデックス→options[index].value の写像が正しい（2番目=recency）", () => {
+    const { sendSelection } = renderView();
+    fireEvent.click(screen.getByRole("button", { name: "新着順にする" }));
+    expect(sendSelection).toHaveBeenCalledWith("d1", "recency");
   });
 
   it("ボトムバーのマイク/消音トグルとテキスト送信が配線される", () => {

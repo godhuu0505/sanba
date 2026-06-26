@@ -27,7 +27,7 @@ export function SessionView({
   sessionId: string;
   sessionToken: string | null;
 }) {
-  const { state, sendSelection } = useRealtimeSession({
+  const { state, metrics, sendSelection } = useRealtimeSession({
     sessionId,
     sessionToken,
     hydrateDetections: true,
@@ -47,8 +47,10 @@ export function SessionView({
     if (!file) return;
     try {
       await uploadContextFile(sessionId, file, sessionToken);
-    } catch {
-      // 失敗は #184（GET context/files）導入時に行状態へ反映する。当面は握りつぶさず再試行可能に保つ。
+    } catch (e) {
+      // 失敗は #184（GET context/files）導入で行状態（failed）へ反映する。それまでは
+      // 沈黙させずログに残す（成功と誤認させない。トースト化は #184 と併せて follow-up）。
+      console.error("material upload failed", e);
     }
   }
 
@@ -59,7 +61,9 @@ export function SessionView({
   // テキスト送信は #185（user.text）未実装のため、当面はセッション文脈へ投入して
   // 会話に反映させる（捨て足場ではなく実効果のある暫定動線。#185 で会話ターン化する）。
   function handleSendText(text: string) {
-    void addSessionContext(sessionId, text, sessionToken, "user_text");
+    void addSessionContext(sessionId, text, sessionToken, "user_text").catch((e) =>
+      console.warn("text relay failed", e),
+    );
   }
 
   return (
@@ -83,6 +87,7 @@ export function SessionView({
         onExport={handleExport}
         onAddMaterial={() => fileInput.current?.click()}
         onRestart={() => window.location.reload()}
+        metrics={metrics}
       />
     </>
   );

@@ -5,8 +5,9 @@
 // 解析はバックグラウンドで進む（会話を止めない）ため、各行に状態（アップロード/解析中/完了/失敗）を出す。
 
 // 素材ビューモデルは共有セレクタ層（selectMaterials）に寄せ、ここでは再エクスポートのみ。
-export type { MaterialItem, MaterialStatus } from "@/lib/realtime/selectors";
 import type { MaterialItem, MaterialStatus } from "@/lib/realtime/selectors";
+
+export type { MaterialItem, MaterialStatus } from "@/lib/realtime/selectors";
 
 export interface MaterialsListProps {
   items: MaterialItem[];
