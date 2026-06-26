@@ -16,6 +16,7 @@ import { RealtimeMetrics } from "./metrics";
 import type {
   AnalysisVisualConflict,
   Detection,
+  Question,
   Requirement,
   ServerEvent,
   SessionPhase,
@@ -57,6 +58,8 @@ export interface SessionState {
   transcript: TranscriptLine[];
   /** 素材 asset_id ごとの解析状態。 */
   analysis: AnalysisState[];
+  /** 直近の通常質問（金枠 / #181）。新しい question.asked で置き換わる。未提示なら null。 */
+  question: Question | null;
   completed: SessionCompletion | null;
   /** 適用済みの最大 seq（ハイドレーション境界の判定に使う）。 */
   seq: number;
@@ -74,6 +77,7 @@ const EMPTY_STATE: SessionState = {
   detections: [],
   transcript: [],
   analysis: [],
+  question: null,
   completed: null,
   seq: 0,
 };
@@ -85,6 +89,7 @@ export class RealtimeStore {
   private analysis = new Map<string, Versioned<AnalysisState>>();
   private phase: SessionPhase = "idle";
   private agentsActive = 0;
+  private question: Question | null = null;
   private completed: SessionCompletion | null = null;
 
   /** ハイドレーションのスナップショット境界 seq。これ以下のライブイベントは破棄。 */
@@ -95,6 +100,8 @@ export class RealtimeStore {
   private lastStatusSeq = 0;
   /** 最後に適用した session.completed の seq。再配信による巻き戻しを防ぐ。 */
   private lastCompletedSeq = 0;
+  /** 最後に適用した question.asked の seq。古い質問による差し戻しを防ぐ。 */
+  private lastQuestionSeq = 0;
   /** このストアが受理するセッション ID。不一致イベントは破棄（同室の偽装対策）。 */
   private expectedSessionId: string | null = null;
 
@@ -319,6 +326,18 @@ export class RealtimeStore {
           event.requirement,
         );
 
+      case "question.asked":
+        // 通常質問（金枠 / #181）。id を持つが「最新1問」を表示するため status/completed と
+        // 同じく seq ガードで巻き戻しを防ぐ（新しい問いが古い再配信に負けない）。
+        if (event.seq <= this.lastQuestionSeq) return false;
+        this.lastQuestionSeq = event.seq;
+        this.question = {
+          id: event.id,
+          prompt: event.prompt,
+          options: event.options ?? [],
+        };
+        return true;
+
       case "analysis.progress": {
         const prev = this.analysis.get(event.asset_id)?.value;
         return this.upsert(this.analysis, event.asset_id, event.seq, {
@@ -379,6 +398,7 @@ export class RealtimeStore {
       detections: this.sortedValues(this.detections),
       transcript: this.sortedValues(this.transcript),
       analysis: this.sortedValues(this.analysis),
+      question: this.question,
       completed: this.completed,
       seq: this.maxSeq,
     };
@@ -396,11 +416,13 @@ export class RealtimeStore {
     this.analysis.clear();
     this.phase = "idle";
     this.agentsActive = 0;
+    this.question = null;
     this.completed = null;
     this.hydrationSeq = 0;
     this.maxSeq = 0;
     this.lastStatusSeq = 0;
     this.lastCompletedSeq = 0;
+    this.lastQuestionSeq = 0;
     this.metrics.reset();
     this.invalidate();
   }

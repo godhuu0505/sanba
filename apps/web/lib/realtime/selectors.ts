@@ -10,6 +10,12 @@ export function selectOpenDetections(state: SessionState): Detection[] {
   return state.detections.filter((d) => !d.resolved && d.summary !== "").reverse();
 }
 
+/** 直近の通常質問（金枠 / #181）。選択肢が無ければ問いピンは出さない（自由記述は音声/テキスト）。 */
+export function selectActiveQuestion(state: SessionState): SessionState["question"] {
+  const q = state.question;
+  return q && q.options.length > 0 ? q : null;
+}
+
 /** 確定要件のみ（09 のサマリ件数・MoSCoW）。 */
 export function selectConfirmedRequirements(state: SessionState): Requirement[] {
   return state.requirements.filter((r) => r.status === "confirmed");

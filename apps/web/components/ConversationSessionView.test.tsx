@@ -52,6 +52,7 @@ const baseState = (over: Partial<SessionState> = {}): SessionState => ({
     { utterance_id: "u1", speaker: "顧客", role: "customer", text: "検索は関連度順で。", final: true },
   ],
   analysis: [{ asset_id: "a1", pct: 40, stage: "OCR", extracted: [], conflicts: [] }],
+  question: null,
   completed: null,
   seq: 9,
   ...over,
@@ -63,10 +64,12 @@ function renderView(props: Partial<React.ComponentProps<typeof ConversationSessi
   const onToggleMute = vi.fn();
   const onSendText = vi.fn();
   const onAddMaterial = vi.fn();
+  const sendAnswer = vi.fn();
   render(
     <ConversationSessionView
       state={baseState()}
       sendSelection={sendSelection}
+      sendAnswer={sendAnswer}
       micOn
       muted={false}
       onToggleMic={onToggleMic}
@@ -77,7 +80,7 @@ function renderView(props: Partial<React.ComponentProps<typeof ConversationSessi
       {...props}
     />,
   );
-  return { sendSelection, onToggleMic, onToggleMute, onSendText, onAddMaterial };
+  return { sendSelection, sendAnswer, onToggleMic, onToggleMute, onSendText, onAddMaterial };
 }
 
 describe("ConversationSessionView（会話シェル結線）", () => {
@@ -120,6 +123,38 @@ describe("ConversationSessionView（会話シェル結線）", () => {
     const { sendSelection } = renderView();
     fireEvent.click(screen.getByRole("button", { name: "新着順にする" }));
     expect(sendSelection).toHaveBeenCalledWith("d1", "recency");
+  });
+
+  it("検知が無ければ通常質問（金枠）を問いピンに出し、回答で sendAnswer を送る（#181）", () => {
+    const { sendAnswer } = renderView({
+      state: baseState({
+        detections: [],
+        question: {
+          id: "q1",
+          prompt: "並び順は何を既定にしますか",
+          options: [
+            { label: "関連度順", value: "relevance" },
+            { label: "新着順", value: "recency" },
+          ],
+        },
+      }),
+    });
+    expect(screen.getByText("並び順は何を既定にしますか")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "関連度順" }));
+    expect(sendAnswer).toHaveBeenCalledWith("q1", { selectedValue: "relevance" });
+    // 回答後は問いピンを畳む（同じ問いは再表示しない）。
+    expect(screen.queryByText("並び順は何を既定にしますか")).toBeNull();
+  });
+
+  it("選択肢つき検知があるときは検知ピンを優先し、通常質問は出さない（#181）", () => {
+    renderView({
+      state: baseState({
+        question: { id: "q1", prompt: "通常質問は出ない", options: [{ label: "x", value: "x" }] },
+      }),
+    });
+    // baseState の d1（選択肢つき矛盾）が優先される。
+    expect(screen.getByText("関連度順か新着順か。")).toBeTruthy();
+    expect(screen.queryByText("通常質問は出ない")).toBeNull();
   });
 
   it("ボトムバーのマイク/消音トグルとテキスト送信が配線される", () => {

@@ -202,6 +202,30 @@ class SANBAAgent(Agent):
         return result.model_dump(mode="json")
 
     @function_tool
+    async def ask_question(
+        self,
+        _ctx: RunContext,
+        prompt: str,
+        options: list[str] | None = None,
+    ) -> dict:
+        """次に聞くべき問いを1つ、画面の問いピン（金枠）に提示する。
+
+        音声で問いかけると同時に呼ぶと、参加者は選択肢をタップでも答えられる（#181）。
+
+        Args:
+            prompt: 問いの一文（例「並び順は何を既定にしますか」）。
+            options: 選択肢ラベル（2〜4個。例 ["関連度順","新着順"]）。
+                自由に答えてほしい問いでは省略する（音声/テキストで回答）。
+        """
+        question_id = make_requirement_id(f"q:{prompt}")
+        opts = [{"label": o, "value": o} for o in (options or [])]
+        if self._publisher is not None:
+            await self._publisher.question_asked(question_id, prompt, options=opts or None)
+            self._repo.set_session_seq(self._session_id, self._publisher.seq)
+        log.info("question_asked", session=self._session_id, id=question_id, options=len(opts))
+        return {"asked": question_id}
+
+    @function_tool
     async def save_requirement(
         self,
         _ctx: RunContext,

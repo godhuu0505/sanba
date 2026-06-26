@@ -65,6 +65,34 @@ async def test_detection_contradiction_payload() -> None:
 
 
 @pytest.mark.asyncio
+async def test_question_asked_payload() -> None:
+    t = RecordingTransport()
+    pub = EventPublisher("s1", t)
+    await pub.question_asked(
+        "q1",
+        "並び順は何を既定にしますか",
+        options=[{"label": "関連度順", "value": "関連度順"}],
+    )
+    ev = t.sent[0]["event"]
+    assert ev["type"] == "question.asked"
+    assert ev["id"] == "q1"
+    assert ev["prompt"].startswith("並び順")
+    assert ev["options"][0]["label"] == "関連度順"
+    assert t.sent[0]["reliable"] is True
+    assert pub.questions_published == 1
+
+
+@pytest.mark.asyncio
+async def test_question_asked_without_options() -> None:
+    t = RecordingTransport()
+    pub = EventPublisher("s1", t)
+    await pub.question_asked("q2", "自由にお聞かせください")
+    ev = t.sent[0]["event"]
+    # 選択肢なし（自由記述）の問いは options を持たない。
+    assert "options" not in ev
+
+
+@pytest.mark.asyncio
 async def test_status_is_lossy() -> None:
     t = RecordingTransport()
     pub = EventPublisher("s1", t)

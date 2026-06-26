@@ -30,7 +30,7 @@ export function SessionView({
   sessionId: string;
   sessionToken: string | null;
 }) {
-  const { state, metrics, sendSelection, sendText } = useRealtimeSession({
+  const { state, metrics, sendSelection, sendText, sendAnswer } = useRealtimeSession({
     sessionId,
     sessionToken,
     hydrateDetections: true,
@@ -133,6 +133,7 @@ export function SessionView({
       <ConversationSessionView
         state={state}
         sendSelection={sendSelection}
+        sendAnswer={sendAnswer}
         micOn={mic.enabled}
         muted={muted}
         onToggleMic={() => void mic.toggle()}

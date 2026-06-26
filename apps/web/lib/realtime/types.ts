@@ -84,6 +84,14 @@ export interface AnalysisVisualConflict {
   refs: string[];
 }
 
+/** 通常質問（金枠・契約 §3 / #181）。検知（緋/黄土）とは別に、次に聞く1問を提示する。 */
+export interface Question {
+  id: string;
+  prompt: string;
+  /** 選択肢（任意）。あればタップで user.answered を返す。無ければ自由記述（音声/テキスト）。 */
+  options: DetectionOption[];
+}
+
 // ── §2 エンベロープ + §3 イベント ──────────────────────────────────────
 
 interface Envelope<T extends string> {
@@ -153,6 +161,12 @@ export type AnalysisVisualEvent = Envelope<"analysis.visual"> & {
   conflicts: AnalysisVisualConflict[];
 };
 
+export type QuestionAskedEvent = Envelope<"question.asked"> & {
+  id: string;
+  prompt: string;
+  options?: DetectionOption[];
+};
+
 export type SessionCompletedEvent = Envelope<"session.completed"> & {
   summary: {
     contradictions_resolved: number;
@@ -171,6 +185,7 @@ export type ServerEvent =
   | DetectionGapEvent
   | DetectionResolvedEvent
   | RequirementUpsertedEvent
+  | QuestionAskedEvent
   | AnalysisProgressEvent
   | AnalysisVisualEvent
   | SessionCompletedEvent;

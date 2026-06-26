@@ -1,8 +1,32 @@
 import { describe, expect, it } from "vitest";
 
-import { mergeMaterials, selectMaterials, selectMiniStatus } from "./selectors";
+import {
+  mergeMaterials,
+  selectActiveQuestion,
+  selectMaterials,
+  selectMiniStatus,
+} from "./selectors";
 import type { MaterialItem } from "./selectors";
-import type { AnalysisState } from "./store";
+import type { AnalysisState, SessionState } from "./store";
+
+// #181: 通常質問（金枠）。選択肢があるときだけ問いピンの対象にする。
+describe("selectActiveQuestion", () => {
+  const state = (question: SessionState["question"]): SessionState =>
+    ({ question }) as SessionState;
+
+  it("選択肢ありの質問を返す", () => {
+    const q = { id: "q1", prompt: "並び順は？", options: [{ label: "関連度順", value: "rel" }] };
+    expect(selectActiveQuestion(state(q))).toEqual(q);
+  });
+
+  it("選択肢なし（自由記述）は問いピン対象にしない（null）", () => {
+    expect(selectActiveQuestion(state({ id: "q1", prompt: "自由に", options: [] }))).toBeNull();
+  });
+
+  it("質問未提示なら null", () => {
+    expect(selectActiveQuestion(state(null))).toBeNull();
+  });
+});
 
 // #184: 復元（hydrated）/投入直後（local）/ライブ（realtime）の素材行を asset_id で統合する。
 describe("mergeMaterials", () => {

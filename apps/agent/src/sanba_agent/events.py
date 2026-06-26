@@ -95,6 +95,7 @@ class EventPublisher:
         self.contradictions_published = 0
         self.detections_resolved = 0
         self.contradictions_resolved = 0
+        self.questions_published = 0
         self._tracer = _get_tracer()
 
     @property
@@ -230,6 +231,23 @@ class EventPublisher:
         return await self._emit(
             "requirement.upserted", {"requirement": requirement_to_contract(requirement, status)}
         )
+
+    async def question_asked(
+        self,
+        question_id: str,
+        prompt: str,
+        *,
+        options: list[dict[str, str]] | None = None,
+    ) -> dict[str, Any]:
+        """通常質問（金枠 / #181）を web の問いピンへ出す（音声と併用）。
+
+        ``options`` があればタップで user.answered が返る。無ければ自由記述（音声/テキスト）。
+        """
+        payload: dict[str, Any] = {"id": question_id, "prompt": prompt}
+        if options:
+            payload["options"] = options
+        self.questions_published += 1
+        return await self._emit("question.asked", payload)
 
     async def analysis_progress(self, asset_id: str, pct: int, stage: str) -> dict[str, Any]:
         return await self._emit(

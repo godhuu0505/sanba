@@ -16,6 +16,7 @@ import { useRef, useState } from "react";
 
 import {
   mergeMaterials,
+  selectActiveQuestion,
   selectConfirmedRequirements,
   selectMaterials,
   selectMiniStatus,
@@ -24,7 +25,7 @@ import {
 } from "@/lib/realtime/selectors";
 import type { RealtimeMetricsSnapshot } from "@/lib/realtime/metrics";
 import type { SessionState } from "@/lib/realtime/store";
-import type { SendSelection } from "@/lib/realtime/useRealtimeSession";
+import type { SendAnswer, SendSelection } from "@/lib/realtime/useRealtimeSession";
 import type { ExportResult } from "@/lib/api";
 
 import { BottomBar } from "./BottomBar";
@@ -41,6 +42,8 @@ export interface ConversationSessionViewProps {
   state: SessionState;
   /** 検知カードの回答を agent へ送る（契約 §4.5）。 */
   sendSelection: SendSelection;
+  /** 通常質問（金枠）の回答を agent へ送る（契約 §4.5 / #181）。 */
+  sendAnswer?: SendAnswer;
   /** マイク入力 ON か（LiveKit local track）。 */
   micOn: boolean;
   /** 音声出力の消音中か。 */
@@ -85,6 +88,7 @@ type Phase = "shell" | "judgment" | "result";
 export function ConversationSessionView({
   state,
   sendSelection,
+  sendAnswer,
   micOn,
   muted,
   onToggleMic,
@@ -106,6 +110,9 @@ export function ConversationSessionView({
   const [tab, setTab] = useState<ShellTab>("history");
   const [endOpen, setEndOpen] = useState(false);
   const [provisional, setProvisional] = useState(false);
+  // 回答済みの通常質問 ID（#181）。検知の resolved 相当のサーバ echo が無いため、
+  // 回答後はローカルで問いピンを畳む（次の question.asked が新 ID で前面に出る）。
+  const [answeredQuestions, setAnsweredQuestions] = useState<ReadonlySet<string>>(new Set());
   // Issue 起票の二重送信を同期的に防ぐ（/export は毎回 GitHub Issue を作るため連打で重複起票になる）。
   const exportingRef = useRef(false);
   // 確定（finalize）の二重送信を同期的に防ぐ（#186）。
@@ -134,9 +141,14 @@ export function ConversationSessionView({
     setPhase(next);
   }
 
-  // 問いピンは「選択肢を持つ未解消検知（緋/黄土）」を最新優先で1件出す。
-  // 通常質問（金枠）の選択肢は #181 まで送られてこないため、本スコープでは検知ドリブンのみ。
+  // 問いピンは「選択肢を持つ未解消検知（緋/黄土）」を最新優先で1件出す。検知が無ければ
+  // 通常質問（金枠 / #181）を出す。検知（矛盾/抜け）は緊急度が高いので優先する。
   const activeChoice = openDetections.find((d) => d.options && d.options.length > 0);
+  const askedQuestion = selectActiveQuestion(state);
+  const activeQuestion =
+    !activeChoice && askedQuestion && !answeredQuestions.has(askedQuestion.id)
+      ? askedQuestion
+      : null;
 
   // 深掘り/判定の「会話で確認」: 会話履歴タブへ戻す。問いピンは未解消検知を最新優先で
   // 自動表示するため、該当検知が選択肢つきなら戻った先で前面に出る。検知 ID を使った
@@ -223,6 +235,20 @@ export function ConversationSessionView({
       onAnswer={(i) => {
         const opt = activeChoice.options?.[i];
         if (opt) sendSelection(activeChoice.id, opt.value);
+      }}
+    />
+  ) : activeQuestion ? (
+    // 通常質問（金枠 / #181）。detectionKind なし = 金（通常）。回答で user.answered を返し、
+    // ローカルで畳む（次の question.asked が前面化するまで再表示しない）。
+    <ChoicePin
+      questionId={activeQuestion.id}
+      question={activeQuestion.prompt}
+      options={activeQuestion.options.map((o) => ({ label: o.label }))}
+      onAnswer={(i) => {
+        const opt = activeQuestion.options[i];
+        if (!opt) return;
+        sendAnswer?.(activeQuestion.id, { selectedValue: opt.value });
+        setAnsweredQuestions((prev) => new Set(prev).add(activeQuestion.id));
       }}
     />
   ) : undefined;
