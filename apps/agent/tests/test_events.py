@@ -263,6 +263,16 @@ def test_decode_user_text_rejects_other_session() -> None:
     assert decode_user_text(payload, expected_session_id="s1") is None
 
 
+def test_decode_user_text_truncates_oversized_input() -> None:
+    # 長大入力はサーバ受信境界で切り詰める（メモリ/LLM コンテキスト保護 / Codex P2）。
+    from sanba_agent.events import MAX_USER_TEXT_CHARS
+
+    payload = json.dumps({"type": "user.text", "text": "あ" * (MAX_USER_TEXT_CHARS + 500)}).encode()
+    decoded = decode_user_text(payload)
+    assert decoded is not None
+    assert len(decoded) == MAX_USER_TEXT_CHARS
+
+
 # ── user.answered（#181）─────────────────────────────────────────────────────
 def test_decode_user_answered_prefers_selected_value() -> None:
     payload = json.dumps(

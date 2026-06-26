@@ -72,6 +72,8 @@ class SANBAAgent(Agent):
         # data channel publish（#94）。未設定でも会話は成立する（publish は付加価値）。
         self._publisher = publisher
         self._utterance_seq = 0
+        # 問い発行ごとの連番（question.asked の ID を一意にする / Codex P2）。
+        self._question_seq = 0
         # 既に publish 済みの検知 id（open_topic の重複 gap を抑止）。
         self._published_gaps: set[str] = set()
         # fire-and-forget の publish タスクを保持（GC による途中消滅を防ぐ）。
@@ -219,11 +221,16 @@ class SANBAAgent(Agent):
             options: 選択肢ラベル（2〜4個。例 ["関連度順","新着順"]）。
                 自由に答えてほしい問いでは省略する（音声/テキストで回答）。
         """
-        question_id = make_requirement_id(f"q:{prompt}")
+        # 発行ごとに一意な ID にする（Codex P2）。同じ文面を再質問しても web 側の
+        # answeredQuestions（回答済み ID）に当たらず、新しい問いとして再表示できる。
+        self._question_seq += 1
+        question_id = f"{make_requirement_id(f'q:{prompt}')}-{self._question_seq}"
         opts = [{"label": o, "value": o} for o in (options or [])]
         if self._publisher is not None:
+            # question.asked はハイドレーション・スナップショット（GET /requirements,/detections）に
+            # 含まれない一過性イベント。ここで last_seq を進めると、後続の再ハイドレーションで
+            # 境界以下として正当な差分を取り逃すため、seq 境界は進めない（Codex P2）。
             await self._publisher.question_asked(question_id, prompt, options=opts or None)
-            self._repo.set_session_seq(self._session_id, self._publisher.seq)
         log.info("question_asked", session=self._session_id, id=question_id, options=len(opts))
         return {"asked": question_id}
 

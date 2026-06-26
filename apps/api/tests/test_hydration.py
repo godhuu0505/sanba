@@ -42,6 +42,24 @@ def _auth(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
+# ── 要件 status の軸マッピング（Codex P1）───────────────────────────────────
+def test_requirement_status_maps_admin_axis_to_conversation_axis() -> None:
+    from sanba_api.repository import requirement_doc_to_contract
+
+    def status_of(admin: str | None) -> str:
+        doc = {"id": "r", "statement": "x", "category": "functional", "priority": "must"}
+        if admin is not None:
+            doc["status"] = admin
+        return requirement_doc_to_contract(doc)["status"]
+
+    # save_requirement 由来（管理軸 draft 既定）や approved は会話上「確定」。
+    assert status_of("draft") == "confirmed"
+    assert status_of("approved") == "confirmed"
+    assert status_of(None) == "confirmed"
+    # 管理画面で却下されたものだけ会話上も未確定（起票/確定の対象外）。
+    assert status_of("rejected") == "draft"
+
+
 # ── 認可 ──────────────────────────────────────────────────────────────────
 def test_requirements_requires_session_token() -> None:
     res = client.get("/api/sessions/sess-1/requirements")
@@ -138,17 +156,18 @@ def test_finalize_marks_session_and_counts_confirmed() -> None:
         sid,
         {
             "id": "d1",
-            "statement": "下書き",
+            "statement": "却下",
             "category": "scope",
             "priority": "should",
-            "status": "draft",
+            # 管理画面で却下された要件は会話上の確定からも外れる（contract: draft）。
+            "status": "rejected",
         },
     )
     res = client.post(f"/api/sessions/{sid}/finalize", headers=_auth(_token(sid)))
     assert res.status_code == 200
     body = res.json()
     assert body["finalized"] is True
-    assert body["confirmed_count"] == 1  # confirmed のみ数える
+    assert body["confirmed_count"] == 1  # 却下を除く確定要件のみ数える
     # セッションが finalized に遷移し、確定件数が刻まれる（不可逆マーカ）。
     meta = _repo.get_session(sid)
     assert meta is not None
@@ -167,7 +186,7 @@ def test_export_disabled_by_default() -> None:
 
 
 def test_export_uses_only_confirmed_requirements(monkeypatch: pytest.MonkeyPatch) -> None:
-    # draft を Issue 化せず、count は確定要件数に一致する。
+    # 却下(rejected)を Issue 化せず、count は確定要件数に一致する（会話確定軸 / Codex P1）。
     from sanba_api import github_export, main
 
     _read_repo._seed_requirement(
@@ -177,17 +196,18 @@ def test_export_uses_only_confirmed_requirements(monkeypatch: pytest.MonkeyPatch
             "statement": "確定",
             "category": "functional",
             "priority": "must",
-            "status": "confirmed",
+            # 管理軸 approved も会話上は確定（contract: confirmed）。
+            "status": "approved",
         },
     )
     _read_repo._seed_requirement(
         "sess-x",
         {
             "id": "d1",
-            "statement": "下書き",
+            "statement": "却下",
             "category": "scope",
             "priority": "should",
-            "status": "draft",
+            "status": "rejected",
         },
     )
     monkeypatch.setattr(settings, "github_connector_enabled", True)
@@ -205,5 +225,5 @@ def test_export_uses_only_confirmed_requirements(monkeypatch: pytest.MonkeyPatch
     res = client.post("/api/sessions/sess-x/export", headers=_auth(_token("sess-x")))
     body = res.json()
     assert body["exported"] is True
-    assert body["count"] == 1  # confirmed のみ
-    assert "下書き" not in str(captured["body"])
+    assert body["count"] == 1  # 却下を除く確定のみ
+    assert "却下" not in str(captured["body"])

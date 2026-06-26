@@ -352,10 +352,17 @@ def _decode_web_event(
     return obj
 
 
+# user.text のサーバ側長さ上限（Codex P2）。従来の /context（max_context_chars）相当の
+# ガードがデータチャネル経由には無いため、長大入力でメモリ/LLM コンテキストを浪費しないよう
+# agent 受信境界で切り詰める。1ターンの発話としては十分広い値。
+MAX_USER_TEXT_CHARS = 4000
+
+
 def decode_user_text(payload: bytes | str, *, expected_session_id: str | None = None) -> str | None:
     """web → agent の user.text（契約 §4.5 / #185）をデコードする。
 
     検証に通れば本文テキストを返す。不正・別セッション・空文字なら None。
+    上限（MAX_USER_TEXT_CHARS）を超える入力は切り詰める（メモリ/LLM コンテキスト保護）。
     テキスト入力を「会話ターン」として扱うため、main 側で発話記録＋応答生成に渡す。
     """
     obj = _decode_web_event(payload, "user.text", expected_session_id=expected_session_id)
@@ -364,7 +371,7 @@ def decode_user_text(payload: bytes | str, *, expected_session_id: str | None = 
     text = obj.get("text")
     if not isinstance(text, str) or not text.strip():
         return None
-    return text.strip()
+    return text.strip()[:MAX_USER_TEXT_CHARS]
 
 
 def decode_user_answered(

@@ -22,6 +22,14 @@ def requirement_doc_to_contract(doc: dict[str, Any]) -> dict[str, Any]:
     agent の `Requirement` モデル（id/category/statement/priority/source_speaker/
     confidence）には citations/status が無いため、契約に合わせて補完する。
     """
+    # 会話の確定軸（contract: draft|confirmed）と管理レビュー軸（draft|approved|rejected,
+    # ADR-0014）は別物。永続モデル Requirement.status は管理軸（既定 draft）で保存されるため、
+    # それを会話軸へそのまま流すと save_requirement 由来の確定要件がすべて draft 扱いになり、
+    # hydration / finalize / export の確定件数が 0 にずれる（Codex P1）。save_requirement で
+    # 保存された要件は会話上「確定」なので confirmed とし、管理画面で却下(rejected)された
+    # ものだけ draft（非確定＝起票/確定の対象外）に落とす。approved は確定の上位なので confirmed。
+    admin_status = doc.get("status")
+    contract_status = "draft" if admin_status == "rejected" else "confirmed"
     return {
         "id": doc.get("id", ""),
         "statement": doc.get("statement", ""),
@@ -30,8 +38,7 @@ def requirement_doc_to_contract(doc: dict[str, Any]) -> dict[str, Any]:
         "confidence": doc.get("confidence", 0.7),
         "source_speaker": doc.get("source_speaker") or "",
         "citations": doc.get("citations", []),
-        # 保存された要件は save_requirement 経由の確定要件。明示が無ければ confirmed。
-        "status": doc.get("status", "confirmed"),
+        "status": contract_status,
     }
 
 
