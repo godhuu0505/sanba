@@ -1,7 +1,70 @@
 import { describe, expect, it } from "vitest";
 
-import { selectMaterials, selectMiniStatus } from "./selectors";
-import type { AnalysisState } from "./store";
+import {
+  mergeMaterials,
+  selectActiveQuestion,
+  selectMaterials,
+  selectMiniStatus,
+} from "./selectors";
+import type { MaterialItem } from "./selectors";
+import type { AnalysisState, SessionState } from "./store";
+
+// #181: 通常質問（金枠）。選択肢があるときだけ問いピンの対象にする。
+describe("selectActiveQuestion", () => {
+  const state = (question: SessionState["question"]): SessionState =>
+    ({ question }) as SessionState;
+
+  it("選択肢ありの質問を返す", () => {
+    const q = { id: "q1", prompt: "並び順は？", options: [{ label: "関連度順", value: "rel" }] };
+    expect(selectActiveQuestion(state(q))).toEqual(q);
+  });
+
+  it("選択肢なし（自由記述）は問いピン対象にしない（null）", () => {
+    expect(selectActiveQuestion(state({ id: "q1", prompt: "自由に", options: [] }))).toBeNull();
+  });
+
+  it("質問未提示なら null", () => {
+    expect(selectActiveQuestion(state(null))).toBeNull();
+  });
+});
+
+// #184: 復元（hydrated）/投入直後（local）/ライブ（realtime）の素材行を asset_id で統合する。
+describe("mergeMaterials", () => {
+  const item = (over: Partial<MaterialItem>): MaterialItem => ({
+    id: "a1",
+    name: "a1",
+    pct: 0,
+    status: "analyzing",
+    ...over,
+  });
+
+  it("同一 asset_id は status/pct を realtime（ライブ）優先で統合する", () => {
+    const realtime = [item({ id: "a1", name: "a1", pct: 100, status: "done", extracted: 2 })];
+    const hydrated = [item({ id: "a1", name: "mock.png", pct: 0, status: "analyzing" })];
+    const [m] = mergeMaterials(realtime, [], hydrated);
+    expect(m.status).toBe("done");
+    expect(m.pct).toBe(100);
+    expect(m.extracted).toBe(2);
+    // 表示名は asset_id ではなく実ファイル名（hydrated）を優先する。
+    expect(m.name).toBe("mock.png");
+  });
+
+  it("local（投入直後）の実ファイル名も realtime 行に引き継ぐ", () => {
+    const realtime = [item({ id: "a2", name: "a2", pct: 50, status: "analyzing" })];
+    const local = [item({ id: "a2", name: "diagram.png", pct: 100, status: "analyzing" })];
+    const [m] = mergeMaterials(realtime, local);
+    expect(m.name).toBe("diagram.png");
+  });
+
+  it("realtime に未到達の復元行（failed/動画）も残す", () => {
+    const hydrated = [
+      item({ id: "v1", name: "rec.mp4", status: "analyzing" }),
+      item({ id: "f1", name: "broken.png（失敗）", status: "failed" }),
+    ];
+    const merged = mergeMaterials([], [], hydrated);
+    expect(merged.map((m) => m.id)).toEqual(["v1", "f1"]);
+  });
+});
 
 // 参考資料タブ（05）の素材ビューモデル。analysis.progress/visual 由来の AnalysisState を
 // MaterialsList が消費する MaterialItem へ寄せる純セレクタ。

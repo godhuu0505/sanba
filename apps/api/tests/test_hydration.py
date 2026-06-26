@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 from sanba_api.auth import create_session_token
 from sanba_api.auth_google import AuthUser, require_user
 from sanba_api.config import settings
-from sanba_api.main import _read_repo, app
+from sanba_api.main import _read_repo, _repo, app
 
 client = TestClient(app)
 
@@ -40,6 +40,24 @@ def _token(session_id: str, role: str = "pm") -> str:
 
 def _auth(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
+
+
+# ── 要件 status の軸マッピング（Codex P1）───────────────────────────────────
+def test_requirement_status_maps_admin_axis_to_conversation_axis() -> None:
+    from sanba_api.repository import requirement_doc_to_contract
+
+    def status_of(admin: str | None) -> str:
+        doc = {"id": "r", "statement": "x", "category": "functional", "priority": "must"}
+        if admin is not None:
+            doc["status"] = admin
+        return requirement_doc_to_contract(doc)["status"]
+
+    # save_requirement 由来（管理軸 draft 既定）や approved は会話上「確定」。
+    assert status_of("draft") == "confirmed"
+    assert status_of("approved") == "confirmed"
+    assert status_of(None) == "confirmed"
+    # 管理画面で却下されたものだけ会話上も未確定（起票/確定の対象外）。
+    assert status_of("rejected") == "draft"
 
 
 # ── 認可 ──────────────────────────────────────────────────────────────────
@@ -110,6 +128,113 @@ def test_requirements_returns_persisted_seq_boundary() -> None:
     assert res.json()["seq"] == 42
 
 
+# ── POST /finalize（#186）──────────────────────────────────────────────────
+def test_finalize_requires_session_token() -> None:
+    res = client.post("/api/sessions/sess-fin/finalize")
+    assert res.status_code == 401
+
+
+def test_finalize_unknown_session_404() -> None:
+    res = client.post("/api/sessions/sess-unknown/finalize", headers=_auth(_token("sess-unknown")))
+    assert res.status_code == 404
+
+
+def test_finalize_marks_session_and_counts_confirmed() -> None:
+    created = client.post("/api/sessions", json={"roles": ["pm"], "consent_acknowledged": True})
+    sid = created.json()["session_id"]
+    _read_repo._seed_requirement(
+        sid,
+        {
+            "id": "c1",
+            "statement": "確定",
+            "category": "functional",
+            "priority": "must",
+            "status": "confirmed",
+        },
+    )
+    _read_repo._seed_requirement(
+        sid,
+        {
+            "id": "d1",
+            "statement": "却下",
+            "category": "scope",
+            "priority": "should",
+            # 管理画面で却下された要件は会話上の確定からも外れる（contract: draft）。
+            "status": "rejected",
+        },
+    )
+    res = client.post(f"/api/sessions/{sid}/finalize", headers=_auth(_token(sid)))
+    assert res.status_code == 200
+    body = res.json()
+    assert body["finalized"] is True
+    assert body["confirmed_count"] == 1  # 却下を除く確定要件のみ数える
+    # セッションが finalized に遷移し、確定件数が刻まれる（不可逆マーカ）。
+    meta = _repo.get_session(sid)
+    assert meta is not None
+    assert meta.status == "finalized"
+    assert meta.finalized_count == 1
+    assert meta.finalized_at is not None
+
+
+def test_finalize_rejects_when_unresolved_detections_remain() -> None:
+    # 07 判定の「未解消 0 件で確定可」をサーバ側でも担保（Codex P2）。
+    created = client.post("/api/sessions", json={"roles": ["pm"], "consent_acknowledged": True})
+    sid = created.json()["session_id"]
+    _read_repo._seed_detection(
+        sid, {"id": "d1", "kind": "gap", "summary": "性能未確認", "resolved": False}
+    )
+    res = client.post(f"/api/sessions/{sid}/finalize", headers=_auth(_token(sid)))
+    assert res.status_code == 409
+    # 拒否されたのでセッションは finalized にならない。
+    meta = _repo.get_session(sid)
+    assert meta is not None
+    assert meta.status != "finalized"
+
+
+def test_finalize_is_idempotent_and_keeps_first_snapshot() -> None:
+    # 再確定/二重 POST しても最初のスナップショット件数を保つ（上書きしない / Codex P2）。
+    created = client.post("/api/sessions", json={"roles": ["pm"], "consent_acknowledged": True})
+    sid = created.json()["session_id"]
+    _read_repo._seed_requirement(
+        sid, {"id": "c1", "statement": "確定", "category": "functional", "priority": "must"}
+    )
+    first = client.post(f"/api/sessions/{sid}/finalize", headers=_auth(_token(sid)))
+    assert first.json()["confirmed_count"] == 1
+    meta1 = _repo.get_session(sid)
+    assert meta1 is not None
+    first_at = meta1.finalized_at
+
+    # 確定後に要件が増えても、再 finalize は最初の件数・刻を変えない。
+    _read_repo._seed_requirement(
+        sid, {"id": "c2", "statement": "後から追加", "category": "scope", "priority": "should"}
+    )
+    second = client.post(f"/api/sessions/{sid}/finalize", headers=_auth(_token(sid)))
+    assert second.status_code == 200
+    assert second.json()["confirmed_count"] == 1  # 1 のまま（2 にならない）
+    meta2 = _repo.get_session(sid)
+    assert meta2 is not None
+    assert meta2.finalized_count == 1
+    assert meta2.finalized_at == first_at  # 刻も保持
+
+
+def test_finalize_idempotent_even_with_late_open_detection() -> None:
+    # 既 finalized なら、後から open 検知が付いても再 POST は 409 にならず保存値を返す（Codex P2）。
+    created = client.post("/api/sessions", json={"roles": ["pm"], "consent_acknowledged": True})
+    sid = created.json()["session_id"]
+    _read_repo._seed_requirement(
+        sid, {"id": "c1", "statement": "確定", "category": "functional", "priority": "must"}
+    )
+    first = client.post(f"/api/sessions/{sid}/finalize", headers=_auth(_token(sid)))
+    assert first.status_code == 200
+    # 確定後に遅延した agent が未解消検知を保存しても、再 POST は冪等に成功する。
+    _read_repo._seed_detection(
+        sid, {"id": "d-late", "kind": "gap", "summary": "後追い", "resolved": False}
+    )
+    again = client.post(f"/api/sessions/{sid}/finalize", headers=_auth(_token(sid)))
+    assert again.status_code == 200
+    assert again.json()["confirmed_count"] == 1
+
+
 # ── POST /export（P1）──────────────────────────────────────────────────────
 def test_export_disabled_by_default() -> None:
     res = client.post("/api/sessions/sess-3/export", headers=_auth(_token("sess-3")))
@@ -120,7 +245,7 @@ def test_export_disabled_by_default() -> None:
 
 
 def test_export_uses_only_confirmed_requirements(monkeypatch: pytest.MonkeyPatch) -> None:
-    # draft を Issue 化せず、count は確定要件数に一致する。
+    # 却下(rejected)を Issue 化せず、count は確定要件数に一致する（会話確定軸 / Codex P1）。
     from sanba_api import github_export, main
 
     _read_repo._seed_requirement(
@@ -130,17 +255,18 @@ def test_export_uses_only_confirmed_requirements(monkeypatch: pytest.MonkeyPatch
             "statement": "確定",
             "category": "functional",
             "priority": "must",
-            "status": "confirmed",
+            # 管理軸 approved も会話上は確定（contract: confirmed）。
+            "status": "approved",
         },
     )
     _read_repo._seed_requirement(
         "sess-x",
         {
             "id": "d1",
-            "statement": "下書き",
+            "statement": "却下",
             "category": "scope",
             "priority": "should",
-            "status": "draft",
+            "status": "rejected",
         },
     )
     monkeypatch.setattr(settings, "github_connector_enabled", True)
@@ -158,5 +284,5 @@ def test_export_uses_only_confirmed_requirements(monkeypatch: pytest.MonkeyPatch
     res = client.post("/api/sessions/sess-x/export", headers=_auth(_token("sess-x")))
     body = res.json()
     assert body["exported"] is True
-    assert body["count"] == 1  # confirmed のみ
-    assert "下書き" not in str(captured["body"])
+    assert body["count"] == 1  # 却下を除く確定のみ
+    assert "却下" not in str(captured["body"])

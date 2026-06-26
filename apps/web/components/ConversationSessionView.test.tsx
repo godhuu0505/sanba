@@ -52,6 +52,7 @@ const baseState = (over: Partial<SessionState> = {}): SessionState => ({
     { utterance_id: "u1", speaker: "顧客", role: "customer", text: "検索は関連度順で。", final: true },
   ],
   analysis: [{ asset_id: "a1", pct: 40, stage: "OCR", extracted: [], conflicts: [] }],
+  question: null,
   completed: null,
   seq: 9,
   ...over,
@@ -63,10 +64,12 @@ function renderView(props: Partial<React.ComponentProps<typeof ConversationSessi
   const onToggleMute = vi.fn();
   const onSendText = vi.fn();
   const onAddMaterial = vi.fn();
+  const sendAnswer = vi.fn();
   render(
     <ConversationSessionView
       state={baseState()}
       sendSelection={sendSelection}
+      sendAnswer={sendAnswer}
       micOn
       muted={false}
       onToggleMic={onToggleMic}
@@ -77,7 +80,7 @@ function renderView(props: Partial<React.ComponentProps<typeof ConversationSessi
       {...props}
     />,
   );
-  return { sendSelection, onToggleMic, onToggleMute, onSendText, onAddMaterial };
+  return { sendSelection, sendAnswer, onToggleMic, onToggleMute, onSendText, onAddMaterial };
 }
 
 describe("ConversationSessionView（会話シェル結線）", () => {
@@ -122,6 +125,38 @@ describe("ConversationSessionView（会話シェル結線）", () => {
     expect(sendSelection).toHaveBeenCalledWith("d1", "recency");
   });
 
+  it("検知が無ければ通常質問（金枠）を問いピンに出し、回答で sendAnswer を送る（#181）", () => {
+    const { sendAnswer } = renderView({
+      state: baseState({
+        detections: [],
+        question: {
+          id: "q1",
+          prompt: "並び順は何を既定にしますか",
+          options: [
+            { label: "関連度順", value: "relevance" },
+            { label: "新着順", value: "recency" },
+          ],
+        },
+      }),
+    });
+    expect(screen.getByText("並び順は何を既定にしますか")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "関連度順" }));
+    expect(sendAnswer).toHaveBeenCalledWith("q1", { selectedValue: "relevance" });
+    // 回答後は問いピンを畳む（同じ問いは再表示しない）。
+    expect(screen.queryByText("並び順は何を既定にしますか")).toBeNull();
+  });
+
+  it("選択肢つき検知があるときは検知ピンを優先し、通常質問は出さない（#181）", () => {
+    renderView({
+      state: baseState({
+        question: { id: "q1", prompt: "通常質問は出ない", options: [{ label: "x", value: "x" }] },
+      }),
+    });
+    // baseState の d1（選択肢つき矛盾）が優先される。
+    expect(screen.getByText("関連度順か新着順か。")).toBeTruthy();
+    expect(screen.queryByText("通常質問は出ない")).toBeNull();
+  });
+
   it("ボトムバーのマイク/消音トグルとテキスト送信が配線される", () => {
     const { onToggleMic, onToggleMute, onSendText } = renderView();
     fireEvent.click(screen.getByRole("button", { name: "会話（マイク）" }));
@@ -145,29 +180,64 @@ describe("ConversationSessionView（会話シェル結線）", () => {
     expect(screen.getByText("検索は関連度順で。")).toBeTruthy();
   });
 
-  it("未解消0件なら判定で確定でき、結果へ進む", () => {
+  it("未解消0件なら判定で確定でき、結果へ進む", async () => {
     renderView({ state: baseState({ detections: [] }) });
     fireEvent.click(screen.getByRole("button", { name: "会話を終了" }));
     fireEvent.click(screen.getByRole("button", { name: "終了する" }));
     fireEvent.click(screen.getByRole("button", { name: "要件を確定する" }));
-    expect(screen.getByText(/要件、産まれました/)).toBeTruthy();
+    // finalize 成功（未指定=解決済み扱い）を待ってから結果へ遷移する。
+    expect(await screen.findByText(/要件、産まれました/)).toBeTruthy();
     expect(screen.getByText(/確定要件 1 件/)).toBeTruthy();
   });
 
-  it("投入直後のローカル素材行を出し、同 id の realtime 解析行が来たら realtime を優先する", () => {
+  it("同 id の realtime 解析行が来ても実ファイル名（ローカル/復元）を保つ（#184 統合）", () => {
     renderView({
       state: baseState({ analysis: [{ asset_id: "a1", pct: 70, stage: "OCR", extracted: [], conflicts: [] }] }),
       extraMaterials: [
-        { id: "a1", name: "重複.png", pct: 0, status: "uploading" },
+        { id: "a1", name: "図面.png", pct: 0, status: "uploading" },
         { id: "local:1", name: "アップ中.png", pct: 0, status: "uploading" },
       ],
     });
     fireEvent.click(screen.getByRole("tab", { name: "参考資料" }));
-    // a1 は realtime（aria-label は asset_id）を優先し、ローカルの「重複.png」は出さない。
-    expect(screen.getByLabelText("資料 a1")).toBeTruthy();
-    expect(screen.queryByLabelText("資料 重複.png")).toBeNull();
+    // a1 は status を realtime 優先で統合しつつ、表示名は実ファイル名「図面.png」を保つ
+    // （realtime 行は asset_id しか持たないため、asset_id 表示には戻さない）。
+    expect(screen.getByLabelText("資料 図面.png")).toBeTruthy();
+    expect(screen.queryByLabelText("資料 a1")).toBeNull();
     // realtime 未到達のローカル行はそのまま見える。
     expect(screen.getByLabelText("資料 アップ中.png")).toBeTruthy();
+  });
+
+  it("確定（要件を確定する）で onFinalize を呼んでから結果へ進む（#186）", async () => {
+    const onFinalize = vi.fn(async () => ({ finalized: true, confirmed_count: 1 }));
+    renderView({ state: baseState({ detections: [] }), onFinalize });
+    fireEvent.click(screen.getByRole("button", { name: "会話を終了" }));
+    fireEvent.click(screen.getByRole("button", { name: "終了する" }));
+    fireEvent.click(screen.getByRole("button", { name: "要件を確定する" }));
+    expect(onFinalize).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText(/要件、産まれました/)).toBeTruthy();
+  });
+
+  it("確定が失敗（409 等）したら結果へ進まず判定に留まり理由を出す（#186 / Codex P2）", async () => {
+    const onFinalize = vi.fn(async () => {
+      throw new Error("finalize failed: 409");
+    });
+    renderView({ state: baseState({ detections: [] }), onFinalize });
+    fireEvent.click(screen.getByRole("button", { name: "会話を終了" }));
+    fireEvent.click(screen.getByRole("button", { name: "終了する" }));
+    fireEvent.click(screen.getByRole("button", { name: "要件を確定する" }));
+    // 失敗理由が判定画面に出て、結果画面（要件、産まれました）には遷移しない。
+    expect(await screen.findByRole("alert")).toBeTruthy();
+    expect(screen.queryByText(/要件、産まれました/)).toBeNull();
+    expect(screen.getByRole("button", { name: "要件を確定する" })).toBeTruthy();
+  });
+
+  it("未解消のまま終う（強制終了）では確定しないので onFinalize を呼ばない（#186）", () => {
+    const onFinalize = vi.fn(async () => ({ finalized: true, confirmed_count: 0 }));
+    renderView({ onFinalize });
+    fireEvent.click(screen.getByRole("button", { name: "会話を終了" }));
+    fireEvent.click(screen.getByRole("button", { name: "終了する" }));
+    fireEvent.click(screen.getByRole("button", { name: "未解消のまま終う" }));
+    expect(onFinalize).not.toHaveBeenCalled();
   });
 
   it("終了→終了するで onLeaveConversation を呼ぶ（マイク送信停止のフック）", () => {
@@ -178,7 +248,7 @@ describe("ConversationSessionView（会話シェル結線）", () => {
     expect(onLeaveConversation).toHaveBeenCalledTimes(1);
   });
 
-  it("結果画面の Issue 書き出しは連打しても1回しか起票しない（重複起票防止）", () => {
+  it("結果画面の Issue 書き出しは連打しても1回しか起票しない（重複起票防止）", async () => {
     let resolve: () => void = () => {};
     const onExport = vi.fn(
       () => new Promise<{ exported: boolean }>((r) => { resolve = () => r({ exported: true }); }),
@@ -187,7 +257,7 @@ describe("ConversationSessionView（会話シェル結線）", () => {
     fireEvent.click(screen.getByRole("button", { name: "会話を終了" }));
     fireEvent.click(screen.getByRole("button", { name: "終了する" }));
     fireEvent.click(screen.getByRole("button", { name: "要件を確定する" }));
-    const issueBtn = screen.getByRole("button", { name: "🐙 Issue" });
+    const issueBtn = await screen.findByRole("button", { name: "🐙 Issue" });
     fireEvent.click(issueBtn);
     fireEvent.click(issueBtn); // 連打
     expect(onExport).toHaveBeenCalledTimes(1);

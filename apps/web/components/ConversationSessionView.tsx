@@ -15,6 +15,8 @@
 import { useRef, useState } from "react";
 
 import {
+  mergeMaterials,
+  selectActiveQuestion,
   selectConfirmedRequirements,
   selectMaterials,
   selectMiniStatus,
@@ -23,7 +25,7 @@ import {
 } from "@/lib/realtime/selectors";
 import type { RealtimeMetricsSnapshot } from "@/lib/realtime/metrics";
 import type { SessionState } from "@/lib/realtime/store";
-import type { SendSelection } from "@/lib/realtime/useRealtimeSession";
+import type { SendAnswer, SendSelection } from "@/lib/realtime/useRealtimeSession";
 import type { ExportResult } from "@/lib/api";
 
 import { BottomBar } from "./BottomBar";
@@ -40,6 +42,8 @@ export interface ConversationSessionViewProps {
   state: SessionState;
   /** 検知カードの回答を agent へ送る（契約 §4.5）。 */
   sendSelection: SendSelection;
+  /** 通常質問（金枠）の回答を agent へ送る（契約 §4.5 / #181）。 */
+  sendAnswer?: SendAnswer;
   /** マイク入力 ON か（LiveKit local track）。 */
   micOn: boolean;
   /** 音声出力の消音中か。 */
@@ -50,6 +54,11 @@ export interface ConversationSessionViewProps {
   onSendText: (text: string) => void;
   /** 要件を GitHub Issue 等へ書き出す（08 結果・既存 API）。 */
   onExport: () => Promise<ExportResult>;
+  /**
+   * 07 判定の「確定」を永続化する（#186）。確定スナップショットを書き込む。
+   * 失敗しても結果画面への遷移は止めない（UX を阻害しない・親がログに残す）。
+   */
+  onFinalize?: () => Promise<unknown>;
   /** 「＋ 素材を追加」（05-2 手段選択 / アップロード。親が所有・必須で偽ボタンを作らない）。 */
   onAddMaterial: () => void;
   /**
@@ -57,6 +66,11 @@ export interface ConversationSessionViewProps {
    * 同 asset_id の realtime 行が来たらそちらを優先（#184 のハイドレーションが入るまでの橋渡し）。
    */
   extraMaterials?: MaterialItem[];
+  /**
+   * GET context/files（#184）由来の復元素材。リロード/再接続でローカル行が消えても
+   * 実ファイル名・状態を取り戻す土台。realtime の analysis 行とは asset_id で統合する。
+   */
+  hydratedMaterials?: MaterialItem[];
   /** 失敗素材の再試行（親が再アップロードへ）。 */
   onRetryMaterial?: (id: string) => void;
   /** 会話フェーズを離れる（終了→判定）瞬間。親はここでマイク送信を止める。 */
@@ -74,14 +88,17 @@ type Phase = "shell" | "judgment" | "result";
 export function ConversationSessionView({
   state,
   sendSelection,
+  sendAnswer,
   micOn,
   muted,
   onToggleMic,
   onToggleMute,
   onSendText,
   onExport,
+  onFinalize,
   onAddMaterial,
   extraMaterials,
+  hydratedMaterials,
   onRetryMaterial,
   onLeaveConversation,
   onRestart,
@@ -93,26 +110,32 @@ export function ConversationSessionView({
   const [tab, setTab] = useState<ShellTab>("history");
   const [endOpen, setEndOpen] = useState(false);
   const [provisional, setProvisional] = useState(false);
+  // 確定（finalize）失敗時のメッセージ（#186 / Codex P2）。失敗なら結果へ進めず判定に留める。
+  const [finalizeError, setFinalizeError] = useState<string | null>(null);
+  // 回答済みの通常質問 ID（#181）。検知の resolved 相当のサーバ echo が無いため、
+  // 回答後はローカルで問いピンを畳む（次の question.asked が新 ID で前面に出る）。
+  const [answeredQuestions, setAnsweredQuestions] = useState<ReadonlySet<string>>(new Set());
   // Issue 起票の二重送信を同期的に防ぐ（/export は毎回 GitHub Issue を作るため連打で重複起票になる）。
   const exportingRef = useRef(false);
+  // 確定（finalize）の二重送信を同期的に防ぐ（#186）。
+  const finalizingRef = useRef(false);
 
   const baseMini = selectMiniStatus(state);
   const openDetections = selectOpenDetections(state);
   const confirmed = selectConfirmedRequirements(state);
 
-  // 投入直後のローカル行（uploading/failed）＋ realtime 解析行。同 id は realtime を優先。
+  // 復元（#184）＋投入直後のローカル行（uploading/failed）＋ realtime 解析行を asset_id で統合。
+  // 状態は realtime 最優先、表示名は実ファイル名（hydrated/local）を asset_id より優先する。
   const realtimeMaterials = selectMaterials(state);
-  const realtimeIds = new Set(realtimeMaterials.map((m) => m.id));
-  const materials = [
-    ...(extraMaterials ?? []).filter((m) => !realtimeIds.has(m.id)),
-    ...realtimeMaterials,
-  ];
+  const materials = mergeMaterials(realtimeMaterials, extraMaterials ?? [], hydratedMaterials ?? []);
 
-  // ローカル素材もミニ状況の件数・解析中フラグに反映する（ヘッダーの「📎資料 N」と一致させる）。
+  // 統合後の素材をミニ状況の件数・解析中フラグに反映する（ヘッダーの「📎資料 N」と一致させる）。
   const mini = {
     ...baseMini,
     materials: materials.length,
-    analyzing: baseMini.analyzing || (extraMaterials ?? []).some((m) => m.status === "uploading"),
+    analyzing:
+      baseMini.analyzing ||
+      materials.some((m) => m.status === "uploading" || m.status === "analyzing"),
   };
 
   function leaveConversationTo(next: Phase) {
@@ -120,9 +143,14 @@ export function ConversationSessionView({
     setPhase(next);
   }
 
-  // 問いピンは「選択肢を持つ未解消検知（緋/黄土）」を最新優先で1件出す。
-  // 通常質問（金枠）の選択肢は #181 まで送られてこないため、本スコープでは検知ドリブンのみ。
+  // 問いピンは「選択肢を持つ未解消検知（緋/黄土）」を最新優先で1件出す。検知が無ければ
+  // 通常質問（金枠 / #181）を出す。検知（矛盾/抜け）は緊急度が高いので優先する。
   const activeChoice = openDetections.find((d) => d.options && d.options.length > 0);
+  const askedQuestion = selectActiveQuestion(state);
+  const activeQuestion =
+    !activeChoice && askedQuestion && !answeredQuestions.has(askedQuestion.id)
+      ? askedQuestion
+      : null;
 
   // 深掘り/判定の「会話で確認」: 会話履歴タブへ戻す。問いピンは未解消検知を最新優先で
   // 自動表示するため、該当検知が選択肢つきなら戻った先で前面に出る。検知 ID を使った
@@ -138,15 +166,33 @@ export function ConversationSessionView({
       <JudgmentGate
         unresolved={mini.unresolved}
         detections={openDetections}
+        error={finalizeError ?? undefined}
         onBack={() => setPhase("shell")}
         onForceEnd={() => {
           setProvisional(true);
           setPhase("result");
         }}
         onConfirm={() => {
-          // TODO(#186): 確定スナップショットを finalize API へ書き込む。
-          setProvisional(false);
-          setPhase("result");
+          // 確定スナップショットを finalize API へ書き込む（#186）。成功を待ってから結果へ
+          // 遷移し、失敗（409: 未解消残り / 401 等）なら判定画面に留めて理由を出す（Codex P2）。
+          // finalize 未指定（テスト等）は解決済み扱いでそのまま遷移する。二重確定は ref で防ぐ。
+          if (finalizingRef.current) return;
+          finalizingRef.current = true;
+          setFinalizeError(null);
+          Promise.resolve(onFinalize?.())
+            .then(() => {
+              setProvisional(false);
+              setPhase("result");
+            })
+            .catch((e) => {
+              console.error("finalize failed", e);
+              setFinalizeError(
+                "確定できませんでした。未解消の項目が残っていないか確かめ、再度お試しください。",
+              );
+            })
+            .finally(() => {
+              finalizingRef.current = false;
+            });
         }}
         onJump={jumpToConversation}
       />
@@ -200,6 +246,20 @@ export function ConversationSessionView({
       onAnswer={(i) => {
         const opt = activeChoice.options?.[i];
         if (opt) sendSelection(activeChoice.id, opt.value);
+      }}
+    />
+  ) : activeQuestion ? (
+    // 通常質問（金枠 / #181）。detectionKind なし = 金（通常）。回答で user.answered を返し、
+    // ローカルで畳む（次の question.asked が前面化するまで再表示しない）。
+    <ChoicePin
+      questionId={activeQuestion.id}
+      question={activeQuestion.prompt}
+      options={activeQuestion.options.map((o) => ({ label: o.label }))}
+      onAnswer={(i) => {
+        const opt = activeQuestion.options[i];
+        if (!opt) return;
+        sendAnswer?.(activeQuestion.id, { selectedValue: opt.value });
+        setAnsweredQuestions((prev) => new Set(prev).add(activeQuestion.id));
       }}
     />
   ) : undefined;

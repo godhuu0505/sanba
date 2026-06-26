@@ -46,3 +46,26 @@ def test_set_session_seq() -> None:
     repo = _mem_repo()
     repo.set_session_seq("s1", 7)
     assert repo._mem_seq["s1"] == 7
+
+
+def test_save_and_list_materials() -> None:
+    # 素材メタを永続化し、GET /context/files の復元に使える（#184・Codex P1）。
+    repo = _mem_repo()
+    repo.save_material("s1", {"id": "a1", "name": "mock.png", "kind": "image", "status": "done"})
+    repo.save_material(
+        "s1", {"id": "a2", "name": "rec.mp4", "kind": "video", "status": "analyzing"}
+    )
+    items = repo.list_materials("s1")
+    assert {m["id"] for m in items} == {"a1", "a2"}
+    assert next(m for m in items if m["id"] == "a1")["name"] == "mock.png"
+
+
+def test_save_material_upserts_by_id() -> None:
+    repo = _mem_repo()
+    repo.save_material(
+        "s1", {"id": "a1", "name": "mock.png", "kind": "image", "status": "analyzing"}
+    )
+    repo.save_material("s1", {"id": "a1", "name": "mock.png", "kind": "image", "status": "done"})
+    items = repo.list_materials("s1")
+    assert len(items) == 1
+    assert items[0]["status"] == "done"

@@ -10,7 +10,8 @@
 //   - live  : LiveKit データチャネル（topic="sanba.events"）を購読 + GET ハイドレーション
 //   - fixture: backend 非依存で契約フィクスチャを再生（静的 UI 先行着手用）
 
-import { useDataChannel } from "@livekit/components-react";
+import { useConnectionState, useDataChannel } from "@livekit/components-react";
+import { ConnectionState } from "livekit-client";
 import {
   useCallback,
   useEffect,
@@ -21,12 +22,26 @@ import {
 import { fetchDetections, fetchRequirements } from "../api";
 import { contractEventFixture } from "./fixtures";
 import { RealtimeMetrics, type RealtimeMetricsSnapshot } from "./metrics";
-import { decodeServerEvent, encodeUserSelection } from "./parse";
+import {
+  decodeServerEvent,
+  encodeUserAnswered,
+  encodeUserSelection,
+  encodeUserText,
+} from "./parse";
 import { RealtimeStore, type SessionState } from "./store";
 import { EVENTS_TOPIC, WEB_EVENTS_TOPIC, type ServerEvent } from "./types";
 
 /** 検知カードの選択肢タップを agent へ送る（契約 §4.5 / Issue #102）。 */
 export type SendSelection = (detectionId: string, selectedValue: string) => void;
+
+/** テキスト入力を会話ターンとして agent へ送る（契約 §4.5 / #185）。 */
+export type SendText = (text: string) => void;
+
+/** 通常質問（金枠）への回答を agent へ送る（契約 §4.5 / #181）。 */
+export type SendAnswer = (
+  questionId: string,
+  answer: { selectedValue?: string; text?: string },
+) => void;
 
 export interface UseRealtimeSessionResult {
   state: SessionState;
@@ -34,6 +49,10 @@ export interface UseRealtimeSessionResult {
   store: RealtimeStore;
   /** live モードのみ。fixture モードでは no-op。 */
   sendSelection: SendSelection;
+  /** live モードのみ。fixture モードでは no-op。 */
+  sendText: SendText;
+  /** live モードのみ。fixture モードでは no-op。 */
+  sendAnswer: SendAnswer;
 }
 
 interface LiveOptions {
@@ -89,15 +108,45 @@ export function useRealtimeSession(opts: LiveOptions): UseRealtimeSessionResult 
 
   // web → agent の送信チャネル（契約 §4.5）。逆方向 topic で混在を避ける。
   const { send } = useDataChannel(WEB_EVENTS_TOPIC);
-  const selectionSeq = useRef(0);
+  // web 発の単調増加 seq（agent 側 seq とは別空間）。selection/text/answered で共有する。
+  const clientSeq = useRef(0);
   const sendSelection = useCallback<SendSelection>(
     (detectionId, selectedValue) => {
-      selectionSeq.current += 1;
+      clientSeq.current += 1;
       const payload = encodeUserSelection(
         sessionId,
         detectionId,
         selectedValue,
-        selectionSeq.current,
+        clientSeq.current,
+        new Date().toISOString(),
+      );
+      send(payload, { reliable: true });
+    },
+    [send, sessionId],
+  );
+  const sendText = useCallback<SendText>(
+    (text) => {
+      const trimmed = text.trim();
+      if (!trimmed) return; // 空送信は無視（誤タップ・IME 確定前）。
+      clientSeq.current += 1;
+      const payload = encodeUserText(
+        sessionId,
+        trimmed,
+        clientSeq.current,
+        new Date().toISOString(),
+      );
+      send(payload, { reliable: true });
+    },
+    [send, sessionId],
+  );
+  const sendAnswer = useCallback<SendAnswer>(
+    (questionId, answer) => {
+      clientSeq.current += 1;
+      const payload = encodeUserAnswered(
+        sessionId,
+        questionId,
+        answer,
+        clientSeq.current,
         new Date().toISOString(),
       );
       send(payload, { reliable: true });
@@ -139,10 +188,27 @@ export function useRealtimeSession(opts: LiveOptions): UseRealtimeSessionResult 
     return off;
   }, [sessionId, store, hydrate]);
 
-  return { state, metrics, store, sendSelection };
+  // 再接続のたびにスナップショットを取り直す（Codex P2）。SessionView を保持したまま
+  // 再接続する設計（03 / ConversationStart）では、切断中に他参加者/agent が更新し、
+  // 復帰後に新しい seq イベントが来ないと画面が古いまま残るため、Connected 復帰時に
+  // ローカル状態は保持したまま hydrate だけ再実行する（初回接続では二重実行しない）。
+  const connState = useConnectionState();
+  const wasConnected = useRef(false);
+  useEffect(() => {
+    if (connState !== ConnectionState.Connected) return;
+    if (wasConnected.current) {
+      store.metrics.recordReconnect();
+      void hydrate();
+    }
+    wasConnected.current = true;
+  }, [connState, hydrate, store]);
+
+  return { state, metrics, store, sendSelection, sendText, sendAnswer };
 }
 
 const noopSelection: SendSelection = () => {};
+const noopText: SendText = () => {};
+const noopAnswer: SendAnswer = () => {};
 
 /**
  * フィクスチャモード: backend 非依存で契約イベント列を再生する。
@@ -170,5 +236,12 @@ export function useFixtureSession(
     };
   }, [stable, stepMs, store]);
 
-  return { state, metrics, store, sendSelection: noopSelection };
+  return {
+    state,
+    metrics,
+    store,
+    sendSelection: noopSelection,
+    sendText: noopText,
+    sendAnswer: noopAnswer,
+  };
 }

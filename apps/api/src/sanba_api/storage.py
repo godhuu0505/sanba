@@ -42,6 +42,21 @@ class Asset:
     uri: str  # gs://bucket/... もしくは mem://... （in-memory 時）
 
 
+def material_record(
+    asset_id: str, name: str, kind: str, status: str, extracted: int = 0
+) -> dict[str, object]:
+    """素材一覧（GET context/files / 契約 §4 #184）の 1 行を組み立てる。
+
+    web の MaterialItem（id/name/status/extracted）に対応する。バイト列ではなく
+    「投入された素材のメタ」で、リロード/再接続時に実ファイル名と状態を復元する。
+    永続化は SessionRepository（外部ストア）が担う（多インスタンス/再起動でも復元できる）。
+    """
+    item: dict[str, object] = {"id": asset_id, "name": name, "kind": kind, "status": status}
+    if extracted > 0:
+        item["extracted"] = extracted
+    return item
+
+
 def asset_kind(filename: str, content_type: str | None) -> str | None:
     """アップロードの種別を返す。画像/動画なら "image"/"video"、非対応なら None。
 

@@ -7,15 +7,17 @@
 
 import { RoomAudioRenderer, useTrackToggle } from "@livekit/components-react";
 import { Track } from "livekit-client";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   ACCEPTED_IMAGE,
   ACCEPTED_VIDEO,
-  addSessionContext,
   exportRequirements,
+  fetchContextFiles,
+  finalizeSession,
   uploadContextFile,
   type ExportResult,
+  type FinalizeResult,
 } from "../lib/api";
 import type { MaterialItem } from "../lib/realtime/selectors";
 import { useRealtimeSession } from "../lib/realtime/useRealtimeSession";
@@ -28,7 +30,7 @@ export function SessionView({
   sessionId: string;
   sessionToken: string | null;
 }) {
-  const { state, metrics, sendSelection } = useRealtimeSession({
+  const { state, metrics, sendSelection, sendText, sendAnswer } = useRealtimeSession({
     sessionId,
     sessionToken,
     hydrateDetections: true,
@@ -40,10 +42,36 @@ export function SessionView({
   const [muted, setMuted] = useState(false);
 
   // 投入直後の素材ローカル行（uploading/failed）。realtime の analysis.progress/visual が届くまで、
-  // また動画の「準備中」を可視化する橋渡し。#184（GET context/files）導入でハイドレーションへ寄せる。
+  // また動画の「準備中」を可視化する橋渡し。
   const [pending, setPending] = useState<MaterialItem[]>([]);
+  // #184: リロード/途中参加時に GET context/files で実ファイル名・状態を復元する。
+  const [hydratedMaterials, setHydratedMaterials] = useState<MaterialItem[]>([]);
   const fileInput = useRef<HTMLInputElement>(null);
   const tempSeq = useRef(0);
+
+  // 接続/再接続時に投入済み素材のメタを取り戻す（契約 §4 / #184）。失敗してもライブ差分で前進する。
+  useEffect(() => {
+    let alive = true;
+    fetchContextFiles(sessionId, sessionToken)
+      .then((snap) => {
+        if (!alive) return;
+        setHydratedMaterials(
+          snap.items.map((f) => ({
+            id: f.id,
+            name: f.name,
+            pct: f.status === "done" ? 100 : 0,
+            status: f.status,
+            ...(f.extracted ? { extracted: f.extracted } : {}),
+          })),
+        );
+      })
+      .catch(() => {
+        /* ハイドレーションは補助。失敗してもライブ差分で前進する。 */
+      });
+    return () => {
+      alive = false;
+    };
+  }, [sessionId, sessionToken]);
 
   async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -53,12 +81,17 @@ export function SessionView({
     setPending((p) => [...p, { id: tempId, name: file.name, pct: 0, status: "uploading" }]);
     try {
       const res = await uploadContextFile(sessionId, file, sessionToken);
-      // 成功: asset_id を確定し解析待ちへ。以後 analysis.progress が同 asset_id で届けば
-      // realtime 行が前面化し、このローカル行は重複排除で隠れる（契約 §3）。
+      // 成功: asset_id を確定する。画像は API で同期解析済み（analysis_pending=false）なので
+      // done にする（画像は analysis.progress/visual のライブが来ないため analyzing のままだと
+      // 「解析中100%」が残り、ミニ状況の解析中も消えない）。動画は解析未実装で analyzing のまま
+      // （GET context/files のハイドレーションが状態を補正する / 契約 §3）。
       const assetId = res.asset_id ?? tempId;
+      const done = res.analysis_pending !== true;
       setPending((p) =>
         p.map((m) =>
-          m.id === tempId ? { id: assetId, name: file.name, pct: 100, status: "analyzing" } : m,
+          m.id === tempId
+            ? { id: assetId, name: file.name, pct: 100, status: done ? "done" : "analyzing" }
+            : m,
         ),
       );
     } catch (err) {
@@ -81,12 +114,15 @@ export function SessionView({
     return exportRequirements(sessionId, sessionToken);
   }
 
-  // テキスト送信は #185（user.text）未実装のため、当面はセッション文脈へ投入して
-  // 会話に反映させる（捨て足場ではなく実効果のある暫定動線。#185 で会話ターン化する）。
+  function handleFinalize(): Promise<FinalizeResult> {
+    // 07 判定の「確定」を永続化する（#186）。確定スナップショット（件数）を刻む。
+    return finalizeSession(sessionId, sessionToken);
+  }
+
+  // テキスト送信は user.text（契約 §4.5 / #185）として agent へ会話ターンで届ける。
+  // agent 側は発話として記録し（transcript.final で会話履歴にも反映）、応答を生成する。
   function handleSendText(text: string) {
-    void addSessionContext(sessionId, text, sessionToken, "user_text").catch((e) =>
-      console.warn("text relay failed", e),
-    );
+    sendText(text);
   }
 
   return (
@@ -102,14 +138,17 @@ export function SessionView({
       <ConversationSessionView
         state={state}
         sendSelection={sendSelection}
+        sendAnswer={sendAnswer}
         micOn={mic.enabled}
         muted={muted}
         onToggleMic={() => void mic.toggle()}
         onToggleMute={() => setMuted((m) => !m)}
         onSendText={handleSendText}
         onExport={handleExport}
+        onFinalize={handleFinalize}
         onAddMaterial={() => fileInput.current?.click()}
         extraMaterials={pending}
+        hydratedMaterials={hydratedMaterials}
         onRetryMaterial={handleRetryMaterial}
         // 会話を離れる瞬間にマイク送信を止める（判定/結果ではボトムバーが無く止められないため）。
         onLeaveConversation={() => {

@@ -10,6 +10,12 @@ export function selectOpenDetections(state: SessionState): Detection[] {
   return state.detections.filter((d) => !d.resolved && d.summary !== "").reverse();
 }
 
+/** 直近の通常質問（金枠 / #181）。選択肢が無ければ問いピンは出さない（自由記述は音声/テキスト）。 */
+export function selectActiveQuestion(state: SessionState): SessionState["question"] {
+  const q = state.question;
+  return q && q.options.length > 0 ? q : null;
+}
+
 /** 確定要件のみ（09 のサマリ件数・MoSCoW）。 */
 export function selectConfirmedRequirements(state: SessionState): Requirement[] {
   return state.requirements.filter((r) => r.status === "confirmed");
@@ -111,6 +117,35 @@ export function selectMaterials(s: { analysis: readonly AnalysisState[] }): Mate
     };
     if (done && a.extracted.length > 0) item.extracted = a.extracted.length;
     return item;
+  });
+}
+
+/**
+ * 複数ソースの素材行を asset_id で統合する（#184 ハイドレーション）。
+ *
+ * 優先度（後勝ち＝ライブが新しい）: hydrated（GET context/files の復元）< local（投入直後の
+ * uploading/failed）< realtime（analysis.progress/visual のライブ状態）。
+ * ただし表示名は asset_id ではなく実ファイル名を優先する: hydrated/local が持つ
+ * 「id と異なる name」を最優先で採用し、realtime 行（name=asset_id）に上書きされないようにする。
+ * 出力順は最初に現れた順（hydrated → local → realtime）。
+ */
+export function mergeMaterials(
+  realtime: readonly MaterialItem[],
+  local: readonly MaterialItem[] = [],
+  hydrated: readonly MaterialItem[] = [],
+): MaterialItem[] {
+  const ordered = [...hydrated, ...local, ...realtime];
+  const byId = new Map<string, MaterialItem>();
+  const realName = new Map<string, string>();
+  for (const m of ordered) {
+    // 実ファイル名（id と異なる name）は先勝ち = hydrated/local が realtime より優先。
+    if (!realName.has(m.id) && m.name && m.name !== m.id) realName.set(m.id, m.name);
+    // status/pct/extracted は後勝ち = realtime が最優先。
+    byId.set(m.id, { ...byId.get(m.id), ...m });
+  }
+  return [...byId.values()].map((m) => {
+    const name = realName.get(m.id);
+    return name ? { ...m, name } : m;
   });
 }
 

@@ -37,7 +37,9 @@ from .events import (
     WEB_EVENTS_TOPIC,
     EventPublisher,
     LiveKitTransport,
+    decode_user_answered,
     decode_user_selection,
+    decode_user_text,
 )
 from .observability import setup_observability
 from .prompts.interview import VOICE_AGENT_INSTRUCTIONS
@@ -70,6 +72,11 @@ class SANBAAgent(Agent):
         # data channel publish（#94）。未設定でも会話は成立する（publish は付加価値）。
         self._publisher = publisher
         self._utterance_seq = 0
+        # 問い発行ごとの連番（question.asked の ID を一意にする / Codex P2）。
+        self._question_seq = 0
+        # question_id → 問い本文。回答を「何への回答か」分かる形で記録するため保持する
+        # （Codex P2。ID は hash+連番で本文を復元できないため）。
+        self._questions: dict[str, str] = {}
         # 既に publish 済みの検知 id（open_topic の重複 gap を抑止）。
         self._published_gaps: set[str] = set()
         # fire-and-forget の publish タスクを保持（GC による途中消滅を防ぐ）。
@@ -114,6 +121,18 @@ class SANBAAgent(Agent):
             role = "participant"
             self._publish(self._publisher.transcript_final(speaker, role, utterance_id, text))
         return utterance_id
+
+    def record_answer(self, question_id: str, answer: str) -> str | None:
+        """通常質問（#181）への回答を、問い本文とともに発話として記録する（Codex P2）。
+
+        question_id から問い本文を引けるなら「問「…」への回答：…」の形で記録し、後続の
+        analyze_requirements が何についての回答か分かる（要件化・引用の欠落を防ぐ）。
+        引けない場合は回答のみ記録する。生成応答の文脈に使えるよう問い本文を返す。
+        """
+        prompt = self._questions.get(question_id)
+        text = f"問「{prompt}」への回答：{answer}" if prompt else answer
+        self.record_utterance("participant", text)
+        return prompt
 
     async def resolve_detection(self, detection_id: str, selected_value: str) -> None:
         """ユーザーの選択（user.selection, 契約 §4.5）を受けて検知を解消する（#102）。
@@ -200,6 +219,37 @@ class SANBAAgent(Agent):
             await self._publisher.status("listening")
             self._repo.set_session_seq(self._session_id, self._publisher.seq)
         return result.model_dump(mode="json")
+
+    @function_tool
+    async def ask_question(
+        self,
+        _ctx: RunContext,
+        prompt: str,
+        options: list[str] | None = None,
+    ) -> dict:
+        """次に聞くべき問いを1つ、画面の問いピン（金枠）に提示する。
+
+        音声で問いかけると同時に呼ぶと、参加者は選択肢をタップでも答えられる（#181）。
+
+        Args:
+            prompt: 問いの一文（例「並び順は何を既定にしますか」）。
+            options: 選択肢ラベル（2〜4個。例 ["関連度順","新着順"]）。
+                自由に答えてほしい問いでは省略する（音声/テキストで回答）。
+        """
+        # 発行ごとに一意な ID にする（Codex P2）。同じ文面を再質問しても web 側の
+        # answeredQuestions（回答済み ID）に当たらず、新しい問いとして再表示できる。
+        self._question_seq += 1
+        question_id = f"{make_requirement_id(f'q:{prompt}')}-{self._question_seq}"
+        # 回答記録時に問い本文を引けるよう保持（Codex P2）。
+        self._questions[question_id] = prompt
+        opts = [{"label": o, "value": o} for o in (options or [])]
+        if self._publisher is not None:
+            # question.asked はハイドレーション・スナップショット（GET /requirements,/detections）に
+            # 含まれない一過性イベント。ここで last_seq を進めると、後続の再ハイドレーションで
+            # 境界以下として正当な差分を取り逃すため、seq 境界は進めない（Codex P2）。
+            await self._publisher.question_asked(question_id, prompt, options=opts or None)
+        log.info("question_asked", session=self._session_id, id=question_id, options=len(opts))
+        return {"asked": question_id}
 
     @function_tool
     async def save_requirement(
@@ -408,26 +458,64 @@ async def entrypoint(ctx: JobContext) -> None:
             speaker = "participant"
             agent.record_utterance(speaker, ev.transcript)
 
-    # web → agent の user.selection を受信し、検知を解消する（契約 §4.5 / #102）。
+    # web → agent の操作イベントを受信する（契約 §4.5）。
+    #   - user.selection（#102）: 検知カードの選択肢タップ → 検知を解消。
+    #   - user.text（#185）: テキスト入力 → 発話として記録し音声で応答（会話ターン化）。
+    #   - user.answered（#181）: 通常質問への回答 → 発話として記録し次の問いへ進む。
     # fire-and-forget タスクは set に退避して GC を防ぐ（#128。完了時に除去・例外をログ）。
     _bg_tasks: set[asyncio.Task] = set()
 
     def _on_bg_done(task: asyncio.Task) -> None:
         _bg_tasks.discard(task)
         if not task.cancelled() and (exc := task.exception()):
-            log.warning("selection_task_failed", error=str(exc))
+            log.warning("web_event_task_failed", error=str(exc))
+
+    def _schedule(coro) -> None:  # type: ignore[no-untyped-def]
+        task = asyncio.create_task(coro)
+        _bg_tasks.add(task)
+        task.add_done_callback(_on_bg_done)
+
+    async def _respond_to_user_text(text: str) -> None:
+        # テキスト入力を会話ターンとして扱う（#185）。発話を記録（transcript.final で会話履歴へ
+        # 反映）し、それを踏まえて音声で応答する。従来のセッション文脈投入（捨て足場）を置換。
+        agent.record_utterance("participant", text)
+        await session.generate_reply(
+            instructions=(
+                f"参加者がテキストで次のように述べました：「{text}」。"
+                "これを会話の発話として受け止め、必要なら一問だけ掘り下げて応答してください。"
+            )
+        )
+
+    async def _respond_to_answer(question_id: str, answer: str) -> None:
+        # 通常質問（金枠）への回答（#181）。回答を「問い本文つき」で発話記録し（Codex P2）、
+        # 何への回答か後続の analyze_requirements が分かるようにしてから要件を一歩進める。
+        prompt = agent.record_answer(question_id, answer)
+        topic = f"問い「{prompt}」" if prompt else "先ほどの問い"
+        await session.generate_reply(
+            instructions=(
+                f"{topic}に対し参加者は「{answer}」と答えました。"
+                "これを踏まえて要件を一歩進め、必要なら次の問いを1つだけ投げてください。"
+            )
+        )
 
     def _on_data(packet) -> None:  # type: ignore[no-untyped-def]
         if getattr(packet, "topic", None) != WEB_EVENTS_TOPIC:
             return
-        # session_id を照合し、同室の別セッション向け selection 混入を弾く（#132）。
-        parsed = decode_user_selection(getattr(packet, "data", b""), expected_session_id=session_id)
-        if parsed is None:
+        data = getattr(packet, "data", b"")
+        # session_id を照合し、同室の別セッション向けイベント混入を弾く（#132）。
+        sel = decode_user_selection(data, expected_session_id=session_id)
+        if sel is not None:
+            detection_id, selected_value = sel
+            _schedule(agent.resolve_detection(detection_id, selected_value))
             return
-        detection_id, selected_value = parsed
-        task = asyncio.create_task(agent.resolve_detection(detection_id, selected_value))
-        _bg_tasks.add(task)
-        task.add_done_callback(_on_bg_done)
+        text = decode_user_text(data, expected_session_id=session_id)
+        if text is not None:
+            _schedule(_respond_to_user_text(text))
+            return
+        answered = decode_user_answered(data, expected_session_id=session_id)
+        if answered is not None:
+            question_id, answer = answered
+            _schedule(_respond_to_answer(question_id, answer))
 
     ctx.room.on("data_received", _on_data)
 

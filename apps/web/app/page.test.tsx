@@ -101,7 +101,8 @@ describe("入口フロー（#140）", () => {
     await waitFor(() => expect(createSession).toHaveBeenCalledTimes(1));
     expect(createSession.mock.calls[0][0]).toEqual(["engineer"]);
     expect(createSession.mock.calls[0][1]).toBe(true);
-    await waitFor(() => expect(screen.getByText("session-view")).toBeTruthy());
+    // 開始後は 03 会話開始（開始前サマリ）へ。接続/許可はここから先（ConversationStart）。
+    await waitFor(() => expect(screen.getByText("支度、相整いまして")).toBeTruthy());
   });
 
   it("開始処理中は二重送信できない", async () => {

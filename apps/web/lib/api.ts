@@ -123,6 +123,19 @@ export interface DetectionsSnapshot {
   seq?: number;
 }
 
+/** GET /context/files の 1 行（契約 §4 #184）。realtime の analysis 行と asset_id で突き合わせる。 */
+export interface ContextFileItem {
+  id: string;
+  name: string;
+  kind: "image" | "video";
+  status: "uploading" | "analyzing" | "done" | "failed";
+  extracted?: number;
+}
+
+export interface ContextFilesSnapshot {
+  items: ContextFileItem[];
+}
+
 // 以下のハイドレーション/起票 API は join 済みトークン（session_token）を Bearer に渡す。
 
 /** GET /api/sessions/{id}/requirements（P0）。確定/下書き要件のスナップショット。 */
@@ -134,6 +147,18 @@ export async function fetchRequirements(
     headers: authHeaders(sessionToken),
   });
   if (!res.ok) throw new Error(`fetch requirements failed: ${res.status}`);
+  return res.json();
+}
+
+/** GET /api/sessions/{id}/context/files（#184）。投入済み素材のメタ（実ファイル名・状態）。 */
+export async function fetchContextFiles(
+  sessionId: string,
+  sessionToken: string | null,
+): Promise<ContextFilesSnapshot> {
+  const res = await fetch(`${API_URL}/api/sessions/${sessionId}/context/files`, {
+    headers: authHeaders(sessionToken),
+  });
+  if (!res.ok) throw new Error(`fetch context files failed: ${res.status}`);
   return res.json();
 }
 
@@ -156,6 +181,24 @@ export interface ExportResult {
   count?: number;
   doc_url?: string;
   reason?: string;
+}
+
+export interface FinalizeResult {
+  finalized: boolean;
+  confirmed_count: number;
+}
+
+/** POST /api/sessions/{id}/finalize（#186）。07 判定の「確定」を永続化する。 */
+export async function finalizeSession(
+  sessionId: string,
+  sessionToken: string | null,
+): Promise<FinalizeResult> {
+  const res = await fetch(`${API_URL}/api/sessions/${sessionId}/finalize`, {
+    method: "POST",
+    headers: authHeaders(sessionToken),
+  });
+  if (!res.ok) throw new Error(`finalize failed: ${res.status}`);
+  return res.json();
 }
 
 /** POST /api/sessions/{id}/export（P1）。要件を GitHub Issue に書き戻す（#39）。 */

@@ -49,6 +49,9 @@ class SessionRepository:
         # 検知 (矛盾/抜け) と適用済み最大 seq (#94/#100)。ハイドレーションの土台。
         self._mem_detections: dict[str, dict[str, dict[str, Any]]] = {}
         self._mem_seq: dict[str, int] = {}
+        # 投入済み素材のメタ (#184)。GET context/files の復元に使う。プロセス内に閉じず外部
+        # ストアへ永続化することで、多インスタンス/再起動後のリロード/途中参加でも復元できる。
+        self._mem_materials: dict[str, dict[str, dict[str, Any]]] = {}
 
     @staticmethod
     def _init_client():  # type: ignore[no-untyped-def]
@@ -90,6 +93,40 @@ class SessionRepository:
             snap = self._client.collection("sessions").document(session_id).get()
             return SessionMeta.model_validate(snap.to_dict()) if snap.exists else None
         return self._mem_sessions.get(session_id)
+
+    def finalize_session(self, session_id: str, *, confirmed_count: int) -> SessionMeta | None:
+        """07 判定の「確定」を永続化する（#186）。
+
+        セッションを finalized にし、確定した要件件数と刻を刻む。存在しなければ None。
+        要件そのものの承認（draft→approved）は管理画面の責務（ADR-0014）なのでここでは触れない。
+        確定スナップショットはあくまでセッション単位の不可逆マーカ。
+        """
+        meta = self.get_session(session_id)
+        if meta is None:
+            return None
+        # 不可逆マーカ: 既に finalized なら最初のスナップショット（件数・刻）を保持して
+        # 返す（Codex P2）。確定後に要件が増減/二重 POST されても初回確定値を変えない。
+        if meta.status == "finalized":
+            return meta
+        updated = meta.model_copy(
+            update={
+                "status": "finalized",
+                "finalized_at": datetime.now(UTC),
+                "finalized_count": confirmed_count,
+            }
+        )
+        if self._client is not None:
+            self._client.collection("sessions").document(session_id).set(
+                {
+                    "status": "finalized",
+                    "finalized_at": updated.finalized_at,
+                    "finalized_count": confirmed_count,
+                },
+                merge=True,
+            )
+        else:
+            self._mem_sessions[session_id] = updated
+        return updated
 
     # ---- Utterances --------------------------------------------------------
     def add_utterance(self, session_id: str, utterance: Utterance) -> None:
@@ -256,6 +293,41 @@ class SessionRepository:
         existing = self._mem_detections.setdefault(session_id, {}).get(detection_id)
         if existing is not None:
             existing.update(patch)
+
+    # ---- Materials (#184) --------------------------------------------------
+    def save_material(self, session_id: str, material: dict[str, Any]) -> None:
+        """投入済み素材のメタ (id/name/kind/status/extracted) を upsert する (#184)。
+
+        GET /context/files でリロード/途中参加時に実ファイル名・解析状態を復元できるよう、
+        プロセス内ではなく外部ストアに永続化する (Cloud Run の多インスタンス/再起動対策)。
+        同一 asset_id は上書き (冪等)。解析の進行で status/extracted を更新できる。
+        """
+        material_id = material["id"]
+        if self._client is not None:
+            doc = dict(material)
+            if (exp := self._expire_at()) is not None:
+                doc["expireAt"] = exp
+            (
+                self._client.collection("sessions")
+                .document(session_id)
+                .collection("materials")
+                .document(material_id)
+                .set(doc, merge=True)
+            )
+            return
+        self._mem_materials.setdefault(session_id, {})[material_id] = dict(material)
+
+    def list_materials(self, session_id: str) -> list[dict[str, Any]]:
+        """セッションに投入された素材メタの一覧 (#184)。"""
+        if self._client is not None:
+            docs = (
+                self._client.collection("sessions")
+                .document(session_id)
+                .collection("materials")
+                .stream()
+            )
+            return [d.to_dict() for d in docs]
+        return list(self._mem_materials.get(session_id, {}).values())
 
     def set_session_seq(self, session_id: str, seq: int) -> None:
         """セッションの適用済み最大 seq を保存する (ハイドレーション境界, 契約 §4)。"""

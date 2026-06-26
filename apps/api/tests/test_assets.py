@@ -160,6 +160,44 @@ def test_upload_unsupported_type_rejected() -> None:
     assert res.status_code == 415
 
 
+# ── 素材一覧ハイドレーション（GET context/files / #184）──────────────────────
+def test_context_files_requires_session_token() -> None:
+    res = client.get("/api/sessions/sess-nofiles/context/files")
+    assert res.status_code == 401
+
+
+def test_context_files_lists_uploaded_materials() -> None:
+    sid = _new_session()
+    # 画像（同期解析済み = done）と動画（解析未実装 = analyzing）を投入。
+    client.post(
+        f"/api/sessions/{sid}/context/file",
+        files={"file": ("mock.png", b"\x89PNG\r\n\x1a\n", "image/png")},
+        headers=_session_auth(sid),
+    )
+    client.post(
+        f"/api/sessions/{sid}/context/file",
+        files={"file": ("rec.mp4", b"\x00\x00\x00\x18ftypmp42", "video/mp4")},
+        headers=_session_auth(sid),
+    )
+    res = client.get(f"/api/sessions/{sid}/context/files", headers=_session_auth(sid))
+    assert res.status_code == 200
+    items = res.json()["items"]
+    by_name = {it["name"]: it for it in items}
+    # 実ファイル名と asset_id・状態が復元できる（リロード/再接続のハイドレーション）。
+    assert by_name["mock.png"]["kind"] == "image"
+    assert by_name["mock.png"]["status"] == "done"
+    assert by_name["mock.png"]["id"].startswith("asset-")
+    assert by_name["rec.mp4"]["kind"] == "video"
+    assert by_name["rec.mp4"]["status"] == "analyzing"
+
+
+def test_context_files_empty_for_new_session() -> None:
+    sid = _new_session()
+    res = client.get(f"/api/sessions/{sid}/context/files", headers=_session_auth(sid))
+    assert res.status_code == 200
+    assert res.json()["items"] == []
+
+
 def test_upload_text_still_indexes() -> None:
     sid = _new_session()
     res = client.post(

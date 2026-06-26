@@ -44,7 +44,13 @@ from .config import settings
 from .ingestion import ContextIndexer, chunk_text, extract_text_from_upload
 from .observability import record_asset_upload, setup_observability
 from .repository import ReadRepository
-from .storage import AssetStore, asset_kind, is_text_upload, resolve_content_type
+from .storage import (
+    AssetStore,
+    asset_kind,
+    is_text_upload,
+    material_record,
+    resolve_content_type,
+)
 from .vision import analyze_image
 
 log = structlog.get_logger(__name__)
@@ -187,12 +193,24 @@ class DetectionsResponse(BaseModel):
     items: list[dict[str, Any]]
 
 
+class ContextFilesResponse(BaseModel):
+    # 投入済み素材のメタ一覧（契約 §4 #184）。web は asset_id で realtime の analysis 行と
+    # 突き合わせ、リロード/再接続時に実ファイル名・状態（解析中/完了）を復元する。
+    items: list[dict[str, Any]]
+
+
 class ExportResponse(BaseModel):
     exported: bool
     issue_url: str | None = None
     count: int | None = None
     doc_url: str | None = None
     reason: str | None = None
+
+
+class FinalizeResponse(BaseModel):
+    # 07 判定の「確定」結果（#186）。確定スナップショットの件数を返す。
+    finalized: bool
+    confirmed_count: int = 0
 
 
 @app.get("/healthz")
@@ -311,6 +329,10 @@ async def add_context_file(
         # 動画解析は未実装: 保存のみ済ませ、web には「準備中」を返す。
         if kind == "video" and not settings.enable_video_analysis:
             record_asset_upload("video", "pending")
+            # 素材一覧（GET context/files / #184）へ永続化。動画は解析未実装のため analyzing。
+            _repo.save_material(
+                session_id, material_record(asset.asset_id, filename, kind, status="analyzing")
+            )
             log.info(
                 "asset_pending",
                 session=session_id,
@@ -331,6 +353,13 @@ async def add_context_file(
         if observations:
             indexed = _indexer.index_context(session_id, observations, f"asset:{asset.asset_id}")
         record_asset_upload(kind, "analyzed")
+        # 素材一覧（GET context/files / #184）へ永続化。画像は同期解析済みなので done。
+        _repo.save_material(
+            session_id,
+            material_record(
+                asset.asset_id, filename, kind, status="done", extracted=len(observations)
+            ),
+        )
         log.info(
             "asset_analyzed",
             session=session_id,
@@ -531,6 +560,54 @@ def get_detections(
     items = _read_repo.list_open_detections(session_id)
     log.info("detections_hydrated", session=session_id, count=len(items), open=open)
     return DetectionsResponse(items=items)
+
+
+@app.get("/api/sessions/{session_id}/context/files", response_model=ContextFilesResponse)
+def get_context_files(
+    session_id: str, access: SessionAccess = Depends(require_session_access)
+) -> ContextFilesResponse:
+    """投入済み素材のメタ一覧（契約 §4 #184）。05 参考資料のハイドレーション。
+
+    リロード/再接続でローカル行（uploading/failed）が消えても、サーバ保持の実ファイル名と
+    解析状態を復元する。realtime の analysis.progress/visual はライブ差分で重ねる。
+    """
+    items = _repo.list_materials(session_id)
+    log.info("context_files_hydrated", session=session_id, count=len(items), sub=access.sub)
+    return ContextFilesResponse(items=items)
+
+
+@app.post("/api/sessions/{session_id}/finalize", response_model=FinalizeResponse)
+def finalize_session_requirements(
+    session_id: str, access: SessionAccess = Depends(require_session_access)
+) -> FinalizeResponse:
+    """07 判定の「確定」を永続化する（#186）。
+
+    会話を締めて要件を確定したとき、確定した要件件数のスナップショットを刻み、セッションを
+    finalized にする（不可逆マーカ）。要件カードの draft→approved 承認は管理画面の責務
+    （ADR-0014）なのでここでは行わない。確定後の export（GitHub Issue）はこの件数と一致する。
+
+    ガード（Codex P2）:
+      - 既に finalized なら open 検知に関係なく保存済みスナップショット件数を返す（冪等）。
+        確定後に遅延 agent が open 検知を保存しても、再送/リロードの再 POST が 409 にならない。
+      - 未確定セッションは、未解消検知が 1 件でも残るなら 409 で拒否する（07 判定の
+        「未解消 0 件で確定可」をサーバ側でも担保。直接 POST や古いクライアント状態を防ぐ）。
+    """
+    existing = _repo.get_session(session_id)
+    if existing is None:
+        raise HTTPException(status_code=404, detail="session not found")
+    # 冪等: 既に finalized なら未解消チェックより先に保存済みスナップショットを返す。
+    if existing.status == "finalized":
+        return FinalizeResponse(finalized=True, confirmed_count=existing.finalized_count or 0)
+    # 新規確定のみ未解消ガードを適用する。
+    if _read_repo.list_open_detections(session_id):
+        raise HTTPException(status_code=409, detail="unresolved detections remain")
+    confirmed = [r for r in _read_repo.list_requirements(session_id) if r["status"] == "confirmed"]
+    meta = _repo.finalize_session(session_id, confirmed_count=len(confirmed))
+    if meta is None:
+        raise HTTPException(status_code=404, detail="session not found")
+    count = meta.finalized_count if meta.finalized_count is not None else len(confirmed)
+    log.info("session_finalized", session=session_id, confirmed=count, sub=access.sub)
+    return FinalizeResponse(finalized=True, confirmed_count=count)
 
 
 @app.post("/api/sessions/{session_id}/export", response_model=ExportResponse)

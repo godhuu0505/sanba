@@ -84,6 +84,14 @@ export interface AnalysisVisualConflict {
   refs: string[];
 }
 
+/** 通常質問（金枠・契約 §3 / #181）。検知（緋/黄土）とは別に、次に聞く1問を提示する。 */
+export interface Question {
+  id: string;
+  prompt: string;
+  /** 選択肢（任意）。あればタップで user.answered を返す。無ければ自由記述（音声/テキスト）。 */
+  options: DetectionOption[];
+}
+
 // ── §2 エンベロープ + §3 イベント ──────────────────────────────────────
 
 interface Envelope<T extends string> {
@@ -153,6 +161,12 @@ export type AnalysisVisualEvent = Envelope<"analysis.visual"> & {
   conflicts: AnalysisVisualConflict[];
 };
 
+export type QuestionAskedEvent = Envelope<"question.asked"> & {
+  id: string;
+  prompt: string;
+  options?: DetectionOption[];
+};
+
 export type SessionCompletedEvent = Envelope<"session.completed"> & {
   summary: {
     contradictions_resolved: number;
@@ -171,6 +185,7 @@ export type ServerEvent =
   | DetectionGapEvent
   | DetectionResolvedEvent
   | RequirementUpsertedEvent
+  | QuestionAskedEvent
   | AnalysisProgressEvent
   | AnalysisVisualEvent
   | SessionCompletedEvent;
@@ -184,5 +199,19 @@ export type UserSelectionEvent = Envelope<"user.selection"> & {
   selected_value: string;
 };
 
-/** web → agent の全イベント（契約 §4.5）。現状 user.selection のみ。 */
-export type ClientEvent = UserSelectionEvent;
+/** テキスト入力を会話ターンとして agent へ送る（契約 §4.5 / #185）。 */
+export type UserTextEvent = Envelope<"user.text"> & {
+  text: string;
+};
+
+/** 通常質問（金枠）への回答を agent へ送る（契約 §4.5 / #181）。 */
+export type UserAnsweredEvent = Envelope<"user.answered"> & {
+  question_id: string;
+  /** 選択肢タップ時の値（自由記述で答えた場合は text を使う）。 */
+  selected_value?: string;
+  /** 自由記述での回答（任意）。 */
+  text?: string;
+};
+
+/** web → agent の全イベント（契約 §4.5）。 */
+export type ClientEvent = UserSelectionEvent | UserTextEvent | UserAnsweredEvent;

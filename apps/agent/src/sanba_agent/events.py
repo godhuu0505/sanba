@@ -95,6 +95,7 @@ class EventPublisher:
         self.contradictions_published = 0
         self.detections_resolved = 0
         self.contradictions_resolved = 0
+        self.questions_published = 0
         self._tracer = _get_tracer()
 
     @property
@@ -231,6 +232,23 @@ class EventPublisher:
             "requirement.upserted", {"requirement": requirement_to_contract(requirement, status)}
         )
 
+    async def question_asked(
+        self,
+        question_id: str,
+        prompt: str,
+        *,
+        options: list[dict[str, str]] | None = None,
+    ) -> dict[str, Any]:
+        """通常質問（金枠 / #181）を web の問いピンへ出す（音声と併用）。
+
+        ``options`` があればタップで user.answered が返る。無ければ自由記述（音声/テキスト）。
+        """
+        payload: dict[str, Any] = {"id": question_id, "prompt": prompt}
+        if options:
+            payload["options"] = options
+        self.questions_published += 1
+        return await self._emit("question.asked", payload)
+
     async def analysis_progress(self, asset_id: str, pct: int, stage: str) -> dict[str, Any]:
         return await self._emit(
             "analysis.progress",
@@ -312,6 +330,72 @@ def decode_user_selection(
     if not isinstance(detection_id, str) or not isinstance(selected_value, str):
         return None
     return detection_id, selected_value
+
+
+def _decode_web_event(
+    payload: bytes | str, expected_type: str, *, expected_session_id: str | None
+) -> dict[str, Any] | None:
+    """web → agent のイベント（契約 §4.5）を JSON デコードし型/セッションを照合する。
+
+    ``expected_type`` と一致し、``expected_session_id`` を渡した場合は session_id も一致する
+    dict を返す。不正・不一致なら None（同室の別セッション向けイベント混入を弾く）。
+    """
+    try:
+        text = payload.decode("utf-8") if isinstance(payload, bytes) else payload
+        obj = json.loads(text)
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    if not isinstance(obj, dict) or obj.get("type") != expected_type:
+        return None
+    if expected_session_id is not None and obj.get("session_id") != expected_session_id:
+        return None
+    return obj
+
+
+# user.text のサーバ側長さ上限（Codex P2）。従来の /context（max_context_chars）相当の
+# ガードがデータチャネル経由には無いため、長大入力でメモリ/LLM コンテキストを浪費しないよう
+# agent 受信境界で切り詰める。1ターンの発話としては十分広い値。
+MAX_USER_TEXT_CHARS = 4000
+
+
+def decode_user_text(payload: bytes | str, *, expected_session_id: str | None = None) -> str | None:
+    """web → agent の user.text（契約 §4.5 / #185）をデコードする。
+
+    検証に通れば本文テキストを返す。不正・別セッション・空文字なら None。
+    上限（MAX_USER_TEXT_CHARS）を超える入力は切り詰める（メモリ/LLM コンテキスト保護）。
+    テキスト入力を「会話ターン」として扱うため、main 側で発話記録＋応答生成に渡す。
+    """
+    obj = _decode_web_event(payload, "user.text", expected_session_id=expected_session_id)
+    if obj is None:
+        return None
+    text = obj.get("text")
+    if not isinstance(text, str) or not text.strip():
+        return None
+    return text.strip()[:MAX_USER_TEXT_CHARS]
+
+
+def decode_user_answered(
+    payload: bytes | str, *, expected_session_id: str | None = None
+) -> tuple[str, str] | None:
+    """web → agent の user.answered（契約 §4.5 / #181）をデコードする。
+
+    通常質問（金枠）への回答。``(question_id, answer)`` を返す。answer は選択肢値
+    （selected_value）優先、無ければ自由記述（text）。どちらも無ければ None。
+    自由記述は user.text と同じ上限（MAX_USER_TEXT_CHARS）で切り詰める（Codex P2）。
+    user.answered.text/selected_value が user.text の防御を迂回するのを防ぐ。
+    """
+    obj = _decode_web_event(payload, "user.answered", expected_session_id=expected_session_id)
+    if obj is None:
+        return None
+    question_id = obj.get("question_id")
+    if not isinstance(question_id, str):
+        return None
+    selected = obj.get("selected_value")
+    text = obj.get("text")
+    answer = selected if isinstance(selected, str) and selected else text
+    if not isinstance(answer, str) or not answer.strip():
+        return None
+    return question_id, answer.strip()[:MAX_USER_TEXT_CHARS]
 
 
 def _get_tracer() -> Any:

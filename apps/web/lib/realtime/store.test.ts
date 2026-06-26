@@ -189,6 +189,42 @@ describe("RealtimeStore — gap recovery", () => {
   });
 });
 
+function questionAsked(
+  seq: number,
+  id: string,
+  options?: { label: string; value: string }[],
+): ServerEvent {
+  return {
+    v: 1,
+    type: "question.asked",
+    seq,
+    ts: "2026-06-24T00:00:00Z",
+    session_id: SESSION,
+    id,
+    prompt: `Q ${id}`,
+    ...(options ? { options } : {}),
+  } as ServerEvent;
+}
+
+describe("RealtimeStore — question.asked（#181）", () => {
+  it("最新の質問を state.question に保持し、古い再配信で巻き戻らない", () => {
+    const s = new RealtimeStore();
+    s.apply(questionAsked(1, "q1", [{ label: "A", value: "a" }]));
+    expect(s.getSnapshot().question?.id).toBe("q1");
+    s.apply(questionAsked(3, "q2", [{ label: "B", value: "b" }]));
+    expect(s.getSnapshot().question?.id).toBe("q2");
+    // 古い seq の再配信（q1@2）は無視され、最新 q2 を保つ。
+    s.apply(questionAsked(2, "q1", [{ label: "A", value: "a" }]));
+    expect(s.getSnapshot().question?.id).toBe("q2");
+  });
+
+  it("選択肢なしの質問も保持する（options は空配列）", () => {
+    const s = new RealtimeStore();
+    s.apply(questionAsked(1, "q1"));
+    expect(s.getSnapshot().question).toEqual({ id: "q1", prompt: "Q q1", options: [] });
+  });
+});
+
 describe("RealtimeStore — fixture replay", () => {
   it("replays the contract fixture to a coherent end state", () => {
     const s = new RealtimeStore();

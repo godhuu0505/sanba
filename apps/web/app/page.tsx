@@ -9,7 +9,6 @@
 // 未ログインなら理由提示＋/login への導線を出す（インラインのログインパネルは廃止）。
 
 import Link from "next/link";
-import { LiveKitRoom, StartAudio } from "@livekit/components-react";
 import { useState } from "react";
 
 import {
@@ -28,7 +27,7 @@ import {
   type JoinResponse,
 } from "../lib/api";
 import { useGoogleAuth } from "../lib/auth";
-import { SessionView } from "../components/SessionView";
+import { ConversationStart } from "../components/ConversationStart";
 
 // 役割チップ。表示は日本語、value は API（POST /api/sessions の roles）に渡す既存値。
 // 既定は「企画(PdM)」= pm（02-prepare.md / #140）。
@@ -79,28 +78,18 @@ export default function Home() {
     }
   }
 
-  // ── 03 以降: ルーム接続後はセッション体験へ引き渡す（#141 が中身を担当）──────
+  // ── 03 会話開始: 開始前サマリ → 接続/許可 →（成功）04 会話履歴。失敗時は復帰導線。
+  // 接続・マイク許可・失敗系は ConversationStart が所有する（screens/03 / ADR-0018）。
   if (conn) {
+    const roleLabel = ROLES.find((r) => r.value === role)?.label ?? role;
     return (
-      <LiveKitRoom
-        token={conn.token}
-        serverUrl={conn.livekit_url}
-        connect
-        audio
-        video={false}
-        style={{ height: "100dvh" }}
-      >
-        <Screen className="px-4 py-3">
-          <AppHeader brand right={<StartAudio label="🔊 音声を有効に" />} />
-          <main className="mx-auto w-full max-w-[640px] flex-1">
-            <p className="mb-2 text-[12px] text-[var(--sanba-muted)]">
-              セッション: <code>{conn.session_id}</code>
-            </p>
-            {/* 音声出力（RoomAudioRenderer）はセッション体験が所有し、消音トグルで制御する。 */}
-            <SessionView sessionId={conn.session_id} sessionToken={conn.session_token} />
-          </main>
-        </Screen>
-      </LiveKitRoom>
+      <ConversationStart
+        conn={conn}
+        goal={goal}
+        roleLabel={roleLabel}
+        // 中断したら会話を畳んで準備（02）へ戻す（マイク送信は SessionView 側で停止済み）。
+        onCancel={() => setConn(null)}
+      />
     );
   }
 

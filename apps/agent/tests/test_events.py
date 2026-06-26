@@ -14,7 +14,9 @@ from sanba_agent.events import (
     EVENTS_TOPIC,
     EventPublisher,
     RecordingTransport,
+    decode_user_answered,
     decode_user_selection,
+    decode_user_text,
     requirement_to_contract,
 )
 
@@ -60,6 +62,34 @@ async def test_detection_contradiction_payload() -> None:
     assert ev["refs"] == ["u1", "u2"]
     assert ev["options"][0]["value"] == "relevance"
     assert t.sent[0]["reliable"] is True
+
+
+@pytest.mark.asyncio
+async def test_question_asked_payload() -> None:
+    t = RecordingTransport()
+    pub = EventPublisher("s1", t)
+    await pub.question_asked(
+        "q1",
+        "並び順は何を既定にしますか",
+        options=[{"label": "関連度順", "value": "関連度順"}],
+    )
+    ev = t.sent[0]["event"]
+    assert ev["type"] == "question.asked"
+    assert ev["id"] == "q1"
+    assert ev["prompt"].startswith("並び順")
+    assert ev["options"][0]["label"] == "関連度順"
+    assert t.sent[0]["reliable"] is True
+    assert pub.questions_published == 1
+
+
+@pytest.mark.asyncio
+async def test_question_asked_without_options() -> None:
+    t = RecordingTransport()
+    pub = EventPublisher("s1", t)
+    await pub.question_asked("q2", "自由にお聞かせください")
+    ev = t.sent[0]["event"]
+    # 選択肢なし（自由記述）の問いは options を持たない。
+    assert "options" not in ev
 
 
 @pytest.mark.asyncio
@@ -207,6 +237,79 @@ def test_decode_user_selection_rejects_other_session() -> None:
         }
     ).encode()
     assert decode_user_selection(payload, expected_session_id="s1") is None
+
+
+# ── user.text（#185）─────────────────────────────────────────────────────────
+def test_decode_user_text_valid() -> None:
+    payload = json.dumps(
+        {"v": 1, "type": "user.text", "session_id": "s1", "text": "  新着順で  "}
+    ).encode()
+    # 前後空白は落として本文を返す。
+    assert decode_user_text(payload) == "新着順で"
+
+
+def test_decode_user_text_rejects_wrong_type() -> None:
+    payload = json.dumps({"type": "user.selection", "text": "x"}).encode()
+    assert decode_user_text(payload) is None
+
+
+def test_decode_user_text_rejects_empty() -> None:
+    payload = json.dumps({"type": "user.text", "text": "   "}).encode()
+    assert decode_user_text(payload) is None
+
+
+def test_decode_user_text_rejects_other_session() -> None:
+    payload = json.dumps({"type": "user.text", "session_id": "s-other", "text": "x"}).encode()
+    assert decode_user_text(payload, expected_session_id="s1") is None
+
+
+def test_decode_user_text_truncates_oversized_input() -> None:
+    # 長大入力はサーバ受信境界で切り詰める（メモリ/LLM コンテキスト保護 / Codex P2）。
+    from sanba_agent.events import MAX_USER_TEXT_CHARS
+
+    payload = json.dumps({"type": "user.text", "text": "あ" * (MAX_USER_TEXT_CHARS + 500)}).encode()
+    decoded = decode_user_text(payload)
+    assert decoded is not None
+    assert len(decoded) == MAX_USER_TEXT_CHARS
+
+
+# ── user.answered（#181）─────────────────────────────────────────────────────
+def test_decode_user_answered_prefers_selected_value() -> None:
+    payload = json.dumps(
+        {
+            "type": "user.answered",
+            "session_id": "s1",
+            "question_id": "q1",
+            "selected_value": "relevance",
+            "text": "自由記述",
+        }
+    ).encode()
+    # 選択肢値があれば優先する。
+    assert decode_user_answered(payload, expected_session_id="s1") == ("q1", "relevance")
+
+
+def test_decode_user_answered_falls_back_to_text() -> None:
+    payload = json.dumps(
+        {"type": "user.answered", "question_id": "q1", "text": "関連度順がよい"}
+    ).encode()
+    assert decode_user_answered(payload) == ("q1", "関連度順がよい")
+
+
+def test_decode_user_answered_rejects_missing_answer() -> None:
+    payload = json.dumps({"type": "user.answered", "question_id": "q1"}).encode()
+    assert decode_user_answered(payload) is None
+
+
+def test_decode_user_answered_truncates_oversized_text() -> None:
+    # 自由記述回答も user.text と同じ上限で切り詰める（防御の迂回を防ぐ / Codex P2）。
+    from sanba_agent.events import MAX_USER_TEXT_CHARS
+
+    payload = json.dumps(
+        {"type": "user.answered", "question_id": "q1", "text": "あ" * (MAX_USER_TEXT_CHARS + 100)}
+    ).encode()
+    result = decode_user_answered(payload)
+    assert result is not None
+    assert len(result[1]) == MAX_USER_TEXT_CHARS
 
 
 def test_requirement_to_contract_handles_missing_speaker() -> None:

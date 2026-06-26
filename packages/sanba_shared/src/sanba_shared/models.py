@@ -88,8 +88,12 @@ class SessionMeta(BaseModel):
     owner_sub: str
     owner_email: str
     roles: list[str] = Field(default_factory=list)
+    # active → finalized（07 判定で参加者が要件を確定したとき / #186）。
     status: str = "active"
     created_at: datetime = Field(default_factory=_now)
+    # 確定スナップショットの刻と件数（#186）。未確定なら None。
+    finalized_at: datetime | None = None
+    finalized_count: int | None = None
 
 
 class AnalysisResult(BaseModel):
