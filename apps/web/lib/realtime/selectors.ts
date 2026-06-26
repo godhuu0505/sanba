@@ -2,7 +2,7 @@
 // 3画面が同じ規則で部分集合を取れるよう共通化する。
 
 import { PRIORITY_ORDER } from "./mapping";
-import type { SessionState } from "./store";
+import type { AnalysisState, SessionState } from "./store";
 import type { Detection, Priority, Requirement } from "./types";
 
 /** 未解消の検知のみ（05 のスタック / 08 の補完）。最新（seq 大）が先頭。 */
@@ -74,6 +74,44 @@ export interface MiniStatus {
   materials: number;
   /** 解析中の素材があるか（pct < 100）。 */
   analyzing: boolean;
+}
+
+// ── 参考資料（05）─────────────────────────────────────────────────────
+// 仕様: docs/design/conversation-experience.md §3,§6 / screens/05-materials.md。
+
+/** 素材行の状態（MaterialsList と共有）。 */
+export type MaterialStatus = "uploading" | "analyzing" | "done" | "failed";
+
+/** 参考資料タブが描く素材ビューモデル（MaterialsList の props 要素）。 */
+export interface MaterialItem {
+  id: string;
+  /** 表示名（無ければ asset_id）。実ファイル名は #184 GET context/files で補完予定。 */
+  name: string;
+  /** 進捗 0–100。 */
+  pct: number;
+  status: MaterialStatus;
+  /** 完了時の抽出要件数（任意）。 */
+  extracted?: number;
+}
+
+/**
+ * 解析状態（analysis.progress / analysis.visual 由来）を素材一覧へ寄せる。
+ * analysis イベントは解析開始後にしか届かないため、ここで導出できるのは analyzing/done のみ。
+ * アップロード中（uploading）・失敗（failed）・実ファイル名は #184（GET context/files）の
+ * ハイドレーションで合流させる（本セレクタは契約済みのライブ状態に閉じる）。
+ */
+export function selectMaterials(s: { analysis: readonly AnalysisState[] }): MaterialItem[] {
+  return s.analysis.map((a) => {
+    const done = a.pct >= 100;
+    const item: MaterialItem = {
+      id: a.asset_id,
+      name: a.asset_id,
+      pct: a.pct,
+      status: done ? "done" : "analyzing",
+    };
+    if (done && a.extracted.length > 0) item.extracted = a.extracted.length;
+    return item;
+  });
 }
 
 /** 会話シェル上部のミニ状況を導出する。 */

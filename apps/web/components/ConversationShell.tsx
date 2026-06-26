@@ -26,8 +26,12 @@ export interface ConversationShellProps {
   elapsed?: string;
   /** 終了（⏹）押下。 */
   onEnd?: () => void;
-  /** 初期タブ。 */
+  /** 初期タブ（非制御時）。 */
   defaultTab?: ShellTab;
+  /** 制御タブ。指定すると親が現在タブを所有する（onTabChange で変更通知）。 */
+  tab?: ShellTab;
+  /** タブ変更通知（ミニ状況/タブ操作・制御/非制御どちらでも発火）。 */
+  onTabChange?: (tab: ShellTab) => void;
   /** タブ本文（active のみ描画）。 */
   tabs: Record<ShellTab, ReactNode>;
   /** 常時ピンの「問い＋選択肢」。 */
@@ -42,11 +46,21 @@ export function ConversationShell({
   elapsed = "0:00",
   onEnd,
   defaultTab = "history",
+  tab: controlledTab,
+  onTabChange,
   tabs,
   choicePin,
   bottomBar,
 }: ConversationShellProps) {
-  const [tab, setTab] = useState<ShellTab>(defaultTab);
+  const [internalTab, setInternalTab] = useState<ShellTab>(defaultTab);
+  // 制御/非制御を明確に二分する。制御時（tab 指定）は内部 state を書かず親を単一の真実とし、
+  // defaultTab/internalTab との二重管理を避ける。非制御時のみ内部 state を更新する。
+  const isControlled = controlledTab !== undefined;
+  const tab = isControlled ? controlledTab : internalTab;
+  const setTab = (next: ShellTab) => {
+    if (!isControlled) setInternalTab(next);
+    onTabChange?.(next);
+  };
 
   return (
     <div className="flex h-full flex-col">

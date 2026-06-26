@@ -9,11 +9,7 @@
 // 未ログインなら理由提示＋/login への導線を出す（インラインのログインパネルは廃止）。
 
 import Link from "next/link";
-import {
-  LiveKitRoom,
-  RoomAudioRenderer,
-  StartAudio,
-} from "@livekit/components-react";
+import { LiveKitRoom, StartAudio } from "@livekit/components-react";
 import { useState } from "react";
 
 import {
@@ -100,9 +96,9 @@ export default function Home() {
             <p className="mb-2 text-[12px] text-[var(--sanba-muted)]">
               セッション: <code>{conn.session_id}</code>
             </p>
+            {/* 音声出力（RoomAudioRenderer）はセッション体験が所有し、消音トグルで制御する。 */}
             <SessionView sessionId={conn.session_id} sessionToken={conn.session_token} />
           </main>
-          <RoomAudioRenderer />
         </Screen>
       </LiveKitRoom>
     );

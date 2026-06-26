@@ -4,18 +4,10 @@
 // 仕様: docs/design/conversation-experience.md §3,§6 / screens/05-materials.md。
 // 解析はバックグラウンドで進む（会話を止めない）ため、各行に状態（アップロード/解析中/完了/失敗）を出す。
 
-export type MaterialStatus = "uploading" | "analyzing" | "done" | "failed";
+// 素材ビューモデルは共有セレクタ層（selectMaterials）に寄せ、ここでは再エクスポートのみ。
+import type { MaterialItem, MaterialStatus } from "@/lib/realtime/selectors";
 
-export interface MaterialItem {
-  id: string;
-  /** 表示名（無ければ asset_id）。 */
-  name: string;
-  /** 進捗 0–100。 */
-  pct: number;
-  status: MaterialStatus;
-  /** 完了時の抽出要件数（任意）。 */
-  extracted?: number;
-}
+export type { MaterialItem, MaterialStatus } from "@/lib/realtime/selectors";
 
 export interface MaterialsListProps {
   items: MaterialItem[];
