@@ -7,13 +7,14 @@
 
 import { RoomAudioRenderer, useTrackToggle } from "@livekit/components-react";
 import { Track } from "livekit-client";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   ACCEPTED_IMAGE,
   ACCEPTED_VIDEO,
   addSessionContext,
   exportRequirements,
+  fetchContextFiles,
   uploadContextFile,
   type ExportResult,
 } from "../lib/api";
@@ -40,10 +41,36 @@ export function SessionView({
   const [muted, setMuted] = useState(false);
 
   // 投入直後の素材ローカル行（uploading/failed）。realtime の analysis.progress/visual が届くまで、
-  // また動画の「準備中」を可視化する橋渡し。#184（GET context/files）導入でハイドレーションへ寄せる。
+  // また動画の「準備中」を可視化する橋渡し。
   const [pending, setPending] = useState<MaterialItem[]>([]);
+  // #184: リロード/途中参加時に GET context/files で実ファイル名・状態を復元する。
+  const [hydratedMaterials, setHydratedMaterials] = useState<MaterialItem[]>([]);
   const fileInput = useRef<HTMLInputElement>(null);
   const tempSeq = useRef(0);
+
+  // 接続/再接続時に投入済み素材のメタを取り戻す（契約 §4 / #184）。失敗してもライブ差分で前進する。
+  useEffect(() => {
+    let alive = true;
+    fetchContextFiles(sessionId, sessionToken)
+      .then((snap) => {
+        if (!alive) return;
+        setHydratedMaterials(
+          snap.items.map((f) => ({
+            id: f.id,
+            name: f.name,
+            pct: f.status === "done" ? 100 : 0,
+            status: f.status,
+            ...(f.extracted ? { extracted: f.extracted } : {}),
+          })),
+        );
+      })
+      .catch(() => {
+        /* ハイドレーションは補助。失敗してもライブ差分で前進する。 */
+      });
+    return () => {
+      alive = false;
+    };
+  }, [sessionId, sessionToken]);
 
   async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -110,6 +137,7 @@ export function SessionView({
         onExport={handleExport}
         onAddMaterial={() => fileInput.current?.click()}
         extraMaterials={pending}
+        hydratedMaterials={hydratedMaterials}
         onRetryMaterial={handleRetryMaterial}
         // 会話を離れる瞬間にマイク送信を止める（判定/結果ではボトムバーが無く止められないため）。
         onLeaveConversation={() => {

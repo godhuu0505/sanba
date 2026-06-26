@@ -187,6 +187,12 @@ class DetectionsResponse(BaseModel):
     items: list[dict[str, Any]]
 
 
+class ContextFilesResponse(BaseModel):
+    # 投入済み素材のメタ一覧（契約 §4 #184）。web は asset_id で realtime の analysis 行と
+    # 突き合わせ、リロード/再接続時に実ファイル名・状態（解析中/完了）を復元する。
+    items: list[dict[str, Any]]
+
+
 class ExportResponse(BaseModel):
     exported: bool
     issue_url: str | None = None
@@ -311,6 +317,10 @@ async def add_context_file(
         # 動画解析は未実装: 保存のみ済ませ、web には「準備中」を返す。
         if kind == "video" and not settings.enable_video_analysis:
             record_asset_upload("video", "pending")
+            # 素材一覧（GET context/files / #184）へ登録。動画は解析未実装のため analyzing のまま。
+            _asset_store.register_material(
+                session_id, asset.asset_id, filename, kind, status="analyzing"
+            )
             log.info(
                 "asset_pending",
                 session=session_id,
@@ -331,6 +341,15 @@ async def add_context_file(
         if observations:
             indexed = _indexer.index_context(session_id, observations, f"asset:{asset.asset_id}")
         record_asset_upload(kind, "analyzed")
+        # 素材一覧（GET context/files / #184）へ登録。画像は同期解析済みなので done。
+        _asset_store.register_material(
+            session_id,
+            asset.asset_id,
+            filename,
+            kind,
+            status="done",
+            extracted=len(observations),
+        )
         log.info(
             "asset_analyzed",
             session=session_id,
@@ -531,6 +550,20 @@ def get_detections(
     items = _read_repo.list_open_detections(session_id)
     log.info("detections_hydrated", session=session_id, count=len(items), open=open)
     return DetectionsResponse(items=items)
+
+
+@app.get("/api/sessions/{session_id}/context/files", response_model=ContextFilesResponse)
+def get_context_files(
+    session_id: str, access: SessionAccess = Depends(require_session_access)
+) -> ContextFilesResponse:
+    """投入済み素材のメタ一覧（契約 §4 #184）。05 参考資料のハイドレーション。
+
+    リロード/再接続でローカル行（uploading/failed）が消えても、サーバ保持の実ファイル名と
+    解析状態を復元する。realtime の analysis.progress/visual はライブ差分で重ねる。
+    """
+    items = [m.to_contract() for m in _asset_store.list_materials(session_id)]
+    log.info("context_files_hydrated", session=session_id, count=len(items), sub=access.sub)
+    return ContextFilesResponse(items=items)
 
 
 @app.post("/api/sessions/{session_id}/export", response_model=ExportResponse)

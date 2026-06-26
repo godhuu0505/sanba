@@ -42,6 +42,32 @@ class Asset:
     uri: str  # gs://bucket/... もしくは mem://... （in-memory 時）
 
 
+@dataclass(frozen=True)
+class MaterialRecord:
+    """素材一覧（GET context/files / 契約 §4 #184）が返す 1 行。
+
+    web の MaterialItem（id/name/status/extracted）に対応する。バイト列ではなく
+    「投入された素材のメタ」を保持し、リロード/再接続時に実ファイル名と状態を復元する。
+    """
+
+    asset_id: str
+    name: str  # 実ファイル名（web のローカル行 name と一致させる）
+    kind: str  # "image" | "video"
+    status: str  # "analyzing" | "done" | "failed"
+    extracted: int = 0  # 解析で抽出した観察/要件数（done 時）
+
+    def to_contract(self) -> dict[str, object]:
+        item: dict[str, object] = {
+            "id": self.asset_id,
+            "name": self.name,
+            "kind": self.kind,
+            "status": self.status,
+        }
+        if self.extracted > 0:
+            item["extracted"] = self.extracted
+        return item
+
+
 def asset_kind(filename: str, content_type: str | None) -> str | None:
     """アップロードの種別を返す。画像/動画なら "image"/"video"、非対応なら None。
 
@@ -94,6 +120,11 @@ class AssetStore:
         self._bucket = self._init_bucket()
         # in-memory フォールバック: テスト・ローカルで保存先がないときの退避（本番は GCS）。
         self._mem: dict[str, bytes] = {}
+        # 素材一覧の登録簿（GET context/files / 契約 §4 #184）。session_id → asset_id → record。
+        # web のリロード/再接続で実ファイル名と解析状態を復元するため、バイト列とは別に
+        # 「投入された素材のメタ」を保持する。本番はワーカー横断のため Firestore が望ましいが
+        # （follow-up）、API プロセスが生きている間の web リロード復元はこれで満たせる。
+        self._registry: dict[str, dict[str, MaterialRecord]] = {}
 
     @property
     def is_memory(self) -> bool:
@@ -136,3 +167,19 @@ class AssetStore:
         return Asset(
             asset_id=asset_id, kind=kind, content_type=content_type, size=len(raw), uri=uri
         )
+
+    # ── 素材一覧の登録簿（GET context/files / 契約 §4 #184）─────────────────────
+    def register_material(
+        self, session_id: str, asset_id: str, name: str, kind: str, status: str, extracted: int = 0
+    ) -> None:
+        """投入された素材のメタを記録/更新する（リロード復元用）。
+
+        同一 asset_id は上書き（冪等）。解析の進行で status/extracted を更新できる。
+        """
+        self._registry.setdefault(session_id, {})[asset_id] = MaterialRecord(
+            asset_id=asset_id, name=name, kind=kind, status=status, extracted=extracted
+        )
+
+    def list_materials(self, session_id: str) -> list[MaterialRecord]:
+        """セッションに投入された素材の一覧（投入順）。"""
+        return list(self._registry.get(session_id, {}).values())

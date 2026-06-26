@@ -15,6 +15,7 @@
 import { useRef, useState } from "react";
 
 import {
+  mergeMaterials,
   selectConfirmedRequirements,
   selectMaterials,
   selectMiniStatus,
@@ -57,6 +58,11 @@ export interface ConversationSessionViewProps {
    * 同 asset_id の realtime 行が来たらそちらを優先（#184 のハイドレーションが入るまでの橋渡し）。
    */
   extraMaterials?: MaterialItem[];
+  /**
+   * GET context/files（#184）由来の復元素材。リロード/再接続でローカル行が消えても
+   * 実ファイル名・状態を取り戻す土台。realtime の analysis 行とは asset_id で統合する。
+   */
+  hydratedMaterials?: MaterialItem[];
   /** 失敗素材の再試行（親が再アップロードへ）。 */
   onRetryMaterial?: (id: string) => void;
   /** 会話フェーズを離れる（終了→判定）瞬間。親はここでマイク送信を止める。 */
@@ -82,6 +88,7 @@ export function ConversationSessionView({
   onExport,
   onAddMaterial,
   extraMaterials,
+  hydratedMaterials,
   onRetryMaterial,
   onLeaveConversation,
   onRestart,
@@ -100,19 +107,18 @@ export function ConversationSessionView({
   const openDetections = selectOpenDetections(state);
   const confirmed = selectConfirmedRequirements(state);
 
-  // 投入直後のローカル行（uploading/failed）＋ realtime 解析行。同 id は realtime を優先。
+  // 復元（#184）＋投入直後のローカル行（uploading/failed）＋ realtime 解析行を asset_id で統合。
+  // 状態は realtime 最優先、表示名は実ファイル名（hydrated/local）を asset_id より優先する。
   const realtimeMaterials = selectMaterials(state);
-  const realtimeIds = new Set(realtimeMaterials.map((m) => m.id));
-  const materials = [
-    ...(extraMaterials ?? []).filter((m) => !realtimeIds.has(m.id)),
-    ...realtimeMaterials,
-  ];
+  const materials = mergeMaterials(realtimeMaterials, extraMaterials ?? [], hydratedMaterials ?? []);
 
-  // ローカル素材もミニ状況の件数・解析中フラグに反映する（ヘッダーの「📎資料 N」と一致させる）。
+  // 統合後の素材をミニ状況の件数・解析中フラグに反映する（ヘッダーの「📎資料 N」と一致させる）。
   const mini = {
     ...baseMini,
     materials: materials.length,
-    analyzing: baseMini.analyzing || (extraMaterials ?? []).some((m) => m.status === "uploading"),
+    analyzing:
+      baseMini.analyzing ||
+      materials.some((m) => m.status === "uploading" || m.status === "analyzing"),
   };
 
   function leaveConversationTo(next: Phase) {
