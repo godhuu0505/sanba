@@ -7,7 +7,7 @@
 // 検知（矛盾/抜け）はバッジ＋枠色で示す（色のみ依存しない・ADR-0017）。
 // 詳細/比較のオーバーレイは別部品（ChoiceDetailSheet など）が担当する。
 
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 
 import { detectionPresentation } from "@/lib/realtime/mapping";
 import type { DetectionKind } from "@/lib/realtime/types";
@@ -55,6 +55,8 @@ export function ChoiceStrip({
     }, LONG_PRESS_MS);
   };
   const cancelPress = () => window.clearTimeout(pressTimer.current);
+  // アンマウント後に詳細を開こうとしないよう、保留タイマーを後始末する。
+  useEffect(() => () => window.clearTimeout(pressTimer.current), []);
   const chipClick = (i: number) => {
     if (longPressed.current) {
       longPressed.current = false;
@@ -105,6 +107,9 @@ export function ChoiceStrip({
                   onPointerDown: () => startPress(i),
                   onPointerUp: cancelPress,
                   onPointerLeave: cancelPress,
+                  // スクロール等でブラウザがジェスチャーを奪うと pointercancel になる。
+                  // ここで止めないと指を離していなくても 450ms 後に詳細が勝手に開く。
+                  onPointerCancel: cancelPress,
                 };
             return (
               <button

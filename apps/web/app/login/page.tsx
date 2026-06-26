@@ -18,6 +18,15 @@ import { useGoogleAuth } from "@/lib/auth";
 // 12「本人確認中」を見せる時間。実機・dev とも同じ間で 13 へ遷移する。
 const WELCOME_MS = 1000;
 
+// `?next=` はユーザー操作で渡る値なので、同一オリジンの相対パスだけを許可する
+// （オープンリダイレクト／`javascript:` スキーム XSS の防止）。
+// 許可: "/" 始まりで "//"・"/\" でないパス。それ以外は null（既定ルートに留める）。
+export function safeNextPath(raw: string | null): string | null {
+  if (!raw || !raw.startsWith("/")) return null;
+  if (raw.startsWith("//") || raw.startsWith("/\\")) return null;
+  return raw;
+}
+
 export default function LoginPage() {
   const { loggedIn, profile, devMode, buttonRef, devSignIn, signOut, resetButton } = useGoogleAuth();
 
@@ -30,7 +39,7 @@ export default function LoginPage() {
   const router = useRouter();
   const nextRef = useRef<string | null>(null);
   useEffect(() => {
-    nextRef.current = new URLSearchParams(window.location.search).get("next");
+    nextRef.current = safeNextPath(new URLSearchParams(window.location.search).get("next"));
   }, []);
   useEffect(() => {
     if (!loggedIn || !nextRef.current) return;

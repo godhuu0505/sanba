@@ -83,6 +83,20 @@ describe("ChoiceStrip（問いピン・最小/一覧）", () => {
     }
   });
 
+  it("最小: 長押し中に pointercancel されたらタイマーを止める（スクロール中の誤展開を防ぐ）", () => {
+    vi.useFakeTimers();
+    try {
+      const cb = setup();
+      const chip = screen.getByRole("button", { name: /新しき順/ });
+      fireEvent.pointerDown(chip);
+      fireEvent.pointerCancel(chip);
+      act(() => vi.advanceTimersByTime(600));
+      expect(cb.onOpenDetail).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("検知（矛盾）のときは検知バッジを出す", () => {
     setup({ detectionKind: "contradiction" });
     expect(screen.getByText(/矛盾/)).toBeTruthy();

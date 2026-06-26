@@ -62,6 +62,23 @@ describe("ChoicePin（フック＋strip/detail/compare の結線）", () => {
     ).not.toThrow();
   });
 
+  it("同一文言・同数でも questionId が変われば再表示する（連続検知で回答できなくなるのを防ぐ）", () => {
+    const onAnswer = vi.fn();
+    const two: ChoiceOptionFull[] = [{ label: "甲" }, { label: "乙" }];
+    const { rerender } = render(
+      <ChoicePin questionId="q1" question="どちらを採りますか" options={two} onAnswer={onAnswer} />,
+    );
+    // 最小chipで回答 → 選択肢UIは hidden になる
+    fireEvent.click(screen.getByRole("button", { name: /甲/ }));
+    expect(onAnswer).toHaveBeenCalledWith(0);
+    expect(screen.queryByText("どちらを採りますか")).toBeNull();
+    // 文言も選択肢数も同じだが「次の問い」: questionId が変われば再表示される
+    rerender(
+      <ChoicePin questionId="q2" question="どちらを採りますか" options={two} onAnswer={onAnswer} />,
+    );
+    expect(screen.getByText("どちらを採りますか")).toBeTruthy();
+  });
+
   it("詳細→比較で ChoiceCompareSheet に切り替わる", () => {
     renderPin();
     fireEvent.click(screen.getByRole("button", { name: /広げる/ }));

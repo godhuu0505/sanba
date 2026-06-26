@@ -26,21 +26,27 @@ export interface ChoiceOptionFull {
 }
 
 export interface ChoicePinProps {
+  /**
+   * 問いの一意 ID（検知 ID / ターン ID など）。文言・選択肢数が同じ「次の問い」でも
+   * これが変われば再表示する。未指定時は question/選択肢数の変化のみで再表示する。
+   */
+  questionId?: string;
   question: string;
   options: ChoiceOptionFull[];
   detectionKind?: DetectionKind;
   onAnswer: (index: number) => void;
 }
 
-export function ChoicePin({ question, options, detectionKind, onAnswer }: ChoicePinProps) {
+export function ChoicePin({ questionId, question, options, detectionKind, onAnswer }: ChoicePinProps) {
   const d = useChoiceDisclosure();
   const { setQuestion, clear } = d;
 
-  // 問い（や選択肢数）が変わったら最小構成に開き直す。
+  // 新しい問いになったら最小構成に開き直す。questionId があればそれを優先の鍵にするため、
+  // 同一文言・同数の連続検知（例: 別々の検知で同じ「どちらを採りますか？」2択）でも再表示できる。
   useEffect(() => {
     if (options.length > 0) setQuestion(options.length);
     else clear();
-  }, [question, options.length, setQuestion, clear]);
+  }, [questionId, question, options.length, setQuestion, clear]);
 
   if (d.state.mode === "hidden") return null;
 
