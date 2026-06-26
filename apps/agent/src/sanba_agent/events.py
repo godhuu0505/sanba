@@ -314,6 +314,63 @@ def decode_user_selection(
     return detection_id, selected_value
 
 
+def _decode_web_event(
+    payload: bytes | str, expected_type: str, *, expected_session_id: str | None
+) -> dict[str, Any] | None:
+    """web → agent のイベント（契約 §4.5）を JSON デコードし型/セッションを照合する。
+
+    ``expected_type`` と一致し、``expected_session_id`` を渡した場合は session_id も一致する
+    dict を返す。不正・不一致なら None（同室の別セッション向けイベント混入を弾く）。
+    """
+    try:
+        text = payload.decode("utf-8") if isinstance(payload, bytes) else payload
+        obj = json.loads(text)
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    if not isinstance(obj, dict) or obj.get("type") != expected_type:
+        return None
+    if expected_session_id is not None and obj.get("session_id") != expected_session_id:
+        return None
+    return obj
+
+
+def decode_user_text(payload: bytes | str, *, expected_session_id: str | None = None) -> str | None:
+    """web → agent の user.text（契約 §4.5 / #185）をデコードする。
+
+    検証に通れば本文テキストを返す。不正・別セッション・空文字なら None。
+    テキスト入力を「会話ターン」として扱うため、main 側で発話記録＋応答生成に渡す。
+    """
+    obj = _decode_web_event(payload, "user.text", expected_session_id=expected_session_id)
+    if obj is None:
+        return None
+    text = obj.get("text")
+    if not isinstance(text, str) or not text.strip():
+        return None
+    return text.strip()
+
+
+def decode_user_answered(
+    payload: bytes | str, *, expected_session_id: str | None = None
+) -> tuple[str, str] | None:
+    """web → agent の user.answered（契約 §4.5 / #181）をデコードする。
+
+    通常質問（金枠）への回答。``(question_id, answer)`` を返す。answer は選択肢値
+    （selected_value）優先、無ければ自由記述（text）。どちらも無ければ None。
+    """
+    obj = _decode_web_event(payload, "user.answered", expected_session_id=expected_session_id)
+    if obj is None:
+        return None
+    question_id = obj.get("question_id")
+    if not isinstance(question_id, str):
+        return None
+    selected = obj.get("selected_value")
+    text = obj.get("text")
+    answer = selected if isinstance(selected, str) and selected else text
+    if not isinstance(answer, str) or not answer.strip():
+        return None
+    return question_id, answer.strip()
+
+
 def _get_tracer() -> Any:
     try:
         from opentelemetry import trace

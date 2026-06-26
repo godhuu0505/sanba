@@ -12,7 +12,6 @@ import { useEffect, useRef, useState } from "react";
 import {
   ACCEPTED_IMAGE,
   ACCEPTED_VIDEO,
-  addSessionContext,
   exportRequirements,
   fetchContextFiles,
   finalizeSession,
@@ -31,7 +30,7 @@ export function SessionView({
   sessionId: string;
   sessionToken: string | null;
 }) {
-  const { state, metrics, sendSelection } = useRealtimeSession({
+  const { state, metrics, sendSelection, sendText } = useRealtimeSession({
     sessionId,
     sessionToken,
     hydrateDetections: true,
@@ -115,12 +114,10 @@ export function SessionView({
     return finalizeSession(sessionId, sessionToken);
   }
 
-  // テキスト送信は #185（user.text）未実装のため、当面はセッション文脈へ投入して
-  // 会話に反映させる（捨て足場ではなく実効果のある暫定動線。#185 で会話ターン化する）。
+  // テキスト送信は user.text（契約 §4.5 / #185）として agent へ会話ターンで届ける。
+  // agent 側は発話として記録し（transcript.final で会話履歴にも反映）、応答を生成する。
   function handleSendText(text: string) {
-    void addSessionContext(sessionId, text, sessionToken, "user_text").catch((e) =>
-      console.warn("text relay failed", e),
-    );
+    sendText(text);
   }
 
   return (

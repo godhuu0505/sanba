@@ -408,26 +408,62 @@ async def entrypoint(ctx: JobContext) -> None:
             speaker = "participant"
             agent.record_utterance(speaker, ev.transcript)
 
-    # web → agent の user.selection を受信し、検知を解消する（契約 §4.5 / #102）。
+    # web → agent の操作イベントを受信する（契約 §4.5）。
+    #   - user.selection（#102）: 検知カードの選択肢タップ → 検知を解消。
+    #   - user.text（#185）: テキスト入力 → 発話として記録し音声で応答（会話ターン化）。
+    #   - user.answered（#181）: 通常質問への回答 → 発話として記録し次の問いへ進む。
     # fire-and-forget タスクは set に退避して GC を防ぐ（#128。完了時に除去・例外をログ）。
     _bg_tasks: set[asyncio.Task] = set()
 
     def _on_bg_done(task: asyncio.Task) -> None:
         _bg_tasks.discard(task)
         if not task.cancelled() and (exc := task.exception()):
-            log.warning("selection_task_failed", error=str(exc))
+            log.warning("web_event_task_failed", error=str(exc))
+
+    def _schedule(coro) -> None:  # type: ignore[no-untyped-def]
+        task = asyncio.create_task(coro)
+        _bg_tasks.add(task)
+        task.add_done_callback(_on_bg_done)
+
+    async def _respond_to_user_text(text: str) -> None:
+        # テキスト入力を会話ターンとして扱う（#185）。発話を記録（transcript.final で会話履歴へ
+        # 反映）し、それを踏まえて音声で応答する。従来のセッション文脈投入（捨て足場）を置換。
+        agent.record_utterance("participant", text)
+        await session.generate_reply(
+            instructions=(
+                f"参加者がテキストで次のように述べました：「{text}」。"
+                "これを会話の発話として受け止め、必要なら一問だけ掘り下げて応答してください。"
+            )
+        )
+
+    async def _respond_to_answer(question_id: str, answer: str) -> None:
+        # 通常質問（金枠）への回答（#181）。回答を発話として記録し、要件を一歩進める。
+        agent.record_utterance("participant", answer)
+        await session.generate_reply(
+            instructions=(
+                f"先ほどの問い（{question_id}）に対し参加者は「{answer}」と答えました。"
+                "これを踏まえて要件を一歩進め、必要なら次の問いを1つだけ投げてください。"
+            )
+        )
 
     def _on_data(packet) -> None:  # type: ignore[no-untyped-def]
         if getattr(packet, "topic", None) != WEB_EVENTS_TOPIC:
             return
-        # session_id を照合し、同室の別セッション向け selection 混入を弾く（#132）。
-        parsed = decode_user_selection(getattr(packet, "data", b""), expected_session_id=session_id)
-        if parsed is None:
+        data = getattr(packet, "data", b"")
+        # session_id を照合し、同室の別セッション向けイベント混入を弾く（#132）。
+        sel = decode_user_selection(data, expected_session_id=session_id)
+        if sel is not None:
+            detection_id, selected_value = sel
+            _schedule(agent.resolve_detection(detection_id, selected_value))
             return
-        detection_id, selected_value = parsed
-        task = asyncio.create_task(agent.resolve_detection(detection_id, selected_value))
-        _bg_tasks.add(task)
-        task.add_done_callback(_on_bg_done)
+        text = decode_user_text(data, expected_session_id=session_id)
+        if text is not None:
+            _schedule(_respond_to_user_text(text))
+            return
+        answered = decode_user_answered(data, expected_session_id=session_id)
+        if answered is not None:
+            question_id, answer = answered
+            _schedule(_respond_to_answer(question_id, answer))
 
     ctx.room.on("data_received", _on_data)
 

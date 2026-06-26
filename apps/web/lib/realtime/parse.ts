@@ -6,7 +6,9 @@ import {
   SCHEMA_VERSION,
   type ServerEvent,
   type ServerEventType,
+  type UserAnsweredEvent,
   type UserSelectionEvent,
+  type UserTextEvent,
 } from "./types";
 
 const KNOWN_TYPES: ReadonlySet<string> = new Set<ServerEventType>([
@@ -140,6 +142,51 @@ export function encodeUserSelection(
     session_id: sessionId,
     detection_id: detectionId,
     selected_value: selectedValue,
+  };
+  return encoder.encode(JSON.stringify(event));
+}
+
+/**
+ * web → agent の user.text をエンコードする（契約 §4.5 / #185）。
+ * ボトムバーのテキスト送信を「会話ターン」として agent に渡す（従来のセッション文脈投入の代替）。
+ */
+export function encodeUserText(
+  sessionId: string,
+  text: string,
+  seq: number,
+  ts: string,
+): Uint8Array {
+  const event: UserTextEvent = {
+    v: SCHEMA_VERSION,
+    type: "user.text",
+    seq,
+    ts,
+    session_id: sessionId,
+    text,
+  };
+  return encoder.encode(JSON.stringify(event));
+}
+
+/**
+ * web → agent の user.answered をエンコードする（契約 §4.5 / #181）。
+ * 通常質問（金枠）の選択肢タップ／自由記述回答を agent に返す。
+ */
+export function encodeUserAnswered(
+  sessionId: string,
+  questionId: string,
+  answer: { selectedValue?: string; text?: string },
+  seq: number,
+  ts: string,
+): Uint8Array {
+  const event: UserAnsweredEvent = {
+    v: SCHEMA_VERSION,
+    type: "user.answered",
+    seq,
+    ts,
+    session_id: sessionId,
+    question_id: questionId,
+    ...(answer.selectedValue !== undefined ? { selected_value: answer.selectedValue } : {}),
+    ...(answer.text !== undefined ? { text: answer.text } : {}),
   };
   return encoder.encode(JSON.stringify(event));
 }

@@ -14,7 +14,9 @@ from sanba_agent.events import (
     EVENTS_TOPIC,
     EventPublisher,
     RecordingTransport,
+    decode_user_answered,
     decode_user_selection,
+    decode_user_text,
     requirement_to_contract,
 )
 
@@ -207,6 +209,57 @@ def test_decode_user_selection_rejects_other_session() -> None:
         }
     ).encode()
     assert decode_user_selection(payload, expected_session_id="s1") is None
+
+
+# ── user.text（#185）─────────────────────────────────────────────────────────
+def test_decode_user_text_valid() -> None:
+    payload = json.dumps(
+        {"v": 1, "type": "user.text", "session_id": "s1", "text": "  新着順で  "}
+    ).encode()
+    # 前後空白は落として本文を返す。
+    assert decode_user_text(payload) == "新着順で"
+
+
+def test_decode_user_text_rejects_wrong_type() -> None:
+    payload = json.dumps({"type": "user.selection", "text": "x"}).encode()
+    assert decode_user_text(payload) is None
+
+
+def test_decode_user_text_rejects_empty() -> None:
+    payload = json.dumps({"type": "user.text", "text": "   "}).encode()
+    assert decode_user_text(payload) is None
+
+
+def test_decode_user_text_rejects_other_session() -> None:
+    payload = json.dumps({"type": "user.text", "session_id": "s-other", "text": "x"}).encode()
+    assert decode_user_text(payload, expected_session_id="s1") is None
+
+
+# ── user.answered（#181）─────────────────────────────────────────────────────
+def test_decode_user_answered_prefers_selected_value() -> None:
+    payload = json.dumps(
+        {
+            "type": "user.answered",
+            "session_id": "s1",
+            "question_id": "q1",
+            "selected_value": "relevance",
+            "text": "自由記述",
+        }
+    ).encode()
+    # 選択肢値があれば優先する。
+    assert decode_user_answered(payload, expected_session_id="s1") == ("q1", "relevance")
+
+
+def test_decode_user_answered_falls_back_to_text() -> None:
+    payload = json.dumps(
+        {"type": "user.answered", "question_id": "q1", "text": "関連度順がよい"}
+    ).encode()
+    assert decode_user_answered(payload) == ("q1", "関連度順がよい")
+
+
+def test_decode_user_answered_rejects_missing_answer() -> None:
+    payload = json.dumps({"type": "user.answered", "question_id": "q1"}).encode()
+    assert decode_user_answered(payload) is None
 
 
 def test_requirement_to_contract_handles_missing_speaker() -> None:
