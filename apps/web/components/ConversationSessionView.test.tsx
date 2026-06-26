@@ -180,12 +180,13 @@ describe("ConversationSessionView（会話シェル結線）", () => {
     expect(screen.getByText("検索は関連度順で。")).toBeTruthy();
   });
 
-  it("未解消0件なら判定で確定でき、結果へ進む", () => {
+  it("未解消0件なら判定で確定でき、結果へ進む", async () => {
     renderView({ state: baseState({ detections: [] }) });
     fireEvent.click(screen.getByRole("button", { name: "会話を終了" }));
     fireEvent.click(screen.getByRole("button", { name: "終了する" }));
     fireEvent.click(screen.getByRole("button", { name: "要件を確定する" }));
-    expect(screen.getByText(/要件、産まれました/)).toBeTruthy();
+    // finalize 成功（未指定=解決済み扱い）を待ってから結果へ遷移する。
+    expect(await screen.findByText(/要件、産まれました/)).toBeTruthy();
     expect(screen.getByText(/確定要件 1 件/)).toBeTruthy();
   });
 
@@ -206,14 +207,28 @@ describe("ConversationSessionView（会話シェル結線）", () => {
     expect(screen.getByLabelText("資料 アップ中.png")).toBeTruthy();
   });
 
-  it("確定（要件を確定する）で onFinalize を呼んでから結果へ進む（#186）", () => {
+  it("確定（要件を確定する）で onFinalize を呼んでから結果へ進む（#186）", async () => {
     const onFinalize = vi.fn(async () => ({ finalized: true, confirmed_count: 1 }));
     renderView({ state: baseState({ detections: [] }), onFinalize });
     fireEvent.click(screen.getByRole("button", { name: "会話を終了" }));
     fireEvent.click(screen.getByRole("button", { name: "終了する" }));
     fireEvent.click(screen.getByRole("button", { name: "要件を確定する" }));
     expect(onFinalize).toHaveBeenCalledTimes(1);
-    expect(screen.getByText(/要件、産まれました/)).toBeTruthy();
+    expect(await screen.findByText(/要件、産まれました/)).toBeTruthy();
+  });
+
+  it("確定が失敗（409 等）したら結果へ進まず判定に留まり理由を出す（#186 / Codex P2）", async () => {
+    const onFinalize = vi.fn(async () => {
+      throw new Error("finalize failed: 409");
+    });
+    renderView({ state: baseState({ detections: [] }), onFinalize });
+    fireEvent.click(screen.getByRole("button", { name: "会話を終了" }));
+    fireEvent.click(screen.getByRole("button", { name: "終了する" }));
+    fireEvent.click(screen.getByRole("button", { name: "要件を確定する" }));
+    // 失敗理由が判定画面に出て、結果画面（要件、産まれました）には遷移しない。
+    expect(await screen.findByRole("alert")).toBeTruthy();
+    expect(screen.queryByText(/要件、産まれました/)).toBeNull();
+    expect(screen.getByRole("button", { name: "要件を確定する" })).toBeTruthy();
   });
 
   it("未解消のまま終う（強制終了）では確定しないので onFinalize を呼ばない（#186）", () => {
@@ -233,7 +248,7 @@ describe("ConversationSessionView（会話シェル結線）", () => {
     expect(onLeaveConversation).toHaveBeenCalledTimes(1);
   });
 
-  it("結果画面の Issue 書き出しは連打しても1回しか起票しない（重複起票防止）", () => {
+  it("結果画面の Issue 書き出しは連打しても1回しか起票しない（重複起票防止）", async () => {
     let resolve: () => void = () => {};
     const onExport = vi.fn(
       () => new Promise<{ exported: boolean }>((r) => { resolve = () => r({ exported: true }); }),
@@ -242,7 +257,7 @@ describe("ConversationSessionView（会話シェル結線）", () => {
     fireEvent.click(screen.getByRole("button", { name: "会話を終了" }));
     fireEvent.click(screen.getByRole("button", { name: "終了する" }));
     fireEvent.click(screen.getByRole("button", { name: "要件を確定する" }));
-    const issueBtn = screen.getByRole("button", { name: "🐙 Issue" });
+    const issueBtn = await screen.findByRole("button", { name: "🐙 Issue" });
     fireEvent.click(issueBtn);
     fireEvent.click(issueBtn); // 連打
     expect(onExport).toHaveBeenCalledTimes(1);

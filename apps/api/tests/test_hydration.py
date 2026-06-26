@@ -217,6 +217,24 @@ def test_finalize_is_idempotent_and_keeps_first_snapshot() -> None:
     assert meta2.finalized_at == first_at  # 刻も保持
 
 
+def test_finalize_idempotent_even_with_late_open_detection() -> None:
+    # 既 finalized なら、後から open 検知が付いても再 POST は 409 にならず保存値を返す（Codex P2）。
+    created = client.post("/api/sessions", json={"roles": ["pm"], "consent_acknowledged": True})
+    sid = created.json()["session_id"]
+    _read_repo._seed_requirement(
+        sid, {"id": "c1", "statement": "確定", "category": "functional", "priority": "must"}
+    )
+    first = client.post(f"/api/sessions/{sid}/finalize", headers=_auth(_token(sid)))
+    assert first.status_code == 200
+    # 確定後に遅延した agent が未解消検知を保存しても、再 POST は冪等に成功する。
+    _read_repo._seed_detection(
+        sid, {"id": "d-late", "kind": "gap", "summary": "後追い", "resolved": False}
+    )
+    again = client.post(f"/api/sessions/{sid}/finalize", headers=_auth(_token(sid)))
+    assert again.status_code == 200
+    assert again.json()["confirmed_count"] == 1
+
+
 # ── POST /export（P1）──────────────────────────────────────────────────────
 def test_export_disabled_by_default() -> None:
     res = client.post("/api/sessions/sess-3/export", headers=_auth(_token("sess-3")))

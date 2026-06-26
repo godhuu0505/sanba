@@ -18,6 +18,8 @@ export interface JudgmentGateProps {
   onForceEnd: () => void;
   /** 要件を確定する（全解消時のみ）。 */
   onConfirm: () => void;
+  /** 確定に失敗したときの理由（サーバ 409 等）。表示して結果へ進ませない。 */
+  error?: string;
   /** 内訳項目の「会話で確認」押下（該当検知へ）。 */
   onJump?: (detectionId: string) => void;
 }
@@ -28,6 +30,7 @@ export function JudgmentGate({
   onBack,
   onForceEnd,
   onConfirm,
+  error,
   onJump,
 }: JudgmentGateProps) {
   const resolved = unresolved === 0;
@@ -52,6 +55,11 @@ export function JudgmentGate({
             すべて解けました。要件を確定できます。
           </p>
           <div className="flex-1" />
+          {error && (
+            <p role="alert" className="mb-2 w-full text-center text-[12px] text-[var(--sanba-rec)]">
+              {error}
+            </p>
+          )}
           <button
             type="button"
             onClick={onConfirm}

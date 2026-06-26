@@ -587,17 +587,24 @@ def finalize_session_requirements(
     （ADR-0014）なのでここでは行わない。確定後の export（GitHub Issue）はこの件数と一致する。
 
     ガード（Codex P2）:
-      - 未解消検知が 1 件でも残るなら 409 で拒否する（07 判定の「未解消 0 件で確定可」を
-        サーバ側でも担保。有効トークンの直接 POST や古いクライアント状態での確定を防ぐ）。
-      - 既に finalized なら最初のスナップショット件数をそのまま返す（冪等・上書きしない）。
+      - 既に finalized なら open 検知に関係なく保存済みスナップショット件数を返す（冪等）。
+        確定後に遅延 agent が open 検知を保存しても、再送/リロードの再 POST が 409 にならない。
+      - 未確定セッションは、未解消検知が 1 件でも残るなら 409 で拒否する（07 判定の
+        「未解消 0 件で確定可」をサーバ側でも担保。直接 POST や古いクライアント状態を防ぐ）。
     """
+    existing = _repo.get_session(session_id)
+    if existing is None:
+        raise HTTPException(status_code=404, detail="session not found")
+    # 冪等: 既に finalized なら未解消チェックより先に保存済みスナップショットを返す。
+    if existing.status == "finalized":
+        return FinalizeResponse(finalized=True, confirmed_count=existing.finalized_count or 0)
+    # 新規確定のみ未解消ガードを適用する。
     if _read_repo.list_open_detections(session_id):
         raise HTTPException(status_code=409, detail="unresolved detections remain")
     confirmed = [r for r in _read_repo.list_requirements(session_id) if r["status"] == "confirmed"]
     meta = _repo.finalize_session(session_id, confirmed_count=len(confirmed))
     if meta is None:
         raise HTTPException(status_code=404, detail="session not found")
-    # 既 finalized なら repo が最初のスナップショットを返す。件数は永続値を正とする（冪等）。
     count = meta.finalized_count if meta.finalized_count is not None else len(confirmed)
     log.info("session_finalized", session=session_id, confirmed=count, sub=access.sub)
     return FinalizeResponse(finalized=True, confirmed_count=count)

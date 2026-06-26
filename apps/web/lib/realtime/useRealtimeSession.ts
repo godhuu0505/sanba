@@ -10,7 +10,8 @@
 //   - live  : LiveKit データチャネル（topic="sanba.events"）を購読 + GET ハイドレーション
 //   - fixture: backend 非依存で契約フィクスチャを再生（静的 UI 先行着手用）
 
-import { useDataChannel } from "@livekit/components-react";
+import { useConnectionState, useDataChannel } from "@livekit/components-react";
+import { ConnectionState } from "livekit-client";
 import {
   useCallback,
   useEffect,
@@ -186,6 +187,21 @@ export function useRealtimeSession(opts: LiveOptions): UseRealtimeSessionResult 
     });
     return off;
   }, [sessionId, store, hydrate]);
+
+  // 再接続のたびにスナップショットを取り直す（Codex P2）。SessionView を保持したまま
+  // 再接続する設計（03 / ConversationStart）では、切断中に他参加者/agent が更新し、
+  // 復帰後に新しい seq イベントが来ないと画面が古いまま残るため、Connected 復帰時に
+  // ローカル状態は保持したまま hydrate だけ再実行する（初回接続では二重実行しない）。
+  const connState = useConnectionState();
+  const wasConnected = useRef(false);
+  useEffect(() => {
+    if (connState !== ConnectionState.Connected) return;
+    if (wasConnected.current) {
+      store.metrics.recordReconnect();
+      void hydrate();
+    }
+    wasConnected.current = true;
+  }, [connState, hydrate, store]);
 
   return { state, metrics, store, sendSelection, sendText, sendAnswer };
 }

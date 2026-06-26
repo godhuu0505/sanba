@@ -110,6 +110,8 @@ export function ConversationSessionView({
   const [tab, setTab] = useState<ShellTab>("history");
   const [endOpen, setEndOpen] = useState(false);
   const [provisional, setProvisional] = useState(false);
+  // 確定（finalize）失敗時のメッセージ（#186 / Codex P2）。失敗なら結果へ進めず判定に留める。
+  const [finalizeError, setFinalizeError] = useState<string | null>(null);
   // 回答済みの通常質問 ID（#181）。検知の resolved 相当のサーバ echo が無いため、
   // 回答後はローカルで問いピンを畳む（次の question.asked が新 ID で前面に出る）。
   const [answeredQuestions, setAnsweredQuestions] = useState<ReadonlySet<string>>(new Set());
@@ -164,24 +166,33 @@ export function ConversationSessionView({
       <JudgmentGate
         unresolved={mini.unresolved}
         detections={openDetections}
+        error={finalizeError ?? undefined}
         onBack={() => setPhase("shell")}
         onForceEnd={() => {
           setProvisional(true);
           setPhase("result");
         }}
         onConfirm={() => {
-          // 確定スナップショットを finalize API へ書き込む（#186）。永続化の成否は
-          // 結果画面への遷移を阻害しない（握りつぶさずログに残す）。二重確定は ref で防ぐ。
-          if (!finalizingRef.current) {
-            finalizingRef.current = true;
-            void onFinalize?.()
-              .catch((e) => console.error("finalize failed", e))
-              .finally(() => {
-                finalizingRef.current = false;
-              });
-          }
-          setProvisional(false);
-          setPhase("result");
+          // 確定スナップショットを finalize API へ書き込む（#186）。成功を待ってから結果へ
+          // 遷移し、失敗（409: 未解消残り / 401 等）なら判定画面に留めて理由を出す（Codex P2）。
+          // finalize 未指定（テスト等）は解決済み扱いでそのまま遷移する。二重確定は ref で防ぐ。
+          if (finalizingRef.current) return;
+          finalizingRef.current = true;
+          setFinalizeError(null);
+          Promise.resolve(onFinalize?.())
+            .then(() => {
+              setProvisional(false);
+              setPhase("result");
+            })
+            .catch((e) => {
+              console.error("finalize failed", e);
+              setFinalizeError(
+                "確定できませんでした。未解消の項目が残っていないか確かめ、再度お試しください。",
+              );
+            })
+            .finally(() => {
+              finalizingRef.current = false;
+            });
         }}
         onJump={jumpToConversation}
       />

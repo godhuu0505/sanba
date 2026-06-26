@@ -74,6 +74,9 @@ class SANBAAgent(Agent):
         self._utterance_seq = 0
         # 問い発行ごとの連番（question.asked の ID を一意にする / Codex P2）。
         self._question_seq = 0
+        # question_id → 問い本文。回答を「何への回答か」分かる形で記録するため保持する
+        # （Codex P2。ID は hash+連番で本文を復元できないため）。
+        self._questions: dict[str, str] = {}
         # 既に publish 済みの検知 id（open_topic の重複 gap を抑止）。
         self._published_gaps: set[str] = set()
         # fire-and-forget の publish タスクを保持（GC による途中消滅を防ぐ）。
@@ -118,6 +121,18 @@ class SANBAAgent(Agent):
             role = "participant"
             self._publish(self._publisher.transcript_final(speaker, role, utterance_id, text))
         return utterance_id
+
+    def record_answer(self, question_id: str, answer: str) -> str | None:
+        """通常質問（#181）への回答を、問い本文とともに発話として記録する（Codex P2）。
+
+        question_id から問い本文を引けるなら「問「…」への回答：…」の形で記録し、後続の
+        analyze_requirements が何についての回答か分かる（要件化・引用の欠落を防ぐ）。
+        引けない場合は回答のみ記録する。生成応答の文脈に使えるよう問い本文を返す。
+        """
+        prompt = self._questions.get(question_id)
+        text = f"問「{prompt}」への回答：{answer}" if prompt else answer
+        self.record_utterance("participant", text)
+        return prompt
 
     async def resolve_detection(self, detection_id: str, selected_value: str) -> None:
         """ユーザーの選択（user.selection, 契約 §4.5）を受けて検知を解消する（#102）。
@@ -225,6 +240,8 @@ class SANBAAgent(Agent):
         # answeredQuestions（回答済み ID）に当たらず、新しい問いとして再表示できる。
         self._question_seq += 1
         question_id = f"{make_requirement_id(f'q:{prompt}')}-{self._question_seq}"
+        # 回答記録時に問い本文を引けるよう保持（Codex P2）。
+        self._questions[question_id] = prompt
         opts = [{"label": o, "value": o} for o in (options or [])]
         if self._publisher is not None:
             # question.asked はハイドレーション・スナップショット（GET /requirements,/detections）に
@@ -470,11 +487,13 @@ async def entrypoint(ctx: JobContext) -> None:
         )
 
     async def _respond_to_answer(question_id: str, answer: str) -> None:
-        # 通常質問（金枠）への回答（#181）。回答を発話として記録し、要件を一歩進める。
-        agent.record_utterance("participant", answer)
+        # 通常質問（金枠）への回答（#181）。回答を「問い本文つき」で発話記録し（Codex P2）、
+        # 何への回答か後続の analyze_requirements が分かるようにしてから要件を一歩進める。
+        prompt = agent.record_answer(question_id, answer)
+        topic = f"問い「{prompt}」" if prompt else "先ほどの問い"
         await session.generate_reply(
             instructions=(
-                f"先ほどの問い（{question_id}）に対し参加者は「{answer}」と答えました。"
+                f"{topic}に対し参加者は「{answer}」と答えました。"
                 "これを踏まえて要件を一歩進め、必要なら次の問いを1つだけ投げてください。"
             )
         )
