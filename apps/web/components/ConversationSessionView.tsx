@@ -96,7 +96,7 @@ export function ConversationSessionView({
   // Issue 起票の二重送信を同期的に防ぐ（/export は毎回 GitHub Issue を作るため連打で重複起票になる）。
   const exportingRef = useRef(false);
 
-  const mini = selectMiniStatus(state);
+  const baseMini = selectMiniStatus(state);
   const openDetections = selectOpenDetections(state);
   const confirmed = selectConfirmedRequirements(state);
 
@@ -107,6 +107,13 @@ export function ConversationSessionView({
     ...(extraMaterials ?? []).filter((m) => !realtimeIds.has(m.id)),
     ...realtimeMaterials,
   ];
+
+  // ローカル素材もミニ状況の件数・解析中フラグに反映する（ヘッダーの「📎資料 N」と一致させる）。
+  const mini = {
+    ...baseMini,
+    materials: materials.length,
+    analyzing: baseMini.analyzing || (extraMaterials ?? []).some((m) => m.status === "uploading"),
+  };
 
   function leaveConversationTo(next: Phase) {
     onLeaveConversation?.();
@@ -163,17 +170,22 @@ export function ConversationSessionView({
           setTab("scroll");
         }}
         onRestart={() => onRestart?.()}
-        onExportIssue={() => {
-          // 連打による重複起票を防ぐ（ref で同期ガード）。失敗は握りつぶさずログに残す。
-          // success URL / 失敗理由 / busy 表示は #186（finalize）と併せた seam（follow-up）。
-          if (exportingRef.current) return;
-          exportingRef.current = true;
-          void onExport()
-            .catch((e) => console.error("export failed", e))
-            .finally(() => {
-              exportingRef.current = false;
-            });
-        }}
+        onExportIssue={
+          // confirmed が 0 件のときはボタン自体を出さない（空 Issue 起票防止）。
+          confirmed.length > 0
+            ? () => {
+                // 連打による重複起票を防ぐ（ref で同期ガード）。失敗は握りつぶさずログに残す。
+                // success URL / 失敗理由 / busy 表示は #186（finalize）と併せた seam（follow-up）。
+                if (exportingRef.current) return;
+                exportingRef.current = true;
+                void onExport()
+                  .catch((e) => console.error("export failed", e))
+                  .finally(() => {
+                    exportingRef.current = false;
+                  });
+              }
+            : undefined
+        }
       />
     );
   }
