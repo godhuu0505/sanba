@@ -32,8 +32,14 @@ jobs:
     runs-on: ubuntu-latest
     # AI レビューのやり取り上限（Codex のレビュー回数で数える）。これを超えたら
     # 自動対応を止め、人間にエスカレーション（needs-human）する。調整可。
+    #
+    # GH_REPO は checkout 前に走る gh pr ステップ（rounds 計数・escalate・responding
+    # 付与）のために必須。これらは actions/checkout より前のためローカル .git が無く、
+    # GH_REPO が無いと gh pr edit/comment がリポジトリを特定できず失敗する（|| true で
+    # 握り潰されラベルが付かない）。job env に置けば全ステップに継承される。
     env:
       MAX_AI_ROUNDS: "5"
+      GH_REPO: ${{ github.repository }}
     # 対象限定とループ防止:
     #  - 起動するのは Codex(Bot) の review か、信頼済みの人間レビュアーの review のみ。
     #  - Claude 自身（claude[bot]）や他 Bot の投稿では起動しない。
@@ -94,7 +100,11 @@ jobs:
           count=$(gh api "repos/${{ github.repository }}/pulls/${PR}/reviews" --paginate \
             | jq '[.[] | select(.user.login == "chatgpt-codex-connector[bot]")] | length')
           echo "count=${count}" >> "$GITHUB_OUTPUT"
-          if [ "${count}" -ge "${MAX_AI_ROUNDS}" ]; then
+          # count は「今トリガーした review」を含む累計。上限“まで”は自動対応させ、
+          # 上限を“超過”した次の review で打ち切るため -gt で判定する（MAX_AI_ROUNDS=5
+          # なら 1〜5 回目は対応、5 回超で capped=true）。-ge だと 5 回目で即停止して
+          # しまい「5 回まで自動対応」というドキュメントと食い違う。
+          if [ "${count}" -gt "${MAX_AI_ROUNDS}" ]; then
             echo "capped=true" >> "$GITHUB_OUTPUT"
           else
             echo "capped=false" >> "$GITHUB_OUTPUT"
