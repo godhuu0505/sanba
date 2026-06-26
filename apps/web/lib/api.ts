@@ -183,6 +183,24 @@ export interface ExportResult {
   reason?: string;
 }
 
+export interface FinalizeResult {
+  finalized: boolean;
+  confirmed_count: number;
+}
+
+/** POST /api/sessions/{id}/finalize（#186）。07 判定の「確定」を永続化する。 */
+export async function finalizeSession(
+  sessionId: string,
+  sessionToken: string | null,
+): Promise<FinalizeResult> {
+  const res = await fetch(`${API_URL}/api/sessions/${sessionId}/finalize`, {
+    method: "POST",
+    headers: authHeaders(sessionToken),
+  });
+  if (!res.ok) throw new Error(`finalize failed: ${res.status}`);
+  return res.json();
+}
+
 /** POST /api/sessions/{id}/export（P1）。要件を GitHub Issue に書き戻す（#39）。 */
 export async function exportRequirements(
   sessionId: string,

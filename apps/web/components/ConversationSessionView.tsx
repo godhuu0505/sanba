@@ -51,6 +51,11 @@ export interface ConversationSessionViewProps {
   onSendText: (text: string) => void;
   /** 要件を GitHub Issue 等へ書き出す（08 結果・既存 API）。 */
   onExport: () => Promise<ExportResult>;
+  /**
+   * 07 判定の「確定」を永続化する（#186）。確定スナップショットを書き込む。
+   * 失敗しても結果画面への遷移は止めない（UX を阻害しない・親がログに残す）。
+   */
+  onFinalize?: () => Promise<unknown>;
   /** 「＋ 素材を追加」（05-2 手段選択 / アップロード。親が所有・必須で偽ボタンを作らない）。 */
   onAddMaterial: () => void;
   /**
@@ -86,6 +91,7 @@ export function ConversationSessionView({
   onToggleMute,
   onSendText,
   onExport,
+  onFinalize,
   onAddMaterial,
   extraMaterials,
   hydratedMaterials,
@@ -102,6 +108,8 @@ export function ConversationSessionView({
   const [provisional, setProvisional] = useState(false);
   // Issue 起票の二重送信を同期的に防ぐ（/export は毎回 GitHub Issue を作るため連打で重複起票になる）。
   const exportingRef = useRef(false);
+  // 確定（finalize）の二重送信を同期的に防ぐ（#186）。
+  const finalizingRef = useRef(false);
 
   const baseMini = selectMiniStatus(state);
   const openDetections = selectOpenDetections(state);
@@ -150,7 +158,16 @@ export function ConversationSessionView({
           setPhase("result");
         }}
         onConfirm={() => {
-          // TODO(#186): 確定スナップショットを finalize API へ書き込む。
+          // 確定スナップショットを finalize API へ書き込む（#186）。永続化の成否は
+          // 結果画面への遷移を阻害しない（握りつぶさずログに残す）。二重確定は ref で防ぐ。
+          if (!finalizingRef.current) {
+            finalizingRef.current = true;
+            void onFinalize?.()
+              .catch((e) => console.error("finalize failed", e))
+              .finally(() => {
+                finalizingRef.current = false;
+              });
+          }
           setProvisional(false);
           setPhase("result");
         }}

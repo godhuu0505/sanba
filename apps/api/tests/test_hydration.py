@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 from sanba_api.auth import create_session_token
 from sanba_api.auth_google import AuthUser, require_user
 from sanba_api.config import settings
-from sanba_api.main import _read_repo, app
+from sanba_api.main import _read_repo, _repo, app
 
 client = TestClient(app)
 
@@ -108,6 +108,53 @@ def test_requirements_returns_persisted_seq_boundary() -> None:
     _read_repo._seed_seq("sess-seq", 42)
     res = client.get("/api/sessions/sess-seq/requirements", headers=_auth(_token("sess-seq")))
     assert res.json()["seq"] == 42
+
+
+# ── POST /finalize（#186）──────────────────────────────────────────────────
+def test_finalize_requires_session_token() -> None:
+    res = client.post("/api/sessions/sess-fin/finalize")
+    assert res.status_code == 401
+
+
+def test_finalize_unknown_session_404() -> None:
+    res = client.post("/api/sessions/sess-unknown/finalize", headers=_auth(_token("sess-unknown")))
+    assert res.status_code == 404
+
+
+def test_finalize_marks_session_and_counts_confirmed() -> None:
+    created = client.post("/api/sessions", json={"roles": ["pm"], "consent_acknowledged": True})
+    sid = created.json()["session_id"]
+    _read_repo._seed_requirement(
+        sid,
+        {
+            "id": "c1",
+            "statement": "確定",
+            "category": "functional",
+            "priority": "must",
+            "status": "confirmed",
+        },
+    )
+    _read_repo._seed_requirement(
+        sid,
+        {
+            "id": "d1",
+            "statement": "下書き",
+            "category": "scope",
+            "priority": "should",
+            "status": "draft",
+        },
+    )
+    res = client.post(f"/api/sessions/{sid}/finalize", headers=_auth(_token(sid)))
+    assert res.status_code == 200
+    body = res.json()
+    assert body["finalized"] is True
+    assert body["confirmed_count"] == 1  # confirmed のみ数える
+    # セッションが finalized に遷移し、確定件数が刻まれる（不可逆マーカ）。
+    meta = _repo.get_session(sid)
+    assert meta is not None
+    assert meta.status == "finalized"
+    assert meta.finalized_count == 1
+    assert meta.finalized_at is not None
 
 
 # ── POST /export（P1）──────────────────────────────────────────────────────

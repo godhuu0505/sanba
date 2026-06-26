@@ -154,20 +154,40 @@ describe("ConversationSessionView（会話シェル結線）", () => {
     expect(screen.getByText(/確定要件 1 件/)).toBeTruthy();
   });
 
-  it("投入直後のローカル素材行を出し、同 id の realtime 解析行が来たら realtime を優先する", () => {
+  it("同 id の realtime 解析行が来ても実ファイル名（ローカル/復元）を保つ（#184 統合）", () => {
     renderView({
       state: baseState({ analysis: [{ asset_id: "a1", pct: 70, stage: "OCR", extracted: [], conflicts: [] }] }),
       extraMaterials: [
-        { id: "a1", name: "重複.png", pct: 0, status: "uploading" },
+        { id: "a1", name: "図面.png", pct: 0, status: "uploading" },
         { id: "local:1", name: "アップ中.png", pct: 0, status: "uploading" },
       ],
     });
     fireEvent.click(screen.getByRole("tab", { name: "参考資料" }));
-    // a1 は realtime（aria-label は asset_id）を優先し、ローカルの「重複.png」は出さない。
-    expect(screen.getByLabelText("資料 a1")).toBeTruthy();
-    expect(screen.queryByLabelText("資料 重複.png")).toBeNull();
+    // a1 は status を realtime 優先で統合しつつ、表示名は実ファイル名「図面.png」を保つ
+    // （realtime 行は asset_id しか持たないため、asset_id 表示には戻さない）。
+    expect(screen.getByLabelText("資料 図面.png")).toBeTruthy();
+    expect(screen.queryByLabelText("資料 a1")).toBeNull();
     // realtime 未到達のローカル行はそのまま見える。
     expect(screen.getByLabelText("資料 アップ中.png")).toBeTruthy();
+  });
+
+  it("確定（要件を確定する）で onFinalize を呼んでから結果へ進む（#186）", () => {
+    const onFinalize = vi.fn(async () => ({ finalized: true, confirmed_count: 1 }));
+    renderView({ state: baseState({ detections: [] }), onFinalize });
+    fireEvent.click(screen.getByRole("button", { name: "会話を終了" }));
+    fireEvent.click(screen.getByRole("button", { name: "終了する" }));
+    fireEvent.click(screen.getByRole("button", { name: "要件を確定する" }));
+    expect(onFinalize).toHaveBeenCalledTimes(1);
+    expect(screen.getByText(/要件、産まれました/)).toBeTruthy();
+  });
+
+  it("未解消のまま終う（強制終了）では確定しないので onFinalize を呼ばない（#186）", () => {
+    const onFinalize = vi.fn(async () => ({ finalized: true, confirmed_count: 0 }));
+    renderView({ onFinalize });
+    fireEvent.click(screen.getByRole("button", { name: "会話を終了" }));
+    fireEvent.click(screen.getByRole("button", { name: "終了する" }));
+    fireEvent.click(screen.getByRole("button", { name: "未解消のまま終う" }));
+    expect(onFinalize).not.toHaveBeenCalled();
   });
 
   it("終了→終了するで onLeaveConversation を呼ぶ（マイク送信停止のフック）", () => {

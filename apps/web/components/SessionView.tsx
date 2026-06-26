@@ -15,8 +15,10 @@ import {
   addSessionContext,
   exportRequirements,
   fetchContextFiles,
+  finalizeSession,
   uploadContextFile,
   type ExportResult,
+  type FinalizeResult,
 } from "../lib/api";
 import type { MaterialItem } from "../lib/realtime/selectors";
 import { useRealtimeSession } from "../lib/realtime/useRealtimeSession";
@@ -108,6 +110,11 @@ export function SessionView({
     return exportRequirements(sessionId, sessionToken);
   }
 
+  function handleFinalize(): Promise<FinalizeResult> {
+    // 07 判定の「確定」を永続化する（#186）。確定スナップショット（件数）を刻む。
+    return finalizeSession(sessionId, sessionToken);
+  }
+
   // テキスト送信は #185（user.text）未実装のため、当面はセッション文脈へ投入して
   // 会話に反映させる（捨て足場ではなく実効果のある暫定動線。#185 で会話ターン化する）。
   function handleSendText(text: string) {
@@ -135,6 +142,7 @@ export function SessionView({
         onToggleMute={() => setMuted((m) => !m)}
         onSendText={handleSendText}
         onExport={handleExport}
+        onFinalize={handleFinalize}
         onAddMaterial={() => fileInput.current?.click()}
         extraMaterials={pending}
         hydratedMaterials={hydratedMaterials}

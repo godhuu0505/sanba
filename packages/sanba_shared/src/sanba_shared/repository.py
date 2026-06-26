@@ -91,6 +91,36 @@ class SessionRepository:
             return SessionMeta.model_validate(snap.to_dict()) if snap.exists else None
         return self._mem_sessions.get(session_id)
 
+    def finalize_session(self, session_id: str, *, confirmed_count: int) -> SessionMeta | None:
+        """07 判定の「確定」を永続化する（#186）。
+
+        セッションを finalized にし、確定した要件件数と刻を刻む。存在しなければ None。
+        要件そのものの承認（draft→approved）は管理画面の責務（ADR-0014）なのでここでは触れない。
+        確定スナップショットはあくまでセッション単位の不可逆マーカ。
+        """
+        meta = self.get_session(session_id)
+        if meta is None:
+            return None
+        updated = meta.model_copy(
+            update={
+                "status": "finalized",
+                "finalized_at": datetime.now(UTC),
+                "finalized_count": confirmed_count,
+            }
+        )
+        if self._client is not None:
+            self._client.collection("sessions").document(session_id).set(
+                {
+                    "status": "finalized",
+                    "finalized_at": updated.finalized_at,
+                    "finalized_count": confirmed_count,
+                },
+                merge=True,
+            )
+        else:
+            self._mem_sessions[session_id] = updated
+        return updated
+
     # ---- Utterances --------------------------------------------------------
     def add_utterance(self, session_id: str, utterance: Utterance) -> None:
         # PII を含みうる発話は永続化前にマスクする（issue #10 / #130 / mask_pii_before_index）。
