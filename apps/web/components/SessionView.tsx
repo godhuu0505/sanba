@@ -81,12 +81,17 @@ export function SessionView({
     setPending((p) => [...p, { id: tempId, name: file.name, pct: 0, status: "uploading" }]);
     try {
       const res = await uploadContextFile(sessionId, file, sessionToken);
-      // 成功: asset_id を確定し解析待ちへ。以後 analysis.progress が同 asset_id で届けば
-      // realtime 行が前面化し、このローカル行は重複排除で隠れる（契約 §3）。
+      // 成功: asset_id を確定する。画像は API で同期解析済み（analysis_pending=false）なので
+      // done にする（画像は analysis.progress/visual のライブが来ないため analyzing のままだと
+      // 「解析中100%」が残り、ミニ状況の解析中も消えない）。動画は解析未実装で analyzing のまま
+      // （GET context/files のハイドレーションが状態を補正する / 契約 §3）。
       const assetId = res.asset_id ?? tempId;
+      const done = res.analysis_pending !== true;
       setPending((p) =>
         p.map((m) =>
-          m.id === tempId ? { id: assetId, name: file.name, pct: 100, status: "analyzing" } : m,
+          m.id === tempId
+            ? { id: assetId, name: file.name, pct: 100, status: done ? "done" : "analyzing" }
+            : m,
         ),
       );
     } catch (err) {
