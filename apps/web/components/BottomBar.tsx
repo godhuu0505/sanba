@@ -1,0 +1,91 @@
+"use client";
+
+// 常時2行ボトムバー。仕様: docs/design/conversation-experience.md §5。
+// 1行目: 消音（音声出力 ON/OFF）/ 会話（マイク入力 ON/OFF）の2系統トグル。
+// 2行目: テキスト入力欄 + 送信（音声と併用）。
+// a11y: 見た目が古語でも aria-label は現代語の機能名（ADR-0017）。
+
+import { useState } from "react";
+
+export interface BottomBarProps {
+  /** 会話＝マイク入力 ON か。 */
+  micOn: boolean;
+  /** 消音＝音声出力 OFF か。 */
+  muted: boolean;
+  onToggleMic: () => void;
+  onToggleMute: () => void;
+  /** テキスト送信（本文）。 */
+  onSend: (text: string) => void;
+}
+
+export function BottomBar({ micOn, muted, onToggleMic, onToggleMute, onSend }: BottomBarProps) {
+  const [text, setText] = useState("");
+
+  const send = () => {
+    const t = text.trim();
+    if (!t) return;
+    onSend(t);
+    setText("");
+  };
+
+  return (
+    <div
+      role="group"
+      aria-label="会話コントロール"
+      className="flex flex-col gap-2 border-t border-[var(--sanba-border)] bg-[#140f08] px-4 pb-[14px] pt-[10px]"
+    >
+      {/* 1行目: 消音 / 会話（マイク） */}
+      <div className="flex gap-2">
+        <button
+          type="button"
+          aria-label="消音"
+          aria-pressed={muted}
+          onClick={onToggleMute}
+          className={`flex-1 rounded-[12px] border py-3 text-[13px] font-bold ${
+            muted
+              ? "border-[var(--sanba-rec)] bg-[#3a1a1a] text-[#e0857c]"
+              : "border-[var(--sanba-border)] bg-[var(--sanba-surface)] text-[var(--sanba-muted)]"
+          }`}
+        >
+          {muted ? "🔇 消音中" : "🔈 消音"}
+        </button>
+        <button
+          type="button"
+          aria-label="会話（マイク）"
+          aria-pressed={micOn}
+          onClick={onToggleMic}
+          className={`flex-1 rounded-[12px] py-3 text-[13px] font-bold ${
+            micOn
+              ? "sanba-gold-gradient text-[var(--sanba-ink)]"
+              : "border border-[var(--sanba-border)] bg-[var(--sanba-surface)] text-[var(--sanba-muted)]"
+          }`}
+        >
+          {micOn ? "🎙 会話（マイク）" : "🎙 会話オフ"}
+        </button>
+      </div>
+
+      {/* 2行目: テキスト入力 / 送信 */}
+      <div className="flex items-center gap-2">
+        <input
+          aria-label="テキストで入力"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => {
+            // 日本語IMEの変換確定 Enter で誤送信しない（isComposing / keyCode 229 を除外）。
+            if (e.key === "Enter" && !e.nativeEvent.isComposing && e.keyCode !== 229) send();
+          }}
+          placeholder="テキストで入力…"
+          className="flex-1 rounded-full border border-[var(--sanba-border)] bg-[#1b140b] px-[14px] py-[11px] text-[12.5px] text-[var(--sanba-cream)] placeholder:text-[var(--sanba-muted)]"
+        />
+        <button
+          type="button"
+          aria-label="送信"
+          onClick={send}
+          className="sanba-gold-gradient rounded-full px-4 py-[11px] text-[14px] font-bold text-[var(--sanba-ink)]"
+        >
+          ▶
+        </button>
+      </div>
+    </div>
+  );
+}

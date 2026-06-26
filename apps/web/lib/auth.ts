@@ -22,6 +22,13 @@ interface CredentialResponse {
   credential?: string;
 }
 
+// One Tap の表示結果通知（本フックが使う最小サブセット）。
+interface PromptMomentNotification {
+  isNotDisplayed(): boolean;
+  isSkippedMoment(): boolean;
+  isDismissedMoment(): boolean;
+}
+
 // GIS のうち本フックが使う最小サブセットだけを宣言する。
 interface GoogleIdentity {
   initialize(config: {
@@ -30,7 +37,7 @@ interface GoogleIdentity {
     auto_select?: boolean;
   }): void;
   renderButton(parent: HTMLElement, options: Record<string, unknown>): void;
-  prompt(): void;
+  prompt(momentListener?: (notification: PromptMomentNotification) => void): void;
   disableAutoSelect(): void;
 }
 
@@ -47,6 +54,11 @@ export interface GoogleAuth {
   profile: GoogleProfile | null;
   /** ログイン済みか (dev モードでは devSignIn 後に true)。 */
   loggedIn: boolean;
+  /**
+   * 認証解決が済んだか。dev モードは即 true、real モードは GIS の再取得(One Tap)試行が
+   * 完了したら true。RequireAuth が解決前に /login へ早期リダイレクトするのを防ぐために使う。
+   */
+  ready: boolean;
   /** client_id 未設定のローカル開発モード。 */
   devMode: boolean;
   /** GIS ボタンを描画する div の ref (real モードのみ使用)。 */
@@ -79,6 +91,7 @@ export function useGoogleAuth(): GoogleAuth {
   const [credential, setCredential] = useState<string | null>(null);
   const [devLoggedIn, setDevLoggedIn] = useState(false);
   const [renderCount, setRenderCount] = useState(0);
+  const [gisSettled, setGisSettled] = useState(false);
   const buttonRef = useRef<HTMLDivElement | null>(null);
 
   const onCredential = useCallback((res: CredentialResponse) => {
@@ -89,6 +102,16 @@ export function useGoogleAuth(): GoogleAuth {
     if (devMode) return; // dev モードでは GIS を読み込まない。
 
     let cancelled = false;
+    // フォールバック: スクリプトのロード失敗や通知の取りこぼしで解決できないと ready が永久に
+    // false のまま保護ページが空白になるため、一定時間で必ず解決済みにする（auto_select の
+    // credential はこれより速く届く想定の猶予）。
+    const settleTimer = window.setTimeout(() => {
+      if (!cancelled) setGisSettled(true);
+    }, 2500);
+    const cleanup = () => {
+      cancelled = true;
+      window.clearTimeout(settleTimer);
+    };
     function setup() {
       const id = window.google?.accounts.id;
       if (!id || cancelled) return;
@@ -108,12 +131,23 @@ export function useGoogleAuth(): GoogleAuth {
         });
       }
       // One Tap を表示して自動再取得を試みる (未ログイン時のみ意味を持つ)。
-      id.prompt();
+      // 表示されない/スキップ/閉じられた = auto_select で credential 復元できない確定なので
+      // そこで解決済みとする。credential が届く場合は onCredential が先に loggedIn を立てるため、
+      // ready かつ未ログインで誤リダイレクトする窓を作らない（Codex 指摘）。
+      id.prompt((notification) => {
+        if (
+          notification.isNotDisplayed() ||
+          notification.isSkippedMoment() ||
+          notification.isDismissedMoment()
+        ) {
+          if (!cancelled) setGisSettled(true);
+        }
+      });
     }
 
     if (window.google?.accounts.id) {
       setup();
-      return;
+      return cleanup;
     }
     // GIS スクリプトを一度だけ読み込む。
     let script = document.querySelector<HTMLScriptElement>(`script[src="${GSI_SRC}"]`);
@@ -126,7 +160,7 @@ export function useGoogleAuth(): GoogleAuth {
     }
     script.addEventListener("load", setup);
     return () => {
-      cancelled = true;
+      cleanup();
       script?.removeEventListener("load", setup);
     };
   }, [devMode, onCredential, renderCount]);
@@ -144,6 +178,7 @@ export function useGoogleAuth(): GoogleAuth {
     credential,
     profile: credential ? decodeProfile(credential) : null,
     loggedIn: devMode ? devLoggedIn : credential !== null,
+    ready: devMode ? true : credential !== null || gisSettled,
     devMode,
     buttonRef,
     devSignIn,

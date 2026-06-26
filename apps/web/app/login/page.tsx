@@ -9,6 +9,7 @@
 // 契機に短時間だけ見せ、自動で 13 へ送る。
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 import { Button, Card, CardDescription, CardTitle, Divider, Screen } from "@/components/sanba";
@@ -17,12 +18,35 @@ import { useGoogleAuth } from "@/lib/auth";
 // 12「本人確認中」を見せる時間。実機・dev とも同じ間で 13 へ遷移する。
 const WELCOME_MS = 1000;
 
+// `?next=` はユーザー操作で渡る値なので、同一オリジンの相対パスだけを許可する
+// （オープンリダイレクト／`javascript:` スキーム XSS の防止）。
+// 許可: "/" 始まりで "//"・"/\" でないパス。それ以外は null（既定ルートに留める）。
+export function safeNextPath(raw: string | null): string | null {
+  if (!raw || !raw.startsWith("/")) return null;
+  if (raw.startsWith("//") || raw.startsWith("/\\")) return null;
+  return raw;
+}
+
 export default function LoginPage() {
   const { loggedIn, profile, devMode, buttonRef, devSignIn, signOut, resetButton } = useGoogleAuth();
 
   const [justLoggedOut, setJustLoggedOut] = useState(false);
   const [welcoming, setWelcoming] = useState(false);
   const prevLoggedIn = useRef(loggedIn);
+
+  // 保護ルート（RequireAuth）から ?next= 付きで来たら、ログイン後に元の遷移先へ復帰する。
+  // welcome（12）の表示を挟んでから遷移するため、loggedIn 立ち上がりの WELCOME_MS 後に replace。
+  const router = useRouter();
+  const nextRef = useRef<string | null>(null);
+  useEffect(() => {
+    nextRef.current = safeNextPath(new URLSearchParams(window.location.search).get("next"));
+  }, []);
+  useEffect(() => {
+    if (!loggedIn || !nextRef.current) return;
+    const target = nextRef.current;
+    const t = setTimeout(() => router.replace(target), WELCOME_MS);
+    return () => clearTimeout(t);
+  }, [loggedIn, router]);
 
   // loggedIn が false→true に立ち上がった時だけ 12 を見せる。マウント時点で既に loggedIn
   // (auto_select による静かな再取得) なら立ち上がり扱いせず 13 へ直行する。
