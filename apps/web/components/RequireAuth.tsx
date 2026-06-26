@@ -15,7 +15,8 @@ export interface RequireAuthProps {
   loggedIn: boolean;
   /** ログイン後に戻る遷移先（/login?next= に載せる）。 */
   next: string;
-  children: React.ReactNode;
+  /** 認証済みのとき描画する保護コンテンツ。ガード用途（未ログイン時のみマウント）では省略可。 */
+  children?: React.ReactNode;
 }
 
 export function RequireAuth({ ready, loggedIn, next, children }: RequireAuthProps) {

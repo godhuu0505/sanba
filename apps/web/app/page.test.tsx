@@ -10,6 +10,7 @@ const authState = {
   credential: null as string | null,
   profile: null as { name?: string } | null,
   loggedIn: false,
+  ready: true,
   devMode: true,
   buttonRef: { current: null },
   devSignIn: vi.fn(),
@@ -17,6 +18,12 @@ const authState = {
   resetButton: vi.fn(),
 };
 vi.mock("../lib/auth", () => ({ useGoogleAuth: () => authState }));
+
+// 厳密な認証ゲート（RequireAuth）のリダイレクト先を検証するため useRouter をモック。
+const replace = vi.fn();
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ replace, push: vi.fn(), refresh: vi.fn() }),
+}));
 
 const createSession = vi.fn(async (..._a: unknown[]) => ({
   session_id: "s1",
@@ -51,11 +58,32 @@ describe("入口フロー（#140）", () => {
     authState.loggedIn = false;
     authState.credential = null;
     authState.profile = null;
+    authState.ready = true;
+    authState.devMode = true;
+    replace.mockClear();
     createSession.mockClear();
     joinSession.mockClear();
     addSessionContext.mockClear();
   });
   afterEach(() => cleanup());
+
+  it("real モードで未ログインなら /login?next=/ へリダイレクトしホームを描画しない", () => {
+    authState.devMode = false;
+    authState.ready = true;
+    authState.loggedIn = false;
+    render(<Home />);
+    expect(replace).toHaveBeenCalledWith(`/login?next=${encodeURIComponent("/")}`);
+    expect(screen.queryByText("会議の前に、五分の問答を")).toBeNull();
+  });
+
+  it("real モードで認証解決前（ready=false）はリダイレクトせず何も描かない", () => {
+    authState.devMode = false;
+    authState.ready = false;
+    authState.loggedIn = false;
+    render(<Home />);
+    expect(replace).not.toHaveBeenCalled();
+    expect(screen.queryByText("会議の前に、五分の問答を")).toBeNull();
+  });
 
   it("01 ホームはヒーローと一語 CTA を出し、実績カードを持たない", () => {
     render(<Home />);

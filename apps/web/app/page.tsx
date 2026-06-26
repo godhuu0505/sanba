@@ -28,6 +28,7 @@ import {
 } from "../lib/api";
 import { useGoogleAuth } from "../lib/auth";
 import { ConversationStart } from "../components/ConversationStart";
+import { RequireAuth } from "../components/RequireAuth";
 
 // 役割チップ。表示は日本語、value は API（POST /api/sessions の roles）に渡す既存値。
 // 既定は「企画(PdM)」= pm（02-prepare.md / #140）。
@@ -50,6 +51,13 @@ export default function Home() {
   const [conn, setConn] = useState<JoinResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const auth = useGoogleAuth();
+
+  // 厳密な認証ゲート（全画面保護 / docs/design/figma-implementation-audit.md A節）。
+  // 未ログインは /login?next= へ戻す。解決前（ready=false）は何も描かず誤リダイレクトを防ぐ。
+  // dev モード（GOOGLE_CLIENT_ID 未設定）は API の AUTH_DEV_BYPASS に委ねて素通しする。
+  if (!auth.devMode && !(auth.ready && auth.loggedIn)) {
+    return <RequireAuth ready={auth.ready} loggedIn={auth.loggedIn} next="/" />;
+  }
 
   async function handleStart() {
     if (busy) return; // 二重送信防止（#140 AC）。
