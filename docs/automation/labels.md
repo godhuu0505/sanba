@@ -18,7 +18,7 @@ SANBA の issue / PR ラベルは **軸（dimension）ベース**で設計し、
 | 優先度 | `priority:` | `priority:p0`（最優先）→ `priority:p3`（低） | 人間 |
 | 対象 | `area:` | `area:agent` `area:api` `area:web` `area:infra` `area:docs` | **PR は自動**（path）/ issue は人間 |
 | 状態 | `status:` | `status:ready` `status:in-progress` `status:blocked` | 人間 |
-| 自動化 | `ai:` | `ai:build` `ai:babysitting` | ADR-0015 参照 |
+| 自動化 | `ai:` | `ai:build` `ai:babysitting` `ai:review-wait` `ai:review-responding` `ai:review-done` | ADR-0015 / ワークフロー自動 |
 
 ### 接頭辞を付けない例外
 - `needs-human` … ADR-0015 §6 の**エスカレーション・コントラクト名**。自動化が文字列一致で参照するため、
@@ -30,6 +30,24 @@ SANBA の issue / PR ラベルは **軸（dimension）ベース**で設計し、
 - **`area:*`（PR）**: `.github/labeler.yml` のパスルールで `actions/labeler` が付与する（`apps/web/**` → `area:web` など）。
   同一リポジトリのブランチ PR が対象。fork PR は対象外（ADR-0015 §10「当面 fork を受け付けない」）。
 - **dependabot**: `dependencies` 等を自動付与（manifest 側で保持）。
+- **レビュー進行（`ai:review-*`）**: ワークフローが自動で付け外しする（手動で触らない）。
+  - `ai:review-wait` … レビュー待ち（`.github/workflows/review-status.yml`）。
+  - `ai:review-responding` … Claude 対応中（`.github/workflows/claude-review-response.yml`、ジョブ実行中だけ）。
+  - `ai:review-done` … AI やり取り収束・**人間が確認可能**。新たな更新/レビューで自動除去。
+  - `needs-human` … AI やり取りが上限（`MAX_AI_ROUNDS`、既定 5＝Codex レビュー回数）を超過、または対応失敗で自動付与。**人間の判断が必要**。
+
+### レビュー進行の状態機械（人間が「いつ見ればよいか」の指標）
+**AI がやり取り中（= 人間は未確認でよい）**: `ai:review-wait` か `ai:review-responding` が付いている間。
+**人間が見てよい**: `ai:review-done`（綺麗に収束）または `needs-human`（回数超過・失敗で打ち切り）。
+
+```
+PR 更新 ─────────────▶ ai:review-wait（待ち）
+Codex/人間 レビュー ──▶ wait 除去 → ai:review-responding（Claude 対応中）
+  ├─ Claude が修正 push ─▶ ai:review-wait（次の Codex ラウンドへ。やり取り継続）
+  ├─ 修正なし(LGTM/skip) ─▶ ai:review-done（収束・人間確認可）
+  ├─ Codex レビューが上限超 ▶ needs-human（自動対応停止・人間へ）
+  └─ 対応ジョブ失敗 ──────▶ needs-human
+```
 
 ## 色の規約（1 軸 1 色相を基本）
 - `priority:` 温度グラデ（p0 赤 → p2 黄 → p3 淡黄）

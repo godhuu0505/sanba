@@ -108,6 +108,17 @@
 - name: "ai:babysitting"
   color: "0e8a16"
   description: "babysitter が自走中の PR に付く可視化用（ADR-0015 §1,§3）"
+# review-wait / review-responding はレビュー進行の可視化用。ワークフローが文字列一致で
+# 付け外しするため rename 禁止（.github/workflows/review-status.yml / claude-review-response.yml）。
+- name: "ai:review-wait"
+  color: "fbca04"
+  description: "レビュー待ち（Codex/人間のレビュー投稿で自動除去）"
+- name: "ai:review-responding"
+  color: "8a63d2"
+  description: "Claude がレビュー指摘に対応中（対応ジョブの実行中に付く可視化用）"
+- name: "ai:review-done"
+  color: "0e8a16"
+  description: "AI レビューのやり取りが収束。人間が確認可能（新たな更新で自動除去）"
 
 # ── メタ（接頭辞なし） ───────────────────────────────────────
 - name: "epic"

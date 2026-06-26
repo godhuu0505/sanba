@@ -30,6 +30,16 @@ jobs:
   triage:
     name: Claude triage
     runs-on: ubuntu-latest
+    # AI レビューのやり取り上限（Codex のレビュー回数で数える）。これを超えたら
+    # 自動対応を止め、人間にエスカレーション（needs-human）する。調整可。
+    #
+    # GH_REPO は checkout 前に走る gh pr ステップ（rounds 計数・escalate・responding
+    # 付与）のために必須。これらは actions/checkout より前のためローカル .git が無く、
+    # GH_REPO が無いと gh pr edit/comment がリポジトリを特定できず失敗する（|| true で
+    # 握り潰されラベルが付かない）。job env に置けば全ステップに継承される。
+    env:
+      MAX_AI_ROUNDS: "5"
+      GH_REPO: ${{ github.repository }}
     # 対象限定とループ防止:
     #  - 起動するのは Codex(Bot) の review か、信頼済みの人間レビュアーの review のみ。
     #  - Claude 自身（claude[bot]）や他 Bot の投稿では起動しない。
@@ -78,13 +88,69 @@ jobs:
             echo "::notice::CLAUDE_CODE_OAUTH_TOKEN 未設定のため Claude 対応をスキップします。"
           fi
 
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      # AI やり取りの回数を Codex のレビュー数で数え、上限超過なら自動対応を打ち切る。
+      # capped=true のとき以降の対応ステップを止め、人間にエスカレーションする。
+      - name: Count AI review rounds
+        id: rounds
         if: ${{ steps.guard.outputs.ok == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          count=$(gh api "repos/${{ github.repository }}/pulls/${PR}/reviews" --paginate \
+            | jq '[.[] | select(.user.login == "chatgpt-codex-connector[bot]")] | length')
+          echo "count=${count}" >> "$GITHUB_OUTPUT"
+          # count は「今トリガーした review」を含む累計。上限“まで”は自動対応させ、
+          # 上限を“超過”した次の review で打ち切るため -gt で判定する（MAX_AI_ROUNDS=5
+          # なら 1〜5 回目は対応、5 回超で capped=true）。-ge だと 5 回目で即停止して
+          # しまい「5 回まで自動対応」というドキュメントと食い違う。
+          if [ "${count}" -gt "${MAX_AI_ROUNDS}" ]; then
+            echo "capped=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "capped=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "::notice::Codex レビュー ${count} 回 / 上限 ${MAX_AI_ROUNDS}"
+
+      # 上限超過: 自動対応せず人間へ。進行中ラベルを外し needs-human を付けて通知。
+      - name: Escalate to human (round cap)
+        if: ${{ steps.guard.outputs.ok == 'true' && steps.rounds.outputs.capped == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          gh pr edit "$PR" --remove-label "ai:review-responding" --remove-label "ai:review-wait" --remove-label "ai:review-done" || true
+          gh pr edit "$PR" --add-label "needs-human" || true
+          gh pr comment "$PR" --body "🛑 AI レビューのやり取りが上限（${MAX_AI_ROUNDS} 回）を超えたため、自動対応を停止しました。ここからは人間の確認・判断をお願いします（\`needs-human\`）。"
+
+      # 可視化: 「Claude 対応中」を付け、待ち/完了ラベルを外す（上限内のときのみ）。
+      # gh の add-label は冪等（既存なら無害）、remove-label は不在で失敗するため || true。
+      - name: Mark responding (label)
+        if: ${{ steps.guard.outputs.ok == 'true' && steps.rounds.outputs.capped != 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          gh pr edit "$PR" --add-label "ai:review-responding" || true
+          gh pr edit "$PR" --remove-label "ai:review-wait" --remove-label "ai:review-done" || true
+
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        if: ${{ steps.guard.outputs.ok == 'true' && steps.rounds.outputs.capped != 'true' }}
         with:
           fetch-depth: 0
+          # pull_request_review の既定 ref は base ブランチのため、明示的に PR の
+          # head ブランチをチェックアウトする。これがないと Claude は head を持たず、
+          # 別ブランチを切って別 PR を作ってしまう。fork は上の if で除外済みなので
+          # head.ref は必ず同一リポジトリのブランチ＝安全に push できる。
+          ref: ${{ github.event.pull_request.head.ref }}
+
+      # 対応前の HEAD を記録。対応後と比較し、Claude が修正を push したか判定する。
+      - name: Record HEAD before
+        id: before
+        if: ${{ steps.guard.outputs.ok == 'true' && steps.rounds.outputs.capped != 'true' }}
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Claude triage and respond
-        if: ${{ steps.guard.outputs.ok == 'true' }}
+        if: ${{ steps.guard.outputs.ok == 'true' && steps.rounds.outputs.capped != 'true' }}
         uses: anthropics/claude-code-action@51705da45eecce209d4700538bf8377d5b5fc695 # v1
         with:
           # Claude Pro/Max サブスク枠で実行（API 従量課金を避ける）。
@@ -120,7 +186,11 @@ jobs:
                これで各指摘の本文・ファイル・行・スレッドIDを把握する。
             3. 指摘ごとに対応方針を検討し、次のいずれかを決める:
                - 対応: その PR の範囲内で、低リスクかつ明確に正しい修正。
-                 → 該当ブランチ（headRefName）に最小限の修正をコミットして push する。
+                 → **いま checkout 済みの同じブランチ（＝トリガー元 PR の head ブランチ
+                   `${{ github.event.pull_request.head.ref }}`）に直接コミットして push する。**
+                   `git checkout -b` で新規ブランチを切ったり、`gh pr create` で別 PR を
+                   作ったりは**絶対にしない**（修正はこの PR 上に積む）。
+                 → 手順例: `git add -A && git commit -m "fix: ..." && git push origin HEAD`
                  可能なら関連する lint/test（ruff / pytest / tsc / npm）を実行して壊れないか確認。
                - skip: 誤検知・意図的な設計・このPRの対象外。理由を明記する。
                - issue: 妥当だが本PRの範囲を超える / 大きな変更が必要。
@@ -130,7 +200,28 @@ jobs:
                  例: `gh api -X POST repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/comments/<comment_id>/replies -f body='...'`
                - 最後に `gh pr comment ${{ github.event.pull_request.number }} --body "..."` で
                  「対応方針サマリ」を1件投稿する（各指摘の方針・理由・関連コミット/issueリンクを箇条書き）。
-            5. 対応すべき指摘が一つも無ければ、サマリに「対応不要（LGTM）」と書いて終了する。
+            5. 「対応（修正を push した）」スレッドは、返信した後に **resolve（解決済みに）する**。
+               - resolve は GraphQL のみ。まずスレッドの node ID を取得する:
+                 ```
+                 gh api graphql -f query='
+                   query($owner:String!,$repo:String!,$pr:Int!){
+                     repository(owner:$owner,name:$repo){ pullRequest(number:$pr){
+                       reviewThreads(first:100){ nodes{
+                         id isResolved comments(first:1){ nodes{ databaseId path } } } } } } }' \
+                   -f owner=${{ github.repository_owner }} -f repo=${{ github.event.repository.name }} \
+                   -F pr=${{ github.event.pull_request.number }}
+                 ```
+                 手順2で得た指摘コメントの id（=comments の databaseId）と突き合わせ、対応した
+                 スレッドの `id` を特定する。
+               - そのスレッドを resolve する:
+                 ```
+                 gh api graphql -f query='mutation($id:ID!){
+                   resolveReviewThread(input:{threadId:$id}){ thread{ isResolved } } }' -F id=<THREAD_ID>
+                 ```
+               - 対象は「対応」したスレッドのみ。**skip / issue 化のスレッドは resolve せず未解決のまま残す**
+                 （人間が最終確認して閉じる。required_review_thread_resolution によりマージ前の
+                 人間チェックポイントになる）。既に resolved のスレッドは触らない。
+            6. 対応すべき指摘が一つも無ければ、サマリに「対応不要（LGTM）」と書いて終了する。
 
             重要な制約:
             - すべての返信・コメントは必ず**日本語**で書く。
@@ -139,3 +230,42 @@ jobs:
             - CLAUDE.md / AGENTS.md の規約（型・lint・観測性・テスト・Conventional Commits）に従う。
               判断に迷う大きな設計変更は「対応」せず issue に回す。
             - 修正コミットは Conventional Commits 形式（例: `fix: ...`, `refactor: ...`）。
+            - **新規ブランチ・新規 PR は作らない。** 修正は必ずトリガー元 PR の head
+              ブランチへ直接コミット＆push する（チェックアウト済みのブランチがそれ）。
+
+      # 対応成功時: HEAD が動いた（=修正を push した）かで分岐。
+      #  - 動いた  → 次の Codex レビュー待ち（ai:review-wait）。やり取り継続。
+      #  - 動かない → 修正なし（LGTM/全 skip）＝収束。人間が確認可能（ai:review-done）。
+      # GITHUB_TOKEN による push は workflow を再起動しないため、ここで明示的に
+      # 次状態のラベルを付ける（review-status.yml の synchronize 再付与に依存しない）。
+      - name: Mark next state (done / wait)
+        if: ${{ success() && steps.guard.outputs.ok == 'true' && steps.rounds.outputs.capped != 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          after="$(git rev-parse HEAD)"
+          if [ "$after" != "${{ steps.before.outputs.sha }}" ]; then
+            echo "::notice::Claude が修正を push（${after}）。次の Codex レビュー待ちにします。"
+            gh pr edit "$PR" --add-label "ai:review-wait" || true
+          else
+            echo "::notice::修正なし（収束）。人間が確認可能にします。"
+            gh pr edit "$PR" --add-label "ai:review-done" || true
+          fi
+
+      # 失敗時: 自動対応が壊れたので人間に確認を促す。
+      - name: Flag failure for human
+        if: ${{ failure() && steps.guard.outputs.ok == 'true' && steps.rounds.outputs.capped != 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: gh pr edit "$PR" --add-label "needs-human" || true
+
+      # 後始末: 失敗・中断でも「対応中」ラベルが残らないよう必ず外す。
+      - name: Unmark responding (label)
+        if: ${{ always() && steps.guard.outputs.ok == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          gh pr edit "$PR" --remove-label "ai:review-responding" || true
