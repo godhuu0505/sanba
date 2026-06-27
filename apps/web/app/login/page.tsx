@@ -14,7 +14,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 import { Button, Card, CardDescription, CardTitle, Logo, Screen } from "@/components/sanba";
-import { useGoogleAuth } from "@/lib/auth";
+import { useAuth } from "@/lib/auth";
 
 // 12「本人確認中」を見せる時間。実機・dev とも同じ間で 13 へ遷移する。
 const WELCOME_MS = 1000;
@@ -29,7 +29,7 @@ export function safeNextPath(raw: string | null): string | null {
 }
 
 export default function LoginPage() {
-  const { loggedIn, devMode, buttonRef, devSignIn, signOut, resetButton } = useGoogleAuth();
+  const { loggedIn, devMode, buttonRef, devSignIn, signOut, resetButton } = useAuth();
 
   const [justLoggedOut, setJustLoggedOut] = useState(false);
   const [welcoming, setWelcoming] = useState(false);
@@ -41,14 +41,30 @@ export default function LoginPage() {
   const routerRef = useRef(router);
   routerRef.current = router;
 
+  // ログアウト遷移（?loggedOut=1）はマウント初回レンダーで同期確定させる。state(justLoggedOut)
+  // の反映前に遷移 effect が走って home へ送ってしまうレースを防ぐため、遷移 effect でも参照する。
+  const loggedOutRef = useRef<boolean | null>(null);
+  if (loggedOutRef.current === null) {
+    loggedOutRef.current =
+      typeof window !== "undefined" &&
+      new URLSearchParams(window.location.search).get("loggedOut") === "1";
+  }
+
   // 保護ルート（RequireAuth）から ?next= 付きで来たら、ログイン後に元の遷移先へ復帰する。
-  // ?loggedOut=1 はホームのアカウントメニューからのログアウト遷移（14 を出す契機）。
   const nextRef = useRef<string | null>(null);
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    nextRef.current = safeNextPath(params.get("next"));
-    if (params.get("loggedOut") === "1") setJustLoggedOut(true);
-  }, []);
+    nextRef.current = safeNextPath(new URLSearchParams(window.location.search).get("next"));
+    // ?loggedOut=1（アカウントメニューからのログアウト遷移）はここで実際に signOut する
+    // （共有 credential を clear＋auto_select 無効化）。元ページ側で signOut しないことで
+    // authGate の誤リダイレクトと競合しない（Codex P2）。14 ゴールを表示する。
+    if (loggedOutRef.current) {
+      setJustLoggedOut(true);
+      signOut();
+    }
+    // root の AuthProvider が先に GIS を初期化済みで、この画面の buttonRef は未装着だったため
+    // 純正サインインボタンが描画されない。マウント後に再描画を促して buttonRef へ描画させる。
+    resetButton();
+  }, [signOut, resetButton]);
 
   // ログイン後はホーム（or ?next）へ送る。13「ナビハブ」は廃止し、導線はホームのアカウント
   // メニューへ集約した（監査 B-1 #5）。loggedIn の false→true 立ち上がり時は 12（本人確認中）を
@@ -56,7 +72,7 @@ export default function LoginPage() {
   // なら立ち上がり扱いせず即遷移する。キャンセル/ログアウトで loggedIn が落ちたら cleanup で
   // 保留中のタイマーを破棄する。
   useEffect(() => {
-    if (justLoggedOut) return;
+    if (loggedOutRef.current || justLoggedOut) return;
     if (!loggedIn) {
       prevLoggedIn.current = false;
       return;
@@ -98,6 +114,8 @@ export default function LoginPage() {
             variant="outline"
             className="mt-3"
             onClick={() => {
+              // 以後はログイン後ホーム誘導を再び有効化する（loggedOut ガードを解除）。
+              loggedOutRef.current = false;
               setJustLoggedOut(false);
               resetButton();
               router.replace("/login");

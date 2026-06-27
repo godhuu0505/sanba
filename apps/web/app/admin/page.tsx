@@ -20,7 +20,7 @@ import {
   listSessionRequirements,
   updateRequirement,
 } from "@/lib/api";
-import { useGoogleAuth } from "@/lib/auth";
+import { useAuth } from "@/lib/auth";
 import { AccountMenu } from "@/components/AccountMenu";
 import { authGate } from "@/components/RequireAuth";
 import {
@@ -57,7 +57,7 @@ const ROLES: { value: string; label: string }[] = [
 type Access = "loading" | "ok" | "unauthenticated" | "forbidden" | "error";
 
 export default function AdminPage() {
-  const auth = useGoogleAuth();
+  const auth = useAuth();
   const router = useRouter();
   const idToken = auth.credential;
 
@@ -140,7 +140,7 @@ export default function AdminPage() {
         back
         onBack={() => router.push("/login")}
         title="管理の間"
-        right={<AccountMenu profile={auth.profile} signOut={auth.signOut} hideAdmin />}
+        right={<AccountMenu profile={auth.profile} hideAdmin />}
       />
       <main className="mx-auto flex w-full max-w-md flex-col gap-[18px] px-[16px] pb-[40px] pt-[6px]">
         <CreateSessionCard idToken={idToken} onCreated={() => void loadSessions()} />

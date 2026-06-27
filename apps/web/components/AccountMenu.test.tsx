@@ -9,13 +9,11 @@ vi.mock("next/navigation", () => ({
 
 import { AccountMenu } from "./AccountMenu";
 
-const signOut = vi.fn();
 const profile = { email: "go@sanba.local", name: "産婆" };
 
 describe("AccountMenu", () => {
   beforeEach(() => {
     push.mockClear();
-    signOut.mockClear();
   });
   afterEach(() => cleanup());
 
@@ -24,12 +22,12 @@ describe("AccountMenu", () => {
   }
 
   it("初期はメニューを開かない", () => {
-    render(<AccountMenu profile={profile} signOut={signOut} />);
+    render(<AccountMenu profile={profile} />);
     expect(screen.queryByRole("menu")).toBeNull();
   });
 
   it("アバター押下でメニューを開き、管理者画面/ログアウトを出す（アカウント設定は出さない）", () => {
-    render(<AccountMenu profile={profile} signOut={signOut} />);
+    render(<AccountMenu profile={profile} />);
     open();
     expect(screen.getByRole("menu")).toBeTruthy();
     expect(screen.getByRole("menuitem", { name: /管理者画面/ })).toBeTruthy();
@@ -40,24 +38,23 @@ describe("AccountMenu", () => {
   });
 
   it("hideAdmin で管理者画面項目を畳む", () => {
-    render(<AccountMenu profile={profile} signOut={signOut} hideAdmin />);
+    render(<AccountMenu profile={profile} hideAdmin />);
     open();
     expect(screen.queryByRole("menuitem", { name: /管理者画面/ })).toBeNull();
     expect(screen.getByRole("menuitem", { name: /ログアウト/ })).toBeTruthy();
   });
 
   it("背景（scrim）クリックで閉じる", () => {
-    render(<AccountMenu profile={profile} signOut={signOut} />);
+    render(<AccountMenu profile={profile} />);
     open();
     fireEvent.click(screen.getByRole("button", { name: "閉じる（背景）" }));
     expect(screen.queryByRole("menu")).toBeNull();
   });
 
-  it("ログアウトで（ページ側の）signOut を呼び /login?loggedOut=1 へ送る", () => {
-    render(<AccountMenu profile={profile} signOut={signOut} />);
+  it("ログアウトは /login?loggedOut=1 への遷移に一本化する（signOut は遷移先で実行）", () => {
+    render(<AccountMenu profile={profile} />);
     open();
     fireEvent.click(screen.getByRole("menuitem", { name: /ログアウト/ }));
-    expect(signOut).toHaveBeenCalledTimes(1);
     expect(push).toHaveBeenCalledWith("/login?loggedOut=1");
   });
 });

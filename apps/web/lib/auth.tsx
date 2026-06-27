@@ -7,7 +7,8 @@
 // NEXT_PUBLIC_GOOGLE_CLIENT_ID が未設定のローカル開発では dev モードに退避し、
 // API の AUTH_DEV_BYPASS と組み合わせて `just up` の体験を壊さない。
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
 
 const CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? "";
 const GSI_SRC = "https://accounts.google.com/gsi/client";
@@ -185,4 +186,25 @@ export function useGoogleAuth(): GoogleAuth {
     signOut,
     resetButton,
   };
+}
+
+// ── アプリ共通の認証コンテキスト ───────────────────────────────────────────
+// useGoogleAuth はルートごとに独立した state を持つため、ページ単位で呼ぶと credential が
+// ルート跨ぎで共有されない（ログイン直後に遷移先 Home が null から始まりログインループする等）。
+// AuthProvider を layout.tsx に一度だけ置き、全ルートが useAuth() で同一インスタンスを読む。
+// credential は依然 in-memory のみで localStorage には保存しない（ADR-0014 §7 の XSS 方針は不変）。
+const AuthContext = createContext<GoogleAuth | null>(null);
+
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const auth = useGoogleAuth();
+  return <AuthContext.Provider value={auth}>{children}</AuthContext.Provider>;
+}
+
+/** アプリ単一の認証状態を読む。AuthProvider の外で呼ぶと throw する。 */
+export function useAuth(): GoogleAuth {
+  const ctx = useContext(AuthContext);
+  if (ctx === null) {
+    throw new Error("useAuth は <AuthProvider> の内側で呼び出してください。");
+  }
+  return ctx;
 }

@@ -16,7 +16,7 @@ const authState = {
   signOut: vi.fn(),
   resetButton: vi.fn(),
 };
-vi.mock("@/lib/auth", () => ({ useGoogleAuth: () => authState }));
+vi.mock("@/lib/auth", () => ({ useAuth: () => authState }));
 
 const replace = vi.fn();
 vi.mock("next/navigation", () => ({

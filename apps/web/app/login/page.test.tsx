@@ -7,7 +7,11 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ replace, push: vi.fn(), refresh: vi.fn() }),
 }));
 
+import { AuthProvider } from "@/lib/auth";
 import LoginPage from "./page";
+
+// LoginPage は useAuth() で共有 auth を読むため、AuthProvider 配下で描画する。
+const renderLogin = () => render(<LoginPage />, { wrapper: AuthProvider });
 
 // dev モード（NEXT_PUBLIC_GOOGLE_CLIENT_ID 未設定）では GIS 無しに全フローを駆動できる。
 // 12（本人確認中）の自動遷移はフェイクタイマーで進める。13 ナビハブは廃止し、ログイン後は
@@ -23,7 +27,7 @@ describe("LoginPage ログイン/ログアウト フロー（dev モード）", 
   });
 
   it("11 → 12 → ログイン後はホーム / へ送る（13 ナビハブは無い）", () => {
-    render(<LoginPage />);
+    renderLogin();
 
     // 11 未認証
     expect(screen.getByText("問答の間へ、ようこそ")).toBeTruthy();
@@ -46,7 +50,7 @@ describe("LoginPage ログイン/ログアウト フロー（dev モード）", 
 
   it("?next= 付きで来てログインすると、welcome 後に元の遷移先へ復帰する", () => {
     window.history.replaceState({}, "", "/login?next=%2F%E5%95%8F%E7%AD%94");
-    render(<LoginPage />);
+    renderLogin();
     act(() => {
       fireEvent.click(screen.getByText("開発用ログイン（bypass）"));
     });
@@ -62,7 +66,7 @@ describe("LoginPage ログイン/ログアウト フロー（dev モード）", 
     "オリジン外/危険スキームの next=%s は破棄し、既定のホーム / へ送る（オープンリダイレクト/XSS 防止）",
     (evil) => {
       window.history.replaceState({}, "", `/login?next=${encodeURIComponent(evil)}`);
-      render(<LoginPage />);
+      renderLogin();
       act(() => {
         fireEvent.click(screen.getByText("開発用ログイン（bypass）"));
       });
@@ -77,7 +81,7 @@ describe("LoginPage ログイン/ログアウト フロー（dev モード）", 
 
   it("?loggedOut=1 で来ると 14（おつかれさまでした）を出し、再ログインで 11 へ戻る", () => {
     window.history.replaceState({}, "", "/login?loggedOut=1");
-    render(<LoginPage />);
+    renderLogin();
 
     // 14 ログアウト完了。未ログインのままなのでホームへは送らない。
     expect(screen.getByText("おつかれさまでした")).toBeTruthy();

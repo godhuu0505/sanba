@@ -15,18 +15,15 @@ import type { GoogleProfile } from "@/lib/auth";
 
 export interface AccountMenuProps {
   /**
-   * 表示中ユーザー。ページ側で解決済みの `useGoogleAuth().profile` を渡す。
-   * ここで `useGoogleAuth()` を再度呼ぶと別インスタンスの状態を持ち、real モードで
-   * profile が初回 null になる/ログアウトがページ側 credential と分断される（Codex 指摘）。
+   * 表示中ユーザー。ページ側で解決済みの `useAuth().profile` を渡す（装飾目的）。
+   * ここで認証 hook を直接呼ばないことで、共有インスタンスと分断された状態を作らない。
    */
   profile: GoogleProfile | null;
-  /** ページ側の `useGoogleAuth().signOut`。ログアウトはこれ 1 本に集約する。 */
-  signOut: () => void;
   /** 管理画面では「管理者画面」項目を畳む（現在地への自己リンクを避ける）。 */
   hideAdmin?: boolean;
 }
 
-export function AccountMenu({ profile, signOut, hideAdmin }: AccountMenuProps) {
+export function AccountMenu({ profile, hideAdmin }: AccountMenuProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
 
@@ -44,11 +41,11 @@ export function AccountMenu({ profile, signOut, hideAdmin }: AccountMenuProps) {
   // 表示用の頭文字（name → email → 既定）。装飾目的のみ。
   const glyph = (profile?.name || profile?.email || "客").trim().charAt(0) || "客";
 
-  // ログアウトはアカウントメニューに一本化。dev モードは authGate が素通しのため、
-  // signOut だけでは保護ページに留まる。明示的に /login へ送ってゴール（14）を見せる。
+  // ログアウトは /login?loggedOut=1 への遷移に一本化する。実際の signOut は遷移先 /login が行い、
+  // 元ページでは signOut しない。こうすることで元ページの authGate が次描画で /login?next= へ
+  // リダイレクトして本遷移を上書きするレースを避ける（Codex P2）。
   function handleLogout() {
     setOpen(false);
-    signOut();
     router.push("/login?loggedOut=1");
   }
 
