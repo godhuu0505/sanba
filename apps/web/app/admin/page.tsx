@@ -115,9 +115,9 @@ export default function AdminPage() {
   }
   if (access === "forbidden") {
     return (
-      <Gate title="管理者権限がありませぬ" eyebrow="403 — 管理者でない">
+      <Gate title="管理者の権限がありません" eyebrow="403 — 管理者でない" icon="⊘">
         <p className="text-[13px] leading-relaxed text-[var(--sanba-muted)]">
-          このアカウントには管理者権限がありませぬ。必要な場合はシステム管理者にお問い合わせください。
+          このアカウントには管理者の権限がありません。必要な場合はシステム管理者にお問い合わせください。
         </p>
       </Gate>
     );
@@ -192,10 +192,13 @@ export default function AdminPage() {
 function Gate({
   title,
   eyebrow,
+  icon,
   children,
 }: {
   title: string;
   eyebrow?: string;
+  /** タイトル横に出す記号（例: 403 の ⊘）。色のみに依存しない判別の補助。 */
+  icon?: string;
   children: React.ReactNode;
 }) {
   return (
@@ -207,7 +210,10 @@ function Gate({
           </p>
         )}
         <Card>
-          <CardTitle>{title}</CardTitle>
+          <CardTitle>
+            {icon && <span aria-hidden="true">{icon} </span>}
+            {title}
+          </CardTitle>
           {children}
         </Card>
       </div>

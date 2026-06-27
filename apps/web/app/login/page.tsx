@@ -12,7 +12,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
-import { Button, Card, CardDescription, CardTitle, Divider, Screen } from "@/components/sanba";
+import { Button, Card, CardDescription, CardTitle, Divider, Logo, Screen } from "@/components/sanba";
 import { useGoogleAuth } from "@/lib/auth";
 
 // 12「本人確認中」を見せる時間。実機・dev とも同じ間で 13 へ遷移する。
@@ -66,6 +66,12 @@ export default function LoginPage() {
     setJustLoggedOut(true);
   }
 
+  // 12 のキャンセル（Figma 75:14）。本人確認の待ちを取りやめ、サインアウトして 11 未認証へ戻す。
+  function handleCancelSignIn() {
+    setWelcoming(false);
+    signOut();
+  }
+
   // ── 14 ログアウト完了 ──────────────────────────────────────────
   if (justLoggedOut) {
     return (
@@ -93,6 +99,8 @@ export default function LoginPage() {
     return (
       <Screen className="items-center justify-center px-6 py-10 text-center">
         <div className="mx-auto flex w-full max-w-md flex-col items-center gap-4">
+          {/* ロゴヘッダー（Figma 75:6）。 */}
+          <Logo size="lg" />
           <div
             role="status"
             aria-label="本人確認中"
@@ -104,6 +112,10 @@ export default function LoginPage() {
           <p className="text-[13px] leading-relaxed text-[var(--sanba-muted)]">
             本人確認のため、Google のポップアップでアカウントを選択してください。
           </p>
+          {/* キャンセル（Figma 75:14）。待ちを取りやめて 11 未認証へ戻す。 */}
+          <Button variant="ghost" className="mt-2" onClick={handleCancelSignIn}>
+            キャンセル
+          </Button>
         </div>
       </Screen>
     );

@@ -32,7 +32,7 @@ describe("DetectionSheet (#97)", () => {
   it("renders the detection with a color-independent label + icon", () => {
     render(<DetectionSheet state={stateWithContradiction()} onSelect={() => {}} />);
     // ラベル（色のみに依存しない判別）。
-    expect(screen.getByText("矛盾を検知")).toBeTruthy();
+    expect(screen.getByText("矛盾")).toBeTruthy();
     expect(screen.getByText("関連度順と新着順が食い違う")).toBeTruthy();
     // refs（根拠の発話）の導線。
     expect(screen.getByText(/#u1/)).toBeTruthy();
