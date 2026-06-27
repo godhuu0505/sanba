@@ -237,12 +237,14 @@ export function MicPermissionModal({ onAllow, onText, onDismiss }: MicPermission
         onClick={onDismiss}
         className="fixed inset-0 z-40 cursor-default bg-black/60"
       />
-      <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+      {/* ラッパーは全画面だが pointer-events-none で、空き領域のクリックは下の暗幕ボタンへ通す。
+          ダイアログ本体だけ pointer-events-auto で操作可能にする（暗幕タップ→onDismiss を阻害しない）。 */}
+      <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center px-4">
         <div
           role="dialog"
           aria-modal="true"
           aria-label="マイクの使用許可"
-          className="flex w-[316px] flex-col items-center gap-3 rounded-[16px] border-[1.5px] border-[#7a5a1e] bg-[#221910] px-[18px] pb-[18px] pt-5 shadow-[0px_10px_28px_0px_rgba(0,0,0,0.5)]"
+          className="pointer-events-auto flex w-[316px] flex-col items-center gap-3 rounded-[16px] border-[1.5px] border-[#7a5a1e] bg-[#221910] px-[18px] pb-[18px] pt-5 shadow-[0px_10px_28px_0px_rgba(0,0,0,0.5)]"
         >
           <div
             aria-hidden="true"
