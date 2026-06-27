@@ -6,7 +6,6 @@
 // 認可の源泉は API 側 (ADMIN_EMAILS)。クライアントのガードは UX 用で、真偽は 401/403 で判定する (§7)。
 // 意匠は SANBA デザインシステム（components/sanba/*）の金彩テーマを再利用し、ロジックは変えない。
 
-import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
@@ -108,8 +107,11 @@ export default function AdminPage() {
         <p className="text-[13px] leading-relaxed text-[var(--sanba-muted)]">
           問答と要件を検めるには、まず本人を確かめます。
         </p>
-        <Button asChild variant="gold" block>
-          <Link href="/login">ログインへ</Link>
+        {/* 401 では共有 AuthProvider に期限切れ credential が残り loggedIn=true のまま。
+            そのまま /login へ送ると即 / へ replace され GIS 再認証ボタンが出ない。ここで
+            signOut して credential を clear し、authGate 経由で /login?next=/admin（GIS）へ送る。 */}
+        <Button variant="gold" block onClick={() => auth.signOut()}>
+          ログインへ
         </Button>
       </Gate>
     );
@@ -138,7 +140,9 @@ export default function AdminPage() {
     <Screen className="sanba-scroll">
       <AppHeader
         back
-        onBack={() => router.push("/login")}
+        // 戻るはホームへ。/login はログイン済みだと即 / へ replace するため、そこへ送ると
+        // 履歴が /admin→/ となりブラウザ戻るで /admin に戻るループになる（直接 / へ送る）。
+        onBack={() => router.push("/")}
         title="管理の間"
         right={<AccountMenu profile={auth.profile} hideAdmin />}
       />
