@@ -30,7 +30,7 @@ export function MaterialsList({ items, onAdd, onRetry }: MaterialsListProps) {
         onClick={onAdd}
         className="rounded-[12px] border border-dashed border-[var(--sanba-frame)] bg-[#1b140b] px-3 py-[13px] text-[12.5px] font-bold text-[var(--sanba-gold-text)]"
       >
-        ＋ 素材を追加（カメラ・アップロード・Drive）
+        ＋ 素材を追加（カメラ・アップロード・画面共有）
       </button>
 
       {items.length === 0 ? (
