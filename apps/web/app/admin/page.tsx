@@ -21,7 +21,7 @@ import {
   updateRequirement,
 } from "@/lib/api";
 import { useGoogleAuth } from "@/lib/auth";
-import { RequireAuth } from "@/components/RequireAuth";
+import { authGate } from "@/components/RequireAuth";
 import {
   AppHeader,
   Button,
@@ -86,11 +86,10 @@ export default function AdminPage() {
     void loadSessions();
   }, [loadSessions]);
 
-  // 厳密な認証ゲート（全画面保護）。未ログインは /login?next=/admin へ戻す。
-  // dev は AUTH_DEV_BYPASS に委ねて素通し。認可（管理者判定）は下の access で 403 表示する。
-  if (!auth.devMode && !(auth.ready && auth.loggedIn)) {
-    return <RequireAuth ready={auth.ready} loggedIn={auth.loggedIn} next="/admin" />;
-  }
+  // 厳密な認証ゲート（全画面保護）。未ログインは /login?next=/admin へ戻す。判定は
+  // authGate に集約（dev は AUTH_DEV_BYPASS に委ねて素通し）。認可（管理者判定）は下の access で 403 表示する。
+  const gate = authGate(auth, "/admin");
+  if (gate) return gate;
 
   // ── 94 アクセスゲート（loading / 401 / 403 / error）──────────────
   if (access === "loading") {
