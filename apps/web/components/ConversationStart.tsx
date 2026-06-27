@@ -17,7 +17,7 @@ import { AppHeader, Button, Card, Screen } from "@/components/sanba";
 import type { JoinResponse } from "../lib/api";
 import { SessionView } from "./SessionView";
 
-type StartPhase = "intro" | "entering" | "failed";
+type StartPhase = "intro" | "permission" | "entering" | "failed";
 
 /** 失敗の種別（理由提示の出し分け）。mic=許可拒否 / connect=接続失敗。 */
 export type StartFailKind = "mic" | "connect";
@@ -43,15 +43,29 @@ export function ConversationStart({ conn, goal, roleLabel, onCancel }: Conversat
       <StartIntro
         goal={goal}
         roleLabel={roleLabel}
-        onStartVoice={() => {
-          setWithMic(true);
-          setPhase("entering");
-        }}
+        // OS プロンプト前に 03-2 アプリ内モーダルで理由提示してから許可を求める（03 AC）。
+        onStartVoice={() => setPhase("permission")}
         onStartText={() => {
           setWithMic(false);
           setPhase("entering");
         }}
         onBack={onCancel}
+      />
+    );
+  }
+
+  if (phase === "permission") {
+    return (
+      <MicPermissionModal
+        onAllow={() => {
+          setWithMic(true);
+          setPhase("entering");
+        }}
+        onText={() => {
+          setWithMic(false);
+          setPhase("entering");
+        }}
+        onDismiss={() => setPhase("intro")}
       />
     );
   }
@@ -200,6 +214,62 @@ export function StartIntro({ goal, roleLabel, onStartVoice, onStartText, onBack 
   );
 }
 
+export interface MicPermissionModalProps {
+  /** マイク許可へ（OS プロンプトを呼ぶ＝音声で接続）。 */
+  onAllow: () => void;
+  /** 音声を使わずテキストで進める。 */
+  onText: () => void;
+  /** 暗幕タップ等で閉じ、03-0 へ戻す。 */
+  onDismiss: () => void;
+}
+
+/**
+ * 03-2 録音許可モーダル。OS のマイク許可プロンプトを呼ぶ前に、アプリ内で理由を提示する
+ * （Figma `139:156`）。暗幕＋中央モーダル。表示は古語、操作の aria-label は現代語（ADR-0017）。
+ */
+export function MicPermissionModal({ onAllow, onText, onDismiss }: MicPermissionModalProps) {
+  return (
+    <Screen className="relative px-4 py-3">
+      {/* 暗幕（scrim）。タップで閉じて 03-0 へ戻る。 */}
+      <button
+        type="button"
+        aria-label="閉じる"
+        onClick={onDismiss}
+        className="fixed inset-0 z-40 cursor-default bg-black/60"
+      />
+      <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="マイクの使用許可"
+          className="flex w-[316px] flex-col items-center gap-3 rounded-[16px] border-[1.5px] border-[#7a5a1e] bg-[#221910] px-[18px] pb-[18px] pt-5 shadow-[0px_10px_28px_0px_rgba(0,0,0,0.5)]"
+        >
+          <div
+            aria-hidden="true"
+            className="sanba-gold-gradient flex size-14 items-center justify-center rounded-full text-[24px]"
+          >
+            🎙
+          </div>
+          <p className="text-center text-[16px] font-bold text-[var(--sanba-gold-text)]">
+            声を聞かせてくださいませ
+          </p>
+          <p className="text-center text-[12px] leading-relaxed text-[var(--sanba-muted)]">
+            問答には端末のマイクを用います。使用を許可してください。
+          </p>
+          <div className="mt-1 flex w-full flex-col gap-[8px]">
+            <Button variant="gold" size="lg" block onClick={onAllow} aria-label="マイクの使用を許可する">
+              マイクを許可する
+            </Button>
+            <Button variant="ghost" block onClick={onText} aria-label="音声を使わずテキストで進める">
+              テキストで進める
+            </Button>
+          </div>
+        </div>
+      </div>
+    </Screen>
+  );
+}
+
 export interface ConnectingOverlayProps {
   state: ConnectionState;
   onCancel: () => void;
@@ -262,6 +332,9 @@ export interface StartFailedProps {
 /** 03-3 失敗系。原因提示＋3導線（設定で許可・再試行・テキストで続ける）。 */
 export function StartFailed({ kind, onRetry, onText, onBack }: StartFailedProps) {
   const isMic = kind === "mic";
+  // 「設定を開いて許可する」押下で手順ガイドを同画面に展開する。Web からブラウザ/OS 設定は
+  // API で直接開けないため、文言フォールバックで誘導する（03 AC「不可環境では文言フォールバック」）。
+  const [showGuide, setShowGuide] = useState(false);
   return (
     <Screen className="px-4 py-3">
       <AppHeader title="会話を始められませんでした" onBack={onBack} />
@@ -291,12 +364,45 @@ export function StartFailed({ kind, onRetry, onText, onBack }: StartFailedProps)
         </div>
         <div className="flex-1" />
         <div className="flex w-full flex-col gap-[8px]">
+          {/* マイク失敗の主操作（Figma 139:233 第一 CTA）。設定を直接は開けないため手順を展開する。 */}
           {isMic && (
-            <p className="text-center text-[11.5px] text-[var(--sanba-muted)]">
-              ブラウザ設定の「マイク」を許可に変えてから、もう一度お試しください。
-            </p>
+            <>
+              <Button
+                variant="gold"
+                size="lg"
+                block
+                onClick={() => setShowGuide((v) => !v)}
+                aria-expanded={showGuide}
+                aria-controls="mic-settings-guide"
+                aria-label="ブラウザのマイク設定を開く手順を表示"
+              >
+                設定を開いて許可する
+              </Button>
+              {showGuide && (
+                <div
+                  id="mic-settings-guide"
+                  role="region"
+                  aria-label="マイク許可の手順"
+                  className="rounded-[12px] border border-[#4a3a1e] bg-[#1b140b] p-[14px] text-left text-[12px] leading-relaxed text-[var(--sanba-muted)]"
+                >
+                  <ol className="list-decimal space-y-1 pl-4">
+                    <li>アドレスバーの 🔒 / ⓘ をタップ</li>
+                    <li>「サイトの設定（権限）」を開く</li>
+                    <li>「マイク」を「許可」に変更</li>
+                    <li>このページを再読み込みして、もう一度お試しください</li>
+                  </ol>
+                  <p className="mt-2 text-[11px]">※ お使いのブラウザにより手順が異なる場合があります。</p>
+                </div>
+              )}
+            </>
           )}
-          <Button variant="gold" size="lg" block onClick={onRetry} aria-label="もう一度接続を試す">
+          <Button
+            variant={isMic ? "ghost" : "gold"}
+            size={isMic ? undefined : "lg"}
+            block
+            onClick={onRetry}
+            aria-label="もう一度接続を試す"
+          >
             もう一度試す
           </Button>
           <Button variant="ghost" block onClick={onText} aria-label="音声を使わずテキストで続ける">
