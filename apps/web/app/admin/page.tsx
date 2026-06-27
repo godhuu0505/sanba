@@ -21,6 +21,7 @@ import {
   updateRequirement,
 } from "@/lib/api";
 import { useGoogleAuth } from "@/lib/auth";
+import { AccountMenu } from "@/components/AccountMenu";
 import { authGate } from "@/components/RequireAuth";
 import {
   AppHeader,
@@ -135,7 +136,12 @@ export default function AdminPage() {
   // ── 91 管理ホーム（セッション一覧）─────────────────────────────
   return (
     <Screen className="sanba-scroll">
-      <AppHeader back onBack={() => router.push("/login")} title="管理の間" />
+      <AppHeader
+        back
+        onBack={() => router.push("/login")}
+        title="管理の間"
+        right={<AccountMenu hideAdmin />}
+      />
       <main className="mx-auto flex w-full max-w-md flex-col gap-[18px] px-[16px] pb-[40px] pt-[6px]">
         <CreateSessionCard idToken={idToken} onCreated={() => void loadSessions()} />
 
