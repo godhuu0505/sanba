@@ -24,13 +24,14 @@ export interface KindPresentation {
 const DETECTION_PRESENTATION: Record<DetectionKind, KindPresentation> = {
   contradiction: {
     color: "#D2564B", // 緋
-    label: "矛盾を検知",
+    // バッジ表記は Figma 正本に合わせて短く「矛盾」。説明は ariaLabel で補う。
+    label: "矛盾",
     icon: "⚠",
     ariaLabel: "矛盾を検知",
   },
   gap: {
     color: "#E0A93B", // 黄土
-    label: "抜けを検知",
+    label: "抜け",
     icon: "◇",
     ariaLabel: "抜け（未定義）を検知",
   },

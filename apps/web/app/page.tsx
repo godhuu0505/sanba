@@ -106,16 +106,7 @@ export default function Home() {
       <Screen className="px-4 py-3">
         <AppHeader title="セッション準備" onBack={() => setStep("home")} />
         <main className="mx-auto flex w-full max-w-[480px] flex-1 flex-col gap-[18px] pt-2">
-          <Field label="ゴール" htmlFor="goal" hint="例: 検索機能のリニューアル要件を固めたい">
-            <Textarea
-              id="goal"
-              value={goal}
-              onChange={(e) => setGoal(e.target.value)}
-              rows={3}
-              placeholder="タップしてテーマを入力…"
-            />
-          </Field>
-
+          {/* フィールド順は Figma 正本に合わせて 役割 → ゴール（02-prepare）。 */}
           <div className="flex flex-col gap-[8px]">
             <span className="text-[13px] font-bold text-[var(--sanba-muted)]">あなたの役割</span>
             <div role="radiogroup" aria-label="あなたの役割" className="flex flex-wrap gap-[8px]">
@@ -137,6 +128,16 @@ export default function Home() {
               })}
             </div>
           </div>
+
+          <Field label="ゴール" htmlFor="goal" hint="例: 検索機能のリニューアル要件を固めたい">
+            <Textarea
+              id="goal"
+              value={goal}
+              onChange={(e) => setGoal(e.target.value)}
+              rows={3}
+              placeholder="タップしてテーマを入力…"
+            />
+          </Field>
 
           {/* 同意ゲート（issue #10）。保持日数・PII マスク文言を併記。 */}
           <label className="flex items-start gap-[10px] text-[13px] leading-relaxed text-[var(--sanba-cream)]">

@@ -2,11 +2,11 @@
 
 // 選択肢の詳細確認（ボトムシート）。1選択肢を観点ごとに深掘りし、前後で巡回・比較・確定できる。
 // 仕様: docs/design/conversation-experience.md §4。
-// 観点データ（どう動く/効き目/留意/出所）は contract に無いため任意。与えられたものだけ描く。
+// 観点データ（どう並ぶ/効き目/留意/出所）は contract に無いため任意。与えられたものだけ描く。
 
 export interface ChoiceOptionDetail {
   label: string;
-  /** どう動く？ */
+  /** どう並ぶ？ */
   how?: string;
   /** 効き目（萌黄）。 */
   effect?: string;
@@ -71,7 +71,7 @@ export function ChoiceDetailSheet({
 
       <div className="flex flex-col gap-[11px] rounded-[14px] border border-[var(--sanba-border)] bg-[#1b140b] p-[14px]">
         <span className="text-[16px] font-bold text-[var(--sanba-cream)]">{option.label}</span>
-        <Section label="どう動く？" color="#d4af37" value={option.how} />
+        <Section label="どう並ぶ？" color="#d4af37" value={option.how} />
         <Section label="効き目" color="#a9be6e" value={option.effect} />
         <Section label="留意" color="#e0a93b" value={option.caution} />
         <Section label="関連・出所" color="#9a875e" value={option.source} />
