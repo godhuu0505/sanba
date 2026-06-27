@@ -11,15 +11,22 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { Avatar, Divider } from "@/components/sanba";
-import { useGoogleAuth } from "@/lib/auth";
+import type { GoogleProfile } from "@/lib/auth";
 
 export interface AccountMenuProps {
+  /**
+   * 表示中ユーザー。ページ側で解決済みの `useGoogleAuth().profile` を渡す。
+   * ここで `useGoogleAuth()` を再度呼ぶと別インスタンスの状態を持ち、real モードで
+   * profile が初回 null になる/ログアウトがページ側 credential と分断される（Codex 指摘）。
+   */
+  profile: GoogleProfile | null;
+  /** ページ側の `useGoogleAuth().signOut`。ログアウトはこれ 1 本に集約する。 */
+  signOut: () => void;
   /** 管理画面では「管理者画面」項目を畳む（現在地への自己リンクを避ける）。 */
   hideAdmin?: boolean;
 }
 
-export function AccountMenu({ hideAdmin }: AccountMenuProps) {
-  const { profile, signOut } = useGoogleAuth();
+export function AccountMenu({ profile, signOut, hideAdmin }: AccountMenuProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
 

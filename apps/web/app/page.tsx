@@ -188,7 +188,7 @@ export default function Home() {
   // Figma 正本（40:2）に実績カードは無い（#140/#147）。ヒーロー＋一語 CTA のみ。
   return (
     <Screen className="px-4 py-3">
-      <AppHeader brand right={<AccountMenu />} />
+      <AppHeader brand right={<AccountMenu profile={auth.profile} signOut={auth.signOut} />} />
       <main className="mx-auto flex w-full max-w-[480px] flex-1 flex-col pt-3">
         <Card>
           <h1 className="text-[22px] font-bold leading-snug text-[var(--sanba-gold-text)]">

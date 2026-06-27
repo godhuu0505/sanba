@@ -140,7 +140,7 @@ export default function AdminPage() {
         back
         onBack={() => router.push("/login")}
         title="管理の間"
-        right={<AccountMenu hideAdmin />}
+        right={<AccountMenu profile={auth.profile} signOut={auth.signOut} hideAdmin />}
       />
       <main className="mx-auto flex w-full max-w-md flex-col gap-[18px] px-[16px] pb-[40px] pt-[6px]">
         <CreateSessionCard idToken={idToken} onCreated={() => void loadSessions()} />
