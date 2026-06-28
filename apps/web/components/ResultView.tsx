@@ -80,11 +80,12 @@ export function ResultView({
 
       {(previewGroups.length > 0 || overflowCount > 0) && (
         <div
+          role="group"
           aria-label="確定要件のプレビュー"
           className="mt-3 w-full space-y-3 overflow-y-auto"
         >
           {previewGroups.map((g) => (
-            <section key={g.priority} aria-label={priorityLabel(g.priority)}>
+            <div key={g.priority}>
               <h3 className="text-[10.5px] font-bold text-[var(--sanba-muted)]">
                 {priorityLabel(g.priority)}
               </h3>
@@ -115,7 +116,7 @@ export function ResultView({
                   );
                 })}
               </ul>
-            </section>
+            </div>
           ))}
           {overflowCount > 0 && (
             <button

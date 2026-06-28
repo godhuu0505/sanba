@@ -79,7 +79,8 @@ describe("ResultView（要件産婆結果）", () => {
         req("s1", "should", "パスワード再設定ができること"),
       ],
     });
-    const preview = screen.getByLabelText("確定要件のプレビュー");
+    // 名前付き group ランドマークとして公開する（aria-label が AT に確実に届く）。
+    const preview = screen.getByRole("group", { name: "確定要件のプレビュー" });
     expect(preview).toBeTruthy();
     expect(screen.getByText("ログインできること")).toBeTruthy();
     expect(screen.getByText("パスワード再設定ができること")).toBeTruthy();
