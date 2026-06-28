@@ -41,6 +41,8 @@ export function resolveVoiceStatus({
   if (muted) return "muted";
   if (agentSpeaking) return "agent-speaking";
   if (phase === "listening" && micOn) return "listening";
+  // recognizing（認識中）/deliberating（検討中）/idle/phase 未指定や micOn=false は「待機中」。
+  // これらの細分表示（例: 認識中の partial 連動）は #248 のスコープ外（agentSpeaking で発話は拾える）。
   return "idle";
 }
 
