@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from sanba_api import auth_google
+from sanba_api import auth_google, main
 from sanba_api.main import app
 
 client = TestClient(app)
@@ -54,3 +54,23 @@ def test_dev_bypass_allows_local_flow(monkeypatch) -> None:
     res = client.post("/api/sessions", json=_CREATE_BODY)
     assert res.status_code == 200
     assert res.json()["session_id"].startswith("sess-")
+
+
+def test_unauthenticated_join_spam_is_rate_limited(monkeypatch) -> None:
+    """未認証スパムは認証検証より先にレートリミットされる (#80)。
+
+    `_require_rate_limit` を `require_user` より前の依存性に置いたため、
+    Authorization 無し/壊れた Bearer でも上限到達後は 401 ではなく 429 を返す
+    （壊れた Bearer 連打で認証経路だけを叩き続けられる穴が塞がれている）。
+    """
+    monkeypatch.setattr(auth_google.settings, "google_oauth_client_id", "cid", raising=True)
+    monkeypatch.setattr(auth_google.settings, "auth_dev_bypass", False, raising=True)
+    monkeypatch.setattr(main.settings, "join_rate_per_minute", 2, raising=True)
+    main._join_hits.clear()
+
+    body = {"invite": "broken", "participant_name": "x"}
+    # 上限内は認証で 401（レートリミット自体には未到達）。
+    for _ in range(2):
+        assert client.post("/api/sessions/join", json=body).status_code == 401
+    # 上限超過は認証へ到達する前に 429。
+    assert client.post("/api/sessions/join", json=body).status_code == 429

@@ -154,6 +154,17 @@ def _rate_limit(client_ip: str) -> None:
     hits.append(time.time())
 
 
+def _require_rate_limit(request: Request) -> None:
+    """認証より先に join のレートリミットを掛ける依存性 (#80)。
+
+    FastAPI は同レベルの依存性を宣言順かつ *パス関数本体の前* に解決する。
+    本依存性を ``require_user`` より前に宣言することで、Authorization ヘッダーが
+    無い/壊れたリクエストでも認証検証へ到達する前にレート制限を適用できる
+    （壊れた Bearer 連打で認証経路だけを叩き続けられる穴を塞ぐ）。
+    """
+    _rate_limit(request.client.host if request.client else "unknown")
+
+
 # ---- Schemas ---------------------------------------------------------------
 class CreateSessionRequest(BaseModel):
     title: str = "要件インタビュー"
@@ -399,7 +410,9 @@ async def add_context_file(
 
 @app.post("/api/sessions/join", response_model=JoinResponse)
 def join_session(
-    req: JoinRequest, request: Request, user: AuthUser = Depends(require_user)
+    req: JoinRequest,
+    _rl: None = Depends(_require_rate_limit),  # auth より先に解決させる (#80)
+    user: AuthUser = Depends(require_user),
 ) -> JoinResponse:
     """Exchange a valid invite for a scoped, short-lived LiveKit token.
 
@@ -408,8 +421,6 @@ def join_session(
     participant identity is derived from the verified `sub` (not a self-reported
     name) so the provenance metadata on captured requirements is trustworthy.
     """
-    _rate_limit(request.client.host if request.client else "unknown")
-
     if settings.auth_dev_bypass and req.invite.startswith("dev:"):
         # Local-dev only: "dev:<session_id>:<role>" bypasses signing. Never in prod.
         _, session_id, role = req.invite.split(":", 2)
