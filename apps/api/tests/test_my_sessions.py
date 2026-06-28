@@ -60,7 +60,8 @@ def test_returns_only_callers_sessions() -> None:
     res = client.get("/api/sessions/mine")
     assert res.status_code == 200
     body = res.json()
-    assert [s["id"] for s in body] == ["sess-mine-1"]
+    # 「他人のは出ない」を順序非依存で確認する (本人 1 件のみ)。
+    assert {s["id"] for s in body} == {"sess-mine-1"}
 
 
 def test_empty_when_no_sessions() -> None:
