@@ -22,6 +22,7 @@ import {
 import type { MaterialItem } from "../lib/realtime/selectors";
 import { useRealtimeSession } from "../lib/realtime/useRealtimeSession";
 import { ConversationSessionView } from "./ConversationSessionView";
+import { MaterialSourceSheet } from "./MaterialSourceSheet";
 
 export function SessionView({
   sessionId,
@@ -38,8 +39,16 @@ export function SessionView({
 
   // マイク入力（自分の声を拾うか）= LiveKit local track の ON/OFF。
   const mic = useTrackToggle({ source: Track.Source.Microphone });
+  // カメラ/画面共有の LiveKit ローカル映像トラック（ADR-0004）。05-2 手段選択シートから制御する
+  // （旧 MaterialView の setCameraEnabled/setScreenShareEnabled 経路を新設計へ統合）。
+  const camera = useTrackToggle({ source: Track.Source.Camera });
+  const screenShare = useTrackToggle({ source: Track.Source.ScreenShare });
   // 音声出力（SANBA の読み上げ）の消音。RoomAudioRenderer の muted で実際に止める。
   const [muted, setMuted] = useState(false);
+  // 05-2 手段選択シート（カメラ/アップロード/画面共有/Drive）の開閉と、カメラ/画面共有の
+  // 開始失敗（権限拒否・ピッカーキャンセル）をシート上で示すためのエラー。
+  const [sourceSheetOpen, setSourceSheetOpen] = useState(false);
+  const [sourceError, setSourceError] = useState<string | null>(null);
 
   // 投入直後の素材ローカル行（uploading/failed）。realtime の analysis.progress/visual が届くまで、
   // また動画の「準備中」を可視化する橋渡し。
@@ -111,10 +120,39 @@ export function SessionView({
     }
   }
 
+  function openSourceSheet() {
+    setSourceError(null);
+    setSourceSheetOpen(true);
+  }
+
   function handleRetryMaterial(id: string) {
-    // 失敗行を片付けて手段選択（当面はファイル選択）をやり直す。
+    // 失敗行を片付けて手段選択をやり直す（05-2 シートを開く）。
     setPending((p) => p.filter((m) => m.id !== id));
-    fileInput.current?.click();
+    openSourceSheet();
+  }
+
+  // カメラ/画面共有の LiveKit ローカルトラックを開始/停止する。権限拒否や画面共有ピッカーの
+  // キャンセルは toggle() の Promise 拒否として届くため、握りつぶさずシート上にエラーを出す
+  // （旧 MaterialView と同じ扱い・観測のため console.error も残す）。
+  async function toggleCameraTrack() {
+    setSourceError(null);
+    try {
+      await camera.toggle();
+    } catch (e) {
+      console.error("camera toggle failed", e);
+      setSourceError("カメラを開始できませんでした。ブラウザのカメラ許可をご確認ください。");
+    }
+  }
+
+  async function toggleScreenShareTrack() {
+    setSourceError(null);
+    try {
+      await screenShare.toggle();
+    } catch (e) {
+      // 画面共有ピッカーのキャンセルもここに届く（NotAllowedError）。
+      console.error("screenShare toggle failed", e);
+      setSourceError("画面共有を開始できませんでした。共有する画面を選び直してください。");
+    }
   }
 
   function handleExport(): Promise<ExportResult> {
@@ -153,17 +191,43 @@ export function SessionView({
         onSendText={handleSendText}
         onExport={handleExport}
         onFinalize={handleFinalize}
-        onAddMaterial={() => fileInput.current?.click()}
+        onAddMaterial={openSourceSheet}
         extraMaterials={pending}
         hydratedMaterials={hydratedMaterials}
         onRetryMaterial={handleRetryMaterial}
-        // 会話を離れる瞬間にマイク送信を止める（判定/結果ではボトムバーが無く止められないため）。
+        // 会話を離れる瞬間にローカル送信を止める（判定/結果ではボトムバーが無く止められないため）。
+        // マイクに加え、映像トラック（カメラ/画面共有）も止めて帯域/コストを抑える（ADR-0004）。
         onLeaveConversation={() => {
           if (mic.enabled) void mic.toggle(false);
+          if (camera.enabled) void camera.toggle(false);
+          if (screenShare.enabled) void screenShare.toggle(false);
         }}
         onRestart={() => window.location.reload()}
         metrics={metrics}
       />
+
+      {/*
+        投入種別（camera/screen/upload/drive）の運用計測:
+        - upload は API 側 `sanba_asset_uploads_total`（kind/result）で計上済み（observability.py）。
+        - camera/screen は LiveKit ローカルトラックの publish としてサーバ側で観測できる。
+        クライアントからの選択イベントを OTLP/メトリクス基盤へ束ねる収集先の設計は本 PR スコープ外のため
+        #232 で対応する。MaterialSourceSheet 側に onSelectSource の seam を残し、そこへぶら下げる。
+      */}
+      {sourceSheetOpen && (
+        <MaterialSourceSheet
+          onClose={() => setSourceSheetOpen(false)}
+          onUpload={() => {
+            // アップロードは隠し input のピッカ → 既存の pending フロー（handleFile）へ合流。
+            setSourceSheetOpen(false);
+            fileInput.current?.click();
+          }}
+          onToggleCamera={toggleCameraTrack}
+          cameraActive={camera.enabled}
+          onToggleScreenShare={toggleScreenShareTrack}
+          screenShareActive={screenShare.enabled}
+          error={sourceError}
+        />
+      )}
     </>
   );
 }
