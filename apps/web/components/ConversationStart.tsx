@@ -28,11 +28,19 @@ export interface ConversationStartProps {
   goal: string;
   /** 02 で選んだ役割の表示名。 */
   roleLabel: string;
+  /** 02 で添付した参考資料のファイル名（開始前サマリに引き継ぐ / 監査 B-2 #11）。 */
+  materialNames?: string[];
   /** 中断して準備（02）へ戻す。 */
   onCancel: () => void;
 }
 
-export function ConversationStart({ conn, goal, roleLabel, onCancel }: ConversationStartProps) {
+export function ConversationStart({
+  conn,
+  goal,
+  roleLabel,
+  materialNames,
+  onCancel,
+}: ConversationStartProps) {
   const [phase, setPhase] = useState<StartPhase>("intro");
   // 音声で始めるか（テキストで進める場合はマイク publish せず接続する）。
   const [withMic, setWithMic] = useState(true);
@@ -43,6 +51,7 @@ export function ConversationStart({ conn, goal, roleLabel, onCancel }: Conversat
       <StartIntro
         goal={goal}
         roleLabel={roleLabel}
+        materialNames={materialNames}
         // OS プロンプト前に 03-2 アプリ内モーダルで理由提示してから許可を求める（03 AC）。
         onStartVoice={() => setPhase("permission")}
         onStartText={() => {
@@ -158,13 +167,29 @@ function RoomGate({ conn, onCancel }: { conn: JoinResponse; onCancel: () => void
 export interface StartIntroProps {
   goal: string;
   roleLabel: string;
+  /** 02 で添付した参考資料のファイル名（無ければ「会話中に追加できます」を出す）。 */
+  materialNames?: string[];
   onStartVoice: () => void;
   onStartText: () => void;
   onBack: () => void;
 }
 
+/** 添付名のサマリ表示。Figma 89:132 の `PRD_検索改善.pdf ・ 他1件` に倣う（監査 B-2 #11）。 */
+function summarizeMaterials(names: string[]): string {
+  if (names.length === 1) return names[0];
+  return `${names[0]} ・ 他${names.length - 1}件`;
+}
+
 /** 03-0 開始前。準備サマリ＋マイク注記（OS プロンプト前の理由提示）＋開始導線。 */
-export function StartIntro({ goal, roleLabel, onStartVoice, onStartText, onBack }: StartIntroProps) {
+export function StartIntro({
+  goal,
+  roleLabel,
+  materialNames,
+  onStartVoice,
+  onStartText,
+  onBack,
+}: StartIntroProps) {
+  const materials = materialNames ?? [];
   return (
     <Screen className="px-4 py-3">
       <AppHeader title="支度、相整いまして" onBack={onBack} />
@@ -191,7 +216,14 @@ export function StartIntro({ goal, roleLabel, onStartVoice, onStartText, onBack 
             </div>
             <div className="flex gap-2">
               <dt className="w-[64px] shrink-0 font-bold text-[var(--sanba-muted)]">参考資料</dt>
-              <dd className="text-[var(--sanba-muted)]">会話中に追加できます</dd>
+              {materials.length > 0 ? (
+                <dd className="text-[var(--sanba-cream)]">
+                  {summarizeMaterials(materials)}
+                  <span className="text-[var(--sanba-muted)]">（計{materials.length}件）</span>
+                </dd>
+              ) : (
+                <dd className="text-[var(--sanba-muted)]">会話中に追加できます</dd>
+              )}
             </div>
           </dl>
         </Card>
