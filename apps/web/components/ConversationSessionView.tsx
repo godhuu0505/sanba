@@ -32,6 +32,7 @@ import { BottomBar } from "./BottomBar";
 import { ChatHistory } from "./ChatHistory";
 import { ChoicePin } from "./ChoicePin";
 import { ConversationShell, type ShellTab } from "./ConversationShell";
+import { DetectionPin } from "./DetectionPin";
 import { EndConfirmDialog } from "./EndConfirmDialog";
 import { JudgmentGate } from "./JudgmentGate";
 import { MaterialsList } from "./MaterialsList";
@@ -143,12 +144,19 @@ export function ConversationSessionView({
     setPhase(next);
   }
 
-  // 問いピンは「選択肢を持つ未解消検知（緋/黄土）」を最新優先で1件出す。検知が無ければ
-  // 通常質問（金枠 / #181）を出す。検知（矛盾/抜け）は緊急度が高いので優先する。
-  const activeChoice = openDetections.find((d) => d.options && d.options.length > 0);
+  // 問いピンは「未解消検知（緋/黄土）」を最新優先で1件、常時前面に出す（検知は緊急度が高い）。
+  // 選択肢あり: 回答付き ChoicePin。選択肢なし（detection.gap 等）: 要約のみの読み取り専用
+  // DetectionPin（#208。旧 find(options>0) は最新の gap を読み飛ばし、件数バッジを開くまで
+  // 気づけなかった）。検知が無ければ通常質問（金枠 / #181）を出す。
+  const activeDetection = openDetections[0];
+  const activeChoice =
+    activeDetection && activeDetection.options && activeDetection.options.length > 0
+      ? activeDetection
+      : null;
+  const activeGap = activeDetection && !activeChoice ? activeDetection : null;
   const askedQuestion = selectActiveQuestion(state);
   const activeQuestion =
-    !activeChoice && askedQuestion && !answeredQuestions.has(askedQuestion.id)
+    !activeDetection && askedQuestion && !answeredQuestions.has(askedQuestion.id)
       ? askedQuestion
       : null;
 
@@ -248,6 +256,10 @@ export function ConversationSessionView({
         if (opt) sendSelection(activeChoice.id, opt.value);
       }}
     />
+  ) : activeGap ? (
+    // 選択肢なし検知（gap 等）。要約のみの読み取り専用ピン（#208）。回答導線は持たず、
+    // 解消（detection.resolved）または次の検知の到着で差し替わる。
+    <DetectionPin summary={activeGap.summary} kind={activeGap.kind} />
   ) : activeQuestion ? (
     // 通常質問（金枠 / #181）。detectionKind なし = 金（通常）。回答で user.answered を返し、
     // ローカルで畳む（次の question.asked が前面化するまで再表示しない）。
