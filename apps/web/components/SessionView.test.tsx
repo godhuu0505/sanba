@@ -185,4 +185,30 @@ describe("SessionView handleFile pending 行", () => {
     await waitFor(() => expect(lastCancelledIds.has("vid-x")).toBe(true));
     expect(lastMaterials.find((m) => m.id === "vid-x")?.status).toBe("cancelled");
   });
+
+  it("中断後に同じ asset_id を再アップロードすると復活する（破棄ガードから外す・Codex P2）", async () => {
+    // API は内容ハッシュで安定 asset_id を返すため、再投入で同じ id が返る。
+    uploadContextFile.mockResolvedValue({
+      indexed_chunks: 1,
+      asset_id: "hash-1",
+      asset_kind: "image",
+      analysis_pending: false,
+    });
+    const { container } = render(<SessionView sessionId="s1" sessionToken="t1" />);
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+
+    // 1回目: アップロード成功 → 中断（破棄）。
+    fireEvent.change(input, { target: { files: [new File(["x"], "f.png")] } });
+    await waitFor(() => expect(lastMaterials.find((m) => m.id === "hash-1")?.status).toBe("done"));
+    onCancelMaterial("hash-1");
+    await waitFor(() => expect(lastCancelledIds.has("hash-1")).toBe(true));
+
+    // 2回目: 同じファイル＝同じ asset_id を再投入 → 破棄ガードから外れ、行が復活する。
+    fireEvent.change(input, { target: { files: [new File(["x"], "f.png")] } });
+    await waitFor(() => expect(lastCancelledIds.has("hash-1")).toBe(false));
+    const rows = lastMaterials.filter((m) => m.id === "hash-1");
+    // 古い cancelled tombstone は消え、done 行だけが残る（重複なし）。
+    expect(rows).toHaveLength(1);
+    expect(rows[0].status).toBe("done");
+  });
 });

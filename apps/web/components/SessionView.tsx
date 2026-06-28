@@ -112,19 +112,31 @@ export function SessionView({
       if (assetId !== tempId) uploadAliases.current.set(tempId, assetId);
       // 成功で abort 対象ではなくなったので controller を片付ける（中断は破棄ガードに切替わる）。
       uploadAborters.current.delete(tempId);
+      // 明示的な再投入は復活させる（#219 / Codex P2）。API は内容ハッシュで安定 asset_id を返すため
+      // （storage.compute_asset_id）、中断後に同じファイルを再追加すると asset_id が前回の破棄
+      // tombstone と一致してしまう。成功時に当該 asset_id を破棄ガードから外す。
+      setCancelledIds((prev) => {
+        if (!prev.has(assetId)) return prev;
+        const next = new Set(prev);
+        next.delete(assetId);
+        return next;
+      });
       // 画像は同期解析済みなので done/100%。動画は解析未着手の「準備中」なので analyzing/0%
       // にして「解析中100%」を出さない。pct はハイドレーション（status→ done?100:0）と揃える。
       setPending((p) =>
-        p.map((m) =>
-          m.id === tempId
-            ? {
-                id: assetId,
-                name: file.name,
-                pct: done ? 100 : 0,
-                status: done ? "done" : "analyzing",
-              }
-            : m,
-        ),
+        p
+          // 同 asset_id の古い破棄 tombstone を取り除く（status 由来の除外が再投入を巻き込まないように）。
+          .filter((m) => !(m.id === assetId && m.id !== tempId && m.status === "cancelled"))
+          .map((m) =>
+            m.id === tempId
+              ? {
+                  id: assetId,
+                  name: file.name,
+                  pct: done ? 100 : 0,
+                  status: done ? "done" : "analyzing",
+                }
+              : m,
+          ),
       );
     } catch (err) {
       // 中断（#219）による abort は失敗ではない。handleCancelMaterial が行を cancelled にして
