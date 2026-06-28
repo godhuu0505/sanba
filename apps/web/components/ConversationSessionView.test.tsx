@@ -203,7 +203,8 @@ describe("ConversationSessionView（会話シェル結線）", () => {
       }),
     });
     // gap が最新 → 要約が常時ピンに前面表示（読み取り専用・抜けバッジ付き）。
-    expect(screen.getByRole("status").textContent).toContain("『該当なし』の空状態が未定義。");
+    // 音声状態インジケータ（#248）も role="status" を持つため、要約テキストとバッジで特定する。
+    expect(screen.getByText("『該当なし』の空状態が未定義。")).toBeTruthy();
     expect(screen.getByLabelText("抜け（未定義）を検知")).toBeTruthy();
     // 読み取り専用: 回答ボタンが無く、古い矛盾の選択肢も前面化しない（最新1件のみ）。
     expect(screen.queryByText("古い矛盾の問い")).toBeNull();

@@ -5,7 +5,11 @@
 // useRealtimeSession に集約し、表示と画面遷移は ConversationSessionView（LiveKit 非依存）へ委ねる。
 // 本層は LiveKit に触れる薄い接続部だけを持つ: マイク入力トグル・音声出力の消音・素材アップロード。
 
-import { RoomAudioRenderer, useTrackToggle } from "@livekit/components-react";
+import {
+  RoomAudioRenderer,
+  useSpeakingParticipants,
+  useTrackToggle,
+} from "@livekit/components-react";
 import { Track } from "livekit-client";
 import { useEffect, useRef, useState } from "react";
 
@@ -47,6 +51,11 @@ export function SessionView({
   const screenShare = useTrackToggle({ source: Track.Source.ScreenShare });
   // 音声出力（SANBA の読み上げ）の消音。RoomAudioRenderer の muted で実際に止める。
   const [muted, setMuted] = useState(false);
+  // エージェント発話／読み上げ中の検知（#248）。useSpeakingParticipants は ActiveSpeakersChanged で
+  // reactive に更新され、購読は本コンポーネント（会話画面）のマウント中だけに閉じる（リーク防止）。
+  // ローカル参加者（自分）を除いたリモート＝エージェントの発話を音声状態インジケータへ渡す。
+  const speaking = useSpeakingParticipants();
+  const agentSpeaking = speaking.some((p) => !p.isLocal);
   // 05-2 手段選択シート（カメラ/アップロード/画面共有/Drive）の開閉と、カメラ/画面共有の
   // 開始失敗（権限拒否・ピッカーキャンセル）をシート上で示すためのエラー。
   const [sourceSheetOpen, setSourceSheetOpen] = useState(false);
@@ -302,6 +311,7 @@ export function SessionView({
         sendAnswer={sendAnswer}
         micOn={mic.enabled}
         muted={muted}
+        agentSpeaking={agentSpeaking}
         onToggleMic={() => void mic.toggle()}
         onToggleMute={() => setMuted((m) => !m)}
         onSendText={handleSendText}
