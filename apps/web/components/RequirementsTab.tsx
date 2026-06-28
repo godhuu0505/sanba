@@ -4,6 +4,8 @@
 // 仕様: docs/design/conversation-experience.md §3,§7 / screens/06-requirements-scroll.md。
 // 編集はしない（確定操作は 07 判定 → 08 結果）。
 
+import { useEffect, useRef } from "react";
+
 import { PRIORITY_ORDER, priorityLabel } from "@/lib/realtime/mapping";
 import type { Detection, Requirement } from "@/lib/realtime/types";
 
@@ -15,6 +17,14 @@ export interface RequirementsTabProps {
   deepDive: Detection[];
   /** 深掘りの「会話で確認」押下。 */
   onJump: (detectionId: string) => void;
+  /**
+   * ミニ状況「未確定」からの遷移時に true（#195）。深掘り（未解消）対象の見出しへスクロールして
+   * 視線を誘導する。要件タブを開いただけ（要件タップ）では false。タブ再マウントで誤発火しない
+   * よう、消費後は親が onUnresolvedFocusConsumed で false に戻す（ワンショット）。
+   */
+  focusUnresolved?: boolean;
+  /** focusUnresolved を消費したことを親へ通知（false へ戻す）。 */
+  onUnresolvedFocusConsumed?: () => void;
 }
 
 function confidenceLabel(c: number): string {
@@ -23,7 +33,23 @@ function confidenceLabel(c: number): string {
   return "低";
 }
 
-export function RequirementsTab({ requirements, deepDive, onJump }: RequirementsTabProps) {
+export function RequirementsTab({
+  requirements,
+  deepDive,
+  onJump,
+  focusUnresolved = false,
+  onUnresolvedFocusConsumed,
+}: RequirementsTabProps) {
+  const deepDiveRef = useRef<HTMLHeadingElement>(null);
+  // 「未確定」からの遷移時のみ深掘り対象へスクロールし、ワンショットで消費する（#195）。
+  // 要件タップ（focusUnresolved=false）や通常のタブ再マウントでは発火しない。
+  // jsdom は scrollIntoView 未実装のため optional 呼び出しで安全に no-op になる。
+  useEffect(() => {
+    if (!focusUnresolved) return;
+    deepDiveRef.current?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+    onUnresolvedFocusConsumed?.();
+  }, [focusUnresolved, onUnresolvedFocusConsumed]);
+
   return (
     <div className="flex flex-col gap-3 px-4 py-3">
       <h2 className="text-[11px] font-bold text-[var(--sanba-gold)]">
@@ -57,7 +83,11 @@ export function RequirementsTab({ requirements, deepDive, onJump }: Requirements
         })
       )}
 
-      <h2 className="mt-1 text-[12px] font-bold text-[#e0a93b]">
+      <h2
+        ref={deepDiveRef}
+        tabIndex={-1}
+        className="mt-1 scroll-mt-2 text-[12px] font-bold text-[#e0a93b]"
+      >
         ⚠ 深掘り対象（未解消 {deepDive.length}）
       </h2>
       <DeepDiveList detections={deepDive} onJump={onJump} />
