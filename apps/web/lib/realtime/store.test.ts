@@ -328,6 +328,16 @@ describe("RealtimeStore — hydrateQuestion（#212 / ADR-0020）", () => {
     expect(s.getSnapshot().seq).toBe(2);
   });
 
+  it("未提示（seq=0 / question=null）の hydrate は安全な no-op（金枠を出さない）", () => {
+    const s = new RealtimeStore();
+    s.hydrateQuestion(null, 0, true);
+    expect(s.getSnapshot().question).toBeNull();
+    // 先着していた live 質問は §5-4 のとおり遅延 null（seq=0）で消えない。
+    s.apply(questionAsked(3, "q1"));
+    s.hydrateQuestion(null, 0, true);
+    expect(s.getSnapshot().question?.id).toBe("q1");
+  });
+
   it("クリア適用後に古い GET が後着してもクリア済みを復活させない（§5-10）", () => {
     const s = new RealtimeStore();
     s.apply(questionCleared(6, "q1")); // current=null でも lastQuestionSeq=6 へ前進

@@ -59,6 +59,40 @@ async def test_clear_current_question_id_mismatch_keeps_pointer() -> None:
 
 
 @pytest.mark.asyncio
+async def test_ask_question_persists_then_tracks_current() -> None:
+    # ask_question は現在質問を保存し、§5-6 用の current 追跡を確定する。
+    agent, repo, transport, _pub = _agent()
+    ask = type(agent).ask_question.__wrapped__  # function_tool の素の関数
+    await ask(agent, None, "並び順は？", ["関連度順", "新着順"])
+    doc = repo._mem_questions["s1"]
+    assert doc["cleared"] is False
+    assert doc["prompt"] == "並び順は？"
+    assert doc["asked_seq"] >= 1
+    assert agent.current_question_id == doc["id"]
+    # question.asked が publish される。
+    assert transport.sent[-1]["event"]["type"] == "question.asked"
+
+
+@pytest.mark.asyncio
+async def test_ask_question_persist_failure_resets_current_tracking() -> None:
+    # §5-1: 保存失敗時は送信せず、current 追跡も None に戻す（存在しない id への再クリアを防ぐ）。
+    agent, repo, transport, pub = _agent()
+
+    def boom(*_args: object, **_kwargs: object) -> None:
+        raise RuntimeError("firestore down")
+
+    repo.save_current_question = boom  # type: ignore[method-assign]
+    ask = type(agent).ask_question.__wrapped__
+    res = await ask(agent, None, "氏名は？")
+    # 会話は止まらない（tool は asked を返す）が、保存できないので送信も seq 消費もしない。
+    assert res["asked"]
+    assert transport.sent == []
+    assert pub.seq == 0
+    # current 追跡は巻き戻る（後続発話が存在しない id でクリア試行しない）。
+    assert agent.current_question_id is None
+
+
+@pytest.mark.asyncio
 async def test_clear_without_publisher_is_noop() -> None:
     # publisher 未設定でも会話は成立する（クリアは付加価値）。例外を投げない。
     repo = SessionRepository()

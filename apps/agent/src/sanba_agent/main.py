@@ -275,6 +275,9 @@ class SANBAAgent(Agent):
             except Exception as exc:  # noqa: BLE001
                 # §5-1: 保存失敗時は送らず seq も消費しない（_emit_guarded が保証）。会話は止めず
                 # 続行する。金枠ピンはこの問いでは復元できないが、音声の問いかけは成立している。
+                # current 追跡も巻き戻す: 保存できなかった id を指したままだと、後続の発話が毎回
+                # CAS 不一致のクリアを試みてログノイズを積む（保存できた問いだけ current とする）。
+                self._current_question_id = None
                 log.warning(
                     "question_persist_failed",
                     session=self._session_id,
