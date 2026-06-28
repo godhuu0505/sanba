@@ -137,14 +137,18 @@ class ContextIndexer:
         """
         if self._client is not None:  # pragma: no cover - needs live ES
             try:
+                # in-memory の _source_matches と同じ `#` 境界にそろえる: 素の prefix（あれば）と
+                # `prefix#*` のみを対象にし、別 asset への前方一致の誤爆を防ぐ。
                 res = self._client.delete_by_query(
                     index=INDEX,
                     query={
                         "bool": {
-                            "filter": [
-                                {"term": {"session_id": session_id}},
-                                {"prefix": {"source": source_prefix}},
-                            ]
+                            "filter": [{"term": {"session_id": session_id}}],
+                            "minimum_should_match": 1,
+                            "should": [
+                                {"term": {"source": source_prefix}},
+                                {"prefix": {"source": f"{source_prefix}#"}},
+                            ],
                         }
                     },
                     refresh=True,

@@ -239,6 +239,8 @@ class FinalizeResponse(BaseModel):
 # web UI 由来テレメトリの許可リスト（#232/#243）。第三者分析 SDK を使わず既存 OTLP 基盤に
 # 集約する（observability.py）。PII/自由記述は受けず、列挙値のみを受ける。未知 event は 422、
 # 未知の属性値は other へ丸めて高カーディナリティ/PII 流入を防ぐ（観測は UX を止めない）。
+# material.discard は含めない: 破棄結果はサーバ（DELETE エンドポイント）が直接 record_material_event
+# で計上する内部イベントで、クライアントからの受領は想定しない（送ってきても 422 で弾く）。
 _TELEMETRY_EVENTS = {"material.source_selected", "material.cancel"}
 _TELEMETRY_SOURCES = {"camera", "screen", "upload", "drive"}
 _TELEMETRY_STATUSES = {"uploading", "analyzing"}
