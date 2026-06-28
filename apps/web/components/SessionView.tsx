@@ -87,10 +87,17 @@ export function SessionView({
       // （GET context/files のハイドレーションが状態を補正する / 契約 §3）。
       const assetId = res.asset_id ?? tempId;
       const done = res.analysis_pending !== true;
+      // 画像は同期解析済みなので done/100%。動画は解析未着手の「準備中」なので analyzing/0%
+      // にして「解析中100%」を出さない。pct はハイドレーション（status→ done?100:0）と揃える。
       setPending((p) =>
         p.map((m) =>
           m.id === tempId
-            ? { id: assetId, name: file.name, pct: 100, status: done ? "done" : "analyzing" }
+            ? {
+                id: assetId,
+                name: file.name,
+                pct: done ? 100 : 0,
+                status: done ? "done" : "analyzing",
+              }
             : m,
         ),
       );
