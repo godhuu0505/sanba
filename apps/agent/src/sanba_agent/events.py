@@ -78,6 +78,7 @@ def _now() -> datetime:
 DETECTOR_CONTRADICTION = "contradiction_detector"
 DETECTOR_SCOPE = "scope_specialist"
 DETECTOR_NFR = "nfr_specialist"
+DETECTOR_AMBIGUITY = "ambiguity_detector"
 
 # 解消理由（detection.resolved）。ユーザー選択＝矛盾カードの解消、agent＝抜けの自動解消。
 RESOLUTION_USER_SELECTED = "user_selected"
@@ -104,6 +105,7 @@ class EventPublisher:
         self.requirements_published = 0
         self.gaps_published = 0
         self.contradictions_published = 0
+        self.ambiguous_published = 0
         self.detections_resolved = 0
         self.contradictions_resolved = 0
         self.questions_published = 0
@@ -116,8 +118,8 @@ class EventPublisher:
 
     @property
     def detections_published(self) -> int:
-        """検知（抜け＋矛盾）の publish 総数。"""
-        return self.gaps_published + self.contradictions_published
+        """検知（抜け＋矛盾＋不明瞭）の publish 総数。"""
+        return self.gaps_published + self.contradictions_published + self.ambiguous_published
 
     async def _emit(
         self, type_: str, payload: dict[str, Any], *, reliable: bool = True
@@ -255,6 +257,30 @@ class EventPublisher:
                 "id": detection_id,
                 "summary": summary,
                 "category": category,
+                "refs": refs,
+                "detector": detector,
+            },
+        )
+
+    async def detection_ambiguous(
+        self,
+        detection_id: str,
+        summary: str,
+        refs: list[str],
+        *,
+        detector: str = DETECTOR_AMBIGUITY,
+    ) -> dict[str, Any]:
+        """不明瞭な論点の検知（#182 / ADR-0022）。矛盾でも抜けでもない第三の未解消検知。
+
+        確定ゲート（07）・深掘り（06）の未解消件数へ算入される
+        （web/store・API list_open_detections）。
+        """
+        self.ambiguous_published += 1
+        return await self._emit(
+            "detection.ambiguous",
+            {
+                "id": detection_id,
+                "summary": summary,
                 "refs": refs,
                 "detector": detector,
             },

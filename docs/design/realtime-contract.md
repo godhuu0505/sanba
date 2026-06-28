@@ -48,6 +48,7 @@ web 側の適用規則: **`(type, id)` で冪等**（同じ要件/検知は upse
 | `transcript.final` | 04/05 | `speaker`, `role`, `utterance_id`（確定ID・`detection.*.refs` と同一ID空間）, `text` |
 | `detection.contradiction` | 05/08 | `id`, `summary`, `refs`:[utterance_id...], `options?`:[{`label`,`value`}], `detector`:`"contradiction_detector"` |
 | `detection.gap` | 05/08 | `id`, `summary`, `category`, `refs`:[utterance_id...], `detector`:`"scope_specialist"`\|`"nfr_specialist"` |
+| `detection.ambiguous` | 06/07 | `id`, `summary`, `refs`:[utterance_id...], `detector`:`"ambiguity_detector"`（#182 / ADR-0022）。矛盾でも抜けでもない不明瞭な論点。`resolved` まで未解消として確定ゲートの件数に算入（`list_open_detections`／web 集計は kind 非依存） |
 | `detection.resolved` | 05/08 | `detection_id`（解消対象）, `resolution`:`"user_selected"`\|`"agent_resolved"`, `selected_value?`（選択肢タップ時） |
 | `requirement.upserted` | 08/09 | `requirement`:{`id`,`statement`,`category`(`functional`\|`non_functional`\|`constraint`\|`scope`\|`open_question`),`priority`(`must`\|`should`\|`could`\|`wont`),`confidence`(0–1),`source_speaker`,`citations`:[{`kind`,`ref`}],`status`(`draft`\|`confirmed`)} |
 | `question.asked` | 04 | `id`, `prompt`, `options?`:[{`label`,`value`}]（#181）。通常質問（金枠）を問いピンに出す。選択肢があればタップで `user.answered` を返す。web は seq ガードで最新1問を保持 |

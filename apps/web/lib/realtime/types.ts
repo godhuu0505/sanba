@@ -51,7 +51,7 @@ export interface Requirement {
   status: RequirementStatus;
 }
 
-export type DetectionKind = "contradiction" | "gap";
+export type DetectionKind = "contradiction" | "gap" | "ambiguous";
 
 export interface DetectionOption {
   label: string;
@@ -139,6 +139,13 @@ export type DetectionGapEvent = Envelope<"detection.gap"> & {
   detector: string;
 };
 
+export type DetectionAmbiguousEvent = Envelope<"detection.ambiguous"> & {
+  id: string;
+  summary: string;
+  refs: string[];
+  detector: string;
+};
+
 export type DetectionResolvedEvent = Envelope<"detection.resolved"> & {
   detection_id: string;
   resolution: "user_selected" | "agent_resolved";
@@ -194,6 +201,7 @@ export type ServerEvent =
   | TranscriptFinalEvent
   | DetectionContradictionEvent
   | DetectionGapEvent
+  | DetectionAmbiguousEvent
   | DetectionResolvedEvent
   | RequirementUpsertedEvent
   | QuestionAskedEvent
