@@ -100,6 +100,33 @@ class ReadRepository:
             raw = self._mem_requirements.get(session_id, [])
         return [requirement_doc_to_contract(d) for d in raw]
 
+    def get_requirements_by_ids(self, session_id: str, ids: list[str]) -> list[dict[str, Any]]:
+        """指定 ID の要件のみを契約形で取得する（#213 export スナップショット）。
+
+        finalize 時に固定した `finalized_requirement_ids` を渡し、確定時集合だけを起票する
+        ために使う。現在の status には依存せず ID 集合で取得するため、確定後に却下/追加されても
+        集合は変わらない（rejected に落ちた要件も確定時に含まれていれば起票対象に残る）。
+        順序は `ids` の順を保ち、既に存在しない（TTL 失効等）ID はスキップする。
+        """
+        if not ids:
+            return []
+        if self._client is not None:
+            by_id: dict[str, dict[str, Any]] = {}
+            for rid in ids:
+                snap = (
+                    self._client.collection("sessions")
+                    .document(session_id)
+                    .collection("requirements")
+                    .document(rid)
+                    .get()
+                )
+                if snap.exists:
+                    by_id[rid] = requirement_doc_to_contract(snap.to_dict())
+        else:
+            raw = self._mem_requirements.get(session_id, [])
+            by_id = {d.get("id", ""): requirement_doc_to_contract(d) for d in raw}
+        return [by_id[rid] for rid in ids if rid in by_id]
+
     def list_open_detections(self, session_id: str) -> list[dict[str, Any]]:
         if self._client is not None:
             docs = (

@@ -174,6 +174,8 @@ def test_finalize_marks_session_and_counts_confirmed() -> None:
     assert meta.status == "finalized"
     assert meta.finalized_count == 1
     assert meta.finalized_at is not None
+    # 確定時の要件 ID スナップショット（#213）。却下を除く確定要件のみ。
+    assert meta.finalized_requirement_ids == ["c1"]
 
 
 def test_finalize_rejects_when_unresolved_detections_remain() -> None:
@@ -244,31 +246,10 @@ def test_export_disabled_by_default() -> None:
     assert body["reason"]
 
 
-def test_export_uses_only_confirmed_requirements(monkeypatch: pytest.MonkeyPatch) -> None:
-    # 却下(rejected)を Issue 化せず、count は確定要件数に一致する（会話確定軸 / Codex P1）。
+def _enable_github(monkeypatch: pytest.MonkeyPatch) -> dict[str, object]:
+    """GitHub connector を有効化し、create_issue を捕捉スタブに差し替える。"""
     from sanba_api import github_export, main
 
-    _read_repo._seed_requirement(
-        "sess-x",
-        {
-            "id": "c1",
-            "statement": "確定",
-            "category": "functional",
-            "priority": "must",
-            # 管理軸 approved も会話上は確定（contract: confirmed）。
-            "status": "approved",
-        },
-    )
-    _read_repo._seed_requirement(
-        "sess-x",
-        {
-            "id": "d1",
-            "statement": "却下",
-            "category": "scope",
-            "priority": "should",
-            "status": "rejected",
-        },
-    )
     monkeypatch.setattr(settings, "github_connector_enabled", True)
     monkeypatch.setattr(settings, "github_token", "t")
     monkeypatch.setattr(settings, "github_repo", "o/r")
@@ -280,9 +261,111 @@ def test_export_uses_only_confirmed_requirements(monkeypatch: pytest.MonkeyPatch
 
     monkeypatch.setattr(github_export, "create_issue", fake_create_issue)
     monkeypatch.setattr(main.github_export, "create_issue", fake_create_issue)
+    return captured
 
-    res = client.post("/api/sessions/sess-x/export", headers=_auth(_token("sess-x")))
+
+def test_export_uses_only_confirmed_requirements(monkeypatch: pytest.MonkeyPatch) -> None:
+    # 却下(rejected)を Issue 化せず、count は確定要件数に一致する（会話確定軸 / Codex P1）。
+    created = client.post("/api/sessions", json={"roles": ["pm"], "consent_acknowledged": True})
+    sid = created.json()["session_id"]
+    _read_repo._seed_requirement(
+        sid,
+        {
+            "id": "c1",
+            "statement": "確定",
+            "category": "functional",
+            "priority": "must",
+            # 管理軸 approved も会話上は確定（contract: confirmed）。
+            "status": "approved",
+        },
+    )
+    _read_repo._seed_requirement(
+        sid,
+        {
+            "id": "d1",
+            "statement": "却下",
+            "category": "scope",
+            "priority": "should",
+            "status": "rejected",
+        },
+    )
+    captured = _enable_github(monkeypatch)
+    # export は finalize 時に凍結した集合を起票する（#213）。まず確定する。
+    client.post(f"/api/sessions/{sid}/finalize", headers=_auth(_token(sid)))
+
+    res = client.post(f"/api/sessions/{sid}/export", headers=_auth(_token(sid)))
     body = res.json()
     assert body["exported"] is True
     assert body["count"] == 1  # 却下を除く確定のみ
     assert "却下" not in str(captured["body"])
+
+
+def test_export_uses_finalized_snapshot_not_recomputed(monkeypatch: pytest.MonkeyPatch) -> None:
+    # 受け入れ基準: finalize 後に要件が増えても export は確定時集合のみ起票する（#213）。
+    created = client.post("/api/sessions", json={"roles": ["pm"], "consent_acknowledged": True})
+    sid = created.json()["session_id"]
+    _read_repo._seed_requirement(
+        sid,
+        {"id": "c1", "statement": "確定済み", "category": "functional", "priority": "must"},
+    )
+    captured = _enable_github(monkeypatch)
+    fin = client.post(f"/api/sessions/{sid}/finalize", headers=_auth(_token(sid)))
+    assert fin.json()["confirmed_count"] == 1
+
+    # 確定後に遅延 agent が新しい確定要件を追加しても、export には現れない。
+    _read_repo._seed_requirement(
+        sid,
+        {"id": "c2", "statement": "後から追加", "category": "scope", "priority": "should"},
+    )
+    res = client.post(f"/api/sessions/{sid}/export", headers=_auth(_token(sid)))
+    body = res.json()
+    assert body["exported"] is True
+    assert body["count"] == 1  # 確定時集合（c1）のみ。c2 は含めない。
+    assert "確定済み" in str(captured["body"])
+    assert "後から追加" not in str(captured["body"])
+
+
+def test_export_keeps_finalized_requirement_even_if_later_rejected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # 確定時集合は不可逆。finalize 後に却下されても確定時に含まれていれば起票され続ける（#213）。
+    created = client.post("/api/sessions", json={"roles": ["pm"], "consent_acknowledged": True})
+    sid = created.json()["session_id"]
+    _read_repo._seed_requirement(
+        sid,
+        {"id": "c1", "statement": "確定要件", "category": "functional", "priority": "must"},
+    )
+    captured = _enable_github(monkeypatch)
+    client.post(f"/api/sessions/{sid}/finalize", headers=_auth(_token(sid)))
+
+    # 確定後に管理画面で却下しても、確定時スナップショットに含まれるので起票対象に残る。
+    _read_repo._mem_requirements[sid][0]["status"] = "rejected"
+    res = client.post(f"/api/sessions/{sid}/export", headers=_auth(_token(sid)))
+    body = res.json()
+    assert body["count"] == 1
+    assert "確定要件" in str(captured["body"])
+
+
+def test_finalize_then_export_is_idempotent(monkeypatch: pytest.MonkeyPatch) -> None:
+    # 二重 finalize / finalize 後の複数回 export が同じ確定時集合を返す（冪等 / #213）。
+    created = client.post("/api/sessions", json={"roles": ["pm"], "consent_acknowledged": True})
+    sid = created.json()["session_id"]
+    _read_repo._seed_requirement(
+        sid,
+        {"id": "c1", "statement": "確定", "category": "functional", "priority": "must"},
+    )
+    _enable_github(monkeypatch)
+    first_fin = client.post(f"/api/sessions/{sid}/finalize", headers=_auth(_token(sid)))
+    # 二重 finalize しても確定時集合（ID）は変わらない。
+    _read_repo._seed_requirement(
+        sid,
+        {"id": "c2", "statement": "後から", "category": "scope", "priority": "should"},
+    )
+    second_fin = client.post(f"/api/sessions/{sid}/finalize", headers=_auth(_token(sid)))
+    assert first_fin.json()["confirmed_count"] == second_fin.json()["confirmed_count"] == 1
+    assert _repo.get_session(sid).finalized_requirement_ids == ["c1"]
+
+    # export を複数回叩いても同じ件数（確定時集合）を返す。
+    first_exp = client.post(f"/api/sessions/{sid}/export", headers=_auth(_token(sid)))
+    second_exp = client.post(f"/api/sessions/{sid}/export", headers=_auth(_token(sid)))
+    assert first_exp.json()["count"] == second_exp.json()["count"] == 1
