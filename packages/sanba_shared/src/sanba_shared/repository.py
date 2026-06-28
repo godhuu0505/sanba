@@ -342,6 +342,30 @@ class SessionRepository:
             return [d.to_dict() for d in docs]
         return list(self._mem_materials.get(session_id, {}).values())
 
+    def delete_material(self, session_id: str, asset_id: str) -> bool:
+        """投入済み素材メタを削除する (#245 真の破棄)。実体を消したら True (冪等)。
+
+        GET /context/files (list_materials) から外し、リロード/再接続での復活を止める。
+        中断確定で DELETE /context/file/{asset_id} から呼ばれる。存在しない asset_id でも
+        安全に False を返す (Firestore 未接続の in-memory フォールバックも壊さない)。
+        """
+        if self._client is not None:
+            ref = (
+                self._client.collection("sessions")
+                .document(session_id)
+                .collection("materials")
+                .document(asset_id)
+            )
+            if not ref.get().exists:
+                return False
+            ref.delete()
+            return True
+        materials = self._mem_materials.get(session_id)
+        if materials is not None and asset_id in materials:
+            del materials[asset_id]
+            return True
+        return False
+
     # ---- Current question (#212 / ADR-0020) --------------------------------
     def save_current_question(
         self, session_id: str, question: dict[str, Any], asked_seq: int

@@ -198,6 +198,67 @@ def test_context_files_empty_for_new_session() -> None:
     assert res.json()["items"] == []
 
 
+# ── 真の破棄（DELETE context/file / #245）──────────────────────────────────
+def test_delete_context_file_requires_session_token() -> None:
+    res = client.delete("/api/sessions/sess-x/context/file/asset-deadbeef")
+    assert res.status_code == 401
+
+
+def test_delete_context_file_removes_binary_meta_and_grounding() -> None:
+    from sanba_api.main import _asset_store, _indexer
+
+    sid = _new_session()
+    up = client.post(
+        f"/api/sessions/{sid}/context/file",
+        files={"file": ("mock.png", b"\x89PNG\r\n\x1a\n", "image/png")},
+        headers=_session_auth(sid),
+    )
+    asset_id = up.json()["asset_id"]
+    # 解析（grounding）は creds 依存で空のため、出所 asset:{id} の chunk を明示的に投入して
+    # 「真の破棄」が索引まで消すことを検証する（本番では index_context が同経路で入る）。
+    _indexer.index_context(sid, ["観察A", "観察B"], f"asset:{asset_id}")
+    assert any(d.get("source", "").startswith(f"asset:{asset_id}") for d in _indexer._mem)
+
+    res = client.delete(f"/api/sessions/{sid}/context/file/{asset_id}", headers=_session_auth(sid))
+    assert res.status_code == 200
+    body = res.json()
+    assert body == {"deleted": True, "existed": True}
+
+    # (1) GET context/files に出ない（リロードで復活しない）。
+    files = client.get(f"/api/sessions/{sid}/context/files", headers=_session_auth(sid)).json()
+    assert all(it["id"] != asset_id for it in files["items"])
+    # (2) grounding 索引から消える。
+    assert not any(d.get("source", "").startswith(f"asset:{asset_id}") for d in _indexer._mem)
+    # (3) binary が消える（再削除は実体なし）。
+    assert _asset_store.delete(sid, asset_id) is False
+
+
+def test_delete_context_file_is_idempotent() -> None:
+    sid = _new_session()
+    # 存在しない asset でも 200・existed=false（冪等）。
+    res = client.delete(
+        f"/api/sessions/{sid}/context/file/asset-doesnotexist", headers=_session_auth(sid)
+    )
+    assert res.status_code == 200
+    assert res.json() == {"deleted": True, "existed": False}
+
+    # 実在 asset を消したあと、二度目も 200・existed=false（一貫）。
+    up = client.post(
+        f"/api/sessions/{sid}/context/file",
+        files={"file": ("rec.mp4", b"\x00\x00\x00\x18ftypmp42", "video/mp4")},
+        headers=_session_auth(sid),
+    )
+    asset_id = up.json()["asset_id"]
+    first = client.delete(
+        f"/api/sessions/{sid}/context/file/{asset_id}", headers=_session_auth(sid)
+    )
+    assert first.json() == {"deleted": True, "existed": True}
+    second = client.delete(
+        f"/api/sessions/{sid}/context/file/{asset_id}", headers=_session_auth(sid)
+    )
+    assert second.json() == {"deleted": True, "existed": False}
+
+
 def test_upload_text_still_indexes() -> None:
     sid = _new_session()
     res = client.post(
