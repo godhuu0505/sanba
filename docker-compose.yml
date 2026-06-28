@@ -51,9 +51,12 @@ services:
       # でユーザの application_default_credentials.json を指す（コンテナ内 path）。
       GOOGLE_APPLICATION_CREDENTIALS: /gcp/adc.json
     volumes:
-      # ADC のパスを解決。複数アカウント運用で CLOUDSDK_CONFIG を別ディレクトリへ向けている場合
-      # （例: ~/.config/gcloud-personal）はそちらを優先、無ければ標準の ~/.config/gcloud を読む。
-      - ${CLOUDSDK_CONFIG:-${HOME}/.config/gcloud}/application_default_credentials.json:/gcp/adc.json:ro
+      # ADC を read-only でマウント。既定は /dev/null（必ず存在）にし、未ログイン時に Docker が
+      # host 側へ空ディレクトリを作ってしまう footgun を避ける（AI Studio 既定経路では ADC 不要）。
+      # Vertex AI 経路を使う場合のみ .env.local で SANBA_ADC_FILE に
+      # application_default_credentials.json のパスを指す（複数アカウントは CLOUDSDK_CONFIG 配下、
+      # 標準は ~/.config/gcloud/application_default_credentials.json）。
+      - ${SANBA_ADC_FILE:-/dev/null}:/gcp/adc.json:ro
     ports: ["8080:8080"]
     # api はセッション/要件のリーダー兼ライターになった (ADR-0014 §15)。
     # 接続先は .env.local の FIRESTORE_EMULATOR_HOST で切り替わる。
@@ -87,9 +90,12 @@ services:
       # Vertex AI 経由のとき ADC を参照する（GOOGLE_GENAI_USE_VERTEXAI=true 時のみ実質有効）。
       GOOGLE_APPLICATION_CREDENTIALS: /gcp/adc.json
     volumes:
-      # ADC のパスを解決。複数アカウント運用で CLOUDSDK_CONFIG を別ディレクトリへ向けている場合
-      # （例: ~/.config/gcloud-personal）はそちらを優先、無ければ標準の ~/.config/gcloud を読む。
-      - ${CLOUDSDK_CONFIG:-${HOME}/.config/gcloud}/application_default_credentials.json:/gcp/adc.json:ro
+      # ADC を read-only でマウント。既定は /dev/null（必ず存在）にし、未ログイン時に Docker が
+      # host 側へ空ディレクトリを作ってしまう footgun を避ける（AI Studio 既定経路では ADC 不要）。
+      # Vertex AI 経路を使う場合のみ .env.local で SANBA_ADC_FILE に
+      # application_default_credentials.json のパスを指す（複数アカウントは CLOUDSDK_CONFIG 配下、
+      # 標準は ~/.config/gcloud/application_default_credentials.json）。
+      - ${SANBA_ADC_FILE:-/dev/null}:/gcp/adc.json:ro
     command: ["start"]
     depends_on:
       livekit:
