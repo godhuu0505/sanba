@@ -106,7 +106,7 @@ function categoryDot(kind: "contradiction" | "gap" | "ambiguous") {
   if (kind === "contradiction")
     return { color: "#D2564B", label: "言葉×画の矛盾", icon: "⚠", ariaLabel: "言葉と画の矛盾" };
   if (kind === "ambiguous")
-    return { color: "#7E8BA3", label: "不明瞭", icon: "?", ariaLabel: "不明瞭な論点" };
+    return { color: "#7E8BA3", label: "不明瞭", icon: "〜", ariaLabel: "不明瞭な論点" };
   return { color: "#E0A93B", label: "抜け", icon: "◇", ariaLabel: "抜け（未定義）" };
 }
 

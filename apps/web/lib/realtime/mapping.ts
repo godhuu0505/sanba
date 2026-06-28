@@ -38,7 +38,8 @@ const DETECTION_PRESENTATION: Record<DetectionKind, KindPresentation> = {
   ambiguous: {
     color: "#7E8BA3", // 鈍色（緋/黄土/橄欖/金 と判別できるくすんだ藍鼠 / #182・ADR-0022）
     label: "不明瞭",
-    icon: "?",
+    // 「〜」で曖昧さを表す。要件カテゴリ open_question の「?」と記号が衝突しないようにする。
+    icon: "〜",
     ariaLabel: "不明瞭な論点を検知",
   },
 };
