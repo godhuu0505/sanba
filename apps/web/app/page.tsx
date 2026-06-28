@@ -9,7 +9,7 @@
 // 未ログインなら理由提示＋/login への導線を出す（インラインのログインパネルは廃止）。
 
 import Link from "next/link";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   AppHeader,
@@ -19,6 +19,7 @@ import {
   Field,
   Screen,
   SessionHistoryList,
+  type SessionHistoryItem,
   Textarea,
 } from "@/components/sanba";
 import {
@@ -27,6 +28,7 @@ import {
   addSessionContext,
   classifyUpload,
   createSession,
+  fetchMySessions,
   joinSession,
   uploadContextFile,
   type JoinResponse,
@@ -50,6 +52,17 @@ const ROLES = [
 
 const RETENTION_DAYS = process.env.NEXT_PUBLIC_RETENTION_DAYS ?? "30";
 
+// ISO 8601 の作成時刻を履歴リスト表示用の日付（YYYY/MM/DD）へ整形する（#250）。
+// パースできない値は空文字にし、行は出すが日付欄は空にする（壊れた値で落とさない）。
+function formatSessionDate(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}/${m}/${day}`;
+}
+
 type Step = "home" | "prepare";
 
 export default function Home() {
@@ -70,7 +83,38 @@ export default function Home() {
   const [uploadedNames, setUploadedNames] = useState<string[]>([]);
   const [uploadFailedCount, setUploadFailedCount] = useState(0);
   const fileInput = useRef<HTMLInputElement>(null);
+  // ホーム「過去の要件を見る」履歴リスト（#215）の中身（#250）。取得できるまでは空 = 空状態。
+  const [history, setHistory] = useState<SessionHistoryItem[]>([]);
   const auth = useAuth();
+
+  // 本人のセッション履歴を取得して履歴リストへ供給する（#250）。ログイン済みのときだけ叩き、
+  // 失敗時は空状態を維持する（履歴は補助情報なので本流＝壁打ち開始は止めない）。idToken が
+  // 変わったら取り直す。アンマウント/再取得時の遅延解決は cancelled で握りつぶす。
+  useEffect(() => {
+    if (!auth.loggedIn) {
+      setHistory([]);
+      return;
+    }
+    let cancelled = false;
+    fetchMySessions(auth.credential)
+      .then((sessions) => {
+        if (cancelled) return;
+        setHistory(
+          sessions.map((s) => ({
+            id: s.id,
+            title: s.title,
+            date: formatSessionDate(s.created_at),
+          })),
+        );
+      })
+      .catch(() => {
+        // 取得失敗（ネットワーク/401 等）は空状態のまま据え置く（UX を止めない）。
+        if (!cancelled) setHistory([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [auth.loggedIn, auth.credential]);
 
   // 厳密な認証ゲート（全画面保護 / docs/design/figma-implementation-audit.md A節）。
   // 未ログインは /login?next= へ戻す。判定は authGate に集約（解決前・dev の扱いも含む）。
@@ -359,7 +403,8 @@ export default function Home() {
   // ── 01 ホーム ─────────────────────────────────────────────────────────
   // Figma 正本（40:2）に *実績(stat)カード* は無い（#140/#147）。ヒーロー＋一語 CTA に加え、
   // 正本 99:3「過去の要件を見る」履歴リスト（stat カードとは別物）を下に置く（#215）。
-  // 履歴データ取得 API は別途のため、現状は空状態の文言を出す（props で受け取り可能）。
+  // 中身は本人のセッション一覧 API（GET /api/sessions/mine / #250）から供給する。0 件や
+  // 未ログイン・取得失敗時は SessionHistoryList が空状態の文言を出す。
   return (
     <Screen className="px-4 py-3">
       <AppHeader brand right={<AccountMenu profile={auth.profile} />} />
@@ -376,7 +421,7 @@ export default function Home() {
             ＋ 壁打ちを始める
           </Button>
         </Card>
-        <SessionHistoryList items={[]} />
+        <SessionHistoryList items={history} />
       </main>
     </Screen>
   );

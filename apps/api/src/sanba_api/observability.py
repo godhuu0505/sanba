@@ -98,6 +98,23 @@ def record_material_event(
         pass
 
 
+# 本人セッション一覧 (GET /api/sessions/mine) のカウンタ (#250)。ホーム「過去の要件を見る」
+# (#215) に供給する一覧で「何件返したか」を計測する (契約 §5 / CLAUDE.md 原則3)。返した件数を
+# 加算するので、本人がどれだけの履歴を持つかの分布把握と、空 (0 件) の頻度確認に使える。
+_my_sessions_counter = metrics.get_meter("sanba_api.sessions").create_counter(
+    "sanba_my_sessions_listed_total",
+    description="本人セッション一覧で返したセッション件数 (#250)",
+)
+
+
+def record_my_sessions_listed(count: int) -> None:
+    """本人セッション一覧取得を計上する (返した件数を加算 / #250)。"""
+    try:
+        _my_sessions_counter.add(count)
+    except Exception:  # pragma: no cover - メトリクスは本処理を止めない
+        pass
+
+
 def setup_observability(app: FastAPI) -> None:
     """Configure OTel tracing + FastAPI instrumentation. Safe to call once."""
     global _initialised

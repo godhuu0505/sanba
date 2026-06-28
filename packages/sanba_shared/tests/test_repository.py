@@ -47,6 +47,33 @@ def test_create_and_list_sessions() -> None:
     assert repo.list_sessions() == [meta]
 
 
+def test_list_sessions_by_owner_filters_and_sorts() -> None:
+    from datetime import UTC, datetime
+
+    repo = _repo()
+
+    def _seed(sid: str, owner: str, created: datetime) -> None:
+        repo.create_session_doc(
+            SessionMeta(
+                id=sid,
+                title="t",
+                owner_sub=owner,
+                owner_email=f"{owner}@example.com",
+                roles=["pm"],
+                created_at=created,
+            )
+        )
+
+    _seed("a-old", "alice", datetime(2024, 1, 1, tzinfo=UTC))
+    _seed("a-new", "alice", datetime(2024, 12, 31, tzinfo=UTC))
+    _seed("b-1", "bob", datetime(2024, 6, 1, tzinfo=UTC))
+
+    mine = repo.list_sessions_by_owner("alice")
+    # owner_sub 一致のみ・created_at 降順 (新しいものを上に)。
+    assert [m.id for m in mine] == ["a-new", "a-old"]
+    assert repo.list_sessions_by_owner("carol") == []
+
+
 def test_update_requirement_only_touches_allowed_fields() -> None:
     repo = _repo()
     original = _seed_requirement(repo, "sess-1")

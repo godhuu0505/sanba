@@ -18,7 +18,7 @@ import os
 import time
 import uuid
 from collections import defaultdict, deque
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any
 
 import structlog
@@ -45,6 +45,7 @@ from .ingestion import ContextIndexer, chunk_text, extract_text_from_upload
 from .observability import (
     record_asset_upload,
     record_material_event,
+    record_my_sessions_listed,
     record_question_hydration,
     setup_observability,
 )
@@ -310,6 +311,45 @@ def create_session(
     )
     log.info("session_created", session=session_id, roles=req.roles, owner=user.sub)
     return CreateSessionResponse(session_id=session_id, invites=invites)
+
+
+class MySession(BaseModel):
+    """`GET /api/sessions/mine` の 1 行 (#250)。本人の履歴一覧 UI (#215) に供給する。
+
+    PII (owner_email/owner_sub) は載せない: 本人だけが見る一覧でも不要な PII は返さない
+    (最小権限 / CLAUDE.md セキュリティ)。一覧に要る最小項目 (標題・作成時刻・確定状態) だけ。
+    詳細ルートは別 issue のため id 以上の内訳は持たせない。
+    """
+
+    id: str
+    title: str
+    created_at: datetime
+    status: str
+    # 07 判定で確定済みか (#186)。一覧でバッジ等に使えるよう真偽で平す。
+    finalized: bool
+
+
+@app.get("/api/sessions/mine", response_model=list[MySession])
+def list_my_sessions(user: AuthUser = Depends(require_user)) -> list[MySession]:
+    """ログインユーザー本人 (owner_sub) のセッション一覧を新しい順で返す (#250)。
+
+    `require_user` (idToken をサーバ検証 / ADR-0012) で本人確認し、owner_sub が一致する
+    ものだけを返す。他人のセッションは一切返さない (認可は本人限定)。ホームの
+    「過去の要件を見る」履歴リスト (#215) のデータ源。
+    """
+    sessions = _repo.list_sessions_by_owner(user.sub)
+    record_my_sessions_listed(len(sessions))
+    log.info("list_my_sessions", owner=user.sub, count=len(sessions))
+    return [
+        MySession(
+            id=s.id,
+            title=s.title,
+            created_at=s.created_at,
+            status=s.status,
+            finalized=s.status == "finalized",
+        )
+        for s in sessions
+    ]
 
 
 @app.post("/api/sessions/{session_id}/context", response_model=ContextResponse)
