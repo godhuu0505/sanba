@@ -167,6 +167,17 @@ export type QuestionAskedEvent = Envelope<"question.asked"> & {
   options?: DetectionOption[];
 };
 
+/**
+ * 現在質問のクリアを全参加者へ伝播するライブイベント（契約 §2 / #212 / ADR-0020 §5-5）。
+ * 回答（タップ / 音声 / テキスト）で current question が tombstone 化されたときに publish される。
+ * `cleared_seq` は本イベントの **envelope `seq` そのもの**（二重採番しない）。web は seq ガードで
+ * 当該ピンを畳む（`question.asked` と対称に seq 境界は進めない）。
+ */
+export type QuestionClearedEvent = Envelope<"question.cleared"> & {
+  /** クリア対象の `question.asked` の `id`。current?.id と一致するときだけピンを畳む。 */
+  question_id: string;
+};
+
 export type SessionCompletedEvent = Envelope<"session.completed"> & {
   summary: {
     contradictions_resolved: number;
@@ -186,6 +197,7 @@ export type ServerEvent =
   | DetectionResolvedEvent
   | RequirementUpsertedEvent
   | QuestionAskedEvent
+  | QuestionClearedEvent
   | AnalysisProgressEvent
   | AnalysisVisualEvent
   | SessionCompletedEvent;

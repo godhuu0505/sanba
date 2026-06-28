@@ -28,6 +28,7 @@ def _assume_logged_in() -> Iterator[None]:
     # 各テストはインメモリ読み出しを使う（Firestore 無し環境）。
     _read_repo._mem_requirements.clear()
     _read_repo._mem_detections.clear()
+    _read_repo._mem_questions.clear()
     yield
     app.dependency_overrides.pop(require_user, None)
 
@@ -126,6 +127,58 @@ def test_requirements_returns_persisted_seq_boundary() -> None:
     _read_repo._seed_seq("sess-seq", 42)
     res = client.get("/api/sessions/sess-seq/requirements", headers=_auth(_token("sess-seq")))
     assert res.json()["seq"] == 42
+
+
+# ── GET /questions/current（#212 / ADR-0020）─────────────────────────────────
+def test_current_question_requires_session_token() -> None:
+    res = client.get("/api/sessions/sess-q/questions/current")
+    assert res.status_code == 401
+
+
+def test_current_question_rejects_token_for_other_session() -> None:
+    res = client.get("/api/sessions/sess-q/questions/current", headers=_auth(_token("sess-OTHER")))
+    assert res.status_code == 403
+
+
+def test_current_question_returns_active_question_with_asked_seq() -> None:
+    _read_repo._seed_question(
+        "sess-q",
+        {
+            "id": "q1",
+            "prompt": "並び順は何を既定にしますか",
+            "options": [{"label": "関連度順", "value": "関連度順"}],
+            "asked_seq": 5,
+            "cleared": False,
+        },
+    )
+    res = client.get("/api/sessions/sess-q/questions/current", headers=_auth(_token("sess-q")))
+    assert res.status_code == 200
+    body = res.json()
+    assert body["seq"] == 5  # asked_seq を順序情報として返す
+    assert body["question"]["id"] == "q1"
+    assert body["question"]["prompt"].startswith("並び順")
+    assert body["question"]["options"][0]["value"] == "関連度順"
+
+
+def test_current_question_returns_null_with_cleared_seq_for_tombstone() -> None:
+    # §5-4: 回答済み（tombstone）でも seq=cleared_seq を返す（遅延 null で新しい問いを消さない）。
+    _read_repo._seed_question(
+        "sess-q",
+        {"id": "q1", "cleared": True, "cleared_seq": 8},
+    )
+    res = client.get("/api/sessions/sess-q/questions/current", headers=_auth(_token("sess-q")))
+    assert res.status_code == 200
+    body = res.json()
+    assert body["question"] is None
+    assert body["seq"] == 8
+
+
+def test_current_question_returns_null_seq_zero_when_unset() -> None:
+    res = client.get("/api/sessions/sess-q/questions/current", headers=_auth(_token("sess-q")))
+    assert res.status_code == 200
+    body = res.json()
+    assert body["question"] is None
+    assert body["seq"] == 0
 
 
 # ── POST /finalize（#186）──────────────────────────────────────────────────

@@ -36,6 +36,7 @@ from .events import (
     RESOLUTION_USER_SELECTED,
     WEB_EVENTS_TOPIC,
     EventPublisher,
+    EventPublishError,
     LiveKitTransport,
     decode_user_answered,
     decode_user_selection,
@@ -77,6 +78,9 @@ class SANBAAgent(Agent):
         # question_id → 問い本文。回答を「何への回答か」分かる形で記録するため保持する
         # （Codex P2。ID は hash+連番で本文を復元できないため）。
         self._questions: dict[str, str] = {}
+        # 現在の未回答質問 id（#212 / ADR-0020 §5-6）。自由記述/音声回答には question_id が
+        # 無いため、「発話受信時点の current 質問」をこの値で束ねクリア対象を固定する。回答で None。
+        self._current_question_id: str | None = None
         # 既に publish 済みの検知 id（open_topic の重複 gap を抑止）。
         self._published_gaps: set[str] = set()
         # fire-and-forget の publish タスクを保持（GC による途中消滅を防ぐ）。
@@ -85,6 +89,11 @@ class SANBAAgent(Agent):
     @property
     def transcript(self) -> list[str]:
         return self._transcript
+
+    @property
+    def current_question_id(self) -> str | None:
+        """現在の未回答質問 id（#212 §5-6。発話受信時点で束ねるために読む）。"""
+        return self._current_question_id
 
     def _publish(self, coro) -> None:  # type: ignore[no-untyped-def]
         """同期コンテキストから publish をスケジュールする（seq は publisher 側で直列化）。"""
@@ -243,13 +252,71 @@ class SANBAAgent(Agent):
         # 回答記録時に問い本文を引けるよう保持（Codex P2）。
         self._questions[question_id] = prompt
         opts = [{"label": o, "value": o} for o in (options or [])]
+        # §5-6: 自由記述/音声回答（question_id なし）のクリア対象を束ねる現在質問 id。
+        self._current_question_id = question_id
         if self._publisher is not None:
             # question.asked はハイドレーション・スナップショット（GET /requirements,/detections）に
             # 含まれない一過性イベント。ここで last_seq を進めると、後続の再ハイドレーションで
             # 境界以下として正当な差分を取り逃すため、seq 境界は進めない（Codex P2）。
-            await self._publisher.question_asked(question_id, prompt, options=opts or None)
+            # ADR-0020 §5-1: 採番 → 保存（現在質問ポインタ）→ 送信。on_persist で asked_seq つきの
+            # 現在質問を Firestore に保存してから data-channel publish する（GET /questions/current
+            # でリロード/途中参加時に金枠ピンを復元できるよう、送信前に確定させる）。
+            def _persist_current(asked_seq: int) -> None:
+                self._repo.save_current_question(
+                    self._session_id,
+                    {"id": question_id, "prompt": prompt, "options": opts},
+                    asked_seq,
+                )
+
+            try:
+                await self._publisher.question_asked(
+                    question_id, prompt, options=opts or None, on_persist=_persist_current
+                )
+            except Exception as exc:  # noqa: BLE001
+                # §5-1: 保存失敗時は送らず seq も消費しない（_emit_guarded が保証）。会話は止めず
+                # 続行する。金枠ピンはこの問いでは復元できないが、音声の問いかけは成立している。
+                log.warning(
+                    "question_persist_failed",
+                    session=self._session_id,
+                    id=question_id,
+                    error=str(exc),
+                )
         log.info("question_asked", session=self._session_id, id=question_id, options=len(opts))
         return {"asked": question_id}
+
+    async def clear_current_question(self, question_id: str) -> None:
+        """回答を受けて現在質問をクリアし、``question.cleared`` を全参加者へ伝播する。
+
+        ADR-0020 §5-3 / §5-5 / §5-7 / §5-9: 現在質問 id == ``question_id`` のとき（Firestore CAS が
+        成功したとき）だけ tombstone 化 + publish する。タップ回答（``user.answered`` の id 一致）と
+        自由記述/音声回答（受信時点の current id を束ねたもの）の双方から呼ばれる。古い回答や再送が
+        遅れて届いても、id が一致しなければ新しい問いを消さない（CAS が守る）。
+        """
+        if self._publisher is None:
+            return
+
+        def _persist_tombstone(cleared_seq: int) -> bool:
+            # 順序は 予約 → tombstone commit → publish（§5-9）。id 不一致/既クリアなら False で
+            # publish しない（採番もしない）。
+            return self._repo.clear_current_question(self._session_id, question_id, cleared_seq)
+
+        cleared = False
+        try:
+            env = await self._publisher.question_cleared(question_id, on_persist=_persist_tombstone)
+            cleared = env is not None
+        except EventPublishError as exc:
+            # §5-9: tombstone は commit 済み。live 伝播の失敗はハイドレーション GET（再接続/欠番
+            # 検知）で確実に復元される。ここでは握りつぶさずログに残す（best-effort の live 反映）。
+            cleared = True
+            log.warning(
+                "question_cleared_publish_failed",
+                session=self._session_id,
+                id=question_id,
+                error=str(exc),
+            )
+        if cleared and self._current_question_id == question_id:
+            self._current_question_id = None
+        log.info("question_cleared", session=self._session_id, id=question_id, cleared=cleared)
 
     @function_tool
     async def save_requirement(
@@ -456,7 +523,12 @@ async def entrypoint(ctx: JobContext) -> None:
     def _on_user_text(ev) -> None:  # type: ignore[no-untyped-def]
         if getattr(ev, "is_final", False) and ev.transcript:
             speaker = "participant"
+            # §5-6: 受信時点の current 質問 id を束ねてから記録する。未回答の current がある間に
+            # 届いた音声発話は、その問いへの回答とみなして（options の有無に依らず）クリアする。
+            current_qid = agent.current_question_id
             agent.record_utterance(speaker, ev.transcript)
+            if current_qid is not None:
+                _schedule(agent.clear_current_question(current_qid))
 
     # web → agent の操作イベントを受信する（契約 §4.5）。
     #   - user.selection（#102）: 検知カードの選択肢タップ → 検知を解消。
@@ -475,10 +547,14 @@ async def entrypoint(ctx: JobContext) -> None:
         _bg_tasks.add(task)
         task.add_done_callback(_on_bg_done)
 
-    async def _respond_to_user_text(text: str) -> None:
+    async def _respond_to_user_text(text: str, current_qid: str | None) -> None:
         # テキスト入力を会話ターンとして扱う（#185）。発話を記録（transcript.final で会話履歴へ
         # 反映）し、それを踏まえて音声で応答する。従来のセッション文脈投入（捨て足場）を置換。
         agent.record_utterance("participant", text)
+        # §5-6: options の有無に依らず、未回答 current への次回答とみなしてクリアする
+        # （current_qid は受信時点で束ねた id。CAS が id 一致時のみクリアする）。
+        if current_qid is not None:
+            await agent.clear_current_question(current_qid)
         await session.generate_reply(
             instructions=(
                 f"参加者がテキストで次のように述べました：「{text}」。"
@@ -490,6 +566,9 @@ async def entrypoint(ctx: JobContext) -> None:
         # 通常質問（金枠）への回答（#181）。回答を「問い本文つき」で発話記録し（Codex P2）、
         # 何への回答か後続の analyze_requirements が分かるようにしてから要件を一歩進める。
         prompt = agent.record_answer(question_id, answer)
+        # §5-3: タップ回答は question_id 一致時に CAS でクリア（早期クリア経路）。これで
+        # 回答済みの問いが再ハイドレーション（GET /questions/current）で復活しない。
+        await agent.clear_current_question(question_id)
         topic = f"問い「{prompt}」" if prompt else "先ほどの問い"
         await session.generate_reply(
             instructions=(
@@ -510,7 +589,9 @@ async def entrypoint(ctx: JobContext) -> None:
             return
         text = decode_user_text(data, expected_session_id=session_id)
         if text is not None:
-            _schedule(_respond_to_user_text(text))
+            # §5-6: 受信時点（同期コールバック内）の current 質問 id を束ねて渡す。後続の非同期
+            # 処理が遅れる間に current が別の問いへ上書きされても、CAS が id 一致時のみクリアする。
+            _schedule(_respond_to_user_text(text, agent.current_question_id))
             return
         answered = decode_user_answered(data, expected_session_id=session_id)
         if answered is not None:

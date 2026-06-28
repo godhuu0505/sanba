@@ -42,7 +42,11 @@ from .auth import (
 from .auth_google import AuthUser, require_admin, require_user
 from .config import settings
 from .ingestion import ContextIndexer, chunk_text, extract_text_from_upload
-from .observability import record_asset_upload, setup_observability
+from .observability import (
+    record_asset_upload,
+    record_question_hydration,
+    setup_observability,
+)
 from .repository import ReadRepository
 from .storage import (
     AssetStore,
@@ -202,6 +206,13 @@ class RequirementsResponse(BaseModel):
 
 class DetectionsResponse(BaseModel):
     items: list[dict[str, Any]]
+
+
+class CurrentQuestionResponse(BaseModel):
+    # 現在の未回答質問（金枠 / 契約 §4 #212）。未提示・回答済みなら question=null。
+    # question=null でも seq（=cleared_seq）を返し、web は遅延 null が新しい問いを消すのを防ぐ。
+    question: dict[str, Any] | None = None
+    seq: int = 0
 
 
 class ContextFilesResponse(BaseModel):
@@ -571,6 +582,33 @@ def get_detections(
     items = _read_repo.list_open_detections(session_id)
     log.info("detections_hydrated", session=session_id, count=len(items), open=open)
     return DetectionsResponse(items=items)
+
+
+@app.get(
+    "/api/sessions/{session_id}/questions/current",
+    response_model=CurrentQuestionResponse,
+)
+def get_current_question(
+    session_id: str, access: SessionAccess = Depends(require_session_access)
+) -> CurrentQuestionResponse:
+    """現在の未回答質問（金枠ピン）のスナップショット（契約 §4 / #212 / ADR-0020）。
+
+    リロード/途中参加で未回答の問いピンを復元する。回答済み（tombstone）/未提示なら
+    `question=null` を返すが、その場合も `seq`（クリア時点の `cleared_seq`）を返すことで、
+    web は「遅延 null が新しい live 質問を消す」逆転を防げる（§5-4）。既存 3 GET と完全に同じ
+    認可（`require_session_access`）・形にする。
+    """
+    snap = _read_repo.get_current_question(session_id)
+    has_question = snap["question"] is not None
+    record_question_hydration(has_question)
+    log.info(
+        "question_hydrated",
+        session=session_id,
+        has_question=has_question,
+        seq=snap["seq"],
+        sub=access.sub,
+    )
+    return CurrentQuestionResponse(question=snap["question"], seq=snap["seq"])
 
 
 @app.get("/api/sessions/{session_id}/context/files", response_model=ContextFilesResponse)

@@ -158,6 +158,29 @@ export class RealtimeStore {
     this.invalidate();
   }
 
+  /**
+   * GET /questions/current の現在質問を取り込む（契約 §4 / #212 / ADR-0020 §5-2/§5-4/§5-11）。
+   *
+   * - `question`（非 null）も `null`（回答済み/未提示）も、`seq > lastQuestionSeq` のときだけ
+   *   適用する。これにより「古い current を読んだ遅延 GET が、先に適用済みの新しい live
+   *   `question.asked` を巻き戻す / 遅延 null が新しい問いを消す」逆転を防ぐ（§5-2 / §5-4）。
+   * - 適用したら `this.question`（値 or null）と `lastQuestionSeq` を更新する。
+   * - `lastQuestionSeq`（question 専用ガード）は常に進めてよいが、**global `maxSeq` は主スナップ
+   *   ショット GET（/requirements・必要なら /detections）が全て成功したときだけ**進める
+   *   （`advanceMaxSeq`）。主 GET 失敗時に question 由来 seq で `maxSeq` を進めると、切断中に
+   *   取り逃した requirement/detection 差分の gap を隠してしまう（§5-11）。
+   * - `maxSeq` の前進は「適用の有無に依らず」行う（誤 gap 防止 / §5-2 後段）。
+   * - `hydrationSeq`（live 破棄境界）は question が seq 境界を進めない方針に合わせて触らない（§3）。
+   */
+  hydrateQuestion(question: Question | null, seq: number, advanceMaxSeq: boolean): void {
+    if (seq > this.lastQuestionSeq) {
+      this.question = question;
+      this.lastQuestionSeq = seq;
+    }
+    if (advanceMaxSeq) this.maxSeq = Math.max(this.maxSeq, seq);
+    this.invalidate();
+  }
+
   /** GET /detections?open=1 の未解消検知を取り込む（契約 §4 P1）。 */
   hydrateDetections(items: Detection[], seq: number): void {
     const freshIds = new Set(items.map((d) => d.id));
@@ -336,6 +359,24 @@ export class RealtimeStore {
           prompt: event.prompt,
           options: event.options ?? [],
         };
+        return true;
+
+      case "question.cleared":
+        // 現在質問のクリア伝播（#212 / ADR-0020 §5-10）。`question.asked` と対称な seq ガード。
+        // 古いクリア（cleared_seq <= lastQuestionSeq）は新しい問いを畳まないよう破棄する
+        // （例: q2.ask(seq=7) 適用後に遅延 q1.cleared(seq=6) が来ても 6<=7 で棄却）。
+        if (event.seq <= this.lastQuestionSeq) return false;
+        // 受信した事実として lastQuestionSeq を前進する（畳む/畳まないに依らず）。これで、
+        // current=null のまま clear を受けた直後に古い GET が後着しても §5-2 の
+        // `seq > lastQuestionSeq` を満たせず、クリア済みの問いを復活させない（§5-10）。
+        this.lastQuestionSeq = event.seq;
+        // 当該の問いを指すクリアのときだけピンを畳む。別の問い対象の遅延クリアで現在の問いを
+        // 消さない。current=null（ask を取り逃した）でも lastQuestionSeq は進める（上で前進済み）。
+        if (this.question && this.question.id === event.question_id) {
+          this.question = null;
+        }
+        // true を返すと apply() が maxSeq を event.seq まで進める（受信済み live seq なので前進可。
+        // 畳まない場合でも誤 gap 検知を防ぐ / §5-10）。
         return true;
 
       case "analysis.progress": {

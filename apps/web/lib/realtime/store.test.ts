@@ -269,6 +269,109 @@ describe("RealtimeStore — question.asked（#181）", () => {
   });
 });
 
+function questionCleared(seq: number, questionId: string): ServerEvent {
+  return {
+    v: 1,
+    type: "question.cleared",
+    seq,
+    ts: "2026-06-24T00:00:00Z",
+    session_id: SESSION,
+    question_id: questionId,
+  } as ServerEvent;
+}
+
+describe("RealtimeStore — hydrateQuestion（#212 / ADR-0020）", () => {
+  it("seq > lastQuestionSeq のとき金枠ピンを復元する（§5-2）", () => {
+    const s = new RealtimeStore();
+    s.hydrateQuestion({ id: "q1", prompt: "並び順は？", options: [] }, 5, true);
+    expect(s.getSnapshot().question?.id).toBe("q1");
+    expect(s.getSnapshot().seq).toBe(5); // 主スナップ成功なら maxSeq 前進
+  });
+
+  it("復元直後の live N+1 / N+2 で誤 gap を出さない（§5-2/§5-4）", () => {
+    const s = new RealtimeStore();
+    s.hydrateRequirements(hydrationFixture.items, 5);
+    s.hydrateQuestion({ id: "q1", prompt: "p", options: [] }, 5, true); // asked_seq=5
+    s.apply(questionAsked(6, "q2"));
+    s.apply(questionAsked(7, "q3"));
+    expect(s.metrics.read().gaps).toBe(0);
+    expect(s.getSnapshot().question?.id).toBe("q3");
+  });
+
+  it("古い current を読んだ遅延 GET は新しい live 質問を巻き戻さない（§5-2）", () => {
+    const s = new RealtimeStore();
+    s.apply(questionAsked(7, "q2")); // 新しい live 質問が先着（lastQuestionSeq=7）
+    s.hydrateQuestion({ id: "q1", prompt: "old", options: [] }, 5, true); // 遅延 GET（古い）
+    expect(s.getSnapshot().question?.id).toBe("q2"); // 巻き戻らない
+  });
+
+  it("遅延 null（回答済み）は新しい live 質問を消さない（§5-4）", () => {
+    const s = new RealtimeStore();
+    s.apply(questionAsked(7, "q2")); // lastQuestionSeq=7
+    s.hydrateQuestion(null, 5, true); // 古い cleared_seq=5 の null
+    expect(s.getSnapshot().question?.id).toBe("q2");
+  });
+
+  it("新しい null（回答済み）は古い問いを畳む（§5-4）", () => {
+    const s = new RealtimeStore();
+    s.apply(questionAsked(3, "q1")); // lastQuestionSeq=3
+    s.hydrateQuestion(null, 6, true); // cleared_seq=6 > 3
+    expect(s.getSnapshot().question).toBeNull();
+  });
+
+  it("主スナップショット失敗時は question seq で maxSeq を進めない（§5-11）", () => {
+    const s = new RealtimeStore();
+    s.apply(reqEvent(2, "r1")); // maxSeq=2
+    s.hydrateQuestion({ id: "q1", prompt: "p", options: [] }, 9, false); // 主 GET 失敗
+    // lastQuestionSeq は進む（ピン復元）が、global maxSeq は据え置き（gap/retry を残す）。
+    expect(s.getSnapshot().question?.id).toBe("q1");
+    expect(s.getSnapshot().seq).toBe(2);
+  });
+
+  it("クリア適用後に古い GET が後着してもクリア済みを復活させない（§5-10）", () => {
+    const s = new RealtimeStore();
+    s.apply(questionCleared(6, "q1")); // current=null でも lastQuestionSeq=6 へ前進
+    s.hydrateQuestion({ id: "q1", prompt: "revive?", options: [] }, 5, true); // 古い GET
+    expect(s.getSnapshot().question).toBeNull(); // 5 <= 6 で適用されず復活しない
+  });
+});
+
+describe("RealtimeStore — question.cleared（#212 / ADR-0020 §5-10）", () => {
+  it("id 一致 & cleared_seq > lastQuestionSeq のとき金枠ピンを畳む", () => {
+    const s = new RealtimeStore();
+    s.apply(questionAsked(3, "q1"));
+    s.apply(questionCleared(4, "q1"));
+    expect(s.getSnapshot().question).toBeNull();
+  });
+
+  it("古い question.cleared は新しい問いを畳まない（§5-10）", () => {
+    const s = new RealtimeStore();
+    s.apply(questionAsked(7, "q2")); // lastQuestionSeq=7
+    s.apply(questionCleared(6, "q1")); // 6 <= 7 で棄却
+    expect(s.getSnapshot().question?.id).toBe("q2");
+  });
+
+  it("id 不一致のクリアは現在の問いを消さないが seq カーソルは前進（§5-10）", () => {
+    const s = new RealtimeStore();
+    s.apply(questionAsked(4, "q2")); // 現在の問いは q2
+    s.apply(questionCleared(5, "q1")); // 別 id 対象 → 畳まない
+    expect(s.getSnapshot().question?.id).toBe("q2");
+    // 受信した live seq として maxSeq を前進（次の seq=6 で誤 gap を出さない）。
+    expect(s.getSnapshot().seq).toBe(5);
+    s.apply(questionAsked(6, "q3"));
+    expect(s.metrics.read().gaps).toBe(0);
+  });
+
+  it("current=null のクリアでも seq を前進し、後着の古い GET で復活させない（§5-10）", () => {
+    const s = new RealtimeStore();
+    s.apply(questionCleared(6, "q1")); // ask を取り逃した（current=null）
+    expect(s.getSnapshot().seq).toBe(6); // maxSeq 前進
+    // 先に開始していた古い GET（q1@5）が後着 → lastQuestionSeq=6 で弾かれ復活しない。
+    s.hydrateQuestion({ id: "q1", prompt: "revive?", options: [] }, 5, true);
+    expect(s.getSnapshot().question).toBeNull();
+  });
+});
+
 describe("RealtimeStore — fixture replay", () => {
   it("replays the contract fixture to a coherent end state", () => {
     const s = new RealtimeStore();

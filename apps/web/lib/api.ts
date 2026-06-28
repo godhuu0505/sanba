@@ -1,4 +1,4 @@
-import type { Detection, Requirement } from "./realtime/types";
+import type { Detection, Question, Requirement } from "./realtime/types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
 
@@ -123,6 +123,14 @@ export interface DetectionsSnapshot {
   seq?: number;
 }
 
+/** GET /questions/current のスナップショット（#212 / ADR-0020）。 */
+export interface CurrentQuestionSnapshot {
+  /** 現在の未回答質問。回答済み/未提示なら null。 */
+  question: Question | null;
+  /** asked_seq（active）または cleared_seq（回答済み）。null でも順序情報として返る（§5-4）。 */
+  seq: number;
+}
+
 /** GET /context/files の 1 行（契約 §4 #184）。realtime の analysis 行と asset_id で突き合わせる。 */
 export interface ContextFileItem {
   id: string;
@@ -159,6 +167,18 @@ export async function fetchContextFiles(
     headers: authHeaders(sessionToken),
   });
   if (!res.ok) throw new Error(`fetch context files failed: ${res.status}`);
+  return res.json();
+}
+
+/** GET /api/sessions/{id}/questions/current（#212）。現在の未回答質問（金枠ピン）の復元。 */
+export async function fetchCurrentQuestion(
+  sessionId: string,
+  sessionToken: string | null,
+): Promise<CurrentQuestionSnapshot> {
+  const res = await fetch(`${API_URL}/api/sessions/${sessionId}/questions/current`, {
+    headers: authHeaders(sessionToken),
+  });
+  if (!res.ok) throw new Error(`fetch current question failed: ${res.status}`);
   return res.json();
 }
 

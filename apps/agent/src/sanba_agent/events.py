@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Protocol
@@ -31,6 +32,16 @@ log = structlog.get_logger(__name__)
 SCHEMA_VERSION = 1
 EVENTS_TOPIC = "sanba.events"
 WEB_EVENTS_TOPIC = "sanba.events.web"  # web → agent（#102 で受信）
+
+
+class EventPublishError(RuntimeError):
+    """commit 後に publish が失敗したことを呼び出し元へ伝える（ADR-0020 §5-9）。
+
+    現在質問のクリア（`question.cleared`）は tombstone を commit してから publish する。
+    commit 後の送信失敗を握りつぶすと、接続中の他参加者に clear が届かず古いピンが残るため、
+    critical な送信の失敗はこの例外で呼び出し元へ返し、補償（再送/ログ）できるようにする。
+    最終的な耐障害境界は tombstone + ハイドレーション GET（再接続/欠番検知で確実に復元）。
+    """
 
 
 class DataTransport(Protocol):
@@ -96,6 +107,7 @@ class EventPublisher:
         self.detections_resolved = 0
         self.contradictions_resolved = 0
         self.questions_published = 0
+        self.questions_cleared = 0
         self._tracer = _get_tracer()
 
     @property
@@ -113,31 +125,74 @@ class EventPublisher:
         # ロックで seq 採番〜送信を直列化し、単調増加と配信順序を保証する。
         async with self._lock:
             self._seq += 1
-            envelope = {
-                "v": SCHEMA_VERSION,
-                "type": type_,
-                "seq": self._seq,
-                "ts": self._clock().isoformat(),
-                "session_id": self._session_id,
-                **payload,
-            }
-            data = json.dumps(envelope, ensure_ascii=False).encode("utf-8")
-            span = (
-                self._tracer.start_as_current_span("sanba.events.publish")
-                if self._tracer
-                else contextlib.nullcontext()
-            )
-            with span as s:
-                if s is not None:
-                    s.set_attribute("sanba.event.type", type_)
-                    s.set_attribute("sanba.event.seq", self._seq)
-                try:
-                    await self._transport.send(data, topic=EVENTS_TOPIC, reliable=reliable)
-                except Exception as exc:  # pragma: no cover - network/optional
-                    # publish 失敗は会話を止めない（ライブ差分は次のイベントで前進）。
-                    log.warning("event_publish_failed", type=type_, seq=self._seq, error=str(exc))
-            log.info("event_published", type=type_, seq=self._seq, reliable=reliable)
+            envelope = self._build_envelope(type_, self._seq, payload)
+            await self._send_envelope(envelope, reliable=reliable)
             return envelope
+
+    async def _emit_guarded(
+        self,
+        type_: str,
+        payload: dict[str, Any],
+        *,
+        before_send: Callable[[int], bool],
+        critical_send: bool = False,
+    ) -> dict[str, Any] | None:
+        """「採番 → 永続化 → 送信」を保証して publish する（ADR-0020 §5-1 / §5-9）。
+
+        seq は **予約（peek）のみ**で、``before_send(seq)`` が成功するまで ``self._seq`` を確定
+        しない。``before_send`` が False を返したら（CAS 不一致 / 既クリア）採番も送信もせず
+        ``None`` を返す＝**欠番を作らない**。例外送出（保存失敗）時も採番を確定しないため、
+        保存できなかったイベントを表に出さない。``critical_send`` のときは commit 後の送信失敗を
+        握りつぶさず ``EventPublishError`` で返す（接続中の他参加者へ確実に補償するため）。
+        """
+        async with self._lock:
+            # §5-1: 次 seq を「予約」するだけ（self._seq はまだ進めない）。
+            seq = self._seq + 1
+            envelope = self._build_envelope(type_, seq, payload)
+            # 採番 → 保存（Firestore tombstone / current 保存）→ 送信。
+            if not before_send(seq):
+                return None
+            # 保存成功後に初めて採番を確定する（ここで seq を消費する）。
+            self._seq = seq
+            sent = await self._send_envelope(envelope, reliable=True)
+            if critical_send and not sent:
+                # §5-9: commit 後の publish 失敗を成功扱いしない（呼び出し元で補償）。
+                raise EventPublishError(f"publish failed after commit: {type_} seq={seq}")
+            return envelope
+
+    def _build_envelope(self, type_: str, seq: int, payload: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "v": SCHEMA_VERSION,
+            "type": type_,
+            "seq": seq,
+            "ts": self._clock().isoformat(),
+            "session_id": self._session_id,
+            **payload,
+        }
+
+    async def _send_envelope(self, envelope: dict[str, Any], *, reliable: bool) -> bool:
+        """エンベロープを送信し、成否を返す。送信例外は握りつぶす（呼び出し元が要否を判断）。"""
+        type_ = envelope["type"]
+        seq = envelope["seq"]
+        data = json.dumps(envelope, ensure_ascii=False).encode("utf-8")
+        span = (
+            self._tracer.start_as_current_span("sanba.events.publish")
+            if self._tracer
+            else contextlib.nullcontext()
+        )
+        sent = False
+        with span as s:
+            if s is not None:
+                s.set_attribute("sanba.event.type", type_)
+                s.set_attribute("sanba.event.seq", seq)
+            try:
+                await self._transport.send(data, topic=EVENTS_TOPIC, reliable=reliable)
+                sent = True
+            except Exception as exc:  # pragma: no cover - network/optional
+                # publish 失敗は会話を止めない（ライブ差分は次のイベントで前進）。
+                log.warning("event_publish_failed", type=type_, seq=seq, error=str(exc))
+        log.info("event_published", type=type_, seq=seq, reliable=reliable, sent=sent)
+        return sent
 
     # ── §3 種別ヘルパ ──────────────────────────────────────────────────
     async def status(self, phase: str, agents_active: int | None = None) -> dict[str, Any]:
@@ -238,16 +293,58 @@ class EventPublisher:
         prompt: str,
         *,
         options: list[dict[str, str]] | None = None,
-    ) -> dict[str, Any]:
+        on_persist: Callable[[int], None] | None = None,
+    ) -> dict[str, Any] | None:
         """通常質問（金枠 / #181）を web の問いピンへ出す（音声と併用）。
 
         ``options`` があればタップで user.answered が返る。無ければ自由記述（音声/テキスト）。
+        ``on_persist`` を渡すと、**送信前に**現在質問を永続化する（ADR-0020 §5-1）。``on_persist``
+        は予約した envelope seq を ``asked_seq`` として受け取り Firestore に保存する。保存に失敗
+        したら送信せず採番も確定しない（復元できないイベントを表に出さない / 欠番も作らない）。
+        質問は seq 境界（``set_session_seq``）を進めない一過性イベントである点は従来どおり（§3）。
         """
         payload: dict[str, Any] = {"id": question_id, "prompt": prompt}
         if options:
             payload["options"] = options
-        self.questions_published += 1
-        return await self._emit("question.asked", payload)
+        env: dict[str, Any] | None
+        if on_persist is None:
+            env = await self._emit("question.asked", payload)
+        else:
+
+            def _before_send(seq: int) -> bool:
+                on_persist(seq)  # 採番 → 保存（失敗時は例外で abort = 採番せず送らない）。
+                return True
+
+            env = await self._emit_guarded("question.asked", payload, before_send=_before_send)
+        if env is not None:
+            self.questions_published += 1
+        return env
+
+    async def question_cleared(
+        self,
+        question_id: str,
+        *,
+        on_persist: Callable[[int], bool],
+    ) -> dict[str, Any] | None:
+        """回答済み現在質問のクリアを全参加者へ伝播する（ADR-0020 §5-5 / §5-9）。
+
+        ``on_persist(cleared_seq)`` で Firestore の tombstone を CAS commit してから publish する
+        （順序は **予約 → commit → publish**）。``on_persist`` が False を返したら（現在質問 id が
+        ``question_id`` と一致しない / 既にクリア済み）publish しない＝採番もしない（§5-3 / §5-7）。
+        ``cleared_seq`` は本イベントの **envelope seq そのもの**（二重採番しない / §5-5）で、
+        tombstone・live・GET の seq に同一値を使う。commit 後の送信失敗は ``EventPublishError``
+        で返す（§5-9）。クリア対象を持たない問いの再送に強い（tombstone は冪等）。
+        """
+        payload: dict[str, Any] = {"question_id": question_id}
+        env = await self._emit_guarded(
+            "question.cleared",
+            payload,
+            before_send=on_persist,
+            critical_send=True,
+        )
+        if env is not None:
+            self.questions_cleared += 1
+        return env
 
     async def analysis_progress(self, asset_id: str, pct: int, stage: str) -> dict[str, Any]:
         return await self._emit(
