@@ -346,6 +346,31 @@ def test_export_keeps_finalized_requirement_even_if_later_rejected(
     assert "確定要件" in str(captured["body"])
 
 
+def test_export_falls_back_for_legacy_finalized_without_snapshot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # 後方互換: 本機能デプロイ前に finalized（snapshot 欠落・count>0）だったセッションは、
+    # 空 Issue ではなく確定要件を再計算して起票する（Codex P1）。
+    created = client.post("/api/sessions", json={"roles": ["pm"], "consent_acknowledged": True})
+    sid = created.json()["session_id"]
+    _read_repo._seed_requirement(
+        sid,
+        {"id": "c1", "statement": "旧確定要件", "category": "functional", "priority": "must"},
+    )
+    # 旧データを模す: finalized だが finalized_requirement_ids は空、count は確定時の値。
+    meta = _repo.get_session(sid)
+    assert meta is not None
+    _repo._mem_sessions[sid] = meta.model_copy(
+        update={"status": "finalized", "finalized_count": 1, "finalized_requirement_ids": []}
+    )
+    captured = _enable_github(monkeypatch)
+    res = client.post(f"/api/sessions/{sid}/export", headers=_auth(_token(sid)))
+    body = res.json()
+    assert body["exported"] is True
+    assert body["count"] == 1  # 空 Issue にせず確定要件を起票
+    assert "旧確定要件" in str(captured["body"])
+
+
 def test_finalize_then_export_is_idempotent(monkeypatch: pytest.MonkeyPatch) -> None:
     # 二重 finalize / finalize 後の複数回 export が同じ確定時集合を返す（冪等 / #213）。
     created = client.post("/api/sessions", json={"roles": ["pm"], "consent_acknowledged": True})

@@ -641,6 +641,10 @@ def export_requirements(
     finalize 時に凍結した要件 ID スナップショット（`finalized_requirement_ids`）の集合だけを
     起票する。確定後に遅延 agent が要件を追加したり管理画面で却下されても、確定時集合を再計算
     せず固定する（Codex P2 / discussion_r3481706919）。未 finalize ならスナップショットは空。
+
+    後方互換（Codex P1）: 本機能デプロイ前に finalized になった旧文書は ID スナップショットを
+    持たない（既定 []）。`status==finalized` かつ確定件数 > 0 で ID 集合だけ欠落しているケースは
+    旧挙動（確定要件の再計算）にフォールバックし、確定済みセッションを空 Issue 化しない。
     """
     if not _github_ready():
         return ExportResponse(exported=False, reason="github connector disabled")
@@ -649,7 +653,16 @@ def export_requirements(
         raise HTTPException(status_code=404, detail="session not found")
     # 確定時の要件 ID 集合だけを取得して起票する（再計算しない / #213）。
     snapshot_ids = session.finalized_requirement_ids
-    confirmed = _read_repo.get_requirements_by_ids(session_id, snapshot_ids)
+    # 旧データのみ再計算へフォールバック（snapshot 欠落の finalized セッション / Codex P1）。
+    # 新セッションは snapshot を正とし固定集合のまま（凍結保証を維持）。確定判定は
+    # _confirmed_requirements に一元化済みのものを再利用する（重複定義しない）。
+    legacy_finalized_without_snapshot = (
+        not snapshot_ids and session.status == "finalized" and (session.finalized_count or 0) > 0
+    )
+    if legacy_finalized_without_snapshot:
+        confirmed = _confirmed_requirements(session_id)
+    else:
+        confirmed = _read_repo.get_requirements_by_ids(session_id, snapshot_ids)
     title, body = github_export.requirements_to_issue_body(confirmed, session_id)
     url = github_export.create_issue(settings.github_token, settings.github_repo, title, body)
     if url is None:
@@ -659,6 +672,7 @@ def export_requirements(
         session=session_id,
         count=len(confirmed),
         id_count=len(snapshot_ids),
+        legacy_fallback=legacy_finalized_without_snapshot,
         url=url,
         sub=access.sub,
     )
