@@ -27,6 +27,43 @@ describe("StartIntro（03-0 開始前）", () => {
     expect(screen.getByText(/マイクを使用します/)).toBeTruthy();
   });
 
+  it("参考資料は未添付なら「会話中に追加できます」、添付ありは名前＋件数を出す（監査 B-2 #11）", () => {
+    const { rerender } = render(
+      <StartIntro goal="" roleLabel="顧客" onStartVoice={vi.fn()} onStartText={vi.fn()} onBack={vi.fn()} />,
+    );
+    expect(screen.getByText("会話中に追加できます")).toBeTruthy();
+
+    rerender(
+      <StartIntro
+        goal=""
+        roleLabel="顧客"
+        materialNames={["PRD.png", "demo.mp4"]}
+        onStartVoice={vi.fn()}
+        onStartText={vi.fn()}
+        onBack={vi.fn()}
+      />,
+    );
+    expect(screen.queryByText("会話中に追加できます")).toBeNull();
+    expect(screen.getByText(/PRD\.png ・ 他1件/)).toBeTruthy();
+    expect(screen.getByText(/（計2件）/)).toBeTruthy();
+  });
+
+  it("投入失敗があれば件数を注意書きで出す（Codex P2）", () => {
+    render(
+      <StartIntro
+        goal=""
+        roleLabel="顧客"
+        materialNames={["ok.png"]}
+        materialFailedCount={2}
+        onStartVoice={vi.fn()}
+        onStartText={vi.fn()}
+        onBack={vi.fn()}
+      />,
+    );
+    expect(screen.getByText(/ok\.png/)).toBeTruthy();
+    expect(screen.getByRole("alert").textContent).toContain("2件は投入できませんでした");
+  });
+
   it("音声開始・テキスト開始がそれぞれ配線される", () => {
     const onStartVoice = vi.fn();
     const onStartText = vi.fn();

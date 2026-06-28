@@ -37,10 +37,21 @@ const joinSession = vi.fn(async (..._a: unknown[]) => ({
   session_token: "st",
 }));
 const addSessionContext = vi.fn(async (..._a: unknown[]) => ({ indexed_chunks: 0 }));
+const uploadContextFile = vi.fn(async (..._a: unknown[]) => ({ indexed_chunks: 1 }));
 vi.mock("../lib/api", () => ({
   createSession: (...a: unknown[]) => createSession(...a),
   joinSession: (...a: unknown[]) => joinSession(...a),
   addSessionContext: (...a: unknown[]) => addSessionContext(...a),
+  uploadContextFile: (...a: unknown[]) => uploadContextFile(...a),
+  // 実装と同じ受理範囲・判定（PNG/JPG・MP4/MOV）。テストではロジックをそのまま使う。
+  ACCEPTED_IMAGE: ".png,.jpg,.jpeg,image/png,image/jpeg",
+  ACCEPTED_VIDEO: ".mp4,.mov,video/mp4,video/quicktime",
+  classifyUpload: (filename: string) => {
+    const name = filename.toLowerCase();
+    if ([".png", ".jpg", ".jpeg"].some((e) => name.endsWith(e))) return "image";
+    if ([".mp4", ".mov"].some((e) => name.endsWith(e))) return "video";
+    return null;
+  },
 }));
 
 // 接続後ブランチに入っても落ちないよう、LiveKit / SessionView は素通しにする。
@@ -64,6 +75,8 @@ describe("入口フロー（#140）", () => {
     createSession.mockClear();
     joinSession.mockClear();
     addSessionContext.mockClear();
+    uploadContextFile.mockClear();
+    uploadContextFile.mockImplementation(async () => ({ indexed_chunks: 1 }));
   });
   afterEach(() => cleanup());
 
@@ -138,6 +151,109 @@ describe("入口フロー（#140）", () => {
     expect(createSession.mock.calls[0][1]).toBe(true);
     // 開始後は 03 会話開始（開始前サマリ）へ。接続/許可はここから先（ConversationStart）。
     await waitFor(() => expect(screen.getByText("支度、相整いまして")).toBeTruthy());
+  });
+
+  // ── 02 参考資料（バイナリ添付）#222 ──────────────────────────────────────
+  function gotoPrepare() {
+    authState.loggedIn = true;
+    const view = render(<Home />);
+    fireEvent.click(screen.getByText("＋ 壁打ちを始める"));
+    return view;
+  }
+
+  function pickFiles(container: HTMLElement, files: File[]) {
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(input, { target: { files } });
+  }
+
+  it("「＋ ファイルを追加」で手段選択シートが開き、アップロード/Drive のみ（カメラ/画面共有は出さない）", () => {
+    gotoPrepare();
+    fireEvent.click(screen.getByRole("button", { name: "＋ ファイルを追加" }));
+    expect(screen.getByRole("dialog", { name: "資料の追加方法" })).toBeTruthy();
+    expect(screen.getByText("ファイルをアップロード")).toBeTruthy();
+    expect(screen.getByText("Google ドライブから選ぶ")).toBeTruthy();
+    // 準備画面は LiveKit ルーム外のためカメラ/画面共有の導線は出さない（#201 再利用条件）。
+    expect(screen.queryByText("カメラで撮影")).toBeNull();
+    expect(screen.queryByText("画面を共有")).toBeNull();
+  });
+
+  it("ファイルを添付するとチップ表示され、削除できる", () => {
+    const { container } = gotoPrepare();
+    const png = new File(["x"], "mock.png", { type: "image/png" });
+    pickFiles(container, [png]);
+    const list = screen.getByRole("list", { name: "添付した参考資料" });
+    expect(list.textContent).toContain("mock.png");
+    fireEvent.click(screen.getByRole("button", { name: "mock.png を取り外す" }));
+    expect(screen.queryByText("mock.png")).toBeNull();
+  });
+
+  it("非対応形式は弾いて理由を出し、ステージしない", () => {
+    const { container } = gotoPrepare();
+    const bad = new File(["x"], "secret.txt", { type: "text/plain" });
+    pickFiles(container, [bad]);
+    expect(screen.getByRole("alert").textContent).toContain("対応していない形式");
+    expect(screen.queryByRole("list", { name: "添付した参考資料" })).toBeNull();
+  });
+
+  it("開始時にステージ済みファイルが join 後に投入され、03-0 サマリに件数/名が反映される", async () => {
+    const { container } = gotoPrepare();
+    fireEvent.click(screen.getByRole("checkbox"));
+    pickFiles(container, [
+      new File(["x"], "PRD.png", { type: "image/png" }),
+      new File(["y"], "demo.mp4", { type: "video/mp4" }),
+    ]);
+    fireEvent.click(screen.getByRole("button", { name: "インタビューを始める" }));
+    await waitFor(() => expect(uploadContextFile).toHaveBeenCalledTimes(2));
+    // join 済みトークン（session_token）で投入する（契約 §4）。
+    expect(uploadContextFile.mock.calls[0][2]).toBe("st");
+    expect((uploadContextFile.mock.calls[0][1] as File).name).toBe("PRD.png");
+    // 03-0 開始前サマリの「参考資料」に名前＋件数が出る（固定文の置換 / 監査 B-2 #11）。
+    await waitFor(() => expect(screen.getByText("支度、相整いまして")).toBeTruthy());
+    expect(screen.getByText(/PRD\.png ・ 他1件/)).toBeTruthy();
+    expect(screen.getByText(/（計2件）/)).toBeTruthy();
+  });
+
+  it("投入失敗分は開始は止めず、サマリで添付済み扱いにせず失敗件数を出す（Codex P2）", async () => {
+    const { container } = gotoPrepare();
+    fireEvent.click(screen.getByRole("checkbox"));
+    uploadContextFile.mockRejectedValueOnce(new Error("upload failed: 500"));
+    pickFiles(container, [new File(["x"], "ng.png", { type: "image/png" })]);
+    fireEvent.click(screen.getByRole("button", { name: "インタビューを始める" }));
+    // 失敗しても開始前サマリ（03-0）へ進む。
+    await waitFor(() => expect(screen.getByText("支度、相整いまして")).toBeTruthy());
+    // 失敗分は「添付済み」に出さない（誤認防止）。0 件成功なので従来文言＋失敗注記。
+    expect(screen.queryByText(/ng\.png/)).toBeNull();
+    expect(screen.getByText("会話中に追加できます")).toBeTruthy();
+    expect(screen.getByText(/1件は投入できませんでした/)).toBeTruthy();
+  });
+
+  it("拡張子が無くても MIME が画像/動画なら受理する（API と整合 / Codex P2）", () => {
+    const { container } = gotoPrepare();
+    pickFiles(container, [new File(["x"], "clipboard-image", { type: "image/png" })]);
+    expect(
+      screen.getByRole("list", { name: "添付した参考資料" }).textContent,
+    ).toContain("clipboard-image");
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("開始処理中は添付の追加/削除を無効化する（Codex P2）", async () => {
+    authState.loggedIn = true;
+    let release: (v: Awaited<ReturnType<typeof createSession>>) => void = () => {};
+    createSession.mockImplementationOnce(() => new Promise((r) => { release = r; }));
+    const { container } = render(<Home />);
+    fireEvent.click(screen.getByText("＋ 壁打ちを始める"));
+    fireEvent.click(screen.getByRole("checkbox"));
+    pickFiles(container, [new File(["x"], "a.png", { type: "image/png" })]);
+    fireEvent.click(screen.getByRole("button", { name: "インタビューを始める" }));
+    expect(
+      (screen.getByRole("button", { name: "＋ ファイルを追加" }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+    expect(
+      (screen.getByRole("button", { name: "a.png を取り外す" }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+    await act(async () => {
+      release({ session_id: "s1", invites: { pm: "inv-pm" } });
+    });
   });
 
   it("開始処理中は二重送信できない", async () => {
