@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { contractEventFixture, hydrationFixture } from "./fixtures";
+import { selectMaterials } from "./selectors";
 import { RealtimeStore } from "./store";
 import type { Requirement, ServerEvent } from "./types";
 
@@ -84,6 +85,49 @@ describe("RealtimeStore — dedup", () => {
     expect(s.getSnapshot().detections).toHaveLength(1);
     expect(s.metrics.read().duplicates).toBe(1);
     expect(s.metrics.read().received).toBe(1);
+  });
+});
+
+function progress(seq: number, asset_id: string, pct: number, stage = "領域検出"): ServerEvent {
+  return { v: 1, type: "analysis.progress", seq, ts: "2026-06-24T00:00:00Z", session_id: SESSION, asset_id, pct, stage };
+}
+
+function visual(seq: number, asset_id: string, extracted: string[]): ServerEvent {
+  return { v: 1, type: "analysis.visual", seq, ts: "2026-06-24T00:00:00Z", session_id: SESSION, asset_id, extracted, conflicts: [] };
+}
+
+describe("RealtimeStore — analysis.visual = 完了 (#209 案A)", () => {
+  it("progress 40% の後に visual が来たら pct を 100 に固定し、抽出/状態を完了にする", () => {
+    const s = new RealtimeStore();
+    s.apply(progress(1, "a1", 40, "領域検出"));
+    s.apply(visual(2, "a1", ["要件X", "要件Y"]));
+
+    const a = s.getSnapshot().analysis[0];
+    expect(a.pct).toBe(100); // 直前の 40% を引きずらない
+    expect(a.extracted).toEqual(["要件X", "要件Y"]); // 抽出は保持
+
+    // AC: セレクタ越しに done + 抽出件数まで通ること。
+    expect(selectMaterials(s.getSnapshot())).toEqual([
+      { id: "a1", name: "a1", pct: 100, status: "done", extracted: 2 },
+    ]);
+  });
+
+  it("progress 単独（visual 未着）は pct を保ち analyzing のまま（visual だけが完了を立てる）", () => {
+    const s = new RealtimeStore();
+    s.apply(progress(1, "a1", 40));
+    const a = s.getSnapshot().analysis[0];
+    expect(a.pct).toBe(40);
+    expect(selectMaterials(s.getSnapshot())[0].status).toBe("analyzing");
+  });
+
+  it("visual の遅着再配信（古い seq）は seq ガードで弾く（単調性を壊さない）", () => {
+    const s = new RealtimeStore();
+    s.apply(progress(2, "a1", 40));
+    s.apply(visual(3, "a1", ["要件X"]));
+    s.apply(visual(1, "a1", [])); // 古い seq の遅着 → 無視
+    const a = s.getSnapshot().analysis[0];
+    expect(a.pct).toBe(100);
+    expect(a.extracted).toEqual(["要件X"]); // 上書きされない
   });
 });
 
