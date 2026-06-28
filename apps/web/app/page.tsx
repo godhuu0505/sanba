@@ -119,18 +119,38 @@ export default function Home() {
 
   // 02 準備フォーム（ゴール/役割/同意）を /login 往復で失わないよう復元・保存する（#179）。
   // ハイドレーション不一致を避けるためマウント後に復元し（読み出しが先）、以降の変更を保存する。
-  const prepHydrated = useRef(false);
+  // prepHydrated は *state*（ref ではない）。ref だと同じ初回 effect flush 内で persist が
+  // 復元前の既定値を書き戻し、authGate の /login リダイレクトで再描画前にアンマウントされると
+  // 入力が既定値で上書きされてしまう（Codex P2）。state にすることで「復元値が反映された
+  // render」以降にのみ初回 write が走る。
+  const [prepHydrated, setPrepHydrated] = useState(false);
   useEffect(() => {
     const saved = readPrep();
-    if (saved.role) setRole(saved.role);
+    // 復元する role は既知の選択肢に限定する。古い/壊れた値（例: "designer"）は既定 pm に戻す
+    // （未サポート role で createSession を呼ばない / チップ未選択の見た目を防ぐ。Codex P2）。
+    if (saved.role && ROLES.some((r) => r.value === saved.role)) setRole(saved.role);
     if (typeof saved.goal === "string") setGoal(saved.goal);
     if (typeof saved.consent === "boolean") setConsent(saved.consent);
-    prepHydrated.current = true;
+    setPrepHydrated(true);
   }, []);
   useEffect(() => {
-    if (!prepHydrated.current) return;
+    if (!prepHydrated) return;
     writePrep({ role, goal, consent });
-  }, [role, goal, consent]);
+  }, [prepHydrated, role, goal, consent]);
+
+  // ログアウト時（ログイン中→未ログインの遷移）は準備フォームを破棄する（#179 / Codex P2）。
+  // 固定キー sessionStorage を同一タブの別ユーザーへ引き継がせない（goal に PII が入り得る）。
+  // 開始成功時の clearPrep と合わせ、保存は「このユーザーの未開始セッション」に限定される。
+  const prevLoggedIn = useRef(auth.loggedIn);
+  useEffect(() => {
+    if (prevLoggedIn.current && !auth.loggedIn) {
+      clearPrep();
+      setRole("pm");
+      setGoal("");
+      setConsent(false);
+    }
+    prevLoggedIn.current = auth.loggedIn;
+  }, [auth.loggedIn]);
 
   // 厳密な認証ゲート（全画面保護 / docs/design/figma-implementation-audit.md A節）。
   // 未ログインは /login?next= へ戻す。判定は authGate に集約（解決前・dev の扱いも含む）。

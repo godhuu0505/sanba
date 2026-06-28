@@ -82,7 +82,10 @@ describe("入口フロー（#140）", () => {
     fetchMySessions.mockClear();
     fetchMySessions.mockImplementation(async () => []);
   });
-  afterEach(() => cleanup());
+  afterEach(() => {
+    cleanup();
+    window.sessionStorage.clear();
+  });
 
   it("real モードで未ログインなら /login?next=/ へリダイレクトしホームを描画しない", () => {
     authState.devMode = false;
@@ -172,6 +175,21 @@ describe("入口フロー（#140）", () => {
     expect(screen.getByRole("radio", { name: "エンジニア" }).getAttribute("aria-checked")).toBe(
       "false",
     );
+  });
+
+  it("保存済み準備フォーム（goal/consent）を復元し、未知の role は既定 pm に戻す (#179 / Codex P2)", () => {
+    // 古い/壊れた保存値（role:"designer"）＋ goal/consent を seed。
+    window.sessionStorage.setItem(
+      "sanba.prep.v1",
+      JSON.stringify({ role: "designer", goal: "復元ゴール", consent: true }),
+    );
+    render(<Home />);
+    fireEvent.click(screen.getByText("＋ 壁打ちを始める"));
+    // goal/consent は復元される。
+    expect(screen.getByDisplayValue("復元ゴール")).toBeTruthy();
+    expect((screen.getByRole("checkbox") as HTMLInputElement).checked).toBe(true);
+    // 未知 role は適用せず既定 pm（チップ未選択や未サポート role の createSession を防ぐ）。
+    expect(screen.getByRole("radio", { name: /企画/ }).getAttribute("aria-checked")).toBe("true");
   });
 
   it("未ログインでは開始が無効でログイン導線を示す", () => {
