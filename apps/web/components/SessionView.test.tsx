@@ -37,11 +37,19 @@ vi.mock("@/lib/api", () => ({
   finalizeSession: vi.fn(),
 }));
 
-// ConversationSessionView は extraMaterials を JSON で書き出すだけのスパイに置き換える。
+// ConversationSessionView は pending/中断系の props を捕捉するだけのスパイに置き換える。
 let lastMaterials: MaterialItem[] = [];
+let lastCancelledIds: ReadonlySet<string> = new Set();
+let onCancelMaterial: (id: string) => void = () => {};
 vi.mock("./ConversationSessionView", () => ({
-  ConversationSessionView: ({ extraMaterials }: { extraMaterials: MaterialItem[] }) => {
-    lastMaterials = extraMaterials;
+  ConversationSessionView: (props: {
+    extraMaterials: MaterialItem[];
+    cancelledIds?: ReadonlySet<string>;
+    onCancelMaterial?: (id: string) => void;
+  }) => {
+    lastMaterials = props.extraMaterials;
+    lastCancelledIds = props.cancelledIds ?? new Set();
+    onCancelMaterial = props.onCancelMaterial ?? (() => {});
     return null;
   },
 }));
@@ -52,6 +60,8 @@ afterEach(() => {
   cleanup();
   uploadContextFile.mockReset();
   lastMaterials = [];
+  lastCancelledIds = new Set();
+  onCancelMaterial = () => {};
 });
 
 async function uploadFile(filename: string): Promise<MaterialItem> {
@@ -108,5 +118,49 @@ describe("SessionView handleFile pending 行", () => {
     expect(lastMaterials.at(-1)).toMatchObject({ status: "uploading", pct: 0 });
     resolveUpload({ indexed_chunks: 1, asset_id: "img-3", analysis_pending: false });
     await waitFor(() => expect(lastMaterials.at(-1)?.status).toBe("done"));
+  });
+
+  // ── 中断（#219）─────────────────────────────────────────────────────
+  it("アップロード中の中断で fetch が中止され（abort）、行は cancelled・id は破棄ガードへ", async () => {
+    let captured: AbortSignal | undefined;
+    // 中止されるまで解決しない fetch。abort で AbortError を投げる本物の挙動を模す。
+    uploadContextFile.mockImplementation(
+      (_s: string, _f: File, _t: string | null, signal?: AbortSignal) => {
+        captured = signal;
+        return new Promise((_resolve, reject) => {
+          signal?.addEventListener("abort", () =>
+            reject(new DOMException("Aborted", "AbortError")),
+          );
+        });
+      },
+    );
+    const { container } = render(<SessionView sessionId="s1" sessionToken="t1" />);
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [new File(["x"], "a.png")] } });
+    const tempId = lastMaterials.at(-1)?.id as string;
+    expect(lastMaterials.at(-1)).toMatchObject({ id: tempId, status: "uploading" });
+
+    // 中断を確定する。
+    onCancelMaterial(tempId);
+
+    // 送信中の fetch が中止される。
+    await waitFor(() => expect(captured?.aborted).toBe(true));
+    // 行は cancelled（failed に上書きされない）／破棄 id はガードへ積まれる。
+    await waitFor(() => expect(lastMaterials.find((m) => m.id === tempId)?.status).toBe("cancelled"));
+    expect(lastCancelledIds.has(tempId)).toBe(true);
+  });
+
+  it("解析中（動画準備中）の中断は asset_id を破棄ガードへ積む（遅延 analysis.* の復活防止）", async () => {
+    uploadContextFile.mockResolvedValue({
+      indexed_chunks: 0,
+      asset_id: "vid-9",
+      asset_kind: "video",
+      analysis_pending: true,
+    });
+    const row = await uploadFile("clip.mp4");
+    expect(row).toMatchObject({ id: "vid-9", status: "analyzing" });
+    onCancelMaterial("vid-9");
+    await waitFor(() => expect(lastCancelledIds.has("vid-9")).toBe(true));
+    expect(lastMaterials.find((m) => m.id === "vid-9")?.status).toBe("cancelled");
   });
 });

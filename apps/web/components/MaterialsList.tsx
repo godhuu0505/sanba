@@ -5,7 +5,11 @@
 // 解析はバックグラウンドで進む（会話を止めない）ため、各行に状態（アップロード/解析中/完了/失敗）を出す。
 
 // 素材ビューモデルは共有セレクタ層（selectMaterials）に寄せ、ここでは再エクスポートのみ。
+import { useState } from "react";
+
 import type { MaterialItem, MaterialStatus } from "@/lib/realtime/selectors";
+
+import { MaterialCancelDialog } from "./MaterialCancelDialog";
 
 export type { MaterialItem, MaterialStatus } from "@/lib/realtime/selectors";
 
@@ -15,14 +19,22 @@ export interface MaterialsListProps {
   onAdd: () => void;
   /** 失敗行の再試行。 */
   onRetry?: (id: string) => void;
+  /**
+   * 解析/アップロード中の素材を中断する（#219）。確定すると当該素材を破棄する。
+   * 未指定なら「✕ 中断」導線を出さない（破棄できない文脈で偽ボタンを作らない）。
+   */
+  onCancel?: (id: string) => void;
 }
 
-const STATUS_LABEL: Record<Exclude<MaterialStatus, "done" | "failed">, string> = {
+const STATUS_LABEL: Record<Exclude<MaterialStatus, "done" | "failed" | "cancelled">, string> = {
   uploading: "アップロード中",
   analyzing: "解析中",
 };
 
-export function MaterialsList({ items, onAdd, onRetry }: MaterialsListProps) {
+export function MaterialsList({ items, onAdd, onRetry, onCancel }: MaterialsListProps) {
+  // 中断確認ダイアログの対象素材（null=閉）。確定で onCancel(id) を呼ぶ（#219 / Figma 222:2）。
+  const [cancelTarget, setCancelTarget] = useState<MaterialItem | null>(null);
+
   return (
     <div className="flex flex-col gap-[10px] px-4 py-3">
       <button
@@ -66,6 +78,17 @@ export function MaterialsList({ items, onAdd, onRetry }: MaterialsListProps) {
                     <div className="h-full sanba-gold-gradient" style={{ width: `${it.pct}%` }} />
                   </div>
                   <span className="text-[11px] font-bold text-[var(--sanba-gold-text)]">{it.pct}%</span>
+                  {/* ✕ 中断（#219 / Figma 136:14・135:80）。押下で破棄確認ダイアログを開く。 */}
+                  {onCancel && (
+                    <button
+                      type="button"
+                      aria-label={`${it.name} の解析を中断`}
+                      onClick={() => setCancelTarget(it)}
+                      className="rounded-full border border-[var(--sanba-frame)] px-[9px] py-[3px] text-[11px] font-bold text-[var(--sanba-muted)]"
+                    >
+                      ✕ 中断
+                    </button>
+                  )}
                 </div>
               )}
 
@@ -86,6 +109,18 @@ export function MaterialsList({ items, onAdd, onRetry }: MaterialsListProps) {
             </div>
           );
         })
+      )}
+
+      {/* 中断確認（#219）。続ける=閉じる、中断する=確定で当該素材を破棄する（onCancel）。 */}
+      {onCancel && cancelTarget && (
+        <MaterialCancelDialog
+          materialName={cancelTarget.name}
+          onContinue={() => setCancelTarget(null)}
+          onConfirm={() => {
+            onCancel(cancelTarget.id);
+            setCancelTarget(null);
+          }}
+        />
       )}
     </div>
   );

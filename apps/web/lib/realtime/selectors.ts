@@ -85,8 +85,15 @@ export interface MiniStatus {
 // ── 参考資料（05）─────────────────────────────────────────────────────
 // 仕様: docs/design/conversation-experience.md §3,§6 / screens/05-materials.md。
 
-/** 素材行の状態（MaterialsList と共有）。 */
-export type MaterialStatus = "uploading" | "analyzing" | "done" | "failed";
+/**
+ * 素材行の状態（MaterialsList と共有）。
+ * cancelled（破棄）は #219 の中断確定で付く終端状態。failed と同じく pending の終端だが、
+ * 表示・件数からは除く（mergeMaterials がフィルタする）。
+ */
+export type MaterialStatus = "uploading" | "analyzing" | "done" | "failed" | "cancelled";
+
+/** 既定の空集合（mergeMaterials の cancelledIds 既定値・毎回生成を避ける）。 */
+const EMPTY_IDS: ReadonlySet<string> = new Set();
 
 /** 参考資料タブが描く素材ビューモデル（MaterialsList の props 要素）。 */
 export interface MaterialItem {
@@ -128,11 +135,15 @@ export function selectMaterials(s: { analysis: readonly AnalysisState[] }): Mate
  * ただし表示名は asset_id ではなく実ファイル名を優先する: hydrated/local が持つ
  * 「id と異なる name」を最優先で採用し、realtime 行（name=asset_id）に上書きされないようにする。
  * 出力順は最初に現れた順（hydrated → local → realtime）。
+ *
+ * cancelledIds（#219 中断で破棄した asset_id）と status==="cancelled" の行は表示・件数から除く。
+ * これにより破棄後に遅延 analysis.* が届いても id を無視して行を復活させない（ゾンビ行防止）。
  */
 export function mergeMaterials(
   realtime: readonly MaterialItem[],
   local: readonly MaterialItem[] = [],
   hydrated: readonly MaterialItem[] = [],
+  cancelledIds: ReadonlySet<string> = EMPTY_IDS,
 ): MaterialItem[] {
   const ordered = [...hydrated, ...local, ...realtime];
   const byId = new Map<string, MaterialItem>();
@@ -143,10 +154,14 @@ export function mergeMaterials(
     // status/pct/extracted は後勝ち = realtime が最優先。
     byId.set(m.id, { ...byId.get(m.id), ...m });
   }
-  return [...byId.values()].map((m) => {
-    const name = realName.get(m.id);
-    return name ? { ...m, name } : m;
-  });
+  return [...byId.values()]
+    // 中断（破棄）した素材は表示・件数から除く。遅延 analysis.* が来ても cancelledIds で
+    // id を無視し、行を復活させない（#219）。
+    .filter((m) => m.status !== "cancelled" && !cancelledIds.has(m.id))
+    .map((m) => {
+      const name = realName.get(m.id);
+      return name ? { ...m, name } : m;
+    });
 }
 
 /** 会話シェル上部のミニ状況を導出する。 */

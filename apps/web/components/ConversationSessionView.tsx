@@ -74,6 +74,16 @@ export interface ConversationSessionViewProps {
   hydratedMaterials?: MaterialItem[];
   /** 失敗素材の再試行（親が再アップロードへ）。 */
   onRetryMaterial?: (id: string) => void;
+  /**
+   * 解析/アップロード中の素材を中断して破棄する（#219）。親（SessionView）が送信中の fetch を
+   * 中止し、破棄 id を cancelledIds に積んで遅延 analysis.* の復活を防ぐ。
+   */
+  onCancelMaterial?: (id: string) => void;
+  /**
+   * 中断で破棄した素材の asset_id 集合（#219）。mergeMaterials で表示・件数から除き、
+   * 遅延 analysis.* が来ても行を復活させないためのガード。
+   */
+  cancelledIds?: ReadonlySet<string>;
   /** 会話フェーズを離れる（終了→判定）瞬間。親はここでマイク送信を止める。 */
   onLeaveConversation?: () => void;
   /** 「新しい問答を始める」。 */
@@ -101,6 +111,8 @@ export function ConversationSessionView({
   extraMaterials,
   hydratedMaterials,
   onRetryMaterial,
+  onCancelMaterial,
+  cancelledIds,
   onLeaveConversation,
   onRestart,
   metrics,
@@ -128,7 +140,14 @@ export function ConversationSessionView({
   // 復元（#184）＋投入直後のローカル行（uploading/failed）＋ realtime 解析行を asset_id で統合。
   // 状態は realtime 最優先、表示名は実ファイル名（hydrated/local）を asset_id より優先する。
   const realtimeMaterials = selectMaterials(state);
-  const materials = mergeMaterials(realtimeMaterials, extraMaterials ?? [], hydratedMaterials ?? []);
+  // 中断で破棄した素材（cancelledIds / status==="cancelled"）は mergeMaterials が表示・件数から
+  // 除く。遅延 analysis.* が来ても id を無視して行を復活させない（#219）。
+  const materials = mergeMaterials(
+    realtimeMaterials,
+    extraMaterials ?? [],
+    hydratedMaterials ?? [],
+    cancelledIds,
+  );
 
   // 統合後の素材をミニ状況の件数・解析中フラグに反映する（ヘッダーの「📎資料 N」と一致させる）。
   const mini = {
@@ -297,7 +316,14 @@ export function ConversationSessionView({
         }
         tabs={{
           history: <ChatHistory transcript={state.transcript} />,
-          files: <MaterialsList items={materials} onAdd={onAddMaterial} onRetry={onRetryMaterial} />,
+          files: (
+            <MaterialsList
+              items={materials}
+              onAdd={onAddMaterial}
+              onRetry={onRetryMaterial}
+              onCancel={onCancelMaterial}
+            />
+          ),
           scroll: (
             <RequirementsTab
               requirements={state.requirements}

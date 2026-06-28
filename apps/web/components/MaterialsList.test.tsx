@@ -60,4 +60,106 @@ describe("MaterialsList（参考資料タブ・解析進捗つき）", () => {
     fireEvent.click(screen.getByRole("button", { name: /素材を追加/ }));
     expect(onAdd).toHaveBeenCalledTimes(1);
   });
+
+  // ── 中断（#219 / Figma 222:2・136:14）─────────────────────────────────
+  describe("中断（✕ 中断）", () => {
+    it("解析中/アップロード中は onCancel 指定時に『✕ 中断』を出す", () => {
+      render(
+        <MaterialsList
+          items={[
+            item({ id: "a1", name: "mock.png", pct: 40, status: "analyzing" }),
+            item({ id: "a2", name: "up.png", pct: 0, status: "uploading" }),
+          ]}
+          onAdd={vi.fn()}
+          onCancel={vi.fn()}
+        />,
+      );
+      expect(screen.getByRole("button", { name: "mock.png の解析を中断" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "up.png の解析を中断" })).toBeTruthy();
+    });
+
+    it("onCancel 未指定なら中断ボタンを出さない", () => {
+      render(
+        <MaterialsList
+          items={[item({ id: "a1", name: "mock.png", pct: 40, status: "analyzing" })]}
+          onAdd={vi.fn()}
+        />,
+      );
+      expect(screen.queryByRole("button", { name: /中断/ })).toBeNull();
+    });
+
+    it("完了/失敗の行には中断ボタンを出さない（解析/アップロード中のみ）", () => {
+      render(
+        <MaterialsList
+          items={[
+            item({ id: "d1", name: "done.png", status: "done" }),
+            item({ id: "f1", name: "fail.png", status: "failed" }),
+          ]}
+          onAdd={vi.fn()}
+          onCancel={vi.fn()}
+        />,
+      );
+      expect(screen.queryByRole("button", { name: /中断/ })).toBeNull();
+    });
+
+    it("中断押下で確認ダイアログ（破棄の警告つき）を出す", () => {
+      render(
+        <MaterialsList
+          items={[item({ id: "a1", name: "mock.png", pct: 40, status: "analyzing" })]}
+          onAdd={vi.fn()}
+          onCancel={vi.fn()}
+        />,
+      );
+      fireEvent.click(screen.getByRole("button", { name: "mock.png の解析を中断" }));
+      const dialog = screen.getByRole("dialog", { name: "中断の確認" });
+      expect(dialog).toBeTruthy();
+      // 破棄の警告と対象名は確認文（ダイアログ本文）に出す。
+      expect(screen.getByText(/「mock\.png」の解析を中断します。途中までの結果は破棄されます/)).toBeTruthy();
+    });
+
+    it("ダイアログで『中断する』を押すと onCancel(id) を呼んで閉じる", () => {
+      const onCancel = vi.fn();
+      render(
+        <MaterialsList
+          items={[item({ id: "a1", name: "mock.png", pct: 40, status: "analyzing" })]}
+          onAdd={vi.fn()}
+          onCancel={onCancel}
+        />,
+      );
+      fireEvent.click(screen.getByRole("button", { name: "mock.png の解析を中断" }));
+      fireEvent.click(screen.getByRole("button", { name: "中断する" }));
+      expect(onCancel).toHaveBeenCalledWith("a1");
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+
+    it("ダイアログで『続ける』を押すと破棄せず閉じる（継続）", () => {
+      const onCancel = vi.fn();
+      render(
+        <MaterialsList
+          items={[item({ id: "a1", name: "mock.png", pct: 40, status: "analyzing" })]}
+          onAdd={vi.fn()}
+          onCancel={onCancel}
+        />,
+      );
+      fireEvent.click(screen.getByRole("button", { name: "mock.png の解析を中断" }));
+      fireEvent.click(screen.getByRole("button", { name: "続ける" }));
+      expect(onCancel).not.toHaveBeenCalled();
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+
+    it("ESC でダイアログを閉じる（継続・a11y）", () => {
+      const onCancel = vi.fn();
+      render(
+        <MaterialsList
+          items={[item({ id: "a1", name: "mock.png", pct: 40, status: "analyzing" })]}
+          onAdd={vi.fn()}
+          onCancel={onCancel}
+        />,
+      );
+      fireEvent.click(screen.getByRole("button", { name: "mock.png の解析を中断" }));
+      fireEvent.keyDown(window, { key: "Escape" });
+      expect(onCancel).not.toHaveBeenCalled();
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+  });
 });
