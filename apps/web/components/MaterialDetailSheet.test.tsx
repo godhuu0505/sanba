@@ -12,6 +12,7 @@ const detail = (over: Partial<MaterialDetail> = {}): MaterialDetail => ({
   status: "done",
   extracted: ["3カラム一覧", "フィルタUI"],
   conflicts: [{ summary: "画面に検索バーが無いが『検索したい』と発言", refs: ["u1"] }],
+  analysisReady: true,
   ...over,
 });
 
@@ -51,21 +52,35 @@ describe("MaterialDetailSheet（05-1 資料詳細）", () => {
     expect(screen.getByText("図にだけ存在する導線")).toBeTruthy();
   });
 
-  it("矛盾が無いときは見つからない旨を出す", () => {
+  it("解析完了で矛盾が無いときだけ『見つかっていません』と断定する", () => {
     render(<MaterialDetailSheet detail={detail({ conflicts: [] })} onClose={vi.fn()} />);
     expect(screen.getByText(/矛盾は見つかっていません/)).toBeTruthy();
   });
 
-  it("解析中は進捗バー（aria-valuenow）と % を出す", () => {
+  it("詳細未取得（再接続後の done 行など）は空を断定せず未取得を示す（Codex P2 #1）", () => {
+    // analysisReady=false: extracted/conflicts が空でも「無し」と断定しない（一覧の件数と矛盾させない）。
     render(
       <MaterialDetailSheet
-        detail={detail({ status: "analyzing", pct: 62, extracted: [] })}
+        detail={detail({ extracted: [], conflicts: [], analysisReady: false })}
+        onClose={vi.fn()}
+      />,
+    );
+    expect(screen.queryByText(/見つかっていません/)).toBeNull();
+    expect(screen.queryByText(/抽出された要件はありません/)).toBeNull();
+    expect(screen.getAllByText(/取得できていません/).length).toBeGreaterThan(0);
+  });
+
+  it("解析中は進捗バー（aria-valuenow）と % を出し、矛盾なしと断定しない（Codex P2 #3）", () => {
+    render(
+      <MaterialDetailSheet
+        detail={detail({ status: "analyzing", pct: 62, extracted: [], conflicts: [], analysisReady: false })}
         onClose={vi.fn()}
       />,
     );
     const bar = screen.getByRole("progressbar", { name: "解析の進捗" });
     expect(bar.getAttribute("aria-valuenow")).toBe("62");
     expect(screen.getByText("62%")).toBeTruthy();
+    expect(screen.queryByText(/見つかっていません/)).toBeNull();
   });
 
   it("✕ / 暗幕 / ESC で閉じる", () => {

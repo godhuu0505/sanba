@@ -140,6 +140,13 @@ export interface MaterialDetail {
    * 「視覚解析のみの矛盾（detection 無し）」もここに含まれる（#202 AC）。
    */
   conflicts: AnalysisVisualConflict[];
+  /**
+   * 解析結果（analysis.visual）を実際に保持しているか。
+   * true = extracted/conflicts は確定値（空なら「無し」と断定してよい）。
+   * false = 解析途中、または再接続後で詳細が未取得（#184 未対応）。この場合 extracted/conflicts の
+   * 空を「解析結果なし」と断定せず、未取得として扱う（一覧の件数と矛盾させない）。
+   */
+  analysisReady: boolean;
 }
 
 /**
@@ -154,13 +161,16 @@ export function selectMaterialDetail(
 ): MaterialDetail | null {
   const a = s.analysis.find((x) => x.asset_id === assetId);
   if (!a) return null;
+  const done = a.pct >= 100;
   return {
     id: a.asset_id,
     name: a.asset_id,
     pct: a.pct,
-    status: a.pct >= 100 ? "done" : "analyzing",
+    status: done ? "done" : "analyzing",
     extracted: a.extracted,
     conflicts: a.conflicts,
+    // 完了（analysis.visual で pct=100 に固定）した素材のみ extracted/conflicts を確定値とみなす。
+    analysisReady: done,
   };
 }
 

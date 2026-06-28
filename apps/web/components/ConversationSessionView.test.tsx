@@ -101,8 +101,20 @@ describe("ConversationSessionView（会話シェル結線）", () => {
     expect(screen.getByText("検索は関連度順で。")).toBeTruthy();
   });
 
-  it("参考資料タブに selectMaterials 由来の素材行を出す（詳細導線つき）", () => {
+  it("参考資料タブに selectMaterials 由来の素材行を出す（解析中は詳細導線なし）", () => {
     renderView();
+    fireEvent.click(screen.getByRole("tab", { name: "参考資料" }));
+    // baseState の a1 は解析中（pct40）。中身が未確定なので詳細導線は出さない。
+    expect(screen.getByLabelText("資料 a1")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /詳細を開く/ })).toBeNull();
+  });
+
+  it("done 素材の行は詳細導線（ボタン）になる", () => {
+    renderView({
+      state: baseState({
+        analysis: [{ asset_id: "a1", pct: 100, stage: "完了", extracted: [], conflicts: [] }],
+      }),
+    });
     fireEvent.click(screen.getByRole("tab", { name: "参考資料" }));
     expect(screen.getByRole("button", { name: "資料 a1 の詳細を開く" })).toBeTruthy();
   });
@@ -146,6 +158,19 @@ describe("ConversationSessionView（会話シェル結線）", () => {
     fireEvent.click(screen.getByRole("tab", { name: "参考資料" }));
     fireEvent.click(screen.getByRole("button", { name: "資料 a1 の詳細を開く" }));
     expect(screen.getByText("図にだけ存在する導線（言及なし）")).toBeTruthy();
+  });
+
+  it("再接続後の done 素材（realtime 解析行なし）は詳細で空を断定しない（Codex P2 #1）", () => {
+    // state.analysis に無い done 素材（GET context/files 復元相当）。fallback は analysisReady=false。
+    renderView({
+      state: baseState({ analysis: [] }),
+      extraMaterials: [{ id: "h1", name: "復元.png", pct: 100, status: "done", extracted: 3 }],
+    });
+    fireEvent.click(screen.getByRole("tab", { name: "参考資料" }));
+    fireEvent.click(screen.getByRole("button", { name: "資料 復元.png の詳細を開く" }));
+    const dialog = screen.getByRole("dialog", { name: "資料の詳細" });
+    expect(within(dialog).queryByText(/見つかっていません/)).toBeNull();
+    expect(within(dialog).getAllByText(/取得できていません/).length).toBeGreaterThan(0);
   });
 
   it("要件絵巻タブに要件と未解消の深掘り対象を出す", () => {
@@ -262,8 +287,9 @@ describe("ConversationSessionView（会話シェル結線）", () => {
     fireEvent.click(screen.getByRole("tab", { name: "参考資料" }));
     // a1 は status を realtime 優先で統合しつつ、表示名は実ファイル名「図面.png」を保つ
     // （realtime 行は asset_id しか持たないため、asset_id 表示には戻さない）。
-    expect(screen.getByRole("button", { name: "資料 図面.png の詳細を開く" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "資料 a1 の詳細を開く" })).toBeNull();
+    // a1 は解析中（pct70）なので行は div（詳細導線なし）。表示名は実ファイル名「図面.png」を保つ。
+    expect(screen.getByLabelText("資料 図面.png")).toBeTruthy();
+    expect(screen.queryByLabelText("資料 a1")).toBeNull();
     // realtime 未到達のローカル行はそのまま見える。
     expect(screen.getByLabelText("資料 アップ中.png")).toBeTruthy();
   });

@@ -54,29 +54,25 @@ describe("MaterialsList（参考資料タブ・解析進捗つき）", () => {
     expect(screen.queryByRole("button", { name: /再試行/ })).toBeNull();
   });
 
-  it("done/analyzing の行は詳細導線（ボタン）になり onOpenDetail(id) を呼ぶ", () => {
+  it("done の行は詳細導線（ボタン）になり onOpenDetail(id) を呼ぶ", () => {
     const onOpenDetail = vi.fn();
     render(
       <MaterialsList
-        items={[
-          item({ id: "a1", name: "一覧_モック.png", status: "done", extracted: 2 }),
-          item({ id: "a2", name: "図解.png", pct: 50, status: "analyzing" }),
-        ]}
+        items={[item({ id: "a1", name: "一覧_モック.png", status: "done", extracted: 2 })]}
         onAdd={vi.fn()}
         onOpenDetail={onOpenDetail}
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: "資料 一覧_モック.png の詳細を開く" }));
     expect(onOpenDetail).toHaveBeenCalledWith("a1");
-    fireEvent.click(screen.getByRole("button", { name: "資料 図解.png の詳細を開く" }));
-    expect(onOpenDetail).toHaveBeenCalledWith("a2");
   });
 
-  it("失敗/アップロード中の行は詳細導線を出さない（解析データが無いため）", () => {
+  it("解析中/失敗/アップロード中の行は詳細導線を出さない（中身が未確定＋進捗バーを button に入れない）", () => {
     const onOpenDetail = vi.fn();
     render(
       <MaterialsList
         items={[
+          item({ id: "a2", name: "図解.png", pct: 50, status: "analyzing" }),
           item({ id: "f1", name: "壊れ.png", status: "failed" }),
           item({ id: "u1", name: "送信中.png", pct: 10, status: "uploading" }),
         ]}
@@ -85,6 +81,8 @@ describe("MaterialsList（参考資料タブ・解析進捗つき）", () => {
       />,
     );
     expect(screen.queryByRole("button", { name: /詳細を開く/ })).toBeNull();
+    // 解析中/アップロード中行の進捗バーは（button ではなく）通常要素配下に残る。
+    expect(screen.getAllByRole("progressbar").length).toBeGreaterThan(0);
   });
 
   it("onOpenDetail 未指定なら行はボタンにしない", () => {

@@ -76,6 +76,12 @@ export function MaterialDetailSheet({
   }, [onClose]);
 
   const done = detail.status === "done";
+  // 解析結果（analysis.visual）を保持しているときだけ、空を「無し」と断定してよい。
+  // 未取得（再接続後の done 行・#184 未対応）/解析途中は断定せず「未取得/解析中」を出す。
+  const ready = detail.analysisReady;
+  const waiting = done
+    ? "解析結果はこの場では取得できていません。"
+    : "解析が終わると、ここに表示されます。";
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center">
@@ -157,7 +163,7 @@ export function MaterialDetailSheet({
             </ul>
           ) : (
             <p className="text-[11.5px] text-[var(--sanba-muted)]">
-              {done ? "抽出された要件はありません。" : "解析が終わると、ここに抽出要件が出ます。"}
+              {ready ? "抽出された要件はありません。" : waiting}
             </p>
           )}
         </section>
@@ -196,7 +202,9 @@ export function MaterialDetailSheet({
               </div>
             ))
           ) : (
-            <p className="text-[11.5px] text-[var(--sanba-muted)]">言葉×画の矛盾は見つかっていません。</p>
+            <p className="text-[11.5px] text-[var(--sanba-muted)]">
+              {ready ? "言葉×画の矛盾は見つかっていません。" : waiting}
+            </p>
           )}
         </section>
       </div>

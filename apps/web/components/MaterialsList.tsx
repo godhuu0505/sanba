@@ -17,7 +17,8 @@ export interface MaterialsListProps {
   onRetry?: (id: string) => void;
   /**
    * 素材行 → 05-1 詳細（抽出要件・言葉×画の矛盾）を開く（#202）。
-   * 解析データを持ち得る done/analyzing 行のみ詳細導線を出す（uploading/failed は対象外）。
+   * 抽出要件/矛盾は解析完了（analysis.visual）で初めて確定するため、詳細導線は done 行のみ。
+   * 解析中/アップロード中/失敗の行は出さない（中身が無い & 進捗バーを button に内包させない）。
    */
   onOpenDetail?: (id: string) => void;
 }
@@ -47,8 +48,9 @@ export function MaterialsList({ items, onAdd, onRetry, onOpenDetail }: Materials
         </p>
       ) : (
         items.map((it) => {
-          // 解析データを持ち得る行（done/analyzing）だけ詳細導線を出す。失敗/アップロード中は対象外。
-          const openable = !!onOpenDetail && (it.status === "done" || it.status === "analyzing");
+          // 詳細（抽出要件/矛盾）が確定する done 行だけ詳細導線を出す。done 行は phrasing 要素
+          // （テキスト）だけなので button に内包しても妥当な DOM になる（進捗バー div を含まない）。
+          const openable = !!onOpenDetail && it.status === "done";
 
           const body = (
             <>

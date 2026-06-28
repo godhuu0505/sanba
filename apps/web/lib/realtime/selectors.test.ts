@@ -149,6 +149,7 @@ describe("selectMaterialDetail", () => {
       status: "done",
       extracted: ["3カラム一覧", "フィルタUI"],
       conflicts: [{ summary: "検索バーが無いが『検索したい』と発言", refs: ["u1"] }],
+      analysisReady: true,
     });
   });
 
@@ -175,6 +176,8 @@ describe("selectMaterialDetail", () => {
     );
     expect(detail?.status).toBe("analyzing");
     expect(detail?.pct).toBe(40);
+    // 解析途中は extracted/conflicts を確定値とみなさない（空でも「無し」と断定しない）。
+    expect(detail?.analysisReady).toBe(false);
   });
 
   it("該当 asset_id の解析状態が無ければ null", () => {

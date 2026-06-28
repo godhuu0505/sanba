@@ -144,8 +144,9 @@ export function ConversationSessionView({
   };
 
   // 05-1 資料詳細（#202）。抽出要件の中身・言葉×画の矛盾は realtime の analysis から導出し、
-  // 表示名だけ統合後の素材行（実ファイル名）で上書きする。realtime に解析行がまだ無い
-  // （hydrated のみの）素材は最小詳細（空の抽出/矛盾）で開く。
+  // 表示名だけ統合後の素材行（実ファイル名）で上書きする。realtime に解析行が無い
+  // （再接続後で GET context/files の done 行のみ＝詳細未取得 #184）素材は analysisReady=false の
+  // 最小詳細で開き、空配列を「解析結果なし」と断定させない（シート側で未取得表示にする）。
   const detailMaterial = detailId ? materials.find((m) => m.id === detailId) : undefined;
   const detailBase = detailId ? selectMaterialDetail(state, detailId) : null;
   const detail =
@@ -159,6 +160,7 @@ export function ConversationSessionView({
             status: detailMaterial.status,
             extracted: [],
             conflicts: [],
+            analysisReady: false,
           }
         : null;
 
