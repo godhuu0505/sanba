@@ -180,8 +180,15 @@ export default function LoginPage() {
               開発用ログイン（bypass）
             </Button>
           ) : (
-            // GIS がこの div に純正のサインインボタンを描画する。
-            <div ref={buttonRef} className="flex justify-center" />
+            // 金彩フレーム（ADR-0019）。GIS 純正ボタンを金グラデの枠で“囲む”ことで SANBA の
+            // 金彩世界観を出す。枠はボタン本体に重ねない（地色・ロゴ・文言は GIS のまま）。
+            // 外側 = 金グラデの薄い縁取り、内側 = 暗色面に純正ボタンを中央配置。
+            <div className="sanba-gold-gradient rounded-[14px] p-[1.5px]">
+              <div className="flex justify-center rounded-[12.5px] bg-[var(--sanba-surface)] p-3">
+                {/* GIS がこの div に純正のサインインボタンを描画する。 */}
+                <div ref={buttonRef} className="flex justify-center" />
+              </div>
+            </div>
           )}
           <p className="text-[11px] leading-relaxed text-[var(--sanba-muted)]">
             {devMode
