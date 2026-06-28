@@ -98,6 +98,28 @@ def record_material_event(
         pass
 
 
+# 本人セッション一覧 (GET /api/sessions/mine) のカウンタ (#250)。ホーム「過去の要件を見る」
+# (#215) に供給する一覧の取得を計測する (契約 §5 / CLAUDE.md 原則3)。リクエストを 1 ずつ計上し
+# (record_auth_event と統一)、result=empty/listed で「履歴が空のユーザーの頻度」を観測する。
+_my_sessions_counter = metrics.get_meter("sanba_api.sessions").create_counter(
+    "sanba_my_sessions_listed_total",
+    description="本人セッション一覧取得リクエスト数 (result=empty/listed ごと / #250)",
+)
+
+
+def record_my_sessions_listed(count: int) -> None:
+    """本人セッション一覧取得を 1 リクエストとして計上する (#250)。
+
+    返した件数ではなくリクエストを 1 ずつ計上する (record_auth_event と統一)。0 件でも確実に
+    計上し、result=empty/listed で空履歴ユーザーの頻度を観測できるようにする (件数を加算する
+    方式だと 0 件が no-op になり観測の死角になるため)。
+    """
+    try:
+        _my_sessions_counter.add(1, {"result": "empty" if count == 0 else "listed"})
+    except Exception:  # pragma: no cover - メトリクスは本処理を止めない
+        pass
+
+
 def setup_observability(app: FastAPI) -> None:
     """Configure OTel tracing + FastAPI instrumentation. Safe to call once."""
     global _initialised

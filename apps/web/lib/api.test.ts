@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { deleteContextFile, sendTelemetry } from "./api";
+import { deleteContextFile, fetchMySessions, sendTelemetry } from "./api";
 
 // 素材の観測テレメトリ送信（#232/#243）とサーバ破棄（#245）の API シーム。
 // fetch をスタブし、送信先・列挙属性・失敗の握りつぶし・冪等 DELETE の契約を検証する。
@@ -69,5 +69,34 @@ describe("deleteContextFile（#245 真の破棄）", () => {
     await expect(deleteContextFile("s1", "asset-abc", null)).rejects.toThrow(
       /500/,
     );
+  });
+});
+
+describe("fetchMySessions（#250 本人セッション一覧）", () => {
+  it("GET /api/sessions/mine を idToken 付きで叩き、一覧を返す", async () => {
+    const rows = [
+      { id: "s1", title: "要件A", created_at: "2024-06-20T00:00:00Z", status: "active", finalized: false },
+    ];
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve(rows) });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const res = await fetchMySessions("idtok");
+    expect(res).toEqual(rows);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toContain("/api/sessions/mine");
+    expect(init.headers.Authorization).toBe("Bearer idtok");
+  });
+
+  it("idToken が null なら Authorization を付けない（dev モードは API の bypass に委ねる）", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve([]) });
+    vi.stubGlobal("fetch", fetchMock);
+    await fetchMySessions(null);
+    expect(fetchMock.mock.calls[0][1].headers.Authorization).toBeUndefined();
+  });
+
+  it("非 2xx は例外を投げる（呼び出し側＝ホームが空状態を維持する）", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 401 });
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(fetchMySessions("idtok")).rejects.toThrow(/401/);
   });
 });
