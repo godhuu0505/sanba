@@ -57,4 +57,29 @@ describe("RequirementsTab（要件絵巻タブ・閲覧のみ＋深掘り）", (
     fireEvent.click(screen.getByRole("button", { name: /会話で確認/ }));
     expect(onJump).toHaveBeenCalledWith("d9");
   });
+
+  it("focusUnresolved=true で深掘りへスクロールしワンショット消費する (#195)", () => {
+    const onConsumed = vi.fn();
+    // jsdom は scrollIntoView 未実装のためスパイを差す（呼び出し到達と消費を検証）。
+    const scrollSpy = vi.fn();
+    Element.prototype.scrollIntoView = scrollSpy;
+    render(
+      <RequirementsTab
+        requirements={[req({})]}
+        deepDive={[det({})]}
+        onJump={vi.fn()}
+        focusUnresolved
+        onUnresolvedFocusConsumed={onConsumed}
+      />,
+    );
+    expect(scrollSpy).toHaveBeenCalledTimes(1);
+    expect(onConsumed).toHaveBeenCalledTimes(1);
+  });
+
+  it("focusUnresolved=false（要件タップ等）ではスクロールしない (#195)", () => {
+    const scrollSpy = vi.fn();
+    Element.prototype.scrollIntoView = scrollSpy;
+    render(<RequirementsTab requirements={[req({})]} deepDive={[det({})]} onJump={vi.fn()} />);
+    expect(scrollSpy).not.toHaveBeenCalled();
+  });
 });

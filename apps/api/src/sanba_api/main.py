@@ -18,7 +18,7 @@ import os
 import time
 import uuid
 from collections import defaultdict, deque
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any
 
 import structlog
@@ -45,7 +45,9 @@ from .ingestion import ContextIndexer, chunk_text, extract_text_from_upload
 from .observability import (
     record_asset_upload,
     record_material_event,
+    record_my_sessions_listed,
     record_question_hydration,
+    record_rate_limited,
     setup_observability,
 )
 from .repository import ReadRepository
@@ -151,8 +153,23 @@ def _rate_limit(client_ip: str) -> None:
     while hits and hits[0] < window_start:
         hits.popleft()
     if len(hits) >= settings.join_rate_per_minute:
+        # 認証より前に 429 で短絡するため auth イベントには現れない。DoS 緩和が発動した
+        # ことを本番で検知できるよう、ログ＋メトリクスに残す（#257 Codex / 原則3）。
+        log.warning("join_rate_limited", client_ip=client_ip, limit=settings.join_rate_per_minute)
+        record_rate_limited()
         raise HTTPException(status_code=429, detail="rate limit exceeded")
     hits.append(time.time())
+
+
+def _require_rate_limit(request: Request) -> None:
+    """認証より先に join のレートリミットを掛ける依存性 (#80)。
+
+    FastAPI は同レベルの依存性を宣言順かつ *パス関数本体の前* に解決する。
+    本依存性を ``require_user`` より前に宣言することで、Authorization ヘッダーが
+    無い/壊れたリクエストでも認証検証へ到達する前にレート制限を適用できる
+    （壊れた Bearer 連打で認証経路だけを叩き続けられる穴を塞ぐ）。
+    """
+    _rate_limit(request.client.host if request.client else "unknown")
 
 
 # ---- Schemas ---------------------------------------------------------------
@@ -310,6 +327,45 @@ def create_session(
     )
     log.info("session_created", session=session_id, roles=req.roles, owner=user.sub)
     return CreateSessionResponse(session_id=session_id, invites=invites)
+
+
+class MySession(BaseModel):
+    """`GET /api/sessions/mine` の 1 行 (#250)。本人の履歴一覧 UI (#215) に供給する。
+
+    PII (owner_email/owner_sub) は載せない: 本人だけが見る一覧でも不要な PII は返さない
+    (最小権限 / CLAUDE.md セキュリティ)。一覧に要る最小項目 (標題・作成時刻・確定状態) だけ。
+    詳細ルートは別 issue のため id 以上の内訳は持たせない。
+    """
+
+    id: str
+    title: str
+    created_at: datetime
+    status: str
+    # 07 判定で確定済みか (#186)。一覧でバッジ等に使えるよう真偽で平す。
+    finalized: bool
+
+
+@app.get("/api/sessions/mine", response_model=list[MySession])
+def list_my_sessions(user: AuthUser = Depends(require_user)) -> list[MySession]:
+    """ログインユーザー本人 (owner_sub) のセッション一覧を新しい順で返す (#250)。
+
+    `require_user` (idToken をサーバ検証 / ADR-0012) で本人確認し、owner_sub が一致する
+    ものだけを返す。他人のセッションは一切返さない (認可は本人限定)。ホームの
+    「過去の要件を見る」履歴リスト (#215) のデータ源。
+    """
+    sessions = _repo.list_sessions_by_owner(user.sub)
+    record_my_sessions_listed(len(sessions))
+    log.info("list_my_sessions", owner=user.sub, count=len(sessions))
+    return [
+        MySession(
+            id=s.id,
+            title=s.title,
+            created_at=s.created_at,
+            status=s.status,
+            finalized=s.status == "finalized",
+        )
+        for s in sessions
+    ]
 
 
 @app.post("/api/sessions/{session_id}/context", response_model=ContextResponse)
@@ -516,7 +572,9 @@ def delete_context_file(
 
 @app.post("/api/sessions/join", response_model=JoinResponse)
 def join_session(
-    req: JoinRequest, request: Request, user: AuthUser = Depends(require_user)
+    req: JoinRequest,
+    _rl: None = Depends(_require_rate_limit),  # auth より先に解決させる (#80)
+    user: AuthUser = Depends(require_user),
 ) -> JoinResponse:
     """Exchange a valid invite for a scoped, short-lived LiveKit token.
 
@@ -525,8 +583,6 @@ def join_session(
     participant identity is derived from the verified `sub` (not a self-reported
     name) so the provenance metadata on captured requirements is trustworthy.
     """
-    _rate_limit(request.client.host if request.client else "unknown")
-
     if settings.auth_dev_bypass and req.invite.startswith("dev:"):
         # Local-dev only: "dev:<session_id>:<role>" bypasses signing. Never in prod.
         _, session_id, role = req.invite.split(":", 2)

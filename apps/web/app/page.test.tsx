@@ -38,11 +38,13 @@ const joinSession = vi.fn(async (..._a: unknown[]) => ({
 }));
 const addSessionContext = vi.fn(async (..._a: unknown[]) => ({ indexed_chunks: 0 }));
 const uploadContextFile = vi.fn(async (..._a: unknown[]) => ({ indexed_chunks: 1 }));
+const fetchMySessions = vi.fn(async (..._a: unknown[]) => [] as unknown[]);
 vi.mock("../lib/api", () => ({
   createSession: (...a: unknown[]) => createSession(...a),
   joinSession: (...a: unknown[]) => joinSession(...a),
   addSessionContext: (...a: unknown[]) => addSessionContext(...a),
   uploadContextFile: (...a: unknown[]) => uploadContextFile(...a),
+  fetchMySessions: (...a: unknown[]) => fetchMySessions(...a),
   // 実装と同じ受理範囲・判定（PNG/JPG・MP4/MOV）。テストではロジックをそのまま使う。
   ACCEPTED_IMAGE: ".png,.jpg,.jpeg,image/png,image/jpeg",
   ACCEPTED_VIDEO: ".mp4,.mov,video/mp4,video/quicktime",
@@ -77,6 +79,8 @@ describe("入口フロー（#140）", () => {
     addSessionContext.mockClear();
     uploadContextFile.mockClear();
     uploadContextFile.mockImplementation(async () => ({ indexed_chunks: 1 }));
+    fetchMySessions.mockClear();
+    fetchMySessions.mockImplementation(async () => []);
   });
   afterEach(() => cleanup());
 
@@ -108,8 +112,56 @@ describe("入口フロー（#140）", () => {
   it("01 ホームはヒーロー下に「過去の要件を見る」見出しと空状態の文言を出す（#215）", () => {
     render(<Home />);
     expect(screen.getByRole("heading", { name: "過去の要件を見る" })).toBeTruthy();
-    // データ取得 API は別途のため、現状は空状態。遷移リンクは出さない。
+    // 未ログインなので履歴は取得しない＝空状態。遷移リンクは出さない。
     expect(screen.getByText(/過去の要件はまだございません/)).toBeTruthy();
+    expect(fetchMySessions).not.toHaveBeenCalled();
+  });
+
+  // ── 01 履歴リスト結線（#250 / #215 follow-up）─────────────────────────────
+  it("ログイン済みなら本人のセッション履歴を取得し、標題と日付を一覧表示する（#250）", async () => {
+    authState.loggedIn = true;
+    authState.credential = "idtok";
+    fetchMySessions.mockResolvedValueOnce([
+      {
+        id: "sess-1",
+        title: "新機能要件定義",
+        created_at: "2024-06-20T03:00:00Z",
+        status: "active",
+        finalized: false,
+      },
+    ]);
+    render(<Home />);
+    // idToken を渡して取得する（ADR-0012）。
+    await waitFor(() => expect(fetchMySessions).toHaveBeenCalledWith("idtok"));
+    expect(await screen.findByText("新機能要件定義")).toBeTruthy();
+    // 日付は YYYY/MM/DD へ整形して表示する（タイムゾーン差を避け書式のみ検証）。
+    expect(screen.getByText(/^\d{4}\/\d{2}\/\d{2}$/)).toBeTruthy();
+    // 行は遷移リンク化される（プレースホルダ詳細ルート /admin?session=）。
+    expect(screen.getByRole("link", { name: /新機能要件定義/ }).getAttribute("href")).toContain(
+      "session=sess-1",
+    );
+    // 空状態の文言は出ない。
+    expect(screen.queryByText(/過去の要件はまだございません/)).toBeNull();
+  });
+
+  it("履歴が 0 件なら空状態の文言を維持する（#250）", async () => {
+    authState.loggedIn = true;
+    authState.credential = "idtok";
+    fetchMySessions.mockResolvedValueOnce([]);
+    render(<Home />);
+    await waitFor(() => expect(fetchMySessions).toHaveBeenCalled());
+    expect(screen.getByText(/過去の要件はまだございません/)).toBeTruthy();
+  });
+
+  it("履歴取得が失敗しても空状態を維持し、ホームは壊れない（#250）", async () => {
+    authState.loggedIn = true;
+    authState.credential = "idtok";
+    fetchMySessions.mockRejectedValueOnce(new Error("fetch my sessions failed: 500"));
+    render(<Home />);
+    await waitFor(() => expect(fetchMySessions).toHaveBeenCalled());
+    expect(screen.getByText(/過去の要件はまだございません/)).toBeTruthy();
+    // 本流（壁打ち開始 CTA）は出続ける。
+    expect(screen.getByText("＋ 壁打ちを始める")).toBeTruthy();
   });
 
   it("CTA で 02 準備へ遷移し、役割の既定が企画(PdM)", () => {

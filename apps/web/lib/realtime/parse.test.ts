@@ -84,6 +84,86 @@ describe("decodeServerEvent", () => {
   });
 });
 
+describe("decodeServerEvent ペイロードの enum/配列/範囲 検証 (#120)", () => {
+  const env = { v: 1, seq: 1, ts: "t", session_id: "s1" };
+  const validRequirement = {
+    id: "r1",
+    statement: "ログインできること",
+    category: "functional",
+    priority: "must",
+    confidence: 0.9,
+    source_speaker: "user",
+    citations: [],
+    status: "confirmed",
+  };
+
+  it("status.phase が列挙外なら bad-payload", () => {
+    expect(decodeServerEvent(bytes({ ...env, type: "status", phase: "dancing" })).reason).toBe(
+      "bad-payload",
+    );
+  });
+
+  it("requirement.priority が列挙外なら bad-payload", () => {
+    const { reason } = decodeServerEvent(
+      bytes({
+        ...env,
+        type: "requirement.upserted",
+        requirement: { ...validRequirement, priority: "urgent" },
+      }),
+    );
+    expect(reason).toBe("bad-payload");
+  });
+
+  it("requirement.confidence が 0–1 の範囲外なら bad-payload", () => {
+    const { reason } = decodeServerEvent(
+      bytes({
+        ...env,
+        type: "requirement.upserted",
+        requirement: { ...validRequirement, confidence: 1.5 },
+      }),
+    );
+    expect(reason).toBe("bad-payload");
+  });
+
+  it("完全に妥当な requirement.upserted は ok", () => {
+    const { reason, event } = decodeServerEvent(
+      bytes({ ...env, type: "requirement.upserted", requirement: validRequirement }),
+    );
+    expect(reason).toBe("ok");
+    expect(event?.type).toBe("requirement.upserted");
+  });
+
+  it("detection.contradiction の refs が配列でない（文字列）なら bad-payload", () => {
+    const { reason } = decodeServerEvent(
+      bytes({
+        ...env,
+        type: "detection.contradiction",
+        id: "d1",
+        summary: "矛盾",
+        refs: "u1",
+        detector: "x",
+      }),
+    );
+    expect(reason).toBe("bad-payload");
+  });
+
+  it("analysis.progress の pct が 100 超なら bad-payload", () => {
+    expect(
+      decodeServerEvent(
+        bytes({ ...env, type: "analysis.progress", asset_id: "a1", pct: 140, stage: "ocr" }),
+      ).reason,
+    ).toBe("bad-payload");
+  });
+
+  it("analysis.progress の pct が範囲内（0–100）なら ok", () => {
+    expect(
+      decodeServerEvent(
+        bytes({ ...env, type: "analysis.progress", asset_id: "a1", pct: 42, stage: "ocr" }),
+      ).reason,
+    ).toBe("ok");
+  });
+});
+
 describe("encodeUserSelection", () => {
   it("builds a contract-shaped user.selection envelope (§4.5)", () => {
     const bytes = encodeUserSelection("s1", "d1", "relevance", 1, "2026-06-24T00:00:00Z");

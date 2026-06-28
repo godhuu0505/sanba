@@ -313,6 +313,36 @@ export async function exportRequirements(
   return res.json();
 }
 
+// ── 本人のセッション履歴（#250 / #215 follow-up）──────────────────────────
+// ホーム「過去の要件を見る」履歴リストに供給する。認証は Google idToken（ADR-0012）で、
+// API 側が owner_sub 一致のものだけを新しい順で返す（認可は本人限定）。PII（owner_email 等）は
+// レスポンスに含めない。
+
+/** GET /api/sessions/mine の 1 行（#250）。本人のセッション（過去の要件）の最小メタ。 */
+export interface MySession {
+  id: string;
+  title: string;
+  /** ISO 8601 の作成時刻。表示用の整形は呼び出し側で行う。 */
+  created_at: string;
+  status: string;
+  /** 07 判定で確定済みか（#186）。 */
+  finalized: boolean;
+}
+
+/**
+ * GET /api/sessions/mine（#250）。ログインユーザー本人のセッション一覧を新しい順で取得する。
+ *
+ * 認証は Google idToken（ADR-0012）。owner_sub が一致するもののみ API 側で返る（本人限定）。
+ * 失敗時は例外を投げ、呼び出し側（ホーム）が空状態を維持するか判断する。
+ */
+export async function fetchMySessions(idToken: string | null): Promise<MySession[]> {
+  const res = await fetch(`${API_URL}/api/sessions/mine`, {
+    headers: authHeaders(idToken),
+  });
+  if (!res.ok) throw new Error(`fetch my sessions failed: ${res.status}`);
+  return res.json();
+}
+
 export async function joinSession(params: {
   invite: string;
   participantName: string;

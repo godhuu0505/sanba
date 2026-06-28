@@ -81,4 +81,38 @@ describe("ConversationShell（共通シェル）", () => {
     fireEvent.click(screen.getByRole("button", { name: /要件 8/ }));
     expect(screen.getByText("絵巻本文")).toBeTruthy();
   });
+
+  it("『未確定』タップは要件絵巻へ移動し onUnresolvedJump を発火する (#195)", () => {
+    const onTabChange = vi.fn();
+    const onUnresolvedJump = vi.fn();
+    render(
+      <ConversationShell
+        mini={mini}
+        tab="history"
+        onTabChange={onTabChange}
+        onUnresolvedJump={onUnresolvedJump}
+        tabs={{ history: <div>h</div>, files: <div>f</div>, scroll: <div>s</div> }}
+        bottomBar={<div>bar</div>}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /未確定 2/ }));
+    expect(onTabChange).toHaveBeenCalledWith("scroll");
+    expect(onUnresolvedJump).toHaveBeenCalledTimes(1);
+  });
+
+  it("『要件』タップでは onUnresolvedJump を発火しない（タブ移動のみ） (#195)", () => {
+    const onUnresolvedJump = vi.fn();
+    render(
+      <ConversationShell
+        mini={mini}
+        tab="history"
+        onTabChange={vi.fn()}
+        onUnresolvedJump={onUnresolvedJump}
+        tabs={{ history: <div>h</div>, files: <div>f</div>, scroll: <div>s</div> }}
+        bottomBar={<div>bar</div>}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /要件 8/ }));
+    expect(onUnresolvedJump).not.toHaveBeenCalled();
+  });
 });

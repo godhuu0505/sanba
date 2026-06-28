@@ -32,6 +32,11 @@ export interface ConversationShellProps {
   tab?: ShellTab;
   /** タブ変更通知（ミニ状況/タブ操作・制御/非制御どちらでも発火）。 */
   onTabChange?: (tab: ShellTab) => void;
+  /**
+   * ミニ状況「未確定」タップ時の追加通知（#195）。要件絵巻タブへ移ると同時に、未解消（深掘り）
+   * 対象へ視線を誘導するために親が使う。タブ移動自体は onTabChange("scroll") で別途発火する。
+   */
+  onUnresolvedJump?: () => void;
   /** タブ本文（active のみ描画）。 */
   tabs: Record<ShellTab, ReactNode>;
   /** 常時ピンの「問い＋選択肢」。 */
@@ -48,6 +53,7 @@ export function ConversationShell({
   defaultTab = "history",
   tab: controlledTab,
   onTabChange,
+  onUnresolvedJump,
   tabs,
   choicePin,
   bottomBar,
@@ -101,7 +107,14 @@ export function ConversationShell({
             ◆ 要件 {mini.requirements}
           </button>
           <span className="text-[#6b5836]">・</span>
-          <button type="button" onClick={() => setTab("scroll")} className="font-bold text-[#e0a93b]">
+          <button
+            type="button"
+            onClick={() => {
+              setTab("scroll");
+              onUnresolvedJump?.();
+            }}
+            className="font-bold text-[#e0a93b]"
+          >
             ⚠ 未確定 {mini.unresolved}
           </button>
           <span className="text-[#6b5836]">・</span>
