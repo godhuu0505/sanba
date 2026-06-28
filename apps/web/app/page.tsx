@@ -27,7 +27,8 @@ import {
   joinSession,
   type JoinResponse,
 } from "../lib/api";
-import { useGoogleAuth } from "../lib/auth";
+import { useAuth } from "../lib/auth";
+import { AccountMenu } from "../components/AccountMenu";
 import { ConversationStart } from "../components/ConversationStart";
 import { authGate } from "../components/RequireAuth";
 
@@ -51,7 +52,7 @@ export default function Home() {
   const [busy, setBusy] = useState(false);
   const [conn, setConn] = useState<JoinResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const auth = useGoogleAuth();
+  const auth = useAuth();
 
   // 厳密な認証ゲート（全画面保護 / docs/design/figma-implementation-audit.md A節）。
   // 未ログインは /login?next= へ戻す。判定は authGate に集約（解決前・dev の扱いも含む）。
@@ -190,8 +191,9 @@ export default function Home() {
   // 履歴データ取得 API は別途のため、現状は空状態の文言を出す（props で受け取り可能）。
   return (
     <Screen className="px-4 py-3">
-      <AppHeader brand />
+      <AppHeader brand right={<AccountMenu profile={auth.profile} />} />
       <main className="mx-auto flex w-full max-w-[480px] flex-1 flex-col gap-[18px] pt-3">
+
         <Card>
           <h1 className="text-[22px] font-bold leading-snug text-[var(--sanba-gold-text)]">
             会議の前に、五分の問答を

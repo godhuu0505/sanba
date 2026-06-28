@@ -1,19 +1,20 @@
 "use client";
 
 // ログイン／ログアウト ユースケース (ADR-0014 §1 / Figma 正本 31:2・黄金テーマ 73-3..6)。
-// 4 状態の一本道: 11 未認証 → 12 サインイン中 → 13 ログイン済み導線 → 14 ログアウト完了。
+// 状態の一本道: 11 未認証 → 12 サインイン中 →（ログイン後はホーム / へ誘導）。
+// ログアウト完了の挨拶（14）は、ホームのアカウントメニュー（#217）から ?loggedOut=1 で来た時に出す。
 //
 // 認証ロジックと認可（管理者判定は API 側の ADMIN_EMAILS が源泉）は変えず、意匠とフローのみ
 // 拡張する (CLAUDE.md「スキン」方針)。SANBA デザインシステム（components/sanba/*）を再利用。
 // GIS は「サインイン開始」イベントを出さないため、12 は loggedIn の false→true 立ち上がりを
-// 契機に短時間だけ見せ、自動で 13 へ送る。
+// 契機に短時間だけ見せ、自動でホームへ送る。ログイン後の導線は /login 内に持たず、Figma 正本に
+// 倣ってホーム＋アカウントメニューへ集約した（監査 B-1 #1/#5）。
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
-import { Button, Card, CardDescription, CardTitle, Divider, Logo, Screen } from "@/components/sanba";
-import { useGoogleAuth } from "@/lib/auth";
+import { Button, Card, CardDescription, CardTitle, Logo, Screen } from "@/components/sanba";
+import { useAuth } from "@/lib/auth";
 
 // 12「本人確認中」を見せる時間。実機・dev とも同じ間で 13 へ遷移する。
 const WELCOME_MS = 1000;
@@ -28,43 +29,66 @@ export function safeNextPath(raw: string | null): string | null {
 }
 
 export default function LoginPage() {
-  const { loggedIn, profile, devMode, buttonRef, devSignIn, signOut, resetButton } = useGoogleAuth();
+  const { loggedIn, devMode, buttonRef, devSignIn, signOut, resetButton } = useAuth();
 
   const [justLoggedOut, setJustLoggedOut] = useState(false);
   const [welcoming, setWelcoming] = useState(false);
   const prevLoggedIn = useRef(loggedIn);
 
-  // 保護ルート（RequireAuth）から ?next= 付きで来たら、ログイン後に元の遷移先へ復帰する。
-  // welcome（12）の表示を挟んでから遷移するため、loggedIn 立ち上がりの WELCOME_MS 後に replace。
   const router = useRouter();
+  // router を ref に退避し、遷移 effect の依存から外す（useRouter は再描画ごとに別インスタンスを
+  // 返し得るため、依存に入れると welcome 表示中に遷移 effect が再実行され即時遷移してしまう）。
+  const routerRef = useRef(router);
+  routerRef.current = router;
+
+  // ログアウト遷移（?loggedOut=1）はマウント初回レンダーで同期確定させる。state(justLoggedOut)
+  // の反映前に遷移 effect が走って home へ送ってしまうレースを防ぐため、遷移 effect でも参照する。
+  const loggedOutRef = useRef<boolean | null>(null);
+  if (loggedOutRef.current === null) {
+    loggedOutRef.current =
+      typeof window !== "undefined" &&
+      new URLSearchParams(window.location.search).get("loggedOut") === "1";
+  }
+
+  // 保護ルート（RequireAuth）から ?next= 付きで来たら、ログイン後に元の遷移先へ復帰する。
   const nextRef = useRef<string | null>(null);
   useEffect(() => {
     nextRef.current = safeNextPath(new URLSearchParams(window.location.search).get("next"));
-  }, []);
-  useEffect(() => {
-    if (!loggedIn || !nextRef.current) return;
-    const target = nextRef.current;
-    const t = setTimeout(() => router.replace(target), WELCOME_MS);
-    return () => clearTimeout(t);
-  }, [loggedIn, router]);
+    // ?loggedOut=1（アカウントメニューからのログアウト遷移）はここで実際に signOut する
+    // （共有 credential を clear＋auto_select 無効化）。元ページ側で signOut しないことで
+    // authGate の誤リダイレクトと競合しない（Codex P2）。14 ゴールを表示する。
+    if (loggedOutRef.current) {
+      setJustLoggedOut(true);
+      signOut();
+    }
+    // root の AuthProvider が先に GIS を初期化済みで、この画面の buttonRef は未装着だったため
+    // 純正サインインボタンが描画されない。マウント後に再描画を促して buttonRef へ描画させる。
+    resetButton();
+  }, [signOut, resetButton]);
 
-  // loggedIn が false→true に立ち上がった時だけ 12 を見せる。マウント時点で既に loggedIn
-  // (auto_select による静かな再取得) なら立ち上がり扱いせず 13 へ直行する。
+  // ログイン後はホーム（or ?next）へ送る。13「ナビハブ」は廃止し、導線はホームのアカウント
+  // メニューへ集約した（監査 B-1 #5）。loggedIn の false→true 立ち上がり時は 12（本人確認中）を
+  // WELCOME_MS だけ見せてから遷移する。マウント時点で既に loggedIn（auto_select の静かな再取得）
+  // なら立ち上がり扱いせず即遷移する。キャンセル/ログアウトで loggedIn が落ちたら cleanup で
+  // 保留中のタイマーを破棄する。
   useEffect(() => {
-    if (loggedIn && !prevLoggedIn.current) {
+    if (loggedOutRef.current || justLoggedOut) return;
+    if (!loggedIn) {
+      prevLoggedIn.current = false;
+      return;
+    }
+    const go = () => routerRef.current.replace(nextRef.current ?? "/");
+    if (!prevLoggedIn.current) {
       prevLoggedIn.current = true;
       setWelcoming(true);
-      const t = setTimeout(() => setWelcoming(false), WELCOME_MS);
+      const t = setTimeout(() => {
+        setWelcoming(false);
+        go();
+      }, WELCOME_MS);
       return () => clearTimeout(t);
     }
-    prevLoggedIn.current = loggedIn;
-  }, [loggedIn]);
-
-  function handleLogout() {
-    signOut();
-    setWelcoming(false);
-    setJustLoggedOut(true);
-  }
+    go();
+  }, [loggedIn, justLoggedOut]);
 
   // 12 のキャンセル（Figma 75:14）。本人確認の待ちを取りやめ、サインアウトして 11 未認証へ戻す。
   function handleCancelSignIn() {
@@ -86,7 +110,17 @@ export default function LoginPage() {
           <p className="text-[13px] leading-relaxed text-[var(--sanba-muted)]">
             ログアウトしました。問答の記録は安全に保たれています。
           </p>
-          <Button variant="outline" className="mt-3" onClick={() => { setJustLoggedOut(false); resetButton(); }}>
+          <Button
+            variant="outline"
+            className="mt-3"
+            onClick={() => {
+              // 以後はログイン後ホーム誘導を再び有効化する（loggedOut ガードを解除）。
+              loggedOutRef.current = false;
+              setJustLoggedOut(false);
+              resetButton();
+              router.replace("/login");
+            }}
+          >
             再びログインする
           </Button>
         </div>
@@ -121,39 +155,8 @@ export default function LoginPage() {
     );
   }
 
-  // ── 13 ログイン済み（導線） ────────────────────────────────────
-  if (loggedIn) {
-    return (
-      <Screen className="justify-center px-6 py-10">
-        <div className="mx-auto w-full max-w-md">
-          <div className="mb-4 flex flex-col gap-1.5">
-            <h1 className="text-[24px] font-bold text-[var(--sanba-gold-text)]">
-              ようこそ戻られました
-            </h1>
-            <p className="text-[13px] leading-relaxed text-[var(--sanba-muted)]">
-              問答を始めるも、要件を検めるも、御心のままに。
-            </p>
-          </div>
-          <Card>
-            <CardTitle>🎙️ SANBA にログイン</CardTitle>
-            <p className="text-[13px] text-[var(--sanba-cream)]">
-              ✅ ログイン中: <strong>{profile?.email ?? "dev@sanba.local"}</strong>
-            </p>
-            <Button asChild variant="gold" block>
-              <Link href="/">🎙️ インタビューを始める</Link>
-            </Button>
-            <Button asChild variant="outline" block>
-              <Link href="/admin">🛠 管理画面へ</Link>
-            </Button>
-            <Divider />
-            <Button variant="ghost" className="self-start" onClick={handleLogout}>
-              ログアウト
-            </Button>
-          </Card>
-        </div>
-      </Screen>
-    );
-  }
+  // ── ログイン済み: ホーム（or ?next）へ送る間は何も描かない（13 ナビハブは廃止）。 ──
+  if (loggedIn) return null;
 
   // ── 11 未認証 ──────────────────────────────────────────────────
   return (

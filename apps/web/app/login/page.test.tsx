@@ -7,10 +7,15 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ replace, push: vi.fn(), refresh: vi.fn() }),
 }));
 
+import { AuthProvider } from "@/lib/auth";
 import LoginPage from "./page";
 
+// LoginPage は useAuth() で共有 auth を読むため、AuthProvider 配下で描画する。
+const renderLogin = () => render(<LoginPage />, { wrapper: AuthProvider });
+
 // dev モード（NEXT_PUBLIC_GOOGLE_CLIENT_ID 未設定）では GIS 無しに全フローを駆動できる。
-// 12（本人確認中）の自動遷移はフェイクタイマーで進める。
+// 12（本人確認中）の自動遷移はフェイクタイマーで進める。13 ナビハブは廃止し、ログイン後は
+// ホーム（or ?next）へ replace する。ログアウト挨拶（14）は ?loggedOut=1 で出す。
 describe("LoginPage ログイン/ログアウト フロー（dev モード）", () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => {
@@ -21,8 +26,8 @@ describe("LoginPage ログイン/ログアウト フロー（dev モード）", 
     window.history.replaceState({}, "", "/login");
   });
 
-  it("11 → 12 → 13 → 14 → 11 を一巡する", () => {
-    render(<LoginPage />);
+  it("11 → 12 → ログイン後はホーム / へ送る（13 ナビハブは無い）", () => {
+    renderLogin();
 
     // 11 未認証
     expect(screen.getByText("問答の間へ、ようこそ")).toBeTruthy();
@@ -33,31 +38,19 @@ describe("LoginPage ログイン/ログアウト フロー（dev モード）", 
       fireEvent.click(bypass);
     });
     expect(screen.getByText("Google アカウントを確認しています")).toBeTruthy();
+    expect(replace).not.toHaveBeenCalled();
 
-    // 12 → 13 ログイン済み（タイマー経過で自動遷移）
+    // 12 →（タイマー経過で）ホーム / へ遷移。導線カード（13）は出さない。
     act(() => {
       vi.advanceTimersByTime(1100);
     });
-    expect(screen.getByText((c) => c.includes("ログイン中:"))).toBeTruthy();
-    expect(screen.getByText("🎙️ インタビューを始める").getAttribute("href")).toBe("/");
-    expect(screen.getByText("🛠 管理画面へ").getAttribute("href")).toBe("/admin");
-
-    // 13 → 14 ログアウト完了
-    act(() => {
-      fireEvent.click(screen.getByText("ログアウト"));
-    });
-    expect(screen.getByText("おつかれさまでした")).toBeTruthy();
-
-    // 14 → 11 再ログイン
-    act(() => {
-      fireEvent.click(screen.getByText("再びログインする"));
-    });
-    expect(screen.getByText("問答の間へ、ようこそ")).toBeTruthy();
+    expect(replace).toHaveBeenCalledWith("/");
+    expect(screen.queryByText("ようこそ戻られました")).toBeNull();
   });
 
   it("?next= 付きで来てログインすると、welcome 後に元の遷移先へ復帰する", () => {
     window.history.replaceState({}, "", "/login?next=%2F%E5%95%8F%E7%AD%94");
-    render(<LoginPage />);
+    renderLogin();
     act(() => {
       fireEvent.click(screen.getByText("開発用ログイン（bypass）"));
     });
@@ -69,30 +62,35 @@ describe("LoginPage ログイン/ログアウト フロー（dev モード）", 
     expect(replace).toHaveBeenCalledWith("/問答");
   });
 
-  it("next が無いときは復帰リダイレクトしない（13 に留まる）", () => {
-    render(<LoginPage />);
-    act(() => {
-      fireEvent.click(screen.getByText("開発用ログイン（bypass）"));
-      vi.advanceTimersByTime(1100);
-    });
-    expect(replace).not.toHaveBeenCalled();
-  });
-
   it.each(["//evil.com", "https://evil.com", "/\\evil.com", "javascript:alert(1)"])(
-    "オリジン外/危険スキームの next=%s は復帰せず破棄する（オープンリダイレクト/XSS 防止）",
+    "オリジン外/危険スキームの next=%s は破棄し、既定のホーム / へ送る（オープンリダイレクト/XSS 防止）",
     (evil) => {
       window.history.replaceState({}, "", `/login?next=${encodeURIComponent(evil)}`);
-      render(<LoginPage />);
-      // 同一オリジンの相対パスと同じ駆動（click → タイマー経過）でも、危険な next は無視される。
+      renderLogin();
       act(() => {
         fireEvent.click(screen.getByText("開発用ログイン（bypass）"));
       });
       act(() => {
         vi.advanceTimersByTime(1100);
       });
-      expect(replace).not.toHaveBeenCalled();
-      // 13（ログイン済み導線）に留まる。
-      expect(screen.getByText((c) => c.includes("ログイン中:"))).toBeTruthy();
+      // 危険な next は無視され、evil へは飛ばさず "/" に丸める。
+      expect(replace).toHaveBeenCalledWith("/");
+      expect(replace).not.toHaveBeenCalledWith(evil);
     },
   );
+
+  it("?loggedOut=1 で来ると 14（おつかれさまでした）を出し、再ログインで 11 へ戻る", () => {
+    window.history.replaceState({}, "", "/login?loggedOut=1");
+    renderLogin();
+
+    // 14 ログアウト完了。未ログインのままなのでホームへは送らない。
+    expect(screen.getByText("おつかれさまでした")).toBeTruthy();
+    expect(replace).not.toHaveBeenCalledWith("/");
+
+    // 14 → 11 再ログイン
+    act(() => {
+      fireEvent.click(screen.getByText("再びログインする"));
+    });
+    expect(screen.getByText("問答の間へ、ようこそ")).toBeTruthy();
+  });
 });

@@ -6,7 +6,6 @@
 // 認可の源泉は API 側 (ADMIN_EMAILS)。クライアントのガードは UX 用で、真偽は 401/403 で判定する (§7)。
 // 意匠は SANBA デザインシステム（components/sanba/*）の金彩テーマを再利用し、ロジックは変えない。
 
-import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
@@ -20,7 +19,8 @@ import {
   listSessionRequirements,
   updateRequirement,
 } from "@/lib/api";
-import { useGoogleAuth } from "@/lib/auth";
+import { useAuth } from "@/lib/auth";
+import { AccountMenu } from "@/components/AccountMenu";
 import { authGate } from "@/components/RequireAuth";
 import {
   AppHeader,
@@ -56,7 +56,7 @@ const ROLES: { value: string; label: string }[] = [
 type Access = "loading" | "ok" | "unauthenticated" | "forbidden" | "error";
 
 export default function AdminPage() {
-  const auth = useGoogleAuth();
+  const auth = useAuth();
   const router = useRouter();
   const idToken = auth.credential;
 
@@ -107,8 +107,11 @@ export default function AdminPage() {
         <p className="text-[13px] leading-relaxed text-[var(--sanba-muted)]">
           問答と要件を検めるには、まず本人を確かめます。
         </p>
-        <Button asChild variant="gold" block>
-          <Link href="/login">ログインへ</Link>
+        {/* 401 では共有 AuthProvider に期限切れ credential が残り loggedIn=true のまま。
+            そのまま /login へ送ると即 / へ replace され GIS 再認証ボタンが出ない。ここで
+            signOut して credential を clear し、authGate 経由で /login?next=/admin（GIS）へ送る。 */}
+        <Button variant="gold" block onClick={() => auth.signOut()}>
+          ログインへ
         </Button>
       </Gate>
     );
@@ -135,7 +138,14 @@ export default function AdminPage() {
   // ── 91 管理ホーム（セッション一覧）─────────────────────────────
   return (
     <Screen className="sanba-scroll">
-      <AppHeader back onBack={() => router.push("/login")} title="管理の間" />
+      <AppHeader
+        back
+        // 戻るはホームへ。/login はログイン済みだと即 / へ replace するため、そこへ送ると
+        // 履歴が /admin→/ となりブラウザ戻るで /admin に戻るループになる（直接 / へ送る）。
+        onBack={() => router.push("/")}
+        title="管理の間"
+        right={<AccountMenu profile={auth.profile} hideAdmin />}
+      />
       <main className="mx-auto flex w-full max-w-md flex-col gap-[18px] px-[16px] pb-[40px] pt-[6px]">
         <CreateSessionCard idToken={idToken} onCreated={() => void loadSessions()} />
 

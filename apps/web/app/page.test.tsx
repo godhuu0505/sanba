@@ -17,7 +17,7 @@ const authState = {
   signOut: vi.fn(),
   resetButton: vi.fn(),
 };
-vi.mock("../lib/auth", () => ({ useGoogleAuth: () => authState }));
+vi.mock("../lib/auth", () => ({ useAuth: () => authState }));
 
 // 厳密な認証ゲート（RequireAuth）のリダイレクト先を検証するため useRouter をモック。
 const replace = vi.fn();
