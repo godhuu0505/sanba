@@ -18,6 +18,7 @@ import {
   mergeMaterials,
   selectActiveQuestion,
   selectConfirmedRequirements,
+  selectMaterialDetail,
   selectMaterials,
   selectMiniStatus,
   selectOpenDetections,
@@ -35,6 +36,7 @@ import { ConversationShell, type ShellTab } from "./ConversationShell";
 import { DetectionPin } from "./DetectionPin";
 import { EndConfirmDialog } from "./EndConfirmDialog";
 import { JudgmentGate } from "./JudgmentGate";
+import { MaterialDetailSheet } from "./MaterialDetailSheet";
 import { MaterialsList } from "./MaterialsList";
 import { RequirementsTab } from "./RequirementsTab";
 import { ResultView } from "./ResultView";
@@ -110,6 +112,8 @@ export function ConversationSessionView({
   const [phase, setPhase] = useState<Phase>("shell");
   const [tab, setTab] = useState<ShellTab>("history");
   const [endOpen, setEndOpen] = useState(false);
+  // 05-1 資料詳細シートで開いている素材の asset_id（#202）。null なら閉じている。
+  const [detailId, setDetailId] = useState<string | null>(null);
   const [provisional, setProvisional] = useState(false);
   // 確定（finalize）失敗時のメッセージ（#186 / Codex P2）。失敗なら結果へ進めず判定に留める。
   const [finalizeError, setFinalizeError] = useState<string | null>(null);
@@ -138,6 +142,25 @@ export function ConversationSessionView({
       baseMini.analyzing ||
       materials.some((m) => m.status === "uploading" || m.status === "analyzing"),
   };
+
+  // 05-1 資料詳細（#202）。抽出要件の中身・言葉×画の矛盾は realtime の analysis から導出し、
+  // 表示名だけ統合後の素材行（実ファイル名）で上書きする。realtime に解析行がまだ無い
+  // （hydrated のみの）素材は最小詳細（空の抽出/矛盾）で開く。
+  const detailMaterial = detailId ? materials.find((m) => m.id === detailId) : undefined;
+  const detailBase = detailId ? selectMaterialDetail(state, detailId) : null;
+  const detail =
+    detailBase != null
+      ? { ...detailBase, name: detailMaterial?.name ?? detailBase.name }
+      : detailMaterial
+        ? {
+            id: detailMaterial.id,
+            name: detailMaterial.name,
+            pct: detailMaterial.pct,
+            status: detailMaterial.status,
+            extracted: [],
+            conflicts: [],
+          }
+        : null;
 
   function leaveConversationTo(next: Phase) {
     onLeaveConversation?.();
@@ -297,7 +320,14 @@ export function ConversationSessionView({
         }
         tabs={{
           history: <ChatHistory transcript={state.transcript} />,
-          files: <MaterialsList items={materials} onAdd={onAddMaterial} onRetry={onRetryMaterial} />,
+          files: (
+            <MaterialsList
+              items={materials}
+              onAdd={onAddMaterial}
+              onRetry={onRetryMaterial}
+              onOpenDetail={setDetailId}
+            />
+          ),
           scroll: (
             <RequirementsTab
               requirements={state.requirements}
@@ -316,6 +346,18 @@ export function ConversationSessionView({
         >
           受信 {metrics.received}・重複 {metrics.duplicates}・破棄 {metrics.dropped}・欠番 {metrics.gaps}
         </p>
+      )}
+
+      {/* 05-1 資料詳細シート（#202）。素材行クリックで開き、抽出要件・言葉×画の矛盾を確認する。 */}
+      {detail && (
+        <MaterialDetailSheet
+          detail={detail}
+          onClose={() => setDetailId(null)}
+          onConfirmInConversation={() => {
+            setDetailId(null);
+            jumpToConversation();
+          }}
+        />
       )}
 
       {endOpen && (

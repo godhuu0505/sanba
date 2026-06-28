@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { SessionState } from "@/lib/realtime/store";
@@ -101,10 +101,51 @@ describe("ConversationSessionView（会話シェル結線）", () => {
     expect(screen.getByText("検索は関連度順で。")).toBeTruthy();
   });
 
-  it("参考資料タブに selectMaterials 由来の素材行を出す", () => {
+  it("参考資料タブに selectMaterials 由来の素材行を出す（詳細導線つき）", () => {
     renderView();
     fireEvent.click(screen.getByRole("tab", { name: "参考資料" }));
-    expect(screen.getByLabelText("資料 a1")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "資料 a1 の詳細を開く" })).toBeTruthy();
+  });
+
+  it("素材行 → 05-1 詳細シートが開き、抽出要件と言葉×画の矛盾を出す（#202）", () => {
+    renderView({
+      state: baseState({
+        analysis: [
+          {
+            asset_id: "a1",
+            pct: 100,
+            stage: "完了",
+            extracted: ["3カラム一覧"],
+            conflicts: [{ summary: "検索バーが無いが『検索したい』と発言", refs: ["u1"] }],
+          },
+        ],
+      }),
+    });
+    fireEvent.click(screen.getByRole("tab", { name: "参考資料" }));
+    fireEvent.click(screen.getByRole("button", { name: "資料 a1 の詳細を開く" }));
+    const dialog = screen.getByRole("dialog", { name: "資料の詳細" });
+    expect(within(dialog).getByText("3カラム一覧")).toBeTruthy();
+    expect(within(dialog).getByText(/検索バーが無いが/)).toBeTruthy();
+  });
+
+  it("detection が来ない素材でも詳細で言葉×画の矛盾を確認できる（#202 AC）", () => {
+    renderView({
+      state: baseState({
+        detections: [],
+        analysis: [
+          {
+            asset_id: "a1",
+            pct: 100,
+            stage: "完了",
+            extracted: [],
+            conflicts: [{ summary: "図にだけ存在する導線（言及なし）", refs: [] }],
+          },
+        ],
+      }),
+    });
+    fireEvent.click(screen.getByRole("tab", { name: "参考資料" }));
+    fireEvent.click(screen.getByRole("button", { name: "資料 a1 の詳細を開く" }));
+    expect(screen.getByText("図にだけ存在する導線（言及なし）")).toBeTruthy();
   });
 
   it("要件絵巻タブに要件と未解消の深掘り対象を出す", () => {
@@ -221,8 +262,8 @@ describe("ConversationSessionView（会話シェル結線）", () => {
     fireEvent.click(screen.getByRole("tab", { name: "参考資料" }));
     // a1 は status を realtime 優先で統合しつつ、表示名は実ファイル名「図面.png」を保つ
     // （realtime 行は asset_id しか持たないため、asset_id 表示には戻さない）。
-    expect(screen.getByLabelText("資料 図面.png")).toBeTruthy();
-    expect(screen.queryByLabelText("資料 a1")).toBeNull();
+    expect(screen.getByRole("button", { name: "資料 図面.png の詳細を開く" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "資料 a1 の詳細を開く" })).toBeNull();
     // realtime 未到達のローカル行はそのまま見える。
     expect(screen.getByLabelText("資料 アップ中.png")).toBeTruthy();
   });

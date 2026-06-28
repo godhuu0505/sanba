@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   mergeMaterials,
   selectActiveQuestion,
+  selectMaterialDetail,
   selectMaterials,
   selectMiniStatus,
 } from "./selectors";
@@ -113,6 +114,72 @@ describe("selectMaterials", () => {
 
   it("空なら空配列", () => {
     expect(selectMaterials({ analysis: [] })).toEqual([]);
+  });
+});
+
+// 05-1 資料詳細（#202）。抽出要件の中身と言葉×画の矛盾を含む詳細ビューモデル。
+// conflicts は analysis.visual（store 既存形）を出所にし、detection.* に依存しない。
+describe("selectMaterialDetail", () => {
+  const analysis = (over: Partial<AnalysisState>): AnalysisState => ({
+    asset_id: "a1",
+    pct: 100,
+    stage: "完了",
+    extracted: [],
+    conflicts: [],
+    ...over,
+  });
+
+  it("抽出要件の中身と言葉×画の矛盾を含めて返す", () => {
+    const detail = selectMaterialDetail(
+      {
+        analysis: [
+          analysis({
+            asset_id: "a1",
+            extracted: ["3カラム一覧", "フィルタUI"],
+            conflicts: [{ summary: "検索バーが無いが『検索したい』と発言", refs: ["u1"] }],
+          }),
+        ],
+      },
+      "a1",
+    );
+    expect(detail).toEqual({
+      id: "a1",
+      name: "a1",
+      pct: 100,
+      status: "done",
+      extracted: ["3カラム一覧", "フィルタUI"],
+      conflicts: [{ summary: "検索バーが無いが『検索したい』と発言", refs: ["u1"] }],
+    });
+  });
+
+  it("detection が無くても analysis.visual の矛盾を surface する（視覚解析のみの矛盾・#202 AC）", () => {
+    // store には detections を一切渡さない（= detection.* が来ていない）。それでも conflicts は出る。
+    const detail = selectMaterialDetail(
+      {
+        analysis: [
+          analysis({
+            asset_id: "a9",
+            conflicts: [{ summary: "図にだけ存在する導線（言及なし）", refs: [] }],
+          }),
+        ],
+      },
+      "a9",
+    );
+    expect(detail?.conflicts).toEqual([{ summary: "図にだけ存在する導線（言及なし）", refs: [] }]);
+  });
+
+  it("解析途中（pct<100）は analyzing として返す", () => {
+    const detail = selectMaterialDetail(
+      { analysis: [analysis({ asset_id: "a2", pct: 40, stage: "領域検出" })] },
+      "a2",
+    );
+    expect(detail?.status).toBe("analyzing");
+    expect(detail?.pct).toBe(40);
+  });
+
+  it("該当 asset_id の解析状態が無ければ null", () => {
+    expect(selectMaterialDetail({ analysis: [analysis({ asset_id: "a1" })] }, "missing")).toBeNull();
+    expect(selectMaterialDetail({ analysis: [] }, "a1")).toBeNull();
   });
 });
 

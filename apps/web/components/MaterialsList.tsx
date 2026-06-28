@@ -15,6 +15,11 @@ export interface MaterialsListProps {
   onAdd: () => void;
   /** 失敗行の再試行。 */
   onRetry?: (id: string) => void;
+  /**
+   * 素材行 → 05-1 詳細（抽出要件・言葉×画の矛盾）を開く（#202）。
+   * 解析データを持ち得る done/analyzing 行のみ詳細導線を出す（uploading/failed は対象外）。
+   */
+  onOpenDetail?: (id: string) => void;
 }
 
 const STATUS_LABEL: Record<Exclude<MaterialStatus, "done" | "failed">, string> = {
@@ -22,7 +27,10 @@ const STATUS_LABEL: Record<Exclude<MaterialStatus, "done" | "failed">, string> =
   analyzing: "解析中",
 };
 
-export function MaterialsList({ items, onAdd, onRetry }: MaterialsListProps) {
+const ROW_CLASS =
+  "flex flex-col gap-[6px] rounded-[12px] border border-[var(--sanba-border)] bg-[#1b140b] px-3 py-[11px]";
+
+export function MaterialsList({ items, onAdd, onRetry, onOpenDetail }: MaterialsListProps) {
   return (
     <div className="flex flex-col gap-[10px] px-4 py-3">
       <button
@@ -39,12 +47,11 @@ export function MaterialsList({ items, onAdd, onRetry }: MaterialsListProps) {
         </p>
       ) : (
         items.map((it) => {
-          return (
-            <div
-              key={it.id}
-              aria-label={`資料 ${it.name}`}
-              className="flex flex-col gap-[6px] rounded-[12px] border border-[var(--sanba-border)] bg-[#1b140b] px-3 py-[11px]"
-            >
+          // 解析データを持ち得る行（done/analyzing）だけ詳細導線を出す。失敗/アップロード中は対象外。
+          const openable = !!onOpenDetail && (it.status === "done" || it.status === "analyzing");
+
+          const body = (
+            <>
               <span className="text-[13px] font-bold text-[var(--sanba-cream)]">{it.name}</span>
 
               {it.status === "done" && (
@@ -68,6 +75,27 @@ export function MaterialsList({ items, onAdd, onRetry }: MaterialsListProps) {
                   <span className="text-[11px] font-bold text-[var(--sanba-gold-text)]">{it.pct}%</span>
                 </div>
               )}
+            </>
+          );
+
+          // 詳細導線つきの行は行全体を1つのボタンにする（入れ子の対話要素を避ける）。
+          if (openable) {
+            return (
+              <button
+                key={it.id}
+                type="button"
+                aria-label={`資料 ${it.name} の詳細を開く`}
+                onClick={() => onOpenDetail?.(it.id)}
+                className={`${ROW_CLASS} text-left`}
+              >
+                {body}
+              </button>
+            );
+          }
+
+          return (
+            <div key={it.id} aria-label={`資料 ${it.name}`} className={ROW_CLASS}>
+              {body}
 
               {it.status === "failed" && (
                 <div className="flex items-center gap-2">
