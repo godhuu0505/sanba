@@ -38,6 +38,54 @@ def heuristic_open_topics(transcript: str) -> list[str]:
     return missing
 
 
+# 基準が曖昧な言い回し（#260 / ADR-0022）。「触れられているが具体性を欠く」論点の合図。
+# 抜け（heuristic_open_topics）が「触れられていない論点」を拾うのとは対象が異なる。
+_AMBIGUITY_MARKERS = (
+    "いい感じ",
+    "良い感じ",
+    "よしなに",
+    "適当",
+    "なるべく",
+    "いろいろ",
+    "色々",
+    "みたいな",
+    "ある程度",
+    "それなり",
+    "ちゃんと",
+    "うまく",
+    "うまいこと",
+    "普通に",
+    "ふつうに",
+    "そこそこ",
+    "とりあえず",
+)
+
+
+def heuristic_ambiguous_topics(transcript: str) -> list[str]:
+    """曖昧な言い回しを含む発話を不明瞭な論点として抽出する（gap/矛盾ではない第三類）。
+
+    ADK が無い環境でも最低限の不明瞭検知を保証するための、依存ゼロの pre-filter。
+    LLM による精度向上（誤検出抑制・論点の言語化）は #40 / Langfuse 評価に委ねる
+    （gap 検知が heuristic_open_topics を持つのと同じ構成）。
+    """
+    found: list[str] = []
+    seen: set[str] = set()
+    for raw in transcript.splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        # "[u1] participant: 本文" の本文部分のみを対象にする（話者ラベルの誤検出回避）。
+        body = line.split(":", 1)[1].strip() if ":" in line else line
+        if not any(marker in body for marker in _AMBIGUITY_MARKERS):
+            continue
+        snippet = body if len(body) <= 40 else body[:40] + "…"
+        if snippet in seen:
+            continue
+        seen.add(snippet)
+        found.append(snippet)
+    return found
+
+
 async def analyze_transcript(transcript: str) -> AnalysisResult:
     """Run the ADK interview team over the transcript and return next steps.
 
@@ -45,13 +93,15 @@ async def analyze_transcript(transcript: str) -> AnalysisResult:
     (keeps local/dev and unit tests working without credentials).
     """
     open_topics = heuristic_open_topics(transcript)
+    ambiguous_topics = heuristic_ambiguous_topics(transcript)
     try:
-        return await _run_adk(transcript, open_topics)
+        return await _run_adk(transcript, open_topics, ambiguous_topics)
     except Exception:
         first_gap = open_topics[0] if open_topics else "他に考慮すべき制約はありますか"
         return AnalysisResult(
             summary=_naive_summary(transcript),
             open_topics=open_topics,
+            ambiguous_topics=ambiguous_topics,
             next_question=f"{first_gap}について教えてください。",
             suggested_answer="（例）まだ決めていません。一般的な水準で構いません。",
         )
@@ -63,7 +113,9 @@ def _naive_summary(transcript: str) -> str:
     return " / ".join(kept) if kept else "まだ要件は確定していません。"
 
 
-async def _run_adk(transcript: str, open_topics: list[str]) -> AnalysisResult:
+async def _run_adk(
+    transcript: str, open_topics: list[str], ambiguous_topics: list[str]
+) -> AnalysisResult:
     """Invoke the ADK agent team. Imported lazily to avoid hard runtime deps in tests."""
     from google.adk.runners import InMemoryRunner
     from google.genai import types
@@ -91,6 +143,7 @@ async def _run_adk(transcript: str, open_topics: list[str]) -> AnalysisResult:
     return AnalysisResult(
         summary=final_text or _naive_summary(transcript),
         open_topics=open_topics,
+        ambiguous_topics=ambiguous_topics,
         next_question=next_q,
         suggested_answer="（例）一般的な水準で構いません。",
     )

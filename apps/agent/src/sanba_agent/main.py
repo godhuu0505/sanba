@@ -31,6 +31,7 @@ from sanba_shared.repository import SessionRepository
 
 from .config import settings
 from .events import (
+    DETECTOR_AMBIGUITY,
     DETECTOR_NFR,
     RESOLUTION_AGENT_RESOLVED,
     RESOLUTION_USER_SELECTED,
@@ -83,6 +84,8 @@ class SANBAAgent(Agent):
         self._current_question_id: str | None = None
         # 既に publish 済みの検知 id（open_topic の重複 gap を抑止）。
         self._published_gaps: set[str] = set()
+        # 既に publish 済みの不明瞭検知 id（曖昧発話の重複 ambiguous を抑止 / #260）。
+        self._published_ambiguous: set[str] = set()
         # fire-and-forget の publish タスクを保持（GC による途中消滅を防ぐ）。
         self._publish_tasks: set[asyncio.Task[Any]] = set()
 
@@ -154,6 +157,7 @@ class SANBAAgent(Agent):
         # 永続化して open スナップショットから外す（リロード後も未解消に戻さない）。
         self._repo.resolve_detection(self._session_id, detection_id, RESOLUTION_USER_SELECTED)
         self._published_gaps.discard(detection_id)
+        self._published_ambiguous.discard(detection_id)
         if self._publisher is not None:
             await self._publisher.detection_resolved(
                 detection_id,
@@ -224,6 +228,43 @@ class SANBAAgent(Agent):
                     )
                     await self._publisher.detection_resolved(
                         gap_id, resolution=RESOLUTION_AGENT_RESOLVED
+                    )
+            # 不明瞭（曖昧な言い回し）を detection.ambiguous で上げる（#260 / ADR-0022）。
+            # gap と同じく id は内容ハッシュ（#121）、重複は _published_ambiguous で抑止。
+            current_ambiguous = {
+                make_requirement_id(f"ambiguous:{t}"): t for t in result.ambiguous_topics
+            }
+            for amb_id, snippet in current_ambiguous.items():
+                if amb_id in self._published_ambiguous:
+                    continue
+                self._published_ambiguous.add(amb_id)
+                summary = f"「{snippet}」は具体的な基準が不明瞭です。"
+                self._repo.save_detection(
+                    self._session_id,
+                    {
+                        "id": amb_id,
+                        "kind": "ambiguous",
+                        "summary": summary,
+                        "refs": [],
+                        "detector": DETECTOR_AMBIGUITY,
+                        "resolved": False,
+                    },
+                )
+                await self._publisher.detection_ambiguous(
+                    amb_id,
+                    summary=summary,
+                    refs=[],
+                    detector=DETECTOR_AMBIGUITY,
+                )
+            # 会話で具体化され曖昧でなくなった論点は agent_resolved で閉じる。
+            for amb_id in list(self._published_ambiguous):
+                if amb_id not in current_ambiguous:
+                    self._published_ambiguous.discard(amb_id)
+                    self._repo.resolve_detection(
+                        self._session_id, amb_id, RESOLUTION_AGENT_RESOLVED
+                    )
+                    await self._publisher.detection_resolved(
+                        amb_id, resolution=RESOLUTION_AGENT_RESOLVED
                     )
             await self._publisher.status("listening")
             self._repo.set_session_seq(self._session_id, self._publisher.seq)
