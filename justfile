@@ -58,6 +58,11 @@ up:
 up-full:
     {{compose_full}} up -d --build
 
+# ブラウザでローカル Web (http://localhost:3000) を開く
+[group('run')]
+open:
+    open http://localhost:3000
+
 # スタックを停止 (補助スタック込みで確実に落とす)
 [group('run')]
 down:
