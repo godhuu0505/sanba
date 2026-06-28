@@ -7,6 +7,9 @@
 
 import { useState } from "react";
 
+import type { SessionPhase } from "@/lib/realtime/types";
+import { VoiceStatusIndicator } from "./VoiceStatusIndicator";
+
 export interface BottomBarProps {
   /** 会話＝マイク入力 ON か。 */
   micOn: boolean;
@@ -16,9 +19,21 @@ export interface BottomBarProps {
   onToggleMute: () => void;
   /** テキスト送信（本文）。 */
   onSend: (text: string) => void;
+  /** 会話全体フェーズ（音声状態インジケータ用 / #248）。 */
+  phase?: SessionPhase;
+  /** エージェント（LiveKit リモート参加者）が発話／読み上げ中か（#248）。 */
+  agentSpeaking?: boolean;
 }
 
-export function BottomBar({ micOn, muted, onToggleMic, onToggleMute, onSend }: BottomBarProps) {
+export function BottomBar({
+  micOn,
+  muted,
+  onToggleMic,
+  onToggleMute,
+  onSend,
+  phase,
+  agentSpeaking,
+}: BottomBarProps) {
   const [text, setText] = useState("");
 
   const send = () => {
@@ -34,6 +49,16 @@ export function BottomBar({ micOn, muted, onToggleMic, onToggleMute, onSend }: B
       aria-label="会話コントロール"
       className="flex flex-col gap-2 border-t border-[var(--sanba-border)] bg-[#140f08] px-4 pb-[14px] pt-[10px]"
     >
+      {/* 音声状態の常時インジケータ（#248）。聞き取り中／発話中／読み上げ中／消音中を可視化。 */}
+      <div className="flex justify-center">
+        <VoiceStatusIndicator
+          phase={phase}
+          micOn={micOn}
+          muted={muted}
+          agentSpeaking={agentSpeaking}
+        />
+      </div>
+
       {/* 1行目: 消音 / 会話（マイク） */}
       <div className="flex gap-2">
         <button

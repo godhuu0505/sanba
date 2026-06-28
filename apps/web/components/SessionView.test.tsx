@@ -12,6 +12,7 @@ import type { MaterialItem } from "@/lib/realtime/selectors";
 vi.mock("@livekit/components-react", () => ({
   RoomAudioRenderer: () => null,
   useTrackToggle: () => ({ enabled: false, toggle: vi.fn() }),
+  useSpeakingParticipants: () => [],
 }));
 vi.mock("livekit-client", () => ({ Track: { Source: { Microphone: "microphone" } } }));
 

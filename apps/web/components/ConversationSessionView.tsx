@@ -51,6 +51,12 @@ export interface ConversationSessionViewProps {
   micOn: boolean;
   /** 音声出力の消音中か。 */
   muted: boolean;
+  /**
+   * エージェント（LiveKit リモート参加者）が発話／読み上げ中か（#248）。
+   * 親（SessionView）が useSpeakingParticipants で購読して供給する。会話画面が
+   * 提示する音声状態インジケータ（聞き取り中／発話中／消音中）の発話判定に使う。
+   */
+  agentSpeaking?: boolean;
   onToggleMic: () => void;
   onToggleMute: () => void;
   /** テキスト送信（#185 user.text を親が中継するまでの seam）。 */
@@ -109,6 +115,7 @@ export function ConversationSessionView({
   sendAnswer,
   micOn,
   muted,
+  agentSpeaking,
   onToggleMic,
   onToggleMute,
   onSendText,
@@ -341,6 +348,8 @@ export function ConversationSessionView({
           <BottomBar
             micOn={micOn}
             muted={muted}
+            phase={state.phase}
+            agentSpeaking={agentSpeaking}
             onToggleMic={onToggleMic}
             onToggleMute={onToggleMute}
             onSend={onSendText}
