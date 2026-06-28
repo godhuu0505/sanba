@@ -4,7 +4,7 @@
 // アバター押下で scrim 付きドロップダウンを開き、ログイン後の導線（管理者画面・ログアウト）を
 // ここに集約する（監査 docs/design/figma-implementation-audit.md B-1 #1/#5）。
 // scrim は ChoicePin と同じ暗幕パターンを踏襲。認可（管理者判定）は API 側 ADMIN_EMAILS が源泉で、
-// ここは導線のみ。アカウント設定の遷移先は未実装のため項目を出さない（別 issue）。
+// ここは導線のみ。項目順は Figma 正本（106:45）に合わせ ⚙ アカウント設定 → 🛠 管理者画面 → ⎋ ログアウト（#227）。
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -21,9 +21,11 @@ export interface AccountMenuProps {
   profile: GoogleProfile | null;
   /** 管理画面では「管理者画面」項目を畳む（現在地への自己リンクを避ける）。 */
   hideAdmin?: boolean;
+  /** 設定画面では「アカウント設定」項目を畳む（現在地への自己リンクを避ける）。 */
+  hideSettings?: boolean;
 }
 
-export function AccountMenu({ profile, hideAdmin }: AccountMenuProps) {
+export function AccountMenu({ profile, hideAdmin, hideSettings }: AccountMenuProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
 
@@ -90,6 +92,16 @@ export function AccountMenu({ profile, hideAdmin }: AccountMenuProps) {
               ✅ ログイン中: <span className="text-[var(--sanba-cream)]">{email}</span>
             </p>
             <Divider />
+            {!hideSettings && (
+              <Link
+                href="/settings"
+                role="menuitem"
+                onClick={() => setOpen(false)}
+                className="flex items-center gap-[8px] rounded-[10px] px-[10px] py-[10px] text-[14px] text-[var(--sanba-cream)] transition-colors hover:bg-[var(--sanba-bg)]"
+              >
+                <span aria-hidden="true">⚙</span> アカウント設定
+              </Link>
+            )}
             {!hideAdmin && (
               <Link
                 href="/admin"

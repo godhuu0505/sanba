@@ -26,15 +26,31 @@ describe("AccountMenu", () => {
     expect(screen.queryByRole("menu")).toBeNull();
   });
 
-  it("アバター押下でメニューを開き、管理者画面/ログアウトを出す（アカウント設定は出さない）", () => {
+  it("アバター押下でメニューを開き、アカウント設定/管理者画面/ログアウトの3項目を出す（Figma 106:45 の順）", () => {
     render(<AccountMenu profile={profile} />);
     open();
     expect(screen.getByRole("menu")).toBeTruthy();
-    expect(screen.getByRole("menuitem", { name: /管理者画面/ })).toBeTruthy();
-    expect(screen.getByRole("menuitem", { name: /ログアウト/ })).toBeTruthy();
-    expect(screen.queryByText(/アカウント設定/)).toBeNull();
+    const items = screen.getAllByRole("menuitem").map((el) => el.textContent ?? "");
+    // 並びは Figma 正本 106:45 に合わせ ⚙ 設定 → 🛠 管理者 → ⎋ ログアウト。
+    expect(items[0]).toMatch(/アカウント設定/);
+    expect(items[1]).toMatch(/管理者画面/);
+    expect(items[2]).toMatch(/ログアウト/);
     // ページ側で解決済みの profile をそのまま表示する（別 hook インスタンスを作らない）。
     expect(screen.getByText(/go@sanba\.local/)).toBeTruthy();
+  });
+
+  it("アカウント設定は /settings へ遷移する menuitem（ラベル＋アイコン併記 / ADR-0017）", () => {
+    render(<AccountMenu profile={profile} />);
+    open();
+    const settings = screen.getByRole("menuitem", { name: /アカウント設定/ });
+    expect(settings.getAttribute("href")).toBe("/settings");
+  });
+
+  it("hideSettings でアカウント設定項目を畳む（設定画面での自己リンク回避）", () => {
+    render(<AccountMenu profile={profile} hideSettings />);
+    open();
+    expect(screen.queryByRole("menuitem", { name: /アカウント設定/ })).toBeNull();
+    expect(screen.getByRole("menuitem", { name: /管理者画面/ })).toBeTruthy();
   });
 
   it("hideAdmin で管理者画面項目を畳む", () => {
