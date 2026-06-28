@@ -147,6 +147,30 @@ describe("MaterialsList（参考資料タブ・解析進捗つき）", () => {
       expect(screen.queryByRole("dialog")).toBeNull();
     });
 
+    it("確認中に対象が完了（サーバ反映済み）になったら確認を無効化し破棄しない（Codex P2）", () => {
+      const onCancel = vi.fn();
+      const { rerender } = render(
+        <MaterialsList
+          items={[item({ id: "local:0", name: "up.png", pct: 0, status: "uploading" })]}
+          onAdd={vi.fn()}
+          onCancel={onCancel}
+        />,
+      );
+      fireEvent.click(screen.getByRole("button", { name: "up.png の解析を中断" }));
+      expect(screen.getByRole("dialog")).toBeTruthy();
+      // アップロード成功で行 id が asset_id・status done に変わる（画像はこの時点でサーバ索引済み）。
+      rerender(
+        <MaterialsList
+          items={[item({ id: "hash-1", name: "up.png", pct: 100, status: "done" })]}
+          onAdd={vi.fn()}
+          onCancel={onCancel}
+        />,
+      );
+      // 確認は自動で閉じ、クライアントだけの破棄は行わない。
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(onCancel).not.toHaveBeenCalled();
+    });
+
     it("ESC でダイアログを閉じる（継続・a11y）", () => {
       const onCancel = vi.fn();
       render(

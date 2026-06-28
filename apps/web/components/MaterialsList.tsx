@@ -5,7 +5,7 @@
 // 解析はバックグラウンドで進む（会話を止めない）ため、各行に状態（アップロード/解析中/完了/失敗）を出す。
 
 // 素材ビューモデルは共有セレクタ層（selectMaterials）に寄せ、ここでは再エクスポートのみ。
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import type { MaterialItem, MaterialStatus } from "@/lib/realtime/selectors";
 
@@ -34,6 +34,17 @@ const STATUS_LABEL: Record<Exclude<MaterialStatus, "done" | "failed" | "cancelle
 export function MaterialsList({ items, onAdd, onRetry, onCancel }: MaterialsListProps) {
   // 中断確認ダイアログの対象素材（null=閉）。確定で onCancel(id) を呼ぶ（#219 / Figma 222:2）。
   const [cancelTarget, setCancelTarget] = useState<MaterialItem | null>(null);
+
+  // 確認ダイアログを開いた後に対象がアップロード/解析中でなくなったら自動で閉じる（Codex P2）。
+  // 画像はアップロード成功時点でサーバ索引（grounding）まで完了しており、その時点で行 id は
+  // local:* → asset_id・status は done に変わる。完了済み（サーバ反映済み）素材をクライアントだけで
+  // 「破棄」したと見せないため、完了したら確認を無効化する（真のサーバ破棄は別 issue）。
+  const liveTarget = cancelTarget
+    ? items.find((m) => m.id === cancelTarget.id && (m.status === "uploading" || m.status === "analyzing"))
+    : undefined;
+  useEffect(() => {
+    if (cancelTarget && !liveTarget) setCancelTarget(null);
+  }, [cancelTarget, liveTarget]);
 
   return (
     <div className="flex flex-col gap-[10px] px-4 py-3">
@@ -111,13 +122,14 @@ export function MaterialsList({ items, onAdd, onRetry, onCancel }: MaterialsList
         })
       )}
 
-      {/* 中断確認（#219）。続ける=閉じる、中断する=確定で当該素材を破棄する（onCancel）。 */}
-      {onCancel && cancelTarget && (
+      {/* 中断確認（#219）。続ける=閉じる、中断する=確定で当該素材を破棄する（onCancel）。
+          対象が完了（done）等で in-flight でなくなったら liveTarget が外れ、確認は出さない（Codex P2）。 */}
+      {onCancel && liveTarget && (
         <MaterialCancelDialog
-          materialName={cancelTarget.name}
+          materialName={liveTarget.name}
           onContinue={() => setCancelTarget(null)}
           onConfirm={() => {
-            onCancel(cancelTarget.id);
+            onCancel(liveTarget.id);
             setCancelTarget(null);
           }}
         />
