@@ -102,6 +102,16 @@ resource "google_firestore_field" "requirements_ttl" {
   ttl_config {}
 }
 
+# 現在質問ポインタ（sessions/{id}/questions/current, #212 / ADR-0020 §5-8）の TTL。
+# 未回答のまま離脱した質問（prompt/options に PII を含みうる）が、発話・draft 要件の 30 日
+# TTL を迂回して残り続けないようにする。tombstone（回答済み）も同じ expireAt で消える。
+resource "google_firestore_field" "questions_ttl" {
+  database   = google_firestore_database.default.name
+  collection = "questions"
+  field      = "expireAt"
+  ttl_config {}
+}
+
 # ---- Service account for Cloud Run workloads (least privilege) ----
 resource "google_service_account" "runtime" {
   account_id   = "sanba-runtime"

@@ -12,7 +12,9 @@ from sanba_shared.models import Priority, Requirement, RequirementCategory
 
 from sanba_agent.events import (
     EVENTS_TOPIC,
+    DataTransport,
     EventPublisher,
+    EventPublishError,
     RecordingTransport,
     decode_user_answered,
     decode_user_selection,
@@ -80,6 +82,118 @@ async def test_question_asked_payload() -> None:
     assert ev["options"][0]["label"] == "関連度順"
     assert t.sent[0]["reliable"] is True
     assert pub.questions_published == 1
+
+
+# ── 現在質問の保存→送信順序・クリア（#212 / ADR-0020 §5-1/§5-5/§5-9）──────────────
+@pytest.mark.asyncio
+async def test_question_asked_persists_before_send() -> None:
+    # §5-1: 採番 → 保存 → 送信。on_persist は publish の前に呼ばれ、asked_seq = envelope seq。
+    t = RecordingTransport()
+    pub = EventPublisher("s1", t)
+    order: list[str] = []
+    seen_seq: list[int] = []
+
+    def on_persist(seq: int) -> None:
+        seen_seq.append(seq)
+        order.append("persist")
+
+    orig_send = t.send
+
+    async def tracking_send(payload: bytes, *, topic: str, reliable: bool) -> None:
+        order.append("send")
+        await orig_send(payload, topic=topic, reliable=reliable)
+
+    t.send = tracking_send  # type: ignore[method-assign]
+    env = await pub.question_asked("q1", "並び順は？", on_persist=on_persist)
+    assert order == ["persist", "send"]  # 保存が送信より先
+    assert env is not None
+    assert seen_seq == [env["seq"]]  # asked_seq は envelope seq と一致
+    assert pub.questions_published == 1
+
+
+@pytest.mark.asyncio
+async def test_question_asked_save_failure_does_not_send_or_consume_seq() -> None:
+    # §5-1: 保存失敗時は送信せず採番も確定しない（欠番を作らない）。
+    t = RecordingTransport()
+    pub = EventPublisher("s1", t)
+
+    def failing_persist(seq: int) -> None:
+        raise RuntimeError("firestore down")
+
+    with pytest.raises(RuntimeError):
+        await pub.question_asked("q1", "p", on_persist=failing_persist)
+    assert t.sent == []  # 送られていない
+    assert pub.seq == 0  # seq は消費されていない
+    assert pub.questions_published == 0
+    # 次のイベントは欠番にならず seq=1 を採る。
+    env = await pub.status("listening")
+    assert env["seq"] == 1
+
+
+@pytest.mark.asyncio
+async def test_question_cleared_uses_envelope_seq_and_persists_first() -> None:
+    # §5-5/§5-9: cleared_seq は envelope seq そのもの。tombstone commit → publish の順。
+    t = RecordingTransport()
+    pub = EventPublisher("s1", t)
+    order: list[str] = []
+    persisted_seq: list[int] = []
+
+    def on_persist(cleared_seq: int) -> bool:
+        persisted_seq.append(cleared_seq)
+        order.append("persist")
+        return True
+
+    orig_send = t.send
+
+    async def tracking_send(payload: bytes, *, topic: str, reliable: bool) -> None:
+        order.append("send")
+        await orig_send(payload, topic=topic, reliable=reliable)
+
+    t.send = tracking_send  # type: ignore[method-assign]
+    env = await pub.question_cleared("q1", on_persist=on_persist)
+    assert env is not None
+    assert env["type"] == "question.cleared"
+    assert env["question_id"] == "q1"
+    assert order == ["persist", "send"]
+    assert persisted_seq == [env["seq"]]  # cleared_seq == envelope seq（二重採番しない）
+    assert pub.questions_cleared == 1
+
+
+@pytest.mark.asyncio
+async def test_question_cleared_aborts_when_cas_rejects() -> None:
+    # §5-3/§5-7: CAS が False（id 不一致/既クリア）なら publish せず採番もしない。
+    t = RecordingTransport()
+    pub = EventPublisher("s1", t)
+
+    def on_persist(cleared_seq: int) -> bool:
+        return False
+
+    env = await pub.question_cleared("q1", on_persist=on_persist)
+    assert env is None
+    assert t.sent == []
+    assert pub.seq == 0  # 欠番を作らない
+    assert pub.questions_cleared == 0
+
+
+@pytest.mark.asyncio
+async def test_question_cleared_raises_when_publish_fails_after_commit() -> None:
+    # §5-9: commit 後の送信失敗を成功扱いしない（EventPublishError で呼び出し元へ返す）。
+    class FailingTransport:
+        async def send(self, payload: bytes, *, topic: str, reliable: bool) -> None:
+            raise RuntimeError("network down")
+
+    transport: DataTransport = FailingTransport()
+    pub = EventPublisher("s1", transport)
+    committed: list[int] = []
+
+    def on_persist(cleared_seq: int) -> bool:
+        committed.append(cleared_seq)  # tombstone は commit 済みを模す
+        return True
+
+    with pytest.raises(EventPublishError):
+        await pub.question_cleared("q1", on_persist=on_persist)
+    assert committed == [1]  # commit は起きた（seq は消費される）
+    assert pub.seq == 1
 
 
 @pytest.mark.asyncio

@@ -19,7 +19,7 @@ import {
   useRef,
   useSyncExternalStore,
 } from "react";
-import { fetchDetections, fetchRequirements } from "../api";
+import { fetchCurrentQuestion, fetchDetections, fetchRequirements } from "../api";
 import { contractEventFixture } from "./fixtures";
 import { RealtimeMetrics, type RealtimeMetricsSnapshot } from "./metrics";
 import {
@@ -158,9 +158,13 @@ export function useRealtimeSession(opts: LiveOptions): UseRealtimeSessionResult 
   //    欠番検知時にも同じ取得を再実行し、欠落分を復元する（契約 §4）。
   const hydrate = useCallback(async () => {
     if (!sessionId) return;
+    let requirementsOk = false;
+    // detections を使わない画面では gating 対象にしない（必要な主スナップショットのみで判定）。
+    let detectionsOk = !hydrateDetections;
     try {
       const snap = await fetchRequirements(sessionId, sessionToken);
       store.hydrateRequirements(snap.items, snap.seq);
+      requirementsOk = true;
     } catch {
       // backend 未完/失敗でもライブ差分で前進できる（ハイドレーションは補助）。
     }
@@ -168,9 +172,19 @@ export function useRealtimeSession(opts: LiveOptions): UseRealtimeSessionResult 
       try {
         const snap = await fetchDetections(sessionId, sessionToken);
         store.hydrateDetections(snap.items, snap.seq ?? 0);
+        detectionsOk = true;
       } catch {
         /* P1・任意 */
       }
+    }
+    // 現在質問（金枠ピン / #212）を他 GET と同じ順序で結線する。§5-11: question 由来 seq で
+    // global maxSeq を進めてよいのは主スナップショット（/requirements・必要なら /detections）が
+    // 全て成功したときだけ。失敗時は lastQuestionSeq だけ進め、gap/retry を残す。
+    try {
+      const snap = await fetchCurrentQuestion(sessionId, sessionToken);
+      store.hydrateQuestion(snap.question, snap.seq, requirementsOk && detectionsOk);
+    } catch {
+      /* #212・任意（ハイドレーションは補助。ライブ差分で前進できる）。 */
     }
   }, [sessionId, sessionToken, hydrateDetections, store]);
 

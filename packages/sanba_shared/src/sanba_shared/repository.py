@@ -52,6 +52,9 @@ class SessionRepository:
         # 投入済み素材のメタ (#184)。GET context/files の復元に使う。プロセス内に閉じず外部
         # ストアへ永続化することで、多インスタンス/再起動後のリロード/途中参加でも復元できる。
         self._mem_materials: dict[str, dict[str, dict[str, Any]]] = {}
+        # 現在の未回答質問の単一ポインタ (#212 / ADR-0020)。最新1問モデルなのでセッション
+        # ごとに 1 ドキュメント。tombstone（cleared）も含めて保持し GET で cleared_seq を返す。
+        self._mem_questions: dict[str, dict[str, Any]] = {}
 
     @staticmethod
     def _init_client():  # type: ignore[no-untyped-def]
@@ -339,6 +342,87 @@ class SessionRepository:
             return [d.to_dict() for d in docs]
         return list(self._mem_materials.get(session_id, {}).values())
 
+    # ---- Current question (#212 / ADR-0020) --------------------------------
+    def save_current_question(
+        self, session_id: str, question: dict[str, Any], asked_seq: int
+    ) -> None:
+        """現在の未回答質問を「最新1問のポインタ」として保存する（ADR-0020 §1 / §5-8）。
+
+        `sessions/{id}/questions/current` の単一ドキュメントに上書き保存する。リロード/途中参加で
+        `GET /questions/current` が金枠ピンを復元できるよう、**publish の前に**確定させる
+        （順序は §5-1。送信成功〜保存完了の窓で復元失敗が起きないようにする）。
+        `expireAt` 付き（発話/draft 要件と同じ 30 日 TTL）。承認のような保全対象ではないため、
+        未回答のまま離脱したら他の一過性データと同じく TTL で消える（§5-8 / issue #10）。
+        `asked_seq` はその問いが publish された envelope seq。GET の順序情報に使う（§3）。
+        """
+        doc: dict[str, Any] = {
+            "id": question["id"],
+            "prompt": question["prompt"],
+            "options": question.get("options") or [],
+            "asked_seq": asked_seq,
+            "cleared": False,
+        }
+        if self._client is not None:
+            # set（merge なし）で全置換する: 前の tombstone（cleared/cleared_seq）を引き継がない。
+            if (exp := self._expire_at()) is not None:
+                doc["expireAt"] = exp
+            self._question_doc(session_id).set(doc)
+            return
+        self._mem_questions[session_id] = doc
+
+    def clear_current_question(self, session_id: str, question_id: str, cleared_seq: int) -> bool:
+        """回答済みの現在質問を tombstone 化する（ADR-0020 §5-3 / §5-7 / §5-9）。
+
+        現在質問 id == `question_id` のとき**だけ**、transaction / CAS で原子的にクリアする。
+        物理削除はせず **tombstone**（`question=null` 相当 + `cleared_seq`）にし、PII を含みうる
+        `prompt`/`options` は削除する（非 PII の `cleared_seq` だけ残す / §5-9）。tombstone も
+        §5-8 の TTL（30 日）で最終的に消える。クリアできたら True、id 不一致 / 未提示 / 既クリア
+        なら False を返す（呼び出し元はこれを見て publish するか決める）。
+        """
+        if self._client is not None:
+            return self._clear_current_question_txn(session_id, question_id, cleared_seq)
+        current = self._mem_questions.get(session_id)
+        if current is None or current.get("cleared") or current.get("id") != question_id:
+            return False
+        self._mem_questions[session_id] = {
+            "id": question_id,
+            "cleared": True,
+            "cleared_seq": cleared_seq,
+        }
+        return True
+
+    def _clear_current_question_txn(
+        self, session_id: str, question_id: str, cleared_seq: int
+    ) -> bool:
+        from google.cloud import firestore
+
+        doc_ref = self._question_doc(session_id)
+        expire_at = self._expire_at()
+
+        @firestore.transactional  # type: ignore[misc]
+        def _txn(transaction: Any) -> bool:
+            snap = doc_ref.get(transaction=transaction)
+            data = snap.to_dict() if snap.exists else None
+            # 古い回答処理が一致を読んだ直後に新しい ask が上書きする競合を防ぐため、
+            # 読み取り〜条件付き書き込みを 1 トランザクションにする（§5-7）。
+            if data is None or data.get("cleared") or data.get("id") != question_id:
+                return False
+            tombstone: dict[str, Any] = {
+                "id": question_id,
+                "cleared": True,
+                "cleared_seq": cleared_seq,
+                # PII を含みうる本文/選択肢は tombstone から消す（§5-9）。
+                "prompt": firestore.DELETE_FIELD,
+                "options": firestore.DELETE_FIELD,
+                "asked_seq": firestore.DELETE_FIELD,
+            }
+            if expire_at is not None:
+                tombstone["expireAt"] = expire_at
+            transaction.set(doc_ref, tombstone, merge=True)
+            return True
+
+        return bool(_txn(self._client.transaction()))
+
     def set_session_seq(self, session_id: str, seq: int) -> None:
         """セッションの適用済み最大 seq を保存する (ハイドレーション境界, 契約 §4)。"""
         if self._client is not None:
@@ -357,4 +441,13 @@ class SessionRepository:
             .document(session_id)
             .collection("requirements")
             .document(rid)
+        )
+
+    def _question_doc(self, session_id: str):  # type: ignore[no-untyped-def]
+        # 最新1問モデル: サブコレクション `questions` の単一ポインタ（doc id="current"）。
+        return (
+            self._client.collection("sessions")
+            .document(session_id)
+            .collection("questions")
+            .document("current")
         )
