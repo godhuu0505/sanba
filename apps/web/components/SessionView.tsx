@@ -64,8 +64,10 @@ export function SessionView({
   const uploadAborters = useRef<Map<string, AbortController>>(new Map());
   // アップロード成功で行 id は tempId→asset_id に差し替わる（realtime と突き合わせるため）。
   // 確認ダイアログを tempId で開いた直後に成功すると、確定時は古い tempId が渡る。両 id を
-  // 中断対象に解決できるよう tempId↔asset_id の対応を控える（#219 / Codex P2）。
-  const uploadAliases = useRef<Map<string, string>>(new Map());
+  // 中断対象に解決できるよう tempId↔asset_id の対応（一意）を保持する（#219 / Codex P2）。
+  // MaterialsList の中断確認も、表示名ではなくこの一意対応で id 差し替え後の行を追跡するため
+  // state で持ち、props として配る（同名素材の取り違えを防ぐ）。
+  const [uploadAliases, setUploadAliases] = useState<ReadonlyMap<string, string>>(() => new Map());
 
   // 接続/再接続時に投入済み素材のメタを取り戻す（契約 §4 / #184）。失敗してもライブ差分で前進する。
   useEffect(() => {
@@ -123,7 +125,9 @@ export function SessionView({
       const assetId = res.asset_id ?? tempId;
       const done = res.analysis_pending !== true;
       // tempId↔asset_id を控える（確認ダイアログを tempId で開いた後に成功しても中断できるように）。
-      if (assetId !== tempId) uploadAliases.current.set(tempId, assetId);
+      if (assetId !== tempId) {
+        setUploadAliases((prev) => new Map(prev).set(tempId, assetId));
+      }
       // 成功で abort 対象ではなくなったので controller を片付ける（中断は破棄ガードに切替わる）。
       uploadAborters.current.delete(tempId);
       // 明示的な再投入は復活させる（#219 / Codex P2）。API は内容ハッシュで安定 asset_id を返すため
@@ -176,9 +180,9 @@ export function SessionView({
     // 確認ダイアログを tempId で開いた後にアップロードが成功すると行 id は asset_id に変わる。
     // どちらで渡されても確実に破棄できるよう、tempId↔asset_id の対応を双方向に解決する（Codex P2）。
     const ids = new Set<string>([id]);
-    const aliased = uploadAliases.current.get(id);
+    const aliased = uploadAliases.get(id);
     if (aliased) ids.add(aliased);
-    for (const [tempId, assetId] of uploadAliases.current) if (assetId === id) ids.add(tempId);
+    for (const [tempId, assetId] of uploadAliases) if (assetId === id) ids.add(tempId);
 
     let aborted = false;
     for (const cid of ids) {
@@ -279,6 +283,7 @@ export function SessionView({
         onRetryMaterial={handleRetryMaterial}
         onCancelMaterial={handleCancelMaterial}
         cancelledIds={cancelledIds}
+        materialAliases={uploadAliases}
         // 会話を離れる瞬間にローカル送信を止める（判定/結果ではボトムバーが無く止められないため）。
         // マイクに加え、映像トラック（カメラ/画面共有）も止めて帯域/コストを抑える（ADR-0004）。
         onLeaveConversation={() => {

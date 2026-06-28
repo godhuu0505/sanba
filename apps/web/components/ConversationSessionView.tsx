@@ -84,6 +84,11 @@ export interface ConversationSessionViewProps {
    * 遅延 analysis.* が来ても行を復活させないためのガード。
    */
   cancelledIds?: ReadonlySet<string>;
+  /**
+   * tempId→asset_id の一意対応（#219）。アップロード成功で行 id が差し替わっても、中断確認が
+   * 表示名ではなく一意 id で対象を追跡するため（同名素材の取り違え防止・Codex P2）。
+   */
+  materialAliases?: ReadonlyMap<string, string>;
   /** 会話フェーズを離れる（終了→判定）瞬間。親はここでマイク送信を止める。 */
   onLeaveConversation?: () => void;
   /** 「新しい問答を始める」。 */
@@ -113,6 +118,7 @@ export function ConversationSessionView({
   onRetryMaterial,
   onCancelMaterial,
   cancelledIds,
+  materialAliases,
   onLeaveConversation,
   onRestart,
   metrics,
@@ -323,6 +329,7 @@ export function ConversationSessionView({
               onAdd={onAddMaterial}
               onRetry={onRetryMaterial}
               onCancel={onCancelMaterial}
+              aliases={materialAliases}
             />
           ),
           scroll: (

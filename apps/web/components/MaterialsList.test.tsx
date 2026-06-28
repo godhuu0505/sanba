@@ -183,17 +183,51 @@ describe("MaterialsList（参考資料タブ・解析進捗つき）", () => {
       fireEvent.click(screen.getByRole("button", { name: "clip.mp4 の解析を中断" }));
       expect(screen.getByRole("dialog")).toBeTruthy();
       // 動画はアップロード成功で id が local:* → asset_id に差し替わるが status は analyzing（中断可能）。
+      // 一意対応（aliases: local:0 → vid-1）で差し替え後の行を追跡する。
       rerender(
         <MaterialsList
           items={[item({ id: "vid-1", name: "clip.mp4", pct: 0, status: "analyzing" })]}
           onAdd={vi.fn()}
           onCancel={onCancel}
+          aliases={new Map([["local:0", "vid-1"]])}
         />,
       );
       // 確認は閉じず、確定すると差し替わった新 id で破棄される。
       expect(screen.getByRole("dialog")).toBeTruthy();
       fireEvent.click(screen.getByRole("button", { name: "中断する" }));
       expect(onCancel).toHaveBeenCalledWith("vid-1");
+    });
+
+    it("同名の別素材へ中断対象をすり替えない（一意 id で追跡・Codex P2）", () => {
+      const onCancel = vi.fn();
+      // 同名 clip.mp4 を2件アップロード中。local:0 の中断確認を開く。
+      const { rerender } = render(
+        <MaterialsList
+          items={[
+            item({ id: "local:0", name: "clip.mp4", pct: 0, status: "uploading" }),
+            item({ id: "local:1", name: "clip.mp4", pct: 0, status: "uploading" }),
+          ]}
+          onAdd={vi.fn()}
+          onCancel={onCancel}
+        />,
+      );
+      fireEvent.click(screen.getAllByRole("button", { name: "clip.mp4 の解析を中断" })[0]);
+      expect(screen.getByRole("dialog")).toBeTruthy();
+      // local:0 だけが done（サーバ反映済み）になり、同名の local:1 はまだアップロード中。
+      rerender(
+        <MaterialsList
+          items={[
+            item({ id: "hash-0", name: "clip.mp4", pct: 100, status: "done" }),
+            item({ id: "local:1", name: "clip.mp4", pct: 0, status: "uploading" }),
+          ]}
+          onAdd={vi.fn()}
+          onCancel={onCancel}
+          aliases={new Map([["local:0", "hash-0"]])}
+        />,
+      );
+      // 対象（local:0→hash-0）は done なので確認は閉じ、残った同名 local:1 を誤って破棄しない。
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(onCancel).not.toHaveBeenCalled();
     });
 
     it("ESC でダイアログを閉じる（継続・a11y）", () => {

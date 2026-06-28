@@ -24,6 +24,11 @@ export interface MaterialsListProps {
    * 未指定なら「✕ 中断」導線を出さない（破棄できない文脈で偽ボタンを作らない）。
    */
   onCancel?: (id: string) => void;
+  /**
+   * tempId→asset_id の一意対応（#219）。アップロード成功で行 id が差し替わったとき、確認中の
+   * 対象を表示名ではなく一意 id で追跡するために使う（同名素材の取り違え防止・Codex P2）。
+   */
+  aliases?: ReadonlyMap<string, string>;
 }
 
 const STATUS_LABEL: Record<Exclude<MaterialStatus, "done" | "failed" | "cancelled">, string> = {
@@ -31,7 +36,7 @@ const STATUS_LABEL: Record<Exclude<MaterialStatus, "done" | "failed" | "cancelle
   analyzing: "解析中",
 };
 
-export function MaterialsList({ items, onAdd, onRetry, onCancel }: MaterialsListProps) {
+export function MaterialsList({ items, onAdd, onRetry, onCancel, aliases }: MaterialsListProps) {
   // 中断確認ダイアログの対象素材（null=閉）。確定で onCancel(id) を呼ぶ（#219 / Figma 222:2）。
   const [cancelTarget, setCancelTarget] = useState<MaterialItem | null>(null);
 
@@ -39,12 +44,14 @@ export function MaterialsList({ items, onAdd, onRetry, onCancel }: MaterialsList
   // 画像はアップロード成功時点でサーバ索引（grounding）まで完了し、行は done になる。完了済み
   // （サーバ反映済み）素材をクライアントだけで「破棄」したと見せないため、done/失敗/消滅で無効化する。
   // 一方、動画はアップロード成功で行 id が local:* → asset_id に差し替わっても status は analyzing の
-  // ままで中断可能なので、閉じてはいけない。id は差し替わるが name（実ファイル名）は保たれるため、
-  // id 一致を優先しつつ name でフォールバックして「解析中/アップロード中」の行を追跡する。
+  // ままで中断可能なので、閉じてはいけない。id 差し替えは一意対応（aliases: tempId→asset_id）で
+  // 解決して追跡する（表示名は同名素材で衝突し取り違えるため使わない・Codex P2）。
   const isInFlight = (m: MaterialItem) => m.status === "uploading" || m.status === "analyzing";
-  const liveTarget = cancelTarget
-    ? (items.find((m) => m.id === cancelTarget.id && isInFlight(m)) ??
-      items.find((m) => m.name === cancelTarget.name && isInFlight(m)))
+  const currentTargetId = cancelTarget
+    ? (aliases?.get(cancelTarget.id) ?? cancelTarget.id)
+    : undefined;
+  const liveTarget = currentTargetId
+    ? items.find((m) => m.id === currentTargetId && isInFlight(m))
     : undefined;
   useEffect(() => {
     if (cancelTarget && !liveTarget) setCancelTarget(null);
