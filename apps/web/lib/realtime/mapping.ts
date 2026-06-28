@@ -35,6 +35,13 @@ const DETECTION_PRESENTATION: Record<DetectionKind, KindPresentation> = {
     icon: "◇",
     ariaLabel: "抜け（未定義）を検知",
   },
+  ambiguous: {
+    color: "#7E8BA3", // 鈍色（緋/黄土/橄欖/金 と判別できるくすんだ藍鼠 / #182・ADR-0022）
+    label: "不明瞭",
+    // 「〜」で曖昧さを表す。要件カテゴリ open_question の「?」と記号が衝突しないようにする。
+    icon: "〜",
+    ariaLabel: "不明瞭な論点を検知",
+  },
 };
 
 export function detectionPresentation(kind: DetectionKind): KindPresentation {

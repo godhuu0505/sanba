@@ -67,6 +67,21 @@ async def test_detection_contradiction_payload() -> None:
 
 
 @pytest.mark.asyncio
+async def test_detection_ambiguous_payload() -> None:
+    t = RecordingTransport()
+    pub = EventPublisher("s1", t)
+    await pub.detection_ambiguous("d9", "並び順の意図が不明瞭", refs=["u3"])
+    ev = t.sent[0]["event"]
+    assert ev["type"] == "detection.ambiguous"
+    assert ev["detector"] == "ambiguity_detector"
+    assert ev["refs"] == ["u3"]
+    assert "category" not in ev  # 抜けと違い category は持たない
+    assert t.sent[0]["reliable"] is True
+    assert pub.ambiguous_published == 1
+    assert pub.detections_published == 1  # 不明瞭も検知総数に算入
+
+
+@pytest.mark.asyncio
 async def test_question_asked_payload() -> None:
     t = RecordingTransport()
     pub = EventPublisher("s1", t)

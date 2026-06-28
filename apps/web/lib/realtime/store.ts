@@ -318,6 +318,33 @@ export class RealtimeStore {
         });
       }
 
+      case "detection.ambiguous": {
+        // 不明瞭（ambiguous / #182・ADR-0022）。矛盾でも抜けでもない第三の未解消検知。
+        // gap と同様に open として確定ゲート（07）・深掘り（06）の未解消件数へ算入される。
+        const existing = this.detections.get(event.id);
+        if (existing && existing.seq >= event.seq && existing.value.resolved) {
+          this.detections.set(event.id, {
+            seq: existing.seq,
+            value: {
+              ...existing.value,
+              kind: "ambiguous",
+              summary: event.summary,
+              refs: event.refs,
+              detector: event.detector,
+            },
+          });
+          return true;
+        }
+        return this.upsert(this.detections, event.id, event.seq, {
+          id: event.id,
+          kind: "ambiguous",
+          summary: event.summary,
+          refs: event.refs,
+          detector: event.detector,
+          resolved: false,
+        });
+      }
+
       case "detection.resolved": {
         const prev = this.detections.get(event.detection_id);
         if (!prev) {
