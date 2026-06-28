@@ -94,25 +94,34 @@ class SessionRepository:
             return SessionMeta.model_validate(snap.to_dict()) if snap.exists else None
         return self._mem_sessions.get(session_id)
 
-    def finalize_session(self, session_id: str, *, confirmed_count: int) -> SessionMeta | None:
-        """07 判定の「確定」を永続化する（#186）。
+    def finalize_session(
+        self,
+        session_id: str,
+        *,
+        confirmed_count: int,
+        finalized_requirement_ids: list[str],
+    ) -> SessionMeta | None:
+        """07 判定の「確定」を永続化する（#186 / #213）。
 
-        セッションを finalized にし、確定した要件件数と刻を刻む。存在しなければ None。
-        要件そのものの承認（draft→approved）は管理画面の責務（ADR-0014）なのでここでは触れない。
-        確定スナップショットはあくまでセッション単位の不可逆マーカ。
+        セッションを finalized にし、確定した要件件数・確定時の要件 ID 集合・刻を刻む。
+        存在しなければ None。要件そのものの承認（draft→approved）は管理画面の責務
+        （ADR-0014）なのでここでは触れない。確定スナップショットはあくまでセッション単位の
+        不可逆マーカ。`finalized_requirement_ids` は export が固定集合を起票する土台（#213）。
         """
         meta = self.get_session(session_id)
         if meta is None:
             return None
-        # 不可逆マーカ: 既に finalized なら最初のスナップショット（件数・刻）を保持して
-        # 返す（Codex P2）。確定後に要件が増減/二重 POST されても初回確定値を変えない。
+        # 不可逆マーカ: 既に finalized なら最初のスナップショット（件数・ID集合・刻）を保持
+        # して返す（Codex P2）。確定後に要件が増減/二重 POST されても初回確定値を変えない。
         if meta.status == "finalized":
             return meta
+        snapshot_ids = list(finalized_requirement_ids)
         updated = meta.model_copy(
             update={
                 "status": "finalized",
                 "finalized_at": datetime.now(UTC),
                 "finalized_count": confirmed_count,
+                "finalized_requirement_ids": snapshot_ids,
             }
         )
         if self._client is not None:
@@ -121,6 +130,7 @@ class SessionRepository:
                     "status": "finalized",
                     "finalized_at": updated.finalized_at,
                     "finalized_count": confirmed_count,
+                    "finalized_requirement_ids": snapshot_ids,
                 },
                 merge=True,
             )
