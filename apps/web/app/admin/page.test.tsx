@@ -83,4 +83,43 @@ describe("管理画面の認証ゲート（厳密・全画面保護）", () => {
     fireEvent.click(screen.getByRole("button", { name: "戻る" }));
     expect(push).toHaveBeenCalledWith("/");
   });
+
+  // ── 91/92 の画面分離（#220 / Figma 73:8・73:9）──────────────────
+  it("91 一覧に主 CTA を出し、作成カードは常時展開しない（アコーディオン廃止）", async () => {
+    authState.loggedIn = true;
+    render(<AdminPage />);
+    await waitFor(() => expect(screen.getByText("管理の間")).toBeTruthy());
+    expect(screen.getByRole("button", { name: "＋ セッションを興す" })).toBeTruthy();
+    // 92 専用画面へ遷移するまで作成カードは出さない。
+    expect(screen.queryByText("新たな問答を興す")).toBeNull();
+    expect(screen.queryByText("セッションを作成")).toBeNull();
+  });
+
+  it("CTA 押下で 92「新たな問答を興す」専用画面へ遷移し、戻るで 91 一覧へ戻る", async () => {
+    authState.loggedIn = true;
+    render(<AdminPage />);
+    await waitFor(() => expect(screen.getByText("管理の間")).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "＋ セッションを興す" }));
+    // 92 ヘッダ（Figma 76:38）と作成カードが出る。一覧の「管理の間」は出ない。
+    expect(screen.getByText("新たな問答を興す")).toBeTruthy();
+    expect(screen.getByText("セッションを作成")).toBeTruthy();
+    expect(screen.queryByText("管理の間")).toBeNull();
+    // router.push は呼ばず、view 状態だけで遷移する（同一ルート内）。
+    expect(push).not.toHaveBeenCalled();
+    // 戻るで 91 一覧へ復帰。
+    fireEvent.click(screen.getByRole("button", { name: "戻る" }));
+    expect(screen.getByText("管理の間")).toBeTruthy();
+    expect(screen.queryByText("新たな問答を興す")).toBeNull();
+  });
+
+  it("92 招く役割の既定は『企画(PdM)』単一（Figma 76:46 / 監査 B-3 #16）", async () => {
+    authState.loggedIn = true;
+    render(<AdminPage />);
+    await waitFor(() => expect(screen.getByText("管理の間")).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "＋ セッションを興す" }));
+    // 選択状態は aria-pressed で表す（● マーカーは aria-hidden）。企画(PdM) のみ pressed。
+    expect(screen.getByRole("button", { name: "企画(PdM)", pressed: true })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "エンジニア", pressed: false })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "顧客", pressed: false })).toBeTruthy();
+  });
 });
