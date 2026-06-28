@@ -64,6 +64,35 @@ describe("mergeMaterials", () => {
     const merged = mergeMaterials([], [], hydrated);
     expect(merged.map((m) => m.id)).toEqual(["v1", "f1"]);
   });
+
+  // #219: 中断で破棄した素材は表示・件数から除く（ゾンビ行・遅延 analysis.* の復活を防ぐ）。
+  it("cancelledIds の素材は除外する（遅延 realtime が来ても復活しない）", () => {
+    const realtime = [
+      item({ id: "a1", name: "a1", pct: 80, status: "analyzing" }),
+      item({ id: "a2", name: "a2", pct: 30, status: "analyzing" }),
+    ];
+    const local = [item({ id: "a1", name: "mock.png", pct: 0, status: "uploading" })];
+    const merged = mergeMaterials(realtime, local, [], new Set(["a1"]));
+    // a1 は破棄済みなので、遅延 realtime（解析中）が来ても行は出ない。a2 のみ残る。
+    expect(merged.map((m) => m.id)).toEqual(["a2"]);
+  });
+
+  it("status==='cancelled' の行も除外する（pending の破棄行）", () => {
+    const local = [
+      item({ id: "c1", name: "破棄.png", status: "cancelled" }),
+      item({ id: "u1", name: "up.png", status: "uploading" }),
+    ];
+    const merged = mergeMaterials([], local, []);
+    expect(merged.map((m) => m.id)).toEqual(["u1"]);
+  });
+
+  it("cancelled 行は同 id の realtime 後勝ちでも復活しない（cancelledIds 未指定・Codex P2）", () => {
+    // 破棄済み local 行（cancelled）と、遅延して届いた同 id の realtime 解析行。
+    const local = [item({ id: "a1", name: "破棄.png", status: "cancelled" })];
+    const realtime = [item({ id: "a1", name: "a1", pct: 60, status: "analyzing" })];
+    // cancelledIds を渡さなくても、status==="cancelled" の id を事前集約して除外する。
+    expect(mergeMaterials(realtime, local, [])).toEqual([]);
+  });
 });
 
 // 参考資料タブ（05）の素材ビューモデル。analysis.progress/visual 由来の AnalysisState を

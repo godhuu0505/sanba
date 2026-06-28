@@ -227,6 +227,36 @@ describe("ConversationSessionView（会話シェル結線）", () => {
     expect(screen.getByLabelText("資料 アップ中.png")).toBeTruthy();
   });
 
+  it("中断（✕ 中断）→『中断する』で onCancelMaterial を呼ぶ（#219）", () => {
+    const onCancelMaterial = vi.fn();
+    renderView({
+      // realtime 解析行（asset_id=a1）。これを参考資料タブで中断する。
+      state: baseState({ analysis: [{ asset_id: "a1", pct: 40, stage: "OCR", extracted: [], conflicts: [] }] }),
+      extraMaterials: [{ id: "a1", name: "図面.png", pct: 0, status: "analyzing" }],
+      onCancelMaterial,
+    });
+    fireEvent.click(screen.getByRole("tab", { name: "参考資料" }));
+    fireEvent.click(screen.getByRole("button", { name: "図面.png の解析を中断" }));
+    fireEvent.click(screen.getByRole("button", { name: "中断する" }));
+    expect(onCancelMaterial).toHaveBeenCalledWith("a1");
+  });
+
+  it("cancelledIds の素材は参考資料・資料件数から消える（#219 復活ガード）", () => {
+    renderView({
+      state: baseState({ analysis: [{ asset_id: "a1", pct: 40, stage: "OCR", extracted: [], conflicts: [] }] }),
+      extraMaterials: [{ id: "a1", name: "図面.png", pct: 0, status: "analyzing" }],
+      cancelledIds: new Set(["a1"]),
+    });
+    // ミニ状況の「資料 N」は破棄分を含まず、解析中フラグも消える（pct<100 の analysis 行が
+    // 残っていてもヘッダーが「資料 0（解析中）」と矛盾しない・Codex P2）。
+    expect(screen.getByRole("button", { name: /資料 0/ })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /解析中/ })).toBeNull();
+    fireEvent.click(screen.getByRole("tab", { name: "参考資料" }));
+    // 破棄済み a1 は遅延 realtime（解析中）が来ても行が出ない。
+    expect(screen.queryByLabelText("資料 図面.png")).toBeNull();
+    expect(screen.getByText(/まだありません/)).toBeTruthy();
+  });
+
   it("確定（要件を確定する）で onFinalize を呼んでから結果へ進む（#186）", async () => {
     const onFinalize = vi.fn(async () => ({ finalized: true, confirmed_count: 1 }));
     renderView({ state: baseState({ detections: [] }), onFinalize });

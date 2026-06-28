@@ -74,6 +74,21 @@ export interface ConversationSessionViewProps {
   hydratedMaterials?: MaterialItem[];
   /** 失敗素材の再試行（親が再アップロードへ）。 */
   onRetryMaterial?: (id: string) => void;
+  /**
+   * 解析/アップロード中の素材を中断して破棄する（#219）。親（SessionView）が送信中の fetch を
+   * 中止し、破棄 id を cancelledIds に積んで遅延 analysis.* の復活を防ぐ。
+   */
+  onCancelMaterial?: (id: string) => void;
+  /**
+   * 中断で破棄した素材の asset_id 集合（#219）。mergeMaterials で表示・件数から除き、
+   * 遅延 analysis.* が来ても行を復活させないためのガード。
+   */
+  cancelledIds?: ReadonlySet<string>;
+  /**
+   * tempId→asset_id の一意対応（#219）。アップロード成功で行 id が差し替わっても、中断確認が
+   * 表示名ではなく一意 id で対象を追跡するため（同名素材の取り違え防止・Codex P2）。
+   */
+  materialAliases?: ReadonlyMap<string, string>;
   /** 会話フェーズを離れる（終了→判定）瞬間。親はここでマイク送信を止める。 */
   onLeaveConversation?: () => void;
   /** 「新しい問答を始める」。 */
@@ -101,6 +116,9 @@ export function ConversationSessionView({
   extraMaterials,
   hydratedMaterials,
   onRetryMaterial,
+  onCancelMaterial,
+  cancelledIds,
+  materialAliases,
   onLeaveConversation,
   onRestart,
   metrics,
@@ -128,15 +146,23 @@ export function ConversationSessionView({
   // 復元（#184）＋投入直後のローカル行（uploading/failed）＋ realtime 解析行を asset_id で統合。
   // 状態は realtime 最優先、表示名は実ファイル名（hydrated/local）を asset_id より優先する。
   const realtimeMaterials = selectMaterials(state);
-  const materials = mergeMaterials(realtimeMaterials, extraMaterials ?? [], hydratedMaterials ?? []);
+  // 中断で破棄した素材（cancelledIds / status==="cancelled"）は mergeMaterials が表示・件数から
+  // 除く。遅延 analysis.* が来ても id を無視して行を復活させない（#219）。
+  const materials = mergeMaterials(
+    realtimeMaterials,
+    extraMaterials ?? [],
+    hydratedMaterials ?? [],
+    cancelledIds,
+  );
 
   // 統合後の素材をミニ状況の件数・解析中フラグに反映する（ヘッダーの「📎資料 N」と一致させる）。
+  // 解析中フラグは破棄反映後の materials のみから導出する。baseMini.analyzing（state.analysis 由来）を
+  // OR すると、中断で破棄した analysis 行が pct<100 の間ヘッダーが「資料 0（解析中）」と矛盾するため
+  // 使わない（#219 / Codex P2）。materials は realtime 解析中行を含み cancelled を除くので過不足ない。
   const mini = {
     ...baseMini,
     materials: materials.length,
-    analyzing:
-      baseMini.analyzing ||
-      materials.some((m) => m.status === "uploading" || m.status === "analyzing"),
+    analyzing: materials.some((m) => m.status === "uploading" || m.status === "analyzing"),
   };
 
   function leaveConversationTo(next: Phase) {
@@ -297,7 +323,15 @@ export function ConversationSessionView({
         }
         tabs={{
           history: <ChatHistory transcript={state.transcript} />,
-          files: <MaterialsList items={materials} onAdd={onAddMaterial} onRetry={onRetryMaterial} />,
+          files: (
+            <MaterialsList
+              items={materials}
+              onAdd={onAddMaterial}
+              onRetry={onRetryMaterial}
+              onCancel={onCancelMaterial}
+              aliases={materialAliases}
+            />
+          ),
           scroll: (
             <RequirementsTab
               requirements={state.requirements}

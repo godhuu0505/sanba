@@ -86,11 +86,18 @@ export interface UploadResult {
   analysis_pending?: boolean;
 }
 
-/** POST /api/sessions/{id}/context/file（画像/動画）。FormData で送る。 */
+/**
+ * POST /api/sessions/{id}/context/file（画像/動画）。FormData で送る。
+ *
+ * signal（任意）を渡すと、中断（#219）で AbortController.abort() により送信中の fetch を中止できる。
+ * 中止時は fetch が AbortError で reject する（呼び出し側で signal.aborted を見て failed と区別する）。
+ * 既存呼び出しは signal 省略でそのまま動く（後方互換）。
+ */
 export async function uploadContextFile(
   sessionId: string,
   file: File,
   sessionToken: string | null,
+  signal?: AbortSignal,
 ): Promise<UploadResult> {
   const form = new FormData();
   form.append("file", file);
@@ -102,6 +109,7 @@ export async function uploadContextFile(
     method: "POST",
     headers,
     body: form,
+    signal,
   });
   if (res.status === 415) throw new Error("対応していない形式です（PNG/JPG・MP4/MOV）");
   if (res.status === 413) throw new Error("ファイルが大きすぎます");
