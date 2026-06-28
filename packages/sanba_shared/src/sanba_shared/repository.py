@@ -494,6 +494,37 @@ class SessionRepository:
             return 0
         return self._mem_seq.get(session_id, 0)
 
+    def reserve_session_seq(self, session_id: str, count: int = 1) -> int:
+        """次の seq を count 個アトミックに予約し、予約区間の先頭 seq を返す（#145・ADR-0021）。
+
+        API も agent と同じセッション seq 空間へ realtime を publish する（ADR-0023）。両者が
+        並行しても単調増加を崩さないよう、last_seq をトランザクションで進めて区間を確保する。
+        返り値 s に対し呼び出し元は s..s+count-1 を使ってよい（last_seq は s+count-1 まで前進）。
+        """
+        if count < 1:
+            raise ValueError("count must be >= 1")
+        if self._client is not None:
+            from google.cloud import firestore
+
+            doc_ref = self._client.collection("sessions").document(session_id)
+
+            @firestore.transactional  # type: ignore[misc]
+            def _txn(transaction: Any) -> int:
+                snap = doc_ref.get(transaction=transaction)
+                data = snap.to_dict() if snap.exists else None
+                current = (
+                    int(data["last_seq"])
+                    if data is not None and isinstance(data.get("last_seq"), int)
+                    else 0
+                )
+                transaction.set(doc_ref, {"last_seq": current + count}, merge=True)
+                return current + 1
+
+            return int(_txn(self._client.transaction()))
+        current = self._mem_seq.get(session_id, 0)
+        self._mem_seq[session_id] = current + count
+        return current + 1
+
     # ---- internal ----------------------------------------------------------
     def _req_doc(self, session_id: str, rid: str):  # type: ignore[no-untyped-def]
         return (

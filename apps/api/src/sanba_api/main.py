@@ -50,6 +50,14 @@ from .observability import (
     record_rate_limited,
     setup_observability,
 )
+from .realtime import (
+    STAGE_ANALYZING,
+    STAGE_FAILED,
+    STAGE_RECEIVED,
+    AnalysisPublisher,
+    NullSender,
+    build_sender,
+)
 from .repository import ReadRepository
 from .storage import (
     AssetStore,
@@ -441,6 +449,22 @@ async def add_context_file(
         if span is not None:
             span.set_attribute("sanba.asset.id", asset.asset_id)
 
+        # 解析の境界を web へ live 配信する（#145 / ADR-0023）。publish は付加価値なので
+        # 失敗してもアップロードを止めない（GET context/files でも状態を復元できる）。
+        sender = (
+            build_sender(
+                settings.livekit_url,
+                settings.livekit_api_key,
+                settings.livekit_api_secret,
+                session_id,
+            )
+            if settings.enable_realtime_publish
+            else NullSender()
+        )
+        publisher = AnalysisPublisher(session_id, sender, _repo)
+        with contextlib.suppress(Exception):
+            await publisher.progress(asset.asset_id, STAGE_RECEIVED)
+
         # 動画解析は未実装: 保存のみ済ませ、web には「準備中」を返す。
         if kind == "video" and not settings.enable_video_analysis:
             record_asset_upload("video", "pending")
@@ -463,7 +487,16 @@ async def add_context_file(
             )
 
         # 画像: Gemini で観察を抽出し、grounding 索引へ（asset を出所に紐づける）。
-        observations = analyze_image(raw, content_type)
+        with contextlib.suppress(Exception):
+            await publisher.progress(asset.asset_id, STAGE_ANALYZING)
+        try:
+            observations = analyze_image(raw, content_type)
+        except Exception:
+            # 解析失敗を web へ通知し再試行導線を出せるようにする（ADR-0023 §3）。
+            with contextlib.suppress(Exception):
+                await publisher.progress(asset.asset_id, STAGE_FAILED)
+            record_asset_upload(kind, "rejected")
+            raise
         indexed = 0
         if observations:
             indexed = _indexer.index_context(session_id, observations, f"asset:{asset.asset_id}")
@@ -475,6 +508,9 @@ async def add_context_file(
                 asset.asset_id, filename, kind, status="done", extracted=len(observations)
             ),
         )
+        # 解析完了を web へ（pct=100・抽出要件）。conflicts は突合実装まで空（ADR-0023 §2）。
+        with contextlib.suppress(Exception):
+            await publisher.visual(asset.asset_id, observations)
         log.info(
             "asset_analyzed",
             session=session_id,
