@@ -5,16 +5,22 @@
 // useRealtimeSession に集約し、表示と画面遷移は ConversationSessionView（LiveKit 非依存）へ委ねる。
 // 本層は LiveKit に触れる薄い接続部だけを持つ: マイク入力トグル・音声出力の消音・素材アップロード。
 
-import { RoomAudioRenderer, useTrackToggle } from "@livekit/components-react";
+import {
+  RoomAudioRenderer,
+  useSpeakingParticipants,
+  useTrackToggle,
+} from "@livekit/components-react";
 import { Track } from "livekit-client";
 import { useEffect, useRef, useState } from "react";
 
 import {
   ACCEPTED_IMAGE,
   ACCEPTED_VIDEO,
+  deleteContextFile,
   exportRequirements,
   fetchContextFiles,
   finalizeSession,
+  sendTelemetry,
   uploadContextFile,
   type ExportResult,
   type FinalizeResult,
@@ -45,6 +51,11 @@ export function SessionView({
   const screenShare = useTrackToggle({ source: Track.Source.ScreenShare });
   // 音声出力（SANBA の読み上げ）の消音。RoomAudioRenderer の muted で実際に止める。
   const [muted, setMuted] = useState(false);
+  // エージェント発話／読み上げ中の検知（#248）。useSpeakingParticipants は ActiveSpeakersChanged で
+  // reactive に更新され、購読は本コンポーネント（会話画面）のマウント中だけに閉じる（リーク防止）。
+  // ローカル参加者（自分）を除いたリモート＝エージェントの発話を音声状態インジケータへ渡す。
+  const speaking = useSpeakingParticipants();
+  const agentSpeaking = speaking.some((p) => !p.isLocal);
   // 05-2 手段選択シート（カメラ/アップロード/画面共有/Drive）の開閉と、カメラ/画面共有の
   // 開始失敗（権限拒否・ピッカーキャンセル）をシート上で示すためのエラー。
   const [sourceSheetOpen, setSourceSheetOpen] = useState(false);
@@ -110,7 +121,14 @@ export function SessionView({
       // 同一ファイルを再投入すると同じ id になり、古い中断応答が後から再投入済みの行を隠してしまう
       // （Codex P2）。サーバに作られた asset の取消／再読込をまたぐ整合は #245（クライアントは
       // tempId の cancelled 行で表示破棄に留める）。
-      if (aborter.signal.aborted) return;
+      if (aborter.signal.aborted) {
+        // #245: abort 直前に成功応答が解決していたレース。画像はレスポンス前に grounding 索引と
+        // material(done) まで完了しているため、クライアント破棄だけでは観察がサーバに残り、
+        // リロードで復活する。確定した asset_id をサーバ側でも「真の破棄」してから抜ける
+        // （cancelledIds には積まない＝再投入を隠さない方針は維持・Codex P2）。
+        if (res.asset_id) void discardOnServer(res.asset_id);
+        return;
+      }
       // 成功: asset_id を確定する。画像は API で同期解析済み（analysis_pending=false）なので
       // done にする（画像は analysis.progress/visual のライブが来ないため analyzing のままだと
       // 「解析中100%」が残り、ミニ状況の解析中も消えない）。動画は解析未実装で analyzing のまま
@@ -177,6 +195,11 @@ export function SessionView({
     if (aliased) ids.add(aliased);
     for (const [tempId, assetId] of uploadAliases) if (assetId === id) ids.add(tempId);
 
+    // 中断時の状態（uploading|analyzing）を telemetry 用に解決する。pending に無い realtime/
+    // 復元由来の行は解析中（動画準備中・遅延 analysis.*）なので analyzing 扱いにする（#243）。
+    const target = pending.find((m) => ids.has(m.id));
+    const status = target?.status === "uploading" ? "uploading" : "analyzing";
+
     let aborted = false;
     for (const cid of ids) {
       const controller = uploadAborters.current.get(cid);
@@ -194,9 +217,32 @@ export function SessionView({
       for (const cid of ids) next.add(cid);
       return next;
     });
-    // 観測性（CLAUDE.md 原則3）: 中断率・abort 有無・対象 id を運用で追えるよう記録する。
-    // 投入種別計測（#201 onSelectSource）と同じく、OTLP/メトリクス基盤への集約配線は #232。
-    console.info("[material] cancel", { ids: [...ids], aborted });
+    // #245 真の破棄: サーバに実体がある asset（tempId=local:* 以外）は binary・メタ・grounding
+    // 索引を DELETE で取り消す。これでリロードでの復活と、画像の grounding 残留を断つ。
+    for (const cid of ids) {
+      if (!cid.startsWith("local:")) void discardOnServer(cid);
+    }
+    // 観測性（CLAUDE.md 原則3 / #243）: 中断率・abort 有無・対象状態を OTLP カウンタへ集約する。
+    // PII/自由記述は送らず、列挙値（status/result）のみ。result は abort の有無で分ける。
+    sendTelemetry(
+      sessionId,
+      "material.cancel",
+      { status, result: aborted ? "aborted" : "discarded" },
+      sessionToken,
+    );
+  }
+
+  // #245: 中断確定した素材をサーバ側でも破棄する（binary・メタ・grounding 索引）。
+  // 失敗してもローカル破棄（cancelled・abort）は維持して UX を止めない。サーバに実体が残ると
+  // リロードで復活し得るが、その際の再中断で再度 DELETE される（失敗時は行を残す方針）。
+  // 破棄失敗は result=error で観測へ記録する（#243）。
+  async function discardOnServer(assetId: string) {
+    try {
+      await deleteContextFile(sessionId, assetId, sessionToken);
+    } catch (err) {
+      console.error("[material] server discard failed", err);
+      sendTelemetry(sessionId, "material.cancel", { result: "error" }, sessionToken);
+    }
   }
 
   function openSourceSheet() {
@@ -265,6 +311,7 @@ export function SessionView({
         sendAnswer={sendAnswer}
         micOn={mic.enabled}
         muted={muted}
+        agentSpeaking={agentSpeaking}
         onToggleMic={() => void mic.toggle()}
         onToggleMute={() => setMuted((m) => !m)}
         onSendText={handleSendText}
@@ -289,11 +336,11 @@ export function SessionView({
       />
 
       {/*
-        投入種別（camera/screen/upload/drive）の運用計測:
+        投入種別（camera/screen/upload/drive）の運用計測（#232）:
         - upload は API 側 `sanba_asset_uploads_total`（kind/result）で計上済み（observability.py）。
-        - camera/screen は LiveKit ローカルトラックの publish としてサーバ側で観測できる。
-        クライアントからの選択イベントを OTLP/メトリクス基盤へ束ねる収集先の設計は本 PR スコープ外のため
-        #232 で対応する。MaterialSourceSheet 側に onSelectSource の seam を残し、そこへぶら下げる。
+        - camera/screen は LiveKit ローカルトラックの publish としてもサーバ側で観測できる。
+        加えて「どの手段が選ばれたか」の比率を運用で追えるよう、選択イベントを onSelectSource →
+        sendTelemetry（POST /telemetry）で OTLP カウンタへ集約する（CLAUDE.md 原則3）。console は使わない。
       */}
       {sourceSheetOpen && (
         <MaterialSourceSheet
@@ -307,6 +354,9 @@ export function SessionView({
           cameraActive={camera.enabled}
           onToggleScreenShare={toggleScreenShareTrack}
           screenShareActive={screenShare.enabled}
+          onSelectSource={(source) =>
+            sendTelemetry(sessionId, "material.source_selected", { source }, sessionToken)
+          }
           error={sourceError}
         />
       )}

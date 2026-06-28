@@ -82,6 +82,61 @@ def record_question_hydration(has_question: bool) -> None:
         pass
 
 
+# web UI 由来の素材イベント（投入種別選択 #232 / 中断 #243 / サーバ破棄 #245）のカウンタ。
+# クライアント観測を第三者分析 SDK ではなくサーバ側 OTLP に集約する（CLAUDE.md 原則3 /
+# 既存 metrics 基盤に一致する最小構成）。PII/自由記述は載せない: event/source/status/result
+# は列挙値のみ（main.py の許可リストで検証し、未知値は other へ丸めて高カーディナリティ/PII
+# 流入を防ぐ）。
+_material_event_counter = metrics.get_meter("sanba_api.materials").create_counter(
+    "sanba_material_events_total",
+    description="素材 UI イベント数 (event/source/status/result ごと)",
+)
+
+
+def record_material_event(
+    event: str,
+    *,
+    source: str = "none",
+    status: str = "none",
+    result: str = "none",
+) -> None:
+    """素材 UI イベントを計上する（列挙値のみ・PII 非送信）。
+
+    - event: material.source_selected / material.cancel / material.discard
+    - source: camera / screen / upload / drive / other / none
+    - status: uploading / analyzing / other / none
+    - result: aborted / discarded / error / deleted / not_found / other / none
+    """
+    try:
+        _material_event_counter.add(
+            1, {"event": event, "source": source, "status": status, "result": result}
+        )
+    except Exception:  # pragma: no cover - メトリクスは本処理を止めない
+        pass
+
+
+# 本人セッション一覧 (GET /api/sessions/mine) のカウンタ (#250)。ホーム「過去の要件を見る」
+# (#215) に供給する一覧の取得を計測する (契約 §5 / CLAUDE.md 原則3)。リクエストを 1 ずつ計上し
+# (record_auth_event と統一)、result=empty/listed で「履歴が空のユーザーの頻度」を観測する。
+_my_sessions_counter = metrics.get_meter("sanba_api.sessions").create_counter(
+    "sanba_my_sessions_listed_total",
+    description="本人セッション一覧取得リクエスト数 (result=empty/listed ごと / #250)",
+)
+
+
+def record_my_sessions_listed(count: int) -> None:
+    """本人セッション一覧取得を 1 リクエストとして計上する (#250)。
+
+    返した件数ではなくリクエストを 1 ずつ計上する (record_auth_event と統一)。0 件でも確実に
+    計上し、result=empty/listed で空履歴ユーザーの頻度を観測できるようにする (件数を加算する
+    方式だと 0 件が no-op になり観測の死角になるため)。
+    """
+    try:
+        _my_sessions_counter.add(1, {"result": "empty" if count == 0 else "listed"})
+    except Exception:  # pragma: no cover - メトリクスは本処理を止めない
+        pass
+
+
 def setup_observability(app: FastAPI) -> None:
     """Configure OTel tracing + FastAPI instrumentation. Safe to call once."""
     global _initialised

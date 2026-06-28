@@ -151,3 +151,31 @@ class AssetStore:
         return Asset(
             asset_id=asset_id, kind=kind, content_type=content_type, size=len(raw), uri=uri
         )
+
+    def delete(self, session_id: str, asset_id: str) -> bool:
+        """保存済み binary を削除する（#245 真の破棄）。実体を消したら True（冪等）。
+
+        拡張子は content_type 依存で呼び出し側（DELETE エンドポイント）は持たないため、
+        `sessions/{sid}/assets/{asset_id}` を接頭辞に持つオブジェクトをまとめて消す。
+        asset_id は固定長（`asset-`＋16桁 hash）なので、別 asset の接頭辞に化けることはなく
+        後続は拡張子（`.png` 等）のみ。GCS 未接続は in-memory を消す。存在しない asset でも
+        安全に False を返す（フォールバックを壊さない）。
+        """
+        prefix = f"sessions/{session_id}/assets/{asset_id}"
+        removed = False
+        if self._bucket is not None:  # pragma: no cover - needs live GCS
+            for blob in self._bucket.list_blobs(prefix=prefix):
+                blob.delete()
+                removed = True
+        else:
+            for name in [k for k in self._mem if k.startswith(prefix)]:
+                del self._mem[name]
+                removed = True
+        if removed:
+            log.info(
+                "asset_deleted",
+                session=session_id,
+                asset_id=asset_id,
+                backend="gcs" if self._bucket is not None else "memory",
+            )
+        return removed

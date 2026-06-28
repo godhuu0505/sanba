@@ -117,6 +117,77 @@ export async function uploadContextFile(
   return res.json();
 }
 
+// ── 素材の観測テレメトリ（#232 投入種別 / #243 中断）─────────────────────
+// 投入種別/中断を console ではなくサーバ側 OTLP カウンタへ集約する。第三者クライアント分析
+// SDK は導入せず、既存 metrics 基盤（apps/api observability.py）に載せる（CLAUDE.md 原則3）。
+// PII/自由記述は送らない: 列挙属性のみ（source/status/result）。
+
+/** 受け付けるイベント種別（API 側の許可リストと一致）。 */
+export type TelemetryEvent = "material.source_selected" | "material.cancel";
+
+/** 列挙属性のみ（PII/自由記述は送らない）。API 側で許可リスト検証される。 */
+export interface TelemetryAttrs {
+  /** #232 投入種別。 */
+  source?: "camera" | "screen" | "upload" | "drive";
+  /** #243 中断対象の状態。 */
+  status?: "uploading" | "analyzing";
+  /** #243 中断結果（abort 有無・破棄失敗）。 */
+  result?: "aborted" | "discarded" | "error";
+}
+
+/**
+ * POST /api/sessions/{id}/telemetry（#232/#243）。素材 UI イベントをサーバ集計へ送る。
+ *
+ * 観測は UX を止めない: 送信は best-effort で、失敗（ネットワーク/401/422）は握りつぶす。
+ * ページ遷移中でも届くよう keepalive を付ける。返り値は無し（送信の成否で分岐させない）。
+ */
+export function sendTelemetry(
+  sessionId: string,
+  event: TelemetryEvent,
+  attrs: TelemetryAttrs,
+  sessionToken: string | null,
+): void {
+  try {
+    void fetch(`${API_URL}/api/sessions/${sessionId}/telemetry`, {
+      method: "POST",
+      headers: authHeaders(sessionToken),
+      body: JSON.stringify({ event, ...attrs }),
+      keepalive: true,
+    }).catch(() => {
+      /* 観測は補助。送信失敗で UX を止めない（#243）。 */
+    });
+  } catch {
+    /* fetch が同期 throw（環境差）しても握りつぶす。 */
+  }
+}
+
+export interface DeleteContextFileResult {
+  /** 常に true（冪等な破棄要求が受理された）。 */
+  deleted: boolean;
+  /** サーバに実体（binary/メタ/索引）が在って消したか。 */
+  existed: boolean;
+}
+
+/**
+ * DELETE /api/sessions/{id}/context/file/{assetId}（#245 真の破棄）。
+ *
+ * 投入済み素材の binary・material メタ・grounding 索引をサーバでまとめて取り消す。冪等
+ * （存在しない asset でも 2xx）。中断確定時に呼び、成功でローカル破棄を確定する。失敗時は
+ * 例外を投げ、呼び出し側がローカル破棄の維持/再試行を判断する。
+ */
+export async function deleteContextFile(
+  sessionId: string,
+  assetId: string,
+  sessionToken: string | null,
+): Promise<DeleteContextFileResult> {
+  const res = await fetch(
+    `${API_URL}/api/sessions/${sessionId}/context/file/${encodeURIComponent(assetId)}`,
+    { method: "DELETE", headers: authHeaders(sessionToken) },
+  );
+  if (!res.ok) throw new Error(`delete context file failed: ${res.status}`);
+  return res.json();
+}
+
 // ── ハイドレーション（契約 §4 / Issue #100）─────────────────────────────
 // リロード・途中参加時に現在状態を取得し、データチャネルのライブ差分と合流させる。
 
@@ -239,6 +310,36 @@ export async function exportRequirements(
     headers: authHeaders(sessionToken),
   });
   if (!res.ok) throw new Error(`export failed: ${res.status}`);
+  return res.json();
+}
+
+// ── 本人のセッション履歴（#250 / #215 follow-up）──────────────────────────
+// ホーム「過去の要件を見る」履歴リストに供給する。認証は Google idToken（ADR-0012）で、
+// API 側が owner_sub 一致のものだけを新しい順で返す（認可は本人限定）。PII（owner_email 等）は
+// レスポンスに含めない。
+
+/** GET /api/sessions/mine の 1 行（#250）。本人のセッション（過去の要件）の最小メタ。 */
+export interface MySession {
+  id: string;
+  title: string;
+  /** ISO 8601 の作成時刻。表示用の整形は呼び出し側で行う。 */
+  created_at: string;
+  status: string;
+  /** 07 判定で確定済みか（#186）。 */
+  finalized: boolean;
+}
+
+/**
+ * GET /api/sessions/mine（#250）。ログインユーザー本人のセッション一覧を新しい順で取得する。
+ *
+ * 認証は Google idToken（ADR-0012）。owner_sub が一致するもののみ API 側で返る（本人限定）。
+ * 失敗時は例外を投げ、呼び出し側（ホーム）が空状態を維持するか判断する。
+ */
+export async function fetchMySessions(idToken: string | null): Promise<MySession[]> {
+  const res = await fetch(`${API_URL}/api/sessions/mine`, {
+    headers: authHeaders(idToken),
+  });
+  if (!res.ok) throw new Error(`fetch my sessions failed: ${res.status}`);
   return res.json();
 }
 

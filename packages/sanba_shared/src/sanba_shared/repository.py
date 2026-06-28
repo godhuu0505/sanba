@@ -91,6 +91,27 @@ class SessionRepository:
             return [SessionMeta.model_validate(d.to_dict()) for d in docs]
         return list(self._mem_sessions.values())
 
+    def list_sessions_by_owner(self, owner_sub: str) -> list[SessionMeta]:
+        """呼び出しユーザー本人 (owner_sub) のセッションだけを新しい順で返す (#250)。
+
+        ホームの「過去の要件を見る」履歴リスト (#215) の供給元。認可は本人限定なので、
+        `list_sessions` の全件ではなく owner_sub で必ず絞る。Firestore は owner_sub の
+        等価クエリ、in-memory はフィルタで同じ意味にする。並びは created_at 降順 (新しい
+        ものを上に)。複合インデックス不要なよう order_by は使わずアプリ側で整列する。
+        """
+        if self._client is not None:
+            from google.cloud.firestore_v1.base_query import FieldFilter
+
+            docs = (
+                self._client.collection("sessions")
+                .where(filter=FieldFilter("owner_sub", "==", owner_sub))
+                .stream()
+            )
+            sessions = [SessionMeta.model_validate(d.to_dict()) for d in docs]
+        else:
+            sessions = [m for m in self._mem_sessions.values() if m.owner_sub == owner_sub]
+        return sorted(sessions, key=lambda m: m.created_at, reverse=True)
+
     def get_session(self, session_id: str) -> SessionMeta | None:
         if self._client is not None:
             snap = self._client.collection("sessions").document(session_id).get()
@@ -341,6 +362,30 @@ class SessionRepository:
             )
             return [d.to_dict() for d in docs]
         return list(self._mem_materials.get(session_id, {}).values())
+
+    def delete_material(self, session_id: str, asset_id: str) -> bool:
+        """投入済み素材メタを削除する (#245 真の破棄)。実体を消したら True (冪等)。
+
+        GET /context/files (list_materials) から外し、リロード/再接続での復活を止める。
+        中断確定で DELETE /context/file/{asset_id} から呼ばれる。存在しない asset_id でも
+        安全に False を返す (Firestore 未接続の in-memory フォールバックも壊さない)。
+        """
+        if self._client is not None:
+            ref = (
+                self._client.collection("sessions")
+                .document(session_id)
+                .collection("materials")
+                .document(asset_id)
+            )
+            if not ref.get().exists:
+                return False
+            ref.delete()
+            return True
+        materials = self._mem_materials.get(session_id)
+        if materials is not None and asset_id in materials:
+            del materials[asset_id]
+            return True
+        return False
 
     # ---- Current question (#212 / ADR-0020) --------------------------------
     def save_current_question(
