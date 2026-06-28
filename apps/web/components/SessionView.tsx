@@ -105,19 +105,12 @@ export function SessionView({
     try {
       const res = await uploadContextFile(sessionId, file, sessionToken, aborter.signal);
       // 中断確定後に成功応答が届く通信レース（abort 直前にレスポンスが解決済みだと catch を通らない）。
-      // 成功を反映せず破棄を維持する。サーバには asset が作られている可能性があるため、判明した
-      // asset_id も破棄ガードへ積み、遅延 analysis.*／ハイドレーションでの復活も防ぐ（真のサーバ破棄は #245）。
-      if (aborter.signal.aborted) {
-        if (res.asset_id) {
-          const committed = res.asset_id;
-          setCancelledIds((prev) => {
-            const next = new Set(prev);
-            next.add(committed);
-            return next;
-          });
-        }
-        return;
-      }
+      // 成功を反映しない（行は handleCancelMaterial が立てた cancelled のまま＝破棄を維持）。
+      // ここで res.asset_id を破棄ガードへ積まないこと: asset_id は内容ハッシュで安定するため
+      // 同一ファイルを再投入すると同じ id になり、古い中断応答が後から再投入済みの行を隠してしまう
+      // （Codex P2）。サーバに作られた asset の取消／再読込をまたぐ整合は #245（クライアントは
+      // tempId の cancelled 行で表示破棄に留める）。
+      if (aborter.signal.aborted) return;
       // 成功: asset_id を確定する。画像は API で同期解析済み（analysis_pending=false）なので
       // done にする（画像は analysis.progress/visual のライブが来ないため analyzing のままだと
       // 「解析中100%」が残り、ミニ状況の解析中も消えない）。動画は解析未実装で analyzing のまま

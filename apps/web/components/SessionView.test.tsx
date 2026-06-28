@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { MaterialItem } from "@/lib/realtime/selectors";
@@ -199,14 +199,16 @@ describe("SessionView handleFile pending 行", () => {
     onCancelMaterial(tempId);
     await waitFor(() => expect(lastMaterials.find((m) => m.id === tempId)?.status).toBe("cancelled"));
 
-    // abort 直前に解決済みだった成功応答が届く。
-    resolveUpload({ indexed_chunks: 1, asset_id: "img-r", analysis_pending: false });
+    // abort 直前に解決済みだった成功応答が届く（成功値で resolve）。
+    await act(async () => {
+      resolveUpload({ indexed_chunks: 1, asset_id: "img-r", analysis_pending: false });
+    });
 
-    // 成功は反映されず破棄を維持。サーバ反映済み asset_id も破棄ガードへ積まれる。
-    await waitFor(() => expect(lastCancelledIds.has("img-r")).toBe(true));
+    // 成功は反映されず破棄を維持（行は cancelled・done に戻らない）。
     expect(lastMaterials.find((m) => m.id === tempId)?.status).toBe("cancelled");
-    // tempId 行が done に戻らず、img-r の done 行も生えない。
     expect(lastMaterials.some((m) => m.status === "done")).toBe(false);
+    // 古い中断応答は content-hash の asset_id を破棄ガードへ積まない（同一ファイル再投入を隠さない・Codex P2）。
+    expect(lastCancelledIds.has("img-r")).toBe(false);
   });
 
   it("中断後に同じ asset_id を再アップロードすると復活する（破棄ガードから外す・Codex P2）", async () => {
