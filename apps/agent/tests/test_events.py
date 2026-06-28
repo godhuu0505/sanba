@@ -49,6 +49,16 @@ async def test_seq_is_monotonic_across_types() -> None:
 
 
 @pytest.mark.asyncio
+async def test_start_seq_seeds_monotonic_continuation() -> None:
+    # 再起動シミュレーション（#123）: 保存済み last_seq=5 からシードすると次イベントは seq=6。
+    # 0 から振り直さないことで web の seq ガードが再起動後イベントを黙殺しない。
+    t = RecordingTransport()
+    pub = EventPublisher("s1", t, start_seq=5)
+    env = await pub.status("listening")
+    assert env["seq"] == 6
+
+
+@pytest.mark.asyncio
 async def test_detection_contradiction_payload() -> None:
     t = RecordingTransport()
     pub = EventPublisher("s1", t)

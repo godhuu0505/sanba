@@ -479,6 +479,21 @@ class SessionRepository:
             return
         self._mem_seq[session_id] = seq
 
+    def get_session_seq(self, session_id: str) -> int:
+        """保存済みの適用済み最大 seq を返す（未保存なら 0）。
+
+        Cloud Run 再起動・再参加後に EventPublisher の seq をここからシードし、seq が 0 へ
+        戻らず単調増加を継ぐ。web の seq ガードが再起動後イベントを黙殺しないようにする
+        （#123・ADR-0021）。
+        """
+        if self._client is not None:
+            snap = self._client.collection("sessions").document(session_id).get()
+            data = snap.to_dict() if snap.exists else None
+            if data is not None and isinstance(data.get("last_seq"), int):
+                return int(data["last_seq"])
+            return 0
+        return self._mem_seq.get(session_id, 0)
+
     # ---- internal ----------------------------------------------------------
     def _req_doc(self, session_id: str, rid: str):  # type: ignore[no-untyped-def]
         return (

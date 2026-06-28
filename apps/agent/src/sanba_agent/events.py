@@ -93,12 +93,15 @@ class EventPublisher:
         session_id: str,
         transport: DataTransport,
         *,
+        start_seq: int = 0,
         clock: Any = _now,
     ) -> None:
         self._session_id = session_id
         self._transport = transport
         self._clock = clock
-        self._seq = 0
+        # 再起動後も seq を単調増加させるため、保存済み last_seq でシード（#123・ADR-0021）。
+        # 既定 0（新規）。永続値の読み出しは呼び出し側（repo.get_session_seq）。
+        self._seq = start_seq
         self._lock = asyncio.Lock()
         # 観測性: 要件数・検知数を種別ごとに計測（契約 §5 / ADR-0005 評価へ）。
         # session.completed のサマリを実測から組み立てるため、抜け/矛盾/解消を分けて持つ。

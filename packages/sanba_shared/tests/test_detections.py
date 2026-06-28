@@ -48,6 +48,14 @@ def test_set_session_seq() -> None:
     assert repo._mem_seq["s1"] == 7
 
 
+def test_get_session_seq_roundtrip_and_default() -> None:
+    # 未保存セッションは 0（新規）。保存後は読み戻せる（#123 再起動後の seq シード）。
+    repo = _mem_repo()
+    assert repo.get_session_seq("unknown") == 0
+    repo.set_session_seq("s1", 12)
+    assert repo.get_session_seq("s1") == 12
+
+
 def test_save_and_list_materials() -> None:
     # 素材メタを永続化し、GET /context/files の復元に使える（#184・Codex P1）。
     repo = _mem_repo()
