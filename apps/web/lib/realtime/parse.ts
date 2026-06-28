@@ -21,6 +21,7 @@ const KNOWN_TYPES: ReadonlySet<string> = new Set<ServerEventType>([
   "transcript.final",
   "detection.contradiction",
   "detection.gap",
+  "detection.ambiguous",
   "detection.resolved",
   "requirement.upserted",
   "question.asked",
@@ -50,6 +51,7 @@ const REQUIRED_FIELDS: Record<ServerEventType, readonly string[]> = {
   "transcript.final": ["speaker", "role", "utterance_id", "text"],
   "detection.contradiction": ["id", "summary", "refs", "detector"],
   "detection.gap": ["id", "summary", "category", "refs", "detector"],
+  "detection.ambiguous": ["id", "summary", "refs", "detector"],
   "detection.resolved": ["detection_id", "resolution"],
   "requirement.upserted": ["requirement"],
   "question.asked": ["id", "prompt"],
@@ -114,6 +116,8 @@ function validatePayload(type: ServerEventType, obj: Record<string, unknown>): b
       return isStringArray(obj.refs);
     case "detection.gap":
       return isStringArray(obj.refs) && typeof obj.category === "string";
+    case "detection.ambiguous":
+      return isStringArray(obj.refs);
     case "analysis.progress":
       // pct は 0–100 の進捗率。範囲外（負値・100 超・NaN）は誤った進捗バーになるため弾く。
       return isNumberInRange(obj.pct, 0, 100);

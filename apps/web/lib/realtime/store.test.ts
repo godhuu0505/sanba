@@ -41,6 +41,31 @@ function contradiction(seq: number, id: string): ServerEvent {
   };
 }
 
+function ambiguous(seq: number, id: string): ServerEvent {
+  return {
+    v: 1,
+    type: "detection.ambiguous",
+    seq,
+    ts: "2026-06-24T00:00:00Z",
+    session_id: SESSION,
+    id,
+    summary: `a ${id}`,
+    refs: [],
+    detector: "ambiguity_detector",
+  };
+}
+
+describe("RealtimeStore — detection.ambiguous (#182)", () => {
+  it("ambiguous を kind=ambiguous の未解消検知として取り込む", () => {
+    const s = new RealtimeStore();
+    s.apply(ambiguous(1, "a1"));
+    const det = s.getSnapshot().detections;
+    expect(det).toHaveLength(1);
+    expect(det[0].kind).toBe("ambiguous");
+    expect(det[0].resolved).toBe(false);
+  });
+});
+
 describe("RealtimeStore — (type,id) upsert", () => {
   it("upserts the same requirement id instead of duplicating", () => {
     const s = new RealtimeStore();

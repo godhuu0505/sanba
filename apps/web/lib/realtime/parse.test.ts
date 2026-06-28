@@ -162,6 +162,22 @@ describe("decodeServerEvent ペイロードの enum/配列/範囲 検証 (#120)"
       ).reason,
     ).toBe("ok");
   });
+
+  it("detection.ambiguous は refs 配列が妥当なら ok (#182)", () => {
+    const { reason, event } = decodeServerEvent(
+      bytes({ ...env, type: "detection.ambiguous", id: "a1", summary: "曖昧", refs: ["u1"], detector: "x" }),
+    );
+    expect(reason).toBe("ok");
+    expect(event?.type).toBe("detection.ambiguous");
+  });
+
+  it("detection.ambiguous の refs が配列でないなら bad-payload (#182)", () => {
+    expect(
+      decodeServerEvent(
+        bytes({ ...env, type: "detection.ambiguous", id: "a1", summary: "曖昧", refs: "u1", detector: "x" }),
+      ).reason,
+    ).toBe("bad-payload");
+  });
 });
 
 describe("encodeUserSelection", () => {
