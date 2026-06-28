@@ -3,7 +3,7 @@
 
 import { PRIORITY_ORDER } from "./mapping";
 import type { AnalysisState, SessionState } from "./store";
-import type { Detection, Priority, Requirement } from "./types";
+import type { AnalysisVisualConflict, Detection, Priority, Requirement } from "./types";
 
 /** 未解消の検知のみ（05 のスタック / 08 の補完）。最新（seq 大）が先頭。 */
 export function selectOpenDetections(state: SessionState): Detection[] {
@@ -125,6 +125,60 @@ export function selectMaterials(s: { analysis: readonly AnalysisState[] }): Mate
     if (done && a.extracted.length > 0) item.extracted = a.extracted.length;
     return item;
   });
+}
+
+// ── 参考資料 詳細（05-1）─────────────────────────────────────────────
+// 仕様: docs/design/conversation-experience.md §6（05-1 詳細）/ screens/05-materials.md / Figma 148:2。
+// 一覧（selectMaterials）は件数だけ持つ最小ビューに留め、抽出要件の中身と「言葉×画の矛盾」は
+// 詳細でだけ surface する（PR #200 で AnalysisView を外した結果、conflicts の表示先が消えていた）。
+
+/** 05-1 資料詳細のビューモデル（抽出要件の中身 + 言葉×画の矛盾を含む）。 */
+export interface MaterialDetail {
+  id: string;
+  /** 表示名（無ければ asset_id）。実ファイル名は呼び出し側が mergeMaterials の name で上書きする。 */
+  name: string;
+  pct: number;
+  status: MaterialStatus;
+  /** 抽出した要件（チップ表示）。 */
+  extracted: string[];
+  /**
+   * 言葉×画の矛盾（視覚解析由来）。store 既存形（AnalysisVisualConflict）のまま渡す。
+   * detection.* イベントの有無に依らず analysis.visual に保持された矛盾をそのまま surface するため、
+   * 「視覚解析のみの矛盾（detection 無し）」もここに含まれる（#202 AC）。
+   */
+  conflicts: AnalysisVisualConflict[];
+  /**
+   * 解析結果（analysis.visual）を実際に保持しているか。
+   * true = extracted/conflicts は確定値（空なら「無し」と断定してよい）。
+   * false = 解析途中、または再接続後で詳細が未取得（#184 未対応）。この場合 extracted/conflicts の
+   * 空を「解析結果なし」と断定せず、未取得として扱う（一覧の件数と矛盾させない）。
+   */
+  analysisReady: boolean;
+}
+
+/**
+ * 1素材の詳細（05-1）を導出する。抽出要件の中身と言葉×画の矛盾を含む点が一覧（selectMaterials）と異なる。
+ * conflicts は analysis.visual（store の AnalysisState.conflicts）を出所にし、detection.* に依存しない。
+ * これにより detection が来ない「視覚解析のみの矛盾」も確認できる（#202 AC）。
+ * 対象 asset_id の解析状態がまだ無ければ null（呼び出し側で空状態を出す）。
+ */
+export function selectMaterialDetail(
+  s: { analysis: readonly AnalysisState[] },
+  assetId: string,
+): MaterialDetail | null {
+  const a = s.analysis.find((x) => x.asset_id === assetId);
+  if (!a) return null;
+  const done = a.pct >= 100;
+  return {
+    id: a.asset_id,
+    name: a.asset_id,
+    pct: a.pct,
+    status: done ? "done" : "analyzing",
+    extracted: a.extracted,
+    conflicts: a.conflicts,
+    // 完了（analysis.visual で pct=100 に固定）した素材のみ extracted/conflicts を確定値とみなす。
+    analysisReady: done,
+  };
 }
 
 /**

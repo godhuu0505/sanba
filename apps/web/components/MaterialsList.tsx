@@ -20,6 +20,12 @@ export interface MaterialsListProps {
   /** 失敗行の再試行。 */
   onRetry?: (id: string) => void;
   /**
+   * 素材行 → 05-1 詳細（抽出要件・言葉×画の矛盾）を開く（#202）。
+   * 抽出要件/矛盾は解析完了（analysis.visual）で初めて確定するため、詳細導線は done 行のみ。
+   * 解析中/アップロード中/失敗の行は出さない（中身が無い & 進捗バーを button に内包させない）。
+   */
+  onOpenDetail?: (id: string) => void;
+  /**
    * 解析/アップロード中の素材を中断する（#219）。確定すると当該素材を破棄する。
    * 未指定なら「✕ 中断」導線を出さない（破棄できない文脈で偽ボタンを作らない）。
    */
@@ -36,7 +42,17 @@ const STATUS_LABEL: Record<Exclude<MaterialStatus, "done" | "failed" | "cancelle
   analyzing: "解析中",
 };
 
-export function MaterialsList({ items, onAdd, onRetry, onCancel, aliases }: MaterialsListProps) {
+const ROW_CLASS =
+  "flex flex-col gap-[6px] rounded-[12px] border border-[var(--sanba-border)] bg-[#1b140b] px-3 py-[11px]";
+
+export function MaterialsList({
+  items,
+  onAdd,
+  onRetry,
+  onOpenDetail,
+  onCancel,
+  aliases,
+}: MaterialsListProps) {
   // 中断確認ダイアログの対象素材（null=閉）。確定で onCancel(id) を呼ぶ（#219 / Figma 222:2）。
   const [cancelTarget, setCancelTarget] = useState<MaterialItem | null>(null);
 
@@ -73,12 +89,12 @@ export function MaterialsList({ items, onAdd, onRetry, onCancel, aliases }: Mate
         </p>
       ) : (
         items.map((it) => {
-          return (
-            <div
-              key={it.id}
-              aria-label={`資料 ${it.name}`}
-              className="flex flex-col gap-[6px] rounded-[12px] border border-[var(--sanba-border)] bg-[#1b140b] px-3 py-[11px]"
-            >
+          // 詳細（抽出要件/矛盾）が確定する done 行だけ詳細導線を出す。done 行は phrasing 要素
+          // （テキスト）だけなので button に内包しても妥当な DOM になる（進捗バー div を含まない）。
+          const openable = !!onOpenDetail && it.status === "done";
+
+          const body = (
+            <>
               <span className="text-[13px] font-bold text-[var(--sanba-cream)]">{it.name}</span>
 
               {it.status === "done" && (
@@ -113,6 +129,27 @@ export function MaterialsList({ items, onAdd, onRetry, onCancel, aliases }: Mate
                   )}
                 </div>
               )}
+            </>
+          );
+
+          // 詳細導線つきの行は行全体を1つのボタンにする（入れ子の対話要素を避ける）。
+          if (openable) {
+            return (
+              <button
+                key={it.id}
+                type="button"
+                aria-label={`資料 ${it.name} の詳細を開く`}
+                onClick={() => onOpenDetail?.(it.id)}
+                className={`${ROW_CLASS} text-left`}
+              >
+                {body}
+              </button>
+            );
+          }
+
+          return (
+            <div key={it.id} aria-label={`資料 ${it.name}`} className={ROW_CLASS}>
+              {body}
 
               {it.status === "failed" && (
                 <div className="flex items-center gap-2">
