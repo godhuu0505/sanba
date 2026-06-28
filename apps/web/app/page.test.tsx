@@ -92,6 +92,13 @@ describe("入口フロー（#140）", () => {
     expect(screen.queryByText(/取り上げた抜け・矛盾/)).toBeNull();
   });
 
+  it("01 ホームはヒーロー下に「過去の要件を見る」見出しと空状態の文言を出す（#215）", () => {
+    render(<Home />);
+    expect(screen.getByRole("heading", { name: "過去の要件を見る" })).toBeTruthy();
+    // データ取得 API は別途のため、現状は空状態。遷移リンクは出さない。
+    expect(screen.getByText(/過去の要件はまだございません/)).toBeTruthy();
+  });
+
   it("CTA で 02 準備へ遷移し、役割の既定が企画(PdM)", () => {
     render(<Home />);
     fireEvent.click(screen.getByText("＋ 壁打ちを始める"));

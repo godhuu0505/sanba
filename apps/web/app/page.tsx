@@ -18,6 +18,7 @@ import {
   Chip,
   Field,
   Screen,
+  SessionHistoryList,
   Textarea,
 } from "@/components/sanba";
 import {
@@ -185,11 +186,14 @@ export default function Home() {
   }
 
   // ── 01 ホーム ─────────────────────────────────────────────────────────
-  // Figma 正本（40:2）に実績カードは無い（#140/#147）。ヒーロー＋一語 CTA のみ。
+  // Figma 正本（40:2）に *実績(stat)カード* は無い（#140/#147）。ヒーロー＋一語 CTA に加え、
+  // 正本 99:3「過去の要件を見る」履歴リスト（stat カードとは別物）を下に置く（#215）。
+  // 履歴データ取得 API は別途のため、現状は空状態の文言を出す（props で受け取り可能）。
   return (
     <Screen className="px-4 py-3">
       <AppHeader brand right={<AccountMenu profile={auth.profile} />} />
-      <main className="mx-auto flex w-full max-w-[480px] flex-1 flex-col pt-3">
+      <main className="mx-auto flex w-full max-w-[480px] flex-1 flex-col gap-[18px] pt-3">
+
         <Card>
           <h1 className="text-[22px] font-bold leading-snug text-[var(--sanba-gold-text)]">
             会議の前に、五分の問答を
@@ -201,6 +205,7 @@ export default function Home() {
             ＋ 壁打ちを始める
           </Button>
         </Card>
+        <SessionHistoryList items={[]} />
       </main>
     </Screen>
   );
