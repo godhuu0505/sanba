@@ -68,6 +68,7 @@
 1. **Web**: `apps/web/lib/auth.tsx` の `renderButton` 引数を `theme:"filled_black"` /
    `text:"continue_with"` / `locale:"ja"` に変更。ログイン画面コンポーネントで GIS ボタンの div を
    **金グラデのカード/枠**で囲む（ボタン本体には重ねない）。
+   - **言語固定は script URL + JS の両方**: Google 公式ガイド（[display-button#button_language](https://developers.google.com/identity/gsi/web/guides/display-button#button_language)）は、ボタン言語を手動固定する場合 GIS script の `?hl=<code>` と JS の `locale` を**併用**する手順を示す。`GSI_SRC` を `https://accounts.google.com/gsi/client?hl=ja` に変更する（`locale:"ja"` だけだとユーザーのブラウザ/Google 設定に依存し「Google で続行」に揃わない場合がある）。
 2. **Design**: Figma 正本 `74:16` を規約準拠の合成（フレーム＝金彩 / ボタン＝承認バリアント）へ更新し、
    監査 B-1 #2 と docs のノード ID ドリフト（B-0）を解消。
 3. **dev bypass**: 金ボタンは「開発用ログイン（bypass）」表記を維持し、純正ボタンと区別（現状維持）。
