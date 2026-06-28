@@ -7,6 +7,20 @@
 import { categoryPresentation, priorityLabel } from "../lib/realtime/mapping";
 import type { Priority, Requirement } from "../lib/realtime/types";
 
+/**
+ * artifact の href として安全な scheme か（http/https のみ許可）。
+ * artifacts は LiveKit データチャネル（session.completed）由来で送信者・payload を信頼できないため、
+ * `javascript:` / `data:` 等を href に渡すとクリックで実行され得る（Codex P2）。表示前に弾く。
+ */
+function isSafeHttpUrl(url: string): boolean {
+  try {
+    const u = new URL(url);
+    return u.protocol === "http:" || u.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 /** プレビューで先に出す優先度（Figma 08：Must/Should を優先表示）。 */
 const PREVIEW_PRIORITIES: readonly Priority[] = ["must", "should"];
 /** 各優先度セクションでプレビューに出す最大件数。超過は「ほか N 件 ›」へ畳む。 */
@@ -54,7 +68,8 @@ export function ResultView({
   onExportDrive,
   onExportIssue,
 }: ResultViewProps) {
-  const artifactLinks = artifacts ?? [];
+  // 信頼できない URL scheme（javascript: 等）は表示しない（Codex P2 / XSS 防止）。
+  const artifactLinks = (artifacts ?? []).filter((a) => isSafeHttpUrl(a.url));
   const outputs: { label: string; handler?: () => void }[] = [
     { label: "📄 PDF", handler: onExportPdf },
     { label: "☁ Drive", handler: onExportDrive },

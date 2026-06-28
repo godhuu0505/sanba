@@ -149,4 +149,20 @@ describe("ResultView（要件産婆結果）", () => {
     expect(link.getAttribute("href")).toBe("https://example.com/a.pdf");
     expect(link.getAttribute("target")).toBe("_blank");
   });
+
+  it("javascript: 等の危険な scheme の artifact はリンクにしない (Codex P2 / XSS 防止)", () => {
+    setup({
+      artifacts: [
+        { kind: "evil", url: "javascript:alert(1)" },
+        { kind: "rel", url: "/relative/path" },
+        { kind: "PDF", url: "https://example.com/ok.pdf" },
+      ],
+    });
+    // 安全な https のみリンク化され、危険/相対 URL は描画されない。
+    expect(screen.getAllByRole("link")).toHaveLength(1);
+    expect(screen.getByRole("link", { name: /PDF を開く/ }).getAttribute("href")).toBe(
+      "https://example.com/ok.pdf",
+    );
+    expect(screen.queryByText(/evil を開く/)).toBeNull();
+  });
 });
