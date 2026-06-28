@@ -163,4 +163,26 @@ describe("SessionView handleFile pending 行", () => {
     await waitFor(() => expect(lastCancelledIds.has("vid-9")).toBe(true));
     expect(lastMaterials.find((m) => m.id === "vid-9")?.status).toBe("cancelled");
   });
+
+  it("ダイアログを tempId で開いた後に成功しても、古い tempId で中断できる（id 差替えの競合・Codex P2）", async () => {
+    // 確認ダイアログを開いた時点では行 id は local:*（uploading）。確定前にアップロードが成功し、
+    // 行 id は asset_id（vid-x）に差し替わる。確定時は古い tempId が渡るが、両 id を破棄する。
+    uploadContextFile.mockResolvedValue({
+      indexed_chunks: 0,
+      asset_id: "vid-x",
+      asset_kind: "video",
+      analysis_pending: true,
+    });
+    const { container } = render(<SessionView sessionId="s1" sessionToken="t1" />);
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [new File(["x"], "clip.mp4")] } });
+    const tempId = lastMaterials.at(-1)?.id as string; // local:* を捕捉（ダイアログを開いた時点）。
+    // アップロード成功で行 id が asset_id へ差し替わるのを待つ。
+    await waitFor(() => expect(lastMaterials.find((m) => m.id === "vid-x")).toBeTruthy());
+    // 古い tempId で中断を確定する。
+    onCancelMaterial(tempId);
+    // asset_id 側がガードへ積まれ（遅延 analysis.* で復活しない）、行も cancelled になる。
+    await waitFor(() => expect(lastCancelledIds.has("vid-x")).toBe(true));
+    expect(lastMaterials.find((m) => m.id === "vid-x")?.status).toBe("cancelled");
+  });
 });

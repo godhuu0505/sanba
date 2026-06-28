@@ -85,6 +85,14 @@ describe("mergeMaterials", () => {
     const merged = mergeMaterials([], local, []);
     expect(merged.map((m) => m.id)).toEqual(["u1"]);
   });
+
+  it("cancelled 行は同 id の realtime 後勝ちでも復活しない（cancelledIds 未指定・Codex P2）", () => {
+    // 破棄済み local 行（cancelled）と、遅延して届いた同 id の realtime 解析行。
+    const local = [item({ id: "a1", name: "破棄.png", status: "cancelled" })];
+    const realtime = [item({ id: "a1", name: "a1", pct: 60, status: "analyzing" })];
+    // cancelledIds を渡さなくても、status==="cancelled" の id を事前集約して除外する。
+    expect(mergeMaterials(realtime, local, [])).toEqual([]);
+  });
 });
 
 // 参考資料タブ（05）の素材ビューモデル。analysis.progress/visual 由来の AnalysisState を

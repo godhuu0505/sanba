@@ -62,6 +62,10 @@ export function SessionView({
   const tempSeq = useRef(0);
   // 送信中アップロードの AbortController（tempId→controller）。中断時に abort() で fetch を中止する。
   const uploadAborters = useRef<Map<string, AbortController>>(new Map());
+  // アップロード成功で行 id は tempId→asset_id に差し替わる（realtime と突き合わせるため）。
+  // 確認ダイアログを tempId で開いた直後に成功すると、確定時は古い tempId が渡る。両 id を
+  // 中断対象に解決できるよう tempId↔asset_id の対応を控える（#219 / Codex P2）。
+  const uploadAliases = useRef<Map<string, string>>(new Map());
 
   // 接続/再接続時に投入済み素材のメタを取り戻す（契約 §4 / #184）。失敗してもライブ差分で前進する。
   useEffect(() => {
@@ -104,6 +108,10 @@ export function SessionView({
       // （GET context/files のハイドレーションが状態を補正する / 契約 §3）。
       const assetId = res.asset_id ?? tempId;
       const done = res.analysis_pending !== true;
+      // tempId↔asset_id を控える（確認ダイアログを tempId で開いた後に成功しても中断できるように）。
+      if (assetId !== tempId) uploadAliases.current.set(tempId, assetId);
+      // 成功で abort 対象ではなくなったので controller を片付ける（中断は破棄ガードに切替わる）。
+      uploadAborters.current.delete(tempId);
       // 画像は同期解析済みなので done/100%。動画は解析未着手の「準備中」なので analyzing/0%
       // にして「解析中100%」を出さない。pct はハイドレーション（status→ done?100:0）と揃える。
       setPending((p) =>
@@ -139,16 +147,33 @@ export function SessionView({
   // cancelledIds により、破棄後に遅延 analysis.* が届いても mergeMaterials が行を復活させない。
   // サーバ側の解析ジョブ取消は Out of Scope（必要なら別 issue）。クライアントの破棄に留める。
   function handleCancelMaterial(id: string) {
-    uploadAborters.current.get(id)?.abort();
-    uploadAborters.current.delete(id);
+    // 確認ダイアログを tempId で開いた後にアップロードが成功すると行 id は asset_id に変わる。
+    // どちらで渡されても確実に破棄できるよう、tempId↔asset_id の対応を双方向に解決する（Codex P2）。
+    const ids = new Set<string>([id]);
+    const aliased = uploadAliases.current.get(id);
+    if (aliased) ids.add(aliased);
+    for (const [tempId, assetId] of uploadAliases.current) if (assetId === id) ids.add(tempId);
+
+    let aborted = false;
+    for (const cid of ids) {
+      const controller = uploadAborters.current.get(cid);
+      if (controller) {
+        controller.abort(); // 送信中の fetch を中止する。
+        aborted = true;
+        uploadAborters.current.delete(cid);
+      }
+    }
     // ローカル行があれば cancelled にする（pending の failed 行管理を踏襲した終端状態）。
-    setPending((p) => p.map((m) => (m.id === id ? { ...m, status: "cancelled" } : m)));
+    setPending((p) => p.map((m) => (ids.has(m.id) ? { ...m, status: "cancelled" } : m)));
     // realtime/復元由来の行（pending に無い）も含めて id を無視するガードに積む。
     setCancelledIds((prev) => {
       const next = new Set(prev);
-      next.add(id);
+      for (const cid of ids) next.add(cid);
       return next;
     });
+    // 観測性（CLAUDE.md 原則3）: 中断率・abort 有無・対象 id を運用で追えるよう記録する。
+    // 投入種別計測（#201 onSelectSource）と同じく、OTLP/メトリクス基盤への集約配線は #232。
+    console.info("[material] cancel", { ids: [...ids], aborted });
   }
 
   function openSourceSheet() {

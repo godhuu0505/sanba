@@ -146,6 +146,11 @@ export function mergeMaterials(
   cancelledIds: ReadonlySet<string> = EMPTY_IDS,
 ): MaterialItem[] {
   const ordered = [...hydrated, ...local, ...realtime];
+  // 破棄 id を先に集約する。cancelledIds（呼び出し側のガード）に加え、いずれかのソースが
+  // status==="cancelled" を持つ id も破棄とみなす。これで後勝ちマージ（realtime 最優先）で
+  // cancelled が analyzing/done に上書きされても復活しない（#219 / Codex P2）。
+  const cancelled = new Set(cancelledIds);
+  for (const m of ordered) if (m.status === "cancelled") cancelled.add(m.id);
   const byId = new Map<string, MaterialItem>();
   const realName = new Map<string, string>();
   for (const m of ordered) {
@@ -155,9 +160,8 @@ export function mergeMaterials(
     byId.set(m.id, { ...byId.get(m.id), ...m });
   }
   return [...byId.values()]
-    // 中断（破棄）した素材は表示・件数から除く。遅延 analysis.* が来ても cancelledIds で
-    // id を無視し、行を復活させない（#219）。
-    .filter((m) => m.status !== "cancelled" && !cancelledIds.has(m.id))
+    // 中断（破棄）した素材は表示・件数から除く（遅延 analysis.* が来ても id ごと無視）。
+    .filter((m) => !cancelled.has(m.id))
     .map((m) => {
       const name = realName.get(m.id);
       return name ? { ...m, name } : m;

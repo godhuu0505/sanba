@@ -150,12 +150,13 @@ export function ConversationSessionView({
   );
 
   // 統合後の素材をミニ状況の件数・解析中フラグに反映する（ヘッダーの「📎資料 N」と一致させる）。
+  // 解析中フラグは破棄反映後の materials のみから導出する。baseMini.analyzing（state.analysis 由来）を
+  // OR すると、中断で破棄した analysis 行が pct<100 の間ヘッダーが「資料 0（解析中）」と矛盾するため
+  // 使わない（#219 / Codex P2）。materials は realtime 解析中行を含み cancelled を除くので過不足ない。
   const mini = {
     ...baseMini,
     materials: materials.length,
-    analyzing:
-      baseMini.analyzing ||
-      materials.some((m) => m.status === "uploading" || m.status === "analyzing"),
+    analyzing: materials.some((m) => m.status === "uploading" || m.status === "analyzing"),
   };
 
   function leaveConversationTo(next: Phase) {
