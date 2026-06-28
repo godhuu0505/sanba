@@ -69,3 +69,70 @@ def test_save_material_upserts_by_id() -> None:
     items = repo.list_materials("s1")
     assert len(items) == 1
     assert items[0]["status"] == "done"
+
+
+# ── 現在質問の保存/クリア（#212 / ADR-0020）──────────────────────────────────
+def test_save_current_question_stores_pointer_with_asked_seq() -> None:
+    repo = _mem_repo()
+    repo.save_current_question(
+        "s1",
+        {"id": "q1", "prompt": "並び順は？", "options": [{"label": "A", "value": "A"}]},
+        asked_seq=5,
+    )
+    doc = repo._mem_questions["s1"]
+    assert doc["id"] == "q1"
+    assert doc["asked_seq"] == 5
+    assert doc["cleared"] is False
+    assert doc["prompt"] == "並び順は？"
+
+
+def test_save_current_question_overwrites_previous_pointer() -> None:
+    # 最新1問モデル: 後の ask が前のポインタ（tombstone 含む）を全置換する。
+    repo = _mem_repo()
+    repo.save_current_question("s1", {"id": "q1", "prompt": "p1"}, asked_seq=1)
+    repo.clear_current_question("s1", "q1", cleared_seq=2)
+    repo.save_current_question("s1", {"id": "q2", "prompt": "p2"}, asked_seq=3)
+    doc = repo._mem_questions["s1"]
+    assert doc["id"] == "q2"
+    assert doc["cleared"] is False
+    assert "cleared_seq" not in doc  # 前 tombstone の cleared_seq を引き継がない
+
+
+def test_clear_current_question_only_when_id_matches() -> None:
+    # §5-3: 現在質問 id == question_id のときだけクリア（古い回答で新しい問いを消さない）。
+    repo = _mem_repo()
+    repo.save_current_question("s1", {"id": "q2", "prompt": "p2"}, asked_seq=7)
+    # 古い q1 の回答が遅れて届いても、current が q2 なのでクリアしない。
+    assert repo.clear_current_question("s1", "q1", cleared_seq=8) is False
+    assert repo._mem_questions["s1"]["id"] == "q2"
+    assert repo._mem_questions["s1"]["cleared"] is False
+
+
+def test_clear_current_question_tombstones_and_masks_pii() -> None:
+    # §5-9: 物理削除せず tombstone 化。prompt/options（PII を含みうる）は消し cleared_seq を残す。
+    repo = _mem_repo()
+    repo.save_current_question(
+        "s1",
+        {"id": "q1", "prompt": "氏名は？", "options": [{"label": "x", "value": "x"}]},
+        asked_seq=4,
+    )
+    assert repo.clear_current_question("s1", "q1", cleared_seq=6) is True
+    doc = repo._mem_questions["s1"]
+    assert doc["cleared"] is True
+    assert doc["cleared_seq"] == 6
+    assert "prompt" not in doc  # PII を残さない
+    assert "options" not in doc
+
+
+def test_clear_current_question_is_idempotent() -> None:
+    # 既クリア（tombstone）への再クリアは no-op で False（並行回答/再送に強い）。
+    repo = _mem_repo()
+    repo.save_current_question("s1", {"id": "q1", "prompt": "p"}, asked_seq=1)
+    assert repo.clear_current_question("s1", "q1", cleared_seq=2) is True
+    assert repo.clear_current_question("s1", "q1", cleared_seq=3) is False
+    assert repo._mem_questions["s1"]["cleared_seq"] == 2  # 最初のクリア seq を保つ
+
+
+def test_clear_current_question_missing_returns_false() -> None:
+    repo = _mem_repo()
+    assert repo.clear_current_question("s1", "q1", cleared_seq=2) is False

@@ -51,6 +51,7 @@ web 側の適用規則: **`(type, id)` で冪等**（同じ要件/検知は upse
 | `detection.resolved` | 05/08 | `detection_id`（解消対象）, `resolution`:`"user_selected"`\|`"agent_resolved"`, `selected_value?`（選択肢タップ時） |
 | `requirement.upserted` | 08/09 | `requirement`:{`id`,`statement`,`category`(`functional`\|`non_functional`\|`constraint`\|`scope`\|`open_question`),`priority`(`must`\|`should`\|`could`\|`wont`),`confidence`(0–1),`source_speaker`,`citations`:[{`kind`,`ref`}],`status`(`draft`\|`confirmed`)} |
 | `question.asked` | 04 | `id`, `prompt`, `options?`:[{`label`,`value`}]（#181）。通常質問（金枠）を問いピンに出す。選択肢があればタップで `user.answered` を返す。web は seq ガードで最新1問を保持 |
+| `question.cleared` | 04 | `question_id`（クリア対象 `question.asked` の `id`）（#212 / ADR-0020）。回答（タップ/音声/テキスト）で現在質問が解消されたことを全参加者へ伝播し、重複回答を防ぐ。`cleared_seq` は本イベントの **envelope `seq` そのもの**。web は `question_id === current?.id` かつ `seq > lastQuestionSeq` のときだけピンを畳む。`question.asked` と対称に seq 境界（`last_seq`）は進めない |
 | `analysis.progress` | 07 | `asset_id`, `pct`(0–100), `stage`（領域検出/OCR/突合 等の人間可読ラベル） |
 | `analysis.visual` | 08 | `asset_id`, `extracted`:[string...], `conflicts`:[{`summary`,`refs`}] |
 | `session.completed` | 09/10 | `summary`:{`contradictions_resolved`,`gaps_found`,`issues_created`}, `artifacts`:[{`kind`,`url`}] |
@@ -77,6 +78,7 @@ web 側の適用規則: **`(type, id)` で冪等**（同じ要件/検知は upse
 | GET | `/api/sessions/{id}/requirements` | `{items:[requirement...], seq}` 現在の要件一覧（`seq` は適用済み連番） | join 済みトークン（Bearer / Cookie）。`session_id` 単体では不可 | **P0**（08/09 の前提） |
 | GET | `/api/sessions/{id}/detections?open=1` | `{items:[detection...]}` 未解消検知 | 同上 | P1（08 の途中参加補強） |
 | GET | `/api/sessions/{id}/context/files` | `{items:[{id,name,kind,status,extracted?}]}` 投入済み素材のメタ（#184）。リロード/再接続で実ファイル名・解析状態を復元。web は realtime の analysis 行と `id`(=asset_id) で統合 | 同上 | P1（05 参考資料の復元） |
+| GET | `/api/sessions/{id}/questions/current` | `{question:{id,prompt,options}\|null, seq}` 現在の未回答質問（金枠ピン / #212・ADR-0020）。回答済み/未提示なら `question=null`。**`null` でも `seq`（クリア時点の `cleared_seq`）を返す**ことで、遅延 null が新しい live 質問を消す逆転を防ぐ。`seq` は active なら `asked_seq` | 同上 | P1（04 問いピンの復元） |
 | POST | `/api/sessions/{id}/finalize` | `{finalized:true, confirmed_count}`（#186）。07 判定の「確定」を永続化（session=finalized・確定件数を刻む不可逆マーカ）。要件の draft→approved 承認は管理画面の責務（ADR-0014）なので触れない | 同上 | P1（07→08） |
 | POST | `/api/sessions/{id}/export` | 成功: `{exported:true, issue_url, count}` + `doc_url?`（Markdown 生成が有れば追加）、失敗: `{exported:false, reason}` — agent ツール `export_requirements_to_github` を起動し `{exported, url, count}` を受け取り、web 向けに `issue_url=url` へリネームして返す | 同上 | P1（09→10） |
 

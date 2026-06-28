@@ -1,4 +1,4 @@
-import type { Detection, Requirement } from "./realtime/types";
+import type { Detection, Question, Requirement } from "./realtime/types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
 
@@ -86,11 +86,18 @@ export interface UploadResult {
   analysis_pending?: boolean;
 }
 
-/** POST /api/sessions/{id}/context/file（画像/動画）。FormData で送る。 */
+/**
+ * POST /api/sessions/{id}/context/file（画像/動画）。FormData で送る。
+ *
+ * signal（任意）を渡すと、中断（#219）で AbortController.abort() により送信中の fetch を中止できる。
+ * 中止時は fetch が AbortError で reject する（呼び出し側で signal.aborted を見て failed と区別する）。
+ * 既存呼び出しは signal 省略でそのまま動く（後方互換）。
+ */
 export async function uploadContextFile(
   sessionId: string,
   file: File,
   sessionToken: string | null,
+  signal?: AbortSignal,
 ): Promise<UploadResult> {
   const form = new FormData();
   form.append("file", file);
@@ -102,6 +109,7 @@ export async function uploadContextFile(
     method: "POST",
     headers,
     body: form,
+    signal,
   });
   if (res.status === 415) throw new Error("対応していない形式です（PNG/JPG・MP4/MOV）");
   if (res.status === 413) throw new Error("ファイルが大きすぎます");
@@ -121,6 +129,14 @@ export interface RequirementsSnapshot {
 export interface DetectionsSnapshot {
   items: Detection[];
   seq?: number;
+}
+
+/** GET /questions/current のスナップショット（#212 / ADR-0020）。 */
+export interface CurrentQuestionSnapshot {
+  /** 現在の未回答質問。回答済み/未提示なら null。 */
+  question: Question | null;
+  /** asked_seq（active）または cleared_seq（回答済み）。null でも順序情報として返る（§5-4）。 */
+  seq: number;
 }
 
 /** GET /context/files の 1 行（契約 §4 #184）。realtime の analysis 行と asset_id で突き合わせる。 */
@@ -159,6 +175,18 @@ export async function fetchContextFiles(
     headers: authHeaders(sessionToken),
   });
   if (!res.ok) throw new Error(`fetch context files failed: ${res.status}`);
+  return res.json();
+}
+
+/** GET /api/sessions/{id}/questions/current（#212）。現在の未回答質問（金枠ピン）の復元。 */
+export async function fetchCurrentQuestion(
+  sessionId: string,
+  sessionToken: string | null,
+): Promise<CurrentQuestionSnapshot> {
+  const res = await fetch(`${API_URL}/api/sessions/${sessionId}/questions/current`, {
+    headers: authHeaders(sessionToken),
+  });
+  if (!res.ok) throw new Error(`fetch current question failed: ${res.status}`);
   return res.json();
 }
 

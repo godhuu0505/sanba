@@ -49,6 +49,22 @@ def record_asset_upload(kind: str, result: str) -> None:
         pass
 
 
+# 現在質問ハイドレーション（GET /questions/current）のカウンタ（#212 / ADR-0020 §5）。
+# requirements_hydrated と同様に「未回答の問いが復元できたか」を計測する（契約 §5）。
+_question_hydration_counter = metrics.get_meter("sanba_api.questions").create_counter(
+    "sanba_question_hydrations_total",
+    description="現在質問ハイドレーション数 (result=question/empty ごと)",
+)
+
+
+def record_question_hydration(has_question: bool) -> None:
+    """現在質問ハイドレーションを計上する (result=question:復元あり / empty:未提示or回答済み)。"""
+    try:
+        _question_hydration_counter.add(1, {"result": "question" if has_question else "empty"})
+    except Exception:  # pragma: no cover - メトリクスは本処理を止めない
+        pass
+
+
 def setup_observability(app: FastAPI) -> None:
     """Configure OTel tracing + FastAPI instrumentation. Safe to call once."""
     global _initialised

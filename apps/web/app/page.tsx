@@ -9,7 +9,7 @@
 // 未ログインなら理由提示＋/login への導線を出す（インラインのログインパネルは廃止）。
 
 import Link from "next/link";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import {
   AppHeader,
@@ -22,14 +22,22 @@ import {
   Textarea,
 } from "@/components/sanba";
 import {
+  ACCEPTED_IMAGE,
+  ACCEPTED_VIDEO,
   addSessionContext,
+  classifyUpload,
   createSession,
   joinSession,
+  uploadContextFile,
   type JoinResponse,
 } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { AccountMenu } from "../components/AccountMenu";
 import { ConversationStart } from "../components/ConversationStart";
+import {
+  MaterialSourceSheet,
+  type MaterialSource,
+} from "../components/MaterialSourceSheet";
 import { authGate } from "../components/RequireAuth";
 
 // 役割チップ。表示は日本語、value は API（POST /api/sessions の roles）に渡す既存値。
@@ -52,6 +60,16 @@ export default function Home() {
   const [busy, setBusy] = useState(false);
   const [conn, setConn] = useState<JoinResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // 参考資料（バイナリ添付）。join 前アップロード経路が無い（ADR-0017 一本道）ため、
+  // 選んだファイルはクライアント側でステージし、handleStart の join 直後に順次投入する。
+  const [staged, setStaged] = useState<File[]>([]);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [attachError, setAttachError] = useState<string | null>(null);
+  // 開始時に「実際に投入できた」名前と失敗件数のスナップショット。03-0 サマリは
+  // staged ではなくこれを参照し、未登録ファイルを「添付済み」と誤認させない（Codex P2）。
+  const [uploadedNames, setUploadedNames] = useState<string[]>([]);
+  const [uploadFailedCount, setUploadFailedCount] = useState(0);
+  const fileInput = useRef<HTMLInputElement>(null);
   const auth = useAuth();
 
   // 厳密な認証ゲート（全画面保護 / docs/design/figma-implementation-audit.md A節）。
@@ -78,12 +96,82 @@ export default function Home() {
         // ゴールは RAG・会話初期文脈へ取り込む（source_name=goal / 02-prepare.md AC）。
         await addSessionContext(joined.session_id, goal, joined.session_token, "goal");
       }
+      // 準備画面でステージした参考資料を、会話開始前に join 済みトークンで順次投入する
+      // （契約 §4 / ADR-0017 一本道。join 前 upload 経路が無いためここで一括投入）。
+      // 1 件の失敗で開始全体は止めないが、成功した分だけをサマリに渡し、失敗件数は別途知らせる
+      // （未登録ファイルを「添付済み」と誤認させない / Codex P2）。
+      const uploaded: string[] = [];
+      let failed = 0;
+      for (const file of staged) {
+        try {
+          await uploadContextFile(joined.session_id, file, joined.session_token);
+          uploaded.push(file.name);
+        } catch (uploadErr) {
+          failed += 1;
+          // PII 回避: ファイル名は出さず、種別・エラーのみ残す（収集先の OTLP/メトリクス配線は #232）。
+          console.error("staged material upload failed", { kind: classifyFile(file), error: uploadErr });
+        }
+      }
+      setUploadedNames(uploaded);
+      setUploadFailedCount(failed);
       setConn(joined);
     } catch (e) {
       setError(String(e));
     } finally {
       setBusy(false);
     }
+  }
+
+  // ── 参考資料（バイナリ添付）の操作 ────────────────────────────────────────
+  // 投入種別の計測 seam（CLAUDE.md 原則3）。準備画面はカメラ/画面共有を出さないため
+  // upload/drive のみが流れる。収集先（OTLP/メトリクス基盤）への本配線は #232 だが、それまでも
+  // 運用でファネル/誤タップを追えるよう構造化ログを残す（"新しい処理に観測性を通す"）。
+  function measureSource(source: MaterialSource) {
+    console.info("[material-source] select", { source, surface: "prepare" });
+  }
+
+  // 受理判定は API（content-type）と揃える。拡張子（classifyUpload）に加えて File.type も見る
+  // ことで、.jfif や拡張子なしでも MIME が image/video なら受理する（Codex P2）。
+  function classifyFile(file: File): "image" | "video" | null {
+    const byName = classifyUpload(file.name);
+    if (byName) return byName;
+    const type = file.type.toLowerCase();
+    if (type === "image/png" || type === "image/jpeg") return "image";
+    if (type === "video/mp4" || type === "video/quicktime") return "video";
+    return null;
+  }
+
+  // ピッカで選んだファイルをステージする。非対応形式は弾いて理由を出す
+  // （API と同じ受理範囲: PNG/JPG・MP4/MOV / 要件票 06）。
+  function handleAddFiles(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = ""; // 同じファイルの再選択でも change を発火させる。
+    if (busy || files.length === 0) return; // 開始処理中は投入セットを固定する（Codex P2）。
+    const accepted: File[] = [];
+    const rejected: string[] = [];
+    for (const f of files) {
+      if (classifyFile(f)) accepted.push(f);
+      else rejected.push(f.name);
+    }
+    if (accepted.length > 0) {
+      // 同名・同サイズの重複はステージしない（取り違え・二重投入の防止）。
+      setStaged((prev) => {
+        const key = (f: File) => `${f.name}:${f.size}`;
+        const seen = new Set(prev.map(key));
+        return [...prev, ...accepted.filter((f) => !seen.has(key(f)))];
+      });
+    }
+    setAttachError(
+      rejected.length > 0
+        ? `対応していない形式です（PNG/JPG・MP4/MOV）: ${rejected.join("、")}`
+        : null,
+    );
+  }
+
+  function removeStaged(index: number) {
+    if (busy) return; // 開始処理中は投入セットを固定する（Codex P2）。
+    setStaged((prev) => prev.filter((_, i) => i !== index));
+    setAttachError(null);
   }
 
   // ── 03 会話開始: 開始前サマリ → 接続/許可 →（成功）04 会話履歴。失敗時は復帰導線。
@@ -95,6 +183,10 @@ export default function Home() {
         conn={conn}
         goal={goal}
         roleLabel={roleLabel}
+        // 03-0 開始前サマリの「参考資料」には "実際に投入できた" 名前だけを反映する
+        // （未登録ファイルを添付済みと誤認させない / 監査 B-2 #11・Codex P2）。
+        materialNames={uploadedNames}
+        materialFailedCount={uploadFailedCount}
         // 中断したら会話を畳んで準備（02）へ戻す（マイク送信は SessionView 側で停止済み）。
         onCancel={() => setConn(null)}
       />
@@ -141,6 +233,71 @@ export default function Home() {
             />
           </Field>
 
+          {/* 参考資料（バイナリ添付）。Figma 89:25 / 91:10。押下で手段選択シート（#201 再利用）を開く。
+              準備画面は LiveKit ルーム外のためカメラ/画面共有は渡さず、アップロード/Drive のみ。
+              選んだファイルはステージ（チップ表示・削除可）し、handleStart で会話開始前に投入する。 */}
+          <div className="flex flex-col gap-[8px]">
+            <span className="text-[13px] font-bold text-[var(--sanba-muted)]">
+              参考資料（任意）
+            </span>
+            <p className="text-[12px] leading-relaxed text-[var(--sanba-muted)]">
+              モック・スクショ・写真（PNG/JPG）や録画（MP4/MOV）を、会話の前に渡しておけます。
+            </p>
+
+            {staged.length > 0 && (
+              <ul aria-label="添付した参考資料" className="flex flex-wrap gap-[8px]">
+                {staged.map((file, i) => (
+                  <li key={`${file.name}:${file.size}`}>
+                    <Chip tone="gold" size="md">
+                      <span aria-hidden="true">📄 </span>
+                      <span className="max-w-[180px] truncate align-middle">{file.name}</span>
+                      <button
+                        type="button"
+                        onClick={() => removeStaged(i)}
+                        disabled={busy}
+                        aria-label={`${file.name} を取り外す`}
+                        className="ml-[6px] text-[var(--sanba-muted)] disabled:opacity-50"
+                      >
+                        ✕
+                      </button>
+                    </Chip>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            {/* 開始処理中（busy）は追加/削除を止める。クリック時点の staged のみが投入されるため、
+                遅れて足した資料が「添付済み」に見えて実際は未送信、という齟齬を防ぐ（Codex P2）。 */}
+            <button
+              type="button"
+              onClick={() => {
+                setAttachError(null);
+                setSheetOpen(true);
+              }}
+              disabled={busy}
+              aria-haspopup="dialog"
+              className="rounded-[12px] border border-dashed border-[var(--sanba-frame)] bg-[#1b140b] px-3 py-[13px] text-left text-[12.5px] font-bold text-[var(--sanba-gold-text)] disabled:opacity-50"
+            >
+              ＋ ファイルを追加
+            </button>
+
+            {attachError && (
+              <p role="alert" className="text-[12px] text-[var(--sanba-rec)]">
+                {attachError}
+              </p>
+            )}
+          </div>
+
+          {/* 隠しファイルピッカ。受理範囲は API と同一（PNG/JPG・MP4/MOV）。複数選択可。 */}
+          <input
+            ref={fileInput}
+            type="file"
+            multiple
+            accept={`${ACCEPTED_IMAGE},${ACCEPTED_VIDEO}`}
+            onChange={handleAddFiles}
+            className="hidden"
+          />
+
           {/* 同意ゲート（issue #10）。保持日数・PII マスク文言を併記。 */}
           <label className="flex items-start gap-[10px] text-[13px] leading-relaxed text-[var(--sanba-cream)]">
             <input
@@ -181,6 +338,20 @@ export default function Home() {
             {error && <p className="text-[12px] text-[var(--sanba-rec)]">{error}</p>}
           </div>
         </main>
+
+        {/* 資料の追加方法シート（#201 再利用）。準備画面は LiveKit ルーム外のため
+            カメラ/画面共有ハンドラは渡さない＝アップロード/Drive のみ。Drive は ADR-0007 未承認で
+            シート側が「準備中」を案内する。投入種別は onSelectSource で計測可能にする（#232 へ配線）。 */}
+        {sheetOpen && (
+          <MaterialSourceSheet
+            onClose={() => setSheetOpen(false)}
+            onUpload={() => {
+              setSheetOpen(false);
+              fileInput.current?.click();
+            }}
+            onSelectSource={measureSource}
+          />
+        )}
       </Screen>
     );
   }
