@@ -213,7 +213,7 @@ describe("入口フロー（#140）", () => {
     expect(screen.getByText(/（計2件）/)).toBeTruthy();
   });
 
-  it("1 件の投入失敗でも会話開始は止めない（残りは 05 で再投入できる）", async () => {
+  it("投入失敗分は開始は止めず、サマリで添付済み扱いにせず失敗件数を出す（Codex P2）", async () => {
     const { container } = gotoPrepare();
     fireEvent.click(screen.getByRole("checkbox"));
     uploadContextFile.mockRejectedValueOnce(new Error("upload failed: 500"));
@@ -221,6 +221,39 @@ describe("入口フロー（#140）", () => {
     fireEvent.click(screen.getByRole("button", { name: "インタビューを始める" }));
     // 失敗しても開始前サマリ（03-0）へ進む。
     await waitFor(() => expect(screen.getByText("支度、相整いまして")).toBeTruthy());
+    // 失敗分は「添付済み」に出さない（誤認防止）。0 件成功なので従来文言＋失敗注記。
+    expect(screen.queryByText(/ng\.png/)).toBeNull();
+    expect(screen.getByText("会話中に追加できます")).toBeTruthy();
+    expect(screen.getByText(/1件は投入できませんでした/)).toBeTruthy();
+  });
+
+  it("拡張子が無くても MIME が画像/動画なら受理する（API と整合 / Codex P2）", () => {
+    const { container } = gotoPrepare();
+    pickFiles(container, [new File(["x"], "clipboard-image", { type: "image/png" })]);
+    expect(
+      screen.getByRole("list", { name: "添付した参考資料" }).textContent,
+    ).toContain("clipboard-image");
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("開始処理中は添付の追加/削除を無効化する（Codex P2）", async () => {
+    authState.loggedIn = true;
+    let release: (v: Awaited<ReturnType<typeof createSession>>) => void = () => {};
+    createSession.mockImplementationOnce(() => new Promise((r) => { release = r; }));
+    const { container } = render(<Home />);
+    fireEvent.click(screen.getByText("＋ 壁打ちを始める"));
+    fireEvent.click(screen.getByRole("checkbox"));
+    pickFiles(container, [new File(["x"], "a.png", { type: "image/png" })]);
+    fireEvent.click(screen.getByRole("button", { name: "インタビューを始める" }));
+    expect(
+      (screen.getByRole("button", { name: "＋ ファイルを追加" }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+    expect(
+      (screen.getByRole("button", { name: "a.png を取り外す" }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+    await act(async () => {
+      release({ session_id: "s1", invites: { pm: "inv-pm" } });
+    });
   });
 
   it("開始処理中は二重送信できない", async () => {

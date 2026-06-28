@@ -48,6 +48,22 @@ describe("StartIntro（03-0 開始前）", () => {
     expect(screen.getByText(/（計2件）/)).toBeTruthy();
   });
 
+  it("投入失敗があれば件数を注意書きで出す（Codex P2）", () => {
+    render(
+      <StartIntro
+        goal=""
+        roleLabel="顧客"
+        materialNames={["ok.png"]}
+        materialFailedCount={2}
+        onStartVoice={vi.fn()}
+        onStartText={vi.fn()}
+        onBack={vi.fn()}
+      />,
+    );
+    expect(screen.getByText(/ok\.png/)).toBeTruthy();
+    expect(screen.getByRole("alert").textContent).toContain("2件は投入できませんでした");
+  });
+
   it("音声開始・テキスト開始がそれぞれ配線される", () => {
     const onStartVoice = vi.fn();
     const onStartText = vi.fn();

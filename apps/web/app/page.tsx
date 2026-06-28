@@ -65,6 +65,10 @@ export default function Home() {
   const [staged, setStaged] = useState<File[]>([]);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [attachError, setAttachError] = useState<string | null>(null);
+  // 開始時に「実際に投入できた」名前と失敗件数のスナップショット。03-0 サマリは
+  // staged ではなくこれを参照し、未登録ファイルを「添付済み」と誤認させない（Codex P2）。
+  const [uploadedNames, setUploadedNames] = useState<string[]>([]);
+  const [uploadFailedCount, setUploadFailedCount] = useState(0);
   const fileInput = useRef<HTMLInputElement>(null);
   const auth = useAuth();
 
@@ -94,15 +98,22 @@ export default function Home() {
       }
       // 準備画面でステージした参考資料を、会話開始前に join 済みトークンで順次投入する
       // （契約 §4 / ADR-0017 一本道。join 前 upload 経路が無いためここで一括投入）。
-      // 1 件の失敗で開始全体は止めない（成功分は 05 で復元・失敗分は会話中に再投入できる）。
+      // 1 件の失敗で開始全体は止めないが、成功した分だけをサマリに渡し、失敗件数は別途知らせる
+      // （未登録ファイルを「添付済み」と誤認させない / Codex P2）。
+      const uploaded: string[] = [];
+      let failed = 0;
       for (const file of staged) {
         try {
           await uploadContextFile(joined.session_id, file, joined.session_token);
+          uploaded.push(file.name);
         } catch (uploadErr) {
-          // 投入失敗は観測できるようログに残す（収集先の OTLP/メトリクス配線は #232）。
-          console.error("staged material upload failed", file.name, uploadErr);
+          failed += 1;
+          // PII 回避: ファイル名は出さず、種別・エラーのみ残す（収集先の OTLP/メトリクス配線は #232）。
+          console.error("staged material upload failed", { kind: classifyFile(file), error: uploadErr });
         }
       }
+      setUploadedNames(uploaded);
+      setUploadFailedCount(failed);
       setConn(joined);
     } catch (e) {
       setError(String(e));
@@ -113,9 +124,21 @@ export default function Home() {
 
   // ── 参考資料（バイナリ添付）の操作 ────────────────────────────────────────
   // 投入種別の計測 seam（CLAUDE.md 原則3）。準備画面はカメラ/画面共有を出さないため
-  // upload/drive のみが流れる。収集先（OTLP/メトリクス基盤）への配線は #232。
+  // upload/drive のみが流れる。収集先（OTLP/メトリクス基盤）への本配線は #232 だが、それまでも
+  // 運用でファネル/誤タップを追えるよう構造化ログを残す（"新しい処理に観測性を通す"）。
   function measureSource(source: MaterialSource) {
-    void source;
+    console.info("[material-source] select", { source, surface: "prepare" });
+  }
+
+  // 受理判定は API（content-type）と揃える。拡張子（classifyUpload）に加えて File.type も見る
+  // ことで、.jfif や拡張子なしでも MIME が image/video なら受理する（Codex P2）。
+  function classifyFile(file: File): "image" | "video" | null {
+    const byName = classifyUpload(file.name);
+    if (byName) return byName;
+    const type = file.type.toLowerCase();
+    if (type === "image/png" || type === "image/jpeg") return "image";
+    if (type === "video/mp4" || type === "video/quicktime") return "video";
+    return null;
   }
 
   // ピッカで選んだファイルをステージする。非対応形式は弾いて理由を出す
@@ -123,11 +146,11 @@ export default function Home() {
   function handleAddFiles(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? []);
     e.target.value = ""; // 同じファイルの再選択でも change を発火させる。
-    if (files.length === 0) return;
+    if (busy || files.length === 0) return; // 開始処理中は投入セットを固定する（Codex P2）。
     const accepted: File[] = [];
     const rejected: string[] = [];
     for (const f of files) {
-      if (classifyUpload(f.name)) accepted.push(f);
+      if (classifyFile(f)) accepted.push(f);
       else rejected.push(f.name);
     }
     if (accepted.length > 0) {
@@ -146,6 +169,7 @@ export default function Home() {
   }
 
   function removeStaged(index: number) {
+    if (busy) return; // 開始処理中は投入セットを固定する（Codex P2）。
     setStaged((prev) => prev.filter((_, i) => i !== index));
     setAttachError(null);
   }
@@ -159,8 +183,10 @@ export default function Home() {
         conn={conn}
         goal={goal}
         roleLabel={roleLabel}
-        // 03-0 開始前サマリの「参考資料」に添付名/件数を反映する（監査 B-2 #11）。
-        materialNames={staged.map((f) => f.name)}
+        // 03-0 開始前サマリの「参考資料」には "実際に投入できた" 名前だけを反映する
+        // （未登録ファイルを添付済みと誤認させない / 監査 B-2 #11・Codex P2）。
+        materialNames={uploadedNames}
+        materialFailedCount={uploadFailedCount}
         // 中断したら会話を畳んで準備（02）へ戻す（マイク送信は SessionView 側で停止済み）。
         onCancel={() => setConn(null)}
       />
@@ -228,8 +254,9 @@ export default function Home() {
                       <button
                         type="button"
                         onClick={() => removeStaged(i)}
+                        disabled={busy}
                         aria-label={`${file.name} を取り外す`}
-                        className="ml-[6px] text-[var(--sanba-muted)]"
+                        className="ml-[6px] text-[var(--sanba-muted)] disabled:opacity-50"
                       >
                         ✕
                       </button>
@@ -239,14 +266,17 @@ export default function Home() {
               </ul>
             )}
 
+            {/* 開始処理中（busy）は追加/削除を止める。クリック時点の staged のみが投入されるため、
+                遅れて足した資料が「添付済み」に見えて実際は未送信、という齟齬を防ぐ（Codex P2）。 */}
             <button
               type="button"
               onClick={() => {
                 setAttachError(null);
                 setSheetOpen(true);
               }}
+              disabled={busy}
               aria-haspopup="dialog"
-              className="rounded-[12px] border border-dashed border-[var(--sanba-frame)] bg-[#1b140b] px-3 py-[13px] text-left text-[12.5px] font-bold text-[var(--sanba-gold-text)]"
+              className="rounded-[12px] border border-dashed border-[var(--sanba-frame)] bg-[#1b140b] px-3 py-[13px] text-left text-[12.5px] font-bold text-[var(--sanba-gold-text)] disabled:opacity-50"
             >
               ＋ ファイルを追加
             </button>
