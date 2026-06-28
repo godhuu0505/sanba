@@ -129,6 +129,17 @@ def _github_ready() -> bool:
     )
 
 
+def _confirmed_requirements(session_id: str) -> list[dict[str, Any]]:
+    """会話確定軸（contract: confirmed）の要件のみを返す（確定判定の単一の定義 / #213）。
+
+    `requirement_doc_to_contract` が管理軸 rejected を draft に落とすため、却下要件はここで
+    除外される。確定判定はこの 1 箇所に集約し finalize のスナップショット算出だけが使う。
+    export は finalize 済みスナップショット（`finalized_requirement_ids`）を起票するため
+    この関数を呼ばない＝確定判定が finalize と export で重複しない（重複定義禁止）。
+    """
+    return [r for r in _read_repo.list_requirements(session_id) if r["status"] == "confirmed"]
+
+
 def _rate_limit(client_ip: str) -> None:
     window_start = time.time() - 60
     hits = _join_hits[client_ip]
@@ -601,12 +612,23 @@ def finalize_session_requirements(
     # 新規確定のみ未解消ガードを適用する。
     if _read_repo.list_open_detections(session_id):
         raise HTTPException(status_code=409, detail="unresolved detections remain")
-    confirmed = [r for r in _read_repo.list_requirements(session_id) if r["status"] == "confirmed"]
-    meta = _repo.finalize_session(session_id, confirmed_count=len(confirmed))
+    confirmed = _confirmed_requirements(session_id)
+    confirmed_ids = [r["id"] for r in confirmed]
+    meta = _repo.finalize_session(
+        session_id,
+        confirmed_count=len(confirmed),
+        finalized_requirement_ids=confirmed_ids,
+    )
     if meta is None:
         raise HTTPException(status_code=404, detail="session not found")
     count = meta.finalized_count if meta.finalized_count is not None else len(confirmed)
-    log.info("session_finalized", session=session_id, confirmed=count, sub=access.sub)
+    log.info(
+        "session_finalized",
+        session=session_id,
+        confirmed=count,
+        id_count=len(meta.finalized_requirement_ids),
+        sub=access.sub,
+    )
     return FinalizeResponse(finalized=True, confirmed_count=count)
 
 
@@ -614,11 +636,33 @@ def finalize_session_requirements(
 def export_requirements(
     session_id: str, access: SessionAccess = Depends(require_session_access)
 ) -> ExportResponse:
-    """確定要件を GitHub Issue として起票する（契約 §4 P1 / #39 ループ）。"""
+    """確定要件を GitHub Issue として起票する（契約 §4 P1 / #39 ループ / #213）。
+
+    finalize 時に凍結した要件 ID スナップショット（`finalized_requirement_ids`）の集合だけを
+    起票する。確定後に遅延 agent が要件を追加したり管理画面で却下されても、確定時集合を再計算
+    せず固定する（Codex P2 / discussion_r3481706919）。未 finalize ならスナップショットは空。
+
+    後方互換（Codex P1）: 本機能デプロイ前に finalized になった旧文書は ID スナップショットを
+    持たない（既定 []）。`status==finalized` かつ確定件数 > 0 で ID 集合だけ欠落しているケースは
+    旧挙動（確定要件の再計算）にフォールバックし、確定済みセッションを空 Issue 化しない。
+    """
     if not _github_ready():
         return ExportResponse(exported=False, reason="github connector disabled")
-    # 確定要件のみを起票する（draft を Issue 化しない・UI の confirmed 件数と count を一致させる）。
-    confirmed = [r for r in _read_repo.list_requirements(session_id) if r["status"] == "confirmed"]
+    session = _repo.get_session(session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="session not found")
+    # 確定時の要件 ID 集合だけを取得して起票する（再計算しない / #213）。
+    snapshot_ids = session.finalized_requirement_ids
+    # 旧データのみ再計算へフォールバック（snapshot 欠落の finalized セッション / Codex P1）。
+    # 新セッションは snapshot を正とし固定集合のまま（凍結保証を維持）。確定判定は
+    # _confirmed_requirements に一元化済みのものを再利用する（重複定義しない）。
+    legacy_finalized_without_snapshot = (
+        not snapshot_ids and session.status == "finalized" and (session.finalized_count or 0) > 0
+    )
+    if legacy_finalized_without_snapshot:
+        confirmed = _confirmed_requirements(session_id)
+    else:
+        confirmed = _read_repo.get_requirements_by_ids(session_id, snapshot_ids)
     title, body = github_export.requirements_to_issue_body(confirmed, session_id)
     url = github_export.create_issue(settings.github_token, settings.github_repo, title, body)
     if url is None:
@@ -627,6 +671,8 @@ def export_requirements(
         "requirements_exported",
         session=session_id,
         count=len(confirmed),
+        id_count=len(snapshot_ids),
+        legacy_fallback=legacy_finalized_without_snapshot,
         url=url,
         sub=access.sub,
     )

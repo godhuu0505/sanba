@@ -94,6 +94,9 @@ class SessionMeta(BaseModel):
     # 確定スナップショットの刻と件数（#186）。未確定なら None。
     finalized_at: datetime | None = None
     finalized_count: int | None = None
+    # 確定時点の要件 ID の不可逆スナップショット（#213）。finalize 後に要件が増減/却下
+    # されても export はこの集合に固定して起票する。旧文書は既定 [] でフォールバック。
+    finalized_requirement_ids: list[str] = Field(default_factory=list)
 
 
 class AnalysisResult(BaseModel):
