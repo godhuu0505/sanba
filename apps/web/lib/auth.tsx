@@ -11,7 +11,10 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 import type { ReactNode } from "react";
 
 const CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? "";
-const GSI_SRC = "https://accounts.google.com/gsi/client";
+// ボタン言語を日本語に固定する。Google 公式ガイド（display-button#button_language）は、
+// 手動固定時に script URL の `?hl=` と JS の `locale` を**併用**する手順を示す。`locale:"ja"`
+// だけだとユーザーのブラウザ/Google 設定に依存し「Google で続行」に揃わない場合がある (ADR-0019)。
+const GSI_SRC = "https://accounts.google.com/gsi/client?hl=ja";
 
 export interface GoogleProfile {
   email: string;
@@ -124,11 +127,15 @@ export function useGoogleAuth(): GoogleAuth {
       // 直前セッションの credential を再取得できる必要がある (P1)。
       id.initialize({ client_id: CLIENT_ID, callback: onCredential, auto_select: true });
       if (buttonRef.current) {
+        // 意匠は ADR-0019: 純正ボタンは Google 承認バリアントへ寄せ（filled_black /
+        // continue_with / ja）、金彩は本ボタンを囲むフレーム側（login 画面）で表現する。
+        // ボタン地色・ロゴ・文言は改変しない（ブランド規約／ADR-0012 信頼境界は不変）。
         id.renderButton(buttonRef.current, {
-          theme: "outline",
+          theme: "filled_black",
           size: "large",
-          text: "signin_with",
+          text: "continue_with",
           shape: "pill",
+          locale: "ja",
         });
       }
       // One Tap を表示して自動再取得を試みる (未ログイン時のみ意味を持つ)。
