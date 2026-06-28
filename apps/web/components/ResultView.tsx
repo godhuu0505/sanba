@@ -24,6 +24,13 @@ export interface ResultViewProps {
   requirements?: Requirement[];
   /** 未解消を残したまま終了した暫定結果か（07 の onForceEnd 経路）。確定済みと区別する。 */
   provisional?: boolean;
+  /**
+   * session.completed のサーバ集計（届いていれば表示）。確定件数と異なり、会話全体の成果
+   * （矛盾解消・抜け検知・Issue 起票）を agent 側の値で示す。ローカル再集計しない（#144）。
+   */
+  summary?: { contradictions_resolved: number; gaps_found: number; issues_created: number } | null;
+  /** 生成物リンク（session.completed.artifacts）。PDF/Drive/Issue などの成果物 URL。 */
+  artifacts?: { kind: string; url: string }[];
   /** この絵巻を画面で確認する（既定動線・必須）。 */
   onView: () => void;
   /** 新しい問答を始める。 */
@@ -39,12 +46,15 @@ export function ResultView({
   breakdown,
   requirements,
   provisional = false,
+  summary = null,
+  artifacts,
   onView,
   onRestart,
   onExportPdf,
   onExportDrive,
   onExportIssue,
 }: ResultViewProps) {
+  const artifactLinks = artifacts ?? [];
   const outputs: { label: string; handler?: () => void }[] = [
     { label: "📄 PDF", handler: onExportPdf },
     { label: "☁ Drive", handler: onExportDrive },
@@ -77,6 +87,13 @@ export function ResultView({
         {breakdown ? `（Must ${breakdown.must} ・ Should ${breakdown.should} ・ Could ${breakdown.could}）` : ""}
         {provisional ? " ・ 未確定を残したまま終了" : ""}
       </p>
+
+      {summary && (
+        <p className="mt-[6px] text-center text-[11px] text-[var(--sanba-muted)]">
+          矛盾解消 {summary.contradictions_resolved} ・ 抜け検知 {summary.gaps_found} ・ Issue 起票{" "}
+          {summary.issues_created}
+        </p>
+      )}
 
       {(previewGroups.length > 0 || overflowCount > 0) && (
         <div
@@ -127,6 +144,22 @@ export function ResultView({
               ほか {overflowCount} 件 ・ タップで全文 ›
             </button>
           )}
+        </div>
+      )}
+
+      {artifactLinks.length > 0 && (
+        <div className="mt-[10px] flex w-full flex-col gap-[6px]">
+          {artifactLinks.map((a) => (
+            <a
+              key={`${a.kind}:${a.url}`}
+              href={a.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="rounded-[11px] border border-[var(--sanba-border)] bg-[var(--sanba-surface)] px-3 py-[10px] text-center text-[11.5px] font-bold text-[var(--sanba-gold-text)]"
+            >
+              {a.kind} を開く
+            </a>
+          ))}
         </div>
       )}
 

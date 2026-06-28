@@ -278,6 +278,8 @@ export function ConversationSessionView({
         breakdown={breakdown}
         requirements={confirmed}
         provisional={provisional}
+        summary={state.completed}
+        artifacts={state.completed?.artifacts}
         onView={() => {
           setPhase("shell");
           setTab("scroll");

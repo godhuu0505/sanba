@@ -130,4 +130,23 @@ describe("ResultView（要件産婆結果）", () => {
     expect(screen.queryByText(/Should/)).toBeNull();
     expect(screen.getByText(/ほか 2 件/)).toBeTruthy();
   });
+
+  it("session.completed のサーバ集計（矛盾解消/抜け/Issue）を再集計せず表示する (#144)", () => {
+    setup({ summary: { contradictions_resolved: 3, gaps_found: 2, issues_created: 1 } });
+    expect(screen.getByText(/矛盾解消 3 ・ 抜け検知 2 ・ Issue 起票 1/)).toBeTruthy();
+  });
+
+  it("summary 未提供（session.completed 未受信）なら集計行を出さない (#144)", () => {
+    setup();
+    expect(screen.queryByText(/矛盾解消/)).toBeNull();
+  });
+
+  it("artifacts のリンクを新規タブで開ける形で出す (#144)", () => {
+    setup({
+      artifacts: [{ kind: "PDF", url: "https://example.com/a.pdf" }],
+    });
+    const link = screen.getByRole("link", { name: /PDF を開く/ });
+    expect(link.getAttribute("href")).toBe("https://example.com/a.pdf");
+    expect(link.getAttribute("target")).toBe("_blank");
+  });
 });
