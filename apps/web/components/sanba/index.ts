@@ -46,6 +46,8 @@ export { ListRow } from "./ListRow";
 export type { ListRowProps } from "./ListRow";
 export { SessionRow } from "./SessionRow";
 export type { SessionRowProps } from "./SessionRow";
+export { SessionHistoryList } from "./SessionHistoryList";
+export type { SessionHistoryItem, SessionHistoryListProps } from "./SessionHistoryList";
 export { RequirementCard } from "./RequirementCard";
 export type { RequirementCardProps, RequirementStatus } from "./RequirementCard";
 export { StatTile } from "./StatTile";
