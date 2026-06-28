@@ -186,6 +186,29 @@ describe("SessionView handleFile pending 行", () => {
     expect(lastMaterials.find((m) => m.id === "vid-x")?.status).toBe("cancelled");
   });
 
+  it("中断確定後に成功応答が届いても破棄を維持する（通信レース・Codex P2）", async () => {
+    // abort の直前にレスポンスが解決済みだと await は成功する。成功処理で破棄が取り消されてはいけない。
+    let resolveUpload: (v: unknown) => void = () => {};
+    uploadContextFile.mockReturnValue(new Promise((r) => (resolveUpload = r)));
+    const { container } = render(<SessionView sessionId="s1" sessionToken="t1" />);
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [new File(["x"], "a.png")] } });
+    const tempId = lastMaterials.at(-1)?.id as string;
+
+    // 中断確定（abort）。行は cancelled になる。
+    onCancelMaterial(tempId);
+    await waitFor(() => expect(lastMaterials.find((m) => m.id === tempId)?.status).toBe("cancelled"));
+
+    // abort 直前に解決済みだった成功応答が届く。
+    resolveUpload({ indexed_chunks: 1, asset_id: "img-r", analysis_pending: false });
+
+    // 成功は反映されず破棄を維持。サーバ反映済み asset_id も破棄ガードへ積まれる。
+    await waitFor(() => expect(lastCancelledIds.has("img-r")).toBe(true));
+    expect(lastMaterials.find((m) => m.id === tempId)?.status).toBe("cancelled");
+    // tempId 行が done に戻らず、img-r の done 行も生えない。
+    expect(lastMaterials.some((m) => m.status === "done")).toBe(false);
+  });
+
   it("中断後に同じ asset_id を再アップロードすると復活する（破棄ガードから外す・Codex P2）", async () => {
     // API は内容ハッシュで安定 asset_id を返すため、再投入で同じ id が返る。
     uploadContextFile.mockResolvedValue({

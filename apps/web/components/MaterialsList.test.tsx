@@ -171,6 +171,31 @@ describe("MaterialsList（参考資料タブ・解析進捗つき）", () => {
       expect(onCancel).not.toHaveBeenCalled();
     });
 
+    it("確認中に対象が id 差し替え後も解析中なら確認を保ち、新 id で中断できる（動画・Codex P2）", () => {
+      const onCancel = vi.fn();
+      const { rerender } = render(
+        <MaterialsList
+          items={[item({ id: "local:0", name: "clip.mp4", pct: 0, status: "uploading" })]}
+          onAdd={vi.fn()}
+          onCancel={onCancel}
+        />,
+      );
+      fireEvent.click(screen.getByRole("button", { name: "clip.mp4 の解析を中断" }));
+      expect(screen.getByRole("dialog")).toBeTruthy();
+      // 動画はアップロード成功で id が local:* → asset_id に差し替わるが status は analyzing（中断可能）。
+      rerender(
+        <MaterialsList
+          items={[item({ id: "vid-1", name: "clip.mp4", pct: 0, status: "analyzing" })]}
+          onAdd={vi.fn()}
+          onCancel={onCancel}
+        />,
+      );
+      // 確認は閉じず、確定すると差し替わった新 id で破棄される。
+      expect(screen.getByRole("dialog")).toBeTruthy();
+      fireEvent.click(screen.getByRole("button", { name: "中断する" }));
+      expect(onCancel).toHaveBeenCalledWith("vid-1");
+    });
+
     it("ESC でダイアログを閉じる（継続・a11y）", () => {
       const onCancel = vi.fn();
       render(

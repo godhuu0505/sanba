@@ -35,12 +35,16 @@ export function MaterialsList({ items, onAdd, onRetry, onCancel }: MaterialsList
   // 中断確認ダイアログの対象素材（null=閉）。確定で onCancel(id) を呼ぶ（#219 / Figma 222:2）。
   const [cancelTarget, setCancelTarget] = useState<MaterialItem | null>(null);
 
-  // 確認ダイアログを開いた後に対象がアップロード/解析中でなくなったら自動で閉じる（Codex P2）。
-  // 画像はアップロード成功時点でサーバ索引（grounding）まで完了しており、その時点で行 id は
-  // local:* → asset_id・status は done に変わる。完了済み（サーバ反映済み）素材をクライアントだけで
-  // 「破棄」したと見せないため、完了したら確認を無効化する（真のサーバ破棄は別 issue）。
+  // 確認ダイアログを開いた後に対象が「中断可能でなくなった」ら自動で閉じる（Codex P2）。
+  // 画像はアップロード成功時点でサーバ索引（grounding）まで完了し、行は done になる。完了済み
+  // （サーバ反映済み）素材をクライアントだけで「破棄」したと見せないため、done/失敗/消滅で無効化する。
+  // 一方、動画はアップロード成功で行 id が local:* → asset_id に差し替わっても status は analyzing の
+  // ままで中断可能なので、閉じてはいけない。id は差し替わるが name（実ファイル名）は保たれるため、
+  // id 一致を優先しつつ name でフォールバックして「解析中/アップロード中」の行を追跡する。
+  const isInFlight = (m: MaterialItem) => m.status === "uploading" || m.status === "analyzing";
   const liveTarget = cancelTarget
-    ? items.find((m) => m.id === cancelTarget.id && (m.status === "uploading" || m.status === "analyzing"))
+    ? (items.find((m) => m.id === cancelTarget.id && isInFlight(m)) ??
+      items.find((m) => m.name === cancelTarget.name && isInFlight(m)))
     : undefined;
   useEffect(() => {
     if (cancelTarget && !liveTarget) setCancelTarget(null);
