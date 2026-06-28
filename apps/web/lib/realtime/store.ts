@@ -353,7 +353,10 @@ export class RealtimeStore {
         const prev = this.analysis.get(event.asset_id)?.value;
         return this.upsert(this.analysis, event.asset_id, event.seq, {
           asset_id: event.asset_id,
-          pct: prev?.pct ?? 100,
+          // visual = 解析完了。抽出要件/突合が確定して届くイベントなので pct を 100 に固定する
+          // （#209 案A）。直前 progress が 40% でも「visual=完了」を保証し、selectMaterials の
+          // done 判定（pct>=100）が確実に立つ。契約上 visual 後に 100% progress が来る保証は無い。
+          pct: 100,
           stage: prev?.stage ?? "完了",
           extracted: event.extracted,
           conflicts: event.conflicts,
