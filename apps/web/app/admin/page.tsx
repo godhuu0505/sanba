@@ -63,6 +63,9 @@ export default function AdminPage() {
   const [access, setAccess] = useState<Access>("loading");
   const [sessions, setSessions] = useState<AdminSession[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
+  // 91 一覧 ⇆ 92 作成の画面遷移（Figma 73:8/73:9）。実装は 91 内アコーディオンだったが、
+  // Figma 正本に合わせ「＋ セッションを興す」CTA → 専用画面 92 へ分離する（#220）。
+  const [view, setView] = useState<"home" | "create">("home");
 
   const loadSessions = useCallback(async () => {
     // dev モードは idToken=null のまま API の AUTH_DEV_BYPASS に委ねる。
@@ -135,6 +138,20 @@ export default function AdminPage() {
     );
   }
 
+  // ── 92 新たな問答を興す（専用作成画面 / Figma 73:9）─────────────
+  // 91 から「＋ セッションを興す」CTA で遷移する独立画面。戻るで 91 一覧へ戻り、
+  // 戻る前後で loadSessions により一覧へ反映する（作成成功時に onCreated で再取得済み）。
+  if (view === "create") {
+    return (
+      <Screen className="sanba-scroll">
+        <AppHeader back onBack={() => setView("home")} title="新たな問答を興す" />
+        <main className="mx-auto flex w-full max-w-md flex-col gap-[18px] px-[16px] pb-[40px] pt-[6px]">
+          <CreateSessionCard idToken={idToken} onCreated={() => void loadSessions()} />
+        </main>
+      </Screen>
+    );
+  }
+
   // ── 91 管理ホーム（セッション一覧）─────────────────────────────
   return (
     <Screen className="sanba-scroll">
@@ -147,7 +164,10 @@ export default function AdminPage() {
         right={<AccountMenu profile={auth.profile} hideAdmin />}
       />
       <main className="mx-auto flex w-full max-w-md flex-col gap-[18px] px-[16px] pb-[40px] pt-[6px]">
-        <CreateSessionCard idToken={idToken} onCreated={() => void loadSessions()} />
+        {/* 主 CTA（Figma 73:8 / 76:11）。専用作成画面 92 へ遷移する。 */}
+        <Button variant="gold" block onClick={() => setView("create")}>
+          ＋ セッションを興す
+        </Button>
 
         <section className="flex flex-col gap-[12px]">
           <h2 className="text-[13px] font-bold tracking-[0.18em] text-[var(--sanba-gold-text)]">
@@ -240,7 +260,9 @@ function CreateSessionCard({
   onCreated: () => void;
 }) {
   const [title, setTitle] = useState("要件インタビュー");
-  const [roles, setRoles] = useState<string[]>(ROLES.map((r) => r.value));
+  // 既定は Figma 92（76:46）に合わせ「企画(PdM)」単一選択（実装は従来 3 役割すべてが既定だった / #220・監査 B-3 #16）。
+  // 複数選択は維持し、roles.length===0 で送信無効化のバリデーションも不変。
+  const [roles, setRoles] = useState<string[]>([ROLES[0].value]);
   const [busy, setBusy] = useState(false);
   const [invites, setInvites] = useState<Record<string, string> | null>(null);
   const [error, setError] = useState<string | null>(null);
