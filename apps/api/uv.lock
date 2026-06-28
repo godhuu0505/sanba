@@ -1755,7 +1755,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "elasticsearch", specifier = ">=8.14,<10" },
+    { name = "elasticsearch", specifier = ">=8.14,<9" },
     { name = "fastapi", specifier = ">=0.111" },
     { name = "google-auth", specifier = ">=2.30" },
     { name = "google-cloud-firestore", specifier = ">=2.16.0" },
