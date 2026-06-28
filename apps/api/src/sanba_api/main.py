@@ -45,6 +45,7 @@ from .ingestion import ContextIndexer, chunk_text, extract_text_from_upload
 from .observability import (
     record_asset_upload,
     record_question_hydration,
+    record_rate_limited,
     setup_observability,
 )
 from .repository import ReadRepository
@@ -150,6 +151,10 @@ def _rate_limit(client_ip: str) -> None:
     while hits and hits[0] < window_start:
         hits.popleft()
     if len(hits) >= settings.join_rate_per_minute:
+        # 認証より前に 429 で短絡するため auth イベントには現れない。DoS 緩和が発動した
+        # ことを本番で検知できるよう、ログ＋メトリクスに残す（#257 Codex / 原則3）。
+        log.warning("join_rate_limited", client_ip=client_ip, limit=settings.join_rate_per_minute)
+        record_rate_limited()
         raise HTTPException(status_code=429, detail="rate limit exceeded")
     hits.append(time.time())
 
