@@ -21,7 +21,7 @@ from .pii import mask_pii
 log = structlog.get_logger(__name__)
 
 INDEX = "sanba-grounding"
-EMBED_DIM = 768  # text-embedding-004
+EMBED_DIM = 3072  # gemini-embedding-001 (must match apps/agent retrieval.py: same index)
 
 
 def _source_matches(source: str, prefix: str) -> bool:
