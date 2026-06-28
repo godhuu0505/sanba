@@ -37,7 +37,10 @@ const baseState = (over: Partial<SessionState> = {}): SessionState => ({
   phase: "listening",
   agentsActive: 0,
   requirements: [req({})],
+  // 並びは seq 昇順（末尾＝最新）。問いピンは最新未解消（selectOpenDetections の先頭）を出すため、
+  // 「選択肢つき検知が前面」を確かめる既定では options つき d1 を最新（末尾）に置く。
   detections: [
+    det({ id: "d2", kind: "gap", summary: "『該当なし』の空状態が未定義。", category: "scope" }),
     det({
       id: "d1",
       summary: "関連度順か新着順か。",
@@ -46,7 +49,6 @@ const baseState = (over: Partial<SessionState> = {}): SessionState => ({
         { label: "新着順にする", value: "recency" },
       ],
     }),
-    det({ id: "d2", kind: "gap", summary: "『該当なし』の空状態が未定義。", category: "scope" }),
   ],
   transcript: [
     { utterance_id: "u1", speaker: "顧客", role: "customer", text: "検索は関連度順で。", final: true },
@@ -123,6 +125,24 @@ describe("ConversationSessionView（会話シェル結線）", () => {
     const { sendSelection } = renderView();
     fireEvent.click(screen.getByRole("button", { name: "新着順にする" }));
     expect(sendSelection).toHaveBeenCalledWith("d1", "recency");
+  });
+
+  it("選択肢なし検知（gap）が最新未解消なら要約のみの読み取り専用ピンを出す（#208）", () => {
+    const { sendSelection } = renderView({
+      state: baseState({
+        detections: [
+          det({ id: "dc", summary: "古い矛盾の問い", options: [{ label: "選ぶA", value: "a" }] }),
+          det({ id: "dg", kind: "gap", summary: "『該当なし』の空状態が未定義。", category: "scope" }),
+        ],
+      }),
+    });
+    // gap が最新 → 要約が常時ピンに前面表示（読み取り専用・抜けバッジ付き）。
+    expect(screen.getByRole("status").textContent).toContain("『該当なし』の空状態が未定義。");
+    expect(screen.getByLabelText("抜け（未定義）を検知")).toBeTruthy();
+    // 読み取り専用: 回答ボタンが無く、古い矛盾の選択肢も前面化しない（最新1件のみ）。
+    expect(screen.queryByText("古い矛盾の問い")).toBeNull();
+    expect(screen.queryByRole("button", { name: "選ぶA" })).toBeNull();
+    expect(sendSelection).not.toHaveBeenCalled();
   });
 
   it("検知が無ければ通常質問（金枠）を問いピンに出し、回答で sendAnswer を送る（#181）", () => {
