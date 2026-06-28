@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { MaterialItem } from "@/lib/realtime/selectors";
@@ -28,6 +28,8 @@ vi.mock("@/lib/realtime/useRealtimeSession", () => ({
 
 // api: アップロード結果は各テストで差し替える。ハイドレーションは空で解決させる。
 const uploadContextFile = vi.fn();
+const sendTelemetry = vi.fn();
+const deleteContextFile = vi.fn();
 vi.mock("@/lib/api", () => ({
   ACCEPTED_IMAGE: ".png",
   ACCEPTED_VIDEO: ".mp4",
@@ -35,21 +37,26 @@ vi.mock("@/lib/api", () => ({
   fetchContextFiles: () => Promise.resolve({ items: [] }),
   exportRequirements: vi.fn(),
   finalizeSession: vi.fn(),
+  sendTelemetry: (...args: unknown[]) => sendTelemetry(...args),
+  deleteContextFile: (...args: unknown[]) => deleteContextFile(...args),
 }));
 
 // ConversationSessionView は pending/中断系の props を捕捉するだけのスパイに置き換える。
 let lastMaterials: MaterialItem[] = [];
 let lastCancelledIds: ReadonlySet<string> = new Set();
 let onCancelMaterial: (id: string) => void = () => {};
+let onAddMaterial: () => void = () => {};
 vi.mock("./ConversationSessionView", () => ({
   ConversationSessionView: (props: {
     extraMaterials: MaterialItem[];
     cancelledIds?: ReadonlySet<string>;
     onCancelMaterial?: (id: string) => void;
+    onAddMaterial?: () => void;
   }) => {
     lastMaterials = props.extraMaterials;
     lastCancelledIds = props.cancelledIds ?? new Set();
     onCancelMaterial = props.onCancelMaterial ?? (() => {});
+    onAddMaterial = props.onAddMaterial ?? (() => {});
     return null;
   },
 }));
@@ -59,9 +66,13 @@ import { SessionView } from "./SessionView";
 afterEach(() => {
   cleanup();
   uploadContextFile.mockReset();
+  sendTelemetry.mockReset();
+  deleteContextFile.mockReset();
+  deleteContextFile.mockResolvedValue({ deleted: true, existed: true });
   lastMaterials = [];
   lastCancelledIds = new Set();
   onCancelMaterial = () => {};
+  onAddMaterial = () => {};
 });
 
 async function uploadFile(filename: string): Promise<MaterialItem> {
@@ -235,5 +246,100 @@ describe("SessionView handleFile pending 行", () => {
     // 古い cancelled tombstone は消え、done 行だけが残る（重複なし）。
     expect(rows).toHaveLength(1);
     expect(rows[0].status).toBe("done");
+  });
+
+  // ── 観測テレメトリ（#232 投入種別 / #243 中断）と真の破棄（#245）──────────
+  it("投入種別の選択で material.source_selected を送る（#232）", () => {
+    render(<SessionView sessionId="s1" sessionToken="t1" />);
+    act(() => onAddMaterial()); // 手段選択シートを開く。
+    fireEvent.click(screen.getByRole("button", { name: /ファイルをアップロード/ }));
+    expect(sendTelemetry).toHaveBeenCalledWith(
+      "s1",
+      "material.source_selected",
+      { source: "upload" },
+      "t1",
+    );
+  });
+
+  it("アップロード中の中断で material.cancel(status=uploading/result=aborted) を送る（#243）", async () => {
+    uploadContextFile.mockImplementation(
+      (_s: string, _f: File, _t: string | null, signal?: AbortSignal) =>
+        new Promise((_resolve, reject) =>
+          signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError"))),
+        ),
+    );
+    const { container } = render(<SessionView sessionId="s1" sessionToken="t1" />);
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [new File(["x"], "a.png")] } });
+    const tempId = lastMaterials.at(-1)?.id as string;
+    onCancelMaterial(tempId);
+    await waitFor(() =>
+      expect(sendTelemetry).toHaveBeenCalledWith(
+        "s1",
+        "material.cancel",
+        { status: "uploading", result: "aborted" },
+        "t1",
+      ),
+    );
+    // 送信中アップロード（tempId=local:*）はサーバに実体が無いため DELETE は呼ばない。
+    expect(deleteContextFile).not.toHaveBeenCalled();
+  });
+
+  it("解析中の中断はサーバ破棄 DELETE を呼び material.cancel(discarded) を送る（#245/#243）", async () => {
+    uploadContextFile.mockResolvedValue({
+      indexed_chunks: 0,
+      asset_id: "vid-9",
+      asset_kind: "video",
+      analysis_pending: true,
+    });
+    const row = await uploadFile("clip.mp4");
+    expect(row.id).toBe("vid-9");
+    onCancelMaterial("vid-9");
+    // (1) サーバ側 binary・メタ・grounding 索引の取消を呼ぶ（リロードでの復活・grounding 残留を断つ）。
+    await waitFor(() => expect(deleteContextFile).toHaveBeenCalledWith("s1", "vid-9", "t1"));
+    // (2) 中断は abort 無し（既に成功済み）なので result=discarded。
+    expect(sendTelemetry).toHaveBeenCalledWith(
+      "s1",
+      "material.cancel",
+      { status: "analyzing", result: "discarded" },
+      "t1",
+    );
+  });
+
+  it("中断確定後に成功応答が届いたら、確定 asset をサーバ破棄して残留を断つ（#245 レース）", async () => {
+    let resolveUpload: (v: unknown) => void = () => {};
+    uploadContextFile.mockReturnValue(new Promise((r) => (resolveUpload = r)));
+    const { container } = render(<SessionView sessionId="s1" sessionToken="t1" />);
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [new File(["x"], "a.png")] } });
+    const tempId = lastMaterials.at(-1)?.id as string;
+
+    onCancelMaterial(tempId); // abort 確定（行は cancelled）。
+    await waitFor(() => expect(lastMaterials.find((m) => m.id === tempId)?.status).toBe("cancelled"));
+    // abort 直前に解決済みだった成功応答が届く（grounding/メタはサーバに作られている）。
+    await act(async () => {
+      resolveUpload({ indexed_chunks: 1, asset_id: "img-r", analysis_pending: false });
+    });
+    // 確定 asset_id をサーバ側でも破棄する（クライアント破棄だけでは観察が残るため）。
+    await waitFor(() => expect(deleteContextFile).toHaveBeenCalledWith("s1", "img-r", "t1"));
+  });
+
+  it("サーバ破棄に失敗しても UX を止めず、result=error を観測へ記録する（#245 失敗時）", async () => {
+    deleteContextFile.mockRejectedValue(new Error("delete context file failed: 500"));
+    uploadContextFile.mockResolvedValue({
+      indexed_chunks: 0,
+      asset_id: "vid-err",
+      asset_kind: "video",
+      analysis_pending: true,
+    });
+    await uploadFile("clip.mp4");
+    onCancelMaterial("vid-err");
+    // ローカル破棄（cancelled・ガード）は維持される。
+    await waitFor(() => expect(lastCancelledIds.has("vid-err")).toBe(true));
+    expect(lastMaterials.find((m) => m.id === "vid-err")?.status).toBe("cancelled");
+    // 破棄失敗は result=error で記録する（握りつぶしつつ観測する）。
+    await waitFor(() =>
+      expect(sendTelemetry).toHaveBeenCalledWith("s1", "material.cancel", { result: "error" }, "t1"),
+    );
   });
 });

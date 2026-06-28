@@ -44,6 +44,7 @@ from .config import settings
 from .ingestion import ContextIndexer, chunk_text, extract_text_from_upload
 from .observability import (
     record_asset_upload,
+    record_material_event,
     record_question_hydration,
     setup_observability,
 )
@@ -235,6 +236,40 @@ class FinalizeResponse(BaseModel):
     confirmed_count: int = 0
 
 
+# web UI 由来テレメトリの許可リスト（#232/#243）。第三者分析 SDK を使わず既存 OTLP 基盤に
+# 集約する（observability.py）。PII/自由記述は受けず、列挙値のみを受ける。未知 event は 422、
+# 未知の属性値は other へ丸めて高カーディナリティ/PII 流入を防ぐ（観測は UX を止めない）。
+_TELEMETRY_EVENTS = {"material.source_selected", "material.cancel"}
+_TELEMETRY_SOURCES = {"camera", "screen", "upload", "drive"}
+_TELEMETRY_STATUSES = {"uploading", "analyzing"}
+_TELEMETRY_RESULTS = {"aborted", "discarded", "error"}
+
+
+class TelemetryRequest(BaseModel):
+    # 列挙属性のみ（PII/自由記述は受けない）。明示フィールドに固定し、任意キーを排除する。
+    event: str
+    source: str | None = None
+    status: str | None = None
+    result: str | None = None
+
+
+class TelemetryResponse(BaseModel):
+    recorded: bool
+
+
+class DeleteContextFileResponse(BaseModel):
+    # 真の破棄（#245）。deleted は常に True（冪等）、existed は実体を消したかを示す。
+    deleted: bool
+    existed: bool
+
+
+def _enum_or_other(value: str | None, allowed: set[str]) -> str:
+    """列挙値の検証。未指定は none、許可外は other へ丸める（PII/高カーディナリティ防止）。"""
+    if value is None:
+        return "none"
+    return value if value in allowed else "other"
+
+
 @app.get("/healthz")
 def healthz() -> dict[str, str]:
     return {"status": "ok"}
@@ -395,6 +430,86 @@ async def add_context_file(
             asset_id=asset.asset_id,
             asset_kind=kind,
         )
+
+
+@app.post("/api/sessions/{session_id}/telemetry", response_model=TelemetryResponse)
+def post_telemetry(
+    session_id: str,
+    body: TelemetryRequest,
+    access: SessionAccess = Depends(require_session_access),
+) -> TelemetryResponse:
+    """web UI 由来の素材イベント（投入種別 #232 / 中断 #243）を OTLP カウンタへ集約する。
+
+    認可（契約 §4）: join 済みセッショントークン必須（匿名のメトリクス汚染を塞ぐ）。
+    第三者クライアント分析 SDK は導入せず、既存 metrics 基盤（observability.py）に載せる
+    （CLAUDE.md 原則3）。PII/自由記述は受けない: event は許可リスト、属性は列挙値のみ
+    （未知値は other に丸めて高カーディナリティ/PII 流入を防ぐ）。送信側は失敗を握りつぶす
+    （best-effort）ため、ここでの 422 は UX を止めない。
+    """
+    if body.event not in _TELEMETRY_EVENTS:
+        raise HTTPException(status_code=422, detail="unknown telemetry event")
+    source = _enum_or_other(body.source, _TELEMETRY_SOURCES)
+    status = _enum_or_other(body.status, _TELEMETRY_STATUSES)
+    result = _enum_or_other(body.result, _TELEMETRY_RESULTS)
+    record_material_event(body.event, source=source, status=status, result=result)
+    log.info(
+        "material_event",
+        session=session_id,
+        event_name=body.event,
+        source=source,
+        status=status,
+        result=result,
+        sub=access.sub,
+    )
+    return TelemetryResponse(recorded=True)
+
+
+@app.delete(
+    "/api/sessions/{session_id}/context/file/{asset_id}",
+    response_model=DeleteContextFileResponse,
+)
+def delete_context_file(
+    session_id: str,
+    asset_id: str,
+    access: SessionAccess = Depends(require_session_access),
+) -> DeleteContextFileResponse:
+    """投入済み素材の「真の破棄」（#245）。binary・material メタ・grounding 索引をまとめて消す。
+
+    認可（契約 §4）: join 済みセッショントークン必須（参加者以外の削除を塞ぐ）。
+    #219/#241 のクライアント破棄だけでは、画像はレスポンス前に grounding 索引と material(done)
+    まで完了するため素材由来の観察が会話に残り、リロードで GET context/files から復活する。
+    本 API で (1) 保存 binary、(2) material メタ、(3) 出所 `asset:{asset_id}` の grounding chunk
+    をまとめて取り消し、以後の会話・ハイドレーションから外す。冪等: 存在しない asset でも 200 を
+    一貫して返す（existed=false）。in-memory/ES/GCS 未接続のフォールバックでも安全に動く。
+    """
+    tracer = _get_tracer()
+    span_cm = (
+        tracer.start_as_current_span("context.file.delete") if tracer else contextlib.nullcontext()
+    )
+    with span_cm as span:
+        if span is not None:
+            span.set_attribute("sanba.asset.id", asset_id)
+        # 索引→binary→メタの順で取り消す（grounding を最優先で会話から外す）。
+        removed_index = _indexer.delete_context(session_id, f"asset:{asset_id}")
+        removed_blob = _asset_store.delete(session_id, asset_id)
+        removed_meta = _repo.delete_material(session_id, asset_id)
+        existed = removed_blob or removed_meta or removed_index > 0
+        if span is not None:
+            span.set_attribute("sanba.asset.existed", existed)
+            span.set_attribute("sanba.asset.index_removed", removed_index)
+    # 破棄結果を #243 の telemetry 基盤へ計上する（中断率・破棄結果を運用で追う / 原則3）。
+    record_material_event("material.discard", result="deleted" if existed else "not_found")
+    log.info(
+        "asset_discarded",
+        session=session_id,
+        asset_id=asset_id,
+        existed=existed,
+        index_removed=removed_index,
+        blob_removed=removed_blob,
+        meta_removed=removed_meta,
+        sub=access.sub,
+    )
+    return DeleteContextFileResponse(deleted=True, existed=existed)
 
 
 @app.post("/api/sessions/join", response_model=JoinResponse)

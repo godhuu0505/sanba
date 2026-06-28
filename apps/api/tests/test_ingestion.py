@@ -61,6 +61,37 @@ def test_memory_indexer_counts_chunks() -> None:
     assert n == 3
 
 
+# ── grounding 索引の取消（#245 真の破棄）────────────────────────────────────
+def test_delete_context_removes_only_matching_source() -> None:
+    """出所接頭辞 `asset:{id}` の chunk だけを消し、他 source/他セッションは残す。"""
+    indexer = ContextIndexer()
+    indexer.index_context("sess-1", ["o1", "o2"], "asset:asset-aaa")
+    indexer.index_context("sess-1", ["k1"], "asset:asset-bbb")
+    indexer.index_context("sess-1", ["t1"], "prd.md")
+    indexer.index_context("sess-2", ["x1"], "asset:asset-aaa")  # 別セッションは無関係。
+
+    removed = indexer.delete_context("sess-1", "asset:asset-aaa")
+    assert removed == 2
+
+    remaining = {(d["session_id"], d["source"]) for d in indexer._mem}
+    # 対象セッションの asset-aaa#* は消える。
+    assert ("sess-1", "asset:asset-aaa#0") not in remaining
+    assert ("sess-1", "asset:asset-aaa#1") not in remaining
+    # 別 asset・別 source・別セッションは残る（巻き込まない）。
+    assert ("sess-1", "asset:asset-bbb#0") in remaining
+    assert ("sess-1", "prd.md#0") in remaining
+    assert ("sess-2", "asset:asset-aaa#0") in remaining
+
+
+def test_delete_context_is_idempotent_when_absent() -> None:
+    """存在しない出所の取消は 0 件で安全（冪等）。"""
+    indexer = ContextIndexer()
+    indexer.index_context("sess-1", ["o1"], "asset:asset-aaa")
+    assert indexer.delete_context("sess-1", "asset:asset-zzz") == 0
+    assert indexer.delete_context("sess-1", "asset:asset-aaa") == 1
+    assert indexer.delete_context("sess-1", "asset:asset-aaa") == 0
+
+
 def test_context_endpoint_indexes_text() -> None:
     created = client.post(
         "/api/sessions", json={"roles": ["pm"], "consent_acknowledged": True}
