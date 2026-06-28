@@ -140,6 +140,9 @@ export function ConversationSessionView({
   // 05-1 資料詳細シートで開いている素材の asset_id（#202）。null なら閉じている。
   const [detailId, setDetailId] = useState<string | null>(null);
   const [provisional, setProvisional] = useState(false);
+  // ミニ状況「未確定」タップで要件絵巻の深掘り対象へスクロールさせるワンショット（#195）。
+  // RequirementsTab が消費後に false へ戻す。要件タップ（タブ移動のみ）では立てない。
+  const [focusDeepDive, setFocusDeepDive] = useState(false);
   // 確定（finalize）失敗時のメッセージ（#186 / Codex P2）。失敗なら結果へ進めず判定に留める。
   const [finalizeError, setFinalizeError] = useState<string | null>(null);
   // 回答済みの通常質問 ID（#181）。検知の resolved 相当のサーバ echo が無いため、
@@ -278,6 +281,8 @@ export function ConversationSessionView({
         breakdown={breakdown}
         requirements={confirmed}
         provisional={provisional}
+        summary={state.completed}
+        artifacts={state.completed?.artifacts}
         onView={() => {
           setPhase("shell");
           setTab("scroll");
@@ -343,6 +348,7 @@ export function ConversationSessionView({
         elapsed={elapsed}
         tab={tab}
         onTabChange={setTab}
+        onUnresolvedJump={() => setFocusDeepDive(true)}
         onEnd={() => setEndOpen(true)}
         choicePin={choicePin}
         bottomBar={
@@ -373,6 +379,8 @@ export function ConversationSessionView({
               requirements={state.requirements}
               deepDive={openDetections}
               onJump={jumpToConversation}
+              focusUnresolved={focusDeepDive}
+              onUnresolvedFocusConsumed={() => setFocusDeepDive(false)}
             />
           ),
         }}

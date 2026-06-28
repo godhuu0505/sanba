@@ -3,9 +3,13 @@
 // メッセージは捨てる（不正な送信元・将来スキーマからの保護）。
 
 import {
+  type Priority,
+  type RequirementCategory,
+  type RequirementStatus,
   SCHEMA_VERSION,
   type ServerEvent,
   type ServerEventType,
+  type SessionPhase,
   type UserAnsweredEvent,
   type UserSelectionEvent,
   type UserTextEvent,
@@ -71,6 +75,76 @@ function hasFields(obj: Record<string, unknown>, fields: readonly string[]): boo
   return fields.every((f) => obj[f] !== undefined && obj[f] !== null);
 }
 
+// enum 値の許可集合（types.ts と一致）。受信境界で列挙外の値を弾き、セレクタ
+// （priority/category で索引）や UI が未知値で TypeError/誤表示にならないよう守る（#120）。
+const PHASES: ReadonlySet<string> = new Set<SessionPhase>([
+  "idle",
+  "listening",
+  "recognizing",
+  "deliberating",
+]);
+const PRIORITIES: ReadonlySet<string> = new Set<Priority>(["must", "should", "could", "wont"]);
+const CATEGORIES: ReadonlySet<string> = new Set<RequirementCategory>([
+  "functional",
+  "non_functional",
+  "constraint",
+  "scope",
+  "open_question",
+]);
+const REQ_STATUSES: ReadonlySet<string> = new Set<RequirementStatus>(["draft", "confirmed"]);
+
+function isStringArray(v: unknown): boolean {
+  return Array.isArray(v) && v.every((x) => typeof x === "string");
+}
+
+function isNumberInRange(v: unknown, min: number, max: number): boolean {
+  return typeof v === "number" && Number.isFinite(v) && v >= min && v <= max;
+}
+
+/**
+ * 種別ごとの enum / 配列 / 数値範囲の網羅検証（#120）。必須フィールドの存在（hasFields）に加え、
+ * 値が契約の許可集合・型・範囲に収まることを確認する。外れたら false（bad-payload で破棄）。
+ * presence は呼び出し側で検証済みの前提（REQUIRED_FIELDS / REQUIREMENT_FIELDS）。
+ */
+function validatePayload(type: ServerEventType, obj: Record<string, unknown>): boolean {
+  switch (type) {
+    case "status":
+      return PHASES.has(obj.phase as string);
+    case "detection.contradiction":
+      return isStringArray(obj.refs);
+    case "detection.gap":
+      return isStringArray(obj.refs) && typeof obj.category === "string";
+    case "analysis.progress":
+      // pct は 0–100 の進捗率。範囲外（負値・100 超・NaN）は誤った進捗バーになるため弾く。
+      return isNumberInRange(obj.pct, 0, 100);
+    case "analysis.visual":
+      return Array.isArray(obj.extracted) && Array.isArray(obj.conflicts);
+    case "session.completed": {
+      const s = obj.summary;
+      if (typeof s !== "object" || s === null) return false;
+      const sm = s as Record<string, unknown>;
+      return (
+        typeof sm.contradictions_resolved === "number" &&
+        typeof sm.gaps_found === "number" &&
+        typeof sm.issues_created === "number" &&
+        Array.isArray(obj.artifacts)
+      );
+    }
+    case "requirement.upserted": {
+      const req = obj.requirement as Record<string, unknown>;
+      return (
+        PRIORITIES.has(req.priority as string) &&
+        CATEGORIES.has(req.category as string) &&
+        REQ_STATUSES.has(req.status as string) &&
+        isNumberInRange(req.confidence, 0, 1) &&
+        Array.isArray(req.citations)
+      );
+    }
+    default:
+      return true;
+  }
+}
+
 const decoder = new TextDecoder();
 
 /** 生バイト列（または文字列）を 1 件の ServerEvent にデコードする。 */
@@ -119,6 +193,11 @@ export function decodeServerEvent(payload: Uint8Array | string): DecodeResult {
     ) {
       return { event: null, reason: "bad-payload" };
     }
+  }
+
+  // enum / 配列 / 範囲の網羅検証（#120）。presence を満たしても値が契約外なら破棄する。
+  if (!validatePayload(type, obj)) {
+    return { event: null, reason: "bad-payload" };
   }
 
   return { event: obj as unknown as ServerEvent, reason: "ok" };

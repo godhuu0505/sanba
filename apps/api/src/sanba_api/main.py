@@ -47,6 +47,7 @@ from .observability import (
     record_material_event,
     record_my_sessions_listed,
     record_question_hydration,
+    record_rate_limited,
     setup_observability,
 )
 from .repository import ReadRepository
@@ -152,8 +153,23 @@ def _rate_limit(client_ip: str) -> None:
     while hits and hits[0] < window_start:
         hits.popleft()
     if len(hits) >= settings.join_rate_per_minute:
+        # 認証より前に 429 で短絡するため auth イベントには現れない。DoS 緩和が発動した
+        # ことを本番で検知できるよう、ログ＋メトリクスに残す（#257 Codex / 原則3）。
+        log.warning("join_rate_limited", client_ip=client_ip, limit=settings.join_rate_per_minute)
+        record_rate_limited()
         raise HTTPException(status_code=429, detail="rate limit exceeded")
     hits.append(time.time())
+
+
+def _require_rate_limit(request: Request) -> None:
+    """認証より先に join のレートリミットを掛ける依存性 (#80)。
+
+    FastAPI は同レベルの依存性を宣言順かつ *パス関数本体の前* に解決する。
+    本依存性を ``require_user`` より前に宣言することで、Authorization ヘッダーが
+    無い/壊れたリクエストでも認証検証へ到達する前にレート制限を適用できる
+    （壊れた Bearer 連打で認証経路だけを叩き続けられる穴を塞ぐ）。
+    """
+    _rate_limit(request.client.host if request.client else "unknown")
 
 
 # ---- Schemas ---------------------------------------------------------------
@@ -556,7 +572,9 @@ def delete_context_file(
 
 @app.post("/api/sessions/join", response_model=JoinResponse)
 def join_session(
-    req: JoinRequest, request: Request, user: AuthUser = Depends(require_user)
+    req: JoinRequest,
+    _rl: None = Depends(_require_rate_limit),  # auth より先に解決させる (#80)
+    user: AuthUser = Depends(require_user),
 ) -> JoinResponse:
     """Exchange a valid invite for a scoped, short-lived LiveKit token.
 
@@ -565,8 +583,6 @@ def join_session(
     participant identity is derived from the verified `sub` (not a self-reported
     name) so the provenance metadata on captured requirements is trustworthy.
     """
-    _rate_limit(request.client.host if request.client else "unknown")
-
     if settings.auth_dev_bypass and req.invite.startswith("dev:"):
         # Local-dev only: "dev:<session_id>:<role>" bypasses signing. Never in prod.
         _, session_id, role = req.invite.split(":", 2)

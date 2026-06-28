@@ -7,6 +7,20 @@
 import { categoryPresentation, priorityLabel } from "../lib/realtime/mapping";
 import type { Priority, Requirement } from "../lib/realtime/types";
 
+/**
+ * artifact の href として安全な scheme か（http/https のみ許可）。
+ * artifacts は LiveKit データチャネル（session.completed）由来で送信者・payload を信頼できないため、
+ * `javascript:` / `data:` 等を href に渡すとクリックで実行され得る（Codex P2）。表示前に弾く。
+ */
+function isSafeHttpUrl(url: string): boolean {
+  try {
+    const u = new URL(url);
+    return u.protocol === "http:" || u.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 /** プレビューで先に出す優先度（Figma 08：Must/Should を優先表示）。 */
 const PREVIEW_PRIORITIES: readonly Priority[] = ["must", "should"];
 /** 各優先度セクションでプレビューに出す最大件数。超過は「ほか N 件 ›」へ畳む。 */
@@ -24,6 +38,13 @@ export interface ResultViewProps {
   requirements?: Requirement[];
   /** 未解消を残したまま終了した暫定結果か（07 の onForceEnd 経路）。確定済みと区別する。 */
   provisional?: boolean;
+  /**
+   * session.completed のサーバ集計（届いていれば表示）。確定件数と異なり、会話全体の成果
+   * （矛盾解消・抜け検知・Issue 起票）を agent 側の値で示す。ローカル再集計しない（#144）。
+   */
+  summary?: { contradictions_resolved: number; gaps_found: number; issues_created: number } | null;
+  /** 生成物リンク（session.completed.artifacts）。PDF/Drive/Issue などの成果物 URL。 */
+  artifacts?: { kind: string; url: string }[];
   /** この絵巻を画面で確認する（既定動線・必須）。 */
   onView: () => void;
   /** 新しい問答を始める。 */
@@ -39,12 +60,16 @@ export function ResultView({
   breakdown,
   requirements,
   provisional = false,
+  summary = null,
+  artifacts,
   onView,
   onRestart,
   onExportPdf,
   onExportDrive,
   onExportIssue,
 }: ResultViewProps) {
+  // 信頼できない URL scheme（javascript: 等）は表示しない（Codex P2 / XSS 防止）。
+  const artifactLinks = (artifacts ?? []).filter((a) => isSafeHttpUrl(a.url));
   const outputs: { label: string; handler?: () => void }[] = [
     { label: "📄 PDF", handler: onExportPdf },
     { label: "☁ Drive", handler: onExportDrive },
@@ -77,6 +102,13 @@ export function ResultView({
         {breakdown ? `（Must ${breakdown.must} ・ Should ${breakdown.should} ・ Could ${breakdown.could}）` : ""}
         {provisional ? " ・ 未確定を残したまま終了" : ""}
       </p>
+
+      {summary && (
+        <p className="mt-[6px] text-center text-[11px] text-[var(--sanba-muted)]">
+          矛盾解消 {summary.contradictions_resolved} ・ 抜け検知 {summary.gaps_found} ・ Issue 起票{" "}
+          {summary.issues_created}
+        </p>
+      )}
 
       {(previewGroups.length > 0 || overflowCount > 0) && (
         <div
@@ -127,6 +159,22 @@ export function ResultView({
               ほか {overflowCount} 件 ・ タップで全文 ›
             </button>
           )}
+        </div>
+      )}
+
+      {artifactLinks.length > 0 && (
+        <div className="mt-[10px] flex w-full flex-col gap-[6px]">
+          {artifactLinks.map((a) => (
+            <a
+              key={`${a.kind}:${a.url}`}
+              href={a.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="rounded-[11px] border border-[var(--sanba-border)] bg-[var(--sanba-surface)] px-3 py-[10px] text-center text-[11.5px] font-bold text-[var(--sanba-gold-text)]"
+            >
+              {a.kind} を開く
+            </a>
+          ))}
         </div>
       )}
 
