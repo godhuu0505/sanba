@@ -276,6 +276,7 @@ export function ConversationSessionView({
       <ResultView
         confirmedCount={confirmed.length}
         breakdown={breakdown}
+        requirements={confirmed}
         provisional={provisional}
         onView={() => {
           setPhase("shell");
