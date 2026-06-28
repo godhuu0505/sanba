@@ -1,0 +1,88 @@
+# ADR-0019: ログイン画面 Google ボタンの意匠（純正維持 + 金彩フレーム）
+
+- ステータス: Accepted（方針確定。実装は WAVE2 / issue #218 フォローアップ）
+- 日付: 2026-06-28
+- 関連: ADR-0012（Google ログイン）、ADR-0014（ログイン/管理画面）、ADR-0008（製品コンセプト / 出所メタ）、issue #218、親エピック #157、監査 `docs/design/figma-implementation-audit.md` B-1 #2
+
+## コンテキスト
+
+ログイン画面 11（Figma `73:3` / ボタン `74:16`）は **金グラデのカスタムボタン「🅖 Google で続行」**
+として描かれている。一方、実装（`apps/web/lib/auth.tsx`）は Google Identity Services (GIS) の
+`id.renderButton(theme:"outline", shape:"pill")` で **GIS 純正の白系ボタン**（「Sign in with Google」）
+を `buttonRef` の div に描画している。`renderButton` のテーマは GIS 既定値
+（`outline` / `filled_blue` / `filled_black`）に限られ、**任意の金色化はできない**。金グラデのボタンは
+現状 **dev の「開発用ログイン（bypass）」専用**（`devSignIn`、トークン無しで通す経路）であり、
+本物の Google サインインではない。
+
+論点は「Figma の金彩意匠（SANBA のダーク/金彩テーマ）」と「Google サインインのブランド規約」の衝突である。
+カスタム金彩化には GIS の `renderButton` を捨てて独自トリガ（`id.prompt()` 等）が必要になり、
+ブランド規約・到達性・セキュリティ境界（ADR-0012）とのトレードオフが生じる。
+
+> 本タスクのスコープはボタンの**意匠方針の決定**のみ。実ボタン実装と、認証ロジック
+> （ID トークン検証 / nonce / dev bypass）の変更は **Out of Scope**（ADR-0012 の信頼境界は不変）。
+
+## 決定
+
+### 純正ボタン維持 + 金彩は「周囲のフレーム/カード」で表現する（フルカスタム金彩化は却下）
+
+1. **GIS `renderButton` を維持する。** ボタン本体は Google 承認の意匠のまま、SANBA のダークテーマに
+   調和する **承認バリアントへ寄せる**:
+   - `theme: "filled_black"`（白 `outline` から変更。ダーク基調に馴染む承認済みバリアント）
+   - `text: "continue_with"`（「Google で続行」相当のローカライズ文言を **GIS が公式提供**）
+   - `locale: "ja"` / `size: "large"` / `shape: "pill"`（既存）
+   - → これだけで Figma の文言「Google で続行」と暗色基調は **ブランド規約の範囲内で**満たせる。
+2. **金彩は Google ボタンの“地”ではなく、ボタンを囲むカード/フレーム（金グラデの枠・ハロー）で表現する。**
+   Google のロゴや背景色そのものを金に塗り替えない。これにより SANBA の金彩世界観を保ちつつ、
+   Google の「ボタン地色・ロゴを改変しない」規約に抵触しない。
+3. **emoji「🅖」と金地ボタンは不採用。** 公式 "G" ロゴの代替に emoji を使う・ボタン地を金グラデにするのは
+   ブランド規約違反（後述）。Figma 正本（`74:16`）は本 ADR の合意で**規約準拠の合成**へ更新する
+   （フレーム＝金彩 / ボタン＝承認バリアント）。
+4. **dev の金ボタンは「開発用ログイン」と明示し、Google ボタンと混同させない**（現状維持）。bypass は
+   そもそも Google サインインではないため、純正ボタンと視覚的に区別できる方がむしろ正しい。
+
+→ 認証フロー（`renderButton` が管理する credential 取得、サーバ検証、ADR-0012 の信頼境界）は
+**一切変えずに**、意匠だけをブランド準拠で寄せる最小差分。
+
+## 理由 / 検討した代替案
+
+| 観点 | 採用: 純正維持 + 金彩フレーム | 却下: フルカスタム金彩化（独自トリガ） |
+|---|---|---|
+| ブランド規約 | `filled_black` + `continue_with` + 金彩フレームで**規約内**。ロゴ/地色/文言を改変しない | 金グラデ地・emoji 🅖 は **Google ブランドガイドライン違反**（承認色は白/中立黒/Google ブルーのみ、公式 "G" ロゴ必須、承認文言必須）。OAuth ブランド審査・将来の検証リスク |
+| セキュリティ境界 | `renderButton` の credential 取得経路を維持＝ADR-0012 の「検証はサーバ」を構造的に崩さない | `id.prompt()`（One Tap）等の独自トリガに置換すると取得経路が変わり、検証/nonce 設計の再点検が必要（Out of Scope に抵触） |
+| 到達性 | ボタンは常時表示で確実に押せる | One Tap は ITP/FedCM/ブラウザ設定で抑制されうる。主導線をこれ一本にするのは不安定 |
+| 実装/保守コスト | テーマ引数の変更＋枠 CSS のみ。低コスト | 公式ロゴ資産・最小サイズ・余白・各状態（hover/focus/disabled）・多言語を**手で規約準拠維持**する継続コスト |
+| 世界観 | 金彩フレームで SANBA らしさは十分に出る | 金地ボタン自体の世界観は最も強いが、規約違反コストに見合わない |
+
+- **Google ブランド要件（カスタム化する場合に満たすべき最小要件、参考）**: 公式 "G" ロゴ（改変・着色不可、
+  emoji 代替不可）/ 承認文言（"Sign in with Google" / "Continue with Google" / "Sign up with Google" と
+  そのローカライズ）/ 承認背景色（白・中立黒・Google ブルー塗り）/ 最小サイズ・クリアスペース・
+  推奨フォント。**金グラデ背景は承認色に無い**ため、フルカスタム金彩は要件を満たせない。これが
+  「フレームで金彩、ボタンは承認バリアント」を採る決め手。
+- **出所メタとの整合（ADR-0008）**: ボタン意匠は認証経路に影響しないため、検証済み `sub`/`email` を
+  participant に束ねる出所メタの信頼性は不変。
+
+## 影響 / フォローアップ（WAVE2: issue #218）
+
+実装は本 ADR の合意後に別 PR で行う（本タスクではコードを変更しない）。作業分解:
+
+1. **Web**: `apps/web/lib/auth.tsx` の `renderButton` 引数を `theme:"filled_black"` /
+   `text:"continue_with"` / `locale:"ja"` に変更。ログイン画面コンポーネントで GIS ボタンの div を
+   **金グラデのカード/枠**で囲む（ボタン本体には重ねない）。
+   - **言語固定は script URL + JS の両方**: Google 公式ガイド（[display-button#button_language](https://developers.google.com/identity/gsi/web/guides/display-button#button_language)）は、ボタン言語を手動固定する場合 GIS script の `?hl=<code>` と JS の `locale` を**併用**する手順を示す。`GSI_SRC` を `https://accounts.google.com/gsi/client?hl=ja` に変更する（`locale:"ja"` だけだとユーザーのブラウザ/Google 設定に依存し「Google で続行」に揃わない場合がある）。
+2. **Design**: Figma 正本 `74:16` を規約準拠の合成（フレーム＝金彩 / ボタン＝承認バリアント）へ更新し、
+   監査 B-1 #2 と docs のノード ID ドリフト（B-0）を解消。
+3. **dev bypass**: 金ボタンは「開発用ログイン（bypass）」表記を維持し、純正ボタンと区別（現状維持）。
+4. **ブランド準拠チェック**: 最小サイズ・余白・ロゴ非改変・承認文言を満たすことを実装時に確認。
+5. **テスト**: `renderButton` 呼び出し引数（theme/text/locale/shape）の単体/スナップショット。dev/real の
+   ボタン出し分けの既存テストを維持。
+6. **不変**: 認証ロジック（ID トークン検証 / nonce / dev bypass / ADR-0012 の信頼境界）は変更しない。
+
+## 却下案
+
+- **フルカスタム金彩ボタン（`renderButton` を捨て `id.prompt()` 等の独自トリガ）**: 金地・emoji ロゴが
+  ブランド規約違反、One Tap 単独主導線は到達性が不安定、認証取得経路の変更が ADR-0012 の境界に波及。
+- **`renderButton` のまま金色化**: GIS のテーマは既定値のみで任意配色は不可能。技術的に実現できない。
+- **dev の金ボタンを本番の Google サインインに流用**: bypass はトークン無し経路で本物の Google
+  サインインではない。ブランド・セキュリティ両面で不可。
+
+> 本書は設計判断の記録（提案）。最終採否は人間レビューを経る（CLAUDE.md 原則1）。
