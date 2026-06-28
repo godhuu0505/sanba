@@ -22,7 +22,7 @@ import {
 import type { MaterialItem } from "../lib/realtime/selectors";
 import { useRealtimeSession } from "../lib/realtime/useRealtimeSession";
 import { ConversationSessionView } from "./ConversationSessionView";
-import { MaterialSourceSheet, type MaterialSource } from "./MaterialSourceSheet";
+import { MaterialSourceSheet } from "./MaterialSourceSheet";
 
 export function SessionView({
   sessionId,
@@ -45,8 +45,10 @@ export function SessionView({
   const screenShare = useTrackToggle({ source: Track.Source.ScreenShare });
   // 音声出力（SANBA の読み上げ）の消音。RoomAudioRenderer の muted で実際に止める。
   const [muted, setMuted] = useState(false);
-  // 05-2 手段選択シート（カメラ/アップロード/画面共有/Drive）の開閉。
+  // 05-2 手段選択シート（カメラ/アップロード/画面共有/Drive）の開閉と、カメラ/画面共有の
+  // 開始失敗（権限拒否・ピッカーキャンセル）をシート上で示すためのエラー。
   const [sourceSheetOpen, setSourceSheetOpen] = useState(false);
+  const [sourceError, setSourceError] = useState<string | null>(null);
 
   // 投入直後の素材ローカル行（uploading/failed）。realtime の analysis.progress/visual が届くまで、
   // また動画の「準備中」を可視化する橋渡し。
@@ -111,16 +113,39 @@ export function SessionView({
     }
   }
 
-  function handleRetryMaterial(id: string) {
-    // 失敗行を片付けて手段選択をやり直す（05-2 シートを開く）。
-    setPending((p) => p.filter((m) => m.id !== id));
+  function openSourceSheet() {
+    setSourceError(null);
     setSourceSheetOpen(true);
   }
 
-  // 投入種別（camera/screen/upload/drive）の計測（#201 / CLAUDE.md 原則3）。集計基盤が入るまでは
-  // 構造化ログで観測可能にしておく（手段ごとの利用比率＝マルチモーダルの効き目の足場）。
-  function trackMaterialSource(source: MaterialSource) {
-    console.info("[material] source_selected", { sessionId, source });
+  function handleRetryMaterial(id: string) {
+    // 失敗行を片付けて手段選択をやり直す（05-2 シートを開く）。
+    setPending((p) => p.filter((m) => m.id !== id));
+    openSourceSheet();
+  }
+
+  // カメラ/画面共有の LiveKit ローカルトラックを開始/停止する。権限拒否や画面共有ピッカーの
+  // キャンセルは toggle() の Promise 拒否として届くため、握りつぶさずシート上にエラーを出す
+  // （旧 MaterialView と同じ扱い・観測のため console.error も残す）。
+  async function toggleCameraTrack() {
+    setSourceError(null);
+    try {
+      await camera.toggle();
+    } catch (e) {
+      console.error("camera toggle failed", e);
+      setSourceError("カメラを開始できませんでした。ブラウザのカメラ許可をご確認ください。");
+    }
+  }
+
+  async function toggleScreenShareTrack() {
+    setSourceError(null);
+    try {
+      await screenShare.toggle();
+    } catch (e) {
+      // 画面共有ピッカーのキャンセルもここに届く（NotAllowedError）。
+      console.error("screenShare toggle failed", e);
+      setSourceError("画面共有を開始できませんでした。共有する画面を選び直してください。");
+    }
   }
 
   function handleExport(): Promise<ExportResult> {
@@ -159,7 +184,7 @@ export function SessionView({
         onSendText={handleSendText}
         onExport={handleExport}
         onFinalize={handleFinalize}
-        onAddMaterial={() => setSourceSheetOpen(true)}
+        onAddMaterial={openSourceSheet}
         extraMaterials={pending}
         hydratedMaterials={hydratedMaterials}
         onRetryMaterial={handleRetryMaterial}
@@ -174,6 +199,13 @@ export function SessionView({
         metrics={metrics}
       />
 
+      {/*
+        投入種別（camera/screen/upload/drive）の運用計測:
+        - upload は API 側 `sanba_asset_uploads_total`（kind/result）で計上済み（observability.py）。
+        - camera/screen は LiveKit ローカルトラックの publish としてサーバ側で観測できる。
+        クライアントからの選択イベントを OTLP/メトリクス基盤へ束ねる収集先の設計は本 PR スコープ外のため
+        #232 で対応する。MaterialSourceSheet 側に onSelectSource の seam を残し、そこへぶら下げる。
+      */}
       {sourceSheetOpen && (
         <MaterialSourceSheet
           onClose={() => setSourceSheetOpen(false)}
@@ -182,11 +214,11 @@ export function SessionView({
             setSourceSheetOpen(false);
             fileInput.current?.click();
           }}
-          onToggleCamera={() => void camera.toggle()}
+          onToggleCamera={toggleCameraTrack}
           cameraActive={camera.enabled}
-          onToggleScreenShare={() => void screenShare.toggle()}
+          onToggleScreenShare={toggleScreenShareTrack}
           screenShareActive={screenShare.enabled}
-          onSelectSource={trackMaterialSource}
+          error={sourceError}
         />
       )}
     </>

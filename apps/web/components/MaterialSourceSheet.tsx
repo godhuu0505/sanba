@@ -43,8 +43,13 @@ export interface MaterialSourceSheetProps {
    * 実ピッカが用意できたら onDrive を注入して差し替える（別チケット）。
    */
   onDrive?: () => void;
-  /** 手段選択の計測フック（CLAUDE.md 原則3 / #201 投入種別の計測）。各導線の押下で発火する。 */
+  /**
+   * 手段選択の計測フック（CLAUDE.md 原則3 / #201 投入種別の計測）。各導線の押下で発火する。
+   * 運用での収集先（OTLP/メトリクス）への配線は #232。
+   */
   onSelectSource?: (source: MaterialSource) => void;
+  /** カメラ/画面共有の開始失敗（権限拒否・ピッカーキャンセル）を示す（親が制御）。 */
+  error?: string | null;
 }
 
 export function MaterialSourceSheet({
@@ -56,6 +61,7 @@ export function MaterialSourceSheet({
   screenShareActive,
   onDrive,
   onSelectSource,
+  error,
 }: MaterialSourceSheetProps) {
   const sheetRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -176,6 +182,12 @@ export function MaterialSourceSheet({
         {driveNotice && !onDrive && (
           <p role="status" className="px-1 text-[11.5px] text-[var(--sanba-muted)]">
             Google ドライブ連携は準備中です（別チケット・ADR-0007）。今はファイルのアップロードをご利用ください。
+          </p>
+        )}
+
+        {error && (
+          <p role="alert" className="px-1 text-[11.5px] font-bold text-[var(--sanba-rec)]">
+            {error}
           </p>
         )}
 

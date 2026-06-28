@@ -89,6 +89,16 @@ describe("MaterialSourceSheet（05-2 手段選択シート）", () => {
     expect(cb.onClose).toHaveBeenCalledTimes(3);
   });
 
+  it("カメラ/画面共有の開始失敗（error）を alert として出す", () => {
+    setup({ error: "カメラを開始できませんでした。ブラウザのカメラ許可をご確認ください。" });
+    expect(screen.getByRole("alert").textContent).toMatch(/カメラを開始できませんでした/);
+  });
+
+  it("error 未指定なら alert を出さない", () => {
+    setup();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
   it("開いた直後はシート内（閉じる）へフォーカスを移す（フォーカストラップの起点）", () => {
     setup();
     expect(document.activeElement).toBe(screen.getByRole("button", { name: "閉じる" }));
