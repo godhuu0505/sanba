@@ -551,9 +551,9 @@ async def entrypoint(ctx: JobContext) -> None:
     seed_knowledge_base(grounding)
     seed_github_context(grounding, session_id)
     # data channel publish（#94）。音声と同一ルーム接続を再利用して web へ差分を流す。
-    # reliable seq は last_seq + current question の asked_seq/cleared_seq の最大値でシード（#123・#270）。
-    # question.asked/cleared は set_session_seq を呼ばないが pub._seq を消費するため、再起動後に seq が
-    # 後退して web の status ガードに弾かれないよう get_startup_seq で上限を揃える（#270 補完）。
+    # reliable seq は last_seq と current question の asked_seq/cleared_seq の最大値でシード
+    # （#123・#270）。question.asked/cleared は set_session_seq を呼ばず pub._seq を消費するため、
+    # 再起動後に seq が後退して web の status ガードに弾かれないよう get_startup_seq で揃える。
     # lossy seq は epoch ブロック基底でシードし大域単調にする（#270）。
     publisher = EventPublisher(
         session_id,
