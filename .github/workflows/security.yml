@@ -51,11 +51,17 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       # Run the gitleaks binary directly (the v2 action needs a license on private
       # org repos); scans the working tree against our allowlisted config.
-      - name: Install gitleaks
+      # バージョン固定 + 公式 checksums.txt 照合で入れる (terraform.yml と同方針・改ざん検知)。
+      - name: Install gitleaks (pinned + checksum)
+        working-directory: /tmp
         run: |
+          set -euo pipefail
           VERSION=8.18.4
-          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${VERSION}/gitleaks_${VERSION}_linux_x64.tar.gz" \
-            | sudo tar -xz -C /usr/local/bin gitleaks
+          base="https://github.com/gitleaks/gitleaks/releases/download/v${VERSION}"
+          curl -sSfL -O "${base}/gitleaks_${VERSION}_linux_x64.tar.gz"
+          curl -sSfL -O "${base}/gitleaks_${VERSION}_checksums.txt"
+          sha256sum --ignore-missing -c "gitleaks_${VERSION}_checksums.txt"
+          sudo tar -xzf "gitleaks_${VERSION}_linux_x64.tar.gz" -C /usr/local/bin gitleaks
       - name: Scan working tree
         run: gitleaks detect --no-git --source . --config .gitleaks.toml --redact --verbose
 
@@ -77,10 +83,12 @@ jobs:
           fi
       # Trivy is advisory: the docker build above is the gate. Install + scan are
       # both continue-on-error so a flaky install/scan never blocks the PR.
+      # install スクリプトは release タグに固定する (mutable な main を参照しない・供給網対策)。
+      # 固定したスクリプト自身が trivy バイナリの checksums.txt を sha256 照合する。
       - name: Install Trivy
         continue-on-error: true
         run: |
-          curl -sSfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \
+          curl -sSfL https://raw.githubusercontent.com/aquasecurity/trivy/v0.55.0/contrib/install.sh \
             | sudo sh -s -- -b /usr/local/bin v0.55.0
       - name: Trivy scan
         continue-on-error: true
