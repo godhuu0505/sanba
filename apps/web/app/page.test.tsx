@@ -45,6 +45,12 @@ vi.mock("../lib/api", () => ({
   addSessionContext: (...a: unknown[]) => addSessionContext(...a),
   uploadContextFile: (...a: unknown[]) => uploadContextFile(...a),
   fetchMySessions: (...a: unknown[]) => fetchMySessions(...a),
+  // GitHub 連携（ADR-0025）: 入口フローのテストでは未連携扱いにし、RepoSelectField は
+  // 設定画面導線のみを描く（repo 一覧/branch は呼ばれない）。selectSessionRepo は no-op。
+  getGithubLinkStatus: () => Promise.resolve({ linked: false, github_login: null }),
+  listGithubRepos: () => Promise.resolve([]),
+  listGithubBranches: () => Promise.resolve([]),
+  selectSessionRepo: () => Promise.resolve({ repo: null, branch: null, commit_sha: null, status: "none" }),
   // 実装と同じ受理範囲・判定（PNG/JPG・MP4/MOV）。テストではロジックをそのまま使う。
   ACCEPTED_IMAGE: ".png,.jpg,.jpeg,image/png,image/jpeg",
   ACCEPTED_VIDEO: ".mp4,.mov,video/mp4,video/quicktime",

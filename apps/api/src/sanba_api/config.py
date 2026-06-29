@@ -83,6 +83,34 @@ class Settings(BaseSettings):
     github_token: str = ""
     github_repo: str = ""  # "owner/name"
 
+    # ---- GitHub App: per-user repo linking (ADR-0025) ----
+    # 連携機能のフラグ。未設定（app id/秘密鍵なし）の構成では連携経路をフェイルクローズする。
+    github_app_enabled: bool = False
+    # GitHub App の数値 ID（App 認証 JWT の iss）。秘匿物ではない。
+    github_app_id: str = ""
+    # GitHub App の秘密鍵（PEM）。Secret Manager 経由で注入する。生のまま env に置かない。
+    github_app_private_key: str = ""
+    # install フローで使う App slug（https://github.com/apps/<slug>/installations/new）。
+    github_app_slug: str = ""
+    # GitHub App の OAuth client（user-to-server）。install 時にユーザー認可も取り、callback で
+    # 「そのユーザーが当該 installation を実際に保有するか」を検証して別人の installation_id
+    # 横取りを防ぐ（ADR-0025 / Codex P1）。両方設定されているときに検証を有効化する。
+    # App 設定で "Request user authorization (OAuth) during installation" を ON にすること。
+    github_app_client_id: str = ""
+    github_app_client_secret: str = ""
+    # install 完了後に GitHub から戻すコールバック先（api の絶対 URL。App 登録側の Setup URL）。
+    github_app_callback_url: str = ""
+    # 連携保存後にユーザーを戻す web 設定画面の URL（api callback とは別物。ここへ 302 する）。
+    github_app_web_return_url: str = ""
+    # 連携開始時に発行する state 署名の有効期限（CSRF/誤紐づけ対策・ADR-0025）。
+    github_link_state_ttl_seconds: int = 600
+    # ---- repo 索引の総量キャップ（関連度優先 + 上限・ADR-0025）----
+    # 索引対象の最大ファイル数と総バイト。超過分はスキップして log + UI に出す。
+    github_index_max_files: int = 1500
+    github_index_max_total_bytes: int = 20_000_000
+    # 単一ファイルのバイト上限（巨大ファイル/生成物の混入ガード）。
+    github_index_max_file_bytes: int = 200_000
+
     # ---- Data governance (issue #10) ----
     # Mask PII before context is written to the shared grounding index.
     mask_pii_before_index: bool = True

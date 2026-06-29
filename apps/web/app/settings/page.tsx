@@ -10,6 +10,7 @@
 import { useRouter } from "next/navigation";
 
 import { AccountMenu } from "@/components/AccountMenu";
+import { GitHubLinkCard } from "@/components/GitHubLinkCard";
 import { authGate } from "@/components/RequireAuth";
 import {
   AppHeader,
@@ -93,6 +94,9 @@ export default function SettingsPage() {
             録音と要件は最大 {RETENTION_DAYS} 日保持し、保存前に個人情報をマスクします。
           </p>
         </Card>
+
+        {/* GitHub 連携（ADR-0025 / 仕様①）。連携アカウントの repo を準備画面で前提化できる。 */}
+        <GitHubLinkCard />
 
         {/* ログアウト導線（アカウントメニューと同じ遷移先に一本化）。 */}
         <Card>
