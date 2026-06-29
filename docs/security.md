@@ -90,6 +90,14 @@ GUI 運用手順のため、実施したら issue #68 に**実施者・日時と
 > 本 issue で単独実施する。WIF の attribute condition（`repository`＋`ref=main` 限定）の確認は
 > `infra/terraform` 側で別途行う（`docs/runbooks/deploy-gcp.md §3`）。
 
+**実施記録**（GUI 設定は IaC 化されないため、実施の都度ここに追記する）:
+
+| 日付 | 実施者 | 内容 |
+|---|---|---|
+| 2026-06-29 | @godhuu0505 | 手順1〜5 を設定（fork PR の Actions 承認・GITHUB_TOKEN read-only＋PR 作成/承認オフ・Secret scanning/push protection・最新 push の再承認要求・本番 dispatch の権限確認）。設定画面のスクリーンショットは issue #68 にコメントで添付。 |
+
+設定変更や再点検をしたら、この表に行を追加して証跡を残す。
+
 **コード側で恒久対応済み**（上表の前提となる多層防御）:
 - 全ワークフローが top-level `permissions:` を宣言済み（既定 `contents: read`、書き込みが要るジョブだけ昇格。checkout しない `review-status.yml` は `pull-requests: write` のみ）→ 手順2 の read-only 既定で問題なく動く。
 - third-party Action は full SHA ピン、`curl | sh` ツールはバージョン固定＋チェックサム照合済み（gitleaks: 公式 checksums.txt 照合 / Trivy: install スクリプトを `| sudo sh` で直接実行せず sha256 照合してから実行＝スクリプト自身も binary を checksums.txt で照合する二段構え / Terraform: 公式 SHA256SUMS 照合）。
