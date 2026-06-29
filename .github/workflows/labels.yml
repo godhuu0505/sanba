@@ -17,6 +17,7 @@ on:
         default: true
 
 permissions:
+  contents: read # actions/checkout に必要 (permissions を 1 つでも書くと他は none になるため明示)
   issues: write
 
 jobs:
