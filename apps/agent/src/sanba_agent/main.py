@@ -551,9 +551,13 @@ async def entrypoint(ctx: JobContext) -> None:
     seed_knowledge_base(grounding)
     seed_github_context(grounding, session_id)
     # data channel publish（#94）。音声と同一ルーム接続を再利用して web へ差分を流す。
-    # 再起動・再参加後も seq を単調増加させるため、保存済み last_seq でシード（#123・ADR-0021）。
+    # reliable seq は保存済み last_seq でシード（#123）。lossy seq は起動ごとの epoch ブロック基底で
+    # シードし、再起動を跨いで大域単調にする（#270）。どちらも 0 へ戻して web に黙殺されるのを防ぐ。
     publisher = EventPublisher(
-        session_id, LiveKitTransport(ctx.room), start_seq=repo.get_session_seq(session_id)
+        session_id,
+        LiveKitTransport(ctx.room),
+        start_seq=repo.get_session_seq(session_id),
+        start_lossy_seq=repo.reserve_lossy_seq_base(session_id),
     )
     agent = SANBAAgent(session_id=session_id, repo=repo, grounding=grounding, publisher=publisher)
 

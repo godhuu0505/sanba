@@ -94,6 +94,7 @@ class EventPublisher:
         transport: DataTransport,
         *,
         start_seq: int = 0,
+        start_lossy_seq: int = 0,
         clock: Any = _now,
     ) -> None:
         self._session_id = session_id
@@ -103,9 +104,10 @@ class EventPublisher:
         # 既定 0（新規）。永続値の読み出しは呼び出し側（repo.get_session_seq）。
         self._seq = start_seq
         # lossy（status/transcript.partial）専用カウンタ（#122・ADR-0021）。reliable seq と別系統。
-        # lossy は reliable seq を消費せず echo するので、欠落しても reliable seq に穴を空けず
-        # web の誤ギャップ・不要な再ハイドレーションを防ぐ。ephemeral（永続化しない）。
-        self._lossy_seq = 0
+        # lossy は reliable seq を消費せず echo するので、欠落しても reliable seq に穴を空けない。
+        # 再起動を跨いだ大域単調性のため epoch ブロック基底でシードする（#270）。0 から振り直すと
+        # 接続維持中の web が再起動後の lossy を黙殺するため、起動ごとに前回より大きい基底にする。
+        self._lossy_seq = start_lossy_seq
         self._lock = asyncio.Lock()
         # 観測性: 要件数・検知数を種別ごとに計測（契約 §5 / ADR-0005 評価へ）。
         # session.completed のサマリを実測から組み立てるため、抜け/矛盾/解消を分けて持つ。
@@ -122,6 +124,10 @@ class EventPublisher:
     @property
     def seq(self) -> int:
         return self._seq
+
+    @property
+    def lossy_seq(self) -> int:
+        return self._lossy_seq
 
     @property
     def detections_published(self) -> int:

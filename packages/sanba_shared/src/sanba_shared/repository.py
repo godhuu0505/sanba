@@ -49,6 +49,10 @@ class SessionRepository:
         # 検知 (矛盾/抜け) と適用済み最大 seq (#94/#100)。ハイドレーションの土台。
         self._mem_detections: dict[str, dict[str, dict[str, Any]]] = {}
         self._mem_seq: dict[str, int] = {}
+        # lossy（status/transcript.partial）の epoch（再起動ごとに +1 / #270・ADR-0021）。
+        # 起動時にここから lossy_seq の開始基底を払い出し、再起動を跨いで lossy_seq を
+        # 大域的に単調増加させる（接続維持中の web が再起動後の lossy を黙殺しないように）。
+        self._mem_lossy_epoch: dict[str, int] = {}
         # 投入済み素材のメタ (#184)。GET context/files の復元に使う。プロセス内に閉じず外部
         # ストアへ永続化することで、多インスタンス/再起動後のリロード/途中参加でも復元できる。
         self._mem_materials: dict[str, dict[str, dict[str, Any]]] = {}
@@ -524,6 +528,44 @@ class SessionRepository:
         current = self._mem_seq.get(session_id, 0)
         self._mem_seq[session_id] = current + count
         return current + 1
+
+    # lossy_seq epoch のブロック幅。1 起動あたり最大この件数の lossy イベントを許容する。
+    # 起動ごとに [epoch*BLOCK, (epoch+1)*BLOCK) の区間を割り当て、再起動を跨いで lossy_seq を
+    # 大域単調にする。JS の安全整数（2^53）に対し十分小さく、現実の lossy 件数を大きく上回る。
+    LOSSY_EPOCH_BLOCK = 1_000_000_000
+
+    def reserve_lossy_seq_base(self, session_id: str) -> int:
+        """この起動の lossy_seq 開始基底を払い出す（#270・ADR-0021）。
+
+        lossy（status/transcript.partial）の `lossy_seq` は ephemeral でプロセス再起動時に 0 へ
+        戻るが、接続を維持している web は再起動前の `lossy_seq` 高水位を保持しているため、0 から
+        振り直すと再起動後の lossy が黙殺される（#123 が reliable seq で解いた退行の lossy 版）。
+        起動ごとに epoch を +1 し、`epoch * BLOCK` を lossy_seq の開始基底として返すことで、
+        再起動後の lossy_seq が必ず以前を上回り、大域的に単調増加する。epoch の採番は
+        Firestore トランザクションで原子的に行う（複数 worker の同時起動に耐える）。
+        """
+        if self._client is not None:
+            from google.cloud import firestore
+
+            doc_ref = self._client.collection("sessions").document(session_id)
+
+            @firestore.transactional  # type: ignore[misc]
+            def _txn(transaction: Any) -> int:
+                snap = doc_ref.get(transaction=transaction)
+                data = snap.to_dict() if snap.exists else None
+                epoch = (
+                    int(data["lossy_epoch"])
+                    if data is not None and isinstance(data.get("lossy_epoch"), int)
+                    else 0
+                ) + 1
+                transaction.set(doc_ref, {"lossy_epoch": epoch}, merge=True)
+                return epoch
+
+            epoch = int(_txn(self._client.transaction()))
+        else:
+            epoch = self._mem_lossy_epoch.get(session_id, 0) + 1
+            self._mem_lossy_epoch[session_id] = epoch
+        return epoch * self.LOSSY_EPOCH_BLOCK
 
     # ---- internal ----------------------------------------------------------
     def _req_doc(self, session_id: str, rid: str):  # type: ignore[no-untyped-def]

@@ -67,6 +67,16 @@ async def test_lossy_seq_increments_independently() -> None:
 
 
 @pytest.mark.asyncio
+async def test_start_lossy_seq_seeds_lossy_across_restart() -> None:
+    # 再起動シミュレーション（#270）: epoch ブロック基底からシードすると lossy_seq が前回を上回り、
+    # 接続維持中の web が再起動後の status を黙殺しない（lossy_seq の大域単調性）。
+    t = RecordingTransport()
+    pub = EventPublisher("s1", t, start_lossy_seq=1_000_000_000)
+    s = await pub.status("listening")
+    assert s["lossy_seq"] == 1_000_000_001  # base+1（0 から振り直さない）
+
+
+@pytest.mark.asyncio
 async def test_analysis_progress_is_reliable_with_distinct_seq() -> None:
     # analysis.* は reliable（ADR-0021 §1）。連続 progress は別々の reliable seq を採り、web の
     # upsert（seq 版管理）で 2 件目が重複破棄されない（Codex P2）。

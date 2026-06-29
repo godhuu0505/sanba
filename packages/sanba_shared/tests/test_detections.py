@@ -73,6 +73,20 @@ def test_reserve_session_seq_continues_from_persisted_last_seq() -> None:
     assert repo.reserve_session_seq("s1") == 11
 
 
+def test_reserve_lossy_seq_base_increments_per_startup() -> None:
+    # 起動ごとに epoch を +1 し、前回より大きい lossy_seq 開始基底を返す（#270）。
+    repo = _mem_repo()
+    block = repo.LOSSY_EPOCH_BLOCK
+    first = repo.reserve_lossy_seq_base("s1")  # epoch 1
+    second = repo.reserve_lossy_seq_base("s1")  # epoch 2（再起動相当）
+    assert first == block
+    assert second == 2 * block
+    # 1 起動内の lossy_seq（base+1..base+BLOCK-1）は次の起動の base を超えない。
+    assert first + (block - 1) < second
+    # セッションが違えば epoch は独立。
+    assert repo.reserve_lossy_seq_base("s2") == block
+
+
 def test_save_and_list_materials() -> None:
     # 素材メタを永続化し、GET /context/files の復元に使える（#184・Codex P1）。
     repo = _mem_repo()
