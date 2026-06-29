@@ -67,6 +67,20 @@ async def test_lossy_seq_increments_independently() -> None:
 
 
 @pytest.mark.asyncio
+async def test_analysis_progress_is_reliable_with_distinct_seq() -> None:
+    # analysis.* は reliable（ADR-0021 §1）。連続 progress は別々の reliable seq を採り、web の
+    # upsert（seq 版管理）で 2 件目が重複破棄されない（Codex P2）。
+    t = RecordingTransport()
+    pub = EventPublisher("s1", t)
+    a = await pub.analysis_progress("a1", 10, "received")
+    b = await pub.analysis_progress("a1", 50, "analyzing")
+    assert a.get("reliable") is not False  # lossy ではない
+    assert "lossy_seq" not in a
+    assert a["seq"] == 1
+    assert b["seq"] == 2  # 別 seq → web で重複破棄されない
+
+
+@pytest.mark.asyncio
 async def test_start_seq_seeds_monotonic_continuation() -> None:
     # 再起動シミュレーション（#123）: 保存済み last_seq=5 からシードすると次の reliable は seq=6。
     # 0 から振り直さないことで web の seq ガードが再起動後イベントを黙殺しない。

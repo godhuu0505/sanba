@@ -404,10 +404,12 @@ class EventPublisher:
         return env
 
     async def analysis_progress(self, asset_id: str, pct: int, stage: str) -> dict[str, Any]:
+        # analysis.* は reliable ストリーム（ADR-0021 §1）。reliable seq を採番して送る。lossy に
+        # すると #122 の echo 仕様で連続 progress（10%→50%）が同一 seq になり、web の upsert（seq
+        # 版管理）が 2 件目を重複破棄して進捗が止まる（Codex P2）。API 経由（#145）も reliable。
         return await self._emit(
             "analysis.progress",
             {"asset_id": asset_id, "pct": pct, "stage": stage},
-            reliable=False,
         )
 
     async def analysis_visual(
