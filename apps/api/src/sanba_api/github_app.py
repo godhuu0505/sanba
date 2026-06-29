@@ -479,3 +479,95 @@ class GitHubAppClient:  # pragma: no cover - network
                     break
                 page += 1
         return branches
+
+    def repo_meta(self, installation_id: int, repo: str) -> dict[str, object]:
+        """repo の description / language / default_branch 等。"""
+        import httpx
+
+        with httpx.Client(timeout=15) as client:
+            res = client.get(f"{_API}/repos/{repo}", headers=self._inst_headers(installation_id))
+        res.raise_for_status()
+        data = res.json()
+        return {
+            "description": data.get("description"),
+            "language": data.get("language"),
+            "default_branch": data.get("default_branch", "main"),
+        }
+
+    def branch_head_sha(self, installation_id: int, repo: str, branch: str) -> str:
+        """branch の HEAD commit sha（索引のピン留め基準）。"""
+        import httpx
+
+        with httpx.Client(timeout=15) as client:
+            res = client.get(
+                f"{_API}/repos/{repo}/branches/{branch}",
+                headers=self._inst_headers(installation_id),
+            )
+        res.raise_for_status()
+        return str(res.json()["commit"]["sha"])
+
+    def list_tree(self, installation_id: int, repo: str, sha: str) -> list[IndexFile]:
+        """commit sha の全ツリーを再帰取得し、blob を (path, size) で返す。"""
+        import httpx
+
+        with httpx.Client(timeout=30) as client:
+            res = client.get(
+                f"{_API}/repos/{repo}/git/trees/{sha}",
+                headers=self._inst_headers(installation_id),
+                params={"recursive": "1"},
+            )
+        res.raise_for_status()
+        data = res.json()
+        files: list[IndexFile] = []
+        for node in data.get("tree", []):
+            if node.get("type") == "blob":
+                files.append(IndexFile(path=node["path"], size=int(node.get("size", 0))))
+        if data.get("truncated"):
+            log.warning("repo_tree_truncated", repo=repo, sha=sha)
+        return files
+
+    def fetch_file(self, installation_id: int, repo: str, sha: str, path: str) -> str:
+        """1 ファイルを raw 取得する（テキスト前提）。"""
+        import httpx
+
+        with httpx.Client(timeout=15) as client:
+            res = client.get(
+                f"{_API}/repos/{repo}/contents/{path}",
+                headers={
+                    **self._inst_headers(installation_id),
+                    "Accept": "application/vnd.github.raw+json",
+                },
+                params={"ref": sha},
+            )
+        res.raise_for_status()
+        return res.text
+
+    def fetch_readme(self, installation_id: int, repo: str, sha: str) -> str | None:
+        """README 本文（無ければ None）。"""
+        import httpx
+
+        with httpx.Client(timeout=15) as client:
+            res = client.get(
+                f"{_API}/repos/{repo}/readme",
+                headers={
+                    **self._inst_headers(installation_id),
+                    "Accept": "application/vnd.github.raw+json",
+                },
+                params={"ref": sha},
+            )
+        if res.status_code == 200 and res.text:
+            return res.text
+        return None
+
+    def installation_login(self, installation_id: int) -> str:
+        """installation のアカウント login（連携表示用）。"""
+        import httpx
+
+        with httpx.Client(timeout=15) as client:
+            res = client.get(
+                f"{_API}/app/installations/{installation_id}",
+                headers=self._app_headers(),
+            )
+        res.raise_for_status()
+        account = res.json().get("account") or {}
+        return str(account.get("login", ""))
