@@ -59,7 +59,7 @@ class Settings(BaseSettings):
     elasticsearch_api_key: str = ""
     google_api_key: str = ""
     google_genai_use_vertexai: bool = False
-    gemini_embed_model: str = "text-embedding-004"
+    gemini_embed_model: str = "gemini-embedding-001"
     # Max characters accepted per context upload (guards memory/cost).
     max_context_chars: int = 200_000
 

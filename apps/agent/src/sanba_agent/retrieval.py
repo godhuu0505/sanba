@@ -21,7 +21,7 @@ from .pii import mask_pii
 log = structlog.get_logger(__name__)
 
 INDEX = "sanba-grounding"
-EMBED_DIM = 768  # text-embedding-004
+EMBED_DIM = 3072  # gemini-embedding-001 (default; truncation requires manual L2 normalize)
 
 
 @dataclass
