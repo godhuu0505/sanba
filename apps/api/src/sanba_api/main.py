@@ -422,7 +422,12 @@ def _github_app_client() -> GitHubAppClient | None:
         settings.github_app_enabled and settings.github_app_id and settings.github_app_private_key
     ):
         return None
-    return GitHubAppClient(settings.github_app_id, settings.github_app_private_key)
+    return GitHubAppClient(
+        settings.github_app_id,
+        settings.github_app_private_key,
+        oauth_client_id=settings.github_app_client_id,
+        oauth_client_secret=settings.github_app_client_secret,
+    )
 
 
 class GitHubLinkStatus(BaseModel):
@@ -482,7 +487,9 @@ def github_link_start(user: AuthUser = Depends(require_user)) -> GitHubLinkStart
 
     state に検証済み sub を束縛し、callback で CSRF/誤紐づけを防ぐ。
     """
-    if not (settings.github_app_enabled and settings.github_app_slug):
+    # callback と同じ必須設定（app_id/private_key）も開始時に確認してフェイルクローズする
+    # （Codex P2: slug だけ設定で install へ送ると、戻りの callback が 503 で連携失敗するため）。
+    if _github_app_client() is None or not settings.github_app_slug:
         raise HTTPException(status_code=503, detail="github app not configured")
     state = create_link_state(
         user.sub, settings.session_signing_secret, settings.github_link_state_ttl_seconds
@@ -494,10 +501,13 @@ def github_link_start(user: AuthUser = Depends(require_user)) -> GitHubLinkStart
 
 
 @app.get("/api/github/link/callback")
-def github_link_callback(installation_id: int, state: str) -> JSONResponse:
+def github_link_callback(installation_id: int, state: str, code: str | None = None) -> JSONResponse:
     """GitHub からの install コールバック。state を検証して連携を保存する（ADR-0025）。
 
-    認証ヘッダは無い（GitHub リダイレクト）。署名 state だけが sub を束縛する真実。
+    認証ヘッダは無い（GitHub リダイレクト）。署名 state が sub を束縛し CSRF を防ぐが、
+    state だけでは「その sub が当該 installation を保有するか」は証明できない。OAuth
+    （user-to-server）を構成している場合は `code` から所有権を検証してから保存し、別人の
+    installation_id 横取りを防ぐ（Codex P1）。OAuth 未構成の dev/local では検証を省く。
     """
     client = _github_app_client()
     if client is None:
@@ -508,6 +518,21 @@ def github_link_callback(installation_id: int, state: str) -> JSONResponse:
         log.warning("github_link_state_rejected", reason=str(exc))
         raise HTTPException(status_code=403, detail=f"invalid state: {exc}") from exc
 
+    # 所有権検証（構成されている場合は必須・フェイルクローズ）。
+    if client.oauth_configured:
+        if not code:
+            raise HTTPException(status_code=403, detail="missing oauth code")
+        try:
+            owns = client.user_owns_installation(code, installation_id)
+        except Exception as exc:  # pragma: no cover - network
+            log.warning("github_owner_verify_failed", error=str(exc))
+            raise HTTPException(status_code=502, detail="github error") from exc
+        if not owns:
+            log.warning("github_installation_not_owned", sub=sub, installation_id=installation_id)
+            raise HTTPException(status_code=403, detail="installation not owned by user")
+    else:
+        log.warning("github_owner_unverified", installation_id=installation_id)
+
     try:
         login = client.installation_login(installation_id)
     except Exception as exc:  # pragma: no cover - network
@@ -515,12 +540,12 @@ def github_link_callback(installation_id: int, state: str) -> JSONResponse:
         login = ""
     _repo.set_github_link(GitHubLink(sub=sub, installation_id=installation_id, github_login=login))
     log.info("github_linked", sub=sub, installation_id=installation_id, login=login)
-    # web の設定画面へ戻す（完了表示）。callback_url 未設定ならJSONで応答（テスト/ローカル）。
-    if settings.github_app_callback_url:
+    # 連携保存後は web の設定画面へ戻す（api callback とは別の web URL / Codex P2）。
+    if settings.github_app_web_return_url:
         return JSONResponse(
             status_code=302,
             content={"linked": True},
-            headers={"Location": f"{settings.github_app_callback_url}?linked=1"},
+            headers={"Location": f"{settings.github_app_web_return_url}?linked=1"},
         )
     return JSONResponse(content={"linked": True, "github_login": login})
 
@@ -586,6 +611,9 @@ def _index_repo_task(
     client = _github_app_client()
     if client is None:  # pragma: no cover - guarded by caller
         return
+    # repo 選び直し / branch 変更 / 再同期で古い github: chunk が残ると search_grounding に
+    # 旧 repo・旧 commit の断片が混ざる。索引前に当該 session の repo chunk を一掃する（Codex P2）。
+    _indexer.delete_repo_context(session_id)
     try:
         outcome = fetch_and_index_repo(
             client,

@@ -127,6 +127,47 @@ class ContextIndexer:
         log.info("context_indexed", session=session_id, source=source_name, chunks=len(chunks))
         return len(chunks)
 
+    def delete_repo_context(self, session_id: str) -> int:
+        """セッションの GitHub repo 由来 chunk（source が `github:` 始まり）を全削除する。
+
+        準備画面で repo を選び直した / 別 branch へ変えた / 再同期したとき、古い repo・commit の
+        コード断片が search_grounding に残って混ざるのを防ぐ（ADR-0025・Codex P2）。repo/path に
+        依らず一括で消すため、`delete_context` の `#` 境界一致ではなく `github:` 前方一致で消す。
+        削除件数を返す（冪等: 0 件でも安全）。
+        """
+        if self._client is not None:  # pragma: no cover - needs live ES
+            try:
+                res = self._client.delete_by_query(
+                    index=INDEX,
+                    query={
+                        "bool": {
+                            "filter": [
+                                {"term": {"session_id": session_id}},
+                                {"prefix": {"source": "github:"}},
+                            ]
+                        }
+                    },
+                    refresh=True,
+                )
+                deleted = int(res.get("deleted", 0))
+            except Exception as exc:  # pragma: no cover - depends on env
+                log.warning("repo_context_delete_failed", error=str(exc), session=session_id)
+                return 0
+        else:
+            before = len(self._mem)
+            self._mem = [
+                d
+                for d in self._mem
+                if not (
+                    d.get("session_id") == session_id
+                    and str(d.get("source", "")).startswith("github:")
+                )
+            ]
+            deleted = before - len(self._mem)
+        if deleted:
+            log.info("repo_context_deleted", session=session_id, chunks=deleted)
+        return deleted
+
     def delete_context(self, session_id: str, source_prefix: str) -> int:
         """出所が `source_prefix`（例 `asset:{asset_id}`）の grounding chunk を取り消す（#245）。
 

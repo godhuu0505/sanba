@@ -4,7 +4,7 @@
 // 一覧から選び、branch を選ぶ（既定はデフォルトブランチ）。選択は親へ伝え、セッション開始時に
 // バインドして非同期索引をキックする。未連携なら設定画面への導線だけを出す。
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   getGithubLinkStatus,
@@ -33,6 +33,9 @@ export function RepoSelectField({
   const [branches, setBranches] = useState<string[]>([]);
   const [loadingBranches, setLoadingBranches] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // repo を素早く切り替えたとき、古い listGithubBranches 応答が後から解決して選択を
+  // 巻き戻すのを防ぐ（最新リクエストの id だけを採用する / Codex P2）。
+  const branchReqId = useRef(0);
 
   // 連携状態 → repo 一覧を取得する。
   useEffect(() => {
@@ -50,6 +53,7 @@ export function RepoSelectField({
   }, [idToken]);
 
   async function handleRepoChange(fullName: string) {
+    const reqId = ++branchReqId.current;
     if (!fullName) {
       onChange(null);
       setBranches([]);
@@ -60,6 +64,8 @@ export function RepoSelectField({
     setError(null);
     try {
       const items = await listGithubBranches(fullName, idToken);
+      // 解決時に最新リクエストでなければ（別 repo へ切替済み）破棄する。
+      if (reqId !== branchReqId.current) return;
       const names = items.map((b) => b.name);
       setBranches(names);
       // 既定はデフォルトブランチ（ADR-0025）。無ければ先頭。
@@ -68,9 +74,9 @@ export function RepoSelectField({
         : (names[0] ?? "");
       onChange(def ? { repo: fullName, branch: def } : null);
     } catch {
-      setError("branch 一覧の取得に失敗しました");
+      if (reqId === branchReqId.current) setError("branch 一覧の取得に失敗しました");
     } finally {
-      setLoadingBranches(false);
+      if (reqId === branchReqId.current) setLoadingBranches(false);
     }
   }
 

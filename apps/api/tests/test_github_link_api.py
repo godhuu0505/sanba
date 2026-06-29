@@ -26,6 +26,12 @@ def _fake_user() -> AuthUser:
 
 
 class FakeClient:
+    # OAuth 未構成（dev/local パス）を既定にする。所有権検証テストはサブクラスで上書きする。
+    oauth_configured = False
+
+    def user_owns_installation(self, code: str, installation_id: int) -> bool:
+        return True
+
     def installation_login(self, installation_id: int) -> str:
         return "octocat"
 
@@ -98,6 +104,46 @@ def test_callback_rejects_bad_state() -> None:
         "/api/github/link/callback", params={"installation_id": 99, "state": "forged.sig"}
     )
     assert res.status_code == 403
+
+
+# ── 所有権検証（user-to-server OAuth 構成時 / Codex P1）─────────────────────────
+class _OAuthClient(FakeClient):
+    oauth_configured = True
+
+    def __init__(self, owns: bool) -> None:
+        self._owns = owns
+
+    def user_owns_installation(self, code: str, installation_id: int) -> bool:
+        return self._owns
+
+
+def test_callback_requires_code_when_oauth_configured(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(main, "_github_app_client", lambda: _OAuthClient(owns=True))
+    state = create_link_state(OWNER, main.settings.session_signing_secret)
+    res = client.get("/api/github/link/callback", params={"installation_id": 99, "state": state})
+    assert res.status_code == 403  # code 無し → 拒否
+
+
+def test_callback_rejects_unowned_installation(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(main, "_github_app_client", lambda: _OAuthClient(owns=False))
+    state = create_link_state(OWNER, main.settings.session_signing_secret)
+    res = client.get(
+        "/api/github/link/callback",
+        params={"installation_id": 99, "state": state, "code": "abc"},
+    )
+    assert res.status_code == 403
+    assert client.get("/api/github/link").json()["linked"] is False
+
+
+def test_callback_links_when_ownership_verified(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(main, "_github_app_client", lambda: _OAuthClient(owns=True))
+    state = create_link_state(OWNER, main.settings.session_signing_secret)
+    res = client.get(
+        "/api/github/link/callback",
+        params={"installation_id": 99, "state": state, "code": "abc"},
+    )
+    assert res.status_code == 200
+    assert client.get("/api/github/link").json()["linked"] is True
 
 
 def test_unlink_removes_link() -> None:

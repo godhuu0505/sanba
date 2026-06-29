@@ -132,8 +132,8 @@ _SECRET_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"\bAIza[0-9A-Za-z_\-]{20,}\b"),
     # Slack tokens
     re.compile(r"xox[baprs]-[A-Za-z0-9-]{10,}"),
-    # OpenAI / generic sk- secrets
-    re.compile(r"\bsk-[A-Za-z0-9]{20,}\b"),
+    # OpenAI / generic sk- secrets（sk-proj-… / sk-svcacct-… 等 hyphen/underscore 含む形も）
+    re.compile(r"\bsk-[A-Za-z0-9_-]{20,}"),
     # Bearer tokens in headers/config
     re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._\-]{20,}"),
     # key/secret/password/token = "value" assignments
@@ -418,12 +418,69 @@ def _parse_iso_epoch(value: object) -> float:
 class GitHubAppClient:  # pragma: no cover - network
     """installation token を都度発行して read-only に repo を読む薄いクライアント。"""
 
-    def __init__(self, app_id: str, private_key_pem: str) -> None:
+    def __init__(
+        self,
+        app_id: str,
+        private_key_pem: str,
+        oauth_client_id: str = "",
+        oauth_client_secret: str = "",
+    ) -> None:
         self.app_id = app_id
         self.private_key_pem = private_key_pem
+        # user-to-server OAuth（install 時の所有権検証用 / ADR-0025・Codex P1）。
+        self.oauth_client_id = oauth_client_id
+        self.oauth_client_secret = oauth_client_secret
         # installation token は短命だが 1h 有効。1 索引ジョブで 1500 ファイル取得しても
         # 毎回発行しないよう (token, expiry_epoch) をプロセス内キャッシュして再利用する。
         self._token_cache: dict[int, tuple[str, float]] = {}
+
+    @property
+    def oauth_configured(self) -> bool:
+        """user-to-server OAuth による所有権検証が可能な構成か。"""
+        return bool(self.oauth_client_id and self.oauth_client_secret)
+
+    def user_owns_installation(self, code: str, installation_id: int) -> bool:
+        """install 時の OAuth code から user token を得て、当該 installation を保有するか検証する。
+
+        別人が他者の installation_id を署名 state と組み合わせて横取りするのを防ぐ
+        （ADR-0025・Codex P1）。OAuth 未設定なら呼ばれない前提。
+        """
+        import httpx
+
+        with httpx.Client(timeout=15) as client:
+            tok = client.post(
+                "https://github.com/login/oauth/access_token",
+                headers={"Accept": "application/json"},
+                data={
+                    "client_id": self.oauth_client_id,
+                    "client_secret": self.oauth_client_secret,
+                    "code": code,
+                },
+            )
+            tok.raise_for_status()
+            user_token = tok.json().get("access_token")
+            if not user_token:
+                return False
+            headers = {
+                "Authorization": f"Bearer {user_token}",
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+            }
+            page = 1
+            while True:
+                res = client.get(
+                    f"{_API}/user/installations",
+                    headers=headers,
+                    params={"per_page": 100, "page": page},
+                )
+                res.raise_for_status()
+                data = res.json()
+                installs = data.get("installations", [])
+                if any(int(i.get("id", -1)) == installation_id for i in installs):
+                    return True
+                if len(installs) < 100:
+                    return False
+                page += 1
 
     def _app_headers(self) -> dict[str, str]:
         token = build_app_jwt(self.app_id, self.private_key_pem, int(time.time()))
@@ -576,12 +633,18 @@ class GitHubAppClient:  # pragma: no cover - network
         return TreeListing(files=files, truncated=truncated)
 
     def fetch_file(self, installation_id: int, repo: str, sha: str, path: str) -> str:
-        """1 ファイルを raw 取得する（テキスト前提）。"""
+        """1 ファイルを raw 取得する（テキスト前提）。
+
+        `docs/a#b.md` や `a?b.txt` のような Git では有効なファイル名で `#`/`?` が
+        fragment/query として切られないよう、path セグメントとしてエンコードする。
+        """
+        from urllib.parse import quote
+
         import httpx
 
         with httpx.Client(timeout=15) as client:
             res = client.get(
-                f"{_API}/repos/{repo}/contents/{path}",
+                f"{_API}/repos/{repo}/contents/{quote(path, safe='/')}",
                 headers={
                     **self._inst_headers(installation_id),
                     "Accept": "application/vnd.github.raw+json",

@@ -174,3 +174,98 @@ def test_index_repo_all_fetch_failures_marks_failed() -> None:
     )
     assert outcome.indexed_files == 0
     assert outcome.failed is True
+
+
+def test_index_repo_tags_chunks_with_repo_and_path() -> None:
+    # 各 chunk 先頭に [repo path] を付け、{repo} 検索で本文を引けるようにする（Codex P2）。
+    fetcher = FakeFetcher({"src/main.py": "def main():\n    return 1\n"})
+    indexer = _index()
+    fetch_and_index_repo(
+        fetcher,
+        indexer,
+        session_id="sess-tag",
+        installation_id=1,
+        repo="octo/demo",
+        branch="main",
+        commit_sha="sha1",
+        max_files=100,
+        max_total_bytes=1_000_000,
+        max_file_bytes=1_000_000,
+    )
+    file_chunks = [d["text"] for d in indexer._mem if "src/main.py" in d["source"]]
+    assert file_chunks
+    assert all("[octo/demo src/main.py]" in t for t in file_chunks)
+
+
+def test_index_repo_redacts_readme_in_summary() -> None:
+    fake_token = "ghp_" + "B" * 36
+    fetcher = FakeFetcher({"README.md": f"# Demo\nAPI_KEY={fake_token}\n"})
+    indexer = _index()
+    outcome = fetch_and_index_repo(
+        fetcher,
+        indexer,
+        session_id="sess-rd",
+        installation_id=1,
+        repo="octo/demo",
+        branch="main",
+        commit_sha="sha1",
+        max_files=100,
+        max_total_bytes=1_000_000,
+        max_file_bytes=1_000_000,
+    )
+    assert fake_token not in outcome.summary
+    blob = " ".join(d["text"] for d in indexer._mem)
+    assert fake_token not in blob
+
+
+def test_index_repo_too_large_marks_partial() -> None:
+    fetcher = FakeFetcher({"src/huge.py": "x" * 5000})
+    indexer = _index()
+    outcome = fetch_and_index_repo(
+        fetcher,
+        indexer,
+        session_id="sess-tl",
+        installation_id=1,
+        repo="octo/demo",
+        branch="main",
+        commit_sha="sha1",
+        max_files=100,
+        max_total_bytes=1_000_000,
+        max_file_bytes=1000,  # huge.py をはじく
+    )
+    assert outcome.indexed_files == 0
+    assert outcome.partial is True
+
+
+def test_reindex_clears_old_repo_chunks() -> None:
+    indexer = _index()
+    # 1 回目: repo A を索引。
+    fetch_and_index_repo(
+        FakeFetcher({"src/a.py": "from a import thing\n"}),
+        indexer,
+        session_id="sess-rx",
+        installation_id=1,
+        repo="octo/repoA",
+        branch="main",
+        commit_sha="sha1",
+        max_files=100,
+        max_total_bytes=1_000_000,
+        max_file_bytes=1_000_000,
+    )
+    # 再選択をエミュレート: 索引前に古い github: chunk を一掃する（_index_repo_task と同手順）。
+    indexer.delete_repo_context("sess-rx")
+    fetch_and_index_repo(
+        FakeFetcher({"src/b.py": "from b import other\n"}),
+        indexer,
+        session_id="sess-rx",
+        installation_id=1,
+        repo="octo/repoB",
+        branch="main",
+        commit_sha="sha2",
+        max_files=100,
+        max_total_bytes=1_000_000,
+        max_file_bytes=1_000_000,
+    )
+    sources = " ".join(d["source"] for d in indexer._mem)
+    assert "repoB" in sources
+    assert "repoA" not in sources

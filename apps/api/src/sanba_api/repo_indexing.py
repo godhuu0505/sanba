@@ -105,7 +105,10 @@ def fetch_and_index_repo(
         )
 
     meta = fetcher.repo_meta(installation_id, repo)
-    readme = fetcher.fetch_readme(installation_id, repo, commit_sha)
+    raw_readme = fetcher.fetch_readme(installation_id, repo, commit_sha)
+    # README 先頭にも秘匿が混じり得る（API_KEY=… / PEM 等）。要約へ渡す前にレダクトする
+    # （Codex P1: _summary も ES に保存・検索可能になるため）。
+    readme = redact_secrets(raw_readme) if raw_readme else None
     summary = build_repo_summary(
         repo=repo,
         branch=branch,
@@ -117,9 +120,10 @@ def fetch_and_index_repo(
 
     indexed_files = 0
     indexed_chunks = 0
-    # 要約自体も索引する（search_grounding が「前提リポジトリ」を引けるように）。
+    # 要約自体も索引する（search_grounding が「前提リポジトリ」を引けるように）。要約も念のため
+    # 全体をレダクトしてから索引する（description 等にも秘匿が混じる可能性に二重で備える）。
     indexed_chunks += indexer.index_context(
-        session_id, chunk_text(summary), repo_source_name(repo, branch, "_summary")
+        session_id, chunk_text(redact_secrets(summary)), repo_source_name(repo, branch, "_summary")
     )
 
     fetch_failures = 0
@@ -136,13 +140,21 @@ def fetch_and_index_repo(
         chunks = chunk_text(safe)
         if not chunks:
             continue
+        # repo 名/path をクエリで引けるよう、各 chunk 先頭にメタ行を付す（Codex P2: search は
+        # source ではなく text を対象にするため、{repo} 検索で本文を拾えるように）。
+        tagged = [f"[{repo} {f.path}]\n{c}" for c in chunks]
         indexed_chunks += indexer.index_context(
-            session_id, chunks, repo_source_name(repo, branch, f.path)
+            session_id, tagged, repo_source_name(repo, branch, f.path)
         )
         indexed_files += 1
 
-    # 選別段でキャップ/除外があった、ツリーが打ち切られた、取得に一部失敗した → PARTIAL。
-    partial = selection.truncated or tree.truncated or fetch_failures > 0
+    # キャップ/過大スキップ/除外があった、ツリー打ち切り、取得一部失敗 → PARTIAL。
+    partial = (
+        selection.truncated
+        or bool(selection.skipped_too_large)
+        or tree.truncated
+        or fetch_failures > 0
+    )
     # 索引すべき候補があったのに 1 件も取得できなかった → FAILED（要約しか入っていない）。
     failed = bool(selection.selected) and indexed_files == 0
     outcome = IndexOutcome(

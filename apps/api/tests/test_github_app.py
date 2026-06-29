@@ -103,6 +103,14 @@ def test_redact_github_token() -> None:
     assert "redacted" in out
 
 
+def test_redact_openai_hyphenated_token() -> None:
+    # sk-proj-… / sk-svcacct-… のような hyphen 入り現行 OpenAI 形式も値全体を伏せる。
+    fake = "sk-proj-" + "A" * 32
+    out = redact_secrets(f"key {fake} end")
+    assert fake not in out
+    assert "redacted" in out
+
+
 def test_redact_assignment_keeps_key_hides_value() -> None:
     fake_value = "s" * 24
     out = redact_secrets(f'api_key = "{fake_value}"')

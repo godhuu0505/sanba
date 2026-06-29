@@ -29,10 +29,20 @@ Google ID トークンの `sub` をキーに新規 `users/{sub}` コレクショ
 `installation_id` と `github_login` を保存する。**生のアクセストークンは保存しない**。
 都度 App 秘密鍵（Secret Manager）から installation token を発行する（漏洩面を最小化）。
 
-### ID 紐づけ — 署名 state
+### ID 紐づけ — 署名 state + 所有権検証
 連携開始時に、検証済み `sub` + nonce + 有効期限を既存 HMAC 署名基盤（`auth.py`）で
 `state` に詰めて GitHub へ渡す。install コールバックで `state` を検証してから
-`users/{sub}` に保存する。これで CSRF・別人の installation 奪取・誤紐づけを防ぐ。
+`users/{sub}` に保存する。これで CSRF・誤紐づけを防ぐ。
+
+ただし署名 `state` は Google `sub` を束縛するだけで、「その sub が当該 `installation_id`
+を保有するか」は証明しない。別人が他者の `installation_id` を自分の正当な `state` と組み
+合わせて callback を直接叩くと、他者の installation を奪取し得る（レビュー指摘）。そこで
+**user-to-server OAuth** を併用し、install 時の `code` から取得したユーザートークンで
+`GET /user/installations` を引き、選ばれた `installation_id` を当該ユーザーが保有することを
+**保存前に検証**する（フェイルクローズ）。OAuth クライアント（`github_app_client_id` /
+`github_app_client_secret`）が構成された本番では必須。未構成の dev/local では検証を省く
+（警告ログを残す）。GitHub App 設定で "Request user authorization (OAuth) during
+installation" を ON にする。
 
 ### 連携主体 — セッション owner 固定
 多人数セッションでも、使うのは**セッション owner の連携アカウントのリポジトリだけ**。
