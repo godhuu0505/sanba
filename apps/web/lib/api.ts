@@ -443,3 +443,101 @@ export function updateRequirement(
     { method: "PATCH", body: JSON.stringify(patch) },
   );
 }
+
+// ===== GitHub repo linking (ADR-0025) =======================================
+
+export interface GitHubLinkStatus {
+  linked: boolean;
+  github_login: string | null;
+}
+
+export interface GitHubRepoItem {
+  full_name: string;
+  default_branch: string;
+  private: boolean;
+}
+
+export interface GitHubBranchItem {
+  name: string;
+  sha: string;
+}
+
+export interface SessionGitHub {
+  repo: string | null;
+  branch: string | null;
+  commit_sha: string | null;
+  // none | pending | indexing | ready | partial | failed
+  status: string;
+}
+
+// 連携状態の取得・開始・解除は Google idToken（require_user）で認可される。
+export async function getGithubLinkStatus(idToken: string | null): Promise<GitHubLinkStatus> {
+  const res = await fetch(`${API_URL}/api/github/link`, { headers: authHeaders(idToken) });
+  if (!res.ok) throw new Error(`github link status failed: ${res.status}`);
+  return res.json();
+}
+
+export async function startGithubLink(idToken: string | null): Promise<{ install_url: string }> {
+  const res = await fetch(`${API_URL}/api/github/link/start`, {
+    method: "POST",
+    headers: authHeaders(idToken),
+  });
+  if (!res.ok) throw new Error(`github link start failed: ${res.status}`);
+  return res.json();
+}
+
+export async function unlinkGithub(idToken: string | null): Promise<GitHubLinkStatus> {
+  const res = await fetch(`${API_URL}/api/github/link`, {
+    method: "DELETE",
+    headers: authHeaders(idToken),
+  });
+  if (!res.ok) throw new Error(`github unlink failed: ${res.status}`);
+  return res.json();
+}
+
+export async function listGithubRepos(idToken: string | null): Promise<GitHubRepoItem[]> {
+  const res = await fetch(`${API_URL}/api/github/repos`, { headers: authHeaders(idToken) });
+  if (!res.ok) throw new Error(`github repos failed: ${res.status}`);
+  return (await res.json()).items;
+}
+
+export async function listGithubBranches(
+  repo: string,
+  idToken: string | null,
+): Promise<GitHubBranchItem[]> {
+  const res = await fetch(
+    `${API_URL}/api/github/branches?repo=${encodeURIComponent(repo)}`,
+    { headers: authHeaders(idToken) },
+  );
+  if (!res.ok) throw new Error(`github branches failed: ${res.status}`);
+  return (await res.json()).items;
+}
+
+// repo 選択・状態取得は join 済みトークン（session_token / 契約 §4）で認可される。
+export async function selectSessionRepo(
+  sessionId: string,
+  repo: string,
+  branch: string | null,
+  sessionToken: string | null,
+): Promise<SessionGitHub> {
+  const body: Record<string, unknown> = { repo };
+  if (branch) body.branch = branch;
+  const res = await fetch(`${API_URL}/api/sessions/${sessionId}/github`, {
+    method: "POST",
+    headers: authHeaders(sessionToken),
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`select repo failed: ${res.status}`);
+  return res.json();
+}
+
+export async function getSessionRepo(
+  sessionId: string,
+  sessionToken: string | null,
+): Promise<SessionGitHub> {
+  const res = await fetch(`${API_URL}/api/sessions/${sessionId}/github`, {
+    headers: authHeaders(sessionToken),
+  });
+  if (!res.ok) throw new Error(`get session repo failed: ${res.status}`);
+  return res.json();
+}

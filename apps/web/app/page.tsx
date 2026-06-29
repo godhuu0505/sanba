@@ -30,12 +30,14 @@ import {
   createSession,
   fetchMySessions,
   joinSession,
+  selectSessionRepo,
   uploadContextFile,
   type JoinResponse,
 } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { AccountMenu } from "../components/AccountMenu";
 import { ConversationStart } from "../components/ConversationStart";
+import { RepoSelectField, type RepoSelection } from "../components/RepoSelectField";
 import {
   MaterialSourceSheet,
   type MaterialSource,
@@ -70,6 +72,8 @@ export default function Home() {
   const [step, setStep] = useState<Step>("home");
   const [role, setRole] = useState<string>("pm");
   const [goal, setGoal] = useState("");
+  // 前提リポジトリの選択（ADR-0025 / 仕様②③）。開始時にバインド+索引キック。
+  const [repoSel, setRepoSel] = useState<RepoSelection | null>(null);
   const [consent, setConsent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [conn, setConn] = useState<JoinResponse | null>(null);
@@ -175,6 +179,20 @@ export default function Home() {
       if (goal.trim()) {
         // ゴールは RAG・会話初期文脈へ取り込む（source_name=goal / 02-prepare.md AC）。
         await addSessionContext(joined.session_id, goal, joined.session_token, "goal");
+      }
+      if (repoSel) {
+        // 前提リポジトリをセッションにバインドし、非同期索引をキックする（ADR-0025）。
+        // 索引完了は会話開始までに間に合わなくても部分結果で深掘りできるため、開始は止めない。
+        try {
+          await selectSessionRepo(
+            joined.session_id,
+            repoSel.repo,
+            repoSel.branch,
+            joined.session_token,
+          );
+        } catch (repoErr) {
+          console.error("select session repo failed", { error: repoErr });
+        }
       }
       // 準備画面でステージした参考資料を、会話開始前に join 済みトークンで順次投入する
       // （契約 §4 / ADR-0017 一本道。join 前 upload 経路が無いためここで一括投入）。
@@ -313,6 +331,12 @@ export default function Home() {
               rows={3}
               placeholder="タップしてテーマを入力…"
             />
+          </Field>
+
+          {/* 前提リポジトリ（ADR-0025 / 仕様②③）。連携済みなら repo+branch を選べる
+              （branch 既定=デフォルト）。開始時にバインドして非同期索引をキックする。 */}
+          <Field label="前提リポジトリ（任意）" hint="深掘り時の前提情報として扱います">
+            <RepoSelectField value={repoSel} onChange={setRepoSel} />
           </Field>
 
           {/* 参考資料（バイナリ添付）。Figma 89:25 / 91:10。押下で手段選択シート（#201 再利用）を開く。
