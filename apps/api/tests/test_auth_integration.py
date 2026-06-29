@@ -57,11 +57,11 @@ def test_dev_bypass_allows_local_flow(monkeypatch) -> None:
 
 
 def test_unauthenticated_join_spam_is_rate_limited(monkeypatch) -> None:
-    """未認証スパムは認証検証より先にレートリミットされる (#80)。
+    """未認証スパムは認証検証より先にレートリミットされる (#80 / #258)。
 
-    `_require_rate_limit` を `require_user` より前の依存性に置いたため、
-    Authorization 無し/壊れた Bearer でも上限到達後は 401 ではなく 429 を返す
-    （壊れた Bearer 連打で認証経路だけを叩き続けられる穴が塞がれている）。
+    レートリミットを HTTP ミドルウェア層（body 解析前）に置いたため、Authorization
+    無し/壊れた Bearer でも上限到達後は 401 ではなく 429 を返す（壊れた Bearer 連打で
+    認証経路だけを叩き続けられる穴が塞がれている）。
     """
     monkeypatch.setattr(auth_google.settings, "google_oauth_client_id", "cid", raising=True)
     monkeypatch.setattr(auth_google.settings, "auth_dev_bypass", False, raising=True)
@@ -96,3 +96,29 @@ def test_rate_limit_emits_observability(monkeypatch) -> None:
     assert calls == []
     assert client.post("/api/sessions/join", json=body).status_code == 429
     assert calls == [1]
+
+
+def test_rate_limit_fires_before_body_parsing(monkeypatch) -> None:
+    """上限超過後は壊れた/巨大 body でも body 解析前に 429 で短絡する (#258)。
+
+    FastAPI は body の読み取り・JSON 解析を依存性解決より先に行うため、依存性版 (#80) では
+    壊れた JSON が 422（解析エラー）になり解析コストを先に発生させられた。レートリミットを
+    ミドルウェア層へ移したことで、上限超過後は不正な JSON でも解析へ進まず 429 を返す。
+    """
+    monkeypatch.setattr(auth_google.settings, "google_oauth_client_id", "cid", raising=True)
+    monkeypatch.setattr(auth_google.settings, "auth_dev_bypass", False, raising=True)
+    monkeypatch.setattr(main.settings, "join_rate_per_minute", 1, raising=True)
+    main._join_hits.clear()
+
+    # 1回目で上限に達する（壊れた invite で 401 = body 解析後の認証拒否）。
+    assert (
+        client.post("/api/sessions/join", json={"invite": "x", "participant_name": "y"}).status_code
+        == 401
+    )
+    # 2回目は壊れた JSON（本来なら 422 解析エラー）でも、解析前に 429 で短絡する。
+    res = client.post(
+        "/api/sessions/join",
+        content=b"{not-json",
+        headers={"Content-Type": "application/json"},
+    )
+    assert res.status_code == 429

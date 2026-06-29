@@ -5,6 +5,7 @@ import {
   Button,
   ChatBubble,
   Chip,
+  ListRow,
   RequirementCard,
   SessionRow,
   Waveform,
@@ -69,6 +70,40 @@ describe("SANBA design system", () => {
     render(<SessionRow title="検索機能" meta="pm@example.com" />);
     expect(screen.getByText("検索機能")).toBeTruthy();
     expect(screen.getByText("検める ›")).toBeTruthy();
+  });
+
+  // #162: 複数子（icon/title/trailing）を持つ行でも asChild がクラッシュせず host 要素に化ける。
+  it("ListRow asChild は複数子のままアンカー化し内容を内包する（Slot 複数子クラッシュ回避）", () => {
+    render(
+      <ListRow asChild icon={<span>📷</span>} title="カメラで撮る" subtitle="写真を解析">
+        <a href="/camera" />
+      </ListRow>,
+    );
+    const link = screen.getByRole("link");
+    expect(link).toHaveProperty("tagName", "A");
+    expect(link.getAttribute("href")).toBe("/camera");
+    // 行の内容（title/subtitle/icon）が host 要素の中に入っている。
+    expect(link.textContent).toContain("カメラで撮る");
+    expect(link.textContent).toContain("写真を解析");
+  });
+
+  it("SessionRow asChild はカード全体を host 要素に化けさせる（#162）", () => {
+    render(
+      <SessionRow asChild title="検索機能" meta="pm@example.com">
+        <a href="/sessions/1" />
+      </SessionRow>,
+    );
+    const link = screen.getByRole("link");
+    expect(link).toHaveProperty("tagName", "A");
+    expect(link.getAttribute("href")).toBe("/sessions/1");
+    expect(link.textContent).toContain("検索機能");
+    expect(link.textContent).toContain("検める ›"); // 既定の操作ピルも内包
+  });
+
+  it("ListRow 非 asChild は div で描画し children を要求しない（既定経路）", () => {
+    render(<ListRow title="アップロード" subtitle="png/jpg/mp4" />);
+    expect(screen.queryByRole("link")).toBeNull();
+    expect(screen.getByText("アップロード")).toBeTruthy();
   });
 
   it("Waveform は状態に応じた aria-label を持つ", () => {

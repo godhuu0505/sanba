@@ -187,6 +187,56 @@ describe("RealtimeStore — hydration boundary", () => {
     const r = s.getSnapshot().requirements.find((x) => x.id === "r1");
     expect(r?.status).toBe("confirmed");
   });
+
+  // #119: GET スナップショットに含まれない種別（status/transcript/analysis/session.completed）
+  // は requirements 境界で捨てない。GET 実行中〜直後に seq<=境界 で後着しても取りこぼさない。
+  it("applies non-snapshot events (status) that arrive at/below the requirements boundary", () => {
+    const s = new RealtimeStore();
+    s.hydrateRequirements(hydrationFixture.items, 6); // requirementsHydrationSeq=6
+    // requirements GET 実行中に publish 済みだった status(seq=4) が GET 完了後に後着。
+    s.apply({ v: 1, type: "status", seq: 4, ts: "t", session_id: SESSION, phase: "deliberating" });
+    expect(s.getSnapshot().phase).toBe("deliberating"); // 旧実装では duplicate 扱いで欠落していた
+    expect(s.metrics.read().duplicates).toBe(0);
+  });
+
+  it("applies a late transcript.final below the requirements boundary (not in any GET)", () => {
+    const s = new RealtimeStore();
+    s.hydrateRequirements(hydrationFixture.items, 6);
+    s.apply({
+      v: 1,
+      type: "transcript.final",
+      seq: 3,
+      ts: "t",
+      session_id: SESSION,
+      utterance_id: "u1",
+      speaker: "PM",
+      role: "participant",
+      text: "発話",
+    });
+    expect(s.getSnapshot().transcript).toHaveLength(1);
+  });
+
+  // detection 境界は requirements とは独立。detections を hydrate しない画面では
+  // requirements 境界で detection を捨てない（境界 0 = ノーガード）。
+  it("does not drop a detection by the requirements boundary when detections were not hydrated", () => {
+    const s = new RealtimeStore();
+    s.hydrateRequirements(hydrationFixture.items, 6); // detections は未 hydrate
+    s.apply(contradiction(2, "d1")); // seq=2 <= requirements 境界6 だが detection 境界は0
+    expect(s.getSnapshot().detections).toHaveLength(1);
+    expect(s.metrics.read().duplicates).toBe(0);
+  });
+
+  it("drops a live detection at/below its own detections boundary after hydrateDetections", () => {
+    const s = new RealtimeStore();
+    s.hydrateDetections(
+      [{ id: "d1", kind: "gap", summary: "snap", refs: [], detector: "", resolved: false }],
+      6,
+    );
+    s.apply(contradiction(5, "d1")); // 5 <= detections 境界6 → スナップショットに含まれる → 破棄
+    expect(s.metrics.read().duplicates).toBe(1);
+    s.apply(contradiction(7, "d2")); // 7 > 6 → 適用
+    expect(s.getSnapshot().detections.find((d) => d.id === "d2")).toBeTruthy();
+  });
 });
 
 describe("RealtimeStore — detection lifecycle", () => {

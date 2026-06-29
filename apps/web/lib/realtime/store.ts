@@ -92,8 +92,14 @@ export class RealtimeStore {
   private question: Question | null = null;
   private completed: SessionCompletion | null = null;
 
-  /** ハイドレーションのスナップショット境界 seq。これ以下のライブイベントは破棄。 */
-  private hydrationSeq = 0;
+  /**
+   * GET スナップショット境界 seq（ドメイン別 / #119）。これ以下のライブ差分は当該ドメインの
+   * スナップショットに含まれるため破棄する。requirements と detections は別 GET なので境界も
+   * 分ける。status/transcript/analysis/session.completed/question はどの GET にも含まれない
+   * （question は lastQuestionSeq で別途ガード）ため、境界では捨てず種別ガードに委ねる。
+   */
+  private requirementsHydrationSeq = 0;
+  private detectionsHydrationSeq = 0;
   /** 観測した最大 seq（欠番検知用）。 */
   private maxSeq = 0;
   /** 最後に適用した status の seq。古い status による phase 巻き戻しを防ぐ。 */
@@ -144,7 +150,7 @@ export class RealtimeStore {
   // ── ハイドレーション（契約 §4） ────────────────────────────────────
   /**
    * GET /requirements のスナップショットを取り込み、境界 seq を確定する。
-   * これ以降は seq > hydrationSeq のライブ差分だけを適用する（空白・重複ゼロ）。
+   * これ以降は seq > requirementsHydrationSeq のライブ差分だけを適用する（空白・重複ゼロ）。
    */
   hydrateRequirements(items: Requirement[], seq: number): void {
     for (const r of items) {
@@ -153,7 +159,7 @@ export class RealtimeStore {
       if (prev && prev.seq > seq) continue;
       this.requirements.set(r.id, { seq, value: r });
     }
-    this.hydrationSeq = Math.max(this.hydrationSeq, seq);
+    this.requirementsHydrationSeq = Math.max(this.requirementsHydrationSeq, seq);
     this.maxSeq = Math.max(this.maxSeq, seq);
     this.invalidate();
   }
@@ -198,6 +204,7 @@ export class RealtimeStore {
         this.detections.set(key, { seq, value: { ...entry.value, resolved: true } });
       }
     }
+    this.detectionsHydrationSeq = Math.max(this.detectionsHydrationSeq, seq);
     this.maxSeq = Math.max(this.maxSeq, seq);
     this.invalidate();
   }
@@ -213,8 +220,12 @@ export class RealtimeStore {
       return;
     }
 
-    // ハイドレーション境界より古いライブ差分はスナップショットに含まれる → 破棄。
-    if (event.seq <= this.hydrationSeq) {
+    // GET スナップショット境界より古いライブ差分は破棄（スナップショットに含まれる）。境界は
+    // 種別が属する GET ドメイン別（#119）。status/transcript/analysis/session.completed は
+    // どの GET にも含まれず、question は専用 seq ガード（lastQuestionSeq）を持つため、ここでは
+    // 捨てず reduce() の種別ガードに委ねる。これで GET 実行中〜直後に後着した非スナップショット
+    // 種別（例: status・transcript.final）を hydrationSeq 境界で取りこぼさない。
+    if (event.seq <= this.snapshotBoundary(event.type)) {
       this.metrics.recordDuplicate();
       return;
     }
@@ -236,6 +247,28 @@ export class RealtimeStore {
     this.metrics.recordReceived();
     this.metrics.recordApplyLatency(performance.now() - startedAt);
     this.invalidate();
+  }
+
+  /**
+   * 種別が属する GET ドメインのスナップショット境界 seq（無ければ 0 = 境界なし / #119）。
+   * 境界 0 のときは `event.seq <= 0` が偽になる（seq は 1 始まり）ため実質ノーガードで、
+   * 当該種別の重複排除は reduce() 内の専用 seq ガードに委ねられる。
+   */
+  private snapshotBoundary(type: ServerEvent["type"]): number {
+    switch (type) {
+      case "requirement.upserted":
+        return this.requirementsHydrationSeq;
+      case "detection.contradiction":
+      case "detection.gap":
+      case "detection.ambiguous":
+      case "detection.resolved":
+        return this.detectionsHydrationSeq;
+      default:
+        // status / transcript.* / analysis.* / session.completed / question.* は
+        // requirements・detections のどちらの GET にも含まれない（question は lastQuestionSeq で
+        // 別途ガード）。境界なし（0）として reduce() の種別ガードに重複排除を委ねる。
+        return 0;
+    }
   }
 
   /** 適用したら true、（古い/重複で）スキップしたら false。 */
@@ -489,7 +522,8 @@ export class RealtimeStore {
     this.agentsActive = 0;
     this.question = null;
     this.completed = null;
-    this.hydrationSeq = 0;
+    this.requirementsHydrationSeq = 0;
+    this.detectionsHydrationSeq = 0;
     this.maxSeq = 0;
     this.lastStatusSeq = 0;
     this.lastCompletedSeq = 0;

@@ -108,21 +108,37 @@ export interface MaterialItem {
 }
 
 /**
+ * analysis.progress / analysis.visual の (stage, pct) を素材行ステータスへ写す（#143 / ADR-0023）。
+ *
+ * - `stage="failed"`: 解析失敗（行に再試行導線を出す）。API は失敗時 pct=100 で送るため、pct より
+ *   stage を優先しないと「完了」と誤判定する。
+ * - `stage="done"` または visual 受信（pct>=100）: 完了。
+ * - それ以外（`received`/`analyzing` 等の途中段階）: 解析中（進捗バー）。
+ *
+ * analysis イベントは解析開始後にしか届かないため uploading はここでは導出しない（投入直後の
+ * local 行・#184 の hydrated 行が担い、mergeMaterials で合流する）。
+ */
+export function materialStatusFromAnalysis(stage: string, pct: number): MaterialStatus {
+  if (stage === "failed") return "failed";
+  if (stage === "done" || pct >= 100) return "done";
+  return "analyzing";
+}
+
+/**
  * 解析状態（analysis.progress / analysis.visual 由来）を素材一覧へ寄せる。
- * analysis イベントは解析開始後にしか届かないため、ここで導出できるのは analyzing/done のみ。
- * アップロード中（uploading）・失敗（failed）・実ファイル名は #184（GET context/files）の
- * ハイドレーションで合流させる（本セレクタは契約済みのライブ状態に閉じる）。
+ * ステータスは stage を優先して判定する（failed を「完了」と誤らないため / #143）。
+ * 実ファイル名は #184（GET context/files）のハイドレーションで合流させる。
  */
 export function selectMaterials(s: { analysis: readonly AnalysisState[] }): MaterialItem[] {
   return s.analysis.map((a) => {
-    const done = a.pct >= 100;
+    const status = materialStatusFromAnalysis(a.stage, a.pct);
     const item: MaterialItem = {
       id: a.asset_id,
       name: a.asset_id,
       pct: a.pct,
-      status: done ? "done" : "analyzing",
+      status,
     };
-    if (done && a.extracted.length > 0) item.extracted = a.extracted.length;
+    if (status === "done" && a.extracted.length > 0) item.extracted = a.extracted.length;
     return item;
   });
 }
@@ -168,15 +184,17 @@ export function selectMaterialDetail(
 ): MaterialDetail | null {
   const a = s.analysis.find((x) => x.asset_id === assetId);
   if (!a) return null;
-  const done = a.pct >= 100;
+  const status = materialStatusFromAnalysis(a.stage, a.pct);
+  const done = status === "done";
   return {
     id: a.asset_id,
     name: a.asset_id,
     pct: a.pct,
-    status: done ? "done" : "analyzing",
+    status,
     extracted: a.extracted,
     conflicts: a.conflicts,
     // 完了（analysis.visual で pct=100 に固定）した素材のみ extracted/conflicts を確定値とみなす。
+    // 失敗・解析中は確定値ではない（空を「無し」と断定しない）。
     analysisReady: done,
   };
 }
