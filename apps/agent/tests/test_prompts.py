@@ -43,3 +43,22 @@ def test_lead_agent_plans_one_branch_with_recommendation() -> None:
 
 def test_contradiction_agent_points_out_directly() -> None:
     assert "直接指摘" in CONTRADICTION_AGENT_INSTRUCTIONS
+
+
+def test_build_repo_premise_includes_repo_and_grounding_hint() -> None:
+    from sanba_agent.prompts.interview import build_repo_premise
+
+    premise = build_repo_premise("octo/demo", "main", ready=True)
+    assert "octo/demo" in premise
+    assert "main" in premise
+    assert "前提" in premise
+    assert "search_grounding" in premise
+    # 索引完了時は「進行中」注記を出さない。
+    assert "進行中" not in premise
+
+
+def test_build_repo_premise_notes_indexing_in_progress() -> None:
+    from sanba_agent.prompts.interview import build_repo_premise
+
+    premise = build_repo_premise("octo/demo", None, ready=False)
+    assert "進行中" in premise

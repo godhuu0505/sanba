@@ -26,7 +26,13 @@ from livekit.agents import (
 )
 from livekit.agents.llm import function_tool
 from livekit.plugins import google
-from sanba_shared.models import Priority, Requirement, RequirementCategory, Utterance
+from sanba_shared.models import (
+    GitHubIndexStatus,
+    Priority,
+    Requirement,
+    RequirementCategory,
+    Utterance,
+)
 from sanba_shared.repository import SessionRepository
 
 from .config import settings
@@ -44,7 +50,7 @@ from .events import (
     decode_user_text,
 )
 from .observability import setup_observability
-from .prompts.interview import VOICE_AGENT_INSTRUCTIONS
+from .prompts.interview import VOICE_AGENT_INSTRUCTIONS, build_repo_premise
 from .retrieval import GroundingStore
 from .tools.analysis import analyze_transcript, make_requirement_id
 
@@ -54,6 +60,26 @@ log = structlog.get_logger(__name__)
 # 場合に SDK へ橋渡しする (api/main.py と同じパターン)。未設定なら本番の実 Firestore に接続。
 if settings.firestore_emulator_host:
     os.environ.setdefault("FIRESTORE_EMULATOR_HOST", settings.firestore_emulator_host)
+
+
+def _repo_premise(repo: SessionRepository, session_id: str) -> str:
+    """SessionMeta を読み、紐づけ repo の前提一節を返す（無ければ空文字 / ADR-0025）。
+
+    索引状態が ready/partial/indexing のときだけ前提化する（none/failed は付けない）。
+    Firestore 不通などで読めない場合も会話は成立させる（前提は付加価値）。
+    """
+    try:
+        meta = repo.get_session(session_id)
+    except Exception as exc:  # pragma: no cover - depends on backend
+        log.warning("repo_premise_session_read_failed", error=str(exc))
+        return ""
+    if meta is None or not meta.github_repo:
+        return ""
+    status = meta.github_index_status
+    if status in (GitHubIndexStatus.NONE, GitHubIndexStatus.FAILED):
+        return ""
+    ready = status in (GitHubIndexStatus.READY, GitHubIndexStatus.PARTIAL)
+    return build_repo_premise(meta.github_repo, meta.github_branch, ready)
 
 
 class SANBAAgent(Agent):
@@ -66,7 +92,10 @@ class SANBAAgent(Agent):
         grounding: GroundingStore,
         publisher: EventPublisher | None = None,
     ) -> None:
-        super().__init__(instructions=VOICE_AGENT_INSTRUCTIONS)
+        # 紐づけ GitHub リポジトリがあれば「前提」を初期 instructions にシードする（ADR-0025）。
+        # retrieval 任せにせず proactive に前提化し、詳細は search_grounding で掘らせる。
+        instructions = VOICE_AGENT_INSTRUCTIONS + _repo_premise(repo, session_id)
+        super().__init__(instructions=instructions)
         self._session_id = session_id
         self._repo = repo
         self._grounding = grounding
