@@ -17,11 +17,11 @@
 
 - **実行基盤は Cloud Run 3 サービス**（`sanba-web` / `sanba-api` / `sanba-agent`）。GKE は不採用（ADR-0006）。
 - **音声は LiveKit Cloud（WebRTC SFU）+ Gemini Live（speech-to-speech）** の二層。低遅延の対話層と、ADK マルチエージェントの分析層を分離。
-- **状態は Firestore**（セッション/要件/発話/検知/質問。TTL で自動失効）、**素材は Cloud Storage**、**RAG 根拠付けは Elasticsearch**（BM25 + Gemini embedding の kNN ハイブリッド）。
+- **状態は Firestore**（セッション/要件/発話/検知/質問。TTL で自動失効）、**素材は Cloud Storage**（実装済だが現 Terraform では未プロビジョニング＝既定は in-memory）、**RAG 根拠付けは Elasticsearch**（BM25 + Gemini embedding の kNN ハイブリッド）。
 - **AI は二経路切替**: 本番は **Vertex AI（キーレス・実行 SA の `aiplatform.user`）**、ローカルは **AI Studio（`GOOGLE_API_KEY`）**。
 - **公開は Global 外部 Application Load Balancer + Serverless NEG + Google 管理 SSL + Cloud DNS**（`https://youken.sanba.net`）。
 - **CI/CD は GitHub Actions + Workload Identity Federation（鍵レス）→ Artifact Registry → `gcloud run deploy`**。env/secret/scale は Terraform 管理。
-- **可観測性は OpenTelemetry 一本化**。本番は OTLP→Cloud Trace/Logging/Monitoring、ローカルは Collector→Prometheus/Loki/Tempo/Grafana。**LLMOps は Langfuse**。
+- **可観測性は OpenTelemetry を方針**とする。現状アプリが OTLP で送るのは**トレースのみ**（本番→Cloud Trace、ローカル→Collector→Tempo→Grafana）。メトリクスは MeterProvider 未設定で no-op、ログは stdout→Cloud Logging。**LLMOps は Langfuse**。
 - **外部コネクタ（GitHub 起票）は既定 OFF**。デモ経路に影響しない。
 
 ---
@@ -101,15 +101,15 @@ flowchart LR
 
 | # | サービス | API | 役割（このプロジェクトでの使われ方） | 定義箇所 |
 |---|---|---|---|---|
-| 1 | **Cloud Run** | `run.googleapis.com` | `sanba-web`/`sanba-api`/`sanba-agent` の実行基盤。web/api は `min=0`+`cpu_idle=true`（scale-to-zero）、agent は `min=1`+`cpu_idle=false`（LiveKit 常駐ワーカー） | `cloud_run.tf` |
+| 1 | **Cloud Run** | `run.googleapis.com` | `sanba-web`/`sanba-api`/`sanba-agent` の実行基盤。web/api は `min=0`+`cpu_idle=true`（scale-to-zero）、agent は `cpu_idle=false`（常駐ワーカー）。agent の `min` は **Terraform 変数の既定こそ `1` だが、CI 経由デプロイ（`terraform.yml`）は `AGENT_MIN_INSTANCES` 未設定時に `0` へ上書き**＝GitHub Actions で初期構築した環境はワーカー非常駐（LiveKit 投入後に Variable で `1` に上げる） | `cloud_run.tf` / `terraform.yml` |
 | 2 | **Firestore (Native)** | `firestore.googleapis.com` | セッション/要件/発話/検知/現在質問の永続化。`utterances`/`requirements`/`questions` に `expireAt` TTL を設定し保持期間後に自動削除 | `main.tf` |
 | 3 | **Artifact Registry** | `artifactregistry.googleapis.com` | コンテナイメージ（`api`/`web`/`agent`）格納。cleanup policy で直近 N 個のみ保持しストレージ課金抑制 | `main.tf` |
 | 4 | **Secret Manager** | `secretmanager.googleapis.com` | `session-signing-secret`/`livekit-*`/`elasticsearch-api-key`/`google-api-key` を Cloud Run に注入。terraform は「箱と参照」のみ管理し**値は管理外**（`gcloud secrets versions add` で投入） | `secrets.tf` |
 | 5 | **Vertex AI** | `aiplatform.googleapis.com` | 本番の Gemini 実行経路（**キーレス**＝実行 SA の `roles/aiplatform.user`）。Live/推論/Vision/Embedding | `main.tf` / `variables.tf` |
-| 6 | **Cloud Trace** | `cloudtrace.googleapis.com` | OpenTelemetry のトレース送信先（本番）。SA に `roles/cloudtrace.agent` | `main.tf` |
-| 7 | **Cloud Monitoring** | `monitoring.googleapis.com` | メトリクス。SA に `roles/monitoring.metricWriter` | `main.tf` |
-| 8 | **Cloud Logging** | `logging.googleapis.com` | 構造化ログ（structlog）+ LB アクセスログ。SA に `roles/logging.logWriter` | `main.tf` / `domain.tf` |
-| 9 | **Cloud Storage** | `storage.googleapis.com` | (a) マルチモーダル素材バケット（`GCS_BUCKET`、`sessions/{id}/assets/...`）、(b) Terraform リモート state（GCS backend） | `storage.py` / `main.tf` |
+| 6 | **Cloud Trace** | `cloudtrace.googleapis.com` | OpenTelemetry の**トレース**送信先（本番）。`observability.py` が設定するのは `OTLPSpanExporter` のみ＝現状 OTLP で出るのはトレースだけ。SA に `roles/cloudtrace.agent` | `main.tf` |
+| 7 | **Cloud Monitoring** | `monitoring.googleapis.com` | SA に `roles/monitoring.metricWriter` は付与済みだが、**アプリは MeterProvider を未設定**のためメトリクス・カウンタは現状 no-op（API は定義のみ。将来 MeterProvider/Reader を足すと有効化される） | `main.tf` |
+| 8 | **Cloud Logging** | `logging.googleapis.com` | 構造化ログ（structlog→**stdout 経由**で Cloud Logging が自動収集。OTLP ログ経路ではない）+ LB アクセスログ。SA に `roles/logging.logWriter` | `main.tf` / `domain.tf` |
+| 9 | **Cloud Storage** | `storage.googleapis.com` | **現状確実に使うのは Terraform リモート state（GCS backend）**。マルチモーダル素材バケットは `storage.py` が `GCS_BUCKET` 設定時に使う実装だが、**現 Terraform には素材バケット・`GCS_BUCKET` env・実行 SA への Storage 権限のいずれも未定義**＝既定では in-memory フォールバック（本番で素材を永続化するには別途プロビジョニングが必要） | `main.tf`（state）/ `storage.py`（実装） |
 | 10 | **Cloud Load Balancing (Compute)** | `compute.googleapis.com` | Global 外部 Application LB（`EXTERNAL_MANAGED`）+ Serverless NEG + Global Anycast IP + URL map + Google 管理 SSL 証明書。`domain != ""` のときだけ作成 | `domain.tf` |
 | 11 | **Cloud DNS** | `dns.googleapis.com` | マネージドゾーン + A レコード（LB IP）。`manage_dns=true` のとき。DNSSEC 対応 | `domain.tf` |
 | 12 | **Cloud Billing Budgets** | `billingbudgets.googleapis.com` | 月次予算アラート（50/90/100%）。コストガードレール | `main.tf` |
@@ -258,7 +258,7 @@ sequenceDiagram
     VA->>FS: 検知解消 / 回答記録 (CAS で current 質問クリア)
 ```
 
-API 側にも `apps/api/src/sanba_api/realtime.py` の `AnalysisPublisher` があり、**素材アップロードの解析進捗を LiveKit に publish**する（次節）。
+API 側にも `apps/api/src/sanba_api/realtime.py` の `AnalysisPublisher` があり、素材アップロードの解析進捗を LiveKit に publish できる（次節）。ただしこの publish は **`ENABLE_REALTIME_PUBLISH`（既定 OFF・Terraform の Cloud Run env にも未注入）が有効なときだけ**で、無効時は `NullSender` で no-op になる（web は `GET /context/files` のハイドレーションで状態を復元する）。
 
 ---
 
@@ -271,22 +271,24 @@ sequenceDiagram
     autonumber
     participant U as 参加者(web)
     participant API as ⬜ sanba-api
-    participant GCS as 🟦 Cloud Storage
-    participant LK as 🟩 LiveKit (進捗 publish)
+    participant GCS as 🟦 GCS / in-mem
+    participant LK as 🟩 LiveKit (任意/OFF既定)
     participant GEM as AI (Gemini Vision)
     participant ES as 🟩 Elasticsearch (grounding)
     participant FS as 🟦 Firestore
 
     U->>API: 画像/動画 multipart (Bearer session_token)
     API->>API: 種別判定 / サイズ・MIME ガード (415/413)
-    API->>GCS: store() → gs://bucket/sessions/{id}/assets/{hash}
-    API->>LK: analysis.progress(received)
+    API->>GCS: store() (GCS_BUCKET 設定時のみ。既定は in-memory)
+    opt ENABLE_REALTIME_PUBLISH=true のときだけ
+        API->>LK: analysis.progress(received)
+    end
     alt 画像 (同期解析)
-        API->>LK: analysis.progress(analyzing)
+        API->>LK: analysis.progress(analyzing) ※publish 有効時
         API->>GEM: analyze_image() 観察抽出 (最大8件)
         API->>ES: 観察を grounding 索引へ (PII マスク後)
         API->>FS: material(status=done) 保存
-        API->>LK: analysis.visual(抽出結果)
+        API->>LK: analysis.visual(抽出結果) ※publish 有効時
     else 動画 (未実装)
         API->>FS: material(status=analyzing) 保存
         API-->>U: analysis_pending=true (web は「準備中」)
@@ -294,7 +296,8 @@ sequenceDiagram
     API-->>U: ContextResponse(asset_id, kind)
 ```
 
-> 削除 `DELETE .../context/file/{asset_id}` は **GCS バイナリ + Firestore メタ + ES 索引チャンク**を一括取り消し（#245 真の破棄）。GCS/ES 未接続時は in-memory フォールバックで安全動作。
+> **配置の前提（誤読防止）**: `GCS への保存`は `GCS_BUCKET` 設定時のみ（既定は in-memory・現 Terraform では未プロビジョニング）、`LiveKit への進捗 publish`は `ENABLE_REALTIME_PUBLISH=true` のときだけ（既定 OFF）。**Gemini Vision・Elasticsearch・Firestore はこのリクエストの本筋**で、解析・索引・メタ保存は publish の有無に依らず実行される（web はリロード時に `GET /context/files` で状態復元）。
+> 削除 `DELETE .../context/file/{asset_id}` は **保存バイナリ + Firestore メタ + ES 索引チャンク**を一括取り消し（#245 真の破棄）。GCS/ES 未接続時は in-memory フォールバックで安全動作。
 
 ---
 
@@ -307,17 +310,17 @@ sequenceDiagram
 | 外部サービス | 種別 | 呼ぶ主体（配置） | 呼ぶタイミング | 認証 / 経路 | 未設定時の挙動 |
 |---|---|---|---|---|---|
 | **LiveKit Cloud** | 🟩 WebRTC SFU | ブラウザ ↔ SFU ↔ agent worker。api はトークン発行のみ | join 時（token）/会話中（音声・映像・data channel 常時） | api key/secret（Secret Manager）。token は room scoped・TTL 付き | ローカルは `livekit-server --dev`（devkey）にフォールバック |
-| **Gemini Live** | AI(S2S) | agent worker | 会話の全音声ターン（常時・低遅延） | Vertex(キーレス) / AI Studio(`GOOGLE_API_KEY`) | 鍵なしでは会話不可（要設定） |
+| **Gemini Live** | AI(S2S) | agent worker | 会話の全音声ターン（常時・低遅延） | Vertex(キーレス) / AI Studio(`GOOGLE_API_KEY`) | **フォールバック無し（唯一の例外）**: 鍵なしでは worker は起動するが会話は成立しない（要設定） |
 | **Gemini 推論** | AI | agent（ADK内）/ evaluation | 区切りでの `analyze_requirements`、セッション採点 | 同上 | ADK/採点ともヒューリスティックにフォールバック |
 | **Gemini Vision** | AI | api | 画像アップロード時（同期） | 同上 | 観察抽出は空配列（落とさない） |
 | **Gemini Embedding** | AI | agent/api（retrieval） | grounding への index/search 時 | 同上 | embedding=None → BM25/語重なりのみ |
 | **Elasticsearch** | 🟩 検索 | agent / api | 発話・要件・観察の index、`search_grounding` | URL + API key | in-memory 語重なりフォールバック |
 | **Firestore** | 🟦 状態 | agent / api | セッション/要件/発話/検知/質問の読み書き（常時） | ADC / 実行 SA `datastore.user` | エミュレータ or in-memory |
-| **Cloud Storage** | 🟦 素材 | api | 画像/動画アップロード・削除時 | ADC / 実行 SA | in-memory dict フォールバック |
+| **Cloud Storage** | 🟦 素材 | api | 画像/動画アップロード・削除時（`GCS_BUCKET` 設定時のみ） | ADC / 実行 SA（※現 Terraform にバケット・env・Storage 権限とも未定義） | in-memory dict フォールバック（＝既定挙動） |
 | **Google Identity** | 🟩 認証 | api（検証）/ web（取得） | セッション作成・join・/admin・/mine の各 API 入口 | OIDC id_token をサーバ検証 | `AUTH_DEV_BYPASS=true` で固定 dev identity |
 | **GitHub Issues** | 🟩 連携 | api(`/export`) / agent(grounding) | 確定要件の起票、README/Issue の根拠取り込み | PAT（`GITHUB_TOKEN`） | **既定 OFF**（デモ経路に無影響） |
 | **Langfuse** | 🟩 LLMOps | agent(evaluation) | room close 時のスコア記録 / プロンプト管理 | host + public/secret key | `get_langfuse()=None` でスキップ |
-| **OTel Collector → Cloud Ops** | 🟦/🟩 可観測 | agent / api | 全処理の span/metric/log（常時、設定時） | OTLP endpoint | endpoint 空なら送信スキップ |
+| **OTel Collector → Cloud Ops** | 🟦/🟩 可観測 | agent / api | **現状は span（トレース）のみ**を OTLP 送信（設定時）。メトリクスは MeterProvider 未設定で no-op、ログは stdout→Cloud Logging 経由 | OTLP endpoint | endpoint 空なら送信スキップ |
 
 ### 7-2. 「会話 1 セッション」の時系列での外部サービス発火
 
@@ -331,11 +334,11 @@ sequenceDiagram
 
     Note over Setup: Google Identity(id_token検証) → LiveKit(token発行) → Firestore(session作成)
     Note over Conv: LiveKit(音声/映像/data) ⇄ Gemini Live(S2S) ⇄ ADK+Gemini推論<br/>Firestore(要件/発話/検知 upsert) / Elasticsearch(grounding) / Gemini Embedding
-    Note over Asset: Cloud Storage(保存) → Gemini Vision(解析) → Elasticsearch(索引) → LiveKit(進捗)
-    Note over Fin: GitHub Issues(起票・任意) / Langfuse(採点記録) / OTel(全 span 送信)
+    Note over Asset: Gemini Vision(解析) → Elasticsearch(索引) → Firestore(メタ)<br/>[任意] Cloud Storage(保存) / LiveKit(進捗 publish)
+    Note over Fin: GitHub Issues(起票・既定OFF) / Langfuse(採点記録・任意) / OTel(span 送信・設定時)
 ```
 
-**読み筋**: 外部サービスは「入口で認証（Google）」「会話中は常時リアルタイム（LiveKit + Gemini Live + Firestore + ES）」「素材投入時に同期解析（GCS + Vision + ES）」「締めで非同期連携（GitHub + Langfuse）」という**4 つのタイミング帯**に明確に分かれる。すべての外部依存は**未設定時フォールバックを持ち**、最小構成（`just up`）が鍵なしで起動する設計。
+**読み筋**: 外部サービスは「入口で認証（Google）」「会話中は常時リアルタイム（LiveKit + Gemini Live + Firestore + ES）」「素材投入時に同期解析（Vision + ES + Firestore。GCS 保存と LiveKit 進捗 publish は任意）」「締めで非同期連携（GitHub + Langfuse）」という**4 つのタイミング帯**に明確に分かれる。**Gemini Live を唯一の例外として**、外部依存はおおむね未設定時フォールバックを持ち、最小構成（`just up`）が鍵なしで**起動**する（ただし音声会話を実際に通すには Gemini の認証情報が必須）。
 
 ---
 
@@ -400,33 +403,34 @@ flowchart LR
 
 ## 10. 可観測性スタック（OpenTelemetry 一本化）
 
-新規処理は必ずトレース/ログ/メトリクスを通す（CLAUDE.md 原則3）。**送信は OTLP に統一**し、出力先だけ環境で替える。
+新規処理は必ず観測性を通す方針（CLAUDE.md 原則3）。ただし**現状アプリが OTLP で実際に送るのはトレース（span）のみ**である点に注意。メトリクス・カウンタは OTel API で定義済みだが MeterProvider 未設定で no-op、ログは structlog→stdout 経由で収集される（OTLP ログ経路ではない）。下図の Prometheus/Loki への破線は **Collector 側の受け口は用意済みだが、アプリからの送信はまだ配線されていない**ことを示す。
 
 ```mermaid
 flowchart LR
   subgraph app["⬜ アプリ (agent / api)"]
-    OT["OpenTelemetry SDK<br/>+ structlog + metrics"]
+    OT["OpenTelemetry SDK (span のみ送信)<br/>structlog→stdout / metrics は no-op"]
   end
 
-  OT -->|OTLP gRPC| ROUTE{"OTEL_EXPORTER_OTLP_ENDPOINT"}
+  OT -->|"OTLP gRPC (traces)"| ROUTE{"OTEL_EXPORTER_OTLP_ENDPOINT"}
 
   subgraph local["ローカル (docker-compose.tools.yml)"]
-    COL["OTel Collector"] --> PROM["🟩 Prometheus"]
-    COL --> LOKI["🟩 Loki"]
-    COL --> TEMPO["🟩 Tempo"]
-    PROM --> GRAF["🟩 Grafana :3001"]
+    COL["OTel Collector"] --> TEMPO["🟩 Tempo"]
+    COL -.->|"受け口のみ(未配線)"| PROM["🟩 Prometheus"]
+    COL -.->|"受け口のみ(未配線)"| LOKI["🟩 Loki"]
+    TEMPO --> GRAF["🟩 Grafana :3001"]
+    PROM --> GRAF
     LOKI --> GRAF
-    TEMPO --> GRAF
   end
 
   subgraph prod["本番 (Cloud Run)"]
-    CT["🟦 Cloud Trace"]
-    CL["🟦 Cloud Logging"]
-    CM["🟦 Cloud Monitoring"]
+    CT["🟦 Cloud Trace (traces)"]
+    CL["🟦 Cloud Logging (stdout 経由)"]
+    CM["🟦 Cloud Monitoring (将来)"]
   end
 
   ROUTE -->|"ローカル"| COL
-  ROUTE -->|"本番"| CT
+  ROUTE -->|"本番(traces)"| CT
+  app -.->|"stdout ログ"| CL
 
   subgraph llmops["LLMOps"]
     LF["🟩 Langfuse :3030<br/>(+ Postgres)"]
@@ -438,13 +442,15 @@ flowchart LR
   end
 ```
 
-| シグナル | ローカル | 本番 |
-|---|---|---|
-| トレース | OTel Collector → Tempo → Grafana | Cloud Trace |
-| メトリクス | Collector → Prometheus → Grafana | Cloud Monitoring |
-| ログ | Collector → Loki → Grafana | Cloud Logging（structlog JSON）+ LB アクセスログ |
-| LLM 品質 | Langfuse（self-host v2 + Postgres） | Langfuse |
-| DORA | four-keys collector → Grafana | four-keys（GitHub API 読み） |
+| シグナル | 現状の実配線 | ローカル出力先 | 本番出力先 |
+|---|---|---|---|
+| トレース | ✅ アプリ→OTLP span | OTel Collector → Tempo → Grafana | Cloud Trace |
+| メトリクス | ⚠️ カウンタ定義のみ（MeterProvider 未設定で no-op） | Collector に Prometheus 受け口はあるが未送信 | `metricWriter` 権限はあるが未送信（将来） |
+| ログ | ✅ structlog→stdout | docker logs（Collector の Loki 受け口は未送信） | Cloud Logging（自動収集）+ LB アクセスログ |
+| LLM 品質 | ✅（鍵設定時） | Langfuse（self-host v2 + Postgres） | Langfuse |
+| DORA | ✅ | four-keys collector → Grafana | four-keys（GitHub API 読み） |
+
+> つまり「OpenTelemetry 一本化」は**方針**であり、現状の実装で OTLP を通っているのはトレースのみ。メトリクス/ログの OTLP 配線は今後の課題（Collector・IAM 側の受け皿は先に用意してある）。
 
 ---
 
