@@ -44,7 +44,9 @@ class FakeClient:
         return f"sha-{branch}"
 
     def list_tree(self, installation_id: int, repo: str, sha: str):  # type: ignore[no-untyped-def]
-        return [IndexFile("README.md", 20), IndexFile("src/main.py", 30)]
+        from sanba_api.github_app import TreeListing
+
+        return TreeListing(files=[IndexFile("README.md", 20), IndexFile("src/main.py", 30)])
 
     def fetch_file(self, installation_id: int, repo: str, sha: str, path: str) -> str:
         return "print('hi')\n"

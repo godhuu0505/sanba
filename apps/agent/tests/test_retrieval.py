@@ -48,3 +48,35 @@ def test_build_search_params_includes_knn_and_filter_when_available() -> None:
     assert params["knn"]["query_vector"] == [0.1, 0.2, 0.3]
     assert params["knn"]["k"] == 2
     assert params["query"]["bool"]["filter"] == [{"terms": {"kind": ["requirement"]}}]
+
+
+def test_context_passages_are_scoped_to_session() -> None:
+    # context（セッション固有素材: ゴール/資料/紐づけ repo コード）は、session_id を渡すと
+    # 当該セッションのものだけが返る（他セッションの private 断片の越境ヒットを防ぐ / ADR-0025）。
+    store = GroundingStore()
+    src_a = "github:o/r@main:rank.py"
+    src_b = "github:o/r2@main:billing.py"
+    store.index_passage("検索リランキングの実装コード", src_a, "context", "sess-A")
+    store.index_passage("別案件の請求ロジックの実装コード", src_b, "context", "sess-B")
+
+    mine = store.search("実装 コード", k=5, session_id="sess-A")
+    sources = {p.source for p in mine}
+    assert src_a in sources
+    assert src_b not in sources
+
+
+def test_non_context_kinds_still_recall_across_sessions() -> None:
+    # 知識/過去要件は ADR-0003 の通り横断的に呼び戻す（session_id 指定でも絞らない）。
+    store = GroundingStore()
+    store.index_passage("非機能要件は可用性99.9%", "req-1", "requirement", "other-session")
+    out = store.search("可用性 要件", k=5, session_id="sess-A")
+    assert any(p.source == "req-1" for p in out)
+
+
+def test_build_search_params_scopes_context_to_session() -> None:
+    params = GroundingStore._build_search_params(
+        "x", k=3, kinds=None, embedding=None, session_id="sess-A"
+    )
+    # context は session 一致 OR 非 context のみ通すフィルタが入る。
+    filters = params["query"]["bool"]["filter"]
+    assert any("bool" in f and "should" in f["bool"] for f in filters)

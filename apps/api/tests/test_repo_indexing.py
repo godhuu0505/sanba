@@ -5,19 +5,29 @@ Uses a fake fetcher + the in-memory ContextIndexer (no GitHub, no Elasticsearch)
 
 from __future__ import annotations
 
-from sanba_api.github_app import IndexFile
+from sanba_api.github_app import IndexFile, TreeListing
 from sanba_api.ingestion import ContextIndexer
 from sanba_api.repo_indexing import fetch_and_index_repo
 
 
 class FakeFetcher:
-    def __init__(self, files: dict[str, str]) -> None:
+    def __init__(
+        self, files: dict[str, str], *, truncated: bool = False, fail_paths: set[str] | None = None
+    ) -> None:
         self._files = files
+        self._truncated = truncated
+        self._fail_paths = fail_paths or set()
 
-    def list_tree(self, installation_id: int, repo: str, sha: str) -> list[IndexFile]:
-        return [IndexFile(p, len(c.encode())) for p, c in self._files.items()]
+    def list_tree(self, installation_id: int, repo: str, sha: str) -> TreeListing:
+        files = [IndexFile(p, len(c.encode())) for p, c in self._files.items()]
+        return TreeListing(files=files, truncated=self._truncated)
+
+    def _maybe_fail(self, path: str) -> None:
+        if path in self._fail_paths:
+            raise RuntimeError("simulated fetch failure")
 
     def fetch_file(self, installation_id: int, repo: str, sha: str, path: str) -> str:
+        self._maybe_fail(path)
         return self._files[path]
 
     def fetch_readme(self, installation_id: int, repo: str, sha: str) -> str | None:
@@ -102,3 +112,65 @@ def test_index_repo_marks_partial_on_cap() -> None:
     )
     assert outcome.indexed_files == 3
     assert outcome.partial is True
+
+
+def test_index_repo_truncated_tree_marks_partial() -> None:
+    fetcher = FakeFetcher({"src/a.py": "x = 1\n"}, truncated=True)
+    indexer = _index()
+    outcome = fetch_and_index_repo(
+        fetcher,
+        indexer,
+        session_id="sess-t",
+        installation_id=1,
+        repo="octo/demo",
+        branch="main",
+        commit_sha="sha1",
+        max_files=100,
+        max_total_bytes=1_000_000,
+        max_file_bytes=1_000_000,
+    )
+    assert outcome.partial is True
+    assert outcome.failed is False
+
+
+def test_index_repo_partial_fetch_failure_marks_partial() -> None:
+    fetcher = FakeFetcher(
+        {"src/a.py": "x = 1\n", "src/b.py": "y = 2\n"}, fail_paths={"src/b.py"}
+    )
+    indexer = _index()
+    outcome = fetch_and_index_repo(
+        fetcher,
+        indexer,
+        session_id="sess-pf",
+        installation_id=1,
+        repo="octo/demo",
+        branch="main",
+        commit_sha="sha1",
+        max_files=100,
+        max_total_bytes=1_000_000,
+        max_file_bytes=1_000_000,
+    )
+    assert outcome.indexed_files == 1
+    assert outcome.partial is True
+    assert outcome.failed is False
+
+
+def test_index_repo_all_fetch_failures_marks_failed() -> None:
+    fetcher = FakeFetcher(
+        {"src/a.py": "x = 1\n", "src/b.py": "y = 2\n"}, fail_paths={"src/a.py", "src/b.py"}
+    )
+    indexer = _index()
+    outcome = fetch_and_index_repo(
+        fetcher,
+        indexer,
+        session_id="sess-af",
+        installation_id=1,
+        repo="octo/demo",
+        branch="main",
+        commit_sha="sha1",
+        max_files=100,
+        max_total_bytes=1_000_000,
+        max_file_bytes=1_000_000,
+    )
+    assert outcome.indexed_files == 0
+    assert outcome.failed is True

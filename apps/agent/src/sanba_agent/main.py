@@ -474,7 +474,9 @@ class SANBAAgent(Agent):
         質問の妥当性を裏付けたいとき、または「過去に似た議論がなかったか」を
         確認したいときに使う。返り値の sources を会話で言及して根拠を示すこと。
         """
-        passages = self._grounding.search(query, k=4)
+        # session_id を渡してセッション固有素材（context: ゴール/資料/紐づけ repo）を本セッション
+        # に限定する（他者の private リポジトリ断片の越境ヒットを防ぐ / ADR-0025）。
+        passages = self._grounding.search(query, k=4, session_id=self._session_id)
         log.info("grounding_search", session=self._session_id, query=query, hits=len(passages))
         return {
             "passages": [

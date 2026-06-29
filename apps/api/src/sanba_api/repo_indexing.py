@@ -18,6 +18,7 @@ import structlog
 
 from .github_app import (
     IndexFile,
+    TreeListing,
     build_repo_summary,
     redact_secrets,
     repo_source_name,
@@ -31,8 +32,8 @@ log = structlog.get_logger(__name__)
 class RepoFetcher(Protocol):
     """GitHub 取得の最小インターフェース（本番は GitHubAppClient、テストは fake）。"""
 
-    def list_tree(self, installation_id: int, repo: str, sha: str) -> list[IndexFile]:
-        """branch head sha のツリー（path + blob size）を返す。"""
+    def list_tree(self, installation_id: int, repo: str, sha: str) -> TreeListing:
+        """branch head sha のツリー（path + blob size + truncated）を返す。"""
         ...
 
     def fetch_file(self, installation_id: int, repo: str, sha: str, path: str) -> str:
@@ -50,12 +51,17 @@ class RepoFetcher(Protocol):
 
 @dataclass
 class IndexOutcome:
-    """索引結果。`partial` は総量キャップで一部を落としたとき True（UI 表示の根拠）。"""
+    """索引結果。状態判定の根拠。
+
+    - `partial`: 総量キャップ / ツリー打ち切り / 一部ファイル取得失敗 で一部が欠けたとき True。
+    - `failed`: 索引すべき候補があったのに 1 件も取得できなかったとき True（要約しか入らない）。
+    """
 
     indexed_files: int
     indexed_chunks: int
     skipped: int
     partial: bool
+    failed: bool
     summary: str
 
 
@@ -78,7 +84,7 @@ def fetch_and_index_repo(
     """
     tree = fetcher.list_tree(installation_id, repo, commit_sha)
     selection = select_indexable_files(
-        tree,
+        tree.files,
         max_files=max_files,
         max_total_bytes=max_total_bytes,
         max_file_bytes=max_file_bytes,
@@ -116,10 +122,13 @@ def fetch_and_index_repo(
         session_id, chunk_text(summary), repo_source_name(repo, branch, "_summary")
     )
 
+    fetch_failures = 0
     for f in selection.selected:
         try:
             raw = fetcher.fetch_file(installation_id, repo, commit_sha, f.path)
-        except Exception as exc:  # pragma: no cover - network
+        except Exception as exc:
+            # 404/403/レート制限など。失敗は握り潰さず集計し、状態に反映する。
+            fetch_failures += 1
             log.warning("repo_file_fetch_failed", repo=repo, path=f.path, error=str(exc))
             continue
         # コード中の生シークレットを索引前にレダクトする（PII マスクは indexer 側で並行）。
@@ -132,11 +141,16 @@ def fetch_and_index_repo(
         )
         indexed_files += 1
 
+    # 選別段でキャップ/除外があった、ツリーが打ち切られた、取得に一部失敗した → PARTIAL。
+    partial = selection.truncated or tree.truncated or fetch_failures > 0
+    # 索引すべき候補があったのに 1 件も取得できなかった → FAILED（要約しか入っていない）。
+    failed = bool(selection.selected) and indexed_files == 0
     outcome = IndexOutcome(
         indexed_files=indexed_files,
         indexed_chunks=indexed_chunks,
         skipped=skipped,
-        partial=selection.truncated,
+        partial=partial,
+        failed=failed,
         summary=summary,
     )
     log.info(
@@ -146,7 +160,10 @@ def fetch_and_index_repo(
         sha=commit_sha,
         files=indexed_files,
         chunks=indexed_chunks,
-        partial=outcome.partial,
+        fetch_failures=fetch_failures,
+        tree_truncated=tree.truncated,
+        partial=partial,
+        failed=failed,
     )
     return outcome
 

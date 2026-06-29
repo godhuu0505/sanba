@@ -392,12 +392,38 @@ class RepoRef:
     private: bool
 
 
+@dataclass(frozen=True)
+class TreeListing:
+    """ツリー取得結果。`truncated` は GitHub が再帰ツリーを打ち切ったとき True。
+
+    打ち切られた場合は一部ファイルが欠落するため、索引は PARTIAL として扱う。
+    """
+
+    files: list[IndexFile]
+    truncated: bool = False
+
+
+def _parse_iso_epoch(value: object) -> float:
+    """GitHub の expires_at(ISO8601) を epoch 秒へ。解釈不能なら 50 分後を仮定する。"""
+    if isinstance(value, str):
+        try:
+            from datetime import datetime
+
+            return datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
+        except ValueError:
+            pass
+    return time.time() + 3000
+
+
 class GitHubAppClient:  # pragma: no cover - network
     """installation token を都度発行して read-only に repo を読む薄いクライアント。"""
 
     def __init__(self, app_id: str, private_key_pem: str) -> None:
         self.app_id = app_id
         self.private_key_pem = private_key_pem
+        # installation token は短命だが 1h 有効。1 索引ジョブで 1500 ファイル取得しても
+        # 毎回発行しないよう (token, expiry_epoch) をプロセス内キャッシュして再利用する。
+        self._token_cache: dict[int, tuple[str, float]] = {}
 
     def _app_headers(self) -> dict[str, str]:
         token = build_app_jwt(self.app_id, self.private_key_pem, int(time.time()))
@@ -408,16 +434,23 @@ class GitHubAppClient:  # pragma: no cover - network
         }
 
     def _installation_token(self, installation_id: int) -> str:
-        """短命の installation token を発行する（保存しない）。"""
+        """短命の installation token を発行/再利用する（保存はしない・期限手前で失効）。"""
         import httpx
 
+        cached = self._token_cache.get(installation_id)
+        if cached is not None and cached[1] - 300 > time.time():
+            return cached[0]
         with httpx.Client(timeout=15) as client:
             res = client.post(
                 f"{_API}/app/installations/{installation_id}/access_tokens",
                 headers=self._app_headers(),
             )
         res.raise_for_status()
-        return str(res.json()["token"])
+        body = res.json()
+        token = str(body["token"])
+        expiry = _parse_iso_epoch(body.get("expires_at"))
+        self._token_cache[installation_id] = (token, expiry)
+        return token
 
     def _inst_headers(self, installation_id: int) -> dict[str, str]:
         return {
@@ -495,25 +528,40 @@ class GitHubAppClient:  # pragma: no cover - network
         }
 
     def branch_head_sha(self, installation_id: int, repo: str, branch: str) -> str:
-        """branch の HEAD commit sha（索引のピン留め基準）。"""
+        """branch の HEAD commit sha（索引のピン留め基準）。
+
+        `feature/foo` のような slash を含む branch 名でも 404 にならないよう、branch を
+        単一 path セグメントとしてエンコードする。
+        """
+        from urllib.parse import quote
+
         import httpx
 
         with httpx.Client(timeout=15) as client:
             res = client.get(
-                f"{_API}/repos/{repo}/branches/{branch}",
+                f"{_API}/repos/{repo}/branches/{quote(branch, safe='')}",
                 headers=self._inst_headers(installation_id),
             )
         res.raise_for_status()
         return str(res.json()["commit"]["sha"])
 
-    def list_tree(self, installation_id: int, repo: str, sha: str) -> list[IndexFile]:
-        """commit sha の全ツリーを再帰取得し、blob を (path, size) で返す。"""
+    def list_tree(self, installation_id: int, repo: str, sha: str) -> TreeListing:
+        """commit sha の全ツリーを再帰取得し、blob を (path, size) で返す。
+
+        Get-a-tree は tree SHA を要求するため、まず commit を解決して tree SHA を得てから
+        取得する（commit SHA を直接渡すと環境により 404 になりうるため確実な経路にする）。
+        再帰ツリーが GitHub 側で打ち切られた場合は `truncated=True` を返し、索引を PARTIAL にする。
+        """
         import httpx
 
+        headers = self._inst_headers(installation_id)
         with httpx.Client(timeout=30) as client:
+            commit = client.get(f"{_API}/repos/{repo}/git/commits/{sha}", headers=headers)
+            commit.raise_for_status()
+            tree_sha = commit.json()["tree"]["sha"]
             res = client.get(
-                f"{_API}/repos/{repo}/git/trees/{sha}",
-                headers=self._inst_headers(installation_id),
+                f"{_API}/repos/{repo}/git/trees/{tree_sha}",
+                headers=headers,
                 params={"recursive": "1"},
             )
         res.raise_for_status()
@@ -522,9 +570,10 @@ class GitHubAppClient:  # pragma: no cover - network
         for node in data.get("tree", []):
             if node.get("type") == "blob":
                 files.append(IndexFile(path=node["path"], size=int(node.get("size", 0))))
-        if data.get("truncated"):
-            log.warning("repo_tree_truncated", repo=repo, sha=sha)
-        return files
+        truncated = bool(data.get("truncated"))
+        if truncated:
+            log.warning("repo_tree_truncated", repo=repo, sha=sha, files=len(files))
+        return TreeListing(files=files, truncated=truncated)
 
     def fetch_file(self, installation_id: int, repo: str, sha: str, path: str) -> str:
         """1 ファイルを raw 取得する（テキスト前提）。"""

@@ -115,21 +115,52 @@ class GroundingStore:
         self._mem.append(_MemDoc(text, source, kind, session_id, embedding))
 
     # ---- read ---------------------------------------------------------
-    def search(self, query: str, k: int = 4, kinds: list[str] | None = None) -> list[Passage]:
+    def search(
+        self,
+        query: str,
+        k: int = 4,
+        kinds: list[str] | None = None,
+        session_id: str | None = None,
+    ) -> list[Passage]:
+        """Retrieve grounding passages.
+
+        ``session_id`` を渡すと、セッション固有の素材（``kind="context"``: ゴール文・
+        アップロード資料・紐づけ repo のコード本文 / ADR-0025）を **そのセッションに限定**する。
+        知識/過去要件 (knowledge/requirement/utterance) は ADR-0003 の通り横断的に呼び戻す。
+        これが無いと、別セッションの参加者が repo 名や実装語で検索したとき他者の private
+        リポジトリ断片が返り得る（cross-tenant leak）。
+        """
         if self._client is not None:  # pragma: no cover - needs live ES
-            return self._search_es(query, k, kinds)
-        return self._search_mem(query, k, kinds)
+            return self._search_es(query, k, kinds, session_id)
+        return self._search_mem(query, k, kinds, session_id)
 
     @staticmethod
     def _build_search_params(
-        query: str, k: int, kinds: list[str] | None, embedding: list[float] | None
+        query: str,
+        k: int,
+        kinds: list[str] | None,
+        embedding: list[float] | None,
+        session_id: str | None = None,
     ) -> dict:
         """Build elasticsearch ``search`` keyword arguments.
 
         Passed via ``client.search(index=INDEX, **params)`` rather than the legacy
         ``body=`` parameter, which was removed in elasticsearch-py 9.0.
         """
-        kind_filter = [{"terms": {"kind": kinds}}] if kinds else []
+        kind_filter: list[dict] = [{"terms": {"kind": kinds}}] if kinds else []
+        if session_id is not None:
+            # context（セッション固有素材）は当該 session_id のものだけ。非 context は横断可。
+            kind_filter.append(
+                {
+                    "bool": {
+                        "minimum_should_match": 1,
+                        "should": [
+                            {"bool": {"must_not": {"term": {"kind": "context"}}}},
+                            {"term": {"session_id": session_id}},
+                        ],
+                    }
+                }
+            )
         params: dict = {
             "size": k,
             "query": {"bool": {"must": {"match": {"text": query}}, "filter": kind_filter}},
@@ -145,10 +176,10 @@ class GroundingStore:
         return params
 
     def _search_es(  # pragma: no cover - needs live ES
-        self, query: str, k: int, kinds: list[str] | None
+        self, query: str, k: int, kinds: list[str] | None, session_id: str | None = None
     ) -> list[Passage]:
         embedding = embed_text(query)
-        params = self._build_search_params(query, k, kinds, embedding)
+        params = self._build_search_params(query, k, kinds, embedding, session_id)
         res = self._client.search(index=INDEX, **params)
         return [
             Passage(
@@ -161,11 +192,16 @@ class GroundingStore:
             for h in res["hits"]["hits"]
         ]
 
-    def _search_mem(self, query: str, k: int, kinds: list[str] | None) -> list[Passage]:
+    def _search_mem(
+        self, query: str, k: int, kinds: list[str] | None, session_id: str | None = None
+    ) -> list[Passage]:
         tokens = _tokenize(query)
         scored: list[Passage] = []
         for doc in self._mem:
             if kinds and doc.kind not in kinds:
+                continue
+            # context（セッション固有素材）は当該セッションのものだけを返す（ADR-0025 隔離）。
+            if session_id is not None and doc.kind == "context" and doc.session_id != session_id:
                 continue
             overlap = len(tokens & _tokenize(doc.text))
             if overlap == 0:

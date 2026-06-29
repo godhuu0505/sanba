@@ -599,7 +599,12 @@ def _index_repo_task(
             max_total_bytes=settings.github_index_max_total_bytes,
             max_file_bytes=settings.github_index_max_file_bytes,
         )
-        status = GitHubIndexStatus.PARTIAL if outcome.partial else GitHubIndexStatus.READY
+        if outcome.failed:
+            status = GitHubIndexStatus.FAILED
+        elif outcome.partial:
+            status = GitHubIndexStatus.PARTIAL
+        else:
+            status = GitHubIndexStatus.READY
     except Exception as exc:  # pragma: no cover - network
         log.warning("repo_index_failed", session=session_id, repo=repo, error=str(exc))
         status = GitHubIndexStatus.FAILED
