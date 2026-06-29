@@ -11,6 +11,11 @@ on:
   schedule:
     - cron: "0 3 * * 1"  # weekly
 
+# 既定 GITHUB_TOKEN を read-only 運用するための明示宣言 (top-level)。
+# 解析ジョブは job 配下で security-events: write 等に昇格する (下記)。
+permissions:
+  contents: read
+
 jobs:
   analyze:
     name: analyze (${{ matrix.language }})

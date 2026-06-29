@@ -2,21 +2,9 @@ import { describe, expect, it } from "vitest";
 import { contractEventFixture, hydrationFixture } from "./fixtures";
 import { selectMaterials } from "./selectors";
 import { RealtimeStore } from "./store";
-import type { Requirement, ServerEvent, SessionPhase } from "./types";
+import type { Requirement, ServerEvent } from "./types";
 
 const SESSION = "s1";
-
-// lossy（status）イベント。reliable とは別名前空間の lossy_seq を持つ（ADR-0021）。
-function statusEv(lossySeq: number, phase: SessionPhase): ServerEvent {
-  return {
-    v: 2,
-    type: "status",
-    lossy_seq: lossySeq,
-    ts: "2026-06-24T00:00:00Z",
-    session_id: SESSION,
-    phase,
-  };
-}
 
 function reqEvent(seq: number, id: string, over: Partial<Requirement> = {}): ServerEvent {
   return {
@@ -205,9 +193,17 @@ describe("RealtimeStore — hydration boundary", () => {
   it("applies non-snapshot events (status) that arrive at/below the requirements boundary", () => {
     const s = new RealtimeStore();
     s.hydrateRequirements(hydrationFixture.items, 6); // requirementsHydrationSeq=6
-    // status は lossy（lossy_seq）なので reliable 境界（requirementsHydrationSeq）の対象外。
-    // どのタイミングで後着しても境界では捨てず適用される（ADR-0021）。
-    s.apply(statusEv(4, "deliberating"));
+    // requirements GET 実行中に publish 済みだった status（lossy, seq=4 echo）が GET 完了後に後着。
+    s.apply({
+      v: 1,
+      type: "status",
+      seq: 4,
+      ts: "t",
+      session_id: SESSION,
+      phase: "deliberating",
+      reliable: false,
+      lossy_seq: 1,
+    });
     expect(s.getSnapshot().phase).toBe("deliberating"); // 旧実装では duplicate 扱いで欠落していた
     expect(s.metrics.read().duplicates).toBe(0);
   });
@@ -273,86 +269,107 @@ describe("RealtimeStore — detection lifecycle", () => {
 });
 
 describe("RealtimeStore — status ordering", () => {
-  it("does not roll back phase with a stale, lower-lossy_seq status", () => {
+  // #122: status は lossy。順序キーは (echoSeq, lossy_seq)。echoSeq は echo した reliable seq。
+  const status = (echoSeq: number, lossySeq: number, phase: string) => ({
+    v: 1,
+    type: "status" as const,
+    seq: echoSeq,
+    ts: "t",
+    session_id: SESSION,
+    phase: phase as "deliberating" | "listening",
+    reliable: false,
+    lossy_seq: lossySeq,
+  });
+
+  it("does not roll back phase with a stale, lower lossy_seq status (同一 echoSeq)", () => {
     const s = new RealtimeStore();
-    s.apply(statusEv(5, "deliberating"));
-    s.apply(statusEv(2, "listening")); // 古い lossy_seq → 破棄
+    s.apply(status(0, 5, "deliberating"));
+    s.apply(status(0, 2, "listening")); // 同 echoSeq・古い lossy_seq → 巻き戻さない
     expect(s.getSnapshot().phase).toBe("deliberating");
   });
-});
 
-describe("RealtimeStore — lossy 欠番は誤 gap を出さない（#122 / ADR-0021）", () => {
-  it("lossy(status) の lossy_seq 欠番では gap も再ハイドレーションも起こさない", () => {
+  it("再起動後も lossy_seq の epoch ブロックで status が復帰する（#270）", () => {
     const s = new RealtimeStore();
-    let gapFired = 0;
-    s.onGapDetected(() => {
-      gapFired += 1;
-    });
-    s.apply(reqEvent(1, "r1"));
-    s.apply(statusEv(1, "listening"));
-    // lossy_seq 2..9 が落ちて 10 が届く（通常のパケット欠落）。reliable seq は無関係。
-    s.apply(statusEv(10, "deliberating"));
-    s.apply(reqEvent(2, "r2")); // reliable seq は 1→2 で連続 → gap にならない
+    s.apply(status(3, 9, "listening")); // 再起動前: lossy_seq=9
+    // 再起動: agent は lossy_seq を epoch ブロック基底（例 1e9+1）から振り出す（#270）。
+    // echo した reliable seq は後退し得る（例 2）が、status は lossy_seq 単独で順序付けるため復帰する。
+    s.apply(status(2, 1_000_000_001, "deliberating"));
+    expect(s.getSnapshot().phase).toBe("deliberating");
+  });
+
+  it("旧 agent（lossy_seq 無し）は seq で順序付く（後方互換 / Codex P2）", () => {
+    const s = new RealtimeStore();
+    // reliable/lossy_seq を持たない旧 status。seq が進むので順に適用される。
+    s.apply({ v: 1, type: "status", seq: 1, ts: "t", session_id: SESSION, phase: "listening" });
+    s.apply({ v: 1, type: "status", seq: 2, ts: "t", session_id: SESSION, phase: "deliberating" });
+    expect(s.getSnapshot().phase).toBe("deliberating");
+  });
+
+  it("does not record a gap or advance maxSeq for lossy status events (#122)", () => {
+    const s = new RealtimeStore();
+    s.apply(reqEvent(1, "r1")); // reliable seq=1 → maxSeq=1
+    s.apply(status(1, 1, "deliberating"));
+    s.apply(status(1, 3, "listening")); // lossy_seq 飛び（2 欠落）でも gap にしない
+    s.apply(reqEvent(2, "r2")); // reliable seq=2（連続）→ gap 無し
     expect(s.metrics.read().gaps).toBe(0);
-    expect(gapFired).toBe(0);
-    expect(s.getSnapshot().phase).toBe("deliberating");
-    expect(s.getSnapshot().requirements).toHaveLength(2);
-  });
-
-  it("reliable seq の欠番は従来どおり gap として検知する（lossy を挟んでも基準は reliable）", () => {
-    const s = new RealtimeStore();
-    s.apply(reqEvent(1, "r1"));
-    s.apply(statusEv(1, "listening")); // lossy は maxSeq を進めない
-    s.apply(reqEvent(3, "r3")); // reliable seq 2 が欠番 → gap
-    expect(s.metrics.read().gaps).toBe(1);
+    expect(s.getSnapshot().seq).toBe(2); // maxSeq は reliable のみで前進
   });
 });
 
-describe("RealtimeStore — transcript の reliable/lossy 混在（ADR-0021）", () => {
-  function partialEv(lossySeq: number, utteranceId: string, text: string): ServerEvent {
-    return {
-      v: 2,
-      type: "transcript.partial",
+describe("RealtimeStore — transcript partial/final（#122）", () => {
+  const partial = (lossySeq: number, id: string, text: string) =>
+    ({
+      v: 1,
+      type: "transcript.partial" as const,
+      seq: 0,
+      ts: "t",
+      session_id: SESSION,
+      utterance_id: id,
+      speaker: "顧客",
+      role: "customer",
+      text,
+      reliable: false,
       lossy_seq: lossySeq,
-      ts: "2026-06-24T00:00:00Z",
-      session_id: SESSION,
-      speaker: "顧客",
-      role: "customer",
-      utterance_id: utteranceId,
-      text,
-    };
-  }
-  function finalEv(seq: number, utteranceId: string, text: string): ServerEvent {
-    return {
-      v: 2,
-      type: "transcript.final",
+    });
+  const final = (seq: number, id: string, text: string) =>
+    ({
+      v: 1,
+      type: "transcript.final" as const,
       seq,
-      ts: "2026-06-24T00:00:00Z",
+      ts: "t",
       session_id: SESSION,
+      utterance_id: id,
       speaker: "顧客",
       role: "customer",
-      utterance_id: utteranceId,
       text,
-    };
-  }
+    });
 
-  it("partial(lossy) の後に final(reliable) が来たら名前空間が違っても final が確定する", () => {
+  it("partial は lossy_seq で更新され、final が確定すると partial を上書きする", () => {
     const s = new RealtimeStore();
-    s.apply(partialEv(5, "u1", "けんさく")); // lossy_seq=5
-    s.apply(finalEv(1, "u1", "検索")); // reliable seq=1（小さくても final が勝つ）
-    const t = s.getSnapshot().transcript;
-    expect(t).toHaveLength(1);
-    expect(t[0].final).toBe(true);
-    expect(t[0].text).toBe("検索");
+    s.apply(partial(1, "u1", "けんさ"));
+    s.apply(partial(2, "u1", "検索した"));
+    expect(s.getSnapshot().transcript[0].text).toBe("検索した");
+    s.apply(final(1, "u1", "検索したい")); // reliable 確定
+    const line = s.getSnapshot().transcript[0];
+    expect(line.text).toBe("検索したい");
+    expect(line.final).toBe(true);
   });
 
-  it("確定後の遅着 partial は確定発話を巻き戻さない", () => {
+  it("確定（final）は遅着 partial で巻き戻らない", () => {
     const s = new RealtimeStore();
-    s.apply(finalEv(1, "u1", "検索"));
-    s.apply(partialEv(99, "u1", "けんさく途中")); // 遅着 partial（lossy_seq 大）でも無視
-    const t = s.getSnapshot().transcript;
-    expect(t[0].final).toBe(true);
-    expect(t[0].text).toBe("検索");
+    s.apply(final(1, "u1", "検索したい"));
+    s.apply(partial(9, "u1", "けんさく…")); // 遅れて届いた partial
+    const line = s.getSnapshot().transcript[0];
+    expect(line.text).toBe("検索したい");
+    expect(line.final).toBe(true);
+  });
+
+  it("確定は seq 昇順で前、進行中の partial は末尾に並ぶ", () => {
+    const s = new RealtimeStore();
+    s.apply(final(1, "u1", "一"));
+    s.apply(final(2, "u2", "二"));
+    s.apply(partial(1, "u3", "さん…")); // lossy_seq=1 でも末尾（現在進行）
+    expect(s.getSnapshot().transcript.map((t) => t.utterance_id)).toEqual(["u1", "u2", "u3"]);
   });
 });
 

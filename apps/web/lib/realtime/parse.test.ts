@@ -11,12 +11,12 @@ function bytes(obj: unknown): Uint8Array {
 }
 
 describe("decodeServerEvent", () => {
-  it("accepts a well-formed lossy envelope (status は lossy_seq)", () => {
+  it("accepts a well-formed envelope", () => {
     const { event, reason } = decodeServerEvent(
       bytes({
-        v: 2,
+        v: 1,
         type: "status",
-        lossy_seq: 1,
+        seq: 1,
         ts: "2026-06-24T00:00:00Z",
         session_id: "s1",
         phase: "listening",
@@ -24,43 +24,6 @@ describe("decodeServerEvent", () => {
     );
     expect(reason).toBe("ok");
     expect(event?.type).toBe("status");
-  });
-
-  it("accepts a well-formed reliable envelope (detection は seq)", () => {
-    const { reason } = decodeServerEvent(
-      bytes({
-        v: 2,
-        type: "detection.gap",
-        seq: 1,
-        ts: "2026-06-24T00:00:00Z",
-        session_id: "s1",
-        id: "d1",
-        summary: "抜け",
-        category: "scope",
-        refs: ["u1"],
-        detector: "scope_specialist",
-      }),
-    );
-    expect(reason).toBe("ok");
-  });
-
-  it("rejects a lossy type that carries reliable seq instead of lossy_seq", () => {
-    // status は lossy 専用。seq を持ち lossy_seq を欠くと bad-envelope（ADR-0021）。
-    const { reason } = decodeServerEvent(
-      bytes({ v: 2, type: "status", seq: 1, ts: "t", session_id: "s1", phase: "idle" }),
-    );
-    expect(reason).toBe("bad-envelope");
-  });
-
-  it("accepts analysis.progress with either seq (API) or lossy_seq (agent)", () => {
-    const reliable = decodeServerEvent(
-      bytes({ v: 2, type: "analysis.progress", seq: 1, ts: "t", session_id: "s1", asset_id: "a1", pct: 50, stage: "analyzing" }),
-    );
-    const lossy = decodeServerEvent(
-      bytes({ v: 2, type: "analysis.progress", lossy_seq: 1, ts: "t", session_id: "s1", asset_id: "a1", pct: 50, stage: "analyzing" }),
-    );
-    expect(reliable.reason).toBe("ok");
-    expect(lossy.reason).toBe("ok");
   });
 
   it("rejects non-JSON", () => {
@@ -74,14 +37,14 @@ describe("decodeServerEvent", () => {
 
   it("rejects an unknown event type", () => {
     const { reason } = decodeServerEvent(
-      bytes({ v: 2, type: "mystery", seq: 1, ts: "t", session_id: "s1" }),
+      bytes({ v: 1, type: "mystery", seq: 1, ts: "t", session_id: "s1" }),
     );
     expect(reason).toBe("unknown-type");
   });
 
   it("rejects a schema version mismatch", () => {
     const { reason } = decodeServerEvent(
-      bytes({ v: 1, type: "status", lossy_seq: 1, ts: "t", session_id: "s1" }),
+      bytes({ v: 2, type: "status", seq: 1, ts: "t", session_id: "s1" }),
     );
     expect(reason).toBe("version");
   });
@@ -89,7 +52,7 @@ describe("decodeServerEvent", () => {
   it("rejects a known type with a missing required payload field", () => {
     // requirement.upserted なのに requirement が無い → store.apply で落ちる前に弾く。
     const { reason } = decodeServerEvent(
-      bytes({ v: 2, type: "requirement.upserted", seq: 1, ts: "t", session_id: "s1" }),
+      bytes({ v: 1, type: "requirement.upserted", seq: 1, ts: "t", session_id: "s1" }),
     );
     expect(reason).toBe("bad-payload");
   });
@@ -97,7 +60,7 @@ describe("decodeServerEvent", () => {
   it("rejects a requirement.upserted whose nested requirement is incomplete", () => {
     const { reason } = decodeServerEvent(
       bytes({
-        v: 2,
+        v: 1,
         type: "requirement.upserted",
         seq: 1,
         ts: "t",
@@ -110,9 +73,9 @@ describe("decodeServerEvent", () => {
 
   it("decodes a string payload too", () => {
     const json = JSON.stringify({
-      v: 2,
+      v: 1,
       type: "status",
-      lossy_seq: 1,
+      seq: 1,
       ts: "t",
       session_id: "s1",
       phase: "idle",
@@ -122,7 +85,7 @@ describe("decodeServerEvent", () => {
 });
 
 describe("decodeServerEvent ペイロードの enum/配列/範囲 検証 (#120)", () => {
-  const env = { v: 2, seq: 1, ts: "t", session_id: "s1" };
+  const env = { v: 1, seq: 1, ts: "t", session_id: "s1" };
   const validRequirement = {
     id: "r1",
     statement: "ログインできること",
@@ -135,12 +98,9 @@ describe("decodeServerEvent ペイロードの enum/配列/範囲 検証 (#120)"
   };
 
   it("status.phase が列挙外なら bad-payload", () => {
-    // status は lossy 専用なので lossy_seq で組む（seq だと bad-envelope で先に弾かれる）。
-    expect(
-      decodeServerEvent(
-        bytes({ v: 2, lossy_seq: 1, ts: "t", session_id: "s1", type: "status", phase: "dancing" }),
-      ).reason,
-    ).toBe("bad-payload");
+    expect(decodeServerEvent(bytes({ ...env, type: "status", phase: "dancing" })).reason).toBe(
+      "bad-payload",
+    );
   });
 
   it("requirement.priority が列挙外なら bad-payload", () => {
@@ -225,7 +185,7 @@ describe("encodeUserSelection", () => {
     const bytes = encodeUserSelection("s1", "d1", "relevance", 1, "2026-06-24T00:00:00Z");
     const obj = JSON.parse(new TextDecoder().decode(bytes));
     expect(obj).toMatchObject({
-      v: 2,
+      v: 1,
       type: "user.selection",
       seq: 1,
       session_id: "s1",
@@ -240,7 +200,7 @@ describe("encodeUserText", () => {
     const obj = JSON.parse(
       new TextDecoder().decode(encodeUserText("s1", "新着順で", 2, "2026-06-24T00:00:00Z")),
     );
-    expect(obj).toMatchObject({ v: 2, type: "user.text", seq: 2, session_id: "s1", text: "新着順で" });
+    expect(obj).toMatchObject({ v: 1, type: "user.text", seq: 2, session_id: "s1", text: "新着順で" });
   });
 });
 

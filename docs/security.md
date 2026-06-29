@@ -54,7 +54,12 @@
   `author_association ∈ {OWNER, MEMBER, COLLABORATOR}` に限定する。外部の第三者の
   レビューでは起動しない（プロンプトインジェクション経由のトークン窃取・改ざん防止）。
 - **最小権限の明示**: 各ワークフローに top-level `permissions:`（既定 `contents: read`）を置き、
-  書き込みが必要なジョブだけ昇格する。
+  書き込みが必要なジョブだけ昇格する。リポジトリの既定 `GITHUB_TOKEN` 権限を read-only に
+  設定しても各ワークフローが必要権限を自前で宣言しているため動作する（§8.1 手順2 の前提）。
+- **third-party Action の full SHA ピン**: GitHub 製以外の Action は commit full SHA で固定する
+  （`@vX` タグ運用はしない。バージョンはコメントで併記、Dependabot が更新）。ワークフロー内で
+  `curl | sh` で入れるツール（gitleaks / Trivy / Terraform）はバージョン固定＋チェックサム照合にする
+  （`terraform.yml` は公式 SHA256SUMS と照合）。供給網（タグ書き換え・改ざん）対策。
 - **fork PR と secrets**: `pull_request` で fork から起動した場合、GitHub は secrets を渡さない。
   `llm-eval.yml` はこの場合 heuristic 評価に自動フォールバックする（gate は維持）。
 - **デプロイ経路の分離**: `deploy.yml` は `push:[main]` と `workflow_dispatch` のみ。fork PR からは
@@ -67,9 +72,36 @@
   `docs/runbooks/deploy-gcp.md §3`）。plan コメントは `terraform show` の出力をそのまま貼るが、
   秘匿リソース属性（`random_password.result` / `secret_data` 等）は provider が `sensitive` 扱いで
   `(sensitive value)` に伏せるため、同一リポジトリ PR でも値は露出しない。
-- **未対応の推奨（フォローアップ）**: ブランチ保護（main への直 push 禁止・必須チェック・必須レビュー）、
-  Actions の third-party action を full SHA ピン留め（供給網対策、Dependabot が更新）、
-  GitHub Secret scanning / push protection の有効化。
+## 8.1 リポジトリ設定ハードニング（GUI 運用手順・#68）
+public 化に伴い、**コード変更を伴わないリポジトリ設定**で多層防御を固める。これらは IaC 化されない
+GUI 運用手順のため、実施したら issue #68 に**実施者・日時とスクリーンショット**をコメントで残す
+（監査証跡）。当面「信頼チーム専用」運用が前提。
+
+| # | 設定箇所 | 望ましい状態 | ねらい |
+|---|---|---|---|
+| 1 | Settings → Actions → General → Fork pull request workflows | 「Require approval for first-time contributors」以上（推奨「all outside collaborators」） | 未信頼コードの CI / `docker build` / scan が承認なしに走らない |
+| 2 | 同 → Workflow permissions | 「Read repository contents and packages permissions」（read-only）＋「Allow GitHub Actions to create and approve pull requests」をオフ | 既定 `GITHUB_TOKEN` を read-only に（各 workflow は必要権限を個別宣言済み） |
+| 3 | Settings → Code security | Secret scanning: Enable ／ Push protection: Enable（public は無料） | CI の gitleaks と多層化（push 前にシークレットを止める） |
+| 4 | Settings → Branches → branch protection (main) | 「Require approval of the most recent reviewable push」を有効化 | 自己承認の悪用防止（最新 push の再承認を要求） |
+| 5 | `deploy.yml` / `terraform.yml` の dispatch 権限 | write 権限者のみ `workflow_dispatch` 可であることを確認 | 本番反映トリガーを信頼済みアクターに限定 |
+
+> 手順4の branch protection は #62（人間1承認＋`quality-gate` 必須＋bot は approve/merge 不可＋
+> stale approval 失効）を前提に整合させる。#62 は棚卸しで close 済みのため、最新 push の再承認要求は
+> 本 issue で単独実施する。WIF の attribute condition（`repository`＋`ref=main` 限定）の確認は
+> `infra/terraform` 側で別途行う（`docs/runbooks/deploy-gcp.md §3`）。
+
+**実施記録**（GUI 設定は IaC 化されないため、実施の都度ここに追記する）:
+
+| 日付 | 実施者 | 内容 |
+|---|---|---|
+| 2026-06-29 | @godhuu0505 | 手順1〜5 を設定（fork PR の Actions 承認・GITHUB_TOKEN read-only＋PR 作成/承認オフ・Secret scanning/push protection・最新 push の再承認要求・本番 dispatch の権限確認）。設定画面のスクリーンショットは issue #68 にコメントで添付。 |
+
+設定変更や再点検をしたら、この表に行を追加して証跡を残す。
+
+**コード側で恒久対応済み**（上表の前提となる多層防御）:
+- 全ワークフローが top-level `permissions:` を宣言済み（既定 `contents: read`、書き込みが要るジョブだけ昇格。checkout しない `review-status.yml` は `pull-requests: write` のみ）→ 手順2 の read-only 既定で問題なく動く。
+- third-party Action は full SHA ピン、`curl | sh` ツールはバージョン固定＋チェックサム照合済み（gitleaks: 公式 checksums.txt 照合 / Trivy: install スクリプトを `| sudo sh` で直接実行せず sha256 照合してから実行＝スクリプト自身も binary を checksums.txt で照合する二段構え / Terraform: 公式 SHA256SUMS 照合）。
+- 特権ワークフロー（`claude-review-response.yml` 等）は fork PR・未信頼アクターでは起動しない（上記参照）。
 
 ## 残課題
 - 完全な IdP 連携（Firebase Auth / Identity Platform）。

@@ -1,6 +1,6 @@
 // データチャネルで届く UTF-8 JSON を検証して ServerEvent に絞り込む。
-// 契約 §2 のエンベロープ必須フィールド（v/type/ts/session_id ＋ reliable は seq / lossy は
-// lossy_seq）を満たさないメッセージは捨てる（不正な送信元・将来スキーマからの保護 / ADR-0021）。
+// 契約 §2 のエンベロープ必須フィールド（v/type/seq/ts/session_id）を満たさない
+// メッセージは捨てる（不正な送信元・将来スキーマからの保護）。
 
 import {
   type Priority,
@@ -30,27 +30,6 @@ const KNOWN_TYPES: ReadonlySet<string> = new Set<ServerEventType>([
   "analysis.visual",
   "session.completed",
 ]);
-
-/** 必ず lossy ストリームで届く種別（`lossy_seq` を持つ / ADR-0021）。 */
-const LOSSY_ONLY_TYPES: ReadonlySet<string> = new Set<ServerEventType>([
-  "status",
-  "transcript.partial",
-]);
-
-/**
- * seq スタンプの妥当性を検証する（ADR-0021）。
- * - lossy 専用種別（status / transcript.partial）: `lossy_seq` が数値であること。
- * - `analysis.progress`: API=reliable（`seq`）/ agent=lossy（`lossy_seq`）の二重生産者なので
- *   どちらか一方が数値であればよい。
- * - それ以外（reliable）: `seq` が数値であること。
- */
-function hasValidSeqStamp(type: ServerEventType, obj: Record<string, unknown>): boolean {
-  const hasSeq = typeof obj.seq === "number";
-  const hasLossySeq = typeof obj.lossy_seq === "number";
-  if (LOSSY_ONLY_TYPES.has(type)) return hasLossySeq;
-  if (type === "analysis.progress") return hasSeq || hasLossySeq;
-  return hasSeq;
-}
 
 export interface DecodeResult {
   event: ServerEvent | null;
@@ -189,6 +168,7 @@ export function decodeServerEvent(payload: Uint8Array | string): DecodeResult {
 
   if (
     typeof obj.type !== "string" ||
+    typeof obj.seq !== "number" ||
     typeof obj.ts !== "string" ||
     typeof obj.session_id !== "string" ||
     typeof obj.v !== "number"
@@ -205,10 +185,6 @@ export function decodeServerEvent(payload: Uint8Array | string): DecodeResult {
 
   // 種別ごとの必須ペイロードまで検証してから ok にする（受信境界の堅牢化）。
   const type = obj.type as ServerEventType;
-  // seq 名前空間（reliable=seq / lossy=lossy_seq）が種別に整合するか検証（ADR-0021）。
-  if (!hasValidSeqStamp(type, obj)) {
-    return { event: null, reason: "bad-envelope" };
-  }
   if (!hasFields(obj, REQUIRED_FIELDS[type])) {
     return { event: null, reason: "bad-payload" };
   }

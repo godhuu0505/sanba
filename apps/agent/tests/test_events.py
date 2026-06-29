@@ -22,61 +22,82 @@ from sanba_agent.events import (
     requirement_to_contract,
 )
 
-RELIABLE_ENVELOPE_KEYS = {"v", "type", "seq", "ts", "session_id"}
-LOSSY_ENVELOPE_KEYS = {"v", "type", "lossy_seq", "ts", "session_id"}
+ENVELOPE_KEYS = {"v", "type", "seq", "ts", "session_id"}
 
 
 @pytest.mark.asyncio
-async def test_reliable_envelope_has_required_fields() -> None:
+async def test_envelope_has_required_fields() -> None:
     t = RecordingTransport()
     pub = EventPublisher("s1", t)
-    env = await pub.detection_gap("d1", "性能が未確認", "non_functional", [])
-    assert RELIABLE_ENVELOPE_KEYS <= set(env)
-    assert "lossy_seq" not in env  # reliable は seq のみ（ADR-0021）
-    assert env["v"] == 2
+    env = await pub.status("listening")
+    assert ENVELOPE_KEYS <= set(env)
+    assert env["v"] == 1
+    assert env["type"] == "status"
     assert env["session_id"] == "s1"
     assert t.sent[0]["topic"] == EVENTS_TOPIC
 
 
 @pytest.mark.asyncio
-async def test_lossy_envelope_uses_lossy_seq() -> None:
-    # status は lossy（ADR-0021）。lossy_seq を持ち、reliable の seq は持たない。
+async def test_reliable_seq_is_monotonic_and_lossy_does_not_consume_it() -> None:
+    # reliable イベントは連続した seq を採る。lossy（status）は reliable seq を消費せず現在値を
+    # echo し、独立の lossy_seq で順序付ける（#122・ADR-0021）。
     t = RecordingTransport()
     pub = EventPublisher("s1", t)
-    env = await pub.status("listening")
-    assert LOSSY_ENVELOPE_KEYS <= set(env)
-    assert "seq" not in env
-    assert env["v"] == 2
-    assert env["type"] == "status"
+    await pub.transcript_final("顧客", "customer", "u1", "検索したい")  # reliable seq=1
+    s = await pub.status("listening")  # lossy: seq echoes 1, lossy_seq=1
+    await pub.detection_gap("d1", "性能が未確認", "non_functional", [])  # reliable seq=2
+    reliable = [m["event"] for m in t.sent if m["event"].get("reliable") is not False]
+    assert [e["seq"] for e in reliable] == [1, 2]  # reliable seq は連続
+    assert s["reliable"] is False
+    assert s["seq"] == 1  # 現在の reliable seq を echo（消費しない）
+    assert s["lossy_seq"] == 1
 
 
 @pytest.mark.asyncio
-async def test_reliable_and_lossy_seq_are_independent_namespaces() -> None:
-    # reliable と lossy は別カウンタ（ADR-0021）。lossy（status / transcript.partial）が挟まっても
-    # reliable seq は連続し、web のギャップ検知が誤発火しない（#122）。
+async def test_lossy_seq_increments_independently() -> None:
+    # 連続する lossy イベントは reliable seq を進めず lossy_seq だけ進める（#122）。
     t = RecordingTransport()
     pub = EventPublisher("s1", t)
-    await pub.status("listening")  # lossy_seq=1
-    await pub.transcript_final("顧客", "customer", "u1", "検索したい")  # seq=1
-    await pub.transcript_partial("顧客", "customer", "u2", "途中")  # lossy_seq=2
-    await pub.detection_gap("d1", "性能が未確認", "non_functional", [])  # seq=2
-    reliable_seqs = [m["event"]["seq"] for m in t.sent if "seq" in m["event"]]
-    lossy_seqs = [m["event"]["lossy_seq"] for m in t.sent if "lossy_seq" in m["event"]]
-    assert reliable_seqs == [1, 2]  # lossy を挟んでも reliable は連続
-    assert lossy_seqs == [1, 2]
+    a = await pub.status("listening")
+    b = await pub.status("deliberating")
+    assert a["lossy_seq"] == 1
+    assert b["lossy_seq"] == 2
+    assert a["seq"] == b["seq"] == 0  # reliable seq は未消費（0 のまま echo）
+    assert pub.seq == 0
+
+
+@pytest.mark.asyncio
+async def test_start_lossy_seq_seeds_lossy_across_restart() -> None:
+    # 再起動シミュレーション（#270）: epoch ブロック基底からシードすると lossy_seq が前回を上回り、
+    # 接続維持中の web が再起動後の status を黙殺しない（lossy_seq の大域単調性）。
+    t = RecordingTransport()
+    pub = EventPublisher("s1", t, start_lossy_seq=1_000_000_000)
+    s = await pub.status("listening")
+    assert s["lossy_seq"] == 1_000_000_001  # base+1（0 から振り直さない）
+
+
+@pytest.mark.asyncio
+async def test_analysis_progress_is_reliable_with_distinct_seq() -> None:
+    # analysis.* は reliable（ADR-0021 §1）。連続 progress は別々の reliable seq を採り、web の
+    # upsert（seq 版管理）で 2 件目が重複破棄されない（Codex P2）。
+    t = RecordingTransport()
+    pub = EventPublisher("s1", t)
+    a = await pub.analysis_progress("a1", 10, "received")
+    b = await pub.analysis_progress("a1", 50, "analyzing")
+    assert a.get("reliable") is not False  # lossy ではない
+    assert "lossy_seq" not in a
+    assert a["seq"] == 1
+    assert b["seq"] == 2  # 別 seq → web で重複破棄されない
 
 
 @pytest.mark.asyncio
 async def test_start_seq_seeds_monotonic_continuation() -> None:
-    # 再起動シミュレーション（#123）: 保存済み last_seq=5 からシードすると次 reliable seq=6。
+    # 再起動シミュレーション（#123）: 保存済み last_seq=5 からシードすると次の reliable は seq=6。
     # 0 から振り直さないことで web の seq ガードが再起動後イベントを黙殺しない。
     t = RecordingTransport()
     pub = EventPublisher("s1", t, start_seq=5)
     env = await pub.detection_gap("d1", "性能が未確認", "non_functional", [])
     assert env["seq"] == 6
-    # lossy も同じ start_seq からシードし、再起動直後の status 反映取りこぼし窓を最小化する。
-    lossy_env = await pub.status("listening")
-    assert lossy_env["lossy_seq"] == 6
 
 
 @pytest.mark.asyncio
@@ -171,7 +192,7 @@ async def test_question_asked_save_failure_does_not_send_or_consume_seq() -> Non
     assert t.sent == []  # 送られていない
     assert pub.seq == 0  # seq は消費されていない
     assert pub.questions_published == 0
-    # 次の reliable イベントは欠番にならず seq=1 を採る（question.asked は reliable / ADR-0021）。
+    # 次の reliable イベントは欠番にならず seq=1 を採る（lossy は reliable seq を消費しない）。
     env = await pub.detection_gap("d1", "性能が未確認", "non_functional", [])
     assert env["seq"] == 1
 

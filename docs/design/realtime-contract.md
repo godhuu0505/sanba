@@ -22,7 +22,11 @@ apps/web（@livekit/components-react で購読）
 - agent は確定要件・検知・状態を **データメッセージ**として publish する。音声トラックと同一ルーム・同一接続。
 - web は `useDataChannel("sanba.events")`（または `room.on(RoomEvent.DataReceived)`）で購読する。
 - 信頼性が要る要件/検知イベントは **reliable** で送る。`status`/`transcript.partial` のような高頻度・
-  使い捨ては lossy 可。reliable / lossy は **seq 名前空間を分ける**（§2 / ADR-0021）。
+  使い捨ては lossy 可。
+- **seq 系統は reliable/lossy で分離する（#122・ADR-0021）**。`seq`（reliable 連番）は reliable
+  イベントにのみ採番し、欠番検知の基準にする。lossy イベントは `seq` を消費せず**現在の reliable seq を
+  echo**し、独立の `lossy_seq` で順序付ける。これにより lossy が落ちても reliable seq に穴が空かず、
+  web が誤って欠番（ギャップ）と判定して不要な GET 再取得をすることを防ぐ。
 
 ## 2. エンベロープ
 
@@ -30,49 +34,34 @@ apps/web（@livekit/components-react で購読）
 
 | フィールド | 型 | 説明 |
 |---|---|---|
-| `v` | int | スキーマ版（現行 `2`。ADR-0021 で reliable/lossy seq を分離した破壊的変更） |
+| `v` | int | スキーマ版（現行 `1`） |
 | `type` | string | イベント種別（§3） |
-| `seq` | int | **reliable** ストリーム専用の連続・単調増加連番。整列・重複排除・**欠番検知（ギャップ）の基準**。lossy イベントは持たない |
-| `lossy_seq` | int | **lossy** ストリーム専用の連番（欠番許容）。lossy イベントだけが持つ。種別ごとの上書き/巻き戻し防止にのみ使い、ギャップ検知には使わない |
+| `seq` | int | reliable ストリームの単調増加連番。整列・重複排除・**欠番検知**の基準。lossy は現在値を echo（消費しない） |
+| `reliable` | bool? | reliable イベントか（既定 true / #122）。false = lossy（`status`/`transcript.partial`）。欠番検知は reliable のみ対象 |
+| `lossy_seq` | int? | lossy イベント専用の単調増加連番。lossy の順序・重複排除に使う（reliable には無い） |
 | `ts` | string | ISO8601（agent 側の発行時刻） |
 | `session_id` | string | 対象セッション |
 
-### reliable / lossy の seq 名前空間（ADR-0021）
-
-seq は **reliable と lossy で別空間**を持つ。これにより lossy（status / transcript.partial /
-会話由来 analysis.progress）が通常のパケット欠落で落ちても reliable `seq` に穴が空かず、
-web のギャップ検知（欠番→GET 再ハイドレーション）が**誤発火しない**（#122）。
-
-- **reliable イベント**: `seq` を持つ。agent / API はそれぞれ reliable 専用カウンタで連続採番する
-  （共有 seq 空間 / `reserve_session_seq`）。web は `seq` の欠番だけを「本当の取りこぼし」とみなす。
-- **lossy イベント**: `lossy_seq` を持つ（`seq` は持たない）。落ちても良い・後続で上書きされる種別。
-  web は種別ごとの `lossy_seq` ガード（status の巻き戻し防止 / transcript.partial の上書き）で整列する。
-- **`analysis.progress` は二重生産者**: アップロード解析（API / #145）は離散・少数なので **reliable**
-  （`seq`）、会話中の画面共有由来（agent）は高頻度なので **lossy**（`lossy_seq`）。web は種別名ではなく
-  **どちらの seq フィールドを持つか**でストリームを判別する。
-
-web 側の適用規則: **`(type, id)` で冪等**（同じ要件/検知は upsert）、**reliable は `seq`・lossy は
-`lossy_seq`** で順序を担保。**reliable `seq` の欠番**を検知したら §4 のハイドレーションで取り直してよい。
+web 側の適用規則: **`(type, id)` で冪等**（同じ要件/検知は upsert）、reliable は **`seq` で順序**、lossy は
+**`lossy_seq` で順序**を担保。欠番検知は reliable seq のみで行い、検知したら §4 のハイドレーションで取り直してよい。
 
 ## 3. イベント種別（agent → web）
 
-> 配信種別の凡例（§2 / ADR-0021）: **R**=reliable（`seq` を持つ）、**L**=lossy（`lossy_seq` を持つ）。
-
-| `type` | 配信 | 主な画面 | ペイロード（共通枠 ＋ R は `seq` / L は `lossy_seq` に加えて） |
-|---|---|---|---|
-| `status` | L | 03/04/05 | `phase`: `idle`\|`listening`\|`recognizing`\|`deliberating`、`agents_active?`: int（"検討中"の体数） |
-| `transcript.partial` | L | 04 | `speaker`, `role`, `utterance_id`（仮払い出し）, `text`（確定前の認識中テキスト） |
-| `transcript.final` | R | 04/05 | `speaker`, `role`, `utterance_id`（確定ID・`detection.*.refs` と同一ID空間）, `text` |
-| `detection.contradiction` | R | 05/08 | `id`, `summary`, `refs`:[utterance_id...], `options?`:[{`label`,`value`}], `detector`:`"contradiction_detector"` |
-| `detection.gap` | R | 05/08 | `id`, `summary`, `category`, `refs`:[utterance_id...], `detector`:`"scope_specialist"`\|`"nfr_specialist"` |
-| `detection.ambiguous` | R | 06/07 | `id`, `summary`, `refs`:[utterance_id...], `detector`:`"ambiguity_detector"`（#182 / ADR-0022）。矛盾でも抜けでもない不明瞭な論点。`resolved` まで未解消として確定ゲートの件数に算入（`list_open_detections`／web 集計は kind 非依存） |
-| `detection.resolved` | R | 05/08 | `detection_id`（解消対象）, `resolution`:`"user_selected"`\|`"agent_resolved"`, `selected_value?`（選択肢タップ時） |
-| `requirement.upserted` | R | 08/09 | `requirement`:{`id`,`statement`,`category`(`functional`\|`non_functional`\|`constraint`\|`scope`\|`open_question`),`priority`(`must`\|`should`\|`could`\|`wont`),`confidence`(0–1),`source_speaker`,`citations`:[{`kind`,`ref`}],`status`(`draft`\|`confirmed`)} |
-| `question.asked` | R | 04 | `id`, `prompt`, `options?`:[{`label`,`value`}]（#181）。通常質問（金枠）を問いピンに出す。選択肢があればタップで `user.answered` を返す。web は seq ガードで最新1問を保持 |
-| `question.cleared` | R | 04 | `question_id`（クリア対象 `question.asked` の `id`）（#212 / ADR-0020）。回答（タップ/音声/テキスト）で現在質問が解消されたことを全参加者へ伝播し、重複回答を防ぐ。`cleared_seq` は本イベントの **envelope `seq` そのもの**。web は `question_id === current?.id` かつ `seq > lastQuestionSeq` のときだけピンを畳む。`question.asked` と対称に seq 境界（`last_seq`）は進めない |
-| `analysis.progress` | R/L | 07 | `asset_id`, `pct`(0–100), `stage`（人間可読ラベル）。アップロード素材の解析は **API（サーバ identity）が直接 publish**（#145 / ADR-0023）＝**reliable（`seq`）**。実体に正直な粗ステージ `received`(10)→`analyzing`(50)→`done`(100)/`failed` を出し、フェイクの中間 pct は作らない。会話中の画面共有由来は従来どおり agent が送る＝**lossy（`lossy_seq`）**。web は seq フィールドの有無でストリームを判別する（ADR-0021） |
-| `analysis.visual` | R | 08 | `asset_id`, `extracted`:[string...], `conflicts`:[{`summary`,`refs`}]。アップロード解析の完了は API が publish（#145）。`conflicts`（言葉×画の矛盾 / ADR-0004）は突合実装まで空配列可 |
-| `session.completed` | R | 09/10 | `summary`:{`contradictions_resolved`,`gaps_found`,`issues_created`}, `artifacts`:[{`kind`,`url`}] |
+| `type` | 主な画面 | ペイロード（`v/type/seq/ts/session_id` に加えて） |
+|---|---|---|
+| `status` | 03/04/05 | `phase`: `idle`\|`listening`\|`recognizing`\|`deliberating`、`agents_active?`: int（"検討中"の体数） |
+| `transcript.partial` | 04 | `speaker`, `role`, `utterance_id`（仮払い出し）, `text`（確定前の認識中テキスト） |
+| `transcript.final` | 04/05 | `speaker`, `role`, `utterance_id`（確定ID・`detection.*.refs` と同一ID空間）, `text` |
+| `detection.contradiction` | 05/08 | `id`, `summary`, `refs`:[utterance_id...], `options?`:[{`label`,`value`}], `detector`:`"contradiction_detector"` |
+| `detection.gap` | 05/08 | `id`, `summary`, `category`, `refs`:[utterance_id...], `detector`:`"scope_specialist"`\|`"nfr_specialist"` |
+| `detection.ambiguous` | 06/07 | `id`, `summary`, `refs`:[utterance_id...], `detector`:`"ambiguity_detector"`（#182 / ADR-0022）。矛盾でも抜けでもない不明瞭な論点。`resolved` まで未解消として確定ゲートの件数に算入（`list_open_detections`／web 集計は kind 非依存） |
+| `detection.resolved` | 05/08 | `detection_id`（解消対象）, `resolution`:`"user_selected"`\|`"agent_resolved"`, `selected_value?`（選択肢タップ時） |
+| `requirement.upserted` | 08/09 | `requirement`:{`id`,`statement`,`category`(`functional`\|`non_functional`\|`constraint`\|`scope`\|`open_question`),`priority`(`must`\|`should`\|`could`\|`wont`),`confidence`(0–1),`source_speaker`,`citations`:[{`kind`,`ref`}],`status`(`draft`\|`confirmed`)} |
+| `question.asked` | 04 | `id`, `prompt`, `options?`:[{`label`,`value`}]（#181）。通常質問（金枠）を問いピンに出す。選択肢があればタップで `user.answered` を返す。web は seq ガードで最新1問を保持 |
+| `question.cleared` | 04 | `question_id`（クリア対象 `question.asked` の `id`）（#212 / ADR-0020）。回答（タップ/音声/テキスト）で現在質問が解消されたことを全参加者へ伝播し、重複回答を防ぐ。`cleared_seq` は本イベントの **envelope `seq` そのもの**。web は `question_id === current?.id` かつ `seq > lastQuestionSeq` のときだけピンを畳む。`question.asked` と対称に seq 境界（`last_seq`）は進めない |
+| `analysis.progress` | 07 | `asset_id`, `pct`(0–100), `stage`（人間可読ラベル）。アップロード素材の解析は **API（サーバ identity）が直接 publish**（#145 / ADR-0023）。実体に正直な粗ステージ `received`(10)→`analyzing`(50)→`done`(100)/`failed` を出し、フェイクの中間 pct は作らない。会話中の画面共有由来は従来どおり agent が送る |
+| `analysis.visual` | 08 | `asset_id`, `extracted`:[string...], `conflicts`:[{`summary`,`refs`}]。アップロード解析の完了は API が publish（#145）。`conflicts`（言葉×画の矛盾 / ADR-0004）は突合実装まで空配列可 |
+| `session.completed` | 09/10 | `summary`:{`contradictions_resolved`,`gaps_found`,`issues_created`}, `artifacts`:[{`kind`,`url`}] |
 
 > エージェント識別子（`detector` / `source_speaker`）は **機能名**で送る。UI 上の色（緋=矛盾/黄土=抜け）は
 > web 側のデザイントークンへのマッピングであり、ペイロードには持たせない。
