@@ -37,6 +37,8 @@ def test_lead_agent_plans_one_branch_with_recommendation() -> None:
     assert "1つの問い" in LEAD_AGENT_INSTRUCTIONS
     assert "推奨回答" in LEAD_AGENT_INSTRUCTIONS
     assert "ディシジョンツリー" in LEAD_AGENT_INSTRUCTIONS
+    # 表面的なら率直に突く(イエスマンにならない)計画原則も退行ガードする。
+    assert "イエスマン" in LEAD_AGENT_INSTRUCTIONS
 
 
 def test_contradiction_agent_points_out_directly() -> None:
