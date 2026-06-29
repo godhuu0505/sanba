@@ -22,8 +22,12 @@
 | **ADK Agent Team** | 要件の構造化・矛盾検知・専門深掘り | Google ADK |
 | **Firestore** | セッション状態・確定要件・発話ログ | Firestore (emulator in dev) |
 | **Elasticsearch** | RAG 根拠付け・過去セッション検索（BM25 + kNN ハイブリッド） | Elasticsearch 8.x |
-| **Observability** | トレース/メトリクス/ログ | OTel Collector → Prometheus / Loki / Tempo / Cloud Ops |
+| **Observability** | トレース（**現状 OTLP で送るのはこれのみ**）／メトリクス・ログ（下記） | トレース→OTel Collector→Tempo（ローカル）/ Cloud Trace（本番）。メトリクスは MeterProvider 未設定で現状 no-op、ログは structlog→stdout→Cloud Logging（Collector の Prometheus/Loki 受け口は用意済みだが未配線）。実態の詳細は [architecture-analysis.md §10](architecture-analysis.md) |
 | **Langfuse** | プロンプト管理・LLM評価・回帰テスト | Langfuse |
+
+> 本章はコンポーネントの**設計上の役割**を述べる。実装で「いまどこまで配線されているか（AS-IS）」と
+> 利用中の Google Cloud / 外部サービスの配置・タイミングは [`architecture-analysis.md`](architecture-analysis.md) に
+> 図つきで網羅する。両者がズレたら analysis 側を一次情報とする。
 
 ## 3. 音声対話と推論の二層構造
 
@@ -86,8 +90,14 @@ sessions/{sessionId}
   ├─ title, status, createdAt, participants[]
   ├─ utterances/{utteranceId}   # 発話ログ (speaker, text, ts, audioRef)
   └─ requirements/{reqId}       # 確定要件 (category, statement, priority, source, confidence)
-artifacts/{sessionId}           # 生成された要件ドキュメント (Cloud Storage ref)
+artifacts/{sessionId}           # 生成された要件ドキュメント (Cloud Storage ref) ※計画
 ```
+
+> **AS-IS 注記**: 上記は目標とするデータモデル。実装済みの実体はこれより広く、`sessions/{id}` 配下に
+> `detections`・`questions/current`・`materials` のサブコレクションを持ち、`utterances`/`requirements`/`questions`
+> は `expireAt` の TTL で自動失効する（[architecture-analysis.md §11](architecture-analysis.md)）。一方
+> **`artifacts` コレクションと Cloud Storage 連携は未実装**（成果物の現在の出力は GitHub Issue 起票で、
+> Cloud Storage の素材バケットも現 Terraform では未プロビジョニング）。Cloud Storage 保存はこの計画の TO-BE。
 
 ## 7. 非機能要件（自分たちの dogfooding）
 
