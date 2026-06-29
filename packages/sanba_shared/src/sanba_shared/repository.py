@@ -498,6 +498,28 @@ class SessionRepository:
             return 0
         return self._mem_seq.get(session_id, 0)
 
+    def get_startup_seq(self, session_id: str) -> int:
+        """起動時の reliable seq シードを返す（#270 補完・ADR-0021）。
+
+        last_seq（set_session_seq で保存）に加え、current question の asked_seq/cleared_seq
+        も読み、その最大値を返す。question.asked/cleared は set_session_seq を呼ばないが
+        publisher._seq を消費するため（§3 設計制約）、再起動後に seq が後退して web の
+        status ガード（event.seq < lastStatusSeq）に弾かれる窓を塞ぐ（#270）。
+        """
+        base = self.get_session_seq(session_id)
+        if self._client is not None:
+            snap = self._question_doc(session_id).get()
+            data = snap.to_dict() if snap.exists else None
+        else:
+            data = self._mem_questions.get(session_id)
+        if data is None:
+            return base
+        for key in ("asked_seq", "cleared_seq"):
+            val = data.get(key)
+            if isinstance(val, int) and val > base:
+                base = val
+        return base
+
     def reserve_session_seq(self, session_id: str, count: int = 1) -> int:
         """次の seq を count 個アトミックに予約し、予約区間の先頭 seq を返す（#145・ADR-0021）。
 
