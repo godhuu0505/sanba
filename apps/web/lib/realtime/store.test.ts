@@ -269,11 +269,11 @@ describe("RealtimeStore — detection lifecycle", () => {
 });
 
 describe("RealtimeStore — status ordering", () => {
-  // #122: status は lossy。順序は lossy_seq で持つ（reliable seq は echo で同値になり得る）。
-  const status = (lossySeq: number, phase: string) => ({
+  // #122: status は lossy。順序キーは (echoSeq, lossy_seq)。echoSeq は echo した reliable seq。
+  const status = (echoSeq: number, lossySeq: number, phase: string) => ({
     v: 1,
     type: "status" as const,
-    seq: 0, // reliable seq の echo（消費しない）
+    seq: echoSeq,
     ts: "t",
     session_id: SESSION,
     phase: phase as "deliberating" | "listening",
@@ -281,19 +281,34 @@ describe("RealtimeStore — status ordering", () => {
     lossy_seq: lossySeq,
   });
 
-  it("does not roll back phase with a stale, lower lossy_seq status", () => {
+  it("does not roll back phase with a stale, lower lossy_seq status (同一 echoSeq)", () => {
     const s = new RealtimeStore();
-    s.apply(status(5, "deliberating"));
-    s.apply(status(2, "listening")); // 古い lossy_seq → 巻き戻さない
+    s.apply(status(0, 5, "deliberating"));
+    s.apply(status(0, 2, "listening")); // 同 echoSeq・古い lossy_seq → 巻き戻さない
+    expect(s.getSnapshot().phase).toBe("deliberating");
+  });
+
+  it("再起動後 lossy_seq が 0 に戻っても echoSeq 前進で status が復帰する（#122 / #123 退行防止）", () => {
+    const s = new RealtimeStore();
+    s.apply(status(3, 9, "listening")); // 再起動前: echoSeq=3, lossy_seq=9
+    // 再起動: lossy_seq は 1 に戻るが、reliable seq は #123 で継続 → echoSeq=4。
+    s.apply(status(4, 1, "deliberating"));
+    expect(s.getSnapshot().phase).toBe("deliberating"); // lossy_seq=1<9 でも echoSeq 前進で適用
+  });
+
+  it("旧 agent（lossy_seq 無し）は seq で順序付く（後方互換 / Codex P2）", () => {
+    const s = new RealtimeStore();
+    // reliable/lossy_seq を持たない旧 status。seq が進むので順に適用される。
+    s.apply({ v: 1, type: "status", seq: 1, ts: "t", session_id: SESSION, phase: "listening" });
+    s.apply({ v: 1, type: "status", seq: 2, ts: "t", session_id: SESSION, phase: "deliberating" });
     expect(s.getSnapshot().phase).toBe("deliberating");
   });
 
   it("does not record a gap or advance maxSeq for lossy status events (#122)", () => {
     const s = new RealtimeStore();
     s.apply(reqEvent(1, "r1")); // reliable seq=1 → maxSeq=1
-    // lossy status が echo した seq（0）や、間欠的な lossy 欠落は欠番検知の対象外。
-    s.apply(status(1, "deliberating"));
-    s.apply(status(3, "listening")); // lossy_seq が 2→飛んで 3 でも gap にしない
+    s.apply(status(1, 1, "deliberating"));
+    s.apply(status(1, 3, "listening")); // lossy_seq 飛び（2 欠落）でも gap にしない
     s.apply(reqEvent(2, "r2")); // reliable seq=2（連続）→ gap 無し
     expect(s.metrics.read().gaps).toBe(0);
     expect(s.getSnapshot().seq).toBe(2); // maxSeq は reliable のみで前進

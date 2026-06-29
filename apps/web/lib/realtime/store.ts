@@ -102,7 +102,14 @@ export class RealtimeStore {
   private detectionsHydrationSeq = 0;
   /** 観測した最大 reliable seq（欠番検知用 / #122）。lossy は前進させない。 */
   private maxSeq = 0;
-  /** 最後に適用した status の lossy_seq。古い status による phase 巻き戻しを防ぐ（#122）。 */
+  /**
+   * 最後に適用した status の順序キー (seq, lossy_seq)（#122）。status は lossy だが、順序の主キーは
+   * **echo された reliable seq**（#123 で再起動を跨いで単調）にし、lossy_seq は同一 seq 内のタイブレーク
+   * にする。これで再起動で lossy_seq が 0 に戻っても、次の reliable イベントで seq が進めば status が
+   * 復帰する（lossy_seq 単独だと復帰までに以前のカウンタ超過を待つ #123 退行になる）。旧 agent
+   * （lossy_seq 無し）は seq のみで従来どおり順序付く（後方互換）。
+   */
+  private lastStatusSeq = 0;
   private lastStatusLossySeq = 0;
   /** 最後に適用した session.completed の seq。再配信による巻き戻しを防ぐ。 */
   private lastCompletedSeq = 0;
@@ -280,11 +287,14 @@ export class RealtimeStore {
   private reduce(event: ServerEvent): boolean {
     switch (event.type) {
       case "status": {
-        // status は lossy（id 無し）。順序は lossy_seq で持つ（#122・ADR-0021）。reliable seq は
-        // echo（複数 status が同値）になり得るため seq では巻き戻し防止できない。古い lossy_seq の
-        // status は破棄して phase の巻き戻しを防ぐ。
+        // status は lossy。順序キーは (seq, lossy_seq) の辞書式（#122）。主キーの echo された
+        // reliable seq は #123 で再起動を跨いで単調なので、再起動で lossy_seq が 0 に戻っても次の
+        // reliable イベントで seq が進めば status が復帰する。lossy_seq は同一 seq 内のタイブレーク。
+        // 旧 agent（lossy_seq 無し）は seq のみで従来どおり順序付く（後方互換 / Codex P2）。
         const ls = event.lossy_seq ?? 0;
-        if (ls <= this.lastStatusLossySeq) return false;
+        if (event.seq < this.lastStatusSeq) return false;
+        if (event.seq === this.lastStatusSeq && ls <= this.lastStatusLossySeq) return false;
+        this.lastStatusSeq = event.seq;
         this.lastStatusLossySeq = ls;
         this.phase = event.phase;
         this.agentsActive = event.agents_active ?? 0;
@@ -293,12 +303,14 @@ export class RealtimeStore {
 
       case "transcript.partial":
       case "transcript.final": {
-        // final は reliable（version=seq）、partial は lossy（version=lossy_seq）。系統が違うため
-        // 同系統どうしでのみ版比較し、確定（final）を partial で巻き戻さない（#122・ADR-0021）。
+        // final は reliable（version=seq）、partial は lossy（version=lossy_seq、無ければ seq に
+        // フォールバック＝旧 agent 後方互換 / Codex P2）。系統が違うため同系統どうしでのみ版比較し、
+        // 確定（final）を partial で巻き戻さない（#122・ADR-0021）。partial は utterance_id 単位で、
+        // 再起動後は別 utterance になるため lossy_seq リセットの影響を実質受けない。
         const isFinal = event.type === "transcript.final";
         const prev = this.transcript.get(event.utterance_id);
         if (prev?.value.final && !isFinal) return false; // 確定済みを partial で上書きしない
-        const version = isFinal ? event.seq : (event.lossy_seq ?? 0);
+        const version = isFinal ? event.seq : (event.lossy_seq ?? event.seq);
         if (prev && prev.value.final === isFinal && prev.seq >= version) return false;
         this.transcript.set(event.utterance_id, {
           seq: version,
@@ -557,6 +569,7 @@ export class RealtimeStore {
     this.requirementsHydrationSeq = 0;
     this.detectionsHydrationSeq = 0;
     this.maxSeq = 0;
+    this.lastStatusSeq = 0;
     this.lastStatusLossySeq = 0;
     this.lastCompletedSeq = 0;
     this.lastQuestionSeq = 0;
