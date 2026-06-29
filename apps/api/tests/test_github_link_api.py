@@ -60,6 +60,9 @@ class FakeClient:
     def fetch_readme(self, installation_id: int, repo: str, sha: str) -> str | None:
         return "# Demo"
 
+    def fetch_issues(self, installation_id: int, repo: str, max_issues: int = 30):  # type: ignore[no-untyped-def]
+        return []
+
 
 @pytest.fixture(autouse=True)
 def _setup(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
@@ -218,3 +221,29 @@ def test_select_repo_requires_link() -> None:
         assert res.status_code == 409
     finally:
         app.dependency_overrides.pop(require_session_access, None)
+
+
+def test_stale_index_job_is_skipped() -> None:
+    # repo A のジョブが走る前に B を選んだ状態（SessionMeta=B）にして A のジョブを直接呼ぶと、
+    # 現在選択と一致しないので索引も書き戻しもしない（Codex P2 stale job guard）。
+    from sanba_shared.models import GitHubIndexStatus
+
+    sid = _make_session()
+    main._repo.set_session_github(
+        sid,
+        repo="octo/repoB",
+        branch="main",
+        commit_sha="shaB",
+        index_status=GitHubIndexStatus.INDEXING,
+    )
+    main._index_repo_task(
+        session_id=sid,
+        installation_id=1,
+        repo="octo/repoA",
+        branch="main",
+        commit_sha="shaA",
+    )
+    meta = main._repo.get_session(sid)
+    assert meta is not None
+    # 選択は B のまま（A に巻き戻っていない）。
+    assert meta.github_repo == "octo/repoB"

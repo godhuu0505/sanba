@@ -48,3 +48,38 @@ def test_requirements_to_issue_body_handles_empty() -> None:
     title, body = requirements_to_issue_body([], "sess-2")
     assert "sess-2" in title
     assert "確定した要件はありません" in body
+
+
+def test_seed_github_context_skips_when_repo_linked(monkeypatch) -> None:
+    # セッションに GitHub App の repo が紐づいていれば、旧グローバル connector の seed を
+    # 走らせない（選択 repo の前提に無関係な GITHUB_REPO 断片を混ぜない / ADR-0025・Codex P2）。
+    from sanba_shared.models import GitHubIndexStatus, SessionMeta
+    from sanba_shared.repository import SessionRepository
+
+    from sanba_agent import main as agent_main
+    from sanba_agent.config import settings as agent_settings
+    from sanba_agent.retrieval import GroundingStore
+
+    # グローバル connector を「有効」に見せる（本来なら seed が走る条件）。
+    monkeypatch.setattr(agent_settings, "github_connector_enabled", True)
+    monkeypatch.setattr(agent_settings, "github_token", "x")
+    monkeypatch.setattr(agent_settings, "github_repo", "global/other")
+
+    repo = SessionRepository()
+    assert repo._client is None
+    repo.create_session_doc(
+        SessionMeta(id="sess-1", title="t", owner_sub="s", owner_email="o@example.com")
+    )
+    repo.set_session_github(
+        "sess-1",
+        repo="octo/linked",
+        branch="main",
+        commit_sha="sha1",
+        index_status=GitHubIndexStatus.READY,
+    )
+    grounding = GroundingStore()
+    assert grounding.is_memory
+
+    agent_main.seed_github_context(grounding, "sess-1", repo)
+    # 旧 connector の fetch は呼ばれず、何も索引されない。
+    assert grounding._mem == []

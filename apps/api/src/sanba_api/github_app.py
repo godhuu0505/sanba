@@ -259,6 +259,10 @@ def is_excluded_path(path: str) -> bool:
         return True
     if base == ".env" or base.startswith(".env."):
         return True
+    # minified バンドルは拡張子が js/css になり _BINARY_EXTS の "min.js" 比較に当たらないため
+    # suffix で別途弾く（圧縮済み巨大ファイルが総量 cap を食って通常ソースを押し出すのを防ぐ）。
+    if base.endswith((".min.js", ".min.css", ".bundle.js", ".map")):
+        return True
     if "." in base:
         ext = base.rsplit(".", 1)[1]
         if ext in _BINARY_EXTS:
@@ -670,6 +674,22 @@ class GitHubAppClient:  # pragma: no cover - network
         if res.status_code == 200 and res.text:
             return res.text
         return None
+
+    def fetch_issues(
+        self, installation_id: int, repo: str, max_issues: int = 30
+    ) -> list[dict[str, object]]:
+        """直近の Issue を取得する（PR は除く。前提情報として索引する / ADR-0025 索引範囲）。"""
+        import httpx
+
+        with httpx.Client(timeout=15) as client:
+            res = client.get(
+                f"{_API}/repos/{repo}/issues",
+                headers=self._inst_headers(installation_id),
+                params={"state": "all", "per_page": max_issues},
+            )
+        res.raise_for_status()
+        # PR も /issues に含まれるため pull_request キーで除外する。
+        return [i for i in res.json() if "pull_request" not in i]
 
     def installation_login(self, installation_id: int) -> str:
         """installation のアカウント login（連携表示用）。"""

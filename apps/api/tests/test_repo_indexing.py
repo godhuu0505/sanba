@@ -36,6 +36,11 @@ class FakeFetcher:
     def repo_meta(self, installation_id: int, repo: str) -> dict[str, object]:
         return {"description": "demo", "language": "Python", "default_branch": "main"}
 
+    def fetch_issues(
+        self, installation_id: int, repo: str, max_issues: int = 30
+    ) -> list[dict[str, object]]:
+        return getattr(self, "_issues", [])
+
 
 def _index() -> ContextIndexer:
     idx = ContextIndexer()
@@ -134,9 +139,7 @@ def test_index_repo_truncated_tree_marks_partial() -> None:
 
 
 def test_index_repo_partial_fetch_failure_marks_partial() -> None:
-    fetcher = FakeFetcher(
-        {"src/a.py": "x = 1\n", "src/b.py": "y = 2\n"}, fail_paths={"src/b.py"}
-    )
+    fetcher = FakeFetcher({"src/a.py": "x = 1\n", "src/b.py": "y = 2\n"}, fail_paths={"src/b.py"})
     indexer = _index()
     outcome = fetch_and_index_repo(
         fetcher,
@@ -269,3 +272,26 @@ def test_reindex_clears_old_repo_chunks() -> None:
     sources = " ".join(d["source"] for d in indexer._mem)
     assert "repoB" in sources
     assert "repoA" not in sources
+
+
+def test_index_repo_indexes_issues() -> None:
+    fetcher = FakeFetcher({"README.md": "# Demo"})
+    fetcher._issues = [  # type: ignore[attr-defined]
+        {"number": 7, "title": "検索が遅い", "body": "P95 が 2s"},
+    ]
+    indexer = _index()
+    fetch_and_index_repo(
+        fetcher,
+        indexer,
+        session_id="sess-iss",
+        installation_id=1,
+        repo="octo/demo",
+        branch="main",
+        commit_sha="sha1",
+        max_files=100,
+        max_total_bytes=1_000_000,
+        max_file_bytes=1_000_000,
+    )
+    blob = " ".join(d["text"] for d in indexer._mem)
+    assert "Issue #7" in blob
+    assert "検索が遅い" in blob

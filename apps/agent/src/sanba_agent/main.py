@@ -551,13 +551,25 @@ def _github_ready() -> bool:
     )
 
 
-def seed_github_context(grounding: GroundingStore, session_id: str) -> None:
+def seed_github_context(
+    grounding: GroundingStore, session_id: str, repo: SessionRepository
+) -> None:
     """Pull a configured GitHub repo's issues/README into grounding (issue #7).
 
     OFF unless the connector is explicitly enabled, so it never affects the demo path.
+    セッションに GitHub App の repo が紐づいている場合は、グローバル `GITHUB_REPO` の
+    断片が選択 repo の前提に混ざるのを避けるため旧 connector seed をスキップする
+    （ADR-0025・Codex P2。検索は session_id だけで通すため混在すると誤った根拠になる）。
     """
     if not _github_ready():
         return
+    try:
+        meta = repo.get_session(session_id)
+        if meta is not None and meta.github_repo:
+            log.info("github_seed_skipped_linked_repo", session=session_id, repo=meta.github_repo)
+            return
+    except Exception as exc:  # pragma: no cover - depends on backend
+        log.warning("github_seed_link_check_failed", error=str(exc))
     try:
         from .connectors import GitHubConnector
 
@@ -580,7 +592,7 @@ async def entrypoint(ctx: JobContext) -> None:
     )
     grounding = GroundingStore()
     seed_knowledge_base(grounding)
-    seed_github_context(grounding, session_id)
+    seed_github_context(grounding, session_id, repo)
     # data channel publish（#94）。音声と同一ルーム接続を再利用して web へ差分を流す。
     # reliable seq は last_seq と current question の asked_seq/cleared_seq の最大値でシード
     # （#123・#270）。question.asked/cleared は set_session_seq を呼ばず pub._seq を消費するため、

@@ -62,6 +62,10 @@ export function RepoSelectField({
     const repo = repos.find((r) => r.full_name === fullName);
     setLoadingBranches(true);
     setError(null);
+    // repo は即時に親へ反映する（branch 読み込み中に開始しても選択 repo がズレない / Codex P2）。
+    // 既定 branch は repo 一覧が持つ default_branch を暫定採用し、branch 一覧取得後に確定する。
+    setBranches(repo?.default_branch ? [repo.default_branch] : []);
+    onChange(repo?.default_branch ? { repo: fullName, branch: repo.default_branch } : null);
     try {
       const items = await listGithubBranches(fullName, idToken);
       // 解決時に最新リクエストでなければ（別 repo へ切替済み）破棄する。

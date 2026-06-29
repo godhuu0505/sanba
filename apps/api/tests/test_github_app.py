@@ -152,6 +152,10 @@ def test_redact_noop_on_clean_code() -> None:
         ".env.production",
         "assets/logo.png",
         "vendor/lib.go",
+        # minified/bundled は dist 配下でなくても suffix で弾く（拡張子は js/css）。
+        "public/app.min.js",
+        "static/styles.min.css",
+        "src/main.js.map",
     ],
 )
 def test_is_excluded_path_true(path: str) -> None:

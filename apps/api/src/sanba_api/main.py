@@ -611,6 +611,12 @@ def _index_repo_task(
     client = _github_app_client()
     if client is None:  # pragma: no cover - guarded by caller
         return
+    # 古いジョブの巻き戻し防止（Codex P2）: repo A の索引中に B へ選び直すと、遅れて走る A の
+    # ジョブが B の chunk を消し A を書き戻し得る。開始時に現在の選択（SessionMeta）がこの
+    # ジョブの (repo,branch,sha) と一致するか確認し、ズレていれば何もしない。
+    if not _selection_current(session_id, repo, branch, commit_sha):
+        log.info("repo_index_skipped_stale", session=session_id, repo=repo, branch=branch)
+        return
     # repo 選び直し / branch 変更 / 再同期で古い github: chunk が残ると search_grounding に
     # 旧 repo・旧 commit の断片が混ざる。索引前に当該 session の repo chunk を一掃する（Codex P2）。
     _indexer.delete_repo_context(session_id)
@@ -636,12 +642,27 @@ def _index_repo_task(
     except Exception as exc:  # pragma: no cover - network
         log.warning("repo_index_failed", session=session_id, repo=repo, error=str(exc))
         status = GitHubIndexStatus.FAILED
+    # 完了時にも再確認: 索引中に B へ選び直されていたら status/選択を巻き戻さない。
+    if not _selection_current(session_id, repo, branch, commit_sha):
+        log.info("repo_index_writeback_skipped_stale", session=session_id, repo=repo)
+        return
     _repo.set_session_github(
         session_id,
         repo=repo,
         branch=branch,
         commit_sha=commit_sha,
         index_status=status,
+    )
+
+
+def _selection_current(session_id: str, repo: str, branch: str, commit_sha: str) -> bool:
+    """SessionMeta の現在選択がこのジョブの (repo,branch,sha) と一致するか（stale 判定）。"""
+    meta = _repo.get_session(session_id)
+    return bool(
+        meta is not None
+        and meta.github_repo == repo
+        and meta.github_branch == branch
+        and meta.github_commit_sha == commit_sha
     )
 
 

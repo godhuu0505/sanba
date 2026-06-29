@@ -48,6 +48,12 @@ class RepoFetcher(Protocol):
         """description / language / default_branch 等のメタ。"""
         ...
 
+    def fetch_issues(
+        self, installation_id: int, repo: str, max_issues: int = 30
+    ) -> list[dict[str, object]]:
+        """直近 Issue（PR 除く）。前提情報として索引する。"""
+        ...
+
 
 @dataclass
 class IndexOutcome:
@@ -126,6 +132,22 @@ def fetch_and_index_repo(
         session_id, chunk_text(redact_secrets(summary)), repo_source_name(repo, branch, "_summary")
     )
 
+    # Issue も前提情報として索引する（ADR-0025 索引範囲 / agent 指示も Issue 参照を前提とする）。
+    try:
+        issues = fetcher.fetch_issues(installation_id, repo)
+    except Exception as exc:  # pragma: no cover - network
+        log.warning("repo_issues_fetch_failed", repo=repo, error=str(exc))
+        issues = []
+    for issue in issues:
+        text = _issue_text(issue, repo)
+        if not text:
+            continue
+        indexed_chunks += indexer.index_context(
+            session_id,
+            chunk_text(redact_secrets(text)),
+            repo_source_name(repo, branch, f"_issue_{issue.get('number')}"),
+        )
+
     fetch_failures = 0
     for f in selection.selected:
         try:
@@ -178,6 +200,16 @@ def fetch_and_index_repo(
         failed=failed,
     )
     return outcome
+
+
+def _issue_text(issue: dict[str, object], repo: str) -> str:
+    """Issue を grounding 用テキストへ整形する（repo 名/番号を text に含め検索可能にする）。"""
+    title = str(issue.get("title") or "").strip()
+    body = str(issue.get("body") or "").strip()
+    number = issue.get("number")
+    if not title:
+        return ""
+    return f"[{repo} Issue #{number}] {title}\n{body}".strip()
 
 
 def _as_str(value: object) -> str | None:
