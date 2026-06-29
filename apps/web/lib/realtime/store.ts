@@ -4,22 +4,27 @@
 // 1か所に集約する。各画面で別々に購読層を書くと 3重複・マージ衝突するため、ここで
 // 共有化する（並列化の要）。
 //
-// 契約（docs/design/realtime-contract.md §2）の適用規則:
+// 契約（docs/design/realtime-contract.md §2 / ADR-0021）の適用規則:
 //   - `(type, id)` で冪等（同じ要件/検知は upsert）
-//   - `seq` で順序を担保（単調増加・整列）
-//   - 同一 seq の再配信は重複排除、欠番は検知して再ハイドレーションの契機にする
+//   - reliable イベントの `seq` で順序を担保（単調増加・整列）
+//   - 同一 seq の再配信は重複排除、**reliable seq** の欠番だけを検知して再ハイドレーションの
+//     契機にする。lossy（status / transcript.partial / agent 由来 analysis.progress）の欠番は
+//     gap にしない。lossy が落ちても reliable seq は連続するため、誤ギャップ・不要な GET
+//     再取得が起きない（#122）。lossy の整列は種別ごとの `lossy_seq` ガードで行う。
 //
 // フレームワーク非依存（React 非依存）にして単体テスト可能にし、UI へは
 // useSyncExternalStore 互換の subscribe / getSnapshot で公開する。
 
 import { RealtimeMetrics } from "./metrics";
-import type {
-  AnalysisVisualConflict,
-  Detection,
-  Question,
-  Requirement,
-  ServerEvent,
-  SessionPhase,
+import {
+  type AnalysisVisualConflict,
+  type Detection,
+  isLossyServerEvent,
+  type Question,
+  type Requirement,
+  reliableSeqOf,
+  type ServerEvent,
+  type SessionPhase,
 } from "./types";
 
 export interface AnalysisState {
@@ -70,6 +75,25 @@ interface Versioned<T> {
   value: T;
 }
 
+/**
+ * reliable/lossy が混在するストリーム（transcript: partial=lossy / final=reliable、
+ * analysis: progress=lossy可 / visual=reliable）の 1 エントリ（ADR-0021）。
+ *
+ * `dedupSeq` は**同一ストリーム内**の重複排除・逆順検知に使う seq（partial/progress=lossy_seq、
+ * final/visual=reliable seq）。名前空間が異なる値を直接比較しないよう、`final`/`done` の遷移を
+ * 先に判定してから同名前空間どうしでのみ `dedupSeq` を比べる。表示順は名前空間に依らず安定さ
+ * せるため、初到着順 `order` で並べる（reliable/lossy の採番速度差で時系列が乱れないように）。
+ */
+interface StreamEntry<T> {
+  /** 同一名前空間内の重複排除キー（lossy=lossy_seq / reliable=reliable seq）。 */
+  dedupSeq: number;
+  /** 確定段階に達したか（transcript: final 受信 / analysis: visual 受信）。 */
+  terminal: boolean;
+  /** 表示順（初到着順）。名前空間混在でも安定した時系列を保つ。 */
+  order: number;
+  value: T;
+}
+
 const EMPTY_STATE: SessionState = {
   phase: "idle",
   agentsActive: 0,
@@ -85,8 +109,10 @@ const EMPTY_STATE: SessionState = {
 export class RealtimeStore {
   private requirements = new Map<string, Versioned<Requirement>>();
   private detections = new Map<string, Versioned<Detection>>();
-  private transcript = new Map<string, Versioned<TranscriptLine>>();
-  private analysis = new Map<string, Versioned<AnalysisState>>();
+  private transcript = new Map<string, StreamEntry<TranscriptLine>>();
+  private analysis = new Map<string, StreamEntry<AnalysisState>>();
+  /** transcript/analysis の表示順を決める初到着カウンタ（reliable/lossy 混在の安定整列用）。 */
+  private streamArrivals = 0;
   private phase: SessionPhase = "idle";
   private agentsActive = 0;
   private question: Question | null = null;
@@ -100,9 +126,9 @@ export class RealtimeStore {
    */
   private requirementsHydrationSeq = 0;
   private detectionsHydrationSeq = 0;
-  /** 観測した最大 seq（欠番検知用）。 */
+  /** 観測した最大 **reliable** seq（欠番検知用 / ADR-0021）。lossy は前進させない。 */
   private maxSeq = 0;
-  /** 最後に適用した status の seq。古い status による phase 巻き戻しを防ぐ。 */
+  /** 最後に適用した status の lossy_seq。古い status による phase 巻き戻しを防ぐ。 */
   private lastStatusSeq = 0;
   /** 最後に適用した session.completed の seq。再配信による巻き戻しを防ぐ。 */
   private lastCompletedSeq = 0;
@@ -220,21 +246,29 @@ export class RealtimeStore {
       return;
     }
 
-    // GET スナップショット境界より古いライブ差分は破棄（スナップショットに含まれる）。境界は
-    // 種別が属する GET ドメイン別（#119）。status/transcript/analysis/session.completed は
-    // どの GET にも含まれず、question は専用 seq ガード（lastQuestionSeq）を持つため、ここでは
-    // 捨てず reduce() の種別ガードに委ねる。これで GET 実行中〜直後に後着した非スナップショット
-    // 種別（例: status・transcript.final）を hydrationSeq 境界で取りこぼさない。
-    if (event.seq <= this.snapshotBoundary(event.type)) {
-      this.metrics.recordDuplicate();
-      return;
-    }
+    // lossy（status / transcript.partial / agent 由来 analysis.progress）は seq 境界・欠番検知・
+    // maxSeq 前進の対象外（ADR-0021）。落ちても reliable seq は連続するため、lossy の欠番で
+    // 誤ギャップ・不要な GET 再取得を起こさない（#122）。lossy の整列は reduce() の種別ガード
+    // （lossy_seq）に委ねる。reliable のみ以下の境界・gap・maxSeq 前進を行う。
+    const lossy = isLossyServerEvent(event);
+    if (!lossy) {
+      const seq = reliableSeqOf(event);
+      // GET スナップショット境界より古いライブ差分は破棄（スナップショットに含まれる）。境界は
+      // 種別が属する GET ドメイン別（#119）。transcript.final/analysis.visual/session.completed は
+      // どの GET にも含まれず、question は専用 seq ガード（lastQuestionSeq）を持つため、ここでは
+      // 捨てず reduce() の種別ガードに委ねる。これで GET 実行中〜直後に後着した非スナップショット
+      // 種別を hydrationSeq 境界で取りこぼさない。
+      if (seq <= this.snapshotBoundary(event.type)) {
+        this.metrics.recordDuplicate();
+        return;
+      }
 
-    // 欠番検知: 期待する次 seq を飛ばして届いたら gap。契約 §4 に従い、欠落差分を
-    // GET で取り直す契機として購読者（hook）へ通知する。
-    if (this.maxSeq > 0 && event.seq > this.maxSeq + 1) {
-      this.metrics.recordGap();
-      for (const l of this.gapListeners) l();
+      // 欠番検知: 期待する次 reliable seq を飛ばして届いたら gap。契約 §4 に従い、欠落差分を
+      // GET で取り直す契機として購読者（hook）へ通知する。
+      if (this.maxSeq > 0 && seq > this.maxSeq + 1) {
+        this.metrics.recordGap();
+        for (const l of this.gapListeners) l();
+      }
     }
 
     const applied = this.reduce(event);
@@ -243,7 +277,8 @@ export class RealtimeStore {
       return;
     }
 
-    this.maxSeq = Math.max(this.maxSeq, event.seq);
+    // reliable seq のみ整列境界（maxSeq）を前進させる。lossy は前進させない（誤 gap 防止）。
+    if (!lossy) this.maxSeq = Math.max(this.maxSeq, reliableSeqOf(event));
     this.metrics.recordReceived();
     this.metrics.recordApplyLatency(performance.now() - startedAt);
     this.invalidate();
@@ -275,10 +310,11 @@ export class RealtimeStore {
   private reduce(event: ServerEvent): boolean {
     switch (event.type) {
       case "status":
-        // status は id を持たず upsert の seq ガードを通らない。最後に適用した
-        // status seq より古いものは破棄し、phase の巻き戻しを防ぐ（lossy 可・順序は seq）。
-        if (event.seq <= this.lastStatusSeq) return false;
-        this.lastStatusSeq = event.seq;
+        // status は id を持たず upsert の seq ガードを通らない。lossy ストリームなので
+        // lossy_seq で順序付けし、最後に適用した lossy_seq より古いものは破棄して phase の
+        // 巻き戻しを防ぐ（ADR-0021）。
+        if (event.lossy_seq <= this.lastStatusSeq) return false;
+        this.lastStatusSeq = event.lossy_seq;
         this.phase = event.phase;
         this.agentsActive = event.agents_active ?? 0;
         return true;
@@ -286,7 +322,10 @@ export class RealtimeStore {
       case "transcript.partial":
       case "transcript.final": {
         const final = event.type === "transcript.final";
-        return this.upsert(this.transcript, event.utterance_id, event.seq, {
+        // partial は lossy（lossy_seq）、final は reliable（seq）と名前空間が異なる。final は
+        // 常に partial を置き換え、同名前空間どうしだけ dedupSeq で逆順/再配信を弾く（ADR-0021）。
+        const dedupSeq = event.type === "transcript.final" ? event.seq : event.lossy_seq;
+        return this.upsertStream(this.transcript, event.utterance_id, final, dedupSeq, {
           utterance_id: event.utterance_id,
           speaker: event.speaker,
           role: event.role,
@@ -441,7 +480,10 @@ export class RealtimeStore {
 
       case "analysis.progress": {
         const prev = this.analysis.get(event.asset_id)?.value;
-        return this.upsert(this.analysis, event.asset_id, event.seq, {
+        // analysis.progress は二重生産者（API=reliable seq / agent=lossy lossy_seq / ADR-0021）。
+        // どちらの seq を持つかで dedupSeq を取り、visual（terminal）には負ける（下記 upsertStream）。
+        const dedupSeq = "lossy_seq" in event ? event.lossy_seq : event.seq;
+        return this.upsertStream(this.analysis, event.asset_id, false, dedupSeq, {
           asset_id: event.asset_id,
           pct: event.pct,
           stage: event.stage,
@@ -452,7 +494,8 @@ export class RealtimeStore {
 
       case "analysis.visual": {
         const prev = this.analysis.get(event.asset_id)?.value;
-        return this.upsert(this.analysis, event.asset_id, event.seq, {
+        // visual は reliable（terminal=true）。progress（lossy 可）に常に勝ち、完了を確定させる。
+        return this.upsertStream(this.analysis, event.asset_id, true, event.seq, {
           asset_id: event.asset_id,
           // visual = 解析完了。抽出要件/突合が確定して届くイベントなので pct を 100 に固定する
           // （#209 案A）。直前 progress が 40% でも「visual=完了」を保証し、selectMaterials の
@@ -493,6 +536,35 @@ export class RealtimeStore {
     return true;
   }
 
+  /**
+   * reliable/lossy 混在ストリーム（transcript / analysis）の id 冪等 upsert（ADR-0021）。
+   *
+   * 名前空間が異なる dedupSeq（lossy_seq と reliable seq）を直接比較すると逆転するため、
+   * 先に terminal 遷移で判定する:
+   *  - 既存が terminal（final/visual）で新規が非 terminal（partial/progress）→ 後戻りさせない。
+   *  - terminal 段階が同じ → 同名前空間どうしの dedupSeq で再配信/逆順を弾く。
+   *  - 非 terminal→terminal の昇格 → 常に適用（確定が認識中/途中を置き換える）。
+   * 表示順は初到着順 `order` を維持し（更新時も元の order を保つ）、名前空間の採番速度差で
+   * 時系列が乱れないようにする。
+   */
+  private upsertStream<T>(
+    map: Map<string, StreamEntry<T>>,
+    id: string,
+    terminal: boolean,
+    dedupSeq: number,
+    value: T,
+  ): boolean {
+    const prev = map.get(id);
+    if (!prev) {
+      map.set(id, { dedupSeq, terminal, order: this.streamArrivals++, value });
+      return true;
+    }
+    if (prev.terminal && !terminal) return false; // 確定後に途中段階へ戻さない
+    if (prev.terminal === terminal && prev.dedupSeq >= dedupSeq) return false; // 同名前空間の再配信/逆順
+    map.set(id, { dedupSeq, terminal, order: prev.order, value });
+    return true;
+  }
+
   // ── スナップショット構築 ───────────────────────────────────────────
   private build(): SessionState {
     return {
@@ -500,8 +572,8 @@ export class RealtimeStore {
       agentsActive: this.agentsActive,
       requirements: this.sortedValues(this.requirements),
       detections: this.sortedValues(this.detections),
-      transcript: this.sortedValues(this.transcript),
-      analysis: this.sortedValues(this.analysis),
+      transcript: this.sortedStream(this.transcript),
+      analysis: this.sortedStream(this.analysis),
       question: this.question,
       completed: this.completed,
       seq: this.maxSeq,
@@ -512,12 +584,18 @@ export class RealtimeStore {
     return [...map.values()].sort((a, b) => a.seq - b.seq).map((v) => v.value);
   }
 
+  /** reliable/lossy 混在ストリームは初到着順（order）で安定整列する（ADR-0021）。 */
+  private sortedStream<T>(map: Map<string, StreamEntry<T>>): T[] {
+    return [...map.values()].sort((a, b) => a.order - b.order).map((e) => e.value);
+  }
+
   /** テスト/リセット用。 */
   clear(): void {
     this.requirements.clear();
     this.detections.clear();
     this.transcript.clear();
     this.analysis.clear();
+    this.streamArrivals = 0;
     this.phase = "idle";
     this.agentsActive = 0;
     this.question = null;

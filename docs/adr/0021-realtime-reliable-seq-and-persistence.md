@@ -1,7 +1,7 @@
 # ADR-0021: realtime イベントの reliable-seq 名前空間と seq 永続化
 
-- ステータス: Proposed（提案中）
-- 日付: 2026-06-28
+- ステータス: Accepted（採択 / 2026-06-29 実装）
+- 日付: 2026-06-28（採択 2026-06-29）
 - 関連: #122（lossy イベント欠番による不要な再ハイドレーション）/ #123（Cloud Run 再起動後の seq 単調性）/
   ADR-0020（question ハイドレーションと Firestore tombstone/current 永続化）/ 契約 `docs/design/realtime-contract.md` §1,§2,§4
 
@@ -77,4 +77,25 @@ seq だけが永続化から漏れている。
 - **テスト**: lossy 欠落で誤ギャップが出ないこと（store 単体）、再起動シナリオで seq が継続すること（agent 結合）を
   回帰に追加する。
 - 実装は #122（web ギャップ判定）と #123（agent 永続化）に分割し、本 ADR を親設計として紐付ける。
-- 本 ADR は提案中。最終判断は人間レビューを経て Accepted とする（CLAUDE.md 原則1）。
+
+## 実装メモ（2026-06-29 採択時）
+
+採択にあたり、決定 1 を以下の形で実装した。
+
+- **エンベロープ**: 既存 `seq` を **reliable 専用**に再定義し、lossy イベントは `seq` を持たず
+  **`lossy_seq`** を持つ（第一候補どおり）。`SCHEMA_VERSION` を **1→2** にメジャー bump し、web の
+  version ガードが旧スキーマを安全に弾く。
+- **web のストリーム判別はフィールド存在ベース**（種別名ではない）。`isLossyServerEvent` は
+  `lossy_seq` を持つかで判定する。理由: **`analysis.progress` が二重生産者**だと判明したため。
+  アップロード解析（API / #145・ADR-0023）は離散・少数で **reliable（`seq`）**、会話中の画面共有由来
+  （agent）は高頻度で **lossy（`lossy_seq`）**。同一種別で reliable/lossy が混在するため、種別名では
+  ストリームを決められない。フィールド存在で判別することで両生産者を正しく扱える。
+- **transcript / analysis の名前空間混在**: `transcript`（partial=lossy / final=reliable）と
+  `analysis`（progress=lossy可 / visual=reliable）は 1 つの Map を共有するため、異なる名前空間の
+  seq を直接比較しない。`terminal`（final / visual 到達）の遷移を先に判定し、同名前空間どうしのみ
+  `dedupSeq` で逆順/再配信を弾く。表示順は名前空間の採番速度差で乱れないよう **初到着順**で安定整列する。
+- **lossy seq の永続化はしない**（高頻度で Firestore 書込を増やすため）。再起動時は reliable の
+  保存値（`get_session_seq`）で両カウンタをシードし、再起動直後の status 反映の取りこぼし窓を最小化する。
+  reliable seq の永続化（#123）は既存どおり `set_session_seq` で継続。
+- 決定 2（reliable seq の Firestore 永続化）は #123 で実装済み（`EventPublisher(start_seq=...)`）。本 PR は
+  決定 1（reliable/lossy seq 名前空間分離）を agent / API / web / 契約に通し、#122 を根治する。

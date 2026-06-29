@@ -5,8 +5,14 @@
 // 命名は契約どおり「機能名」（detector / source_speaker）で持ち、緋/黄土などの擬人化・
 // 色トークンへの写像は UI 層（mapping.ts）に閉じ込める（契約 §3 注記）。
 
-/** 現行スキーマ版（契約 §2 `v`）。 */
-export const SCHEMA_VERSION = 1 as const;
+/**
+ * 現行スキーマ版（契約 §2 `v`）。
+ *
+ * v2（ADR-0021）: reliable/lossy で seq 名前空間を分離した破壊的変更。reliable イベントは
+ * 連続 `seq`、lossy イベント（status / transcript.partial / agent 由来 analysis.progress）は
+ * 欠番許容の `lossy_seq` を持つ。version 不一致は parse.ts が安全側に破棄する。
+ */
+export const SCHEMA_VERSION = 2 as const;
 
 /** agent → web のデータチャネル topic（契約 §1）。 */
 export const EVENTS_TOPIC = "sanba.events";
@@ -94,22 +100,44 @@ export interface Question {
 
 // ── §2 エンベロープ + §3 イベント ──────────────────────────────────────
 
+/**
+ * reliable ストリームのエンベロープ（ADR-0021）。`seq` は reliable イベント**だけ**で採番される
+ * 連続・単調増加の連番で、整列・重複排除・欠番検知の基準。lossy が落ちても穴が空かないため、
+ * web は `seq` の欠番だけを「本当の取りこぼし」として再ハイドレーションの契機にできる。
+ * web → agent のユーザー操作（§4.5）も web 発の reliable 連番として同形を使う。
+ */
 interface Envelope<T extends string> {
   v: number;
   type: T;
-  /** セッション内の単調増加連番。整列・重複排除・欠番検知の基準。 */
+  /** reliable ストリーム内の連続連番。整列・重複排除・欠番検知の基準。 */
   seq: number;
   /** ISO8601（agent 側の発行時刻）。 */
   ts: string;
   session_id: string;
 }
 
-export type StatusEvent = Envelope<"status"> & {
+/**
+ * lossy ストリームのエンベロープ（ADR-0021）。`lossy_seq` は lossy イベント専用の連番で、
+ * 通常のパケット欠落で**欠番が出る前提**。reliable の `seq` とは別空間なので、lossy が落ちても
+ * reliable seq は連続したままになり、誤ギャップ・不要な GET 再ハイドレーションを起こさない（#122）。
+ * lossy は「落ちても良い・後続で上書きされる」種別（status / transcript.partial 等）に使う。
+ */
+interface LossyEnvelope<T extends string> {
+  v: number;
+  type: T;
+  /** lossy ストリーム内の連番（欠番許容）。種別ごとの上書き/巻き戻し防止にのみ使う。 */
+  lossy_seq: number;
+  /** ISO8601（agent 側の発行時刻）。 */
+  ts: string;
+  session_id: string;
+}
+
+export type StatusEvent = LossyEnvelope<"status"> & {
   phase: SessionPhase;
   agents_active?: number;
 };
 
-export type TranscriptPartialEvent = Envelope<"transcript.partial"> & {
+export type TranscriptPartialEvent = LossyEnvelope<"transcript.partial"> & {
   speaker: string;
   role: string;
   utterance_id: string;
@@ -156,11 +184,23 @@ export type RequirementUpsertedEvent = Envelope<"requirement.upserted"> & {
   requirement: Requirement;
 };
 
-export type AnalysisProgressEvent = Envelope<"analysis.progress"> & {
+interface AnalysisProgressBody {
   asset_id: string;
   pct: number;
   stage: string;
-};
+}
+
+/**
+ * `analysis.progress` は**生産者によって reliable/lossy が異なる**二重生産者イベント（ADR-0021 / ADR-0023）:
+ * - アップロード解析（API publish / #145）: 数件の離散イベントなので **reliable**（`seq` を持つ）。
+ * - 会話中の画面共有由来（agent publish）: 高頻度・使い捨てなので **lossy**（`lossy_seq` を持つ）。
+ *
+ * よって型は reliable/lossy の union とし、web は**どちらの seq フィールドを持つか**で
+ * ストリームを判別する（`isLossyServerEvent`）。種別名だけでは判別できない。
+ */
+export type AnalysisProgressEvent =
+  | (Envelope<"analysis.progress"> & AnalysisProgressBody)
+  | (LossyEnvelope<"analysis.progress"> & AnalysisProgressBody);
 
 export type AnalysisVisualEvent = Envelope<"analysis.visual"> & {
   asset_id: string;
@@ -211,6 +251,34 @@ export type ServerEvent =
   | SessionCompletedEvent;
 
 export type ServerEventType = ServerEvent["type"];
+
+/** lossy ストリームのイベント（`lossy_seq` を持つ / ADR-0021）。 */
+export type LossyServerEvent = StatusEvent | TranscriptPartialEvent;
+
+/**
+ * イベントが lossy ストリームか（`lossy_seq` を持つか）で判定する（ADR-0021）。
+ *
+ * 種別名ではなく**フィールドの有無**で判別するのが要点。`analysis.progress` は API 由来なら
+ * reliable（`seq`）、agent 由来なら lossy（`lossy_seq`）の二重生産者なので、種別だけでは
+ * ストリームを決められない。lossy 判定されたイベントは gap 検知・seq 境界・maxSeq 前進の
+ * 対象外にする（落ちても reliable seq は連続するため誤ギャップを起こさない / #122）。
+ */
+export function isLossyServerEvent(
+  event: ServerEvent,
+): event is LossyServerEvent | (AnalysisProgressEvent & { lossy_seq: number }) {
+  return (
+    "lossy_seq" in event &&
+    typeof (event as { lossy_seq?: unknown }).lossy_seq === "number"
+  );
+}
+
+/**
+ * イベントの reliable `seq` を取り出す（reliable イベント専用 / ADR-0021）。
+ * lossy イベントには `seq` が無いため、呼び出し側は `isLossyServerEvent` で除外してから使う。
+ */
+export function reliableSeqOf(event: ServerEvent): number {
+  return (event as { seq: number }).seq;
+}
 
 // ── §4.5 web → agent ───────────────────────────────────────────────────
 

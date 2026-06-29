@@ -4,49 +4,66 @@
 // フロント先行着手の鍵。realtime-contract.md §3 の各種別を網羅し、05-detection /
 // 08-analysis / 09-scroll の要件票にある実例コピーをそのまま使う。
 //
-// seq は単調増加。重複排除・欠番検知のテストもこの列から派生させる。
+// seq は reliable/lossy で別名前空間（ADR-0021）。reliable は連続 seq、lossy（status /
+// transcript.partial / agent 由来 analysis.progress）は lossy_seq。重複排除・欠番検知の
+// テストもこの列から派生させる（lossy 欠番は gap にしない）。
 
-import type { Requirement, ServerEvent } from "./types";
+import { SCHEMA_VERSION, type Requirement, type ServerEvent } from "./types";
 
 const SESSION = "demo-session";
 const ts = (n: number) => new Date(2026, 5, 24, 12, 48, n % 60).toISOString();
 
-// 共通エンベロープ（v/session_id/seq）を補完する。union に対して Omit を分配させる
+// 共通エンベロープ（v/session_id/seq|lossy_seq）を補完する。union に対して Omit を分配させる
 // ため DistributiveOmit を使う（素の Omit は union の共通キーしか残さない）。
-type DistributiveOmit<T, K extends keyof T> = T extends unknown ? Omit<T, K> : never;
+type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
 
-function ev(
-  seq: number,
-  body: DistributiveOmit<ServerEvent, "v" | "session_id" | "seq">,
-): ServerEvent {
-  return { v: 1, session_id: SESSION, seq, ...body } as ServerEvent;
+type EventBody = DistributiveOmit<ServerEvent, "v" | "session_id" | "seq" | "lossy_seq">;
+
+// lossy ストリームで送る種別（ADR-0021）。fixture の analysis.progress は会話セッション由来＝
+// agent publish を模すため lossy 扱い（API アップロード解析は reliable / ADR-0023）。
+const LOSSY_TYPES: ReadonlySet<string> = new Set([
+  "status",
+  "transcript.partial",
+  "analysis.progress",
+]);
+
+// reliable/lossy を別カウンタで採番するファクトリ。reliable は連続 seq、lossy は lossy_seq。
+function makeFixture(bodies: EventBody[]): ServerEvent[] {
+  let relSeq = 0;
+  let lossySeq = 0;
+  return bodies.map((body) => {
+    const stamp = LOSSY_TYPES.has(body.type)
+      ? { lossy_seq: ++lossySeq }
+      : { seq: ++relSeq };
+    return { v: SCHEMA_VERSION, session_id: SESSION, ...stamp, ...body } as ServerEvent;
+  });
 }
 
 /**
  * 05/08/09 を一通り再現するイベント列。検索機能リニューアルの壁打ちを題材にする
  * （09-scroll.md「検索機能リニューアル · 確定12 · 検知6」のミニ版）。
  */
-export const contractEventFixture: ServerEvent[] = [
-  ev(1, { type: "status", ts: ts(1), phase: "listening" }),
-  ev(2, {
+export const contractEventFixture: ServerEvent[] = makeFixture([
+  { type: "status", ts: ts(1), phase: "listening" },
+  {
     type: "transcript.final",
     ts: ts(2),
     speaker: "顧客",
     role: "customer",
     utterance_id: "u1",
     text: "検索結果は関連度順で出したい。",
-  }),
-  ev(3, {
+  },
+  {
     type: "transcript.final",
     ts: ts(3),
     speaker: "PM",
     role: "pm",
     utterance_id: "u2",
     text: "さっきは新着順と言っていた気がします。",
-  }),
-  ev(4, { type: "status", ts: ts(4), phase: "deliberating", agents_active: 2 }),
+  },
+  { type: "status", ts: ts(4), phase: "deliberating", agents_active: 2 },
   // 矛盾検知（05 のボトムシート + 選択肢）。
-  ev(5, {
+  {
     type: "detection.contradiction",
     ts: ts(5),
     id: "d1",
@@ -57,9 +74,9 @@ export const contractEventFixture: ServerEvent[] = [
       { label: "新着順にする", value: "recency" },
     ],
     detector: "contradiction_detector",
-  }),
+  },
   // 抜け検知（05/08 の黄土）。
-  ev(6, {
+  {
     type: "detection.gap",
     ts: ts(6),
     id: "d2",
@@ -67,9 +84,9 @@ export const contractEventFixture: ServerEvent[] = [
     category: "scope",
     refs: ["u1"],
     detector: "scope_specialist",
-  }),
+  },
   // 要件が確定し始める（08/09）。
-  ev(7, {
+  {
     type: "requirement.upserted",
     ts: ts(7),
     requirement: requirement("r1", {
@@ -81,24 +98,24 @@ export const contractEventFixture: ServerEvent[] = [
       citations: [{ kind: "utterance", ref: "u1" }],
       status: "confirmed",
     }),
-  }),
-  // 素材アップロード → 解析の進捗（07/08）。
-  ev(8, {
+  },
+  // 素材アップロード → 解析の進捗（07/08）。fixture は会話由来＝lossy（lossy_seq）。
+  {
     type: "analysis.progress",
     ts: ts(8),
     asset_id: "a1",
     pct: 40,
     stage: "領域検出",
-  }),
-  ev(9, {
+  },
+  {
     type: "analysis.progress",
     ts: ts(9),
     asset_id: "a1",
     pct: 80,
     stage: "OCR",
-  }),
+  },
   // 言葉×画の矛盾（08）。
-  ev(10, {
+  {
     type: "analysis.visual",
     ts: ts(10),
     asset_id: "a1",
@@ -109,17 +126,17 @@ export const contractEventFixture: ServerEvent[] = [
         refs: ["u1"],
       },
     ],
-  }),
+  },
   // ユーザーが選択肢をタップ → agent 側で解消され resolved が返る（05 の往復）。
-  ev(11, {
+  {
     type: "detection.resolved",
     ts: ts(11),
     detection_id: "d1",
     resolution: "user_selected",
     selected_value: "relevance",
-  }),
+  },
   // 解消メモが要件として確定（09 の「解消」タグ相当）。
-  ev(12, {
+  {
     type: "requirement.upserted",
     ts: ts(12),
     requirement: requirement("r2", {
@@ -131,8 +148,8 @@ export const contractEventFixture: ServerEvent[] = [
       citations: [{ kind: "utterance", ref: "u2" }],
       status: "confirmed",
     }),
-  }),
-  ev(13, {
+  },
+  {
     type: "requirement.upserted",
     ts: ts(13),
     requirement: requirement("r3", {
@@ -144,14 +161,14 @@ export const contractEventFixture: ServerEvent[] = [
       citations: [{ kind: "utterance", ref: "u1" }],
       status: "draft",
     }),
-  }),
-  ev(14, {
+  },
+  {
     type: "session.completed",
     ts: ts(14),
     summary: { contradictions_resolved: 1, gaps_found: 1, issues_created: 3 },
     artifacts: [{ kind: "issue", url: "https://github.com/godhuu0505/sanba/issues/999" }],
-  }),
-];
+  },
+]);
 
 function requirement(
   id: string,
@@ -160,7 +177,7 @@ function requirement(
   return { id, ...rest };
 }
 
-/** ハイドレーション（GET /requirements）のモック。seq=6 までを反映済みとする。 */
+/** ハイドレーション（GET /requirements）のモック。reliable seq=6 までを反映済みとする。 */
 export const hydrationFixture: { items: Requirement[]; seq: number } = {
   seq: 6,
   items: [

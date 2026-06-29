@@ -24,7 +24,9 @@ from sanba_shared.repository import SessionRepository
 
 log = structlog.get_logger(__name__)
 
-SCHEMA_VERSION = 1
+# v2（ADR-0021）: reliable/lossy で seq 名前空間を分離。API のアップロード解析は離散・少数なので
+# reliable（`seq`）で publish する（会話由来の高頻度 analysis.progress=agent の lossy とは別扱い）。
+SCHEMA_VERSION = 2
 EVENTS_TOPIC = "sanba.events"
 
 # アップロード解析の「正直な」ステージ（ADR-0023 §1）。実体のない多段は作らない。

@@ -41,8 +41,10 @@ def test_progress_emits_contract_envelope_with_stage_pct() -> None:
     ev = sender.sent[0]["event"]
     assert sender.sent[0]["topic"] == EVENTS_TOPIC
     assert sender.sent[0]["reliable"] is True
-    assert ev["v"] == 1
+    assert ev["v"] == 2
     assert ev["type"] == "analysis.progress"
+    # API のアップロード解析は reliable なので seq（lossy_seq ではない）を持つ（ADR-0021）。
+    assert "lossy_seq" not in ev
     assert ev["session_id"] == "s1"
     assert ev["asset_id"] == "a1"
     assert ev["stage"] == "received"

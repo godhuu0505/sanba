@@ -22,40 +22,61 @@ from sanba_agent.events import (
     requirement_to_contract,
 )
 
-ENVELOPE_KEYS = {"v", "type", "seq", "ts", "session_id"}
+RELIABLE_ENVELOPE_KEYS = {"v", "type", "seq", "ts", "session_id"}
+LOSSY_ENVELOPE_KEYS = {"v", "type", "lossy_seq", "ts", "session_id"}
 
 
 @pytest.mark.asyncio
-async def test_envelope_has_required_fields() -> None:
+async def test_reliable_envelope_has_required_fields() -> None:
     t = RecordingTransport()
     pub = EventPublisher("s1", t)
-    env = await pub.status("listening")
-    assert ENVELOPE_KEYS <= set(env)
-    assert env["v"] == 1
-    assert env["type"] == "status"
+    env = await pub.detection_gap("d1", "性能が未確認", "non_functional", [])
+    assert RELIABLE_ENVELOPE_KEYS <= set(env)
+    assert "lossy_seq" not in env  # reliable は seq のみ（ADR-0021）
+    assert env["v"] == 2
     assert env["session_id"] == "s1"
     assert t.sent[0]["topic"] == EVENTS_TOPIC
 
 
 @pytest.mark.asyncio
-async def test_seq_is_monotonic_across_types() -> None:
+async def test_lossy_envelope_uses_lossy_seq() -> None:
+    # status は lossy（ADR-0021）。lossy_seq を持ち、reliable の seq は持たない。
     t = RecordingTransport()
     pub = EventPublisher("s1", t)
-    await pub.status("listening")
-    await pub.transcript_final("顧客", "customer", "u1", "検索したい")
-    await pub.detection_gap("d1", "性能が未確認", "non_functional", [])
-    seqs = [m["event"]["seq"] for m in t.sent]
-    assert seqs == [1, 2, 3]
+    env = await pub.status("listening")
+    assert LOSSY_ENVELOPE_KEYS <= set(env)
+    assert "seq" not in env
+    assert env["v"] == 2
+    assert env["type"] == "status"
+
+
+@pytest.mark.asyncio
+async def test_reliable_and_lossy_seq_are_independent_namespaces() -> None:
+    # reliable と lossy は別カウンタ（ADR-0021）。lossy（status / transcript.partial）が挟まっても
+    # reliable seq は連続し、web のギャップ検知が誤発火しない（#122）。
+    t = RecordingTransport()
+    pub = EventPublisher("s1", t)
+    await pub.status("listening")  # lossy_seq=1
+    await pub.transcript_final("顧客", "customer", "u1", "検索したい")  # seq=1
+    await pub.transcript_partial("顧客", "customer", "u2", "途中")  # lossy_seq=2
+    await pub.detection_gap("d1", "性能が未確認", "non_functional", [])  # seq=2
+    reliable_seqs = [m["event"]["seq"] for m in t.sent if "seq" in m["event"]]
+    lossy_seqs = [m["event"]["lossy_seq"] for m in t.sent if "lossy_seq" in m["event"]]
+    assert reliable_seqs == [1, 2]  # lossy を挟んでも reliable は連続
+    assert lossy_seqs == [1, 2]
 
 
 @pytest.mark.asyncio
 async def test_start_seq_seeds_monotonic_continuation() -> None:
-    # 再起動シミュレーション（#123）: 保存済み last_seq=5 からシードすると次イベントは seq=6。
+    # 再起動シミュレーション（#123）: 保存済み last_seq=5 からシードすると次 reliable seq=6。
     # 0 から振り直さないことで web の seq ガードが再起動後イベントを黙殺しない。
     t = RecordingTransport()
     pub = EventPublisher("s1", t, start_seq=5)
-    env = await pub.status("listening")
+    env = await pub.detection_gap("d1", "性能が未確認", "non_functional", [])
     assert env["seq"] == 6
+    # lossy も同じ start_seq からシードし、再起動直後の status 反映取りこぼし窓を最小化する。
+    lossy_env = await pub.status("listening")
+    assert lossy_env["lossy_seq"] == 6
 
 
 @pytest.mark.asyncio
@@ -150,8 +171,8 @@ async def test_question_asked_save_failure_does_not_send_or_consume_seq() -> Non
     assert t.sent == []  # 送られていない
     assert pub.seq == 0  # seq は消費されていない
     assert pub.questions_published == 0
-    # 次のイベントは欠番にならず seq=1 を採る。
-    env = await pub.status("listening")
+    # 次の reliable イベントは欠番にならず seq=1 を採る（question.asked は reliable / ADR-0021）。
+    env = await pub.detection_gap("d1", "性能が未確認", "non_functional", [])
     assert env["seq"] == 1
 
 

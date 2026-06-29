@@ -172,8 +172,9 @@
 |---|---|---|---|
 | データチャネル | data channel | LiveKit ルームの音声と同一接続で JSON イベントを publish する経路。 | [realtime-contract.md §1](design/realtime-contract.md) |
 | トピック | topic | `sanba.events`（agent→web）と `sanba.events.web`（web→agent）でトラフィックを分ける。 | [events.py](../apps/agent/src/sanba_agent/events.py) |
-| エンベロープ | envelope | 全イベント共通の枠 `v` / `type` / `seq` / `ts` / `session_id`。 | [realtime-contract.md §2](design/realtime-contract.md) |
-| シーケンス | `seq` | セッション内の単調増加連番。整列・重複排除・欠番検知の基準。 | [events.py](../apps/agent/src/sanba_agent/events.py) |
+| エンベロープ | envelope | 全イベント共通の枠 `v` / `type` / `ts` / `session_id` ＋ reliable は `seq` / lossy は `lossy_seq`（ADR-0021）。 | [realtime-contract.md §2](design/realtime-contract.md) |
+| シーケンス（reliable） | `seq` | reliable ストリーム専用の連続・単調増加連番。整列・重複排除・**欠番検知（ギャップ）の基準**。 | [events.py](../apps/agent/src/sanba_agent/events.py) |
+| シーケンス（lossy） | `lossy_seq` | lossy ストリーム（status / transcript.partial / 会話由来 analysis.progress）専用の連番。欠番許容で、落ちても reliable `seq` に穴を開けない＝誤ギャップを起こさない（#122 / ADR-0021）。 | [events.py](../apps/agent/src/sanba_agent/events.py) |
 | 冪等適用 | idempotent upsert | 同じ `(type, id)` は upsert、`seq` で順序を担保する web 側の適用規則。 | [realtime-contract.md §2](design/realtime-contract.md) |
 | ハイドレーション | hydration | リロード・途中参加時に GET でスナップショットを取得し、データチャネルのライブ差分と合流させる手順。 | [realtime-contract.md §4](design/realtime-contract.md) |
 | ユーザー選択 | `user.selection` | web→agent の唯一の書き込み系。検知カードの選択肢タップを `detection_id` / `selected_value` で返す。 | [realtime-contract.md §4.5](design/realtime-contract.md) |
