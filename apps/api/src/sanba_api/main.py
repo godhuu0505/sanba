@@ -61,6 +61,7 @@ from .github_app import (
     GitHubAppClient,
     InvalidLinkState,
     create_link_state,
+    redact_secrets,
     verify_link_state,
 )
 from .ingestion import ContextIndexer, chunk_text, extract_text_from_upload
@@ -645,11 +646,12 @@ def _index_repo_task(
                 max_total_bytes=settings.github_index_max_total_bytes,
                 max_file_bytes=settings.github_index_max_file_bytes,
             )
-            # SessionMeta 保存用の要約は PII マスクする（Firestore at-rest / 発話保存と同方針）。
-            # ES 経路は index_context が別途マスクするが、これは直接 Firestore へ入る（Codex P2）。
-            summary = (
-                mask_pii(outcome.summary) if settings.mask_pii_before_index else outcome.summary
-            )
+            # SessionMeta 保存用の要約は秘匿レダクト＋PII マスクする（Firestore at-rest / agent
+            # premise に直接入るため）。要約には repo description が redact 前で混じるので、ES 経路
+            # （index_context が別途マスク）とは別に保存前にも両方を通す（Codex P2）。
+            summary = redact_secrets(outcome.summary)
+            if settings.mask_pii_before_index:
+                summary = mask_pii(summary)
             if outcome.failed:
                 status = GitHubIndexStatus.FAILED
             elif outcome.partial:

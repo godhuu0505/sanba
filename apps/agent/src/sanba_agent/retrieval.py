@@ -74,6 +74,16 @@ class GroundingStore:
 
     def _ensure_index(self) -> None:  # pragma: no cover - needs live ES
         if self._client.indices.exists(index=INDEX):
+            # 既存 index は PR 以前の mapping で作られている可能性がある。session_id が keyword で
+            # 無いと term フィルタ（session スコープ / ADR-0025）がヒットせず context が検索から
+            # 消えるため、起動時に keyword mapping を明示する（既に keyword なら冪等・型衝突時は
+            # ログのみで会話は止めない / Codex P2）。
+            try:
+                self._client.indices.put_mapping(
+                    index=INDEX, properties={"session_id": {"type": "keyword"}}
+                )
+            except Exception as exc:
+                log.warning("ensure_session_id_mapping_failed", error=str(exc))
             return
         self._client.indices.create(
             index=INDEX,

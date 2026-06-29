@@ -99,6 +99,15 @@ class ContextIndexer:
                         }
                     },
                 )
+            else:
+                # 既存 index に session_id keyword mapping を明示する（PR 以前作成の index で
+                # session スコープの term フィルタが効くように。冪等 / Codex P2）。
+                try:
+                    client.indices.put_mapping(
+                        index=INDEX, properties={"session_id": {"type": "keyword"}}
+                    )
+                except Exception as exc:
+                    log.warning("ensure_session_id_mapping_failed", error=str(exc))
             return client
         except Exception as exc:  # pragma: no cover - depends on env
             log.warning("elasticsearch_unavailable_using_memory", error=str(exc))

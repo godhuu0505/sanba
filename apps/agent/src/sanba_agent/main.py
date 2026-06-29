@@ -491,11 +491,16 @@ class SANBAAgent(Agent):
         # 現在の commit sha を持つ repo chunk 以外は落とし、stale な断片を会話に出さない
         # （Codex P2。source は github:{repo}@{branch}@{sha}:{path} 形式で sha を内包）。
         # stale 除外で上位が削られても現在 repo の有効 chunk が残るよう、多めに取得してから絞る。
+        # owner が連携解除/権限剥奪したら、索引済み repo chunk を検索時に遮断する（query-time
+        # access control / ADR-0025・Codex P2）。共有索引は消さない方針なので、ここで弾く。
         want = 4
-        current_sha = self._current_repo_sha()
-        fetch_k = want * 4 if current_sha is not None else want
+        current_sha, revoked = self._repo_access()
+        fetch_k = want * 4 if (current_sha is not None or revoked) else want
         passages = self._grounding.search(query, k=fetch_k, session_id=self._session_id)
-        if current_sha is not None:
+        if revoked:
+            # 連携が無効: あらゆる repo 索引 chunk（github:）を落とす。
+            passages = [p for p in passages if not p.source.startswith("github:")]
+        elif current_sha is not None:
             passages = [p for p in passages if not _is_stale_repo_passage(p.source, current_sha)]
         passages = passages[:want]
         log.info("grounding_search", session=self._session_id, query=query, hits=len(passages))
@@ -506,13 +511,25 @@ class SANBAAgent(Agent):
             ]
         }
 
-    def _current_repo_sha(self) -> str | None:
-        """セッションに紐づいた repo の現在 commit sha（stale repo chunk の峻別に使う）。"""
+    def _repo_access(self) -> tuple[str | None, bool]:
+        """(現在の commit sha, 連携無効か) を返す（repo chunk の峻別・遮断に使う）。
+
+        セッションに repo が紐づいているのに owner の GitHub 連携が消えていれば revoked=True。
+        Firestore 不通時は安全側に倒し、repo 紐づけがあるなら revoked 扱いにする。
+        """
         try:
             meta = self._repo.get_session(self._session_id)
         except Exception:  # pragma: no cover - depends on backend
-            return None
-        return meta.github_commit_sha if meta is not None else None
+            return None, False
+        if meta is None or not meta.github_repo:
+            return None, False
+        try:
+            link = self._repo.get_github_link(meta.owner_sub)
+        except Exception:  # pragma: no cover - depends on backend
+            return meta.github_commit_sha, True
+        if link is None:
+            return meta.github_commit_sha, True
+        return meta.github_commit_sha, False
 
     @function_tool
     async def export_requirements_to_github(self, _ctx: RunContext) -> dict:

@@ -92,3 +92,36 @@ def test_is_stale_repo_passage_filters_other_sha() -> None:
     # 知識や env connector 形式（@ なし）は対象外。
     assert _is_stale_repo_passage("knowledge:reqs#1", "shaNEW") is False
     assert _is_stale_repo_passage("github:o/r#readme", "shaNEW") is False
+
+
+def test_unlinked_owner_blocks_repo_passages(monkeypatch) -> None:
+    # owner が連携解除したら、索引済み repo chunk を検索時に遮断する（query-time ACL / ADR-0025）。
+    from sanba_shared.models import GitHubIndexStatus, SessionMeta
+    from sanba_shared.repository import SessionRepository
+
+    from sanba_agent.main import SANBAAgent
+
+    repo = SessionRepository()
+    assert repo._client is None
+    repo.create_session_doc(
+        SessionMeta(id="sess-x", title="t", owner_sub="owner", owner_email="o@example.com")
+    )
+    repo.set_session_github(
+        "sess-x",
+        repo="octo/r",
+        branch="main",
+        commit_sha="sha1",
+        index_status=GitHubIndexStatus.READY,
+    )
+    from sanba_shared.models import GitHubLink
+
+    grounding = GroundingStore()
+    grounding.index_passage("repo code", "github:octo/r@main@sha1:a.py", "context", "sess-x")
+
+    agent = SANBAAgent("sess-x", repo, grounding)
+    # 連携あり → revoked=False。
+    repo.set_github_link(GitHubLink(sub="owner", installation_id=1, github_login="octo"))
+    assert agent._repo_access() == ("sha1", False)
+    # 連携解除 → revoked=True（共有索引は消さず query 時に遮断する）。
+    repo.delete_github_link("owner")
+    assert agent._repo_access() == ("sha1", True)
