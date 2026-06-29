@@ -144,6 +144,20 @@ describe("selectMaterials", () => {
   it("空なら空配列", () => {
     expect(selectMaterials({ analysis: [] })).toEqual([]);
   });
+
+  // #143 / ADR-0023: API は失敗時 stage="failed" を pct=100 で送る。pct だけ見ると done と
+  // 誤判定するため stage を優先して failed にし、再試行導線（MaterialsList）へ繋ぐ。
+  it("stage='failed' は pct=100 でも failed（done と誤判定しない）", () => {
+    expect(
+      selectMaterials({ analysis: [analysis({ asset_id: "a4", pct: 100, stage: "failed" })] }),
+    ).toEqual([{ id: "a4", name: "a4", pct: 100, status: "failed" }]);
+  });
+
+  it("stage='received' は解析中（受領直後・pct=10）", () => {
+    expect(
+      selectMaterials({ analysis: [analysis({ asset_id: "a5", pct: 10, stage: "received" })] }),
+    ).toEqual([{ id: "a5", name: "a5", pct: 10, status: "analyzing" }]);
+  });
 });
 
 // 05-1 資料詳細（#202）。抽出要件の中身と言葉×画の矛盾を含む詳細ビューモデル。
@@ -212,6 +226,15 @@ describe("selectMaterialDetail", () => {
   it("該当 asset_id の解析状態が無ければ null", () => {
     expect(selectMaterialDetail({ analysis: [analysis({ asset_id: "a1" })] }, "missing")).toBeNull();
     expect(selectMaterialDetail({ analysis: [] }, "a1")).toBeNull();
+  });
+
+  it("stage='failed' は failed・analysisReady=false（抽出/矛盾を確定値としない）", () => {
+    const detail = selectMaterialDetail(
+      { analysis: [analysis({ asset_id: "a7", pct: 100, stage: "failed" })] },
+      "a7",
+    );
+    expect(detail?.status).toBe("failed");
+    expect(detail?.analysisReady).toBe(false);
   });
 });
 

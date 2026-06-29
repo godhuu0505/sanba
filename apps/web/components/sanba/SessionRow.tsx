@@ -1,12 +1,16 @@
 import * as React from "react";
-import { Slot } from "@radix-ui/react-slot";
+import { Slot, Slottable } from "@radix-ui/react-slot";
 
 import { cn } from "@/lib/utils";
 import { Chip } from "./Chip";
 
 /**
  * 管理ホームのセッション一覧 1 行。標題＋メタ（招待者・日付）＋操作ピル。
- * `asChild` でカード全体をリンク化できる。
+ *
+ * `asChild` でカード全体をリンク化できる（#162）。内容を複数の子として描画するため、
+ * Slottable で host 要素（利用側の <a> 等）を 1 つのマージ対象として印付けし、他の子を
+ * その中へ入れて Radix Slot の「単一子のみ」制約によるクラッシュを避ける。利用例:
+ *   <SessionRow asChild title="…"><a href="/s/1" /></SessionRow>
  */
 export interface SessionRowProps extends Omit<React.HTMLAttributes<HTMLElement>, "title"> {
   title: React.ReactNode;
@@ -17,7 +21,7 @@ export interface SessionRowProps extends Omit<React.HTMLAttributes<HTMLElement>,
 }
 
 export const SessionRow = React.forwardRef<HTMLElement, SessionRowProps>(
-  ({ className, title, meta, action = "検める ›", asChild, ...props }, ref) => {
+  ({ className, title, meta, action = "検める ›", asChild, children, ...props }, ref) => {
     const Comp: React.ElementType = asChild ? Slot : "div";
     return (
       <Comp
@@ -37,6 +41,8 @@ export const SessionRow = React.forwardRef<HTMLElement, SessionRowProps>(
         <Chip tone="gold" className="shrink-0">
           {action}
         </Chip>
+        {/* asChild 時の host 要素（利用側の <a> 等）。上記の子はこの中に入る。 */}
+        <Slottable>{children}</Slottable>
       </Comp>
     );
   },

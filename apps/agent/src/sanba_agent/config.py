@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     google_genai_use_vertexai: bool = False
     google_cloud_project: str = "sanba-dev"
     google_cloud_location: str = "us-central1"
-    gemini_live_model: str = "gemini-2.0-flash-live-001"
+    gemini_live_model: str = "gemini-live-2.5-flash-native-audio"
     gemini_reasoning_model: str = "gemini-2.5-flash"
 
     # LiveKit
@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     # Elasticsearch (RAG grounding + past-session search)
     elasticsearch_url: str = ""
     elasticsearch_api_key: str = ""
-    gemini_embed_model: str = "text-embedding-004"
+    gemini_embed_model: str = "gemini-embedding-001"
 
     # Data governance (issue #10)
     mask_pii_before_index: bool = True

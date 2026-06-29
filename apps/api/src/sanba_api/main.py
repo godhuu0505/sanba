@@ -24,6 +24,7 @@ from typing import Any
 import structlog
 from fastapi import Depends, FastAPI, File, Header, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from livekit import api
 from pydantic import BaseModel
 from sanba_shared.models import Requirement, RequirementStatus, SessionMeta
@@ -50,6 +51,14 @@ from .observability import (
     record_rate_limited,
     setup_observability,
 )
+from .realtime import (
+    STAGE_ANALYZING,
+    STAGE_FAILED,
+    STAGE_RECEIVED,
+    AnalysisPublisher,
+    NullSender,
+    build_sender,
+)
 from .repository import ReadRepository
 from .storage import (
     AssetStore,
@@ -74,6 +83,51 @@ def _get_tracer() -> Any:
 
 
 app = FastAPI(title="SANBA API", version="0.2.0")
+
+# In-memory per-IP rate limiter for the join endpoint. Stateless workers can use
+# a shared store (Redis/Firestore) later; this is enough to blunt abuse in the MVP.
+_join_hits: dict[str, deque[float]] = defaultdict(deque)
+
+
+def _over_rate_limit(client_ip: str) -> bool:
+    """sliding-window で join が上限超過なら True（上限内なら副作用でヒットを記録）。
+
+    判定を関数に切り出し、body 解析より前のミドルウェア層から呼ぶ（#258）。
+    """
+    window_start = time.time() - 60
+    hits = _join_hits[client_ip]
+    while hits and hits[0] < window_start:
+        hits.popleft()
+    if len(hits) >= settings.join_rate_per_minute:
+        return True
+    hits.append(time.time())
+    return False
+
+
+@app.middleware("http")
+async def _rate_limit_join(request: Request, call_next: Any) -> Any:
+    """join のレートリミットを body 解析より前（ミドルウェア層）で適用する（#258 / #80）。
+
+    FastAPI ルートの依存性（Depends）は request body の読み取り・JSON/Pydantic 解析の後に
+    解決される（routing.py: body→solve_dependencies の順）。そのため依存性版（#80）は、未認証
+    スパムが壊れた/巨大 JSON を送ると解析コストだけを発生させ続けられる穴が残っていた。Starlette
+    の HTTP ミドルウェアは body 読み取り前に走るので、POST /api/sessions/join のみ上限判定し、
+    超過時は body に触れず 429 を返す。CORS より内側で動くよう CORS の前に登録し、429 応答にも
+    CORS ヘッダが付くようにする（ミドルウェアは後から add した方が外側になる）。
+    """
+    if request.method == "POST" and request.url.path == "/api/sessions/join":
+        client_ip = request.client.host if request.client else "unknown"
+        if _over_rate_limit(client_ip):
+            # 認証より前に短絡するため auth イベントに現れない。DoS 緩和の発火をログ＋
+            # メトリクスで本番検知できるようにする（#257 Codex / CLAUDE.md 原則3）。
+            log.warning(
+                "join_rate_limited", client_ip=client_ip, limit=settings.join_rate_per_minute
+            )
+            record_rate_limited()
+            return JSONResponse(status_code=429, content={"detail": "rate limit exceeded"})
+    return await call_next(request)
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[o.strip() for o in settings.allowed_origins.split(",")],
@@ -82,10 +136,6 @@ app.add_middleware(
 )
 # OTLP エンドポイントが設定されていれば分散トレースを有効化する (未設定なら no-op)。
 setup_observability(app)
-
-# In-memory per-IP rate limiter for the join endpoint. Stateless workers can use
-# a shared store (Redis/Firestore) later; this is enough to blunt abuse in the MVP.
-_join_hits: dict[str, deque[float]] = defaultdict(deque)
 
 # Context indexer shares the agent's Elasticsearch grounding index (issue #6).
 _indexer = ContextIndexer()
@@ -145,31 +195,6 @@ def _confirmed_requirements(session_id: str) -> list[dict[str, Any]]:
     この関数を呼ばない＝確定判定が finalize と export で重複しない（重複定義禁止）。
     """
     return [r for r in _read_repo.list_requirements(session_id) if r["status"] == "confirmed"]
-
-
-def _rate_limit(client_ip: str) -> None:
-    window_start = time.time() - 60
-    hits = _join_hits[client_ip]
-    while hits and hits[0] < window_start:
-        hits.popleft()
-    if len(hits) >= settings.join_rate_per_minute:
-        # 認証より前に 429 で短絡するため auth イベントには現れない。DoS 緩和が発動した
-        # ことを本番で検知できるよう、ログ＋メトリクスに残す（#257 Codex / 原則3）。
-        log.warning("join_rate_limited", client_ip=client_ip, limit=settings.join_rate_per_minute)
-        record_rate_limited()
-        raise HTTPException(status_code=429, detail="rate limit exceeded")
-    hits.append(time.time())
-
-
-def _require_rate_limit(request: Request) -> None:
-    """認証より先に join のレートリミットを掛ける依存性 (#80)。
-
-    FastAPI は同レベルの依存性を宣言順かつ *パス関数本体の前* に解決する。
-    本依存性を ``require_user`` より前に宣言することで、Authorization ヘッダーが
-    無い/壊れたリクエストでも認証検証へ到達する前にレート制限を適用できる
-    （壊れた Bearer 連打で認証経路だけを叩き続けられる穴を塞ぐ）。
-    """
-    _rate_limit(request.client.host if request.client else "unknown")
 
 
 # ---- Schemas ---------------------------------------------------------------
@@ -441,6 +466,22 @@ async def add_context_file(
         if span is not None:
             span.set_attribute("sanba.asset.id", asset.asset_id)
 
+        # 解析の境界を web へ live 配信する（#145 / ADR-0023）。publish は付加価値なので
+        # 失敗してもアップロードを止めない（GET context/files でも状態を復元できる）。
+        sender = (
+            build_sender(
+                settings.livekit_url,
+                settings.livekit_api_key,
+                settings.livekit_api_secret,
+                session_id,
+            )
+            if settings.enable_realtime_publish
+            else NullSender()
+        )
+        publisher = AnalysisPublisher(session_id, sender, _repo)
+        with contextlib.suppress(Exception):
+            await publisher.progress(asset.asset_id, STAGE_RECEIVED)
+
         # 動画解析は未実装: 保存のみ済ませ、web には「準備中」を返す。
         if kind == "video" and not settings.enable_video_analysis:
             record_asset_upload("video", "pending")
@@ -463,7 +504,16 @@ async def add_context_file(
             )
 
         # 画像: Gemini で観察を抽出し、grounding 索引へ（asset を出所に紐づける）。
-        observations = analyze_image(raw, content_type)
+        with contextlib.suppress(Exception):
+            await publisher.progress(asset.asset_id, STAGE_ANALYZING)
+        try:
+            observations = analyze_image(raw, content_type)
+        except Exception:
+            # 解析失敗を web へ通知し再試行導線を出せるようにする（ADR-0023 §3）。
+            with contextlib.suppress(Exception):
+                await publisher.progress(asset.asset_id, STAGE_FAILED)
+            record_asset_upload(kind, "rejected")
+            raise
         indexed = 0
         if observations:
             indexed = _indexer.index_context(session_id, observations, f"asset:{asset.asset_id}")
@@ -475,6 +525,9 @@ async def add_context_file(
                 asset.asset_id, filename, kind, status="done", extracted=len(observations)
             ),
         )
+        # 解析完了を web へ（pct=100・抽出要件）。conflicts は突合実装まで空（ADR-0023 §2）。
+        with contextlib.suppress(Exception):
+            await publisher.visual(asset.asset_id, observations)
         log.info(
             "asset_analyzed",
             session=session_id,
@@ -573,7 +626,6 @@ def delete_context_file(
 @app.post("/api/sessions/join", response_model=JoinResponse)
 def join_session(
     req: JoinRequest,
-    _rl: None = Depends(_require_rate_limit),  # auth より先に解決させる (#80)
     user: AuthUser = Depends(require_user),
 ) -> JoinResponse:
     """Exchange a valid invite for a scoped, short-lived LiveKit token.

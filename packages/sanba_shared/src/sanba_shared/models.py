@@ -104,5 +104,8 @@ class AnalysisResult(BaseModel):
 
     summary: str
     open_topics: list[str] = Field(default_factory=list)
+    # 触れられているが基準が曖昧な論点（矛盾でも抜けでもない第三類 / #260・ADR-0022）。
+    # open_topics（未確認の抜け）と区別し、detection.ambiguous として発火する。
+    ambiguous_topics: list[str] = Field(default_factory=list)
     next_question: str
     suggested_answer: str

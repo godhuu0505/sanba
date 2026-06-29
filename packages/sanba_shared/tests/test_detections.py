@@ -48,6 +48,31 @@ def test_set_session_seq() -> None:
     assert repo._mem_seq["s1"] == 7
 
 
+def test_get_session_seq_roundtrip_and_default() -> None:
+    # 未保存セッションは 0（新規）。保存後は読み戻せる（#123 再起動後の seq シード）。
+    repo = _mem_repo()
+    assert repo.get_session_seq("unknown") == 0
+    repo.set_session_seq("s1", 12)
+    assert repo.get_session_seq("s1") == 12
+
+
+def test_reserve_session_seq_allocates_monotonic_intervals() -> None:
+    # API は同じ seq 空間を共有する（#145・ADR-0023）。予約は単調増加の区間を返す。
+    repo = _mem_repo()
+    assert repo.reserve_session_seq("s1") == 1  # 先頭 1
+    assert repo.reserve_session_seq("s1") == 2  # 次は 2
+    assert repo.reserve_session_seq("s1", count=3) == 3  # 3,4,5 を確保
+    assert repo.get_session_seq("s1") == 5  # last_seq は 5 まで前進
+    assert repo.reserve_session_seq("s1") == 6  # 区間の後に継ぐ
+
+
+def test_reserve_session_seq_continues_from_persisted_last_seq() -> None:
+    # 既存 last_seq（agent が進めた値）の続きから予約する（seq 空間の共有）。
+    repo = _mem_repo()
+    repo.set_session_seq("s1", 10)
+    assert repo.reserve_session_seq("s1") == 11
+
+
 def test_save_and_list_materials() -> None:
     # 素材メタを永続化し、GET /context/files の復元に使える（#184・Codex P1）。
     repo = _mem_repo()

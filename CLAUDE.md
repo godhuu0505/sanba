@@ -38,6 +38,11 @@
   Trivy、`codeql.yml`、`dependabot.yml`）の結果を確認する。advisory は段階的に解消する。
 - シークレットは絶対にコミットしない（gitleaks が検出）。`.env`（gitignore 済）と Secret Manager を使う。
 - コンテナは非 root 実行・最小ベースを維持する。
+- GitHub Actions（供給網・最小権限）:
+  - GitHub 製以外の Action は **commit full SHA でピン**する（`@vX` タグ運用は禁止。バージョンはコメントで併記し、Dependabot が更新する）。
+  - ワークフロー内で `curl | sh` 等で入れるツールは**バージョン固定＋チェックサム照合**にする（例: `terraform.yml` の SHA256SUMS 照合）。
+  - 各ワークフローは top-level `permissions:` を既定 `contents: read` にし、書き込みが要るジョブだけ昇格する（既定 `GITHUB_TOKEN` を read-only 運用するための前提）。
+  - リポジトリ設定面のハードニング（fork PR の Actions 承認・Secret scanning / push protection・branch protection 等）は `docs/security.md §8` を参照。
 
 ## やってはいけないこと
 - 単発の Gemini API 呼び出しを「エージェント」と称する薄い実装。
