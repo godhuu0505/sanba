@@ -15,6 +15,8 @@ from typing import Any
 import structlog
 
 from .models import (
+    GitHubIndexStatus,
+    GitHubLink,
     Requirement,
     RequirementStatus,
     SessionMeta,
@@ -59,6 +61,8 @@ class SessionRepository:
         # 現在の未回答質問の単一ポインタ (#212 / ADR-0020)。最新1問モデルなのでセッション
         # ごとに 1 ドキュメント。tombstone（cleared）も含めて保持し GET で cleared_seq を返す。
         self._mem_questions: dict[str, dict[str, Any]] = {}
+        # ユーザーの GitHub App 連携 (`users/{sub}` / ADR-0025)。sub -> GitHubLink。
+        self._mem_github_links: dict[str, GitHubLink] = {}
 
     @staticmethod
     def _init_client():  # type: ignore[no-untyped-def]
@@ -165,6 +169,83 @@ class SessionRepository:
         else:
             self._mem_sessions[session_id] = updated
         return updated
+
+    def set_session_github(
+        self,
+        session_id: str,
+        *,
+        repo: str | None,
+        branch: str | None,
+        commit_sha: str | None,
+        index_status: GitHubIndexStatus,
+    ) -> SessionMeta | None:
+        """セッションに紐づけた GitHub repo/branch/sha/索引状態を保存する (ADR-0025)。
+
+        agent は `SessionMeta` を読んで要約をシードし、web は状態表示・進捗に使う。
+        存在しなければ None。merge 保存で他フィールド（要件確定スナップショット等）を温存する。
+        """
+        meta = self.get_session(session_id)
+        if meta is None:
+            return None
+        updated = meta.model_copy(
+            update={
+                "github_repo": repo,
+                "github_branch": branch,
+                "github_commit_sha": commit_sha,
+                "github_index_status": index_status,
+            }
+        )
+        if self._client is not None:
+            self._client.collection("sessions").document(session_id).set(
+                {
+                    "github_repo": repo,
+                    "github_branch": branch,
+                    "github_commit_sha": commit_sha,
+                    "github_index_status": index_status.value,
+                },
+                merge=True,
+            )
+        else:
+            self._mem_sessions[session_id] = updated
+        return updated
+
+    # ---- User GitHub link (`users/{sub}` / ADR-0025) -----------------------
+    def get_github_link(self, sub: str) -> GitHubLink | None:
+        """ユーザー (Google sub) の GitHub App 連携を取得する。未連携なら None。"""
+        if self._client is not None:
+            snap = self._client.collection("users").document(sub).get()
+            if not snap.exists:
+                return None
+            data = snap.to_dict() or {}
+            github = data.get("github")
+            return GitHubLink.model_validate(github) if github else None
+        return self._mem_github_links.get(sub)
+
+    def set_github_link(self, link: GitHubLink) -> None:
+        """ユーザーの GitHub App 連携を upsert する。生トークンは保存しない (ADR-0025)。"""
+        if self._client is not None:
+            self._client.collection("users").document(link.sub).set(
+                {"github": link.model_dump(mode="json")}, merge=True
+            )
+            return
+        self._mem_github_links[link.sub] = link
+
+    def delete_github_link(self, sub: str) -> bool:
+        """連携解除: `users/{sub}` の installation 記録のみ削除する (ADR-0025)。
+
+        共有 (repo,branch,sha) 索引は他 installation が参照し得るため消さない。
+        記録があれば True（冪等: 無くても安全に False）。
+        """
+        if self._client is not None:
+            from google.cloud import firestore
+
+            ref = self._client.collection("users").document(sub)
+            snap = ref.get()
+            if not snap.exists or not (snap.to_dict() or {}).get("github"):
+                return False
+            ref.set({"github": firestore.DELETE_FIELD}, merge=True)
+            return True
+        return self._mem_github_links.pop(sub, None) is not None
 
     # ---- Utterances --------------------------------------------------------
     def add_utterance(self, session_id: str, utterance: Utterance) -> None:
