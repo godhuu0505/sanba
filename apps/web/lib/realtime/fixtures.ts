@@ -26,9 +26,13 @@ function ev(
  * 05/08/09 を一通り再現するイベント列。検索機能リニューアルの壁打ちを題材にする
  * （09-scroll.md「検索機能リニューアル · 確定12 · 検知6」のミニ版）。
  */
+// 注（#122・ADR-0021）: reliable イベントは seq を 1 から連続で採る。lossy（status）は reliable
+// seq を消費せず**現在値を echo**し（reliable:false）、独立の lossy_seq で順序付ける。これにより
+// lossy が落ちても reliable seq に穴が空かない（誤ギャップを出さない）。
 export const contractEventFixture: ServerEvent[] = [
-  ev(1, { type: "status", ts: ts(1), phase: "listening" }),
-  ev(2, {
+  // status は lossy。まだ reliable が無いので seq=0 を echo、lossy_seq=1。
+  ev(0, { type: "status", ts: ts(1), phase: "listening", reliable: false, lossy_seq: 1 }),
+  ev(1, {
     type: "transcript.final",
     ts: ts(2),
     speaker: "顧客",
@@ -36,7 +40,7 @@ export const contractEventFixture: ServerEvent[] = [
     utterance_id: "u1",
     text: "検索結果は関連度順で出したい。",
   }),
-  ev(3, {
+  ev(2, {
     type: "transcript.final",
     ts: ts(3),
     speaker: "PM",
@@ -44,9 +48,17 @@ export const contractEventFixture: ServerEvent[] = [
     utterance_id: "u2",
     text: "さっきは新着順と言っていた気がします。",
   }),
-  ev(4, { type: "status", ts: ts(4), phase: "deliberating", agents_active: 2 }),
-  // 矛盾検知（05 のボトムシート + 選択肢）。
-  ev(5, {
+  // status（lossy）: 現在の reliable seq=2 を echo、lossy_seq=2。reliable seq は消費しない。
+  ev(2, {
+    type: "status",
+    ts: ts(4),
+    phase: "deliberating",
+    agents_active: 2,
+    reliable: false,
+    lossy_seq: 2,
+  }),
+  // 矛盾検知（05 のボトムシート + 選択肢）。reliable seq=3。
+  ev(3, {
     type: "detection.contradiction",
     ts: ts(5),
     id: "d1",
@@ -59,7 +71,7 @@ export const contractEventFixture: ServerEvent[] = [
     detector: "contradiction_detector",
   }),
   // 抜け検知（05/08 の黄土）。
-  ev(6, {
+  ev(4, {
     type: "detection.gap",
     ts: ts(6),
     id: "d2",
@@ -69,7 +81,7 @@ export const contractEventFixture: ServerEvent[] = [
     detector: "scope_specialist",
   }),
   // 要件が確定し始める（08/09）。
-  ev(7, {
+  ev(5, {
     type: "requirement.upserted",
     ts: ts(7),
     requirement: requirement("r1", {
@@ -83,14 +95,14 @@ export const contractEventFixture: ServerEvent[] = [
     }),
   }),
   // 素材アップロード → 解析の進捗（07/08）。
-  ev(8, {
+  ev(6, {
     type: "analysis.progress",
     ts: ts(8),
     asset_id: "a1",
     pct: 40,
     stage: "領域検出",
   }),
-  ev(9, {
+  ev(7, {
     type: "analysis.progress",
     ts: ts(9),
     asset_id: "a1",
@@ -98,7 +110,7 @@ export const contractEventFixture: ServerEvent[] = [
     stage: "OCR",
   }),
   // 言葉×画の矛盾（08）。
-  ev(10, {
+  ev(8, {
     type: "analysis.visual",
     ts: ts(10),
     asset_id: "a1",
@@ -111,7 +123,7 @@ export const contractEventFixture: ServerEvent[] = [
     ],
   }),
   // ユーザーが選択肢をタップ → agent 側で解消され resolved が返る（05 の往復）。
-  ev(11, {
+  ev(9, {
     type: "detection.resolved",
     ts: ts(11),
     detection_id: "d1",
@@ -119,7 +131,7 @@ export const contractEventFixture: ServerEvent[] = [
     selected_value: "relevance",
   }),
   // 解消メモが要件として確定（09 の「解消」タグ相当）。
-  ev(12, {
+  ev(10, {
     type: "requirement.upserted",
     ts: ts(12),
     requirement: requirement("r2", {
@@ -132,7 +144,7 @@ export const contractEventFixture: ServerEvent[] = [
       status: "confirmed",
     }),
   }),
-  ev(13, {
+  ev(11, {
     type: "requirement.upserted",
     ts: ts(13),
     requirement: requirement("r3", {
@@ -145,7 +157,7 @@ export const contractEventFixture: ServerEvent[] = [
       status: "draft",
     }),
   }),
-  ev(14, {
+  ev(12, {
     type: "session.completed",
     ts: ts(14),
     summary: { contradictions_resolved: 1, gaps_found: 1, issues_created: 3 },

@@ -102,6 +102,10 @@ class EventPublisher:
         # 再起動後も seq を単調増加させるため、保存済み last_seq でシード（#123・ADR-0021）。
         # 既定 0（新規）。永続値の読み出しは呼び出し側（repo.get_session_seq）。
         self._seq = start_seq
+        # lossy（status/transcript.partial）専用カウンタ（#122・ADR-0021）。reliable seq と別系統。
+        # lossy は reliable seq を消費せず echo するので、欠落しても reliable seq に穴を空けず
+        # web の誤ギャップ・不要な再ハイドレーションを防ぐ。ephemeral（永続化しない）。
+        self._lossy_seq = 0
         self._lock = asyncio.Lock()
         # 観測性: 要件数・検知数を種別ごとに計測（契約 §5 / ADR-0005 評価へ）。
         # session.completed のサマリを実測から組み立てるため、抜け/矛盾/解消を分けて持つ。
@@ -127,10 +131,20 @@ class EventPublisher:
     async def _emit(
         self, type_: str, payload: dict[str, Any], *, reliable: bool = True
     ) -> dict[str, Any]:
-        # ロックで seq 採番〜送信を直列化し、単調増加と配信順序を保証する。
+        # ロックで採番〜送信を直列化し、単調増加と配信順序を保証する。
         async with self._lock:
-            self._seq += 1
-            envelope = self._build_envelope(type_, self._seq, payload)
+            if reliable:
+                # reliable: 要件/検知/question/analysis/session.completed 等。欠番検知の対象。
+                self._seq += 1
+                envelope = self._build_envelope(type_, self._seq, payload, reliable=True)
+            else:
+                # lossy（status/transcript.partial）: reliable seq を消費せず現在値を echo し、
+                # 独立の lossy_seq で順序付ける（#122・ADR-0021）。これで lossy 欠落が reliable
+                # seq に穴を空けず、web の誤ギャップ判定・不要な GET 再取得を防ぐ。
+                self._lossy_seq += 1
+                envelope = self._build_envelope(
+                    type_, self._seq, payload, reliable=False, lossy_seq=self._lossy_seq
+                )
             await self._send_envelope(envelope, reliable=reliable)
             return envelope
 
@@ -165,15 +179,29 @@ class EventPublisher:
                 raise EventPublishError(f"publish failed after commit: {type_} seq={seq}")
             return envelope
 
-    def _build_envelope(self, type_: str, seq: int, payload: dict[str, Any]) -> dict[str, Any]:
-        return {
+    def _build_envelope(
+        self,
+        type_: str,
+        seq: int,
+        payload: dict[str, Any],
+        *,
+        reliable: bool = True,
+        lossy_seq: int | None = None,
+    ) -> dict[str, Any]:
+        # `reliable` を全イベントに明示（既定 true）。欠番検知は reliable のみ対象（#122）。
+        # lossy イベントは `lossy_seq` で順序付ける（`seq` は現在の reliable 値の echo）。
+        envelope: dict[str, Any] = {
             "v": SCHEMA_VERSION,
             "type": type_,
             "seq": seq,
             "ts": self._clock().isoformat(),
             "session_id": self._session_id,
+            "reliable": reliable,
             **payload,
         }
+        if lossy_seq is not None:
+            envelope["lossy_seq"] = lossy_seq
+        return envelope
 
     async def _send_envelope(self, envelope: dict[str, Any], *, reliable: bool) -> bool:
         """エンベロープを送信し、成否を返す。送信例外は握りつぶす（呼び出し元が要否を判断）。"""
@@ -376,10 +404,12 @@ class EventPublisher:
         return env
 
     async def analysis_progress(self, asset_id: str, pct: int, stage: str) -> dict[str, Any]:
+        # analysis.* は reliable ストリーム（ADR-0021 §1）。reliable seq を採番して送る。lossy に
+        # すると #122 の echo 仕様で連続 progress（10%→50%）が同一 seq になり、web の upsert（seq
+        # 版管理）が 2 件目を重複破棄して進捗が止まる（Codex P2）。API 経由（#145）も reliable。
         return await self._emit(
             "analysis.progress",
             {"asset_id": asset_id, "pct": pct, "stage": stage},
-            reliable=False,
         )
 
     async def analysis_visual(

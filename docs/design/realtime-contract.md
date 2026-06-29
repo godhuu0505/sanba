@@ -23,6 +23,10 @@ apps/web（@livekit/components-react で購読）
 - web は `useDataChannel("sanba.events")`（または `room.on(RoomEvent.DataReceived)`）で購読する。
 - 信頼性が要る要件/検知イベントは **reliable** で送る。`status`/`transcript.partial` のような高頻度・
   使い捨ては lossy 可。
+- **seq 系統は reliable/lossy で分離する（#122・ADR-0021）**。`seq`（reliable 連番）は reliable
+  イベントにのみ採番し、欠番検知の基準にする。lossy イベントは `seq` を消費せず**現在の reliable seq を
+  echo**し、独立の `lossy_seq` で順序付ける。これにより lossy が落ちても reliable seq に穴が空かず、
+  web が誤って欠番（ギャップ）と判定して不要な GET 再取得をすることを防ぐ。
 
 ## 2. エンベロープ
 
@@ -32,12 +36,14 @@ apps/web（@livekit/components-react で購読）
 |---|---|---|
 | `v` | int | スキーマ版（現行 `1`） |
 | `type` | string | イベント種別（§3） |
-| `seq` | int | セッション内の単調増加連番。web は seq で整列・重複排除 |
+| `seq` | int | reliable ストリームの単調増加連番。整列・重複排除・**欠番検知**の基準。lossy は現在値を echo（消費しない） |
+| `reliable` | bool? | reliable イベントか（既定 true / #122）。false = lossy（`status`/`transcript.partial`）。欠番検知は reliable のみ対象 |
+| `lossy_seq` | int? | lossy イベント専用の単調増加連番。lossy の順序・重複排除に使う（reliable には無い） |
 | `ts` | string | ISO8601（agent 側の発行時刻） |
 | `session_id` | string | 対象セッション |
 
-web 側の適用規則: **`(type, id)` で冪等**（同じ要件/検知は upsert）、**`seq` で順序**を担保。
-欠番を検知したら §4 のハイドレーションで取り直してよい。
+web 側の適用規則: **`(type, id)` で冪等**（同じ要件/検知は upsert）、reliable は **`seq` で順序**、lossy は
+**`lossy_seq` で順序**を担保。欠番検知は reliable seq のみで行い、検知したら §4 のハイドレーションで取り直してよい。
 
 ## 3. イベント種別（agent → web）
 
