@@ -103,11 +103,10 @@ export class RealtimeStore {
   /** 観測した最大 reliable seq（欠番検知用 / #122）。lossy は前進させない。 */
   private maxSeq = 0;
   /**
-   * 最後に適用した status の順序キー (seq, lossy_seq)（#122）。status は lossy だが、順序の主キーは
-   * **echo された reliable seq**（#123 で再起動を跨いで単調）にし、lossy_seq は同一 seq 内のタイブレーク
-   * にする。これで再起動で lossy_seq が 0 に戻っても、次の reliable イベントで seq が進めば status が
-   * 復帰する（lossy_seq 単独だと復帰までに以前のカウンタ超過を待つ #123 退行になる）。旧 agent
-   * （lossy_seq 無し）は seq のみで従来どおり順序付く（後方互換）。
+   * 最後に適用した status の順序キー（#122 / #270）。新 agent は lossy_seq で順序付ける
+   * （agent 側 epoch ブロックで再起動を跨いで大域単調なので、これ単独で古い status を弾ける）。
+   * 旧 agent（lossy_seq 無し）は echo された reliable seq で順序付ける（後方互換）。両系統は同一
+   * セッション内で混在しないため、別々のガード変数で持つ。
    */
   private lastStatusSeq = 0;
   private lastStatusLossySeq = 0;
@@ -287,15 +286,19 @@ export class RealtimeStore {
   private reduce(event: ServerEvent): boolean {
     switch (event.type) {
       case "status": {
-        // status は lossy。順序キーは (seq, lossy_seq) の辞書式（#122）。主キーの echo された
-        // reliable seq は #123 で再起動を跨いで単調なので、再起動で lossy_seq が 0 に戻っても次の
-        // reliable イベントで seq が進めば status が復帰する。lossy_seq は同一 seq 内のタイブレーク。
-        // 旧 agent（lossy_seq 無し）は seq のみで従来どおり順序付く（後方互換 / Codex P2）。
-        const ls = event.lossy_seq ?? 0;
-        if (event.seq < this.lastStatusSeq) return false;
-        if (event.seq === this.lastStatusSeq && ls <= this.lastStatusLossySeq) return false;
-        this.lastStatusSeq = event.seq;
-        this.lastStatusLossySeq = ls;
+        // status は lossy。順序は lossy_seq 単独で持つ（#122 / #270）。lossy_seq は agent 側で
+        // epoch ブロックにより**再起動を跨いで大域単調**なので、これだけで古い status を弾ける。
+        // echo された reliable seq を主キーにしない: reliable seq は set_session_seq されない
+        // reliable イベント（question.* 等）の後に再起動すると後退し得るため、主キーにすると
+        // 再起動直後の status が `seq < lastStatusSeq` で破棄される窓が残る（Codex P2）。
+        // 旧 agent（lossy_seq 無し）は従来どおり echo seq で順序付ける（後方互換）。
+        if (event.lossy_seq === undefined) {
+          if (event.seq <= this.lastStatusSeq) return false;
+          this.lastStatusSeq = event.seq;
+        } else {
+          if (event.lossy_seq <= this.lastStatusLossySeq) return false;
+          this.lastStatusLossySeq = event.lossy_seq;
+        }
         this.phase = event.phase;
         this.agentsActive = event.agents_active ?? 0;
         return true;

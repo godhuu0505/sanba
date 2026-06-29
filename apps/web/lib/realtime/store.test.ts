@@ -288,12 +288,13 @@ describe("RealtimeStore — status ordering", () => {
     expect(s.getSnapshot().phase).toBe("deliberating");
   });
 
-  it("再起動後 lossy_seq が 0 に戻っても echoSeq 前進で status が復帰する（#122 / #123 退行防止）", () => {
+  it("再起動後も lossy_seq の epoch ブロックで status が復帰する（#270）", () => {
     const s = new RealtimeStore();
-    s.apply(status(3, 9, "listening")); // 再起動前: echoSeq=3, lossy_seq=9
-    // 再起動: lossy_seq は 1 に戻るが、reliable seq は #123 で継続 → echoSeq=4。
-    s.apply(status(4, 1, "deliberating"));
-    expect(s.getSnapshot().phase).toBe("deliberating"); // lossy_seq=1<9 でも echoSeq 前進で適用
+    s.apply(status(3, 9, "listening")); // 再起動前: lossy_seq=9
+    // 再起動: agent は lossy_seq を epoch ブロック基底（例 1e9+1）から振り出す（#270）。
+    // echo した reliable seq は後退し得る（例 2）が、status は lossy_seq 単独で順序付けるため復帰する。
+    s.apply(status(2, 1_000_000_001, "deliberating"));
+    expect(s.getSnapshot().phase).toBe("deliberating");
   });
 
   it("旧 agent（lossy_seq 無し）は seq で順序付く（後方互換 / Codex P2）", () => {

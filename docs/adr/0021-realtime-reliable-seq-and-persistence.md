@@ -51,6 +51,13 @@ seq だけが永続化から漏れている。
   web の seq ガードを通過して反映される（#123 解消）。
 - 競合（複数 worker が同一セッションに採番）に備え、**Firestore トランザクション/`Increment`** で原子的に採番する。
   単一 worker 前提の現状でも、再起動を跨いだ単調性をこれで担保する。
+- **lossy_seq も再起動を跨いで大域単調にする（#270 / 実装済み）**: lossy（status/transcript.partial）の
+  `lossy_seq` は ephemeral で再起動時 0 へ戻るため、接続維持中の web が再起動後の lossy を黙殺する
+  （#123 が reliable で解いた退行の lossy 版）。毎回の起動で per-session **epoch を +1**（Firestore
+  トランザクションで原子的に採番）し、`lossy_seq` を `epoch * BLOCK`（`BLOCK=1e9`）から開始する。これで
+  再起動後の `lossy_seq` が必ず以前を上回り、web は envelope/受信ロジックを変えずに（既存の
+  `lossy_seq` 順序のまま）再起動後の lossy を受理できる。1 起動あたり `BLOCK` 件まで lossy を許容する
+  （現実の status/partial 件数を大きく上回る）。`reserve_lossy_seq_base`（`repository`）が採番する。
 
 ### 3. 契約・観測性の更新
 - `docs/design/realtime-contract.md` §1/§2/§4 を更新し、reliable/lossy の **seq 系統の分離**と、
