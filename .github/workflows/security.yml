@@ -83,13 +83,19 @@ jobs:
           fi
       # Trivy is advisory: the docker build above is the gate. Install + scan are
       # both continue-on-error so a flaky install/scan never blocks the PR.
-      # install スクリプトは release タグに固定する (mutable な main を参照しない・供給網対策)。
-      # 固定したスクリプト自身が trivy バイナリの checksums.txt を sha256 照合する。
-      - name: Install Trivy
+      # install スクリプトを `| sudo sh` で直接実行せず、ファイルに落として sha256 を
+      # 照合してから実行する。tag は mutable なため tag 差し替え・配信経路の改ざんがあると
+      # sha256 が一致せず set -e で実行前に止まる (continue-on-error なので fail-safe に skip)。
+      # 固定したスクリプト自身も trivy バイナリを checksums.txt で sha256 照合する (二段の供給網対策)。
+      - name: Install Trivy (script sha256-verified)
         continue-on-error: true
         run: |
-          curl -sSfL https://raw.githubusercontent.com/aquasecurity/trivy/v0.55.0/contrib/install.sh \
-            | sudo sh -s -- -b /usr/local/bin v0.55.0
+          set -euo pipefail
+          SCRIPT_SHA256=2304dcc0c1883e802d376eae1b514c923b7427a7d88091dfcaf83967e6f55a7c
+          curl -sSfL -o /tmp/trivy-install.sh \
+            https://raw.githubusercontent.com/aquasecurity/trivy/v0.55.0/contrib/install.sh
+          echo "${SCRIPT_SHA256}  /tmp/trivy-install.sh" | sha256sum -c -
+          sudo sh /tmp/trivy-install.sh -b /usr/local/bin v0.55.0
       - name: Trivy scan
         continue-on-error: true
         run: trivy image --severity HIGH,CRITICAL --format table sanba-${{ matrix.app }}:scan || true

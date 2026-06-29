@@ -92,7 +92,7 @@ GUI 運用手順のため、実施したら issue #68 に**実施者・日時と
 
 **コード側で恒久対応済み**（上表の前提となる多層防御）:
 - 全ワークフローが top-level `permissions:` を宣言済み（既定 `contents: read`、書き込みが要るジョブだけ昇格。checkout しない `review-status.yml` は `pull-requests: write` のみ）→ 手順2 の read-only 既定で問題なく動く。
-- third-party Action は full SHA ピン、`curl | sh` ツールはバージョン固定＋チェックサム照合済み（gitleaks: 公式 checksums.txt 照合 / Trivy: install スクリプトを release タグに固定しスクリプトが binary を sha256 照合 / Terraform: 公式 SHA256SUMS 照合）。
+- third-party Action は full SHA ピン、`curl | sh` ツールはバージョン固定＋チェックサム照合済み（gitleaks: 公式 checksums.txt 照合 / Trivy: install スクリプトを `| sudo sh` で直接実行せず sha256 照合してから実行＝スクリプト自身も binary を checksums.txt で照合する二段構え / Terraform: 公式 SHA256SUMS 照合）。
 - 特権ワークフロー（`claude-review-response.yml` 等）は fork PR・未信頼アクターでは起動しない（上記参照）。
 
 ## 残課題
