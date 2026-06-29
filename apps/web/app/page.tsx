@@ -182,7 +182,10 @@ export default function Home() {
       }
       if (repoSel) {
         // 前提リポジトリをセッションにバインドし、非同期索引をキックする（ADR-0025）。
-        // 索引完了は会話開始までに間に合わなくても部分結果で深掘りできるため、開始は止めない。
+        // 索引完了は会話開始までに間に合わなくても部分結果で深掘りできるため待たない。ただし
+        // バインド自体に失敗（権限変更/branch削除/GitHub 502 等）したら、ユーザーが前提 repo を
+        // 明示選択しているのに無反映で開始すると気づけないため、開始を止めて理由を表示する
+        // （Codex P2）。session は TTL で消えるので再開始でやり直せる。
         try {
           await selectSessionRepo(
             joined.session_id,
@@ -192,6 +195,10 @@ export default function Home() {
           );
         } catch (repoErr) {
           console.error("select session repo failed", { error: repoErr });
+          setError(
+            `前提リポジトリ「${repoSel.repo}」の紐づけに失敗しました。時間をおいて再度お試しください。`,
+          );
+          return;
         }
       }
       // 準備画面でステージした参考資料を、会話開始前に join 済みトークンで順次投入する

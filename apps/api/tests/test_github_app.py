@@ -241,5 +241,7 @@ def test_build_repo_summary_truncates() -> None:
     assert summary.endswith("…")
 
 
-def test_repo_source_name_is_unique_per_repo_branch_path() -> None:
-    assert repo_source_name("o/r", "main", "src/a.py") == "github:o/r@main:src/a.py"
+def test_repo_source_name_embeds_repo_branch_sha_path() -> None:
+    assert (
+        repo_source_name("o/r", "main", "abc123", "src/a.py") == "github:o/r@main@abc123:src/a.py"
+    )

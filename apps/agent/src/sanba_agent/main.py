@@ -79,7 +79,18 @@ def _repo_premise(repo: SessionRepository, session_id: str) -> str:
     if status in (GitHubIndexStatus.NONE, GitHubIndexStatus.FAILED):
         return ""
     ready = status in (GitHubIndexStatus.READY, GitHubIndexStatus.PARTIAL)
-    return build_repo_premise(meta.github_repo, meta.github_branch, ready)
+    return build_repo_premise(meta.github_repo, meta.github_branch, ready, meta.github_summary)
+
+
+def _is_stale_repo_passage(source: str, current_sha: str) -> bool:
+    """repo 索引 chunk のうち現在の commit sha 以外を stale と判定する（ADR-0025）。
+
+    repo 索引の source は `github:{repo}@{branch}@{sha}:{path}` で sha を内包する。旧
+    env connector の source（`github:{repo}#...`）は `@` を含まないため対象外（False）。
+    """
+    if not source.startswith("github:") or "@" not in source:
+        return False
+    return f"@{current_sha}:" not in source
 
 
 class SANBAAgent(Agent):
@@ -477,6 +488,12 @@ class SANBAAgent(Agent):
         # session_id を渡してセッション固有素材（context: ゴール/資料/紐づけ repo）を本セッション
         # に限定する（他者の private リポジトリ断片の越境ヒットを防ぐ / ADR-0025）。
         passages = self._grounding.search(query, k=4, session_id=self._session_id)
+        # 紐づけ repo を素早く選び直すと、旧 commit の chunk が索引中に書き込まれて残り得る。
+        # 現在の commit sha を持つ repo chunk 以外は落とし、stale な断片を会話に出さない
+        # （Codex P2。source は github:{repo}@{branch}@{sha}:{path} 形式で sha を内包）。
+        current_sha = self._current_repo_sha()
+        if current_sha is not None:
+            passages = [p for p in passages if not _is_stale_repo_passage(p.source, current_sha)]
         log.info("grounding_search", session=self._session_id, query=query, hits=len(passages))
         return {
             "passages": [
@@ -484,6 +501,14 @@ class SANBAAgent(Agent):
                 for p in passages
             ]
         }
+
+    def _current_repo_sha(self) -> str | None:
+        """セッションに紐づいた repo の現在 commit sha（stale repo chunk の峻別に使う）。"""
+        try:
+            meta = self._repo.get_session(self._session_id)
+        except Exception:  # pragma: no cover - depends on backend
+            return None
+        return meta.github_commit_sha if meta is not None else None
 
     @function_tool
     async def export_requirements_to_github(self, _ctx: RunContext) -> dict:

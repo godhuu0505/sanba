@@ -379,9 +379,13 @@ def build_repo_summary(
     return summary
 
 
-def repo_source_name(repo: str, branch: str, path: str) -> str:
-    """grounding 索引の出所名。`github:{repo}@{branch}:{path}` で一意化する。"""
-    return f"github:{repo}@{branch}:{path}"
+def repo_source_name(repo: str, branch: str, sha: str, path: str) -> str:
+    """grounding 索引の出所名。`github:{repo}@{branch}@{sha}:{path}` で一意化する。
+
+    sha を含めることで、repo を素早く選び直した際に残存し得る旧 commit の chunk を、
+    検索側が現在の sha で峻別して除外できる（stale 索引の越境ヒット防止 / ADR-0025）。
+    """
+    return f"github:{repo}@{branch}@{sha}:{path}"
 
 
 # ── 薄い GitHub App REST クライアント（App 設定時のみ使用）─────────────────────

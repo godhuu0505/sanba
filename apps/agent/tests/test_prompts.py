@@ -62,3 +62,13 @@ def test_build_repo_premise_notes_indexing_in_progress() -> None:
 
     premise = build_repo_premise("octo/demo", None, ready=False)
     assert "進行中" in premise
+
+
+def test_build_repo_premise_embeds_summary() -> None:
+    from sanba_agent.prompts.interview import build_repo_premise
+
+    premise = build_repo_premise(
+        "octo/demo", "main", ready=True, summary="# 前提リポジトリ: octo/demo\n説明: A demo"
+    )
+    # 索引時の要約をそのまま初期 instructions に埋め込む（retrieval 任せにしない）。
+    assert "説明: A demo" in premise

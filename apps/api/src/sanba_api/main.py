@@ -633,6 +633,7 @@ def _index_repo_task(
             max_total_bytes=settings.github_index_max_total_bytes,
             max_file_bytes=settings.github_index_max_file_bytes,
         )
+        summary = outcome.summary
         if outcome.failed:
             status = GitHubIndexStatus.FAILED
         elif outcome.partial:
@@ -642,6 +643,7 @@ def _index_repo_task(
     except Exception as exc:  # pragma: no cover - network
         log.warning("repo_index_failed", session=session_id, repo=repo, error=str(exc))
         status = GitHubIndexStatus.FAILED
+        summary = None
     # 完了時にも再確認: 索引中に B へ選び直されていたら status/選択を巻き戻さない。
     if not _selection_current(session_id, repo, branch, commit_sha):
         log.info("repo_index_writeback_skipped_stale", session=session_id, repo=repo)
@@ -652,6 +654,7 @@ def _index_repo_task(
         branch=branch,
         commit_sha=commit_sha,
         index_status=status,
+        summary=summary,
     )
 
 

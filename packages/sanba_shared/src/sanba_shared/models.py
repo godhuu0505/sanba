@@ -135,6 +135,9 @@ class SessionMeta(BaseModel):
     # 索引をピン留めした commit sha（鮮度の基準・(repo,branch,sha) 索引キー）。
     github_commit_sha: str | None = None
     github_index_status: GitHubIndexStatus = GitHubIndexStatus.NONE
+    # 索引時に組み立てた repo 要約（名/説明/README先頭/ツリー概要）。agent が初期 instructions に
+    # proactive シードする（ADR-0025・retrieval 任せにしない）。索引完了時に書き込む。
+    github_summary: str | None = None
 
 
 class AnalysisResult(BaseModel):

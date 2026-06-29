@@ -80,3 +80,15 @@ def test_build_search_params_scopes_context_to_session() -> None:
     # context は session 一致 OR 非 context のみ通すフィルタが入る。
     filters = params["query"]["bool"]["filter"]
     assert any("bool" in f and "should" in f["bool"] for f in filters)
+
+
+def test_is_stale_repo_passage_filters_other_sha() -> None:
+    from sanba_agent.main import _is_stale_repo_passage
+
+    cur = "github:o/r@main@shaNEW:src/a.py"
+    old = "github:o/r@main@shaOLD:src/a.py"
+    assert _is_stale_repo_passage(old, "shaNEW") is True
+    assert _is_stale_repo_passage(cur, "shaNEW") is False
+    # 知識や env connector 形式（@ なし）は対象外。
+    assert _is_stale_repo_passage("knowledge:reqs#1", "shaNEW") is False
+    assert _is_stale_repo_passage("github:o/r#readme", "shaNEW") is False

@@ -178,8 +178,9 @@ class SessionRepository:
         branch: str | None,
         commit_sha: str | None,
         index_status: GitHubIndexStatus,
+        summary: str | None = None,
     ) -> SessionMeta | None:
-        """セッションに紐づけた GitHub repo/branch/sha/索引状態を保存する (ADR-0025)。
+        """セッションに紐づけた GitHub repo/branch/sha/索引状態/要約を保存する (ADR-0025)。
 
         agent は `SessionMeta` を読んで要約をシードし、web は状態表示・進捗に使う。
         存在しなければ None。merge 保存で他フィールド（要件確定スナップショット等）を温存する。
@@ -193,6 +194,7 @@ class SessionRepository:
                 "github_branch": branch,
                 "github_commit_sha": commit_sha,
                 "github_index_status": index_status,
+                "github_summary": summary,
             }
         )
         if self._client is not None:
@@ -202,6 +204,7 @@ class SessionRepository:
                     "github_branch": branch,
                     "github_commit_sha": commit_sha,
                     "github_index_status": index_status.value,
+                    "github_summary": summary,
                 },
                 merge=True,
             )

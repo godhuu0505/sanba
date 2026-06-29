@@ -129,13 +129,18 @@ def fetch_and_index_repo(
     # 要約自体も索引する（search_grounding が「前提リポジトリ」を引けるように）。要約も念のため
     # 全体をレダクトしてから索引する（description 等にも秘匿が混じる可能性に二重で備える）。
     indexed_chunks += indexer.index_context(
-        session_id, chunk_text(redact_secrets(summary)), repo_source_name(repo, branch, "_summary")
+        session_id,
+        chunk_text(redact_secrets(summary)),
+        repo_source_name(repo, branch, commit_sha, "_summary"),
     )
 
     # Issue も前提情報として索引する（ADR-0025 索引範囲 / agent 指示も Issue 参照を前提とする）。
+    issues_failed = False
     try:
         issues = fetcher.fetch_issues(installation_id, repo)
-    except Exception as exc:  # pragma: no cover - network
+    except Exception as exc:
+        # Issues 権限不足/無効化/レート制限。前提に Issue を含むので欠落は PARTIAL に反映する。
+        issues_failed = True
         log.warning("repo_issues_fetch_failed", repo=repo, error=str(exc))
         issues = []
     for issue in issues:
@@ -145,7 +150,7 @@ def fetch_and_index_repo(
         indexed_chunks += indexer.index_context(
             session_id,
             chunk_text(redact_secrets(text)),
-            repo_source_name(repo, branch, f"_issue_{issue.get('number')}"),
+            repo_source_name(repo, branch, commit_sha, f"_issue_{issue.get('number')}"),
         )
 
     fetch_failures = 0
@@ -166,16 +171,17 @@ def fetch_and_index_repo(
         # source ではなく text を対象にするため、{repo} 検索で本文を拾えるように）。
         tagged = [f"[{repo} {f.path}]\n{c}" for c in chunks]
         indexed_chunks += indexer.index_context(
-            session_id, tagged, repo_source_name(repo, branch, f.path)
+            session_id, tagged, repo_source_name(repo, branch, commit_sha, f.path)
         )
         indexed_files += 1
 
-    # キャップ/過大スキップ/除外があった、ツリー打ち切り、取得一部失敗 → PARTIAL。
+    # キャップ/過大スキップ/除外、ツリー打ち切り、ファイル/Issue 取得失敗 → PARTIAL。
     partial = (
         selection.truncated
         or bool(selection.skipped_too_large)
         or tree.truncated
         or fetch_failures > 0
+        or issues_failed
     )
     # 索引すべき候補があったのに 1 件も取得できなかった → FAILED（要約しか入っていない）。
     failed = bool(selection.selected) and indexed_files == 0

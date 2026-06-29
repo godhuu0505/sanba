@@ -73,12 +73,15 @@ CONTRADICTION_AGENT_INSTRUCTIONS = """\
 """
 
 
-def build_repo_premise(repo: str, branch: str | None, ready: bool) -> str:
+def build_repo_premise(
+    repo: str, branch: str | None, ready: bool, summary: str | None = None
+) -> str:
     """紐づけ GitHub リポジトリを「前提」として agent に明示する一節（ADR-0025）。
 
-    準備画面で owner が選んだ repo を深掘りの前提に据える。詳細（README/コード/Issue）は
-    ES に索引済みなので `search_grounding` で `{repo}` を検索して掘れ、と促す（proactive
-    seed + retrieval の併用）。索引未完なら一言だけ添える。
+    準備画面で owner が選んだ repo を深掘りの前提に据える。索引時に組み立てた `summary`
+    （名/説明/README先頭/ツリー概要）があれば初期 instructions に**そのまま埋め込み**、
+    agent が検索を呼ぶ前から既存コードベースの前提を把握できるようにする（retrieval 任せ
+    にしない / Codex P2）。さらに詳細は `search_grounding` で `{repo}` を掘らせる。
     """
     branch_part = f"（branch: {branch}）" if branch else ""
     lines = [
@@ -86,8 +89,14 @@ def build_repo_premise(repo: str, branch: str | None, ready: bool) -> str:
         "## 前提リポジトリ",
         f"このセッションは GitHub リポジトリ `{repo}`{branch_part} を前提にします。",
         "要件はこの既存コードベース・ドキュメント・Issue を踏まえて深掘りしてください。",
-        f"具体的な実装/構成/課題は `search_grounding` で `{repo}` を検索して根拠付けること。",
     ]
+    if summary:
+        lines.append("")
+        lines.append(summary.strip())
+        lines.append("")
+    lines.append(
+        f"さらに具体的な実装/構成/課題は `search_grounding` で `{repo}` を検索して根拠付けること。"
+    )
     if not ready:
         lines.append("（リポジトリの索引はまだ進行中です。取得でき次第より深く参照できます。）")
     return "\n".join(lines)
