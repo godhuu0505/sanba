@@ -487,13 +487,17 @@ class SANBAAgent(Agent):
         """
         # session_id を渡してセッション固有素材（context: ゴール/資料/紐づけ repo）を本セッション
         # に限定する（他者の private リポジトリ断片の越境ヒットを防ぐ / ADR-0025）。
-        passages = self._grounding.search(query, k=4, session_id=self._session_id)
         # 紐づけ repo を素早く選び直すと、旧 commit の chunk が索引中に書き込まれて残り得る。
         # 現在の commit sha を持つ repo chunk 以外は落とし、stale な断片を会話に出さない
         # （Codex P2。source は github:{repo}@{branch}@{sha}:{path} 形式で sha を内包）。
+        # stale 除外で上位が削られても現在 repo の有効 chunk が残るよう、多めに取得してから絞る。
+        want = 4
         current_sha = self._current_repo_sha()
+        fetch_k = want * 4 if current_sha is not None else want
+        passages = self._grounding.search(query, k=fetch_k, session_id=self._session_id)
         if current_sha is not None:
             passages = [p for p in passages if not _is_stale_repo_passage(p.source, current_sha)]
+        passages = passages[:want]
         log.info("grounding_search", session=self._session_id, query=query, hits=len(passages))
         return {
             "passages": [

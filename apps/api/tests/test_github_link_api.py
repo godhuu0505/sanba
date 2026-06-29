@@ -32,6 +32,9 @@ class FakeClient:
     def user_owns_installation(self, code: str, installation_id: int) -> bool:
         return True
 
+    def close(self) -> None:
+        pass
+
     def installation_login(self, installation_id: int) -> str:
         return "octocat"
 
@@ -70,6 +73,9 @@ def _setup(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     monkeypatch.setattr(main, "_github_app_client", lambda: FakeClient())
     monkeypatch.setattr(main.settings, "github_app_enabled", True)
     monkeypatch.setattr(main.settings, "github_app_slug", "sanba-app")
+    # OAuth 未構成（FakeClient.oauth_configured=False）でも検証を省けるよう dev bypass にする
+    # （本番の所有権検証フェイルクローズは別テストで検証する）。
+    monkeypatch.setattr(main.settings, "auth_dev_bypass", True)
     # 各テストで連携状態をクリーンにする。
     main._repo.delete_github_link(OWNER)
     yield
@@ -135,6 +141,17 @@ def test_callback_rejects_unowned_installation(monkeypatch: pytest.MonkeyPatch) 
         params={"installation_id": 99, "state": state, "code": "abc"},
     )
     assert res.status_code == 403
+    assert client.get("/api/github/link").json()["linked"] is False
+
+
+def test_callback_failclosed_when_oauth_unconfigured_and_no_dev_bypass(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # OAuth 未構成 かつ dev bypass 無効（本番相当）→ 所有権検証できないので拒否する（P1）。
+    monkeypatch.setattr(main.settings, "auth_dev_bypass", False)
+    state = create_link_state(OWNER, main.settings.session_signing_secret)
+    res = client.get("/api/github/link/callback", params={"installation_id": 99, "state": state})
+    assert res.status_code == 503
     assert client.get("/api/github/link").json()["linked"] is False
 
 

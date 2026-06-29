@@ -441,6 +441,9 @@ class GitHubAppClient:  # pragma: no cover - network
         # installation token は短命だが 1h 有効。1 索引ジョブで 1500 ファイル取得しても
         # 毎回発行しないよう (token, expiry_epoch) をプロセス内キャッシュして再利用する。
         self._token_cache: dict[int, tuple[str, float]] = {}
+        # ファイル取得のホットパス用の共有 HTTP クライアント（接続プール再利用 / Codex P2）。
+        # 1500 ファイルで TLS を都度確立しないよう lazy 生成し、ジョブ終了時に close する。
+        self._http: object | None = None
 
     @property
     def oauth_configured(self) -> bool:
@@ -640,25 +643,37 @@ class GitHubAppClient:  # pragma: no cover - network
             log.warning("repo_tree_truncated", repo=repo, sha=sha, files=len(files))
         return TreeListing(files=files, truncated=truncated)
 
+    def _shared_http(self):  # type: ignore[no-untyped-def]
+        """ファイル取得のホットパス用の共有 httpx.Client（接続プール再利用 / Codex P2）。"""
+        import httpx
+
+        if self._http is None:
+            self._http = httpx.Client(timeout=15)
+        return self._http
+
+    def close(self) -> None:
+        """共有 HTTP クライアントを閉じる（索引ジョブ終了時に呼ぶ）。"""
+        if self._http is not None:
+            self._http.close()  # type: ignore[attr-defined]
+            self._http = None
+
     def fetch_file(self, installation_id: int, repo: str, sha: str, path: str) -> str:
         """1 ファイルを raw 取得する（テキスト前提）。
 
         `docs/a#b.md` や `a?b.txt` のような Git では有効なファイル名で `#`/`?` が
         fragment/query として切られないよう、path セグメントとしてエンコードする。
+        接続確立コストを抑えるため、索引ジョブ内で共有の httpx.Client を再利用する。
         """
         from urllib.parse import quote
 
-        import httpx
-
-        with httpx.Client(timeout=15) as client:
-            res = client.get(
-                f"{_API}/repos/{repo}/contents/{quote(path, safe='/')}",
-                headers={
-                    **self._inst_headers(installation_id),
-                    "Accept": "application/vnd.github.raw+json",
-                },
-                params={"ref": sha},
-            )
+        res = self._shared_http().get(
+            f"{_API}/repos/{repo}/contents/{quote(path, safe='/')}",
+            headers={
+                **self._inst_headers(installation_id),
+                "Accept": "application/vnd.github.raw+json",
+            },
+            params={"ref": sha},
+        )
         res.raise_for_status()
         return res.text
 

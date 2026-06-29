@@ -72,6 +72,7 @@ from .observability import (
     record_rate_limited,
     setup_observability,
 )
+from .pii import mask_pii
 from .realtime import (
     STAGE_ANALYZING,
     STAGE_FAILED,
@@ -489,8 +490,13 @@ def github_link_start(user: AuthUser = Depends(require_user)) -> GitHubLinkStart
     """
     # callback と同じ必須設定（app_id/private_key）も開始時に確認してフェイルクローズする
     # （Codex P2: slug だけ設定で install へ送ると、戻りの callback が 503 で連携失敗するため）。
-    if _github_app_client() is None or not settings.github_app_slug:
+    client = _github_app_client()
+    if client is None or not settings.github_app_slug:
         raise HTTPException(status_code=503, detail="github app not configured")
+    # 所有権検証に必要な OAuth が無い本番では、install させても callback で拒否されるので
+    # 開始時点でも止める（Codex P1。dev bypass 時のみ許可）。
+    if not client.oauth_configured and not settings.auth_dev_bypass:
+        raise HTTPException(status_code=503, detail="ownership verification not configured")
     state = create_link_state(
         user.sub, settings.session_signing_secret, settings.github_link_state_ttl_seconds
     )
@@ -518,7 +524,9 @@ def github_link_callback(installation_id: int, state: str, code: str | None = No
         log.warning("github_link_state_rejected", reason=str(exc))
         raise HTTPException(status_code=403, detail=f"invalid state: {exc}") from exc
 
-    # 所有権検証（構成されている場合は必須・フェイルクローズ）。
+    # 所有権検証はフェイルクローズ（Codex P1）: OAuth 未構成なら本番では拒否する。秘密鍵だけ
+    # 先に入った設定漏れでも、別人が既知の他者 installation_id を横取りできないようにする。
+    # ローカル/CI の開発時のみ auth_dev_bypass で検証を省ける（既存の dev bypass 方針に合わせる）。
     if client.oauth_configured:
         if not code:
             raise HTTPException(status_code=403, detail="missing oauth code")
@@ -530,8 +538,11 @@ def github_link_callback(installation_id: int, state: str, code: str | None = No
         if not owns:
             log.warning("github_installation_not_owned", sub=sub, installation_id=installation_id)
             raise HTTPException(status_code=403, detail="installation not owned by user")
+    elif settings.auth_dev_bypass:
+        log.warning("github_owner_unverified_dev_bypass", installation_id=installation_id)
     else:
-        log.warning("github_owner_unverified", installation_id=installation_id)
+        log.warning("github_owner_unverified_rejected", installation_id=installation_id)
+        raise HTTPException(status_code=503, detail="ownership verification not configured")
 
     try:
         login = client.installation_login(installation_id)
@@ -611,51 +622,59 @@ def _index_repo_task(
     client = _github_app_client()
     if client is None:  # pragma: no cover - guarded by caller
         return
-    # 古いジョブの巻き戻し防止（Codex P2）: repo A の索引中に B へ選び直すと、遅れて走る A の
-    # ジョブが B の chunk を消し A を書き戻し得る。開始時に現在の選択（SessionMeta）がこの
-    # ジョブの (repo,branch,sha) と一致するか確認し、ズレていれば何もしない。
-    if not _selection_current(session_id, repo, branch, commit_sha):
-        log.info("repo_index_skipped_stale", session=session_id, repo=repo, branch=branch)
-        return
-    # repo 選び直し / branch 変更 / 再同期で古い github: chunk が残ると search_grounding に
-    # 旧 repo・旧 commit の断片が混ざる。索引前に当該 session の repo chunk を一掃する（Codex P2）。
-    _indexer.delete_repo_context(session_id)
     try:
-        outcome = fetch_and_index_repo(
-            client,
-            _indexer,
-            session_id=session_id,
-            installation_id=installation_id,
+        # 古いジョブの巻き戻し防止（Codex P2）: repo A の索引中に B へ選び直すと、遅れて走る A の
+        # ジョブが B の chunk を消し A を書き戻し得る。開始時に現在の選択（SessionMeta）がこの
+        # ジョブの (repo,branch,sha) と一致するか確認し、ズレていれば何もしない。
+        if not _selection_current(session_id, repo, branch, commit_sha):
+            log.info("repo_index_skipped_stale", session=session_id, repo=repo, branch=branch)
+            return
+        # repo 選び直し / branch 変更 / 再同期で古い github: chunk が残ると search_grounding に
+        # 旧 commit の断片が混ざる。索引前に当該 session の repo chunk を一掃する（Codex P2）。
+        _indexer.delete_repo_context(session_id)
+        try:
+            outcome = fetch_and_index_repo(
+                client,
+                _indexer,
+                session_id=session_id,
+                installation_id=installation_id,
+                repo=repo,
+                branch=branch,
+                commit_sha=commit_sha,
+                max_files=settings.github_index_max_files,
+                max_total_bytes=settings.github_index_max_total_bytes,
+                max_file_bytes=settings.github_index_max_file_bytes,
+            )
+            # SessionMeta 保存用の要約は PII マスクする（Firestore at-rest / 発話保存と同方針）。
+            # ES 経路は index_context が別途マスクするが、これは直接 Firestore へ入る（Codex P2）。
+            summary = (
+                mask_pii(outcome.summary) if settings.mask_pii_before_index else outcome.summary
+            )
+            if outcome.failed:
+                status = GitHubIndexStatus.FAILED
+            elif outcome.partial:
+                status = GitHubIndexStatus.PARTIAL
+            else:
+                status = GitHubIndexStatus.READY
+        except Exception as exc:  # pragma: no cover - network
+            log.warning("repo_index_failed", session=session_id, repo=repo, error=str(exc))
+            status = GitHubIndexStatus.FAILED
+            summary = None
+        # 完了時にも再確認: 索引中に B へ選び直されていたら status/選択を巻き戻さない。
+        if not _selection_current(session_id, repo, branch, commit_sha):
+            log.info("repo_index_writeback_skipped_stale", session=session_id, repo=repo)
+            return
+        _repo.set_session_github(
+            session_id,
             repo=repo,
             branch=branch,
             commit_sha=commit_sha,
-            max_files=settings.github_index_max_files,
-            max_total_bytes=settings.github_index_max_total_bytes,
-            max_file_bytes=settings.github_index_max_file_bytes,
+            index_status=status,
+            summary=summary,
         )
-        summary = outcome.summary
-        if outcome.failed:
-            status = GitHubIndexStatus.FAILED
-        elif outcome.partial:
-            status = GitHubIndexStatus.PARTIAL
-        else:
-            status = GitHubIndexStatus.READY
-    except Exception as exc:  # pragma: no cover - network
-        log.warning("repo_index_failed", session=session_id, repo=repo, error=str(exc))
-        status = GitHubIndexStatus.FAILED
-        summary = None
-    # 完了時にも再確認: 索引中に B へ選び直されていたら status/選択を巻き戻さない。
-    if not _selection_current(session_id, repo, branch, commit_sha):
-        log.info("repo_index_writeback_skipped_stale", session=session_id, repo=repo)
-        return
-    _repo.set_session_github(
-        session_id,
-        repo=repo,
-        branch=branch,
-        commit_sha=commit_sha,
-        index_status=status,
-        summary=summary,
-    )
+    finally:
+        # 共有 HTTP クライアントを必ず閉じる（接続リーク防止 / Codex P2）。
+        client.close()
 
 
 def _selection_current(session_id: str, repo: str, branch: str, commit_sha: str) -> bool:
