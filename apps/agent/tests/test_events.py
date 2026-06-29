@@ -38,23 +38,41 @@ async def test_envelope_has_required_fields() -> None:
 
 
 @pytest.mark.asyncio
-async def test_seq_is_monotonic_across_types() -> None:
+async def test_reliable_seq_is_monotonic_and_lossy_does_not_consume_it() -> None:
+    # reliable イベントは連続した seq を採る。lossy（status）は reliable seq を消費せず現在値を
+    # echo し、独立の lossy_seq で順序付ける（#122・ADR-0021）。
     t = RecordingTransport()
     pub = EventPublisher("s1", t)
-    await pub.status("listening")
-    await pub.transcript_final("顧客", "customer", "u1", "検索したい")
-    await pub.detection_gap("d1", "性能が未確認", "non_functional", [])
-    seqs = [m["event"]["seq"] for m in t.sent]
-    assert seqs == [1, 2, 3]
+    await pub.transcript_final("顧客", "customer", "u1", "検索したい")  # reliable seq=1
+    s = await pub.status("listening")  # lossy: seq echoes 1, lossy_seq=1
+    await pub.detection_gap("d1", "性能が未確認", "non_functional", [])  # reliable seq=2
+    reliable = [m["event"] for m in t.sent if m["event"].get("reliable") is not False]
+    assert [e["seq"] for e in reliable] == [1, 2]  # reliable seq は連続
+    assert s["reliable"] is False
+    assert s["seq"] == 1  # 現在の reliable seq を echo（消費しない）
+    assert s["lossy_seq"] == 1
+
+
+@pytest.mark.asyncio
+async def test_lossy_seq_increments_independently() -> None:
+    # 連続する lossy イベントは reliable seq を進めず lossy_seq だけ進める（#122）。
+    t = RecordingTransport()
+    pub = EventPublisher("s1", t)
+    a = await pub.status("listening")
+    b = await pub.status("deliberating")
+    assert a["lossy_seq"] == 1
+    assert b["lossy_seq"] == 2
+    assert a["seq"] == b["seq"] == 0  # reliable seq は未消費（0 のまま echo）
+    assert pub.seq == 0
 
 
 @pytest.mark.asyncio
 async def test_start_seq_seeds_monotonic_continuation() -> None:
-    # 再起動シミュレーション（#123）: 保存済み last_seq=5 からシードすると次イベントは seq=6。
+    # 再起動シミュレーション（#123）: 保存済み last_seq=5 からシードすると次の reliable は seq=6。
     # 0 から振り直さないことで web の seq ガードが再起動後イベントを黙殺しない。
     t = RecordingTransport()
     pub = EventPublisher("s1", t, start_seq=5)
-    env = await pub.status("listening")
+    env = await pub.detection_gap("d1", "性能が未確認", "non_functional", [])
     assert env["seq"] == 6
 
 
@@ -150,8 +168,8 @@ async def test_question_asked_save_failure_does_not_send_or_consume_seq() -> Non
     assert t.sent == []  # 送られていない
     assert pub.seq == 0  # seq は消費されていない
     assert pub.questions_published == 0
-    # 次のイベントは欠番にならず seq=1 を採る。
-    env = await pub.status("listening")
+    # 次の reliable イベントは欠番にならず seq=1 を採る（lossy は reliable seq を消費しない）。
+    env = await pub.detection_gap("d1", "性能が未確認", "non_functional", [])
     assert env["seq"] == 1
 
 

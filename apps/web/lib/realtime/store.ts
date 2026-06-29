@@ -100,10 +100,10 @@ export class RealtimeStore {
    */
   private requirementsHydrationSeq = 0;
   private detectionsHydrationSeq = 0;
-  /** 観測した最大 seq（欠番検知用）。 */
+  /** 観測した最大 reliable seq（欠番検知用 / #122）。lossy は前進させない。 */
   private maxSeq = 0;
-  /** 最後に適用した status の seq。古い status による phase 巻き戻しを防ぐ。 */
-  private lastStatusSeq = 0;
+  /** 最後に適用した status の lossy_seq。古い status による phase 巻き戻しを防ぐ（#122）。 */
+  private lastStatusLossySeq = 0;
   /** 最後に適用した session.completed の seq。再配信による巻き戻しを防ぐ。 */
   private lastCompletedSeq = 0;
   /** 最後に適用した question.asked の seq。古い質問による差し戻しを防ぐ。 */
@@ -220,19 +220,24 @@ export class RealtimeStore {
       return;
     }
 
-    // GET スナップショット境界より古いライブ差分は破棄（スナップショットに含まれる）。境界は
+    // lossy（status/transcript.partial）は reliable seq を消費せず現在値を echo するだけ（#122・
+    // ADR-0021）。echo した seq は境界・欠番判定に使えない（0 や境界以下になり得る）ため、lossy は
+    // ここでの境界/欠番判定の対象外とし、重複排除は reduce() の lossy_seq ガードに委ねる。
+    const isLossy = event.reliable === false;
+
+    // GET スナップショット境界より古い reliable 差分は破棄（スナップショットに含まれる）。境界は
     // 種別が属する GET ドメイン別（#119）。status/transcript/analysis/session.completed は
     // どの GET にも含まれず、question は専用 seq ガード（lastQuestionSeq）を持つため、ここでは
     // 捨てず reduce() の種別ガードに委ねる。これで GET 実行中〜直後に後着した非スナップショット
     // 種別（例: status・transcript.final）を hydrationSeq 境界で取りこぼさない。
-    if (event.seq <= this.snapshotBoundary(event.type)) {
+    if (!isLossy && event.seq <= this.snapshotBoundary(event.type)) {
       this.metrics.recordDuplicate();
       return;
     }
 
-    // 欠番検知: 期待する次 seq を飛ばして届いたら gap。契約 §4 に従い、欠落差分を
-    // GET で取り直す契機として購読者（hook）へ通知する。
-    if (this.maxSeq > 0 && event.seq > this.maxSeq + 1) {
+    // 欠番検知・maxSeq 前進は reliable ストリームのみ（#122・ADR-0021）。lossy が欠落しても
+    // reliable seq に穴は空かないため、lossy の欠番を gap 扱いして不要な GET 再取得を誘発しない。
+    if (!isLossy && this.maxSeq > 0 && event.seq > this.maxSeq + 1) {
       this.metrics.recordGap();
       for (const l of this.gapListeners) l();
     }
@@ -243,7 +248,7 @@ export class RealtimeStore {
       return;
     }
 
-    this.maxSeq = Math.max(this.maxSeq, event.seq);
+    if (!isLossy) this.maxSeq = Math.max(this.maxSeq, event.seq);
     this.metrics.recordReceived();
     this.metrics.recordApplyLatency(performance.now() - startedAt);
     this.invalidate();
@@ -274,25 +279,38 @@ export class RealtimeStore {
   /** 適用したら true、（古い/重複で）スキップしたら false。 */
   private reduce(event: ServerEvent): boolean {
     switch (event.type) {
-      case "status":
-        // status は id を持たず upsert の seq ガードを通らない。最後に適用した
-        // status seq より古いものは破棄し、phase の巻き戻しを防ぐ（lossy 可・順序は seq）。
-        if (event.seq <= this.lastStatusSeq) return false;
-        this.lastStatusSeq = event.seq;
+      case "status": {
+        // status は lossy（id 無し）。順序は lossy_seq で持つ（#122・ADR-0021）。reliable seq は
+        // echo（複数 status が同値）になり得るため seq では巻き戻し防止できない。古い lossy_seq の
+        // status は破棄して phase の巻き戻しを防ぐ。
+        const ls = event.lossy_seq ?? 0;
+        if (ls <= this.lastStatusLossySeq) return false;
+        this.lastStatusLossySeq = ls;
         this.phase = event.phase;
         this.agentsActive = event.agents_active ?? 0;
         return true;
+      }
 
       case "transcript.partial":
       case "transcript.final": {
-        const final = event.type === "transcript.final";
-        return this.upsert(this.transcript, event.utterance_id, event.seq, {
-          utterance_id: event.utterance_id,
-          speaker: event.speaker,
-          role: event.role,
-          text: event.text,
-          final,
+        // final は reliable（version=seq）、partial は lossy（version=lossy_seq）。系統が違うため
+        // 同系統どうしでのみ版比較し、確定（final）を partial で巻き戻さない（#122・ADR-0021）。
+        const isFinal = event.type === "transcript.final";
+        const prev = this.transcript.get(event.utterance_id);
+        if (prev?.value.final && !isFinal) return false; // 確定済みを partial で上書きしない
+        const version = isFinal ? event.seq : (event.lossy_seq ?? 0);
+        if (prev && prev.value.final === isFinal && prev.seq >= version) return false;
+        this.transcript.set(event.utterance_id, {
+          seq: version,
+          value: {
+            utterance_id: event.utterance_id,
+            speaker: event.speaker,
+            role: event.role,
+            text: event.text,
+            final: isFinal,
+          },
         });
+        return true;
       }
 
       case "detection.contradiction": {
@@ -500,7 +518,7 @@ export class RealtimeStore {
       agentsActive: this.agentsActive,
       requirements: this.sortedValues(this.requirements),
       detections: this.sortedValues(this.detections),
-      transcript: this.sortedValues(this.transcript),
+      transcript: this.sortedTranscript(),
       analysis: this.sortedValues(this.analysis),
       question: this.question,
       completed: this.completed,
@@ -510,6 +528,20 @@ export class RealtimeStore {
 
   private sortedValues<T>(map: Map<string, Versioned<T>>): T[] {
     return [...map.values()].sort((a, b) => a.seq - b.seq).map((v) => v.value);
+  }
+
+  /**
+   * transcript は版が 2 系統（final=reliable seq / partial=lossy_seq / #122）。生 seq で混在
+   * ソートすると系統差で誤順になるため、確定（final）を seq 昇順で前に、未確定（partial＝現在進行
+   * の発話）を lossy_seq 昇順で末尾に置く。これで「確定済みの会話＋末尾に進行中の一言」が出る。
+   */
+  private sortedTranscript(): TranscriptLine[] {
+    return [...this.transcript.values()]
+      .sort((a, b) => {
+        if (a.value.final !== b.value.final) return a.value.final ? -1 : 1;
+        return a.seq - b.seq;
+      })
+      .map((v) => v.value);
   }
 
   /** テスト/リセット用。 */
@@ -525,7 +557,7 @@ export class RealtimeStore {
     this.requirementsHydrationSeq = 0;
     this.detectionsHydrationSeq = 0;
     this.maxSeq = 0;
-    this.lastStatusSeq = 0;
+    this.lastStatusLossySeq = 0;
     this.lastCompletedSeq = 0;
     this.lastQuestionSeq = 0;
     this.metrics.reset();

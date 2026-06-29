@@ -97,8 +97,19 @@ export interface Question {
 interface Envelope<T extends string> {
   v: number;
   type: T;
-  /** セッション内の単調増加連番。整列・重複排除・欠番検知の基準。 */
+  /**
+   * reliable ストリームの単調増加連番（整列・重複排除・欠番検知の基準 / 契約 §2）。
+   * lossy イベント（status/transcript.partial）は reliable seq を消費せず**現在値を echo**する
+   * ため、その seq は欠番検知に使わない（#122・ADR-0021）。lossy の順序は `lossy_seq` で持つ。
+   */
   seq: number;
+  /**
+   * reliable イベントか（既定 true。#122・ADR-0021）。false = lossy（status/transcript.partial）。
+   * 欠番検知・maxSeq 前進は reliable のみ対象にする。古い agent（フィールド無し）は true 扱い。
+   */
+  reliable?: boolean;
+  /** lossy イベント専用の単調増加連番。lossy の順序・重複排除に使う（reliable には無い）。 */
+  lossy_seq?: number;
   /** ISO8601（agent 側の発行時刻）。 */
   ts: string;
   session_id: string;
