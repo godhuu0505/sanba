@@ -94,26 +94,37 @@ def test_app_jwt_signs_and_verifies_with_rsa() -> None:
 
 
 # ── 秘匿レダクト ──────────────────────────────────────────────────────────
+# テスト用のダミー秘匿値は実行時に組み立てる（リテラルを置かない＝gitleaks を素通り
+# させず、かつソースに偽トークンを残さない）。
 def test_redact_github_token() -> None:
-    out = redact_secrets("token = ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ012345")
-    assert "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ012345" not in out
+    fake_token = "ghp_" + "A" * 36
+    out = redact_secrets(f"token = {fake_token}")
+    assert fake_token not in out
     assert "redacted" in out
 
 
 def test_redact_assignment_keeps_key_hides_value() -> None:
-    out = redact_secrets('api_key = "supersecretvalue12345"')
+    fake_value = "s" * 24
+    out = redact_secrets(f'api_key = "{fake_value}"')
     assert "api_key" in out
-    assert "supersecretvalue12345" not in out
+    assert fake_value not in out
 
 
 def test_redact_private_key_block() -> None:
-    pem = (
-        "-----BEGIN RSA PRIVATE KEY-----\n"
-        "MIIBOgIBAAJBAKj34GkxFhD90vcNLYLInFEX6Ppy1tPf9Cnzj4p4WGeKLs1Pt8Qu\n"
-        "-----END RSA PRIVATE KEY-----"
-    )
+    # 実鍵を実行時に生成して PEM 化する（リテラルの鍵ブロックをソースに置かない）。
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    pem = key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.TraditionalOpenSSL,
+        encryption_algorithm=serialization.NoEncryption(),
+    ).decode()
+    body = pem.splitlines()[1]  # base64 本文の一部
     out = redact_secrets(f"key:\n{pem}\n")
-    assert "MIIBOgIBAA" not in out
+    assert body not in out
+    assert "PRIVATE KEY" not in out
 
 
 def test_redact_noop_on_clean_code() -> None:

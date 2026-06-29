@@ -64,7 +64,9 @@ def test_index_repo_indexes_files_and_summary() -> None:
 
 
 def test_index_repo_redacts_secrets_before_indexing() -> None:
-    fetcher = FakeFetcher({"config.py": 'API_KEY = "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ012345"\n'})
+    # ダミートークンは実行時に組み立てる（ソースにリテラルを残さない）。
+    fake_token = "ghp_" + "A" * 36
+    fetcher = FakeFetcher({"config.py": f'API_KEY = "{fake_token}"\n'})
     indexer = _index()
     fetch_and_index_repo(
         fetcher,
@@ -80,7 +82,7 @@ def test_index_repo_redacts_secrets_before_indexing() -> None:
     )
     # in-memory 索引に生トークンが残っていないこと。
     blob = " ".join(d["text"] for d in indexer._mem)
-    assert "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ012345" not in blob
+    assert fake_token not in blob
 
 
 def test_index_repo_marks_partial_on_cap() -> None:
