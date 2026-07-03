@@ -70,7 +70,7 @@ export function RequirementsTab({
               {group.map((r) => (
                 <div
                   key={r.id}
-                  className="flex flex-col gap-[3px] rounded-[12px] border border-[var(--sanba-border)] bg-[#1b140b] px-3 py-[11px]"
+                  className="flex flex-col gap-[3px] rounded-[12px] border border-[var(--sanba-border)] bg-[var(--sanba-surface)] px-3 py-[11px]"
                 >
                   <p className="text-[13px] font-bold text-[var(--sanba-cream)]">{r.statement}</p>
                   <span className="text-[10.5px] text-[var(--sanba-muted)]">
@@ -86,7 +86,7 @@ export function RequirementsTab({
       <h2
         ref={deepDiveRef}
         tabIndex={-1}
-        className="mt-1 scroll-mt-2 text-[12px] font-bold text-[#e0a93b]"
+        className="mt-1 scroll-mt-2 text-[12px] font-bold text-[#9c6b0e]"
       >
         ⚠ 深掘り対象（未解消 {deepDive.length}）
       </h2>

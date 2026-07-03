@@ -12,6 +12,7 @@ import {
   Chip,
   Divider,
   Field,
+  Figure,
   Input,
   ListRow,
   Logo,
@@ -26,7 +27,7 @@ import {
 
 export const metadata: Metadata = {
   title: "SANBA — UI Kit",
-  description: "SANBA デザインシステムのショーケース（dark + gold）。",
+  description: "SANBA デザインシステムのショーケース（白い紙×原色×棒人間 / ADR-0025）。",
 };
 
 /**
@@ -37,17 +38,17 @@ export const metadata: Metadata = {
 export default function DesignKitPage() {
   if (process.env.NODE_ENV === "production") notFound();
   return (
-    <main className="min-h-screen bg-neutral-900 px-6 py-10 text-neutral-200">
+    <main className="min-h-screen bg-neutral-100 px-6 py-10 text-neutral-800">
       <header className="mx-auto mb-8 max-w-6xl">
-        <h1 className="text-2xl font-bold text-white">SANBA UI Kit</h1>
-        <p className="mt-1 text-sm text-neutral-400">
-          dark + gold / 明朝。<code>@/components/sanba</code> の再利用部品で正本画面を再構成。
+        <h1 className="text-2xl font-bold text-neutral-900">SANBA UI Kit</h1>
+        <p className="mt-1 text-sm text-neutral-500">
+          白い紙×原色×棒人間（ADR-0025）。<code>@/components/sanba</code> の再利用部品で主要画面を再構成。
         </p>
       </header>
 
       {/* プリミティブ一覧 */}
-      <section className="mx-auto mb-10 max-w-6xl rounded-2xl border border-neutral-700 bg-neutral-800/40 p-6">
-        <h2 className="mb-4 text-lg font-semibold text-white">Primitives</h2>
+      <section className="mx-auto mb-10 max-w-6xl rounded-2xl border border-neutral-300 bg-white p-6">
+        <h2 className="mb-4 text-lg font-semibold text-neutral-900">Primitives</h2>
         <div className="sanba-font flex flex-wrap items-start gap-8 rounded-xl sanba-screen-bg p-6">
           <Stack label="Logo">
             <Logo />
@@ -55,12 +56,21 @@ export default function DesignKitPage() {
             <Logo wordmark={false} />
           </Stack>
           <Stack label="Button">
-            <Button variant="gold">金の CTA</Button>
+            <Button variant="gold">主要 CTA（朱）</Button>
             <Button variant="outline">枠ボタン</Button>
             <Button variant="ghost">テキスト</Button>
             <Button variant="gold" size="sm">
               小
             </Button>
+          </Stack>
+          <Stack label="Figure（サンバさん）">
+            <div className="flex items-end gap-3">
+              <Figure state="walking" />
+              <Figure state="asking" />
+              <Figure state="listening" />
+              <Figure state="insight" />
+              <Figure state="writing" />
+            </div>
           </Stack>
           <Stack label="Chip / tone">
             <Chip tone="gold" dot selected>
@@ -103,7 +113,7 @@ export default function DesignKitPage() {
 
       {/* 画面再構成 */}
       <section className="mx-auto max-w-6xl">
-        <h2 className="mb-4 text-lg font-semibold text-white">Screens</h2>
+        <h2 className="mb-4 text-lg font-semibold text-neutral-900">Screens</h2>
         <div className="flex flex-wrap gap-8">
           <LoginScreen />
           <ConversationScreen />

@@ -47,7 +47,7 @@ export function BottomBar({
     <div
       role="group"
       aria-label="会話コントロール"
-      className="flex flex-col gap-2 border-t border-[var(--sanba-border)] bg-[#140f08] px-4 pb-[14px] pt-[10px]"
+      className="flex flex-col gap-2 border-t-2 border-[var(--sanba-frame)] bg-[var(--sanba-surface)] px-4 pb-[14px] pt-[10px]"
     >
       {/* 音声状態の常時インジケータ（#248）。聞き取り中／発話中／読み上げ中／消音中を可視化。 */}
       <div className="flex justify-center">
@@ -68,7 +68,7 @@ export function BottomBar({
           onClick={onToggleMute}
           className={`flex-1 rounded-[12px] border py-3 text-[13px] font-bold ${
             muted
-              ? "border-[var(--sanba-rec)] bg-[#3a1a1a] text-[#e0857c]"
+              ? "border-[var(--sanba-rec)] bg-[var(--sanba-rec-pale)] text-[var(--sanba-rec)]"
               : "border-[var(--sanba-border)] bg-[var(--sanba-surface)] text-[var(--sanba-muted)]"
           }`}
         >
@@ -100,7 +100,7 @@ export function BottomBar({
             if (e.key === "Enter" && !e.nativeEvent.isComposing && e.keyCode !== 229) send();
           }}
           placeholder="テキストで入力…"
-          className="flex-1 rounded-full border border-[var(--sanba-border)] bg-[#1b140b] px-[14px] py-[11px] text-[12.5px] text-[var(--sanba-cream)] placeholder:text-[var(--sanba-muted)]"
+          className="flex-1 rounded-full border border-[var(--sanba-border)] bg-[var(--sanba-surface)] px-[14px] py-[11px] text-[12.5px] text-[var(--sanba-cream)] placeholder:text-[var(--sanba-muted)]"
         />
         <button
           type="button"

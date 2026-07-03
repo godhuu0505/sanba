@@ -5,8 +5,8 @@ import { Avatar } from "./Avatar";
 
 /**
  * 問答の吹き出し。
- *  - `author="agent"`: 左寄せ・生成りの面・SANBA の金章。
- *  - `author="user"`:  右寄せ・暗色の面＋金枠・参加者章。
+ *  - `author="agent"`: 左寄せ・白い面＋墨枠・SANBA の産章（山吹）。
+ *  - `author="user"`:  右寄せ・瑠璃の淡色面＋瑠璃枠・参加者章。
  * しっぽ（角の欠け）は話者側の上角だけ詰めて向きを示す。
  */
 export interface ChatBubbleProps extends React.HTMLAttributes<HTMLDivElement> {
@@ -36,8 +36,8 @@ export function ChatBubble({
       className={cn(
         "max-w-[78%] px-[13px] py-[11px] text-[13px] leading-[1.52]",
         isAgent
-          ? "rounded-[14px] rounded-tl-[4px] bg-[var(--sanba-cream-bubble)] text-[var(--sanba-ink-bubble)]"
-          : "rounded-[14px] rounded-tr-[4px] border border-[var(--sanba-border-strong)] bg-[var(--sanba-surface-strong)] text-[var(--sanba-cream)]",
+          ? "rounded-[14px] rounded-tl-[4px] border-[1.5px] border-[var(--sanba-frame)] bg-[var(--sanba-cream-bubble)] text-[var(--sanba-ink-bubble)]"
+          : "rounded-[14px] rounded-tr-[4px] border-[1.5px] border-[var(--sanba-select)] bg-[var(--sanba-select-pale)] text-[var(--sanba-cream)]",
       )}
     >
       {children}

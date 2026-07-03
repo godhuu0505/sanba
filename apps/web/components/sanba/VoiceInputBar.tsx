@@ -22,7 +22,7 @@ function MicIcon({ muted }: { muted?: boolean }) {
 
 /**
  * 会話画面の音声入力ドック。波形＋状態テキスト＋マイクボタンを 1 つにまとめる。
- *  - `state="listening"`: 金の波形＋萌黄の「認識中」＋金箔マイク。
+ *  - `state="listening"`: 墨×萌黄の波形＋萌黄の「認識中」＋山吹マイク（ステッカー）。
  *  - `state="muted"`:     鈍色の波形＋「ミュート中」＋面のマイク（off）。
  * `onToggle` でマイクの ON/OFF を親に通知する。
  */
@@ -64,10 +64,10 @@ export function VoiceInputBar({
         aria-pressed={muted}
         aria-label="マイクのミュート切替"
         className={cn(
-          "flex size-[56px] shrink-0 items-center justify-center rounded-full border border-[var(--sanba-border)] transition-opacity",
+          "flex size-[56px] shrink-0 items-center justify-center rounded-full transition-[opacity,transform,box-shadow]",
           muted
-            ? "bg-[var(--sanba-surface)] text-[var(--sanba-muted)]"
-            : "sanba-gold-gradient text-[var(--sanba-ink)] hover:opacity-90",
+            ? "border-2 border-[var(--sanba-border-strong)] bg-[var(--sanba-surface)] text-[var(--sanba-muted)]"
+            : "sanba-sticker sanba-gold-gradient text-[var(--sanba-ink)] hover:opacity-95 active:translate-x-[1px] active:translate-y-[1px] active:shadow-[1px_1px_0_var(--sanba-shadow)]",
         )}
       >
         <MicIcon muted={muted} />

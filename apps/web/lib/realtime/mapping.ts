@@ -20,23 +20,24 @@ export interface KindPresentation {
   ariaLabel: string;
 }
 
-// 緋 = 矛盾 / 黄土 = 抜け（05-detection.md / 08-analysis.md のトークン）。
+// 朱（旧・緋）= 矛盾 / 黄土 = 抜け（05-detection.md / 08-analysis.md のトークン）。
+// 値は白地（ADR-0025）でコントラストが立つよう暗めに調整している。
 const DETECTION_PRESENTATION: Record<DetectionKind, KindPresentation> = {
   contradiction: {
-    color: "#D2564B", // 緋
+    color: "#C43A20", // 朱（= --sanba-rec）
     // バッジ表記は Figma 正本に合わせて短く「矛盾」。説明は ariaLabel で補う。
     label: "矛盾",
     icon: "⚠",
     ariaLabel: "矛盾を検知",
   },
   gap: {
-    color: "#E0A93B", // 黄土
+    color: "#9C6B0E", // 黄土（白地向けの暗色）
     label: "抜け",
     icon: "◇",
     ariaLabel: "抜け（未定義）を検知",
   },
   ambiguous: {
-    color: "#7E8BA3", // 鈍色（緋/黄土/橄欖/金 と判別できるくすんだ藍鼠 / #182・ADR-0022）
+    color: "#5E6B85", // 鈍色（朱/黄土/橄欖/金 と判別できるくすんだ藍鼠 / #182・ADR-0022）
     label: "不明瞭",
     // 「〜」で曖昧さを表す。要件カテゴリ open_question の「?」と記号が衝突しないようにする。
     icon: "〜",
@@ -50,17 +51,18 @@ export function detectionPresentation(kind: DetectionKind): KindPresentation {
 
 // 要件カテゴリの表示（08/09 のチップ・セクション用）。色は補助、ラベル＋アイコンが主。
 const CATEGORY_PRESENTATION: Record<string, KindPresentation> = {
-  functional: { color: "#2F6FED", label: "機能", icon: "⚙", ariaLabel: "機能要件" },
+  // 機能は瑠璃（= --sanba-select）で選択系の青と統一（ADR-0025）。
+  functional: { color: "#2A5CDB", label: "機能", icon: "⚙", ariaLabel: "機能要件" },
   non_functional: {
     color: "#6B47C7",
     label: "非機能",
     icon: "◎",
     ariaLabel: "非機能要件",
   },
-  constraint: { color: "#8A8D91", label: "制約", icon: "▣", ariaLabel: "制約" },
-  scope: { color: "#1F9E8B", label: "境界", icon: "▢", ariaLabel: "スコープ・境界" },
+  constraint: { color: "#6B6E73", label: "制約", icon: "▣", ariaLabel: "制約" },
+  scope: { color: "#177E6F", label: "境界", icon: "▢", ariaLabel: "スコープ・境界" },
   open_question: {
-    color: "#E0A93B",
+    color: "#9C6B0E",
     label: "未解決",
     icon: "?",
     ariaLabel: "未解決の問い",
@@ -68,7 +70,7 @@ const CATEGORY_PRESENTATION: Record<string, KindPresentation> = {
 };
 
 const UNKNOWN_CATEGORY: KindPresentation = {
-  color: "#8A8D91",
+  color: "#6B6E73",
   label: "要件",
   icon: "•",
   ariaLabel: "要件",

@@ -26,12 +26,12 @@ export function DetectionPin({ summary, kind }: DetectionPinProps) {
   return (
     <div
       role="status"
-      className="flex items-center gap-2 border-t-2 bg-[#1f1710] px-4 py-[11px]"
+      className="flex items-center gap-2 border-t-2 bg-[var(--sanba-surface-strong)] px-4 py-[11px]"
       style={{ borderTopColor: presentation.color }}
     >
       <span
         aria-label={presentation.ariaLabel}
-        className="shrink-0 rounded-full px-2 py-[2px] text-[10.5px] font-bold text-[var(--sanba-ink)]"
+        className="shrink-0 rounded-full px-2 py-[2px] text-[10.5px] font-bold text-white"
         style={{ backgroundColor: presentation.color }}
       >
         {presentation.icon} {presentation.label}

@@ -7,7 +7,7 @@ const DEFAULT_BARS = [18, 40, 64, 34, 56, 28, 48, 62, 36];
 
 /**
  * 音声の波形ビジュアライザ。
- *  - `state="active"`: 金箔のバー＋脈動アニメ（集音中）。
+ *  - `state="active"`: 墨と萌黄が交互のバー＋脈動アニメ（集音中）。
  *  - `state="muted"`:  鈍色の静止バー（ミュート中）。
  */
 export interface WaveformProps extends React.HTMLAttributes<HTMLDivElement> {
@@ -31,7 +31,12 @@ export function Waveform({ className, state = "active", bars = DEFAULT_BARS, ...
           style={{ height: h, animationDelay: active ? `${(i % 5) * 0.12}s` : undefined }}
           className={cn(
             "w-[5px] shrink-0 rounded-[3px]",
-            active ? "sanba-gold-gradient sanba-wave-bar" : "bg-[var(--sanba-border-strong)]",
+            active
+              ? cn(
+                  "sanba-wave-bar",
+                  i % 2 === 0 ? "bg-[var(--sanba-frame)]" : "bg-[var(--sanba-speak)]",
+                )
+              : "bg-[var(--sanba-border-strong)]",
           )}
         />
       ))}

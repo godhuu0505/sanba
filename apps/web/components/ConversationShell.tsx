@@ -74,14 +74,14 @@ export function ConversationShell({
       <header className="flex items-center gap-2 px-4 pb-2 pt-2">
         <span
           aria-hidden
-          className="flex size-7 items-center justify-center rounded-full bg-[var(--sanba-frame)] text-[13px] font-bold text-[var(--sanba-ink)]"
+          className="sanba-gold-gradient sanba-serif flex size-7 items-center justify-center rounded-full border border-[var(--sanba-frame)] text-[13px] font-bold text-[var(--sanba-ink)]"
         >
           産
         </span>
         <h1 className="text-[15px] font-bold text-[var(--sanba-cream)]">問答</h1>
         <span className="flex-1" />
         {recording && (
-          <span className="rounded-full bg-[#2a1416] px-[9px] py-1 text-[11px] font-bold text-[var(--sanba-rec)]">
+          <span className="rounded-full border border-[var(--sanba-rec)] bg-[var(--sanba-rec-pale)] px-[9px] py-1 text-[11px] font-bold text-[var(--sanba-rec)]">
             ● REC {elapsed}
           </span>
         )}
@@ -100,24 +100,24 @@ export function ConversationShell({
       <div className="px-4 pb-[6px]">
         <div
           aria-label="状況"
-          className="flex items-center gap-2 rounded-[10px] border border-[var(--sanba-border)] bg-[#1b140b] px-3 py-2 text-[11.5px]"
+          className="flex items-center gap-2 rounded-[10px] border border-[var(--sanba-border)] bg-[var(--sanba-surface)] px-3 py-2 text-[11.5px]"
         >
           {/* タップで該当タブへ（要件/未確定→要件絵巻、資料→参考資料）。 */}
           <button type="button" onClick={() => setTab("scroll")} className="font-bold text-[var(--sanba-gold-text)]">
             ◆ 要件 {mini.requirements}
           </button>
-          <span className="text-[#6b5836]">・</span>
+          <span className="text-[var(--sanba-border-strong)]">・</span>
           <button
             type="button"
             onClick={() => {
               setTab("scroll");
               onUnresolvedJump?.();
             }}
-            className="font-bold text-[#e0a93b]"
+            className="font-bold text-[#9c6b0e]"
           >
             ⚠ 未確定 {mini.unresolved}
           </button>
-          <span className="text-[#6b5836]">・</span>
+          <span className="text-[var(--sanba-border-strong)]">・</span>
           <button type="button" onClick={() => setTab("files")} className="text-[var(--sanba-muted)]">
             📎 資料 {mini.materials}
             {mini.analyzing ? "（解析中）" : ""}
@@ -131,7 +131,7 @@ export function ConversationShell({
       <div
         role="tablist"
         aria-label="情報タブ"
-        className="flex gap-5 border-b border-[#3a2e1a] px-4"
+        className="flex gap-5 border-b border-[var(--sanba-border)] px-4"
       >
         {TAB_ORDER.map((k) => {
           const active = tab === k;

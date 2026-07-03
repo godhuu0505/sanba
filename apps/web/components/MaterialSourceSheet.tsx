@@ -123,7 +123,7 @@ export function MaterialSourceSheet({
         role="dialog"
         aria-modal="true"
         aria-label="資料の追加方法"
-        className="relative z-10 flex w-full max-w-[420px] flex-col gap-2 rounded-t-[18px] border-t border-[var(--sanba-frame)] bg-[#221910] px-4 pb-[18px] pt-[14px]"
+        className="relative z-10 flex w-full max-w-[420px] flex-col gap-2 rounded-t-[18px] border-t-2 border-[var(--sanba-frame)] bg-[var(--sanba-surface)] px-4 pb-[18px] pt-[14px]"
       >
         <div className="flex items-center gap-2">
           <span className="text-[15px] font-bold text-[var(--sanba-gold-text)]">
@@ -225,7 +225,7 @@ function SourceRow({
       aria-label={actionLabel}
       aria-pressed={active}
       onClick={onClick}
-      className="flex w-full items-center gap-3 rounded-[12px] border bg-[#1b140b] px-3 py-[13px] text-left"
+      className="flex w-full items-center gap-3 rounded-[12px] border bg-[var(--sanba-surface-strong)] px-3 py-[13px] text-left"
       style={{ borderColor: active ? "var(--sanba-gold-text)" : "var(--sanba-border)" }}
     >
       <span aria-hidden="true" className="text-[20px]">
@@ -235,7 +235,7 @@ function SourceRow({
         <span className="flex items-center gap-2 text-[14px] font-bold text-[var(--sanba-cream)]">
           {title}
           {active && (
-            <span className="rounded-full bg-[var(--sanba-gold-text)] px-[7px] py-[1px] text-[10px] font-bold text-[var(--sanba-ink)]">
+            <span className="rounded-full bg-[var(--sanba-gold-text)] px-[7px] py-[1px] text-[10px] font-bold text-white">
               ON
             </span>
           )}

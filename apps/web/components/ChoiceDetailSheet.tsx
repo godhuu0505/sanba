@@ -52,7 +52,7 @@ export function ChoiceDetailSheet({
   onCompare,
 }: ChoiceDetailSheetProps) {
   return (
-    <div className="flex flex-col gap-3 rounded-t-[18px] border-t border-[var(--sanba-frame)] bg-[#221910] px-4 pb-[18px] pt-[10px]">
+    <div className="flex flex-col gap-3 rounded-t-[18px] border-t-2 border-[var(--sanba-frame)] bg-[var(--sanba-surface)] px-4 pb-[18px] pt-[10px]">
       <div className="flex items-center gap-2">
         <span className="text-[14px] font-bold text-[var(--sanba-gold-text)]">選択肢の詳細</span>
         <span className="text-[11px] text-[var(--sanba-muted)]">
@@ -69,12 +69,12 @@ export function ChoiceDetailSheet({
         </button>
       </div>
 
-      <div className="flex flex-col gap-[11px] rounded-[14px] border border-[var(--sanba-border)] bg-[#1b140b] p-[14px]">
+      <div className="flex flex-col gap-[11px] rounded-[14px] border border-[var(--sanba-border)] bg-[var(--sanba-surface-strong)] p-[14px]">
         <span className="text-[16px] font-bold text-[var(--sanba-cream)]">{option.label}</span>
-        <Section label="どう並ぶ？" color="#d4af37" value={option.how} />
-        <Section label="効き目" color="#a9be6e" value={option.effect} />
-        <Section label="留意" color="#e0a93b" value={option.caution} />
-        <Section label="関連・出所" color="#9a875e" value={option.source} />
+        <Section label="どう並ぶ？" color="var(--sanba-gold-text)" value={option.how} />
+        <Section label="効き目" color="var(--sanba-speak)" value={option.effect} />
+        <Section label="留意" color="#9c6b0e" value={option.caution} />
+        <Section label="関連・出所" color="var(--sanba-muted)" value={option.source} />
       </div>
 
       <button

@@ -2,6 +2,7 @@ import * as React from "react";
 import Link from "next/link";
 
 import { cn } from "@/lib/utils";
+import { Figure } from "./Figure";
 import { ListRow } from "./ListRow";
 
 /**
@@ -50,7 +51,11 @@ export const SessionHistoryList = React.forwardRef<HTMLElement, SessionHistoryLi
           過去の要件を見る
         </h2>
         {items.length === 0 ? (
-          <p className="text-[13px] leading-relaxed text-[var(--sanba-muted)]">{emptyText}</p>
+          // 空状態はサンバさん（問いかけ）が誘う（ADR-0025）。
+          <div className="flex items-center gap-[14px] rounded-[12px] border border-dashed border-[var(--sanba-border-strong)] bg-[var(--sanba-surface)] px-[14px] py-[10px]">
+            <Figure state="asking" className="w-[44px] shrink-0" />
+            <p className="text-[13px] leading-relaxed text-[var(--sanba-muted)]">{emptyText}</p>
+          </div>
         ) : (
           <ul className="flex flex-col gap-[8px]">
             {items.map((item) => (

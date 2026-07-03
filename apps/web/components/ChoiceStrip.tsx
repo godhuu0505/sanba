@@ -68,11 +68,11 @@ export function ChoiceStrip({
   if (options.length === 0) return null;
 
   const presentation = detectionKind ? detectionPresentation(detectionKind) : null;
-  const accent = presentation ? presentation.color : "#7a5a1e";
+  const accent = presentation ? presentation.color : "var(--sanba-gold-deep)";
 
   return (
     <div
-      className="flex flex-col gap-2 border-t-2 bg-[#1f1710] px-4 py-[9px]"
+      className="flex flex-col gap-2 border-t-2 bg-[var(--sanba-surface-strong)] px-4 py-[9px]"
       style={{ borderTopColor: accent }}
     >
       {/* 見出し：検知バッジ＋問い＋開閉 */}
@@ -80,7 +80,7 @@ export function ChoiceStrip({
         {presentation && (
           <span
             aria-label={presentation.ariaLabel}
-            className="rounded-full px-2 py-[2px] text-[10.5px] font-bold text-[var(--sanba-ink)]"
+            className="rounded-full px-2 py-[2px] text-[10.5px] font-bold text-white"
             style={{ backgroundColor: presentation.color }}
           >
             {presentation.icon} {presentation.label}
@@ -119,7 +119,7 @@ export function ChoiceStrip({
                 {...longPress}
                 className={`shrink-0 rounded-full border px-[11px] py-[6px] text-[12px] font-bold ${
                   o.fixed
-                    ? "border-dashed border-[#6b5836] text-[var(--sanba-muted)]"
+                    ? "border-dashed border-[var(--sanba-border-strong)] text-[var(--sanba-muted)]"
                     : "border-[var(--sanba-frame)] bg-[var(--sanba-surface)] text-[var(--sanba-gold-text)]"
                 }`}
               >
@@ -137,7 +137,7 @@ export function ChoiceStrip({
                 onClick={() => onSelect(i)}
                 className={`flex flex-1 flex-col items-start rounded-[10px] border px-[10px] py-[9px] text-left ${
                   o.fixed
-                    ? "border-dashed border-[#6b5836] bg-[#241a0f]"
+                    ? "border-dashed border-[var(--sanba-border-strong)] bg-[var(--sanba-bg)]"
                     : "border-[var(--sanba-border)] bg-[var(--sanba-surface)]"
                 }`}
               >

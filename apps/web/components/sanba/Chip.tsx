@@ -17,15 +17,16 @@ type ToneStyle = { soft: string; solid: string };
 const TONES: Record<ChipTone, ToneStyle> = {
   neutral: {
     soft: "border border-[var(--sanba-border)] bg-[var(--sanba-surface)] text-[var(--sanba-muted)]",
-    solid: "border border-transparent bg-[var(--sanba-cream)] text-[var(--sanba-ink)]",
+    // 選択＝瑠璃（ADR-0025）。役割チップなど単一選択の「選ばれている」状態。
+    solid: "border border-transparent bg-[var(--sanba-select)] text-white",
   },
   gold: {
     soft: "border border-[var(--sanba-gold-deep)] bg-transparent text-[var(--sanba-gold-text)]",
-    solid: "sanba-gold-gradient border border-transparent text-[var(--sanba-ink)]",
+    solid: "sanba-gold-gradient border border-[var(--sanba-frame)] text-[var(--sanba-ink)]",
   },
   success: {
     soft: "border border-[var(--sanba-speak)]/40 bg-transparent text-[var(--sanba-speak)]",
-    solid: "border border-transparent bg-[var(--sanba-speak)] text-[var(--sanba-ink)]",
+    solid: "border border-transparent bg-[var(--sanba-speak)] text-white",
   },
   danger: {
     soft: "border border-[var(--sanba-rec)]/40 bg-transparent text-[var(--sanba-rec)]",
@@ -33,7 +34,7 @@ const TONES: Record<ChipTone, ToneStyle> = {
   },
   info: {
     soft: "border border-[var(--sanba-border)] bg-transparent text-[var(--sanba-cream)]",
-    solid: "border border-transparent bg-[var(--sanba-border)] text-[var(--sanba-cream)]",
+    solid: "border border-transparent bg-[var(--sanba-surface-strong)] text-[var(--sanba-cream)]",
   },
 };
 

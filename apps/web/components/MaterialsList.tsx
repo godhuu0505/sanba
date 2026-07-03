@@ -43,7 +43,7 @@ const STATUS_LABEL: Record<Exclude<MaterialStatus, "done" | "failed" | "cancelle
 };
 
 const ROW_CLASS =
-  "flex flex-col gap-[6px] rounded-[12px] border border-[var(--sanba-border)] bg-[#1b140b] px-3 py-[11px]";
+  "flex flex-col gap-[6px] rounded-[12px] border border-[var(--sanba-border)] bg-[var(--sanba-surface)] px-3 py-[11px]";
 
 export function MaterialsList({
   items,
@@ -78,7 +78,7 @@ export function MaterialsList({
       <button
         type="button"
         onClick={onAdd}
-        className="rounded-[12px] border border-dashed border-[var(--sanba-frame)] bg-[#1b140b] px-3 py-[13px] text-[12.5px] font-bold text-[var(--sanba-gold-text)]"
+        className="rounded-[12px] border border-dashed border-[var(--sanba-gold-deep)] bg-[var(--sanba-surface)] px-3 py-[13px] text-[12.5px] font-bold text-[var(--sanba-gold-text)]"
       >
         ＋ 素材を追加（カメラ・アップロード・画面共有）
       </button>
@@ -111,7 +111,7 @@ export function MaterialsList({
                     aria-valuenow={it.pct}
                     aria-valuemin={0}
                     aria-valuemax={100}
-                    className="h-[5px] flex-1 overflow-hidden rounded-full bg-[var(--sanba-surface)]"
+                    className="h-[5px] flex-1 overflow-hidden rounded-full bg-[var(--sanba-border)]"
                   >
                     <div className="h-full sanba-gold-gradient" style={{ width: `${it.pct}%` }} />
                   </div>
