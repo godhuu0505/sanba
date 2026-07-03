@@ -52,7 +52,7 @@ export function RequirementsTab({
 
   return (
     <div className="flex flex-col gap-3 px-4 py-3">
-      <h2 className="text-[11px] font-bold text-[var(--sanba-gold)]">
+      <h2 className="text-[11px] font-bold text-[var(--sanba-gold-text)]">
         要件絵巻（MoSCoW・確信度/出所つき・閲覧のみ）
       </h2>
 
