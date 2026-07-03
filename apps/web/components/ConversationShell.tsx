@@ -113,7 +113,7 @@ export function ConversationShell({
               setTab("scroll");
               onUnresolvedJump?.();
             }}
-            className="font-bold text-[#9c6b0e]"
+            className="font-bold text-[#8f620c]"
           >
             ⚠ 未確定 {mini.unresolved}
           </button>

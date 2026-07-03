@@ -107,7 +107,7 @@ function categoryDot(kind: "contradiction" | "gap" | "ambiguous") {
     return { color: "#C43A20", label: "言葉×画の矛盾", icon: "⚠", ariaLabel: "言葉と画の矛盾" };
   if (kind === "ambiguous")
     return { color: "#5E6B85", label: "不明瞭", icon: "〜", ariaLabel: "不明瞭な論点" };
-  return { color: "#9C6B0E", label: "抜け", icon: "◇", ariaLabel: "抜け（未定義）" };
+  return { color: "#8F620C", label: "抜け", icon: "◇", ariaLabel: "抜け（未定義）" };
 }
 
 const card = {
