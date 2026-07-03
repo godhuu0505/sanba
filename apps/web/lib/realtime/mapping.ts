@@ -31,7 +31,7 @@ const DETECTION_PRESENTATION: Record<DetectionKind, KindPresentation> = {
     ariaLabel: "矛盾を検知",
   },
   gap: {
-    color: "#8F620C", // 黄土（白地向けの暗色）
+    color: "#7D560B", // 黄土（白地向けの暗色）
     label: "抜け",
     icon: "◇",
     ariaLabel: "抜け（未定義）を検知",
@@ -62,7 +62,7 @@ const CATEGORY_PRESENTATION: Record<string, KindPresentation> = {
   constraint: { color: "#6B6E73", label: "制約", icon: "▣", ariaLabel: "制約" },
   scope: { color: "#177E6F", label: "境界", icon: "▢", ariaLabel: "スコープ・境界" },
   open_question: {
-    color: "#8F620C",
+    color: "#7D560B",
     label: "未解決",
     icon: "?",
     ariaLabel: "未解決の問い",
