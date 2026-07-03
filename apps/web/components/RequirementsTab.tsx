@@ -86,7 +86,7 @@ export function RequirementsTab({
       <h2
         ref={deepDiveRef}
         tabIndex={-1}
-        className="mt-1 scroll-mt-2 text-[12px] font-bold text-[#8f620c]"
+        className="mt-1 scroll-mt-2 text-[12px] font-bold text-[var(--sanba-caution)]"
       >
         ⚠ 深掘り対象（未解消 {deepDive.length}）
       </h2>

@@ -47,7 +47,8 @@
   --sanba-gold-amber: #de9200;    /* 山吹の陰 */
   --sanba-rec: #c43a20;           /* 朱 — 主要 CTA・録音中・矛盾（白文字 4.6:1） */
   --sanba-rec-pale: #fbeae6;      /* 朱の淡色面（矛盾の告知など） */
-  --sanba-speak: #54751b;         /* 萌黄 — 発話認識中（淡色面上でも AA 4.7:1 以上） */
+  --sanba-speak: #4a6619;         /* 萌黄 — 発話認識中（淡色面上でも AA 5.5:1 以上） */
+  --sanba-caution: #7d560b;       /* 黄土 — 留意・未確定警告（淡色面上でも AA 5.5:1 以上） */
   --sanba-select: #2a5cdb;        /* 瑠璃 — 選択状態・ユーザー発話・リンク */
   --sanba-select-pale: #eaf0ff;   /* 瑠璃の淡色面（ユーザー吹き出し） */
   --sanba-shadow: rgba(34, 30, 26, 0.16); /* ステッカーのベタ塗りオフセット影 */
@@ -99,6 +100,7 @@
   --color-sanba-rec: var(--sanba-rec);
   --color-sanba-rec-pale: var(--sanba-rec-pale);
   --color-sanba-speak: var(--sanba-speak);
+  --color-sanba-caution: var(--sanba-caution);
   --color-sanba-select: var(--sanba-select);
   --color-sanba-select-pale: var(--sanba-select-pale);
   --font-serif-jp: var(--font-noto-serif-jp), "Noto Serif JP", serif;

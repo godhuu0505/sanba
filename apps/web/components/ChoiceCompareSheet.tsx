@@ -34,7 +34,7 @@ export function ChoiceCompareSheet({ rows, onSelect, onClose, onDetail }: Choice
       </div>
       <div className="flex gap-3 text-[11px] font-bold">
         <span className="text-[var(--sanba-speak)]">✓ 効き目</span>
-        <span className="text-[#8f620c]">⚠ 留意</span>
+        <span className="text-[var(--sanba-caution)]">⚠ 留意</span>
       </div>
 
       {rows.map((r, i) => (
@@ -68,7 +68,7 @@ export function ChoiceCompareSheet({ rows, onSelect, onClose, onDetail }: Choice
               <p className="text-[11.5px] text-[var(--sanba-muted)]">{r.effect ?? "—"}</p>
             </div>
             <div className="flex-1 rounded-[9px] bg-[var(--sanba-surface)] px-[9px] py-2">
-              <span className="text-[10px] font-bold text-[#8f620c]">⚠ 留意</span>
+              <span className="text-[10px] font-bold text-[var(--sanba-caution)]">⚠ 留意</span>
               <p className="text-[11.5px] text-[var(--sanba-muted)]">{r.caution ?? "—"}</p>
             </div>
           </div>
