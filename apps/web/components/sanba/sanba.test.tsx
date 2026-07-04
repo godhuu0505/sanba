@@ -2,6 +2,7 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  AppHeader,
   Button,
   ChatBubble,
   Chip,
@@ -121,5 +122,25 @@ describe("SANBA design system", () => {
     expect(screen.getByRole("img", { name: "集音中" })).toBeTruthy();
     rerender(<Waveform state="muted" />);
     expect(screen.getByRole("img", { name: "ミュート中" })).toBeTruthy();
+  });
+});
+
+// SANBA ブランドは全画面で常時表示する（2026-07 要望「どの画面でも SANBA ヘッダー」）。
+describe("AppHeader（SANBA ブランド常時表示）", () => {
+  it("タイトル画面でもロゴ（SANBA）を併記する", () => {
+    render(<AppHeader title="管理の間" />);
+    expect(screen.getByText("SANBA")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "管理の間" })).toBeTruthy();
+  });
+
+  it("タイトル無しでもロゴを出す。deprecated な brand 指定は無指定と同義（DOM へ流出しない）", () => {
+    const { rerender } = render(<AppHeader />);
+    expect(screen.getByText("SANBA")).toBeTruthy();
+    expect(screen.queryByRole("heading")).toBeNull();
+
+    rerender(<AppHeader brand />);
+    expect(screen.getByText("SANBA")).toBeTruthy();
+    // brand 属性を DOM へ漏らさない（React unknown attribute 警告の防止）。
+    expect(screen.getByRole("banner").hasAttribute("brand")).toBe(false);
   });
 });
