@@ -207,9 +207,8 @@ class SessionMeta(BaseModel):
     # 単発セッション（旧文書の互換）。repo 解決は「セッション明示 > product > 環境変数」。
     product_id: str | None = None
     # インタビュー・モード（ADR-0032）。リンクの scope から決まり、agent がプロンプト・
-    # 語彙・成果物の形式を分岐する。値は InviteScope と同じ語彙（developer / end_user）。
-    # 旧文書は既定 developer でフォールバックする。
-    interview_mode: str = "developer"
+    # 語彙・成果物の形式を分岐する。旧文書は既定 developer でフォールバックする。
+    interview_mode: InviteScope = InviteScope.DEVELOPER
 
     # ---- 連携 GitHub リポジトリ (ADR-0027 / ADR-0028) ----
     # セッション単位の GitHub リポジトリ（ADR-0027）。02 準備で選択され、grounding 取り込みと

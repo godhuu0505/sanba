@@ -350,8 +350,9 @@ class SessionRepository:
         updated = Product.model_validate(data)
 
         if self._client is not None:
+            # github_* などの並行更新を巻き戻さないよう、編集対象フィールドのみ patch する。
             self._client.collection("products").document(product_id).set(
-                updated.model_dump(mode="json"), merge=True
+                updates, merge=True
             )
         else:
             self._mem_products[product_id] = updated
@@ -492,6 +493,14 @@ class SessionRepository:
 
         @firestore.transactional  # type: ignore[misc]
         def _txn(transaction: Any) -> ProductInvite:
+            # delete_product との競合で孤立した invite を消費させない。
+            product_snap = (
+                self._client.collection("products")
+                .document(product_id)
+                .get(transaction=transaction)
+            )
+            if not product_snap.exists:
+                raise ProductNotFound(product_id)
             snap = doc_ref.get(transaction=transaction)
             if not snap.exists:
                 raise InviteNotFound(invite_id)
