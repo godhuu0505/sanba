@@ -125,7 +125,7 @@ jobs:
     permissions:
       contents: read
       id-token: write # Workload Identity Federation
-      attestations: write # SLSA build provenance (actions/attest-build-provenance)
+      attestations: write # SLSA build provenance + SBOM attestation (actions/attest-build-provenance, actions/attest-sbom)
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -202,4 +202,22 @@ jobs:
         with:
           subject-name: ${{ env.REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ env.REPO }}/${{ matrix.app }}
           subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: false
+
+      - name: Generate SBOM (CycloneDX)
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          image: ${{ env.REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ env.REPO }}/${{ matrix.app }}@${{ steps.build.outputs.digest }}
+          format: cyclonedx-json
+          output-file: sbom-${{ matrix.app }}.cdx.json
+          upload-artifact: false
+
+      - name: Attest SBOM
+        # SBOM を GitHub に署名付きで記録する。build provenance と同様デプロイ後に実行し、
+        # attestation の失敗が本番反映を止めないようにする。
+        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
+        with:
+          subject-name: ${{ env.REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ env.REPO }}/${{ matrix.app }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          sbom-path: sbom-${{ matrix.app }}.cdx.json
           push-to-registry: false
