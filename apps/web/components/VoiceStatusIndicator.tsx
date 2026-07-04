@@ -12,6 +12,7 @@
 
 import { type LucideIcon, Mic, Pause, Volume2, VolumeX } from "lucide-react";
 
+import { Figure, type FigureState } from "@/components/sanba";
 import type { SessionPhase } from "@/lib/realtime/types";
 
 export type VoiceStatus = "muted" | "agent-speaking" | "listening" | "idle";
@@ -79,11 +80,22 @@ const PRESENTATION: Record<
   },
 };
 
+/**
+ * 音声状態 → 棒人間サンバさんの状態（ADR-0033 §6 の配線）。
+ * 聞き取り中だけ耳を澄ますサンバさんを添える。発話中/消音中/待機中はステータスピルの
+ * 文言＋アイコンに委ね figure は出さない（1 画面 1 体・過剰演出の回避）。
+ * 将来 agent-speaking→asking 等へ拡張する余地を残し、写像を 1 箇所に閉じ込める。
+ */
+export function figureStateForVoiceStatus(status: VoiceStatus): FigureState | null {
+  return status === "listening" ? "listening" : null;
+}
+
 export function VoiceStatusIndicator(props: VoiceStatusIndicatorProps) {
   const status = resolveVoiceStatus(props);
   const { icon: Icon, label, tone, pulse } = PRESENTATION[status];
+  const figState = figureStateForVoiceStatus(status);
 
-  return (
+  const pill = (
     <div
       role="status"
       aria-live="polite"
@@ -98,6 +110,16 @@ export function VoiceStatusIndicator(props: VoiceStatusIndicatorProps) {
       />
       <Icon size={14} aria-hidden />
       <span>{label}</span>
+    </div>
+  );
+
+  // 聞き取り中はサンバさんが耳を澄ます。意味はステータスピル（role=status/aria-live）が既に
+  // 読み上げるので、figure は装飾（label 無し＝aria-hidden・reduced-motion で静止）。
+  if (!figState) return pill;
+  return (
+    <div className="flex flex-col items-center gap-1">
+      <Figure state={figState} className="w-[34px]" />
+      {pill}
     </div>
   );
 }
