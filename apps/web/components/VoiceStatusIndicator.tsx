@@ -12,6 +12,7 @@
 
 import { type LucideIcon, Mic, Pause, Volume2, VolumeX } from "lucide-react";
 
+import { Figure, type FigureState } from "@/components/sanba";
 import type { SessionPhase } from "@/lib/realtime/types";
 
 export type VoiceStatus = "muted" | "agent-speaking" | "listening" | "idle";
@@ -79,25 +80,44 @@ const PRESENTATION: Record<
   },
 };
 
+/**
+ * 音声状態 → 棒人間サンバさんの状態（ADR-0033 §6 の配線）。
+ * 聞き取り中だけ耳を澄ますサンバさんを添える。発話中/消音中/待機中はステータスピルの
+ * 文言＋アイコンに委ね figure は出さない（1 画面 1 体・過剰演出の回避）。
+ * 将来 agent-speaking→asking 等へ拡張する余地を残し、写像を 1 箇所に閉じ込める。
+ */
+export function figureStateForVoiceStatus(status: VoiceStatus): FigureState | null {
+  return status === "listening" ? "listening" : null;
+}
+
 export function VoiceStatusIndicator(props: VoiceStatusIndicatorProps) {
   const status = resolveVoiceStatus(props);
   const { icon: Icon, label, tone, pulse } = PRESENTATION[status];
+  const figState = figureStateForVoiceStatus(status);
 
+  // role="status" を常に同一のルートノードに固定し live region を安定させる（a11y）。
+  // 遷移で Figure の有無が変わっても role="status" ノード自体は差し替わらない。
   return (
     <div
       role="status"
       aria-live="polite"
       aria-label={`音声状態: ${label}`}
       data-status={status}
-      className={`flex items-center justify-center gap-1.5 rounded-full border bg-[var(--sanba-surface)] px-3 py-1 text-[11px] font-bold ${tone}`}
+      className="flex flex-col items-center gap-1"
     >
-      {/* 発話/聞き取り中は点滅ドットで「生きている」状態を示す（色のみに依存しない補助）。 */}
-      <span
-        aria-hidden
-        className={`inline-block h-1.5 w-1.5 rounded-full bg-current ${pulse ? "animate-pulse" : ""}`}
-      />
-      <Icon size={14} aria-hidden />
-      <span>{label}</span>
+      {/* 聞き取り中だけサンバさんが耳を澄ます。意味はこの role=status/aria-live が読み上げるので装飾（aria-hidden）。 */}
+      {figState && <Figure state={figState} className="w-[34px]" />}
+      <div
+        className={`flex items-center justify-center gap-1.5 rounded-full border bg-[var(--sanba-surface)] px-3 py-1 text-[11px] font-bold ${tone}`}
+      >
+        {/* 発話/聞き取り中は点滅ドットで「生きている」状態を示す（色のみに依存しない補助）。 */}
+        <span
+          aria-hidden
+          className={`inline-block h-1.5 w-1.5 rounded-full bg-current ${pulse ? "animate-pulse" : ""}`}
+        />
+        <Icon size={14} aria-hidden />
+        <span>{label}</span>
+      </div>
     </div>
   );
 }
