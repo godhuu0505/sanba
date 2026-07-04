@@ -40,11 +40,17 @@ from pydantic import BaseModel, Field
 from sanba_shared.models import (
     GitHubIndexStatus,
     GitHubLink,
+    Product,
     Requirement,
     RequirementStatus,
     SessionMeta,
+    new_product_id,
 )
-from sanba_shared.repository import RequirementNotFound, SessionRepository
+from sanba_shared.repository import (
+    ProductNotFound,
+    RequirementNotFound,
+    SessionRepository,
+)
 
 from . import github_export
 from .auth import (
@@ -56,7 +62,7 @@ from .auth import (
     verify_invite,
     verify_session_token,
 )
-from .auth_google import AuthUser, require_admin, require_user
+from .auth_google import AuthUser, is_admin, require_admin, require_user
 from .config import settings
 from .github_app import (
     GitHubAppClient,
@@ -71,6 +77,7 @@ from .observability import (
     record_material_event,
     record_my_requirements_viewed,
     record_my_sessions_listed,
+    record_product_event,
     record_question_hydration,
     record_rate_limited,
     setup_observability,
@@ -863,6 +870,322 @@ def get_session_repo(
         branch=meta.github_branch,
         commit_sha=meta.github_commit_sha,
         status=meta.github_index_status.value,
+    )
+
+
+# ---- Products (ADR-0031) ----------------------------------------------------
+class CreateProductRequest(BaseModel):
+    """`POST /api/products`（FR-1.1）。name はハンドラ側で strip + 空を 400 にする。"""
+
+    name: str = Field(max_length=200)
+    description: str = Field(default="", max_length=2000)
+    # 利用者向け語彙（ADR-0032 でプロンプトにシード）。件数はここで、各語の長さは
+    # `_clean_glossary` で制限する（Firestore 文書とプロンプトの肥大防止）。
+    glossary: list[str] = Field(default_factory=list, max_length=100)
+
+
+class UpdateProductRequest(BaseModel):
+    """`PATCH /api/products/{id}`（FR-1.2）。None = 変更しない（部分更新）。"""
+
+    name: str | None = Field(default=None, max_length=200)
+    description: str | None = Field(default=None, max_length=2000)
+    glossary: list[str] | None = Field(default=None, max_length=100)
+
+
+class ProductResponse(BaseModel):
+    """product の応答形。owner_sub は載せない（本人/管理者しか読めない一覧でも
+    不要な識別子は返さない。MySession の最小権限方針と同じ）。"""
+
+    id: str
+    name: str
+    description: str
+    glossary: list[str]
+    created_at: datetime
+    github_repo: str | None = None
+    github_branch: str | None = None
+    github_commit_sha: str | None = None
+    github_index_status: str = "none"
+
+
+class DeleteProductResponse(BaseModel):
+    deleted: bool
+
+
+def _product_response(product: Product) -> ProductResponse:
+    return ProductResponse(
+        id=product.id,
+        name=product.name,
+        description=product.description,
+        glossary=product.glossary,
+        created_at=product.created_at,
+        github_repo=product.github_repo,
+        github_branch=product.github_branch,
+        github_commit_sha=product.github_commit_sha,
+        github_index_status=product.github_index_status.value,
+    )
+
+
+def _clean_glossary(glossary: list[str]) -> list[str]:
+    """利用者向け語彙を正規化する: 前後空白を除き、空要素を捨て、過長は 400。"""
+    cleaned = [g.strip() for g in glossary]
+    cleaned = [g for g in cleaned if g]
+    if any(len(g) > 100 for g in cleaned):
+        raise HTTPException(status_code=400, detail="glossary term too long (max 100 chars)")
+    return cleaned
+
+
+def _require_product_access(product_id: str, user: AuthUser) -> Product:
+    """product 認可の一点集約（ADR-0031 決定5 / 要件 NFR-6）: owner または admin のみ。
+
+    非所有・不存在はどちらも 404 に平す（`/api/sessions/mine/{id}` と同じ:
+    応答差で他人の product ID の存在を漏らさない）。org / テナントを将来導入する
+    ときは、この関数の判定を sub → org → product に差し替える（他の場所に判定を
+    増やさない）。web 側の判定は表示制御のみで、認可の源泉は常にここ。
+    """
+    product = _repo.get_product(product_id)
+    if product is None:
+        raise HTTPException(status_code=404, detail="product not found")
+    if product.owner_sub != user.sub and not is_admin(user):
+        raise HTTPException(status_code=404, detail="product not found")
+    return product
+
+
+@app.post("/api/products", response_model=ProductResponse)
+def create_product(
+    req: CreateProductRequest, user: AuthUser = Depends(require_user)
+) -> ProductResponse:
+    """アプリを登録する（FR-1.1 / ADR-0031）。owner は呼び出しユーザー。"""
+    name = req.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="name must not be empty")
+    product = Product(
+        id=new_product_id(),
+        name=name,
+        description=req.description.strip(),
+        owner_sub=user.sub,
+        glossary=_clean_glossary(req.glossary),
+    )
+    _repo.create_product(product)
+    record_product_event("created")
+    log.info("product_created", product=product.id, owner=user.sub)
+    return _product_response(product)
+
+
+# 注意: "/api/products/mine" は "/api/products/{product_id}" より先に登録する
+# （FastAPI は登録順にマッチするため、逆だと "mine" が product_id として解釈される）。
+@app.get("/api/products/mine", response_model=list[ProductResponse])
+def list_my_products(user: AuthUser = Depends(require_user)) -> list[ProductResponse]:
+    """本人 (owner_sub) の product 一覧を新しい順で返す（FR-1.1）。他人のは返さない。"""
+    products = _repo.list_products_by_owner(user.sub)
+    log.info("my_products_listed", owner=user.sub, count=len(products))
+    return [_product_response(p) for p in products]
+
+
+@app.get("/api/products/{product_id}", response_model=ProductResponse)
+def get_product(product_id: str, user: AuthUser = Depends(require_user)) -> ProductResponse:
+    """product 詳細（owner / admin。FR-1.2）。"""
+    return _product_response(_require_product_access(product_id, user))
+
+
+@app.patch("/api/products/{product_id}", response_model=ProductResponse)
+def update_product(
+    product_id: str, req: UpdateProductRequest, user: AuthUser = Depends(require_user)
+) -> ProductResponse:
+    """name / description / glossary のみ更新する（FR-1.2）。所有・出所は不変。"""
+    _require_product_access(product_id, user)
+    name = req.name.strip() if req.name is not None else None
+    if name == "":
+        raise HTTPException(status_code=400, detail="name must not be empty")
+    glossary = _clean_glossary(req.glossary) if req.glossary is not None else None
+    description = req.description.strip() if req.description is not None else None
+    try:
+        updated = _repo.update_product(
+            product_id, name=name, description=description, glossary=glossary
+        )
+    except ProductNotFound as exc:
+        # 認可チェック後に消えた競合。存在秘匿の方針に合わせ 404 のまま返す。
+        raise HTTPException(status_code=404, detail="product not found") from exc
+    record_product_event("updated")
+    log.info("product_updated", product=product_id, owner=user.sub)
+    return _product_response(updated)
+
+
+@app.delete("/api/products/{product_id}", response_model=DeleteProductResponse)
+def delete_product(
+    product_id: str, user: AuthUser = Depends(require_user)
+) -> DeleteProductResponse:
+    """product を配下の深掘りリンクごと削除する（FR-1.2）。
+
+    grounding 索引に入れた repo chunk も一緒に掃除する（消し漏れると
+    search_grounding に親なし product の断片が残る）。
+    """
+    _require_product_access(product_id, user)
+    deleted = _repo.delete_product(product_id)
+    if deleted:
+        try:
+            _indexer.delete_repo_context(product_id)
+        except Exception as exc:  # pragma: no cover - ES 不調でも削除自体は成立させる
+            log.warning("product_context_cleanup_failed", product=product_id, error=str(exc))
+    record_product_event("deleted")
+    log.info("product_deleted", product=product_id, owner=user.sub, deleted=deleted)
+    return DeleteProductResponse(deleted=deleted)
+
+
+def _index_product_repo_task(
+    *,
+    product_id: str,
+    installation_id: int,
+    repo: str,
+    branch: str,
+    commit_sha: str,
+) -> None:
+    """背景タスク: product の前提 repo を索引し状態を ready/partial/failed に更新する。
+
+    `_index_repo_task`（セッション版）と同じ流れの product 版。索引スコープは
+    product_id（配下セッションが共有する前提情報 / FR-1.3）。stale 判定も
+    SessionMeta ではなく product 文書に対して行う。
+    """
+    client = _github_app_client()
+    if client is None:  # pragma: no cover - guarded by caller
+        return
+    try:
+        if not _product_selection_current(product_id, repo, branch, commit_sha):
+            log.info("product_repo_index_skipped_stale", product=product_id, repo=repo)
+            return
+        _indexer.delete_repo_context(product_id)
+        try:
+            outcome = fetch_and_index_repo(
+                client,
+                _indexer,
+                session_id=product_id,
+                installation_id=installation_id,
+                repo=repo,
+                branch=branch,
+                commit_sha=commit_sha,
+                max_files=settings.github_index_max_files,
+                max_total_bytes=settings.github_index_max_total_bytes,
+                max_file_bytes=settings.github_index_max_file_bytes,
+            )
+            summary = redact_secrets(outcome.summary)
+            if settings.mask_pii_before_index:
+                summary = mask_pii(summary)
+            if outcome.failed:
+                status = GitHubIndexStatus.FAILED
+            elif outcome.partial:
+                status = GitHubIndexStatus.PARTIAL
+            else:
+                status = GitHubIndexStatus.READY
+        except Exception as exc:  # pragma: no cover - network
+            log.warning("product_repo_index_failed", product=product_id, repo=repo, error=str(exc))
+            status = GitHubIndexStatus.FAILED
+            summary = None
+        if not _product_selection_current(product_id, repo, branch, commit_sha):
+            log.info("product_repo_index_writeback_skipped_stale", product=product_id, repo=repo)
+            return
+        _repo.set_product_github(
+            product_id,
+            repo=repo,
+            branch=branch,
+            commit_sha=commit_sha,
+            index_status=status,
+            summary=summary,
+        )
+    finally:
+        client.close()
+
+
+def _product_selection_current(product_id: str, repo: str, branch: str, commit_sha: str) -> bool:
+    """product の現在選択がこのジョブの (repo,branch,sha) と一致するか（stale 判定）。"""
+    product = _repo.get_product(product_id)
+    return bool(
+        product is not None
+        and product.github_repo == repo
+        and product.github_branch == branch
+        and product.github_commit_sha == commit_sha
+    )
+
+
+@app.post("/api/products/{product_id}/github", response_model=SessionGitHubResponse)
+def select_product_repo(
+    product_id: str,
+    req: SelectRepoRequest,
+    background: BackgroundTasks,
+    user: AuthUser = Depends(require_user),
+) -> SessionGitHubResponse:
+    """product に前提 repo を紐づけ、非同期索引をキックする（FR-1.3 / ADR-0031）。
+
+    連携主体は product owner 固定（ADR-0028 の「セッション owner 固定」と同方針:
+    owner の GitHub App installation でのみ索引するため、admin でも他人の product には
+    紐づけできない）。同一 (repo, branch, sha) が索引済み/索引中なら再索引しない。
+    """
+    product = _require_product_access(product_id, user)
+    if user.sub != product.owner_sub:
+        raise HTTPException(status_code=403, detail="owner only")
+    if not _GITHUB_REPO_RE.match(req.repo):
+        raise HTTPException(status_code=400, detail="github_repo must be in 'owner/name' format")
+    # 許可リスト（GITHUB_REPO_ALLOWLIST / ADR-0027）は product の紐づけにも一貫適用する
+    # （NFR-2。セッション経路だけ絞って product 側に抜け道が残るのを防ぐ）。
+    if not _github_repo_allowed(req.repo):
+        raise HTTPException(status_code=400, detail="github_repo is not allowed")
+    client = _github_app_client()
+    link = _repo.get_github_link(product.owner_sub)
+    if client is None or link is None:
+        raise HTTPException(status_code=409, detail="github not linked")
+
+    try:
+        branch = req.branch
+        if not branch:
+            branch = str(client.repo_meta(link.installation_id, req.repo)["default_branch"])
+        commit_sha = client.branch_head_sha(link.installation_id, req.repo, branch)
+    except Exception as exc:  # pragma: no cover - network
+        log.warning("github_resolve_branch_failed", error=str(exc))
+        raise HTTPException(status_code=502, detail="github error") from exc
+
+    # 同一 (repo, branch, sha) が索引中/索引済みなら再索引しない（FR-1.3 AC）。
+    # failed のときだけ同一 sha でも再試行を許す。
+    if (
+        product.github_repo == req.repo
+        and product.github_branch == branch
+        and product.github_commit_sha == commit_sha
+        and product.github_index_status
+        in (GitHubIndexStatus.INDEXING, GitHubIndexStatus.READY, GitHubIndexStatus.PARTIAL)
+    ):
+        log.info(
+            "product_repo_index_reused",
+            product=product_id,
+            repo=req.repo,
+            sha=commit_sha,
+            status=product.github_index_status.value,
+        )
+        return SessionGitHubResponse(
+            repo=req.repo,
+            branch=branch,
+            commit_sha=commit_sha,
+            status=product.github_index_status.value,
+        )
+
+    _repo.set_product_github(
+        product_id,
+        repo=req.repo,
+        branch=branch,
+        commit_sha=commit_sha,
+        index_status=GitHubIndexStatus.INDEXING,
+    )
+    background.add_task(
+        _index_product_repo_task,
+        product_id=product_id,
+        installation_id=link.installation_id,
+        repo=req.repo,
+        branch=branch,
+        commit_sha=commit_sha,
+    )
+    record_product_event("github_set")
+    log.info("product_repo_selected", product=product_id, repo=req.repo, branch=branch)
+    return SessionGitHubResponse(
+        repo=req.repo,
+        branch=branch,
+        commit_sha=commit_sha,
+        status=GitHubIndexStatus.INDEXING.value,
     )
 
 
