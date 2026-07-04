@@ -4,7 +4,7 @@
 FROM python:3.13-slim AS base
 
 ENV PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1
+    UV_LINK_MODE=copy
 WORKDIR /app
 
 # uv for fast, reproducible installs
@@ -14,10 +14,17 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 COPY packages/sanba_shared ./packages/sanba_shared
 COPY apps/agent/pyproject.toml ./apps/agent/pyproject.toml
 COPY apps/agent/src ./apps/agent/src
-RUN uv pip install --system --no-cache ./apps/agent
+# BuildKit キャッシュマウントで uv のダウンロード済み wheel を再ビルド間で再利用する。
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install --system ./apps/agent
 
-# LiveKit Agents need plugin model files; download at build time when present.
-RUN python -m sanba_agent.main download-files || true
+# LiveKit Agents need plugin model files. 本番/CI ではビルド時に同梱して
+# コールドスタートを速くする (既定 DOWNLOAD_MODELS=1)。ローカルは compose で
+# DOWNLOAD_MODELS=0 を渡してスキップし、ビルドを軽くする (モデルは実行時に取得)。
+ARG DOWNLOAD_MODELS=1
+RUN if [ "$DOWNLOAD_MODELS" = "1" ]; then \
+      python -m sanba_agent.main download-files || true; \
+    fi
 
 # Run as an unprivileged user (defense in depth).
 RUN useradd --create-home --uid 10001 appuser

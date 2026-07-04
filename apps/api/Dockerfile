@@ -3,7 +3,8 @@
 # 同梱するため、相対 path 依存 (../../packages/sanba_shared) を保ったまま COPY する。
 FROM python:3.13-slim
 
-ENV PYTHONUNBUFFERED=1
+ENV PYTHONUNBUFFERED=1 \
+    UV_LINK_MODE=copy
 WORKDIR /app
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
@@ -12,7 +13,10 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 COPY packages/sanba_shared ./packages/sanba_shared
 COPY apps/api/pyproject.toml ./apps/api/pyproject.toml
 COPY apps/api/src ./apps/api/src
-RUN uv pip install --system --no-cache ./apps/api
+# BuildKit キャッシュマウントで uv のダウンロード済み wheel を再ビルド間で再利用する
+# (--no-cache は付けない。付けるとマウントの意味が無くなる)。
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install --system ./apps/api
 
 # Run as an unprivileged user (defense in depth).
 RUN useradd --create-home --uid 10001 appuser

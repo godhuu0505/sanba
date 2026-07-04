@@ -1,8 +1,10 @@
 # syntax=docker/dockerfile:1
 FROM node:25-slim AS deps
 WORKDIR /app
-COPY package.json ./
-RUN npm install
+# lockfile も渡して再現性のある高速インストール (npm ci)。
+# BuildKit キャッシュマウントで ~/.npm を再ビルド間で再利用する。
+COPY package.json package-lock.json ./
+RUN --mount=type=cache,target=/root/.npm npm ci
 
 FROM node:25-slim AS builder
 WORKDIR /app

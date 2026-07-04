@@ -80,6 +80,11 @@ services:
     build:
       context: .
       dockerfile: apps/agent/Dockerfile
+      args:
+        # ローカルはモデルをビルド時に同梱せずスキップ (ビルド軽量化)。
+        # 実行時に取得し、下の agent-cache volume に永続化する。
+        # 本番/CI は Dockerfile 既定 (DOWNLOAD_MODELS=1) で同梱する。
+        DOWNLOAD_MODELS: "0"
     env_file: .env.local
     environment:
       # agent は LiveKit worker として server に接続する。コンテナ内から localhost は
@@ -96,6 +101,9 @@ services:
       # application_default_credentials.json のパスを指す（複数アカウントは CLOUDSDK_CONFIG 配下、
       # 標準は ~/.config/gcloud/application_default_credentials.json）。
       - ${SANBA_ADC_FILE:-/dev/null}:/gcp/adc.json:ro
+      # 実行時にDLするプラグインモデル (HF/torch 等) を永続化し、再作成のたびの
+      # 再ダウンロードを防ぐ。appuser の home は /home/appuser。
+      - agent-cache:/home/appuser/.cache
     command: ["start"]
     depends_on:
       livekit:
@@ -148,3 +156,4 @@ services:
 
 volumes:
   es-data:
+  agent-cache:
