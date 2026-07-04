@@ -46,7 +46,9 @@ def requirements_to_issue_body(
     return title, "\n".join(lines).strip()
 
 
-def list_repos(token: str, per_page: int = 100, max_pages: int = 10) -> list[str]:  # pragma: no cover - network
+def list_repos(  # pragma: no cover - network
+    token: str, per_page: int = 100, max_pages: int = 10
+) -> list[str]:
     """Return repo full names ("owner/name") the token can read, newest activity first.
 
     02 準備「連携リポジトリ」の候補一覧（ADR-0027）。失敗は空リストで返し、

@@ -137,6 +137,27 @@ def record_my_sessions_listed(count: int) -> None:
         pass
 
 
+# 本人セッションの要件絵巻閲覧 (GET /api/sessions/mine/{id}/requirements) のカウンタ。
+# ホーム履歴 (#215/#250) からの詳細閲覧ファネルを観測する (CLAUDE.md 原則3)。
+# record_my_sessions_listed と同じく 1 リクエスト 1 計上・result=empty/viewed。
+_my_requirements_counter = metrics.get_meter("sanba_api.sessions").create_counter(
+    "sanba_my_requirements_viewed_total",
+    description="本人セッションの要件絵巻閲覧リクエスト数 (result=empty/viewed ごと)",
+)
+
+
+def record_my_requirements_viewed(count: int) -> None:
+    """本人セッションの要件絵巻閲覧を 1 リクエストとして計上する。
+
+    要件 0 件でも確実に計上し (加算方式だと 0 件が no-op になる死角)、
+    result=empty/viewed で「開いたが要件が無かった」頻度を観測する。
+    """
+    try:
+        _my_requirements_counter.add(1, {"result": "empty" if count == 0 else "viewed"})
+    except Exception:  # pragma: no cover - メトリクスは本処理を止めない
+        pass
+
+
 def setup_observability(app: FastAPI) -> None:
     """Configure OTel tracing + FastAPI instrumentation. Safe to call once."""
     global _initialised

@@ -47,6 +47,7 @@ from .ingestion import ContextIndexer, chunk_text, extract_text_from_upload
 from .observability import (
     record_asset_upload,
     record_material_event,
+    record_my_requirements_viewed,
     record_my_sessions_listed,
     record_question_hydration,
     record_rate_limited,
@@ -195,6 +196,26 @@ def _confirmed_requirements(session_id: str) -> list[dict[str, Any]]:
     この関数を呼ばない＝確定判定が finalize と export で重複しない（重複定義禁止）。
     """
     return [r for r in _read_repo.list_requirements(session_id) if r["status"] == "confirmed"]
+
+
+def _finalized_snapshot_requirements(session: SessionMeta) -> list[dict[str, Any]]:
+    """finalize 時に凍結した要件集合を契約形で返す（#213 凍結保証の単一定義）。
+
+    export と過去要件閲覧（GET /api/sessions/mine/{id}/requirements）が共有する。確定後に
+    遅延 agent が要件を追加したり管理画面 API で却下されても、確定時集合を再計算せず固定する
+    （Codex P2 / discussion_r3481706919）。未 finalize ならスナップショットは空。
+
+    後方互換（Codex P1）: 本機能デプロイ前に finalized になった旧文書は ID スナップショットを
+    持たない（既定 []）。`status==finalized` かつ確定件数 > 0 で ID 集合だけ欠落しているケースは
+    旧挙動（確定要件の再計算）にフォールバックし、確定済みセッションを空にしない。
+    """
+    snapshot_ids = session.finalized_requirement_ids
+    legacy_finalized_without_snapshot = (
+        not snapshot_ids and session.status == "finalized" and (session.finalized_count or 0) > 0
+    )
+    if legacy_finalized_without_snapshot:
+        return _confirmed_requirements(session.id)
+    return _read_repo.get_requirements_by_ids(session.id, snapshot_ids)
 
 
 # ---- Schemas ---------------------------------------------------------------
@@ -431,6 +452,57 @@ def list_github_repos(user: AuthUser = Depends(require_user)) -> GithubReposResp
     repos = github_export.list_repos(settings.github_token)
     log.info("github_repos_listed", count=len(repos), sub=user.sub)
     return GithubReposResponse(enabled=True, repos=repos, default=settings.github_repo or None)
+
+
+class MySessionRequirementsResponse(BaseModel):
+    """`GET /api/sessions/mine/{id}/requirements` の応答。
+
+    過去セッションの要件絵巻閲覧画面 (web /sessions/{id}) に、見出し用の最小メタ
+    (標題・作成時刻・確定状態) と要件スナップショットをまとめて供給する。
+    items は契約 §3 の requirement 形 (get_requirements と同じ contract 形) で、
+    PII (owner_email/owner_sub) は MySession と同じく載せない (最小権限)。
+    """
+
+    id: str
+    title: str
+    created_at: datetime
+    finalized: bool
+    items: list[dict[str, Any]]
+
+
+@app.get(
+    "/api/sessions/mine/{session_id}/requirements",
+    response_model=MySessionRequirementsResponse,
+)
+def get_my_session_requirements(
+    session_id: str, user: AuthUser = Depends(require_user)
+) -> MySessionRequirementsResponse:
+    """本人 (owner_sub) の過去セッションの要件絵巻を返す。
+
+    ホーム「過去の要件を見る」(#215/#250) からの詳細閲覧。join 済みトークンは会話終了後には
+    残らないため、`require_session_access` ではなく idToken (ADR-0012) で本人確認し、
+    owner_sub 一致で認可する。非所有・不存在はどちらも 404 に平す (他人のセッション ID の
+    存在を応答差で漏らさない)。
+    """
+    session = _repo.get_session(session_id)
+    if session is None or session.owner_sub != user.sub:
+        raise HTTPException(status_code=404, detail="session not found")
+    # 確定済みは finalize 時の凍結スナップショットだけを見せる（Codex P1）。確定後に遅延 agent
+    # が追加した要件や管理画面 API での却下を混ぜず、export と同じ成果物を表示する。
+    # 未確定（進行中）は現在の全要件を出す（会話中の絵巻タブと同じ見え方）。
+    if session.status == "finalized":
+        items = _finalized_snapshot_requirements(session)
+    else:
+        items = _read_repo.list_requirements(session_id)
+    record_my_requirements_viewed(len(items))
+    log.info("my_requirements_viewed", session=session_id, owner=user.sub, count=len(items))
+    return MySessionRequirementsResponse(
+        id=session.id,
+        title=session.title,
+        created_at=session.created_at,
+        finalized=session.status == "finalized",
+        items=items,
+    )
 
 
 @app.post("/api/sessions/{session_id}/context", response_model=ContextResponse)
@@ -897,8 +969,12 @@ def finalize_session_requirements(
     """07 判定の「確定」を永続化する（#186）。
 
     会話を締めて要件を確定したとき、確定した要件件数のスナップショットを刻み、セッションを
-    finalized にする（不可逆マーカ）。要件カードの draft→approved 承認は管理画面の責務
-    （ADR-0014）なのでここでは行わない。確定後の export（GitHub Issue）はこの件数と一致する。
+    finalized にする（不可逆マーカ）。確定後の export（GitHub Issue）はこの件数と一致する。
+
+    確定時集合は approved にして TTL（expireAt）を解除する（Codex P1）: 管理画面の承認 UI
+    廃止に伴い、draft のまま 30 日 TTL で消えると過去要件閲覧（/sessions/{id}）と export が
+    欠落するため、参加者の「確定」を成果物保全の起点にする。TTL 解除は既存の
+    set_requirement_status（approved で expireAt 削除）に集約済みのものを再利用する。
 
     ガード（Codex P2）:
       - 既に finalized なら open 検知に関係なく保存済みスナップショット件数を返す（冪等）。
@@ -924,6 +1000,16 @@ def finalize_session_requirements(
     )
     if meta is None:
         raise HTTPException(status_code=404, detail="session not found")
+    # 確定時集合を成果物として保全する: approved で expireAt が外れ 30 日 TTL の対象外になる
+    # （Codex P1）。approved_by は確定操作の主体（join 済みトークンの sub）。
+    for rid in confirmed_ids:
+        try:
+            _repo.set_requirement_status(
+                session_id, rid, RequirementStatus.APPROVED, approved_by=access.sub
+            )
+        except RequirementNotFound:
+            # 確定直前に TTL 失効等で消えた要件はスキップする（finalize 自体は成立させる）。
+            log.warning("finalize_preserve_missing_requirement", session=session_id, rid=rid)
     count = meta.finalized_count if meta.finalized_count is not None else len(confirmed)
     log.info(
         "session_finalized",
@@ -942,12 +1028,8 @@ def export_requirements(
     """確定要件を GitHub Issue として起票する（契約 §4 P1 / #39 ループ / #213）。
 
     finalize 時に凍結した要件 ID スナップショット（`finalized_requirement_ids`）の集合だけを
-    起票する。確定後に遅延 agent が要件を追加したり管理画面で却下されても、確定時集合を再計算
-    せず固定する（Codex P2 / discussion_r3481706919）。未 finalize ならスナップショットは空。
-
-    後方互換（Codex P1）: 本機能デプロイ前に finalized になった旧文書は ID スナップショットを
-    持たない（既定 []）。`status==finalized` かつ確定件数 > 0 で ID 集合だけ欠落しているケースは
-    旧挙動（確定要件の再計算）にフォールバックし、確定済みセッションを空 Issue 化しない。
+    起票する。凍結の定義（旧データのフォールバック含む）は _finalized_snapshot_requirements
+    に一元化し、過去要件閲覧と共有する。
     """
     # コネクタ無効/トークン未設定は従来どおりセッション照会前に黙って断る（既定 OFF の不干渉）。
     if not (settings.github_connector_enabled and settings.github_token):
@@ -961,17 +1043,7 @@ def export_requirements(
     if not export_repo:
         return ExportResponse(exported=False, reason="github connector disabled")
     # 確定時の要件 ID 集合だけを取得して起票する（再計算しない / #213）。
-    snapshot_ids = session.finalized_requirement_ids
-    # 旧データのみ再計算へフォールバック（snapshot 欠落の finalized セッション / Codex P1）。
-    # 新セッションは snapshot を正とし固定集合のまま（凍結保証を維持）。確定判定は
-    # _confirmed_requirements に一元化済みのものを再利用する（重複定義しない）。
-    legacy_finalized_without_snapshot = (
-        not snapshot_ids and session.status == "finalized" and (session.finalized_count or 0) > 0
-    )
-    if legacy_finalized_without_snapshot:
-        confirmed = _confirmed_requirements(session_id)
-    else:
-        confirmed = _read_repo.get_requirements_by_ids(session_id, snapshot_ids)
+    confirmed = _finalized_snapshot_requirements(session)
     title, body = github_export.requirements_to_issue_body(confirmed, session_id)
     url = github_export.create_issue(settings.github_token, export_repo, title, body)
     if url is None:
@@ -980,8 +1052,7 @@ def export_requirements(
         "requirements_exported",
         session=session_id,
         count=len(confirmed),
-        id_count=len(snapshot_ids),
-        legacy_fallback=legacy_finalized_without_snapshot,
+        id_count=len(session.finalized_requirement_ids),
         repo=export_repo,
         session_selected=session.github_repo is not None,
         url=url,

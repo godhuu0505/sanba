@@ -149,9 +149,9 @@ describe("入口フロー（#140）", () => {
     expect(await screen.findByText("新機能要件定義")).toBeTruthy();
     // 日付は YYYY/MM/DD へ整形して表示する（タイムゾーン差を避け書式のみ検証）。
     expect(screen.getByText(/^\d{4}\/\d{2}\/\d{2}$/)).toBeTruthy();
-    // 行は遷移リンク化される（プレースホルダ詳細ルート /admin?session=）。
-    expect(screen.getByRole("link", { name: /新機能要件定義/ }).getAttribute("href")).toContain(
-      "session=sess-1",
+    // 行は過去要件の絵巻閲覧画面（/sessions/{id}）への遷移リンクになる。
+    expect(screen.getByRole("link", { name: /新機能要件定義/ }).getAttribute("href")).toBe(
+      "/sessions/sess-1",
     );
     // 空状態の文言は出ない。
     expect(screen.queryByText(/過去の要件はまだございません/)).toBeNull();
