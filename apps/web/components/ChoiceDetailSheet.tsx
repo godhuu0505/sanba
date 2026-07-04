@@ -74,7 +74,7 @@ export function ChoiceDetailSheet({
       <div className="flex flex-col gap-[11px] rounded-[14px] border border-[var(--sanba-border)] bg-[var(--sanba-surface-strong)] p-[14px]">
         <span className="text-[16px] font-bold text-[var(--sanba-cream)]">{option.label}</span>
         <Section label="どう並ぶ？" color="var(--sanba-gold-text)" value={option.how} />
-        <Section label="効き目" color="var(--sanba-speak)" value={option.effect} />
+        <Section label="効き目" color="var(--sanba-speak-text)" value={option.effect} />
         <Section label="留意" color="var(--sanba-caution)" value={option.caution} />
         <Section label="関連・出所" color="var(--sanba-muted)" value={option.source} />
       </div>
