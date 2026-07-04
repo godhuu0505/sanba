@@ -11,6 +11,9 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@fontsource/noto-sans-jp": "^5.2.9",
+    "@fontsource/noto-serif-jp": "^5.2.8",
+    "@fontsource/zen-kaku-gothic-new": "^5.2.7",
     "@livekit/components-react": "^2.6.0",
     "@livekit/components-styles": "^1.1.4",
     "@radix-ui/react-slot": "^1.1.1",
