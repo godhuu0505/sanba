@@ -295,7 +295,7 @@ export function MicPermissionModal({ onAllow, onText, onDismiss }: MicPermission
         >
           <div
             aria-hidden="true"
-            className="sanba-gold-gradient flex size-14 items-center justify-center rounded-full text-[24px]"
+            className="sanba-gold-gradient flex size-14 items-center justify-center rounded-full border-2 border-[var(--sanba-frame)] text-[24px]"
           >
             🎙
           </div>
@@ -335,7 +335,7 @@ export function ConnectingOverlay({ state, onCancel }: ConnectingOverlayProps) {
       <main className="mx-auto flex w-full max-w-[420px] flex-1 flex-col items-center gap-6 pt-12">
         <div
           aria-hidden="true"
-          className="sanba-gold-gradient flex size-20 animate-pulse items-center justify-center rounded-full text-[30px]"
+          className="sanba-gold-gradient sanba-serif flex size-20 animate-pulse items-center justify-center rounded-full border-2 border-[var(--sanba-frame)] text-[30px] font-bold text-[var(--sanba-ink)]"
         >
           産
         </div>

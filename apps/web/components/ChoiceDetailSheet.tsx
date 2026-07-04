@@ -80,7 +80,7 @@ export function ChoiceDetailSheet({
       <button
         type="button"
         onClick={onSelect}
-        className="sanba-gold-gradient rounded-[13px] py-[14px] text-center text-[14px] font-bold text-[var(--sanba-ink)]"
+        className="sanba-sticker sanba-gold-gradient rounded-[13px] py-[13px] text-center text-[14px] font-bold text-[var(--sanba-ink)] active:translate-x-[2px] active:translate-y-[2px] active:shadow-[1px_1px_0_var(--sanba-shadow)]"
       >
         🎙 「{option.label}」を選ぶ
       </button>

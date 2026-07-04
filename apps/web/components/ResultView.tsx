@@ -4,6 +4,7 @@
 // 仕様: docs/design/conversation-experience.md §7 / screens/08-result.md / Figma 144:86。
 // 画面で確認＝必須。PDF/Drive/Issue 出力＝任意（ハンドラがあるものだけ出す）。
 
+import { Button } from "@/components/sanba";
 import { categoryPresentation, priorityLabel } from "../lib/realtime/mapping";
 import type { Priority, Requirement } from "../lib/realtime/types";
 
@@ -90,7 +91,7 @@ export function ResultView({
 
   return (
     <div className="flex h-full flex-col items-center px-4 pb-4 pt-5">
-      <div className="sanba-gold-gradient flex size-[78px] items-center justify-center rounded-full text-[28px] font-bold text-[var(--sanba-ink)]">
+      <div className="sanba-gold-gradient sanba-serif flex size-[78px] items-center justify-center rounded-full border-2 border-[var(--sanba-frame)] text-[28px] font-bold text-[var(--sanba-ink)]">
         産
       </div>
       <p className="mt-[10px] text-center text-[18px] font-bold text-[var(--sanba-gold-text)]">
@@ -180,14 +181,15 @@ export function ResultView({
 
       <div className="flex-1" />
 
-      <button
-        type="button"
+      <Button
+        variant="gold"
+        size="lg"
+        block
         onClick={onView}
         aria-label="この絵巻を画面で確認する（確定要件の全文）"
-        className="sanba-gold-gradient w-full rounded-[13px] py-[15px] text-[14px] font-bold text-[var(--sanba-ink)]"
       >
         この絵巻を画面で確認する ›
-      </button>
+      </Button>
 
       {available.length > 0 && (
         <>

@@ -57,7 +57,7 @@ export function ChoiceCompareSheet({ rows, onSelect, onClose, onDetail }: Choice
             <button
               type="button"
               onClick={() => onSelect(i)}
-              className="sanba-gold-gradient rounded-full px-3 py-[5px] text-[11px] font-bold text-[var(--sanba-ink)]"
+              className="sanba-gold-gradient rounded-full border border-[var(--sanba-frame)] px-3 py-[5px] text-[11px] font-bold text-[var(--sanba-ink)]"
             >
               選ぶ
             </button>
