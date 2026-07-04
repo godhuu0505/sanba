@@ -1363,7 +1363,9 @@ def join_product(
     # 使用回数を減らさない。文書照合と消費は原子的（ADR-0031 / consume_invite）。
     try:
         invite = _repo.consume_invite(claim.product_id, claim.invite_id)
-    except InviteNotFound as exc:
+    except (InviteNotFound, ProductNotFound) as exc:
+        # Firestore 経路は join と product 削除の競合で ProductNotFound を投げ得る
+        # （トランザクション内の親存在チェック）。invite 不在と同じ 404 に平す。
         raise HTTPException(status_code=404, detail="invite not found") from exc
     except InviteNotUsable as exc:
         log.warning(
