@@ -69,7 +69,7 @@ export function BottomBar({
           onClick={onToggleMute}
           className={`flex flex-1 items-center justify-center gap-1.5 rounded-[12px] border py-3 text-[13px] font-bold ${
             muted
-              ? "border-[var(--sanba-rec)] bg-[var(--sanba-rec-pale)] text-[var(--sanba-rec)]"
+              ? "border-[var(--sanba-rec)] bg-[var(--sanba-rec-pale)] text-[var(--sanba-rec-text)]"
               : "border-[var(--sanba-border)] bg-[var(--sanba-surface)] text-[var(--sanba-muted)]"
           }`}
         >

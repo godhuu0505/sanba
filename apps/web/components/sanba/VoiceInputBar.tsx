@@ -52,7 +52,7 @@ export function VoiceInputBar({
         <span
           className={cn(
             "whitespace-nowrap text-[12.5px] font-bold",
-            muted ? "text-[var(--sanba-muted)]" : "text-[var(--sanba-speak)]",
+            muted ? "text-[var(--sanba-muted)]" : "text-[var(--sanba-speak-text)]",
           )}
         >
           {label}

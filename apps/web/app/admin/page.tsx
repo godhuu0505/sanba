@@ -279,7 +279,7 @@ function CreateSessionCard({
       >
         {busy ? "発行しております…" : "作成して招待を発行"}
       </Button>
-      {error && <p className="text-[13px] text-[var(--sanba-rec)]">{error}</p>}
+      {error && <p className="text-[13px] text-[var(--sanba-rec-text)]">{error}</p>}
       {invites && (
         <div className="flex flex-col gap-[6px] rounded-[12px] border border-[var(--sanba-border)] bg-[var(--sanba-bg)]/40 px-[14px] py-[12px]">
           <p className="text-[13px] font-bold text-[var(--sanba-gold-text)]">

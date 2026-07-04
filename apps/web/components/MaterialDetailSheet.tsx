@@ -129,7 +129,7 @@ export function MaterialDetailSheet({
         <div className="flex flex-col gap-[6px]">
           <span className="text-[11.5px] font-bold text-[var(--sanba-cream)]">{detail.name}</span>
           {done ? (
-            <span className="inline-flex items-center gap-1 text-[11px] font-bold text-[var(--sanba-speak)]">
+            <span className="inline-flex items-center gap-1 text-[11px] font-bold text-[var(--sanba-speak-text)]">
               <Check size={13} aria-hidden /> 解析済
             </span>
           ) : (

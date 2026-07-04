@@ -235,7 +235,7 @@ export function StartIntro({
                   <span className="text-[var(--sanba-muted)]">会話中に追加できます</span>
                 )}
                 {failedCount > 0 && (
-                  <span role="alert" className="text-[12px] text-[var(--sanba-rec)]">
+                  <span role="alert" className="text-[12px] text-[var(--sanba-rec-text)]">
                     {failedCount}件は投入できませんでした。会話中に再度添付できます。
                   </span>
                 )}
@@ -403,7 +403,7 @@ export function StartFailed({ kind, onRetry, onText, onBack }: StartFailedProps)
         >
           <TriangleAlert size={32} aria-hidden />
         </div>
-        <p className="text-[16px] font-bold text-[var(--sanba-rec)]">
+        <p className="text-[16px] font-bold text-[var(--sanba-rec-text)]">
           {isMic ? "声を捉えられませなんだ" : "繋ぐことが叶いませなんだ"}
         </p>
         <div className="w-full rounded-[14px] border border-[var(--sanba-rec)]/40 bg-[var(--sanba-rec-pale)] p-[14px] text-[12.5px] leading-relaxed text-[var(--sanba-muted)]">

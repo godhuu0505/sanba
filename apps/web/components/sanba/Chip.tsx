@@ -25,11 +25,11 @@ const TONES: Record<ChipTone, ToneStyle> = {
     solid: "sanba-gold-gradient border border-[var(--sanba-frame)] text-[var(--sanba-ink)]",
   },
   success: {
-    soft: "border border-[var(--sanba-speak)]/40 bg-transparent text-[var(--sanba-speak)]",
+    soft: "border border-[var(--sanba-speak)]/40 bg-transparent text-[var(--sanba-speak-text)]",
     solid: "border border-transparent bg-[var(--sanba-speak)] text-white",
   },
   danger: {
-    soft: "border border-[var(--sanba-rec)]/40 bg-transparent text-[var(--sanba-rec)]",
+    soft: "border border-[var(--sanba-rec)]/40 bg-transparent text-[var(--sanba-rec-text)]",
     solid: "border border-transparent bg-[var(--sanba-rec)] text-white",
   },
   info: {

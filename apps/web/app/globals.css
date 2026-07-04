@@ -32,27 +32,31 @@
   --sanba-bg: #fcfbf7;            /* 紙 — 画面下地（生成りがかった白） */
   --sanba-surface: #ffffff;       /* 白 — カード/入力の面 */
   --sanba-surface-strong: #f4f1e8;/* 淡い紙面（アイコン箱・強調面） */
-  --sanba-border: #e7e1d3;        /* 藁色 — 弱い境界・区切り線 */
+  --sanba-border: #ede8dc;        /* 藁色 waraiiro — 弱い境界・区切り線（ADR-0033） */
   --sanba-border-strong: #d6cfbe; /* 藁色の濃 — ハンドル・静止波形 */
   --sanba-frame: #221e1a;         /* 墨線 — 強い枠・ステッカーの縁 */
   --sanba-cream: #221e1a;         /* 主要テキスト（生成り→墨） */
   --sanba-cream-bubble: #ffffff;  /* エージェント吹き出しの面（白＋墨枠） */
   --sanba-ink: #221e1a;           /* 山吹面上の濃色テキスト */
   --sanba-ink-bubble: #221e1a;    /* 吹き出し上のテキスト */
-  --sanba-muted: #6e675a;         /* 補助テキスト（鈍色。淡色面上でも AA 4.8:1 以上） */
+  --sanba-muted: #7a7266;         /* 鈍色 nibi — 補助テキスト。ADR-0033 の #8C8478 は白地 3.7:1 で
+                                     小文字 AA 不可のため、意図（暖かく明るめ）を汲みつつ AA 安全な暖灰に（白地 4.75:1）。 */
   --sanba-gold-text: #985c06;     /* 見出しの山吹（文字用の暗色。淡色面上でも AA） */
   --sanba-gold-deep: #c08a10;     /* 山吹の枠線用 */
-  --sanba-gold: #f0a814;          /* 山吹 — 産章・ひらめき・マイク */
+  --sanba-gold: #f0a814;          /* 山吹 — 産章・ひらめき・マイク（面・図形。小文字には使わない） */
   --sanba-gold-light: #f8c64b;    /* 山吹のハイライト */
   --sanba-gold-amber: #de9200;    /* 山吹の陰 */
-  --sanba-rec: #c43a20;           /* 朱 — 主要 CTA・録音中・矛盾（白文字 4.6:1） */
+  --sanba-gold-pale: #fdf3dc;     /* 山吹の淡色面（ひらめきカード等 / ADR-0033） */
+  --sanba-rec: #e0402a;           /* 朱 shu — 主要 CTA・録音中・矛盾の「面/図形」（ADR-0033）。白文字 4.3:1（太字CTA） */
+  --sanba-rec-text: #c43a20;      /* 朱の「文字」用（白地 5.3:1・AA）。text-* はこちらを使う */
   --sanba-rec-pale: #fbeae6;      /* 朱の淡色面（矛盾の告知など） */
-  --sanba-speak: #4a6619;         /* 萌黄 — 発話認識中（淡色面上でも AA 5.5:1 以上） */
+  --sanba-speak: #7fa83c;         /* 萌黄 moegi — 音声認識中の「面/図形」（波形・音波。小文字には使わない / ADR-0033） */
+  --sanba-speak-text: #4a6619;    /* 萌黄の「文字」用（白地 6.6:1・AA）。text-* はこちらを使う */
   --sanba-caution: #7d560b;       /* 黄土 — 留意・未確定警告（淡色面上でも AA 5.5:1 以上） */
   --sanba-select: #2a5cdb;        /* 瑠璃 — 選択状態・ユーザー発話・リンク */
   --sanba-select-pale: #eaf0ff;   /* 瑠璃の淡色面（ユーザー吹き出し） */
-  --sanba-shadow: rgba(34, 30, 26, 0.16); /* ステッカーのベタ塗りオフセット影 */
-  --sanba-radius-card: 14px;
+  --sanba-shadow: rgba(34, 30, 26, 0.12); /* ステッカーのベタ塗りオフセット影（ADR-0033・墨ベース） */
+  --sanba-radius-card: 16px;
   --sanba-radius-control: 12px;
   --sanba-radius-bubble: 14px;
 }
@@ -97,9 +101,12 @@
   --color-sanba-gold: var(--sanba-gold);
   --color-sanba-gold-light: var(--sanba-gold-light);
   --color-sanba-gold-amber: var(--sanba-gold-amber);
+  --color-sanba-gold-pale: var(--sanba-gold-pale);
   --color-sanba-rec: var(--sanba-rec);
+  --color-sanba-rec-text: var(--sanba-rec-text);
   --color-sanba-rec-pale: var(--sanba-rec-pale);
   --color-sanba-speak: var(--sanba-speak);
+  --color-sanba-speak-text: var(--sanba-speak-text);
   --color-sanba-caution: var(--sanba-caution);
   --color-sanba-select: var(--sanba-select);
   --color-sanba-select-pale: var(--sanba-select-pale);
@@ -158,6 +165,18 @@ body {
 .sanba-sticker {
   border: 2px solid var(--sanba-frame);
   box-shadow: 3px 3px 0 var(--sanba-shadow);
+}
+
+/* 手描きの揺らぎ角丸（ADR-0033）。ステッカー/カードの縁を機械的でなくする。
+   .sanba-sticker と併用（.sanba-wobble を後掛け）して「紙に貼った札」の質感を出す。 */
+.sanba-wobble {
+  border-radius: 15px 17px 14px 18px / 17px 14px 18px 15px;
+}
+
+/* カードの深いオフセット影（ADR-0033・提案 HTML の主要カードは 5px）。 */
+.sanba-sticker-card {
+  border: 2px solid var(--sanba-frame);
+  box-shadow: 5px 5px 0 var(--sanba-shadow);
 }
 
 /* 細い金のスクロールバー（会話・要件絵巻などの縦スクロール領域用）。 */
