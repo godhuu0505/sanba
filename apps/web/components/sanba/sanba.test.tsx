@@ -15,12 +15,16 @@ afterEach(cleanup);
 
 describe("SANBA design system", () => {
   it("Button は variant に応じてクラスを切り替える", () => {
-    const { rerender } = render(<Button variant="gold">金</Button>);
-    const btn = screen.getByRole("button", { name: "金" });
-    expect(btn.className).toContain("sanba-gold-gradient");
+    const { rerender } = render(<Button variant="gold">主</Button>);
+    const btn = screen.getByRole("button", { name: "主" });
+    // 主 CTA は朱ベタのステッカー様式（ADR-0025）。
+    expect(btn.className).toContain("sanba-sticker");
+    expect(btn.className).toContain("bg-[var(--sanba-rec)]");
 
     rerender(<Button variant="outline">枠</Button>);
-    expect(screen.getByRole("button", { name: "枠" }).className).toContain("border");
+    const outline = screen.getByRole("button", { name: "枠" }).className;
+    expect(outline).toContain("sanba-sticker");
+    expect(outline).not.toContain("bg-[var(--sanba-rec)]");
   });
 
   it("Button asChild はラッパ要素に化ける（アンカー化）", () => {
@@ -31,7 +35,7 @@ describe("SANBA design system", () => {
     );
     const link = screen.getByRole("link", { name: "始める" });
     expect(link).toHaveProperty("tagName", "A");
-    expect(link.className).toContain("sanba-gold-gradient");
+    expect(link.className).toContain("sanba-sticker");
   });
 
   it("ChatBubble は話者で左右と面色を出し分ける", () => {

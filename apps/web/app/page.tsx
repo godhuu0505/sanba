@@ -17,6 +17,7 @@ import {
   Card,
   Chip,
   Field,
+  Figure,
   Screen,
   SessionHistoryList,
   type SessionHistoryItem,
@@ -358,7 +359,7 @@ export default function Home() {
               }}
               disabled={busy}
               aria-haspopup="dialog"
-              className="rounded-[12px] border border-dashed border-[var(--sanba-frame)] bg-[#1b140b] px-3 py-[13px] text-left text-[12.5px] font-bold text-[var(--sanba-gold-text)] disabled:opacity-50"
+              className="rounded-[12px] border border-dashed border-[var(--sanba-gold-deep)] bg-[var(--sanba-surface)] px-3 py-[13px] text-left text-[12.5px] font-bold text-[var(--sanba-gold-text)] disabled:opacity-50"
             >
               ＋ ファイルを追加
             </button>
@@ -449,12 +450,18 @@ export default function Home() {
       <main className="mx-auto flex w-full max-w-[480px] flex-1 flex-col gap-[18px] pt-3">
 
         <Card>
-          <h1 className="text-[22px] font-bold leading-snug text-[var(--sanba-gold-text)]">
-            会議の前に、五分の問答を
-          </h1>
-          <p className="text-[13px] leading-relaxed text-[var(--sanba-muted)]">
-            一問ずつ問いかけ、抜けと矛盾をその場で取り上げます。
-          </p>
+          <div className="flex items-start justify-between gap-[12px]">
+            <div className="flex flex-col gap-[8px]">
+              <h1 className="sanba-display text-[23px] font-bold leading-snug text-[var(--sanba-cream)]">
+                会議の前に、五分の問答を
+              </h1>
+              <p className="text-[13px] leading-relaxed text-[var(--sanba-muted)]">
+                一問ずつ問いかけ、抜けと矛盾をその場で取り上げます。
+              </p>
+            </div>
+            {/* サンバさん（歩行）。ホームの待ち時間に体温を与える（ADR-0025、1 画面 1 体まで）。 */}
+            <Figure state="walking" className="mt-[2px] w-[44px] shrink-0" />
+          </div>
           <Button variant="gold" size="lg" block onClick={() => setStep("prepare")}>
             ＋ 壁打ちを始める
           </Button>

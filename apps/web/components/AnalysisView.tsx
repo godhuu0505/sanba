@@ -101,13 +101,13 @@ function RequirementRow({ requirement }: { requirement: Requirement }) {
   );
 }
 
-// 矛盾=緋/抜け=黄土/不明瞭=鈍色の点（KindBadge を流用）。検知の色トークンに合わせる（#182）。
+// 矛盾=朱/抜け=黄土/不明瞭=鈍色の点（KindBadge を流用）。検知の色トークン（白地向け）に合わせる（#182）。
 function categoryDot(kind: "contradiction" | "gap" | "ambiguous") {
   if (kind === "contradiction")
-    return { color: "#D2564B", label: "言葉×画の矛盾", icon: "⚠", ariaLabel: "言葉と画の矛盾" };
+    return { color: "#C43A20", label: "言葉×画の矛盾", icon: "⚠", ariaLabel: "言葉と画の矛盾" };
   if (kind === "ambiguous")
-    return { color: "#7E8BA3", label: "不明瞭", icon: "〜", ariaLabel: "不明瞭な論点" };
-  return { color: "#E0A93B", label: "抜け", icon: "◇", ariaLabel: "抜け（未定義）" };
+    return { color: "#5E6B85", label: "不明瞭", icon: "〜", ariaLabel: "不明瞭な論点" };
+  return { color: "#7D560B", label: "抜け", icon: "◇", ariaLabel: "抜け（未定義）" };
 }
 
 const card = {
@@ -141,7 +141,7 @@ const ctaButton = {
   fontWeight: 700,
   borderRadius: 12,
   border: "none",
-  background: "#1F9E8B",
+  background: "#177E6F",
   color: "#fff",
   cursor: "pointer",
 };

@@ -50,7 +50,10 @@ export const SessionHistoryList = React.forwardRef<HTMLElement, SessionHistoryLi
           過去の要件を見る
         </h2>
         {items.length === 0 ? (
-          <p className="text-[13px] leading-relaxed text-[var(--sanba-muted)]">{emptyText}</p>
+          // 空状態。棒人間はホームのヒーロー側が担うため出さない（ADR-0025「1画面1体まで」）。
+          <div className="flex items-center rounded-[12px] border border-dashed border-[var(--sanba-border-strong)] bg-[var(--sanba-surface)] px-[14px] py-[12px]">
+            <p className="text-[13px] leading-relaxed text-[var(--sanba-muted)]">{emptyText}</p>
+          </div>
         ) : (
           <ul className="flex flex-col gap-[8px]">
             {items.map((item) => (

@@ -42,7 +42,11 @@ export function JudgmentGate({
         style={
           resolved
             ? { background: "var(--sanba-gold)", color: "var(--sanba-ink)" }
-            : { backgroundColor: "#241216", border: "2px solid #d2564b", color: "#d2564b" }
+            : {
+                backgroundColor: "var(--sanba-rec-pale)",
+                border: "2px solid var(--sanba-rec)",
+                color: "var(--sanba-rec)",
+              }
         }
       >
         {resolved ? "⚖" : "⚠"}
@@ -70,8 +74,8 @@ export function JudgmentGate({
         </>
       ) : (
         <>
-          <div className="mt-4 w-full rounded-[14px] border-[1.5px] border-[#d2564b] bg-[#241216] p-[14px]">
-            <p className="text-[16px] font-bold text-[#e0857c]">未解消 {unresolved} 件 ・ 確定不可</p>
+          <div className="mt-4 w-full rounded-[14px] border-[1.5px] border-[var(--sanba-rec)] bg-[var(--sanba-rec-pale)] p-[14px]">
+            <p className="text-[16px] font-bold text-[var(--sanba-rec)]">未解消 {unresolved} 件 ・ 確定不可</p>
             <p className="mt-1 text-[11.5px] text-[var(--sanba-muted)]">
               ひとつでも残れば、要件は確定できませぬ。
             </p>
@@ -92,7 +96,7 @@ export function JudgmentGate({
           <button
             type="button"
             onClick={onForceEnd}
-            className="mt-2 w-full rounded-[12px] border border-[#7a3a36] py-3 text-[12.5px] font-bold text-[var(--sanba-rec)]"
+            className="mt-2 w-full rounded-[12px] border border-[var(--sanba-rec)]/40 py-3 text-[12.5px] font-bold text-[var(--sanba-rec)]"
           >
             未解消のまま終う
           </button>

@@ -24,31 +24,34 @@
   --ring: oklch(0.708 0 0);
   --radius: 0.625rem;
 
-  /* ── SANBA ブランドトークン（dark + gold）─────────────────────────────
-     Figma「SANBA — UI/UX 機能拡張デザイン」正本（node 31:2）から抽出。
-     産婆術の世界観に合わせた漆黒×金の配色。light テーマ（admin/login）を
-     壊さないよう独立した名前空間（--sanba-*）で定義し、SANBA 体験を担う
-     コンポーネント（components/sanba/*）だけが参照する。 */
-  --sanba-bg: #0e0a05;            /* 画面下地（最暗部） */
-  --sanba-bg-mid: #221910;        /* 放射グラデの中間 */
-  --sanba-bg-glow: #3e2e16;       /* 放射グラデの中心（ほのかな金の灯り） */
-  --sanba-surface: #2e2214;       /* カード/入力の面 */
-  --sanba-surface-strong: #2e2a16;/* ユーザー吹き出しの面 */
-  --sanba-border: #4a3a1e;        /* 標準の境界・区切り線 */
-  --sanba-border-strong: #5a4a2e; /* ユーザー吹き出しの境界 */
-  --sanba-frame: #8a5a14;         /* 端末フレームの金枠 */
-  --sanba-cream: #efe6c9;         /* 主要テキスト（生成り） */
-  --sanba-cream-bubble: #ecdfb8;  /* エージェント吹き出しの面 */
-  --sanba-ink: #2a1e08;           /* 金面上の濃色テキスト */
-  --sanba-ink-bubble: #3e2c12;    /* 生成り吹き出し上のテキスト */
-  --sanba-muted: #cbb98d;         /* 補助テキスト（鈍い金） */
-  --sanba-gold-text: #f0d67a;     /* 見出しの金 */
-  --sanba-gold-deep: #8a5a14;     /* 金グラデの起点 */
-  --sanba-gold: #d4af37;          /* 金グラデの主色 */
-  --sanba-gold-light: #f6e6ac;    /* 金グラデのハイライト */
-  --sanba-gold-amber: #c8951f;    /* 金グラデの終点 */
-  --sanba-rec: #d2564b;           /* 録音中・矛盾（緋） */
-  --sanba-speak: #a9be6e;         /* 発話認識中（萌黄） */
+  /* ── SANBA ブランドトークン（白い紙×原色）───────────────────────────
+     ADR-0025「白い紙の上の問答」。和名の原色（紙・墨・朱・瑠璃・山吹・萌黄）を
+     白基調に配し、色は「行動=朱・選択=瑠璃・ひらめき=山吹・認識中=萌黄」の
+     瞬間にだけ灯す。名前空間（--sanba-*）と参照箇所は旧・漆黒×金時代から維持し、
+     値のみ差し替えている（旧値は ADR-0025 と git 履歴を参照）。 */
+  --sanba-bg: #fcfbf7;            /* 紙 — 画面下地（生成りがかった白） */
+  --sanba-surface: #ffffff;       /* 白 — カード/入力の面 */
+  --sanba-surface-strong: #f4f1e8;/* 淡い紙面（アイコン箱・強調面） */
+  --sanba-border: #e7e1d3;        /* 藁色 — 弱い境界・区切り線 */
+  --sanba-border-strong: #d6cfbe; /* 藁色の濃 — ハンドル・静止波形 */
+  --sanba-frame: #221e1a;         /* 墨線 — 強い枠・ステッカーの縁 */
+  --sanba-cream: #221e1a;         /* 主要テキスト（生成り→墨） */
+  --sanba-cream-bubble: #ffffff;  /* エージェント吹き出しの面（白＋墨枠） */
+  --sanba-ink: #221e1a;           /* 山吹面上の濃色テキスト */
+  --sanba-ink-bubble: #221e1a;    /* 吹き出し上のテキスト */
+  --sanba-muted: #6e675a;         /* 補助テキスト（鈍色。淡色面上でも AA 4.8:1 以上） */
+  --sanba-gold-text: #985c06;     /* 見出しの山吹（文字用の暗色。淡色面上でも AA） */
+  --sanba-gold-deep: #c08a10;     /* 山吹の枠線用 */
+  --sanba-gold: #f0a814;          /* 山吹 — 産章・ひらめき・マイク */
+  --sanba-gold-light: #f8c64b;    /* 山吹のハイライト */
+  --sanba-gold-amber: #de9200;    /* 山吹の陰 */
+  --sanba-rec: #c43a20;           /* 朱 — 主要 CTA・録音中・矛盾（白文字 4.6:1） */
+  --sanba-rec-pale: #fbeae6;      /* 朱の淡色面（矛盾の告知など） */
+  --sanba-speak: #4a6619;         /* 萌黄 — 発話認識中（淡色面上でも AA 5.5:1 以上） */
+  --sanba-caution: #7d560b;       /* 黄土 — 留意・未確定警告（淡色面上でも AA 5.5:1 以上） */
+  --sanba-select: #2a5cdb;        /* 瑠璃 — 選択状態・ユーザー発話・リンク */
+  --sanba-select-pale: #eaf0ff;   /* 瑠璃の淡色面（ユーザー吹き出し） */
+  --sanba-shadow: rgba(34, 30, 26, 0.16); /* ステッカーのベタ塗りオフセット影 */
   --sanba-radius-card: 14px;
   --sanba-radius-control: 12px;
   --sanba-radius-bubble: 14px;
@@ -95,8 +98,14 @@
   --color-sanba-gold-light: var(--sanba-gold-light);
   --color-sanba-gold-amber: var(--sanba-gold-amber);
   --color-sanba-rec: var(--sanba-rec);
+  --color-sanba-rec-pale: var(--sanba-rec-pale);
   --color-sanba-speak: var(--sanba-speak);
+  --color-sanba-caution: var(--sanba-caution);
+  --color-sanba-select: var(--sanba-select);
+  --color-sanba-select-pale: var(--sanba-select-pale);
   --font-serif-jp: var(--font-noto-serif-jp), "Noto Serif JP", serif;
+  --font-sans-jp: var(--font-noto-sans-jp), "Noto Sans JP", "Hiragino Kaku Gothic ProN", sans-serif;
+  --font-display-jp: var(--font-zen-kaku), var(--font-noto-sans-jp), "Hiragino Kaku Gothic ProN", sans-serif;
 }
 
 * {
@@ -113,30 +122,36 @@ body {
    グラデーションは色トークン単体では表せないためクラスとして提供する。
    コンポーネントからは className で合成して使う（cn(...) と併用可）。 */
 
-/* 金の箔グラデ（CTA・ロゴ・波形）。--gold-angle で向きだけ差し替え可能。 */
+/* 旧・金箔グラデの後継。ADR-0025 で山吹のベタ塗りに（産章・マイク・強調チップ）。
+   クラス名は参照箇所が多いため維持する。 */
 .sanba-gold-gradient {
-  background-image: linear-gradient(
-    var(--gold-angle, 110deg),
-    var(--sanba-gold-deep) 0%,
-    var(--sanba-gold) 28.571%,
-    var(--sanba-gold-light) 42.857%,
-    var(--sanba-gold-amber) 71.429%
-  );
+  background-color: var(--sanba-gold);
 }
 
-/* 端末の下地：中央下からほのかに金が灯る放射グラデ（Figma 正本に準拠）。 */
+/* 端末の下地：紙色のベタ（ADR-0025。旧・放射グラデは廃止）。 */
 .sanba-screen-bg {
   background-color: var(--sanba-bg);
-  background-image: radial-gradient(
-    ellipse 217px 681px at 50% 74%,
-    var(--sanba-bg-glow) 0%,
-    var(--sanba-bg-mid) 42%,
-    var(--sanba-bg) 100%
-  );
 }
 
+/* 地の書体は太めのゴシック（ADR-0025）。 */
 .sanba-font {
+  font-family: var(--font-sans-jp);
+}
+
+/* 見出し・ロゴのディスプレイ書体。 */
+.sanba-display {
+  font-family: var(--font-display-jp);
+}
+
+/* 産章など、系譜を継ぐ一字だけの明朝。 */
+.sanba-serif {
   font-family: var(--font-serif-jp);
+}
+
+/* ステッカー様式：墨の縁＋ベタ塗りオフセット影。CTA・主要カードに使う。 */
+.sanba-sticker {
+  border: 2px solid var(--sanba-frame);
+  box-shadow: 3px 3px 0 var(--sanba-shadow);
 }
 
 /* 細い金のスクロールバー（会話・要件絵巻などの縦スクロール領域用）。 */
@@ -163,4 +178,49 @@ body {
 }
 @media (prefers-reduced-motion: reduce) {
   .sanba-wave-bar { animation: none; }
+}
+
+/* ── 棒人間「サンバさん」（components/sanba/Figure.tsx）───────────────
+   SVG 線画の関節を CSS で駆動する。transform-box: view-box により
+   transform-origin を viewBox 座標（関節位置）で指定できる。 */
+@keyframes sanba-fig-swing {
+  from { transform: rotate(-28deg); }
+  to { transform: rotate(28deg); }
+}
+@keyframes sanba-fig-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-2.5px); }
+}
+@keyframes sanba-fig-tilt {
+  0%, 45% { transform: rotate(0deg); }
+  55%, 88% { transform: rotate(-9deg); }
+  100% { transform: rotate(0deg); }
+}
+@keyframes sanba-fig-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+@keyframes sanba-fig-pulse {
+  0%, 100% { opacity: 0.2; }
+  50% { opacity: 1; }
+}
+@keyframes sanba-fig-cheer {
+  0%, 100% { transform: rotate(0deg); }
+  50% { transform: rotate(-18deg); }
+}
+@keyframes sanba-fig-cheer-r {
+  0%, 100% { transform: rotate(0deg); }
+  50% { transform: rotate(18deg); }
+}
+@keyframes sanba-fig-scribble {
+  0%, 100% { transform: translate(0, 0) rotate(0deg); }
+  25% { transform: translate(3px, 1px) rotate(2deg); }
+  50% { transform: translate(6px, 0) rotate(0deg); }
+  75% { transform: translate(3px, -1px) rotate(-2deg); }
+}
+.sanba-fig-joint {
+  transform-box: view-box;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sanba-fig-joint { animation: none !important; }
 }

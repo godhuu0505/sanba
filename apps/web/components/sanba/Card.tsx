@@ -18,7 +18,10 @@ export function Card({ className, ...props }: React.HTMLAttributes<HTMLDivElemen
 export function CardTitle({ className, ...props }: React.HTMLAttributes<HTMLHeadingElement>) {
   return (
     <h3
-      className={cn("text-[18px] font-bold leading-snug text-[var(--sanba-cream)]", className)}
+      className={cn(
+        "sanba-display text-[18px] font-bold leading-snug text-[var(--sanba-cream)]",
+        className,
+      )}
       {...props}
     />
   );

@@ -66,7 +66,7 @@ const PRESENTATION: Record<
   muted: {
     icon: "🔇",
     label: "消音中",
-    tone: "border-[var(--sanba-rec)] text-[#e0857c]",
+    tone: "border-[var(--sanba-rec)] text-[var(--sanba-rec)]",
     pulse: false,
   },
   idle: {

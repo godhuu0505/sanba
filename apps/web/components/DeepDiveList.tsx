@@ -31,12 +31,12 @@ export function DeepDiveList({ detections, onJump }: DeepDiveListProps) {
           <div
             key={d.id}
             aria-label={`深掘り ${k.ariaLabel}`}
-            className="flex flex-col gap-[6px] rounded-[12px] border bg-[#241a0f] px-3 py-[11px]"
+            className="flex flex-col gap-[6px] rounded-[12px] border bg-[var(--sanba-surface)] px-3 py-[11px]"
             style={{ borderColor: k.color }}
           >
             <div className="flex items-start gap-2">
               <span
-                className="rounded-full px-2 py-[2px] text-[10.5px] font-bold text-[var(--sanba-ink)]"
+                className="rounded-full px-2 py-[2px] text-[10.5px] font-bold text-white"
                 style={{ backgroundColor: k.color }}
               >
                 {k.icon} {k.label}
