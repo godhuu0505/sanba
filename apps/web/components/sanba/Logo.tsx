@@ -23,7 +23,7 @@ export function Logo({ className, size = "md", wordmark = true, glyph = "産", .
     <div className={cn("flex items-center gap-[10px]", className)} {...props}>
       <span
         className={cn(
-          "sanba-gold-gradient sanba-serif flex items-center justify-center rounded-full border-2 border-[var(--sanba-frame)] font-bold text-[var(--sanba-ink)]",
+          "sanba-gold-gradient sanba-serif flex items-center justify-center rounded-full border-2 border-sanba-frame font-bold text-sanba-ink",
           s.box,
           s.glyph,
         )}
@@ -32,7 +32,7 @@ export function Logo({ className, size = "md", wordmark = true, glyph = "産", .
         {glyph}
       </span>
       {wordmark && (
-        <span className={cn("sanba-display font-bold text-[var(--sanba-cream)]", s.word)}>
+        <span className={cn("sanba-display font-bold text-sanba-cream", s.word)}>
           SANBA
         </span>
       )}

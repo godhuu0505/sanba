@@ -14,28 +14,29 @@ export type ChipTone = "neutral" | "gold" | "success" | "danger" | "info";
 
 type ToneStyle = { soft: string; solid: string };
 
+// 役割チップは 1.5px 墨枠・角丸99（ADR-0033 §7）。soft/solid で枠幅を揃え、選択でサイズが跳ねない。
 const TONES: Record<ChipTone, ToneStyle> = {
   neutral: {
-    soft: "border border-[var(--sanba-border)] bg-[var(--sanba-surface)] text-[var(--sanba-muted)]",
-    // 選択＝瑠璃（ADR-0025）。役割チップなど単一選択の「選ばれている」状態。
-    solid: "border border-transparent bg-[var(--sanba-select)] text-white",
+    soft: "border-[1.5px] border-sanba-frame bg-sanba-surface text-sanba-cream",
+    // 選択＝瑠璃ベタ＋白文字（ADR-0033）。役割チップなど単一選択の「選ばれている」状態。
+    solid: "border-[1.5px] border-transparent bg-sanba-select text-white",
   },
   gold: {
-    soft: "border border-[var(--sanba-gold-deep)] bg-transparent text-[var(--sanba-gold-text)]",
-    solid: "sanba-gold-gradient border border-[var(--sanba-frame)] text-[var(--sanba-ink)]",
+    soft: "border-[1.5px] border-sanba-gold-deep bg-transparent text-sanba-gold-text",
+    solid: "sanba-gold-gradient border-[1.5px] border-sanba-frame text-sanba-ink",
   },
   success: {
-    soft: "border border-[var(--sanba-speak)]/40 bg-transparent text-[var(--sanba-speak-text)]",
-    // 萌黄(#7fa83c)は明色で白文字だと 2.8:1（AA不可）。墨文字を載せる（5.9:1）。
-    solid: "border border-transparent bg-[var(--sanba-speak)] text-[var(--sanba-ink)]",
+    soft: "border-[1.5px] border-sanba-speak/40 bg-transparent text-sanba-speak-text",
+    // 萌黄(#7fa83c)は明色で白文字だと不足。墨文字を載せる（ADR-0033）。
+    solid: "border-[1.5px] border-transparent bg-sanba-speak text-sanba-ink",
   },
   danger: {
-    soft: "border border-[var(--sanba-rec)]/40 bg-transparent text-[var(--sanba-rec-text)]",
-    solid: "border border-transparent bg-[var(--sanba-rec-text)] text-white",
+    soft: "border-[1.5px] border-sanba-rec/40 bg-transparent text-sanba-rec-text",
+    solid: "border-[1.5px] border-transparent bg-sanba-rec-text text-white",
   },
   info: {
-    soft: "border border-[var(--sanba-border)] bg-transparent text-[var(--sanba-cream)]",
-    solid: "border border-transparent bg-[var(--sanba-surface-strong)] text-[var(--sanba-cream)]",
+    soft: "border-[1.5px] border-sanba-border bg-transparent text-sanba-cream",
+    solid: "border-[1.5px] border-transparent bg-sanba-surface-strong text-sanba-cream",
   },
 };
 

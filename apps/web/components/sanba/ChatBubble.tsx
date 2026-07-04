@@ -36,8 +36,8 @@ export function ChatBubble({
       className={cn(
         "max-w-[78%] px-[13px] py-[11px] text-[13px] leading-[1.52]",
         isAgent
-          ? "rounded-[14px] rounded-tl-[4px] border-[1.5px] border-[var(--sanba-frame)] bg-[var(--sanba-cream-bubble)] text-[var(--sanba-ink-bubble)]"
-          : "rounded-[14px] rounded-tr-[4px] border-[1.5px] border-[var(--sanba-select)] bg-[var(--sanba-select-pale)] text-[var(--sanba-cream)]",
+          ? "rounded-[14px] rounded-tl-[4px] border-[1.5px] border-sanba-frame bg-sanba-cream-bubble text-sanba-ink-bubble"
+          : "rounded-[14px] rounded-tr-[4px] border-[1.5px] border-sanba-select bg-sanba-select-pale text-sanba-cream",
       )}
     >
       {children}
