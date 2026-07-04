@@ -156,6 +156,20 @@ describe("深掘りリンク入場画面（ADR-0031 / FR-1.6）", () => {
     expect(joinProduct).toHaveBeenCalledTimes(2);
   });
 
+  it("joinProduct 成功後に joinSession が失敗した場合、リトライで joinProduct を再消費しない", async () => {
+    joinSession.mockRejectedValueOnce(new ApiError(429, "rate limit exceeded"));
+    render(<JoinPage />);
+    await startWithConsent();
+    expect(await screen.findByRole("alert")).toBeTruthy();
+    expect(joinProduct).toHaveBeenCalledTimes(1);
+
+    // リトライ: joinProduct は呼ばず joinSession だけ再実行する（use_count を守る）。
+    fireEvent.click(screen.getByRole("button", { name: "深掘りを開始する" }));
+    await waitFor(() => expect(screen.getByTestId("conversation-start")).toBeTruthy());
+    expect(joinProduct).toHaveBeenCalledTimes(1); // 増えていない（再消費なし）
+    expect(joinSession).toHaveBeenCalledTimes(2);
+  });
+
   it("classifyJoinError は未知のエラーを一時エラーに平す", () => {
     expect(classifyJoinError(new Error("network")).retryable).toBe(true);
     expect(classifyJoinError(new ApiError(403, "invalid invite link: bad signature")).retryable).toBe(

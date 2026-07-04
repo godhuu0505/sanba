@@ -15,7 +15,7 @@ import { useState } from "react";
 import { ConversationStart } from "@/components/ConversationStart";
 import { authGate } from "@/components/RequireAuth";
 import { AppHeader, Button, Card, CardTitle, Screen } from "@/components/sanba";
-import { ApiError, joinProduct, joinSession, type JoinResponse } from "@/lib/api";
+import { ApiError, joinProduct, joinSession, type JoinResponse, type ProductJoinResult } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 
 const RETENTION_DAYS = process.env.NEXT_PUBLIC_RETENTION_DAYS ?? "30";
@@ -111,6 +111,8 @@ export default function JoinPage() {
   const [conn, setConn] = useState<JoinResponse | null>(null);
   const [productName, setProductName] = useState("");
   const [roleLabel, setRoleLabel] = useState("");
+  // joinProduct の結果をキャッシュ: joinSession リトライ時に use_count を再消費しないため。
+  const [pendingJoin, setPendingJoin] = useState<ProductJoinResult | null>(null);
 
   // Stage 1 はログイン必須。未ログインは /login?next=/join/{token} → ログイン後に復帰。
   const gate = authGate(auth, `/join/${encodeURIComponent(token)}`);
@@ -125,8 +127,10 @@ export default function JoinPage() {
     setBusy(true);
     setError(null);
     try {
-      // 消費を伴う join はここ 1 回だけ。失敗しても自動では再送しない。
-      const joined = await joinProduct(token, consent, auth.credential);
+      // joinProduct は use_count を消費する。成功結果をキャッシュし、
+      // joinSession リトライ時に再消費しないようにする（max_uses=1 対策）。
+      const joined = pendingJoin ?? (await joinProduct(token, consent, auth.credential));
+      if (!pendingJoin) setPendingJoin(joined);
       const session = await joinSession({
         invite: joined.invite,
         participantName: auth.profile?.name || "ゲスト",
