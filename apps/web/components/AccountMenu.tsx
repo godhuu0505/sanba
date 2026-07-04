@@ -82,7 +82,7 @@ export function AccountMenu({ profile, hideAdmin, hideSettings }: AccountMenuPro
             type="button"
             aria-label="閉じる（背景）"
             onClick={() => setOpen(false)}
-            className="fixed inset-0 z-40 bg-black/55"
+            className="fixed inset-0 z-40 bg-sanba-frame/55"
           />
           <div
             role="menu"

@@ -81,7 +81,7 @@ export function ChoicePin({ questionId, question, options, detectionKind, onAnsw
         type="button"
         aria-label="閉じる（背景）"
         onClick={d.closeOverlay}
-        className="fixed inset-0 bg-black/55"
+        className="fixed inset-0 bg-sanba-frame/55"
       />
       <div className="relative">
         {d.state.mode === "detail" ? (

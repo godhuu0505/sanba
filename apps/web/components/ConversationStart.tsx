@@ -286,7 +286,7 @@ export function MicPermissionModal({ onAllow, onText, onDismiss }: MicPermission
         type="button"
         aria-label="閉じる"
         onClick={onDismiss}
-        className="fixed inset-0 z-40 cursor-default bg-black/60"
+        className="fixed inset-0 z-40 cursor-default bg-sanba-frame/60"
       />
       {/* ラッパーは全画面だが pointer-events-none で、空き領域のクリックは下の暗幕ボタンへ通す。
           ダイアログ本体だけ pointer-events-auto で操作可能にする（暗幕タップ→onDismiss を阻害しない）。 */}

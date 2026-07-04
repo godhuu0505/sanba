@@ -68,7 +68,7 @@ export function MaterialCancelDialog({
         type="button"
         aria-label="閉じる（背景）"
         onClick={onContinue}
-        className="absolute inset-0 bg-black/55"
+        className="absolute inset-0 bg-sanba-frame/55"
       />
 
       <div

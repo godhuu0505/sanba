@@ -409,7 +409,7 @@ export function ConversationSessionView({
       )}
 
       {endOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 px-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-sanba-frame/55 px-4">
           <EndConfirmDialog
             unresolved={mini.unresolved}
             onContinue={() => setEndOpen(false)}
