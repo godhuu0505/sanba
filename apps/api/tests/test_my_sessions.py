@@ -17,7 +17,7 @@ from sanba_shared.models import SessionMeta
 
 from sanba_api import auth_google
 from sanba_api.auth_google import AuthUser, require_user
-from sanba_api.main import _repo, app
+from sanba_api.main import _read_repo, _repo, app
 
 client = TestClient(app)
 
@@ -29,6 +29,7 @@ def _user(sub: str, email: str) -> AuthUser:
 @pytest.fixture(autouse=True)
 def _reset() -> Iterator[None]:
     _repo._mem_sessions.clear()
+    _read_repo._mem_requirements.clear()
     assert _repo._client is None, "テストは Firestore 非接続のメモリ fallback 前提"
     yield
     app.dependency_overrides.pop(require_user, None)
@@ -116,3 +117,95 @@ def test_invalid_bearer_token_is_rejected(monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.setattr(auth_google.settings, "auth_dev_bypass", False, raising=True)
     res = client.get("/api/sessions/mine", headers={"Authorization": "Bearer not-a-real-token"})
     assert res.status_code == 401
+
+
+# ---- 過去セッションの要件絵巻 (GET /api/sessions/mine/{id}/requirements) ----
+def _seed_requirement(sid: str, rid: str = "r1") -> None:
+    _read_repo._seed_requirement(
+        sid,
+        {
+            "id": rid,
+            "statement": "キーワード検索を新設する",
+            "category": "functional",
+            "priority": "must",
+            "confidence": 0.9,
+            "source_speaker": "顧客",
+        },
+    )
+
+
+def test_my_requirements_returns_meta_and_items() -> None:
+    _seed("sess-1", "alice", created=datetime(2024, 6, 20, tzinfo=UTC), title="新機能要件定義")
+    _seed_requirement("sess-1")
+    _login("alice")
+
+    res = client.get("/api/sessions/mine/sess-1/requirements")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["id"] == "sess-1"
+    assert body["title"] == "新機能要件定義"
+    assert body["finalized"] is False
+    # PII (owner_email/owner_sub) は載せない (一覧 API と同じ最小権限)。
+    assert "owner_email" not in body
+    assert "owner_sub" not in body
+    # items は契約 §3 の requirement 形 (get_requirements と同じ contract 形)。
+    item = body["items"][0]
+    assert item["id"] == "r1"
+    assert item["priority"] == "must"
+    assert item["citations"] == []
+    assert item["status"] == "confirmed"
+
+
+def test_my_requirements_empty_items_when_none_recorded() -> None:
+    _seed("sess-1", "alice", created=datetime(2024, 6, 20, tzinfo=UTC))
+    _login("alice")
+    body = client.get("/api/sessions/mine/sess-1/requirements").json()
+    assert body["items"] == []
+
+
+def test_my_requirements_finalized_returns_frozen_snapshot_only() -> None:
+    """確定済みは finalize 時の凍結スナップショットだけを見せる（Codex P1）。
+
+    確定後に遅延 agent が追加した要件は、export と同様に過去要件閲覧にも混ぜない（#213）。
+    """
+    _seed("sess-1", "alice", created=datetime(2024, 6, 20, tzinfo=UTC))
+    _seed_requirement("sess-1", "r1")
+    _repo.finalize_session("sess-1", confirmed_count=1, finalized_requirement_ids=["r1"])
+    # 確定後の遅延追加（凍結集合の外）。
+    _seed_requirement("sess-1", "r2")
+    _login("alice")
+
+    body = client.get("/api/sessions/mine/sess-1/requirements").json()
+    assert body["finalized"] is True
+    assert [i["id"] for i in body["items"]] == ["r1"]
+
+
+def test_my_requirements_legacy_finalized_without_snapshot_falls_back() -> None:
+    """旧データ（ID スナップショット無しの finalized）は export と同じ再計算フォールバック。"""
+    _seed("sess-1", "alice", created=datetime(2024, 6, 20, tzinfo=UTC))
+    _seed_requirement("sess-1", "r1")
+    _repo.finalize_session("sess-1", confirmed_count=1, finalized_requirement_ids=[])
+    _login("alice")
+
+    body = client.get("/api/sessions/mine/sess-1/requirements").json()
+    assert body["finalized"] is True
+    assert [i["id"] for i in body["items"]] == ["r1"]
+
+
+def test_my_requirements_hides_other_owners_session_as_404() -> None:
+    """非所有は 404 (403 ではない): 応答差で他人のセッション ID の存在を漏らさない。"""
+    _seed("sess-bob", "bob", created=datetime(2024, 6, 20, tzinfo=UTC))
+    _seed_requirement("sess-bob")
+    _login("alice")
+    assert client.get("/api/sessions/mine/sess-bob/requirements").status_code == 404
+
+
+def test_my_requirements_unknown_session_is_404() -> None:
+    _login("alice")
+    assert client.get("/api/sessions/mine/no-such/requirements").status_code == 404
+
+
+def test_my_requirements_requires_login(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(auth_google.settings, "google_oauth_client_id", "cid", raising=True)
+    monkeypatch.setattr(auth_google.settings, "auth_dev_bypass", False, raising=True)
+    assert client.get("/api/sessions/mine/sess-1/requirements").status_code == 401

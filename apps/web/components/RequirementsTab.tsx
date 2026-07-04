@@ -6,10 +6,13 @@
 
 import { useEffect, useRef } from "react";
 
-import { PRIORITY_ORDER, priorityLabel } from "@/lib/realtime/mapping";
 import type { Detection, Requirement } from "@/lib/realtime/types";
 
 import { DeepDiveList } from "./DeepDiveList";
+import { RequirementsScrollList } from "./RequirementsScrollList";
+
+// MoSCoW 区分の本体リスト（空状態含む）は RequirementsScrollList に抽出済み。
+// このタブは見出し＋深掘り（未解消）導線のみを所有する。
 
 export interface RequirementsTabProps {
   requirements: Requirement[];
@@ -25,12 +28,6 @@ export interface RequirementsTabProps {
   focusUnresolved?: boolean;
   /** focusUnresolved を消費したことを親へ通知（false へ戻す）。 */
   onUnresolvedFocusConsumed?: () => void;
-}
-
-function confidenceLabel(c: number): string {
-  if (c >= 0.75) return "高";
-  if (c >= 0.5) return "中";
-  return "低";
 }
 
 export function RequirementsTab({
@@ -56,32 +53,7 @@ export function RequirementsTab({
         要件絵巻（MoSCoW・確信度/出所つき・閲覧のみ）
       </h2>
 
-      {requirements.length === 0 ? (
-        <p className="px-1 py-3 text-[12.5px] text-[var(--sanba-muted)]">
-          まだ要件はありません。問答が進むと、ここに育っていきます。
-        </p>
-      ) : (
-        PRIORITY_ORDER.map((pr) => {
-          const group = requirements.filter((r) => r.priority === pr);
-          if (group.length === 0) return null;
-          return (
-            <section key={pr} aria-label={priorityLabel(pr)} className="flex flex-col gap-[6px]">
-              <h3 className="text-[12px] font-bold text-[var(--sanba-gold-text)]">{priorityLabel(pr)}</h3>
-              {group.map((r) => (
-                <div
-                  key={r.id}
-                  className="flex flex-col gap-[3px] rounded-[12px] border border-[var(--sanba-border)] bg-[var(--sanba-surface)] px-3 py-[11px]"
-                >
-                  <p className="text-[13px] font-bold text-[var(--sanba-cream)]">{r.statement}</p>
-                  <span className="text-[10.5px] text-[var(--sanba-muted)]">
-                    確信 {confidenceLabel(r.confidence)}　・　出所 {r.source_speaker}
-                  </span>
-                </div>
-              ))}
-            </section>
-          );
-        })
-      )}
+      <RequirementsScrollList requirements={requirements} />
 
       <h2
         ref={deepDiveRef}
