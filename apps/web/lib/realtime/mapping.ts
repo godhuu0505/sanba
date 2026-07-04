@@ -24,20 +24,20 @@ export interface KindPresentation {
 // 値は白地（ADR-0025）でコントラストが立つよう暗めに調整している。
 const DETECTION_PRESENTATION: Record<DetectionKind, KindPresentation> = {
   contradiction: {
-    color: "#C43A20", // 朱（= --sanba-rec）
+    color: "var(--sanba-rec-text)", // 朱の文字用（= --sanba-rec-text・白地 5.3:1）
     // バッジ表記は Figma 正本に合わせて短く「矛盾」。説明は ariaLabel で補う。
     label: "矛盾",
     icon: "⚠",
     ariaLabel: "矛盾を検知",
   },
   gap: {
-    color: "#7D560B", // 黄土（白地向けの暗色）
+    color: "var(--sanba-caution)", // 黄土（白地向けの暗色）
     label: "抜け",
     icon: "◇",
     ariaLabel: "抜け（未定義）を検知",
   },
   ambiguous: {
-    color: "#5E6B85", // 鈍色（朱/黄土/橄欖/金 と判別できるくすんだ藍鼠 / #182・ADR-0022）
+    color: "var(--sanba-cat-ambiguous)", // 鈍色（朱/黄土/橄欖/金 と判別できるくすんだ藍鼠 / #182・ADR-0022）
     label: "不明瞭",
     // 「〜」で曖昧さを表す。要件カテゴリ open_question の「?」と記号が衝突しないようにする。
     icon: "〜",
@@ -52,17 +52,17 @@ export function detectionPresentation(kind: DetectionKind): KindPresentation {
 // 要件カテゴリの表示（08/09 のチップ・セクション用）。色は補助、ラベル＋アイコンが主。
 const CATEGORY_PRESENTATION: Record<string, KindPresentation> = {
   // 機能は瑠璃（= --sanba-select）で選択系の青と統一（ADR-0025）。
-  functional: { color: "#2A5CDB", label: "機能", icon: "⚙", ariaLabel: "機能要件" },
+  functional: { color: "var(--sanba-select)", label: "機能", icon: "⚙", ariaLabel: "機能要件" },
   non_functional: {
-    color: "#6B47C7",
+    color: "var(--sanba-cat-nonfunctional)",
     label: "非機能",
     icon: "◎",
     ariaLabel: "非機能要件",
   },
-  constraint: { color: "#6B6E73", label: "制約", icon: "▣", ariaLabel: "制約" },
-  scope: { color: "#177E6F", label: "境界", icon: "▢", ariaLabel: "スコープ・境界" },
+  constraint: { color: "var(--sanba-cat-neutral)", label: "制約", icon: "▣", ariaLabel: "制約" },
+  scope: { color: "var(--sanba-cat-scope)", label: "境界", icon: "▢", ariaLabel: "スコープ・境界" },
   open_question: {
-    color: "#7D560B",
+    color: "var(--sanba-caution)",
     label: "未解決",
     icon: "?",
     ariaLabel: "未解決の問い",
@@ -70,7 +70,7 @@ const CATEGORY_PRESENTATION: Record<string, KindPresentation> = {
 };
 
 const UNKNOWN_CATEGORY: KindPresentation = {
-  color: "#6B6E73",
+  color: "var(--sanba-cat-neutral)",
   label: "要件",
   icon: "•",
   ariaLabel: "要件",

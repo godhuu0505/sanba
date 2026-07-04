@@ -56,6 +56,14 @@
   --sanba-caution: #7d560b;       /* 黄土 — 留意・未確定警告（淡色面上でも AA 5.5:1 以上） */
   --sanba-select: #2a5cdb;        /* 瑠璃 — 選択状態・ユーザー発話・リンク */
   --sanba-select-pale: #eaf0ff;   /* 瑠璃の淡色面（ユーザー吹き出し） */
+  /* 分類（検知/要件カテゴリ）チップの補助色。lib/realtime/mapping.ts の直書き hex を
+     ここへ集約（ADR-0033 §影響「直書き hex はトークン参照へ寄せる」）。値は不変（no-op）。
+     色は補助で、識別はラベル＋アイコンが主（色のみ非依存 / Issue #101）。白地コントラスト
+     実測: いずれも本文 AA 4.5:1 以上（最小 青緑 4.9:1）、図形/アイコンは 3:1 で十分。 */
+  --sanba-cat-ambiguous: #5e6b85;     /* 藍鼠 — 不明瞭（検知）。白地 5.36:1 */
+  --sanba-cat-nonfunctional: #6b47c7; /* 菫 — 非機能要件。白地 6.27:1 */
+  --sanba-cat-neutral: #6b6e73;       /* 鈍灰 — 制約・要件既定（フォールバック）。白地 5.12:1 */
+  --sanba-cat-scope: #177e6f;         /* 青緑 — 境界・スコープ。白地 4.94:1 */
   --sanba-shadow: rgba(34, 30, 26, 0.12); /* ステッカーのベタ塗りオフセット影（ADR-0033・墨ベース） */
   --sanba-radius-card: 16px;
   --sanba-radius-control: 12px;
@@ -111,6 +119,10 @@
   --color-sanba-caution: var(--sanba-caution);
   --color-sanba-select: var(--sanba-select);
   --color-sanba-select-pale: var(--sanba-select-pale);
+  --color-sanba-cat-ambiguous: var(--sanba-cat-ambiguous);
+  --color-sanba-cat-nonfunctional: var(--sanba-cat-nonfunctional);
+  --color-sanba-cat-neutral: var(--sanba-cat-neutral);
+  --color-sanba-cat-scope: var(--sanba-cat-scope);
   /* 書体は @fontsource でセルフホスト（layout.tsx で woff2 を同梱）。
      以前は next/font/google がこの --font-* 変数を注入していたが、自前配信に伴い
      ここで font-family 名に束ねる（未定義だと var() が宣言全体を無効化するため必須）。 */
