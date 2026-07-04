@@ -46,6 +46,49 @@ def requirements_to_issue_body(
     return title, "\n".join(lines).strip()
 
 
+def list_repos(  # pragma: no cover - network
+    token: str, per_page: int = 100, max_pages: int = 10
+) -> list[str]:
+    """Return repo full names ("owner/name") the token can read, newest activity first.
+
+    02 準備「連携リポジトリ」の候補一覧（ADR-0027）。失敗は空リストで返し、
+    UI 側の手入力フォールバックに委ねる（一覧の不調で開始を止めない）。
+    最大 max_pages * per_page 件（既定 1000 件）まで全ページ取得する。
+    """
+    import httpx
+
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    result: list[str] = []
+    try:
+        with httpx.Client(timeout=15) as client:
+            for page in range(1, max_pages + 1):
+                res = client.get(
+                    f"{_API}/user/repos",
+                    headers=headers,
+                    params={"per_page": per_page, "sort": "updated", "page": page},
+                )
+                if res.status_code != 200:
+                    log.warning("github_list_repos_failed", status=res.status_code, page=page)
+                    break
+                body = res.json()
+                if not isinstance(body, list) or len(body) == 0:
+                    break
+                result.extend(
+                    r["full_name"]
+                    for r in body
+                    if isinstance(r, dict) and isinstance(r.get("full_name"), str)
+                )
+                if len(body) < per_page:
+                    break  # 最終ページ
+    except Exception as exc:
+        log.warning("github_list_repos_failed", error=str(exc))
+    return result
+
+
 def create_issue(
     token: str, repo: str, title: str, body: str
 ) -> str | None:  # pragma: no cover - network

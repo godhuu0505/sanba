@@ -357,12 +357,50 @@ def _enable_github(monkeypatch: pytest.MonkeyPatch) -> dict[str, object]:
     captured: dict[str, object] = {}
 
     def fake_create_issue(token: str, repo: str, title: str, body: str) -> str:
+        captured["repo"] = repo
         captured["body"] = body
         return "https://github.com/o/r/issues/1"
 
     monkeypatch.setattr(github_export, "create_issue", fake_create_issue)
     monkeypatch.setattr(main.github_export, "create_issue", fake_create_issue)
     return captured
+
+
+def test_export_uses_session_selected_repo(monkeypatch: pytest.MonkeyPatch) -> None:
+    # 02 準備で選んだリポジトリへ起票する（ADR-0027）。環境変数 "o/r" ではなく選択値が勝つ。
+    created = client.post(
+        "/api/sessions",
+        json={"roles": ["pm"], "consent_acknowledged": True, "github_repo": "acme/product-a"},
+    )
+    sid = created.json()["session_id"]
+    _read_repo._seed_requirement(
+        sid,
+        {"id": "c1", "statement": "確定", "category": "functional", "priority": "must"},
+    )
+    captured = _enable_github(monkeypatch)
+    client.post(f"/api/sessions/{sid}/finalize", headers=_auth(_token(sid)))
+
+    res = client.post(f"/api/sessions/{sid}/export", headers=_auth(_token(sid)))
+    assert res.json()["exported"] is True
+    assert captured["repo"] == "acme/product-a"
+
+
+def test_export_falls_back_to_env_repo_without_selection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # リポジトリ未選択のセッションは従来どおり環境変数 GITHUB_REPO へ（ADR-0027 の互換）。
+    created = client.post("/api/sessions", json={"roles": ["pm"], "consent_acknowledged": True})
+    sid = created.json()["session_id"]
+    _read_repo._seed_requirement(
+        sid,
+        {"id": "c1", "statement": "確定", "category": "functional", "priority": "must"},
+    )
+    captured = _enable_github(monkeypatch)
+    client.post(f"/api/sessions/{sid}/finalize", headers=_auth(_token(sid)))
+
+    res = client.post(f"/api/sessions/{sid}/export", headers=_auth(_token(sid)))
+    assert res.json()["exported"] is True
+    assert captured["repo"] == "o/r"
 
 
 def test_export_uses_only_confirmed_requirements(monkeypatch: pytest.MonkeyPatch) -> None:

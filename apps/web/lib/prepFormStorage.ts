@@ -8,6 +8,8 @@ export interface PrepForm {
   role?: string;
   goal?: string;
   consent?: boolean;
+  /** 連携リポジトリ "owner/name"（任意 / ADR-0027）。空文字は「連携しない」。 */
+  githubRepo?: string;
 }
 
 /** 保存済みの準備フォームを読み出す。未保存/壊れた値/利用不可なら空を返す（本流を止めない）。 */
@@ -24,6 +26,7 @@ export function readPrep(): PrepForm {
     if (typeof o.role === "string") out.role = o.role;
     if (typeof o.goal === "string") out.goal = o.goal;
     if (typeof o.consent === "boolean") out.consent = o.consent;
+    if (typeof o.githubRepo === "string") out.githubRepo = o.githubRepo;
     return out;
   } catch {
     return {};

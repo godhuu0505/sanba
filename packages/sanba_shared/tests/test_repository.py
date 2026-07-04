@@ -124,3 +124,64 @@ def test_reject_clears_approval_fields() -> None:
     assert rejected.status is RequirementStatus.REJECTED
     assert rejected.approved_by is None
     assert rejected.approved_at is None
+
+
+# ── GitHub link / session repo binding (ADR-0028) ────────────────────────────
+def test_github_link_set_get_delete() -> None:
+    from sanba_shared.models import GitHubLink
+
+    repo = _repo()
+    assert repo.get_github_link("sub-1") is None
+
+    link = GitHubLink(sub="sub-1", installation_id=42, github_login="octo")
+    repo.set_github_link(link)
+    got = repo.get_github_link("sub-1")
+    assert got is not None
+    assert got.installation_id == 42
+    assert got.github_login == "octo"
+
+    assert repo.delete_github_link("sub-1") is True
+    assert repo.get_github_link("sub-1") is None
+    # 冪等: 既に無ければ False。
+    assert repo.delete_github_link("sub-1") is False
+
+
+def test_set_session_github_binds_repo_and_status() -> None:
+    from sanba_shared.models import GitHubIndexStatus
+
+    repo = _repo()
+    repo.create_session_doc(
+        SessionMeta(id="sess-9", title="t", owner_sub="sub", owner_email="o@example.com")
+    )
+    updated = repo.set_session_github(
+        "sess-9",
+        repo="octo/demo",
+        branch="main",
+        commit_sha="abc123",
+        index_status=GitHubIndexStatus.INDEXING,
+    )
+    assert updated is not None
+    assert updated.github_repo == "octo/demo"
+    assert updated.github_branch == "main"
+    assert updated.github_commit_sha == "abc123"
+    assert updated.github_index_status is GitHubIndexStatus.INDEXING
+    # 永続化されたメタからも読める。
+    reread = repo.get_session("sess-9")
+    assert reread is not None
+    assert reread.github_index_status is GitHubIndexStatus.INDEXING
+
+
+def test_set_session_github_missing_session_returns_none() -> None:
+    from sanba_shared.models import GitHubIndexStatus
+
+    repo = _repo()
+    assert (
+        repo.set_session_github(
+            "nope",
+            repo=None,
+            branch=None,
+            commit_sha=None,
+            index_status=GitHubIndexStatus.NONE,
+        )
+        is None
+    )

@@ -26,7 +26,13 @@ from livekit.agents import (
 )
 from livekit.agents.llm import function_tool
 from livekit.plugins import google
-from sanba_shared.models import Priority, Requirement, RequirementCategory, Utterance
+from sanba_shared.models import (
+    GitHubIndexStatus,
+    Priority,
+    Requirement,
+    RequirementCategory,
+    Utterance,
+)
 from sanba_shared.repository import SessionRepository
 
 from .config import settings
@@ -44,7 +50,7 @@ from .events import (
     decode_user_text,
 )
 from .observability import setup_observability
-from .prompts.interview import VOICE_AGENT_INSTRUCTIONS
+from .prompts.interview import VOICE_AGENT_INSTRUCTIONS, build_repo_premise
 from .retrieval import GroundingStore
 from .tools.analysis import analyze_transcript, make_requirement_id
 
@@ -54,6 +60,37 @@ log = structlog.get_logger(__name__)
 # 場合に SDK へ橋渡しする (api/main.py と同じパターン)。未設定なら本番の実 Firestore に接続。
 if settings.firestore_emulator_host:
     os.environ.setdefault("FIRESTORE_EMULATOR_HOST", settings.firestore_emulator_host)
+
+
+def _repo_premise(repo: SessionRepository, session_id: str) -> str:
+    """SessionMeta を読み、紐づけ repo の前提一節を返す（無ければ空文字 / ADR-0028）。
+
+    索引状態が ready/partial/indexing のときだけ前提化する（none/failed は付けない）。
+    Firestore 不通などで読めない場合も会話は成立させる（前提は付加価値）。
+    """
+    try:
+        meta = repo.get_session(session_id)
+    except Exception as exc:  # pragma: no cover - depends on backend
+        log.warning("repo_premise_session_read_failed", error=str(exc))
+        return ""
+    if meta is None or not meta.github_repo:
+        return ""
+    status = meta.github_index_status
+    if status in (GitHubIndexStatus.NONE, GitHubIndexStatus.FAILED):
+        return ""
+    ready = status in (GitHubIndexStatus.READY, GitHubIndexStatus.PARTIAL)
+    return build_repo_premise(meta.github_repo, meta.github_branch, ready, meta.github_summary)
+
+
+def _is_stale_repo_passage(source: str, current_sha: str) -> bool:
+    """repo 索引 chunk のうち現在の commit sha 以外を stale と判定する（ADR-0028）。
+
+    repo 索引の source は `github:{repo}@{branch}@{sha}:{path}` で sha を内包する。旧
+    env connector の source（`github:{repo}#...`）は `@` を含まないため対象外（False）。
+    """
+    if not source.startswith("github:") or "@" not in source:
+        return False
+    return f"@{current_sha}:" not in source
 
 
 class SANBAAgent(Agent):
@@ -66,7 +103,10 @@ class SANBAAgent(Agent):
         grounding: GroundingStore,
         publisher: EventPublisher | None = None,
     ) -> None:
-        super().__init__(instructions=VOICE_AGENT_INSTRUCTIONS)
+        # 紐づけ GitHub リポジトリがあれば「前提」を初期 instructions にシードする（ADR-0028）。
+        # retrieval 任せにせず proactive に前提化し、詳細は search_grounding で掘らせる。
+        instructions = VOICE_AGENT_INSTRUCTIONS + _repo_premise(repo, session_id)
+        super().__init__(instructions=instructions)
         self._session_id = session_id
         self._repo = repo
         self._grounding = grounding
@@ -445,7 +485,24 @@ class SANBAAgent(Agent):
         質問の妥当性を裏付けたいとき、または「過去に似た議論がなかったか」を
         確認したいときに使う。返り値の sources を会話で言及して根拠を示すこと。
         """
-        passages = self._grounding.search(query, k=4)
+        # session_id を渡してセッション固有素材（context: ゴール/資料/紐づけ repo）を本セッション
+        # に限定する（他者の private リポジトリ断片の越境ヒットを防ぐ / ADR-0028）。
+        # 紐づけ repo を素早く選び直すと、旧 commit の chunk が索引中に書き込まれて残り得る。
+        # 現在の commit sha を持つ repo chunk 以外は落とし、stale な断片を会話に出さない
+        # （Codex P2。source は github:{repo}@{branch}@{sha}:{path} 形式で sha を内包）。
+        # stale 除外で上位が削られても現在 repo の有効 chunk が残るよう、多めに取得してから絞る。
+        # owner が連携解除/権限剥奪したら、索引済み repo chunk を検索時に遮断する（query-time
+        # access control / ADR-0028・Codex P2）。共有索引は消さない方針なので、ここで弾く。
+        want = 4
+        current_sha, revoked = self._repo_access()
+        fetch_k = want * 4 if (current_sha is not None or revoked) else want
+        passages = self._grounding.search(query, k=fetch_k, session_id=self._session_id)
+        if revoked:
+            # 連携が無効: あらゆる repo 索引 chunk（github:）を落とす。
+            passages = [p for p in passages if not p.source.startswith("github:")]
+        elif current_sha is not None:
+            passages = [p for p in passages if not _is_stale_repo_passage(p.source, current_sha)]
+        passages = passages[:want]
         log.info("grounding_search", session=self._session_id, query=query, hits=len(passages))
         return {
             "passages": [
@@ -454,20 +511,46 @@ class SANBAAgent(Agent):
             ]
         }
 
+    def _repo_access(self) -> tuple[str | None, bool]:
+        """(現在の commit sha, 連携無効か) を返す（repo chunk の峻別・遮断に使う）。
+
+        セッションに repo が紐づいているのに owner の GitHub 連携が消えていれば revoked=True。
+        Firestore 不通時は安全側に倒し、repo 紐づけがあるなら revoked 扱いにする。
+        対象は GitHub App の ES 索引フローのみ（index_status=none は connector 選択 / env
+        フォールバック＝ADR-0027 の seed 経路で、遮断すると正当な seed まで落ちる）。
+        """
+        try:
+            meta = self._repo.get_session(self._session_id)
+        except Exception:  # pragma: no cover - depends on backend
+            return None, False
+        if meta is None or not meta.github_repo:
+            return None, False
+        if meta.github_index_status is GitHubIndexStatus.NONE:
+            return None, False
+        try:
+            link = self._repo.get_github_link(meta.owner_sub)
+        except Exception:  # pragma: no cover - depends on backend
+            return meta.github_commit_sha, True
+        if link is None:
+            return meta.github_commit_sha, True
+        return meta.github_commit_sha, False
+
     @function_tool
     async def export_requirements_to_github(self, _ctx: RunContext) -> dict:
         """確定した要件を GitHub Issue として書き出す(コネクタが有効な場合のみ)。
 
         インタビューの締めくくりで、合意した要件を実装チームに引き継ぐときに使う。
         """
-        if not _github_ready():
+        # 起票先は 02 準備で選んだセッションのリポジトリを最優先する（ADR-0027）。
+        gh_repo = _resolve_github_repo(self._repo, self._session_id)
+        if not _github_ready(gh_repo):
             return {"exported": False, "reason": "github connector disabled"}
         from .connectors import GitHubConnector, requirements_to_issue_body
 
         requirements = self._repo.list_requirements(self._session_id)
         title, body = requirements_to_issue_body(requirements, self._session_id)
-        url = GitHubConnector(settings.github_token, settings.github_repo).create_issue(title, body)
-        log.info("requirements_exported", session=self._session_id, url=url)
+        url = GitHubConnector(settings.github_token, gh_repo).create_issue(title, body)
+        log.info("requirements_exported", session=self._session_id, repo=gh_repo, url=url)
         if self._publisher is not None and url is not None:
             # ループの締め（09→10）。スタッツは publish 済みの実測から組み立てる
             # （gaps_found は抜けのみ、contradictions_resolved は解消済みの矛盾のみ）。
@@ -514,25 +597,57 @@ def seed_knowledge_base(grounding: GroundingStore) -> None:
         grounding.index_passage(text=text, source=source, kind="knowledge")
 
 
-def _github_ready() -> bool:
-    return bool(
-        settings.github_connector_enabled and settings.github_token and settings.github_repo
-    )
+def _github_ready(repo_name: str) -> bool:
+    return bool(settings.github_connector_enabled and settings.github_token and repo_name)
 
 
-def seed_github_context(grounding: GroundingStore, session_id: str) -> None:
-    """Pull a configured GitHub repo's issues/README into grounding (issue #7).
+def _resolve_github_repo(repo: SessionRepository, session_id: str) -> str:
+    """連携リポジトリを「セッション選択 → 環境変数」の順で解決する（ADR-0027）。
+
+    02 準備で選ばれた値はセッション文書（`sessions/{id}.github_repo`）に載る。
+    未選択・旧文書は環境変数 GITHUB_REPO（従来挙動）。どちらも無ければ空文字を返し、
+    呼び出し側の `_github_ready` が黙って断る。
+    """
+    try:
+        meta = repo.get_session(session_id)
+    except Exception as exc:  # pragma: no cover - Firestore 障害でも本流を止めない
+        log.warning("github_repo_resolve_failed", session=session_id, error=str(exc))
+        return settings.github_repo
+    if meta is not None and meta.github_repo:
+        return meta.github_repo
+    return settings.github_repo
+
+
+def seed_github_context(
+    grounding: GroundingStore, session_id: str, repo: SessionRepository, repo_name: str
+) -> None:
+    """Pull the session's GitHub repo issues/README into grounding (issue #7 / ADR-0027).
 
     OFF unless the connector is explicitly enabled, so it never affects the demo path.
+    `repo_name` は `_resolve_github_repo`（セッション選択→環境変数）の解決結果を渡す。
+    セッションの repo が GitHub App 経由で ES 索引済み/索引中（index_status が none/failed
+    以外）の場合は、repo 本体の chunk と README/Issue seed が二重になるためスキップする
+    （ADR-0028・Codex P2。検索は session_id だけで通すため重複すると根拠が水増しされる）。
     """
-    if not _github_ready():
+    if not _github_ready(repo_name):
         return
+    try:
+        meta = repo.get_session(session_id)
+        if meta is not None and meta.github_index_status not in (
+            GitHubIndexStatus.NONE,
+            GitHubIndexStatus.FAILED,
+        ):
+            log.info("github_seed_skipped_indexed_repo", session=session_id, repo=meta.github_repo)
+            return
+    except Exception as exc:  # pragma: no cover - depends on backend
+        log.warning("github_seed_link_check_failed", error=str(exc))
     try:
         from .connectors import GitHubConnector
 
-        connector = GitHubConnector(settings.github_token, settings.github_repo)
+        connector = GitHubConnector(settings.github_token, repo_name)
         for text, source in connector.fetch_context_passages():
             grounding.index_passage(text=text, source=source, kind="context", session_id=session_id)
+        log.info("github_context_seeded", session=session_id, repo=repo_name)
     except Exception as exc:  # pragma: no cover - network/optional
         log.warning("github_seed_failed", error=str(exc))
 
@@ -549,7 +664,7 @@ async def entrypoint(ctx: JobContext) -> None:
     )
     grounding = GroundingStore()
     seed_knowledge_base(grounding)
-    seed_github_context(grounding, session_id)
+    seed_github_context(grounding, session_id, repo, _resolve_github_repo(repo, session_id))
     # data channel publish（#94）。音声と同一ルーム接続を再利用して web へ差分を流す。
     # reliable seq は last_seq と current question の asked_seq/cleared_seq の最大値でシード
     # （#123・#270）。question.asked/cleared は set_session_seq を呼ばず pub._seq を消費するため、

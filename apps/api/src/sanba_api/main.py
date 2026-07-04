@@ -15,6 +15,7 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import re
 import time
 import uuid
 from collections import defaultdict, deque
@@ -22,12 +23,27 @@ from datetime import datetime, timedelta
 from typing import Any
 
 import structlog
-from fastapi import Depends, FastAPI, File, Header, HTTPException, Request, UploadFile
+from fastapi import (
+    BackgroundTasks,
+    Depends,
+    FastAPI,
+    File,
+    Header,
+    HTTPException,
+    Request,
+    UploadFile,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from livekit import api
-from pydantic import BaseModel
-from sanba_shared.models import Requirement, RequirementStatus, SessionMeta
+from pydantic import BaseModel, Field
+from sanba_shared.models import (
+    GitHubIndexStatus,
+    GitHubLink,
+    Requirement,
+    RequirementStatus,
+    SessionMeta,
+)
 from sanba_shared.repository import RequirementNotFound, SessionRepository
 
 from . import github_export
@@ -42,6 +58,13 @@ from .auth import (
 )
 from .auth_google import AuthUser, require_admin, require_user
 from .config import settings
+from .github_app import (
+    GitHubAppClient,
+    InvalidLinkState,
+    create_link_state,
+    redact_secrets,
+    verify_link_state,
+)
 from .ingestion import ContextIndexer, chunk_text, extract_text_from_upload
 from .observability import (
     record_asset_upload,
@@ -52,6 +75,7 @@ from .observability import (
     record_rate_limited,
     setup_observability,
 )
+from .pii import mask_pii
 from .realtime import (
     STAGE_ANALYZING,
     STAGE_FAILED,
@@ -60,6 +84,7 @@ from .realtime import (
     NullSender,
     build_sender,
 )
+from .repo_indexing import fetch_and_index_repo
 from .repository import ReadRepository
 from .storage import (
     AssetStore,
@@ -181,10 +206,9 @@ def require_session_access(
     return access
 
 
-def _github_ready() -> bool:
-    return bool(
-        settings.github_connector_enabled and settings.github_token and settings.github_repo
-    )
+# "owner/name" 形式（ADR-0027）。GitHub の実際の命名規則より緩いが、パス注入
+# （`/` の追加や空文字）を弾ければ十分（トークン権限外のリポは GitHub 側が 404 を返す）。
+_GITHUB_REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 
 
 def _confirmed_requirements(session_id: str) -> list[dict[str, Any]]:
@@ -225,6 +249,9 @@ class CreateSessionRequest(BaseModel):
     roles: list[str] = ["pm", "engineer", "customer"]
     # Explicit consent to recording + AI processing (issue #10).
     consent_acknowledged: bool = False
+    # セッション単位の連携リポジトリ "owner/name"（任意 / ADR-0027）。未指定・空は
+    # 「連携しない」= 環境変数 GITHUB_REPO へのフォールバック（従来挙動）。
+    github_repo: str | None = None
 
 
 class CreateSessionResponse(BaseModel):
@@ -354,6 +381,11 @@ def create_session(
             status_code=400,
             detail="consent required: recording and AI processing must be acknowledged",
         )
+    # 連携リポジトリ（任意 / ADR-0027）。空文字は「連携しない」= None に正規化し、
+    # 形式不正（owner/name 以外）は黙って落とさず 400 で返す（起票時の失敗より早く気づける）。
+    github_repo = (req.github_repo or "").strip() or None
+    if github_repo is not None and not _GITHUB_REPO_RE.match(github_repo):
+        raise HTTPException(status_code=400, detail="github_repo must be in 'owner/name' format")
     session_id = f"sess-{uuid.uuid4().hex[:8]}"
     invites = {
         role: create_invite(
@@ -369,9 +401,16 @@ def create_session(
             owner_sub=user.sub,
             owner_email=user.email,
             roles=req.roles,
+            github_repo=github_repo,
         )
     )
-    log.info("session_created", session=session_id, roles=req.roles, owner=user.sub)
+    log.info(
+        "session_created",
+        session=session_id,
+        roles=req.roles,
+        owner=user.sub,
+        github_repo=github_repo or "(none)",
+    )
     return CreateSessionResponse(session_id=session_id, invites=invites)
 
 
@@ -412,6 +451,382 @@ def list_my_sessions(user: AuthUser = Depends(require_user)) -> list[MySession]:
         )
         for s in sessions
     ]
+
+
+# ---- GitHub App: per-user repo linking (ADR-0028) --------------------------
+def _github_app_client() -> GitHubAppClient | None:
+    """設定済みなら App クライアントを返す。未設定はフェイルクローズ（None）。"""
+    if not (
+        settings.github_app_enabled and settings.github_app_id and settings.github_app_private_key
+    ):
+        return None
+    return GitHubAppClient(
+        settings.github_app_id,
+        settings.github_app_private_key,
+        oauth_client_id=settings.github_app_client_id,
+        oauth_client_secret=settings.github_app_client_secret,
+    )
+
+
+class GitHubLinkStatus(BaseModel):
+    linked: bool
+    github_login: str | None = None
+
+
+class GitHubLinkStart(BaseModel):
+    install_url: str
+
+
+class GitHubRepoItem(BaseModel):
+    full_name: str
+    default_branch: str
+    private: bool
+
+
+class GitHubBranchItem(BaseModel):
+    name: str
+    sha: str
+
+
+class GitHubBranchesResponse(BaseModel):
+    items: list[GitHubBranchItem]
+
+
+class SelectRepoRequest(BaseModel):
+    repo: str  # "owner/name"
+    # 省略時はデフォルトブランチを使う（ADR-0028: branch 既定=デフォルト）。
+    branch: str | None = None
+
+
+class SessionGitHubResponse(BaseModel):
+    repo: str | None = None
+    branch: str | None = None
+    commit_sha: str | None = None
+    status: str = "none"
+
+
+@app.get("/api/github/link", response_model=GitHubLinkStatus)
+def github_link_status(user: AuthUser = Depends(require_user)) -> GitHubLinkStatus:
+    """本人の GitHub 連携状態を返す（設定画面の表示用）。"""
+    link = _repo.get_github_link(user.sub)
+    return GitHubLinkStatus(
+        linked=link is not None,
+        github_login=link.github_login if link else None,
+    )
+
+
+@app.post("/api/github/link/start", response_model=GitHubLinkStart)
+def github_link_start(user: AuthUser = Depends(require_user)) -> GitHubLinkStart:
+    """連携開始: 署名 state 付きの GitHub App インストール URL を返す（ADR-0028）。
+
+    state に検証済み sub を束縛し、callback で CSRF/誤紐づけを防ぐ。
+    """
+    # callback と同じ必須設定（app_id/private_key）も開始時に確認してフェイルクローズする
+    # （Codex P2: slug だけ設定で install へ送ると、戻りの callback が 503 で連携失敗するため）。
+    client = _github_app_client()
+    if client is None or not settings.github_app_slug:
+        raise HTTPException(status_code=503, detail="github app not configured")
+    # 所有権検証に必要な OAuth が無い本番では、install させても callback で拒否されるので
+    # 開始時点でも止める（Codex P1。dev bypass 時のみ許可）。
+    if not client.oauth_configured and not settings.auth_dev_bypass:
+        raise HTTPException(status_code=503, detail="ownership verification not configured")
+    state = create_link_state(
+        user.sub, settings.session_signing_secret, settings.github_link_state_ttl_seconds
+    )
+    install_url = (
+        f"https://github.com/apps/{settings.github_app_slug}/installations/new?state={state}"
+    )
+    return GitHubLinkStart(install_url=install_url)
+
+
+@app.get("/api/github/link/callback")
+def github_link_callback(installation_id: int, state: str, code: str | None = None) -> JSONResponse:
+    """GitHub からの install コールバック。state を検証して連携を保存する（ADR-0028）。
+
+    認証ヘッダは無い（GitHub リダイレクト）。署名 state が sub を束縛し CSRF を防ぐが、
+    state だけでは「その sub が当該 installation を保有するか」は証明できない。OAuth
+    （user-to-server）を構成している場合は `code` から所有権を検証してから保存し、別人の
+    installation_id 横取りを防ぐ（Codex P1）。OAuth 未構成の dev/local では検証を省く。
+    """
+    client = _github_app_client()
+    if client is None:
+        raise HTTPException(status_code=503, detail="github app not configured")
+    try:
+        sub = verify_link_state(state, settings.session_signing_secret)
+    except InvalidLinkState as exc:
+        log.warning("github_link_state_rejected", reason=str(exc))
+        raise HTTPException(status_code=403, detail=f"invalid state: {exc}") from exc
+
+    # 所有権検証はフェイルクローズ（Codex P1）: OAuth 未構成なら本番では拒否する。秘密鍵だけ
+    # 先に入った設定漏れでも、別人が既知の他者 installation_id を横取りできないようにする。
+    # ローカル/CI の開発時のみ auth_dev_bypass で検証を省ける（既存の dev bypass 方針に合わせる）。
+    if client.oauth_configured:
+        if not code:
+            raise HTTPException(status_code=403, detail="missing oauth code")
+        try:
+            owns = client.user_owns_installation(code, installation_id)
+        except Exception as exc:  # pragma: no cover - network
+            log.warning("github_owner_verify_failed", error=str(exc))
+            raise HTTPException(status_code=502, detail="github error") from exc
+        if not owns:
+            log.warning("github_installation_not_owned", sub=sub, installation_id=installation_id)
+            raise HTTPException(status_code=403, detail="installation not owned by user")
+    elif settings.auth_dev_bypass:
+        log.warning("github_owner_unverified_dev_bypass", installation_id=installation_id)
+    else:
+        log.warning("github_owner_unverified_rejected", installation_id=installation_id)
+        raise HTTPException(status_code=503, detail="ownership verification not configured")
+
+    try:
+        login = client.installation_login(installation_id)
+    except Exception as exc:  # pragma: no cover - network
+        log.warning("github_installation_lookup_failed", error=str(exc))
+        login = ""
+    _repo.set_github_link(GitHubLink(sub=sub, installation_id=installation_id, github_login=login))
+    log.info("github_linked", sub=sub, installation_id=installation_id, login=login)
+    # 連携保存後は web の設定画面へ戻す（api callback とは別の web URL / Codex P2）。
+    if settings.github_app_web_return_url:
+        return JSONResponse(
+            status_code=302,
+            content={"linked": True},
+            headers={"Location": f"{settings.github_app_web_return_url}?linked=1"},
+        )
+    return JSONResponse(content={"linked": True, "github_login": login})
+
+
+@app.delete("/api/github/link", response_model=GitHubLinkStatus)
+def github_unlink(user: AuthUser = Depends(require_user)) -> GitHubLinkStatus:
+    """連携解除: users/{sub} の installation 記録のみ削除する（共有索引は残す / ADR-0028）。"""
+    removed = _repo.delete_github_link(user.sub)
+    log.info("github_unlinked", sub=user.sub, removed=removed)
+    return GitHubLinkStatus(linked=False)
+
+
+class GithubReposResponse(BaseModel):
+    """`GET /api/github/repos`（ADR-0027）。02 準備「連携リポジトリ」の候補一覧。"""
+
+    # コネクタ/App 連携のいずれかが使える状態か。False のとき UI はフィールドごと隠す
+    # （ADR-0007 の不干渉）。
+    enabled: bool
+    # 読める "owner/name" の一覧（更新が新しい順）。
+    repos: list[str]
+    # 環境変数の既定リポジトリ（あれば UI が初期選択に使える）。
+    default: str | None = None
+    # ---- 追加情報（ADR-0028 / 後方互換の additive）----
+    # 本人が GitHub App 連携済みで一覧が App installation 由来か。True のとき web は
+    # branch 選択と開始時の索引キック（POST /api/sessions/{id}/github）を有効化する。
+    linked: bool = False
+    # App 由来のときの詳細（default_branch / private）。connector 由来では空。
+    items: list[GitHubRepoItem] = Field(default_factory=list)
+
+
+@app.get("/api/github/repos", response_model=GithubReposResponse)
+def list_github_repos(user: AuthUser = Depends(require_user)) -> GithubReposResponse:
+    """セッション実施前に選べる GitHub リポジトリの候補を返す（ADR-0027 / ADR-0028）。
+
+    1 本のエンドポイントに統一し、次の順で解決する:
+      1. 本人が GitHub App 連携済み → 連携アカウントの installation が読める一覧（ADR-0028）。
+      2. 未連携でデプロイ単位コネクタが有効 → 設定済みトークンで読める一覧（ADR-0027）。
+      3. どちらも不可 → `enabled=False`（UI はフィールドごと隠す）。
+    一覧取得の失敗は `repos=[]` のまま `enabled=True` で返し、UI は手入力（owner/name）へ
+    フォールバックする（一覧の不調で開始を止めない）。
+    """
+    client = _github_app_client()
+    link = _repo.get_github_link(user.sub)
+    if client is not None and link is not None:
+        try:
+            app_repos = client.list_repos(link.installation_id)
+        except Exception as exc:  # pragma: no cover - network
+            log.warning("github_list_repos_failed", error=str(exc))
+            app_repos = []
+        log.info("github_repos_listed", count=len(app_repos), sub=user.sub, source="app")
+        return GithubReposResponse(
+            enabled=True,
+            repos=[r.full_name for r in app_repos],
+            default=settings.github_repo or None,
+            linked=True,
+            items=[
+                GitHubRepoItem(
+                    full_name=r.full_name, default_branch=r.default_branch, private=r.private
+                )
+                for r in app_repos
+            ],
+        )
+    if not (settings.github_connector_enabled and settings.github_token):
+        return GithubReposResponse(enabled=False, repos=[])
+    repos = github_export.list_repos(settings.github_token)
+    log.info("github_repos_listed", count=len(repos), sub=user.sub, source="connector")
+    return GithubReposResponse(enabled=True, repos=repos, default=settings.github_repo or None)
+
+
+@app.get("/api/github/branches", response_model=GitHubBranchesResponse)
+def github_list_branches(
+    repo: str, user: AuthUser = Depends(require_user)
+) -> GitHubBranchesResponse:
+    """選択 repo の branch 一覧（準備画面の branch 選択 / ADR-0028）。"""
+    client = _github_app_client()
+    link = _repo.get_github_link(user.sub)
+    if client is None or link is None:
+        raise HTTPException(status_code=409, detail="github not linked")
+    try:
+        branches = client.list_branches(link.installation_id, repo)
+    except Exception as exc:  # pragma: no cover - network
+        log.warning("github_list_branches_failed", error=str(exc))
+        raise HTTPException(status_code=502, detail="github error") from exc
+    return GitHubBranchesResponse(
+        items=[GitHubBranchItem(name=b["name"], sha=b["sha"]) for b in branches]
+    )
+
+
+def _index_repo_task(
+    *,
+    session_id: str,
+    installation_id: int,
+    repo: str,
+    branch: str,
+    commit_sha: str,
+) -> None:
+    """背景タスク: repo を索引し SessionMeta の状態を ready/partial/failed に更新する。"""
+    client = _github_app_client()
+    if client is None:  # pragma: no cover - guarded by caller
+        return
+    try:
+        # 古いジョブの巻き戻し防止（Codex P2）: repo A の索引中に B へ選び直すと、遅れて走る A の
+        # ジョブが B の chunk を消し A を書き戻し得る。開始時に現在の選択（SessionMeta）がこの
+        # ジョブの (repo,branch,sha) と一致するか確認し、ズレていれば何もしない。
+        if not _selection_current(session_id, repo, branch, commit_sha):
+            log.info("repo_index_skipped_stale", session=session_id, repo=repo, branch=branch)
+            return
+        # repo 選び直し / branch 変更 / 再同期で古い github: chunk が残ると search_grounding に
+        # 旧 commit の断片が混ざる。索引前に当該 session の repo chunk を一掃する（Codex P2）。
+        _indexer.delete_repo_context(session_id)
+        try:
+            outcome = fetch_and_index_repo(
+                client,
+                _indexer,
+                session_id=session_id,
+                installation_id=installation_id,
+                repo=repo,
+                branch=branch,
+                commit_sha=commit_sha,
+                max_files=settings.github_index_max_files,
+                max_total_bytes=settings.github_index_max_total_bytes,
+                max_file_bytes=settings.github_index_max_file_bytes,
+            )
+            # SessionMeta 保存用の要約は秘匿レダクト＋PII マスクする（Firestore at-rest / agent
+            # premise に直接入るため）。要約には repo description が redact 前で混じるので、ES 経路
+            # （index_context が別途マスク）とは別に保存前にも両方を通す（Codex P2）。
+            summary = redact_secrets(outcome.summary)
+            if settings.mask_pii_before_index:
+                summary = mask_pii(summary)
+            if outcome.failed:
+                status = GitHubIndexStatus.FAILED
+            elif outcome.partial:
+                status = GitHubIndexStatus.PARTIAL
+            else:
+                status = GitHubIndexStatus.READY
+        except Exception as exc:  # pragma: no cover - network
+            log.warning("repo_index_failed", session=session_id, repo=repo, error=str(exc))
+            status = GitHubIndexStatus.FAILED
+            summary = None
+        # 完了時にも再確認: 索引中に B へ選び直されていたら status/選択を巻き戻さない。
+        if not _selection_current(session_id, repo, branch, commit_sha):
+            log.info("repo_index_writeback_skipped_stale", session=session_id, repo=repo)
+            return
+        _repo.set_session_github(
+            session_id,
+            repo=repo,
+            branch=branch,
+            commit_sha=commit_sha,
+            index_status=status,
+            summary=summary,
+        )
+    finally:
+        # 共有 HTTP クライアントを必ず閉じる（接続リーク防止 / Codex P2）。
+        client.close()
+
+
+def _selection_current(session_id: str, repo: str, branch: str, commit_sha: str) -> bool:
+    """SessionMeta の現在選択がこのジョブの (repo,branch,sha) と一致するか（stale 判定）。"""
+    meta = _repo.get_session(session_id)
+    return bool(
+        meta is not None
+        and meta.github_repo == repo
+        and meta.github_branch == branch
+        and meta.github_commit_sha == commit_sha
+    )
+
+
+@app.post("/api/sessions/{session_id}/github", response_model=SessionGitHubResponse)
+def select_session_repo(
+    session_id: str,
+    req: SelectRepoRequest,
+    background: BackgroundTasks,
+    access: SessionAccess = Depends(require_session_access),
+) -> SessionGitHubResponse:
+    """準備画面で repo+branch を選び、非同期索引をキックする（ADR-0028）。
+
+    連携主体は owner 固定: owner の installation でのみ索引する。branch 省略時は
+    デフォルトブランチを使い、選択時の HEAD sha にピン留めする。
+    """
+    meta = _repo.get_session(session_id)
+    if meta is None:
+        raise HTTPException(status_code=404, detail="session not found")
+    # owner 固定（ADR-0028）: セッション所有者のみが前提 repo を紐づけられる。
+    if access.sub != meta.owner_sub:
+        raise HTTPException(status_code=403, detail="owner only")
+    client = _github_app_client()
+    link = _repo.get_github_link(meta.owner_sub)
+    if client is None or link is None:
+        raise HTTPException(status_code=409, detail="github not linked")
+
+    try:
+        branch = req.branch
+        if not branch:
+            branch = str(client.repo_meta(link.installation_id, req.repo)["default_branch"])
+        commit_sha = client.branch_head_sha(link.installation_id, req.repo, branch)
+    except Exception as exc:  # pragma: no cover - network
+        log.warning("github_resolve_branch_failed", error=str(exc))
+        raise HTTPException(status_code=502, detail="github error") from exc
+
+    _repo.set_session_github(
+        session_id,
+        repo=req.repo,
+        branch=branch,
+        commit_sha=commit_sha,
+        index_status=GitHubIndexStatus.INDEXING,
+    )
+    background.add_task(
+        _index_repo_task,
+        session_id=session_id,
+        installation_id=link.installation_id,
+        repo=req.repo,
+        branch=branch,
+        commit_sha=commit_sha,
+    )
+    log.info("session_repo_selected", session=session_id, repo=req.repo, branch=branch)
+    return SessionGitHubResponse(
+        repo=req.repo,
+        branch=branch,
+        commit_sha=commit_sha,
+        status=GitHubIndexStatus.INDEXING.value,
+    )
+
+
+@app.get("/api/sessions/{session_id}/github", response_model=SessionGitHubResponse)
+def get_session_repo(
+    session_id: str, access: SessionAccess = Depends(require_session_access)
+) -> SessionGitHubResponse:
+    """セッションの紐づけ repo と索引状態を返す（準備画面の進捗ポーリング / ADR-0028）。"""
+    meta = _repo.get_session(session_id)
+    if meta is None:
+        raise HTTPException(status_code=404, detail="session not found")
+    return SessionGitHubResponse(
+        repo=meta.github_repo,
+        branch=meta.github_branch,
+        commit_sha=meta.github_commit_sha,
+        status=meta.github_index_status.value,
+    )
 
 
 class MySessionRequirementsResponse(BaseModel):
@@ -991,15 +1406,21 @@ def export_requirements(
     起票する。凍結の定義（旧データのフォールバック含む）は _finalized_snapshot_requirements
     に一元化し、過去要件閲覧と共有する。
     """
-    if not _github_ready():
+    # コネクタ無効/トークン未設定は従来どおりセッション照会前に黙って断る（既定 OFF の不干渉）。
+    if not (settings.github_connector_enabled and settings.github_token):
         return ExportResponse(exported=False, reason="github connector disabled")
     session = _repo.get_session(session_id)
     if session is None:
         raise HTTPException(status_code=404, detail="session not found")
+    # 起票先はセッションで選んだリポジトリを最優先し、未選択は環境変数へフォールバック
+    # （ADR-0027）。どちらも無ければ従来どおり黙って断る。
+    export_repo = session.github_repo or settings.github_repo
+    if not export_repo:
+        return ExportResponse(exported=False, reason="github connector disabled")
     # 確定時の要件 ID 集合だけを取得して起票する（再計算しない / #213）。
     confirmed = _finalized_snapshot_requirements(session)
     title, body = github_export.requirements_to_issue_body(confirmed, session_id)
-    url = github_export.create_issue(settings.github_token, settings.github_repo, title, body)
+    url = github_export.create_issue(settings.github_token, export_repo, title, body)
     if url is None:
         return ExportResponse(exported=False, reason="issue creation failed")
     log.info(
@@ -1007,6 +1428,8 @@ def export_requirements(
         session=session_id,
         count=len(confirmed),
         id_count=len(session.finalized_requirement_ids),
+        repo=export_repo,
+        session_selected=session.github_repo is not None,
         url=url,
         sub=access.sub,
     )
