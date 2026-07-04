@@ -18,14 +18,16 @@ describe("SANBA design system", () => {
   it("Button は variant に応じてクラスを切り替える", () => {
     const { rerender } = render(<Button variant="gold">主</Button>);
     const btn = screen.getByRole("button", { name: "主" });
-    // 主 CTA は朱ベタのステッカー様式。白文字を載せる面は AA 安全な朱 #C43A20（--sanba-rec-text / ADR-0033）。
-    expect(btn.className).toContain("sanba-sticker");
-    expect(btn.className).toContain("bg-[var(--sanba-rec-text)]");
+    // 主 CTA は朱ステッカー（2px 墨枠＋墨オフセット影）。白文字を載せる面は AA 安全な朱
+    // #C43A20（--sanba-rec-text / ADR-0033）。
+    expect(btn.className).toContain("border-sanba-frame");
+    expect(btn.className).toContain("bg-sanba-rec-text");
 
     rerender(<Button variant="outline">枠</Button>);
     const outline = screen.getByRole("button", { name: "枠" }).className;
-    expect(outline).toContain("sanba-sticker");
-    expect(outline).not.toContain("bg-[var(--sanba-rec-text)]");
+    // 白ステッカーも 2px 墨枠。ただし朱面は載せない。
+    expect(outline).toContain("border-sanba-frame");
+    expect(outline).not.toContain("bg-sanba-rec-text");
   });
 
   it("Button asChild はラッパ要素に化ける（アンカー化）", () => {
@@ -36,7 +38,7 @@ describe("SANBA design system", () => {
     );
     const link = screen.getByRole("link", { name: "始める" });
     expect(link).toHaveProperty("tagName", "A");
-    expect(link.className).toContain("sanba-sticker");
+    expect(link.className).toContain("border-sanba-frame");
   });
 
   it("ChatBubble は話者で左右と面色を出し分ける", () => {
