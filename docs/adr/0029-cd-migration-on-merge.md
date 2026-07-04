@@ -1,11 +1,18 @@
-# ADR-0025: main マージ→本番デプロイ時のマイグレーション実行設計
+# ADR-0029: main マージ→本番デプロイ時のマイグレーション実行設計
 
 - ステータス: Proposed（提案中）
 - 日付: 2026-06-29
 - 関連: #36（Cloud Run 実デプロイ）/ ADR-0016（CI/CD 戦略・public 化）/ ADR-0006（Cloud Run + LiveKit）/
-  ADR-0003（Elasticsearch グラウンディング）/ `docs/runbooks/deploy-gcp.md` / `.github/workflows/deploy.yml`
+  ADR-0003（Elasticsearch グラウンディング）/
+  **ADR-0026（main マージで terraform 自動 apply — 本 ADR の前提）** /
+  `docs/runbooks/deploy-gcp.md` / `.github/workflows/deploy.yml`
 - 下敷き: CLAUDE.md「本番志向（production-ready）」「観測できないものは運用できない」「設計判断とレビューは人間が行う」
 - 調査: 2024–2026 の一次情報（Google Cloud / Elastic / GitHub Actions 公式）を多ソース検証し、初版の前提を見直して改訂（§7 参考文献・§8 検証ノート）。
+- 改訂（2026-07-04）: ADR-0026（PR #284）により **Terraform 管理の宣言的設定（Firestore TTL /
+  Cloud Run env・secret 等）は main マージ時に `deploy.yml` の `migrate` ジョブ（terraform apply）で
+  自動反映される**ようになった。これに伴い本 ADR のスコープは **Elasticsearch 側のマイグレーション
+  （versioned index + alias の冪等 ensure と KB 再シード）に限定**され、§5 のパイプライン順序を
+  新フロー前提に更新した。
 
 ## コンテキスト
 
@@ -126,12 +133,16 @@ runbook の手順で GitHub Variables（`GCP_PROJECT_ID` ほか）と WIF を入
 ### 5. パイプライン順序（expand-contract）
 
 ```
-build/push（変更 app の image）
+migrate（terraform apply — infra 変更があるマージのみ・ADR-0026 で自動化済み）
+  → build/push（変更 app の image）
   → ensure index vN + alias 張替（アプリ起動時 ensure で自動、または seed ジョブ冒頭で実施）
   → KB 再シード（sanba-seed-kb を execute --wait、失敗で停止）
   → 各 service の revision デプロイ（既存 deploy.yml）
 ```
 
+- 先頭の migrate（Terraform 宣言の反映）は ADR-0026 で実装済み。本 ADR が足すのは
+  ES ensure / KB 再シードの 2 段で、`deploy.yml` の `migrate` 成功（または skip）後・
+  service 切替前に挟む。
 - 後方互換（additive）の index/alias を先に用意してからサービスを切り替えるため無停止。
 - KB 再シードは**マッピングに変更があった時だけ**実行に絞ってよい（毎デプロイ実行は任意・冪等なので
   害は無いがパイプラインを重くする。コスト最適化として paths/diff で絞るのは将来検討）。
@@ -139,7 +150,8 @@ build/push（変更 app の image）
 ### 6. Firestore は Terraform 宣言のまま（層を分離）
 
 - TTL（`google_firestore_field`）は既存どおり。複合インデックスが要れば `google_firestore_index` を
-  足し `terraform.yml` で反映。**非同期ビルドの `READY` 待ち**を runbook に明記する [j]。
+  足せば **main マージで自動 apply される（ADR-0026）**。**非同期ビルドの `READY` 待ち**を
+  runbook に明記する [j]。
 - アプリのデータ系（ES）は §2–§5、インフラ宣言（Firestore index/TTL）は Terraform、と層を分け混在させない。
 
 ## 理由 / 検討した代替案
