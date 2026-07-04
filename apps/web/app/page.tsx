@@ -93,11 +93,11 @@ export default function Home() {
   const [history, setHistory] = useState<SessionHistoryItem[]>([]);
   // 連携リポジトリ（任意 / ADR-0027）。空文字 = 連携しない。
   const [githubRepo, setGithubRepo] = useState("");
-  // リポジトリ候補（GET /api/github/repos）。null = 未取得/取得失敗 → フィールドを出さない。
+  // リポジトリ候補（GET /api/github/repos）。null = 「未取得」（取得前・取得中）で、
+  // この間は開始を塞ぐ（Codex P2: effect 実行前の初回描画の窓も含めて、連携先を
+  // 確認できるまでセッションを作らせない）。取得失敗は enabled:false の番兵で settle
+  // させ、フィールド非表示 = 連携しない（fail-closed）として開始は解放する。
   const [repoChoices, setRepoChoices] = useState<GithubRepos | null>(null);
-  // リポジトリ候補取得中フラグ。取得完了まで開始ボタンを無効にし、既定値の確定前に
-  // セッションを作らせない（Codex P2: 3522999976）。取得は成功/失敗/離脱で必ず settle する。
-  const [fetchingRepos, setFetchingRepos] = useState(false);
   // 「未初期化」と「明示的な連携しない（空文字）」の区別（Codex P2）。sessionStorage は
   // 永続化 effect が復元直後から常に githubRepo を書くため readPrep では判別できない。
   // 保存値の復元・ユーザー操作で true になり、以後は既定リポの初期選択で上書きしない。
@@ -140,12 +140,10 @@ export default function Home() {
   useEffect(() => {
     if (step !== "prepare" || !auth.loggedIn || repoChoices !== null) return;
     let cancelled = false;
-    setFetchingRepos(true);
     fetchGithubRepos(auth.credential)
       .then((choices) => {
         if (!cancelled) {
           setRepoChoices(choices);
-          setFetchingRepos(false);
           // 未初期化のときだけ既定リポジトリを初期選択する（ADR-0027）。保存済みの値
           // （明示的な「連携しない」= 空文字を含む）とユーザー操作は上書きしない（Codex P2）。
           if (choices.default && !githubRepoTouched.current) {
@@ -154,14 +152,12 @@ export default function Home() {
         }
       })
       .catch(() => {
-        if (!cancelled) {
-          setRepoChoices(null);
-          setFetchingRepos(false);
-        }
+        // 取得失敗 = コネクタ無効と同じ扱い（番兵で settle）。null に戻すと開始が
+        // 永久に塞がるため、フィールド非表示 + 空文字送信（連携しない）で前へ進める。
+        if (!cancelled) setRepoChoices({ enabled: false, repos: [], default: null });
       });
     return () => {
       cancelled = true;
-      setFetchingRepos(false);
     };
   }, [step, auth.loggedIn, auth.credential, repoChoices]);
 
@@ -188,7 +184,14 @@ export default function Home() {
   }, []);
   useEffect(() => {
     if (!prepHydrated) return;
-    writePrep({ role, goal, consent, githubRepo });
+    // githubRepo は「触った」ときだけ保存する（Codex P2: 未操作の空文字まで保存すると、
+    // リロード後の復元が明示オプトアウト扱いになり既定リポの初期選択が効かなくなる）。
+    writePrep({
+      role,
+      goal,
+      consent,
+      ...(githubRepoTouched.current ? { githubRepo } : {}),
+    });
   }, [prepHydrated, role, goal, consent, githubRepo]);
 
   // ログアウト時（ログイン中→未ログインの遷移）は準備フォームを破棄する（#179 / Codex P2）。
@@ -345,9 +348,10 @@ export default function Home() {
 
   // ── 02 準備 ───────────────────────────────────────────────────────────
   if (step === "prepare") {
-    // 候補取得中は開始を待たせる: ユーザーが連携先を確認する前にセッションが
-    // 作られるのを防ぐ（Codex P2）。取得は失敗/離脱でも settle するので詰まらない。
-    const canStart = consent && auth.loggedIn && !busy && !fetchingRepos;
+    // 候補が settle する（repoChoices が入る）まで開始を待たせる: ユーザーが連携先を
+    // 確認する前にセッションが作られるのを防ぐ（Codex P2。effect 実行前の初回描画の
+    // 窓も null で塞がる）。取得は失敗でも番兵で settle するので詰まらない。
+    const canStart = consent && auth.loggedIn && !busy && repoChoices !== null;
     return (
       <Screen className="px-4 py-3">
         <AppHeader title="セッション準備" onBack={() => setStep("home")} />

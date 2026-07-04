@@ -1072,6 +1072,11 @@ def export_requirements(
     export_repo = session.github_repo if session.github_repo is not None else settings.github_repo
     if not export_repo:
         return ExportResponse(exported=False, reason="github connector disabled")
+    # 解決後の値にも許可リストを掛ける（Codex P2: 一覧・保存で絞っても、フォールバック先の
+    # 既定リポや allowlist 導入前に保存された値が許可外なら起票しない = fail-closed）。
+    if not _github_repo_allowed(export_repo):
+        log.warning("export_repo_not_allowed", session=session_id, repo=export_repo)
+        return ExportResponse(exported=False, reason="github repo not allowed")
     # 確定時の要件 ID 集合だけを取得して起票する（再計算しない / #213）。
     confirmed = _finalized_snapshot_requirements(session)
     title, body = github_export.requirements_to_issue_body(confirmed, session_id)

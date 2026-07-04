@@ -535,7 +535,12 @@ def _resolve_github_repo(repo: SessionRepository, session_id: str) -> str:
         # 別リポを選んだセッションの要件・文脈が意図しない既定リポへ送られる事故を防ぐ）。
         log.warning("github_repo_resolve_failed", session=session_id, error=str(exc))
         return ""
-    if meta is not None and meta.github_repo is not None:
+    if meta is None:
+        # セッション文書が無い（未作成/削除済み/誤設定の空ストア）= 選択値を確認できない。
+        # 既定リポへ流さず連携を無効側へ倒す（Codex P2 / fail-closed）。
+        log.warning("github_repo_session_missing", session=session_id)
+        return ""
+    if meta.github_repo is not None:
         return meta.github_repo
     return settings.github_repo
 

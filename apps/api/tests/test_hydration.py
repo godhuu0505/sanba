@@ -406,6 +406,28 @@ def test_export_respects_explicit_opt_out(monkeypatch: pytest.MonkeyPatch) -> No
     assert "repo" not in captured  # create_issue は呼ばれない
 
 
+def test_export_fallback_repo_outside_allowlist_is_blocked(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # 一覧・保存で絞っても、フォールバック先（環境変数の既定リポ）が許可リスト外なら
+    # 起票しない（Codex P2 / fail-closed）。旧クライアントの github_repo 省略経路を塞ぐ。
+    created = client.post("/api/sessions", json={"roles": ["pm"], "consent_acknowledged": True})
+    sid = created.json()["session_id"]
+    _read_repo._seed_requirement(
+        sid,
+        {"id": "c1", "statement": "確定", "category": "functional", "priority": "must"},
+    )
+    captured = _enable_github(monkeypatch)  # 既定リポ "o/r"
+    monkeypatch.setattr(settings, "github_repo_allowlist", "acme")
+    client.post(f"/api/sessions/{sid}/finalize", headers=_auth(_token(sid)))
+
+    res = client.post(f"/api/sessions/{sid}/export", headers=_auth(_token(sid)))
+    body = res.json()
+    assert body["exported"] is False
+    assert body["reason"] == "github repo not allowed"
+    assert "repo" not in captured  # create_issue は呼ばれない
+
+
 def test_export_falls_back_to_env_repo_without_selection(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
