@@ -76,6 +76,7 @@ describe("過去要件の絵巻閲覧画面（/sessions/[id]）", () => {
     authState.devMode = false;
     replace.mockClear();
     push.mockClear();
+    authState.signOut.mockClear();
     vi.mocked(fetchMySessionRequirements).mockReset().mockResolvedValue(SCROLL);
   });
   afterEach(() => cleanup());
@@ -106,6 +107,16 @@ describe("過去要件の絵巻閲覧画面（/sessions/[id]）", () => {
     await waitFor(() =>
       expect(screen.getByText(/このセッションの要件はまだ生まれておりませぬ/)).toBeTruthy(),
     );
+  });
+
+  it("401（idToken 期限切れ）は再認証導線を出し、押下で signOut して credential を clear する", async () => {
+    // authGate はメモリ上の loggedIn しか見ないため、期限切れ token では API 401 でここに到達する。
+    vi.mocked(fetchMySessionRequirements).mockRejectedValue(new ApiError(401, "unauthorized"));
+    render(<PastRequirementsPage />);
+    await waitFor(() => expect(screen.getByText("ログインへ")).toBeTruthy());
+    fireEvent.click(screen.getByText("ログインへ"));
+    // 無効トークンでの再試行ループに入らず、authGate 経由で /login?next= へ送る（Codex P2）。
+    expect(authState.signOut).toHaveBeenCalledTimes(1);
   });
 
   it("404（非所有・不存在）は「見つからない」表示に落とす", async () => {

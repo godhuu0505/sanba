@@ -82,6 +82,25 @@ describe("管理画面の認証ゲート（厳密・全画面保護）", () => {
     expect(push).toHaveBeenCalledWith("/");
   });
 
+  it("一覧の行は閲覧専用: 押せない「検める ›」ピルを出さない（Codex P2）", async () => {
+    authState.loggedIn = true;
+    vi.mocked(listAdminSessions).mockResolvedValue([
+      {
+        id: "sess-1",
+        title: "検索機能",
+        owner_sub: "alice",
+        owner_email: "alice@example.com",
+        roles: ["pm"],
+        status: "active",
+        created_at: "2024-06-20T03:00:00Z",
+      },
+    ]);
+    render(<AdminPage />);
+    await waitFor(() => expect(screen.getByText("検索機能")).toBeTruthy());
+    // 旧 93 の展開は廃止済み。操作の見た目（既定ピル）も残さない。
+    expect(screen.queryByText("検める ›")).toBeNull();
+  });
+
   // ── 91/92 の画面分離（#220 / Figma 73:8・73:9）──────────────────
   it("91 一覧に主 CTA を出し、作成カードは常時展開しない（アコーディオン廃止）", async () => {
     authState.loggedIn = true;

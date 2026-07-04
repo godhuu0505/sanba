@@ -15,8 +15,8 @@ import { Chip } from "./Chip";
 export interface SessionRowProps extends Omit<React.HTMLAttributes<HTMLElement>, "title"> {
   title: React.ReactNode;
   meta?: React.ReactNode;
-  /** 操作ピルの文言（既定: 検める ›）。 */
-  action?: React.ReactNode;
+  /** 操作ピルの文言（既定: 検める ›）。null で非表示（閲覧専用の行 / Codex P2）。 */
+  action?: React.ReactNode | null;
   asChild?: boolean;
 }
 
@@ -38,9 +38,12 @@ export const SessionRow = React.forwardRef<HTMLElement, SessionRowProps>(
             <span className="truncate text-[12px] text-[var(--sanba-muted)]">{meta}</span>
           )}
         </span>
-        <Chip tone="gold" className="shrink-0">
-          {action}
-        </Chip>
+        {/* action=null は操作ピルを出さない: 押せない行に操作の見た目を残さない（Codex P2）。 */}
+        {action !== null && (
+          <Chip tone="gold" className="shrink-0">
+            {action}
+          </Chip>
+        )}
         {/* asChild 時の host 要素（利用側の <a> 等）。上記の子はこの中に入る。 */}
         <Slottable>{children}</Slottable>
       </Comp>

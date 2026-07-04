@@ -76,6 +76,12 @@ describe("SANBA design system", () => {
     expect(screen.getByText("検める ›")).toBeTruthy();
   });
 
+  it("SessionRow action=null は操作ピルを出さない（閲覧専用の行 / Codex P2）", () => {
+    render(<SessionRow title="検索機能" meta="pm@example.com" action={null} />);
+    expect(screen.getByText("検索機能")).toBeTruthy();
+    expect(screen.queryByText("検める ›")).toBeNull();
+  });
+
   // #162: 複数子（icon/title/trailing）を持つ行でも asChild がクラッシュせず host 要素に化ける。
   it("ListRow asChild は複数子のままアンカー化し内容を内包する（Slot 複数子クラッシュ回避）", () => {
     render(

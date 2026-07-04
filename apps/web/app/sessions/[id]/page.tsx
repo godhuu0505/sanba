@@ -30,6 +30,7 @@ type Load =
   | { state: "loading" }
   | { state: "ok"; data: MySessionRequirements }
   | { state: "notfound" }
+  | { state: "unauthenticated" }
   | { state: "error" };
 
 export default function PastRequirementsPage() {
@@ -48,8 +49,11 @@ export default function PastRequirementsPage() {
       const data = await fetchMySessionRequirements(sessionId, auth.credential);
       setLoad({ state: "ok", data });
     } catch (e) {
-      // 404 = 非所有 or 不存在（API が同じ応答に平す）。それ以外は再試行導線つきの失敗表示。
+      // 404 = 非所有 or 不存在（API が同じ応答に平す）。401 = idToken 期限切れ/失効で、
+      // authGate はメモリ上の loggedIn しか見ないため到達する（再認証導線へ / Codex P2）。
+      // それ以外は再試行導線つきの失敗表示。
       if (e instanceof ApiError && e.status === 404) setLoad({ state: "notfound" });
+      else if (e instanceof ApiError && e.status === 401) setLoad({ state: "unauthenticated" });
       else setLoad({ state: "error" });
     }
   }, [auth.devMode, auth.loggedIn, auth.credential, sessionId]);
@@ -74,6 +78,19 @@ export default function PastRequirementsPage() {
           <p className="px-1 py-3 text-[13px] leading-relaxed text-[var(--sanba-muted)]">
             この要件は見つかりませんでした。ご本人のセッションのみ閲覧できます。
           </p>
+        )}
+
+        {load.state === "unauthenticated" && (
+          <div className="flex flex-col gap-3 px-1 py-3">
+            <p className="text-[13px] leading-relaxed text-[var(--sanba-muted)]">
+              ログインの期限が切れました。もう一度ログインしてください。
+            </p>
+            {/* 期限切れ credential が残ったままだと同じ無効トークンで再試行し続けるため、
+                admin と同様に signOut で clear し、authGate 経由で /login?next= へ送る（Codex P2）。 */}
+            <Button variant="gold" block onClick={() => auth.signOut()}>
+              ログインへ
+            </Button>
+          </div>
         )}
 
         {load.state === "error" && (

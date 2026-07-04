@@ -163,6 +163,8 @@ export default function AdminPage() {
                   key={s.id}
                   title={s.title}
                   meta={`${s.owner_email} ・ ${formatDate(s.created_at)}`}
+                  // 押せない行に既定の「検める ›」ピルを残さない（Codex P2）。
+                  action={null}
                 />
               ))}
             </div>
