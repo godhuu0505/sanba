@@ -102,11 +102,11 @@ export function ProductRepoCard({
   return (
     <Card>
       <CardTitle>前提リポジトリ</CardTitle>
-      <p className="text-[12px] leading-relaxed text-[var(--sanba-muted)]">
+      <p className="text-[12px] leading-relaxed text-sanba-muted">
         紐づけたリポジトリの内容を索引し、このアプリの深掘りセッションの前提として使います。
       </p>
       <div className="flex items-center gap-[8px]">
-        <span className="min-w-0 truncate text-[14px] font-bold text-[var(--sanba-gold-text)]">
+        <span className="min-w-0 truncate text-[14px] font-bold text-sanba-gold-text">
           {product.github_repo
             ? `${product.github_repo}${product.github_branch ? ` (${product.github_branch})` : ""}`
             : "未紐づけ"}
@@ -117,9 +117,9 @@ export function ProductRepoCard({
       </div>
       <Divider />
       {choices === null ? (
-        <p className="text-[12px] text-[var(--sanba-muted)]">候補を取得しています…</p>
+        <p className="text-[12px] text-sanba-muted">候補を取得しています…</p>
       ) : !choices.linked ? (
-        <p className="text-[12px] leading-relaxed text-[var(--sanba-muted)]">
+        <p className="text-[12px] leading-relaxed text-sanba-muted">
           リポジトリの紐づけには GitHub 連携が必要です。アカウント設定の「GitHub 連携」から
           連携してください。
         </p>
@@ -151,7 +151,7 @@ export function ProductRepoCard({
             </Field>
           )}
           {error && (
-            <p role="alert" className="text-[12px] text-[var(--sanba-rec-text)]">
+            <p role="alert" className="text-[12px] text-sanba-rec-text">
               {error}
             </p>
           )}

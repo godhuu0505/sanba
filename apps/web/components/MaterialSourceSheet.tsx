@@ -124,10 +124,10 @@ export function MaterialSourceSheet({
         role="dialog"
         aria-modal="true"
         aria-label="資料の追加方法"
-        className="relative z-10 flex w-full max-w-[420px] flex-col gap-2 rounded-t-[18px] border-t-2 border-[var(--sanba-frame)] bg-[var(--sanba-surface)] px-4 pb-[18px] pt-[14px]"
+        className="relative z-10 flex w-full max-w-[420px] flex-col gap-2 rounded-t-[18px] border-t-2 border-sanba-frame bg-sanba-surface px-4 pb-[18px] pt-[14px]"
       >
         <div className="flex items-center gap-2">
-          <span className="text-[15px] font-bold text-[var(--sanba-gold-text)]">
+          <span className="text-[15px] font-bold text-sanba-gold-text">
             資料の追加方法を選ぶ
           </span>
           <span className="flex-1" />
@@ -136,12 +136,12 @@ export function MaterialSourceSheet({
             type="button"
             aria-label="閉じる"
             onClick={onClose}
-            className="flex size-[26px] items-center justify-center rounded-full border border-[var(--sanba-border)] bg-[var(--sanba-surface)] text-[12px] text-[var(--sanba-muted)]"
+            className="flex size-[26px] items-center justify-center rounded-full border border-sanba-border bg-sanba-surface text-[12px] text-sanba-muted"
           >
             <X size={14} aria-hidden />
           </button>
         </div>
-        <p className="text-[12px] text-[var(--sanba-muted)]">
+        <p className="text-[12px] text-sanba-muted">
           言葉以外の情報（画像・画面・カメラ）も、会話を止めずに渡せます。
         </p>
 
@@ -181,13 +181,13 @@ export function MaterialSourceSheet({
           onClick={() => pick("drive", onDrive ?? (() => setDriveNotice(true)))}
         />
         {driveNotice && !onDrive && (
-          <p role="status" className="px-1 text-[11.5px] text-[var(--sanba-muted)]">
+          <p role="status" className="px-1 text-[11.5px] text-sanba-muted">
             Google ドライブ連携は準備中です（別チケット・ADR-0007）。今はファイルのアップロードをご利用ください。
           </p>
         )}
 
         {error && (
-          <p role="alert" className="px-1 text-[11.5px] font-bold text-[var(--sanba-rec-text)]">
+          <p role="alert" className="px-1 text-[11.5px] font-bold text-sanba-rec-text">
             {error}
           </p>
         )}
@@ -195,7 +195,7 @@ export function MaterialSourceSheet({
         <button
           type="button"
           onClick={onClose}
-          className="mt-1 rounded-[12px] border border-[var(--sanba-border)] py-[12px] text-center text-[13px] font-bold text-[var(--sanba-muted)]"
+          className="mt-1 rounded-[12px] border border-sanba-border py-[12px] text-center text-[13px] font-bold text-sanba-muted"
         >
           キャンセル
         </button>
@@ -226,24 +226,24 @@ function SourceRow({
       aria-label={actionLabel}
       aria-pressed={active}
       onClick={onClick}
-      className="flex w-full items-center gap-3 rounded-[12px] border bg-[var(--sanba-surface-strong)] px-3 py-[13px] text-left"
+      className="flex w-full items-center gap-3 rounded-[12px] border bg-sanba-surface-strong px-3 py-[13px] text-left"
       style={{ borderColor: active ? "var(--sanba-gold-text)" : "var(--sanba-border)" }}
     >
       <span aria-hidden="true" className="text-[20px]">
         {icon}
       </span>
       <span className="flex flex-1 flex-col gap-[2px]">
-        <span className="flex items-center gap-2 text-[14px] font-bold text-[var(--sanba-cream)]">
+        <span className="flex items-center gap-2 text-[14px] font-bold text-sanba-cream">
           {title}
           {active && (
-            <span className="rounded-full bg-[var(--sanba-gold-text)] px-[7px] py-[1px] text-[10px] font-bold text-white">
+            <span className="rounded-full bg-sanba-gold-text px-[7px] py-[1px] text-[10px] font-bold text-white">
               ON
             </span>
           )}
         </span>
-        <span className="text-[11.5px] text-[var(--sanba-muted)]">{sub}</span>
+        <span className="text-[11.5px] text-sanba-muted">{sub}</span>
       </span>
-      <span aria-hidden="true" className="text-[var(--sanba-muted)]">
+      <span aria-hidden="true" className="text-sanba-muted">
         ›
       </span>
     </button>

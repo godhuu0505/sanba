@@ -44,7 +44,7 @@ const STATUS_LABEL: Record<Exclude<MaterialStatus, "done" | "failed" | "cancelle
 };
 
 const ROW_CLASS =
-  "flex flex-col gap-[6px] rounded-[12px] border border-[var(--sanba-border)] bg-[var(--sanba-surface)] px-3 py-[11px]";
+  "flex flex-col gap-[6px] rounded-[12px] border border-sanba-border bg-sanba-surface px-3 py-[11px]";
 
 export function MaterialsList({
   items,
@@ -79,13 +79,13 @@ export function MaterialsList({
       <button
         type="button"
         onClick={onAdd}
-        className="rounded-[12px] border border-dashed border-[var(--sanba-gold-deep)] bg-[var(--sanba-surface)] px-3 py-[13px] text-[12.5px] font-bold text-[var(--sanba-gold-text)]"
+        className="rounded-[12px] border border-dashed border-sanba-gold-deep bg-sanba-surface px-3 py-[13px] text-[12.5px] font-bold text-sanba-gold-text"
       >
         ＋ 素材を追加（カメラ・アップロード・画面共有）
       </button>
 
       {items.length === 0 ? (
-        <p className="px-1 py-4 text-center text-[12.5px] text-[var(--sanba-muted)]">
+        <p className="px-1 py-4 text-center text-[12.5px] text-sanba-muted">
           まだありません。資料を追加すると、ここに解析状況が出ます。
         </p>
       ) : (
@@ -96,10 +96,10 @@ export function MaterialsList({
 
           const body = (
             <>
-              <span className="text-[13px] font-bold text-[var(--sanba-cream)]">{it.name}</span>
+              <span className="text-[13px] font-bold text-sanba-cream">{it.name}</span>
 
               {it.status === "done" && (
-                <span className="inline-flex items-center gap-1 text-[11px] font-bold text-[var(--sanba-speak-text)]">
+                <span className="inline-flex items-center gap-1 text-[11px] font-bold text-sanba-speak-text">
                   <Check size={13} aria-hidden /> 解析済
                   {typeof it.extracted === "number" ? ` ・ 要件 ${it.extracted} 件を抽出` : ""}
                 </span>
@@ -107,24 +107,24 @@ export function MaterialsList({
 
               {(it.status === "uploading" || it.status === "analyzing") && (
                 <div className="flex items-center gap-2">
-                  <span className="text-[11px] text-[var(--sanba-muted)]">{STATUS_LABEL[it.status]}</span>
+                  <span className="text-[11px] text-sanba-muted">{STATUS_LABEL[it.status]}</span>
                   <div
                     role="progressbar"
                     aria-valuenow={it.pct}
                     aria-valuemin={0}
                     aria-valuemax={100}
-                    className="h-[5px] flex-1 overflow-hidden rounded-full bg-[var(--sanba-border)]"
+                    className="h-[5px] flex-1 overflow-hidden rounded-full bg-sanba-border"
                   >
                     <div className="h-full sanba-gold-gradient" style={{ width: `${it.pct}%` }} />
                   </div>
-                  <span className="text-[11px] font-bold text-[var(--sanba-gold-text)]">{it.pct}%</span>
+                  <span className="text-[11px] font-bold text-sanba-gold-text">{it.pct}%</span>
                   {/* ✕ 中断（#219 / Figma 136:14・135:80）。押下で破棄確認ダイアログを開く。 */}
                   {onCancel && (
                     <button
                       type="button"
                       aria-label={`${it.name} の解析を中断`}
                       onClick={() => setCancelTarget(it)}
-                      className="inline-flex items-center gap-1 rounded-full border border-[var(--sanba-frame)] px-[9px] py-[3px] text-[11px] font-bold text-[var(--sanba-muted)]"
+                      className="inline-flex items-center gap-1 rounded-full border border-sanba-frame px-[9px] py-[3px] text-[11px] font-bold text-sanba-muted"
                     >
                       <X size={12} aria-hidden /> 中断
                     </button>
@@ -155,12 +155,12 @@ export function MaterialsList({
 
               {it.status === "failed" && (
                 <div className="flex items-center gap-2">
-                  <span className="text-[11px] font-bold text-[var(--sanba-rec-text)]">アップロード/解析に失敗</span>
+                  <span className="text-[11px] font-bold text-sanba-rec-text">アップロード/解析に失敗</span>
                   {onRetry && (
                     <button
                       type="button"
                       onClick={() => onRetry(it.id)}
-                      className="rounded-full border border-[var(--sanba-frame)] px-[9px] py-[3px] text-[11px] font-bold text-[var(--sanba-gold-text)]"
+                      className="rounded-full border border-sanba-frame px-[9px] py-[3px] text-[11px] font-bold text-sanba-gold-text"
                     >
                       再試行
                     </button>

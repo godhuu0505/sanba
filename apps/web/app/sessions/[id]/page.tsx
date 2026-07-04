@@ -71,18 +71,18 @@ export default function PastRequirementsPage() {
       <AppHeader back onBack={() => router.push("/")} title="要件絵巻" />
       <main className="mx-auto flex w-full max-w-md flex-col gap-3 px-4 pb-10 pt-1">
         {load.state === "loading" && (
-          <p className="px-1 py-3 text-[13px] text-[var(--sanba-muted)]">読み込み中…</p>
+          <p className="px-1 py-3 text-[13px] text-sanba-muted">読み込み中…</p>
         )}
 
         {load.state === "notfound" && (
-          <p className="px-1 py-3 text-[13px] leading-relaxed text-[var(--sanba-muted)]">
+          <p className="px-1 py-3 text-[13px] leading-relaxed text-sanba-muted">
             この要件は見つかりませんでした。ご本人のセッションのみ閲覧できます。
           </p>
         )}
 
         {load.state === "unauthenticated" && (
           <div className="flex flex-col gap-3 px-1 py-3">
-            <p className="text-[13px] leading-relaxed text-[var(--sanba-muted)]">
+            <p className="text-[13px] leading-relaxed text-sanba-muted">
               ログインの期限が切れました。もう一度ログインしてください。
             </p>
             {/* 期限切れ credential が残ったままだと同じ無効トークンで再試行し続けるため、
@@ -97,7 +97,7 @@ export default function PastRequirementsPage() {
 
         {load.state === "error" && (
           <div className="flex flex-col gap-3 px-1 py-3">
-            <p className="text-[13px] text-[var(--sanba-muted)]">読み込みに失敗しました。</p>
+            <p className="text-[13px] text-sanba-muted">読み込みに失敗しました。</p>
             <Button variant="gold" block onClick={() => void fetchScroll()}>
               再び試みる
             </Button>
@@ -107,10 +107,10 @@ export default function PastRequirementsPage() {
         {load.state === "ok" && (
           <>
             <div className="flex flex-col gap-[2px] px-1">
-              <h2 className="text-[18px] font-bold text-[var(--sanba-cream)]">
+              <h2 className="text-[18px] font-bold text-sanba-cream">
                 {load.data.title}
               </h2>
-              <p className="text-[12px] text-[var(--sanba-muted)]">
+              <p className="text-[12px] text-sanba-muted">
                 {formatSessionDate(load.data.created_at)}
                 {load.data.finalized ? " ・ 確定済み" : " ・ 未確定"}
               </p>

@@ -61,15 +61,15 @@ export function GitHubLinkCard() {
   return (
     <Card>
       <CardTitle>GitHub 連携</CardTitle>
-      <p className="text-[12px] leading-relaxed text-[var(--sanba-muted)]">
+      <p className="text-[12px] leading-relaxed text-sanba-muted">
         リポジトリを 1 つ紐づけると、要件サンバの深掘り時に前提情報として扱えます。
       </p>
       <Divider />
       {status?.linked ? (
         <div className="flex flex-col gap-[10px]">
           <div className="flex items-baseline justify-between gap-[12px]">
-            <span className="text-[13px] text-[var(--sanba-muted)]">連携中</span>
-            <span className="truncate text-[14px] font-bold text-[var(--sanba-gold-text)]">
+            <span className="text-[13px] text-sanba-muted">連携中</span>
+            <span className="truncate text-[14px] font-bold text-sanba-gold-text">
               {status.github_login ?? "（不明）"}
             </span>
           </div>

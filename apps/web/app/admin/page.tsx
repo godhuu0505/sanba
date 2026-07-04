@@ -77,7 +77,7 @@ export default function AdminPage() {
   if (access === "loading") {
     return (
       <Gate title="読み込み中…" eyebrow="しばしお待ちを">
-        <p className="text-[13px] leading-relaxed text-[var(--sanba-muted)]">
+        <p className="text-[13px] leading-relaxed text-sanba-muted">
           アクセス権を確かめております。
         </p>
       </Gate>
@@ -86,7 +86,7 @@ export default function AdminPage() {
   if (access === "unauthenticated") {
     return (
       <Gate title="ログインが必要です" eyebrow="401 — 本人を確かめます">
-        <p className="text-[13px] leading-relaxed text-[var(--sanba-muted)]">
+        <p className="text-[13px] leading-relaxed text-sanba-muted">
           問答と要件を検めるには、まず本人を確かめます。
         </p>
         {/* 401 では共有 AuthProvider に期限切れ credential が残り loggedIn=true のまま。
@@ -103,7 +103,7 @@ export default function AdminPage() {
   if (access === "forbidden") {
     return (
       <Gate title="管理者の権限がありません" eyebrow="403 — 管理者でない" icon="⊘">
-        <p className="text-[13px] leading-relaxed text-[var(--sanba-muted)]">
+        <p className="text-[13px] leading-relaxed text-sanba-muted">
           このアカウントには管理者の権限がありません。必要な場合はシステム管理者にお問い合わせください。
         </p>
       </Gate>
@@ -151,11 +151,11 @@ export default function AdminPage() {
         </Button>
 
         <section className="flex flex-col gap-[12px]">
-          <h2 className="text-[13px] font-bold tracking-[0.18em] text-[var(--sanba-gold-text)]">
+          <h2 className="text-[13px] font-bold tracking-[0.18em] text-sanba-gold-text">
             進行中の問答
           </h2>
           {sessions.length === 0 ? (
-            <p className="text-[13px] text-[var(--sanba-muted)]">問答がまだございません。</p>
+            <p className="text-[13px] text-sanba-muted">問答がまだございません。</p>
           ) : (
             <div className="flex flex-col gap-[10px]">
               {/* 旧 93「要件を検める」展開は廃止（要件閲覧は /sessions/[id] の絵巻閲覧画面へ）。
@@ -196,7 +196,7 @@ function Gate({
       <AppHeader />
       <div className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center px-6 py-10">
         {eyebrow && (
-          <p className="mb-2 text-[12px] tracking-[0.2em] text-[var(--sanba-gold-text)]">
+          <p className="mb-2 text-[12px] tracking-[0.2em] text-sanba-gold-text">
             ✦ {eyebrow} ✦
           </p>
         )}
@@ -258,7 +258,7 @@ function CreateSessionCard({
         <Input id="title" value={title} onChange={(e) => setTitle(e.target.value)} />
       </Field>
       <div className="flex flex-col gap-[6px]">
-        <span className="text-[13px] font-bold text-[var(--sanba-muted)]">招く者の役割</span>
+        <span className="text-[13px] font-bold text-sanba-muted">招く者の役割</span>
         <div className="flex flex-wrap gap-[8px]">
           {ROLES.map((r) => (
             <Chip key={r.value} asChild tone="gold" size="md" selected={roles.includes(r.value)}>
@@ -279,16 +279,16 @@ function CreateSessionCard({
       >
         {busy ? "発行しております…" : "作成して招待を発行"}
       </Button>
-      {error && <p className="text-[13px] text-[var(--sanba-rec-text)]">{error}</p>}
+      {error && <p className="text-[13px] text-sanba-rec-text">{error}</p>}
       {invites && (
-        <div className="flex flex-col gap-[6px] rounded-[12px] border border-[var(--sanba-border)] bg-[var(--sanba-bg)]/40 px-[14px] py-[12px]">
-          <p className="text-[13px] font-bold text-[var(--sanba-gold-text)]">
+        <div className="flex flex-col gap-[6px] rounded-[12px] border border-sanba-border bg-sanba-bg/40 px-[14px] py-[12px]">
+          <p className="text-[13px] font-bold text-sanba-gold-text">
             招待の符（role ごと）
           </p>
           {Object.entries(invites).map(([role, token]) => (
-            <p key={role} className="break-all text-[12px] text-[var(--sanba-cream)]">
+            <p key={role} className="break-all text-[12px] text-sanba-cream">
               <span className="font-bold">{role}:</span>{" "}
-              <code className="text-[var(--sanba-muted)]">{token}</code>
+              <code className="text-sanba-muted">{token}</code>
             </p>
           ))}
         </div>

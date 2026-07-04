@@ -149,7 +149,7 @@ function RoomGate({ conn, onCancel }: { conn: JoinResponse; onCancel: () => void
     <Screen className="px-4 py-3">
       <AppHeader brand right={<StartAudio label="音声を有効に" />} />
       <main className="mx-auto w-full max-w-[640px] flex-1">
-        <p className="mb-2 text-[12px] text-[var(--sanba-muted)]">
+        <p className="mb-2 text-[12px] text-sanba-muted">
           セッション: <code>{conn.session_id}</code>
         </p>
         <SessionView sessionId={conn.session_id} sessionToken={conn.session_token} />
@@ -158,7 +158,7 @@ function RoomGate({ conn, onCancel }: { conn: JoinResponse; onCancel: () => void
         <div
           role="status"
           aria-live="polite"
-          className="fixed inset-x-0 top-0 z-50 bg-[var(--sanba-rec-text)]/90 py-1 text-center text-[12px] font-bold text-white"
+          className="fixed inset-x-0 top-0 z-50 bg-sanba-rec-text/90 py-1 text-center text-[12px] font-bold text-white"
         >
           繋ぎ直しております… しばらくお待ちください
         </div>
@@ -210,32 +210,32 @@ export function StartIntro({
           >
             産
           </div>
-          <p className="text-[13px] text-[var(--sanba-muted)]">問答を始める支度が整いました。</p>
+          <p className="text-[13px] text-sanba-muted">問答を始める支度が整いました。</p>
         </div>
 
         <Card>
           <dl className="flex flex-col gap-[10px] text-[13px]">
             <div className="flex gap-2">
-              <dt className="w-[64px] shrink-0 font-bold text-[var(--sanba-muted)]">ゴール</dt>
-              <dd className="text-[var(--sanba-cream)]">{goal.trim() || "（未入力）"}</dd>
+              <dt className="w-[64px] shrink-0 font-bold text-sanba-muted">ゴール</dt>
+              <dd className="text-sanba-cream">{goal.trim() || "（未入力）"}</dd>
             </div>
             <div className="flex gap-2">
-              <dt className="w-[64px] shrink-0 font-bold text-[var(--sanba-muted)]">役割</dt>
-              <dd className="text-[var(--sanba-cream)]">{roleLabel}</dd>
+              <dt className="w-[64px] shrink-0 font-bold text-sanba-muted">役割</dt>
+              <dd className="text-sanba-cream">{roleLabel}</dd>
             </div>
             <div className="flex gap-2">
-              <dt className="w-[64px] shrink-0 font-bold text-[var(--sanba-muted)]">参考資料</dt>
+              <dt className="w-[64px] shrink-0 font-bold text-sanba-muted">参考資料</dt>
               <dd className="flex flex-col gap-[2px]">
                 {materials.length > 0 ? (
-                  <span className="text-[var(--sanba-cream)]">
+                  <span className="text-sanba-cream">
                     {summarizeMaterials(materials)}
-                    <span className="text-[var(--sanba-muted)]">（計{materials.length}件）</span>
+                    <span className="text-sanba-muted">（計{materials.length}件）</span>
                   </span>
                 ) : (
-                  <span className="text-[var(--sanba-muted)]">会話中に追加できます</span>
+                  <span className="text-sanba-muted">会話中に追加できます</span>
                 )}
                 {failedCount > 0 && (
-                  <span role="alert" className="text-[12px] text-[var(--sanba-rec-text)]">
+                  <span role="alert" className="text-[12px] text-sanba-rec-text">
                     {failedCount}件は投入できませんでした。会話中に再度添付できます。
                   </span>
                 )}
@@ -245,7 +245,7 @@ export function StartIntro({
         </Card>
 
         {/* OS プロンプトの前にマイク使用の理由を提示する（03 AC）。 */}
-        <p className="flex items-start gap-1.5 text-[12px] leading-relaxed text-[var(--sanba-muted)]">
+        <p className="flex items-start gap-1.5 text-[12px] leading-relaxed text-sanba-muted">
           <Mic size={14} aria-hidden className="mt-0.5 shrink-0" />
           <span>音声で問答するためマイクを使用します。次の画面で許可を求めます。</span>
         </p>
@@ -295,18 +295,18 @@ export function MicPermissionModal({ onAllow, onText, onDismiss }: MicPermission
           role="dialog"
           aria-modal="true"
           aria-label="マイクの使用許可"
-          className="pointer-events-auto flex w-[316px] flex-col items-center gap-3 rounded-[16px] border-2 border-[var(--sanba-frame)] bg-[var(--sanba-surface)] px-[18px] pb-[18px] pt-5 shadow-[4px_4px_0_var(--sanba-shadow)]"
+          className="pointer-events-auto flex w-[316px] flex-col items-center gap-3 rounded-[16px] border-2 border-sanba-frame bg-sanba-surface px-[18px] pb-[18px] pt-5 shadow-[4px_4px_0_var(--sanba-shadow)]"
         >
           <div
             aria-hidden="true"
-            className="sanba-gold-gradient flex size-14 items-center justify-center rounded-full border-2 border-[var(--sanba-frame)] text-[24px]"
+            className="sanba-gold-gradient flex size-14 items-center justify-center rounded-full border-2 border-sanba-frame text-[24px]"
           >
             <Mic size={26} aria-hidden />
           </div>
-          <p className="text-center text-[16px] font-bold text-[var(--sanba-gold-text)]">
+          <p className="text-center text-[16px] font-bold text-sanba-gold-text">
             声を聞かせてくださいませ
           </p>
-          <p className="text-center text-[12px] leading-relaxed text-[var(--sanba-muted)]">
+          <p className="text-center text-[12px] leading-relaxed text-sanba-muted">
             問答には端末のマイクを用います。使用を許可してください。
           </p>
           <div className="mt-1 flex w-full flex-col gap-[8px]">
@@ -339,11 +339,11 @@ export function ConnectingOverlay({ state, onCancel }: ConnectingOverlayProps) {
       <main className="mx-auto flex w-full max-w-[420px] flex-1 flex-col items-center gap-6 pt-12">
         <div
           aria-hidden="true"
-          className="sanba-gold-gradient sanba-serif flex size-20 animate-pulse items-center justify-center rounded-full border-2 border-[var(--sanba-frame)] text-[30px] font-bold text-[var(--sanba-ink)]"
+          className="sanba-gold-gradient sanba-serif flex size-20 animate-pulse items-center justify-center rounded-full border-2 border-sanba-frame text-[30px] font-bold text-sanba-ink"
         >
           産
         </div>
-        <p className="text-[14px] font-bold text-[var(--sanba-gold-text)]" aria-live="polite">
+        <p className="text-[14px] font-bold text-sanba-gold-text" aria-live="polite">
           {reconnecting ? "繋ぎ直しております…" : "繋いでおります…"}
         </p>
         <ul className="flex w-full flex-col gap-2 text-[13px]">
@@ -403,10 +403,10 @@ export function StartFailed({ kind, onRetry, onText, onBack }: StartFailedProps)
         >
           <TriangleAlert size={32} aria-hidden />
         </div>
-        <p className="text-[16px] font-bold text-[var(--sanba-rec-text)]">
+        <p className="text-[16px] font-bold text-sanba-rec-text">
           {isMic ? "声を捉えられませなんだ" : "繋ぐことが叶いませなんだ"}
         </p>
-        <div className="w-full rounded-[14px] border border-[var(--sanba-rec)]/40 bg-[var(--sanba-rec-pale)] p-[14px] text-[12.5px] leading-relaxed text-[var(--sanba-muted)]">
+        <div className="w-full rounded-[14px] border border-sanba-rec/40 bg-sanba-rec-pale p-[14px] text-[12.5px] leading-relaxed text-sanba-muted">
           {isMic ? (
             <ul className="list-disc pl-4">
               <li>ブラウザのマイク許可が拒否されています。</li>
@@ -440,7 +440,7 @@ export function StartFailed({ kind, onRetry, onText, onBack }: StartFailedProps)
                   id="mic-settings-guide"
                   role="region"
                   aria-label="マイク許可の手順"
-                  className="rounded-[12px] border border-[var(--sanba-border)] bg-[var(--sanba-surface)] p-[14px] text-left text-[12px] leading-relaxed text-[var(--sanba-muted)]"
+                  className="rounded-[12px] border border-sanba-border bg-sanba-surface p-[14px] text-left text-[12px] leading-relaxed text-sanba-muted"
                 >
                   <ol className="list-decimal space-y-1 pl-4">
                     <li>アドレスバーの 🔒 / ⓘ をタップ</li>

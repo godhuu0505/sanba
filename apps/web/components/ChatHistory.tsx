@@ -22,7 +22,7 @@ export function ChatHistory({ transcript }: ChatHistoryProps) {
   if (transcript.length === 0) {
     return (
       <div className="flex h-full items-center justify-center px-6 py-8">
-        <p className="inline-flex items-center justify-center gap-1.5 text-center text-[13px] text-[var(--sanba-muted)]">
+        <p className="inline-flex items-center justify-center gap-1.5 text-center text-[13px] text-sanba-muted">
           <Mic size={15} aria-hidden /> 話しかけてください
         </p>
       </div>
@@ -37,7 +37,7 @@ export function ChatHistory({ transcript }: ChatHistoryProps) {
           <ChatBubble key={line.utterance_id} author={author}>
             {line.text}
             {!line.final && (
-              <span className="ml-1 align-middle text-[11px] font-bold text-[var(--sanba-speak-text)]">
+              <span className="ml-1 align-middle text-[11px] font-bold text-sanba-speak-text">
                 ‖ 認識中…
               </span>
             )}

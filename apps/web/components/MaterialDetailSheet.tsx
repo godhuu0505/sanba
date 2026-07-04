@@ -99,10 +99,10 @@ export function MaterialDetailSheet({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="relative z-10 flex max-h-[85vh] w-full max-w-[420px] flex-col gap-3 overflow-y-auto rounded-t-[18px] border-t-2 border-[var(--sanba-frame)] bg-[var(--sanba-surface)] px-4 pb-[18px] pt-[12px]"
+        className="relative z-10 flex max-h-[85vh] w-full max-w-[420px] flex-col gap-3 overflow-y-auto rounded-t-[18px] border-t-2 border-sanba-frame bg-sanba-surface px-4 pb-[18px] pt-[12px]"
       >
         <div className="flex items-center gap-2">
-          <span id={titleId} className="text-[15px] font-bold text-[var(--sanba-gold-text)]">
+          <span id={titleId} className="text-[15px] font-bold text-sanba-gold-text">
             資料の詳細
           </span>
           <span className="flex-1" />
@@ -111,7 +111,7 @@ export function MaterialDetailSheet({
             type="button"
             aria-label="閉じる"
             onClick={onClose}
-            className="flex size-[26px] items-center justify-center rounded-full border border-[var(--sanba-border)] bg-[var(--sanba-surface)] text-[12px] text-[var(--sanba-muted)]"
+            className="flex size-[26px] items-center justify-center rounded-full border border-sanba-border bg-sanba-surface text-[12px] text-sanba-muted"
           >
             <X size={14} aria-hidden />
           </button>
@@ -120,52 +120,52 @@ export function MaterialDetailSheet({
         {/* プレビュー枠（画像 URL は store に無いためプレースホルダ・Figma 150:2 踏襲）。 */}
         <div
           aria-hidden="true"
-          className="flex h-[140px] items-center justify-center gap-1.5 rounded-[12px] border border-[var(--sanba-border)] bg-[var(--sanba-surface-strong)] text-[13px] text-[var(--sanba-muted)]"
+          className="flex h-[140px] items-center justify-center gap-1.5 rounded-[12px] border border-sanba-border bg-sanba-surface-strong text-[13px] text-sanba-muted"
         >
           <ImageIcon size={16} aria-hidden /> {detail.name}
         </div>
 
         {/* メタ（名前・解析状態）。解析中は進捗バーで状態を可視化（色のみに依存しない）。 */}
         <div className="flex flex-col gap-[6px]">
-          <span className="text-[11.5px] font-bold text-[var(--sanba-cream)]">{detail.name}</span>
+          <span className="text-[11.5px] font-bold text-sanba-cream">{detail.name}</span>
           {done ? (
-            <span className="inline-flex items-center gap-1 text-[11px] font-bold text-[var(--sanba-speak-text)]">
+            <span className="inline-flex items-center gap-1 text-[11px] font-bold text-sanba-speak-text">
               <Check size={13} aria-hidden /> 解析済
             </span>
           ) : (
             <div className="flex items-center gap-2">
-              <span className="text-[11px] text-[var(--sanba-muted)]">解析中</span>
+              <span className="text-[11px] text-sanba-muted">解析中</span>
               <div
                 role="progressbar"
                 aria-valuenow={detail.pct}
                 aria-valuemin={0}
                 aria-valuemax={100}
                 aria-label="解析の進捗"
-                className="h-[5px] flex-1 overflow-hidden rounded-full bg-[var(--sanba-border)]"
+                className="h-[5px] flex-1 overflow-hidden rounded-full bg-sanba-border"
               >
                 <div className="sanba-gold-gradient h-full" style={{ width: `${detail.pct}%` }} />
               </div>
-              <span className="text-[11px] font-bold text-[var(--sanba-gold-text)]">{detail.pct}%</span>
+              <span className="text-[11px] font-bold text-sanba-gold-text">{detail.pct}%</span>
             </div>
           )}
         </div>
 
         {/* 種別①: 抽出した要件（チップ）。 */}
         <section aria-label="抽出した要件" className="flex flex-col gap-2">
-          <span className="text-[12px] font-bold text-[var(--sanba-gold-text)]">抽出した要件</span>
+          <span className="text-[12px] font-bold text-sanba-gold-text">抽出した要件</span>
           {detail.extracted.length > 0 ? (
             <ul className="flex list-none flex-wrap gap-[6px] p-0">
               {detail.extracted.map((e, i) => (
                 <li
                   key={`${e}-${i}`}
-                  className="rounded-[999px] border border-[var(--sanba-gold-deep)] bg-[var(--sanba-surface-strong)] px-[11px] py-[6px] text-[12px] font-bold text-[var(--sanba-gold-text)]"
+                  className="rounded-[999px] border border-sanba-gold-deep bg-sanba-surface-strong px-[11px] py-[6px] text-[12px] font-bold text-sanba-gold-text"
                 >
                   {e}
                 </li>
               ))}
             </ul>
           ) : (
-            <p className="text-[11.5px] text-[var(--sanba-muted)]">
+            <p className="text-[11.5px] text-sanba-muted">
               {ready ? "抽出された要件はありません。" : waiting}
             </p>
           )}
@@ -192,12 +192,12 @@ export function MaterialDetailSheet({
                   <span aria-hidden="true">{CONFLICT.icon}</span>
                   <span>言葉×画の矛盾</span>
                 </span>
-                <span className="text-[12.5px] text-[var(--sanba-cream)]">{c.summary}</span>
+                <span className="text-[12.5px] text-sanba-cream">{c.summary}</span>
                 {onConfirmInConversation && (
                   <button
                     type="button"
                     onClick={onConfirmInConversation}
-                    className="w-fit text-[11px] font-bold text-[var(--sanba-gold-text)]"
+                    className="w-fit text-[11px] font-bold text-sanba-gold-text"
                   >
                     会話で確認 ›
                   </button>
@@ -205,7 +205,7 @@ export function MaterialDetailSheet({
               </div>
             ))
           ) : (
-            <p className="text-[11.5px] text-[var(--sanba-muted)]">
+            <p className="text-[11.5px] text-sanba-muted">
               {ready ? "言葉×画の矛盾は見つかっていません。" : waiting}
             </p>
           )}

@@ -22,8 +22,8 @@ export function StatusBar({
       )}
       {...props}
     >
-      <span className="text-[13px] text-[var(--sanba-cream)]">{time}</span>
-      <span className="whitespace-pre text-[12px] text-[var(--sanba-muted)]">{signal}</span>
+      <span className="text-[13px] text-sanba-cream">{time}</span>
+      <span className="whitespace-pre text-[12px] text-sanba-muted">{signal}</span>
     </div>
   );
 }

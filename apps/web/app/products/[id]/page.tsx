@@ -146,7 +146,7 @@ export default function ProductDetailPage() {
         <main className="mx-auto flex w-full max-w-[480px] flex-1 flex-col gap-[18px] pt-2">
           <Card>
             <CardTitle>見つかりません</CardTitle>
-            <p className="text-[12px] leading-relaxed text-[var(--sanba-muted)]">
+            <p className="text-[12px] leading-relaxed text-sanba-muted">
               このアプリは存在しないか、閲覧できません。
             </p>
             <Button variant="outline" block onClick={() => router.push("/products")}>
@@ -168,7 +168,7 @@ export default function ProductDetailPage() {
       <main className="mx-auto flex w-full max-w-[480px] flex-1 flex-col gap-[18px] pt-2">
         {product === null ? (
           <Card>
-            <p className="text-[12px] text-[var(--sanba-muted)]">読み込み中…</p>
+            <p className="text-[12px] text-sanba-muted">読み込み中…</p>
           </Card>
         ) : (
           <>
@@ -197,7 +197,7 @@ export default function ProductDetailPage() {
 
             <Card>
               <CardTitle>利用者向け語彙</CardTitle>
-              <p className="text-[12px] leading-relaxed text-[var(--sanba-muted)]">
+              <p className="text-[12px] leading-relaxed text-sanba-muted">
                 利用者に見えている言葉（画面名・機能の呼び名）です。利用者向けの深掘りでは
                 この語彙で質問し、技術用語を使いません。
               </p>
@@ -209,7 +209,7 @@ export default function ProductDetailPage() {
                       <button
                         type="button"
                         aria-label={`${term} を削除`}
-                        className="ml-[4px] text-[var(--sanba-muted)] hover:text-[var(--sanba-cream)]"
+                        className="ml-[4px] text-sanba-muted hover:text-sanba-cream"
                         onClick={() =>
                           void saveGlossary(product.glossary.filter((t) => t !== term))
                         }
@@ -244,20 +244,20 @@ export default function ProductDetailPage() {
             <ProductInvitesCard productId={productId} />
 
             {error && (
-              <p role="alert" className="text-[12px] text-[var(--sanba-rec-text)]">
+              <p role="alert" className="text-[12px] text-sanba-rec-text">
                 {error}
               </p>
             )}
 
             <Card>
               <CardTitle>アプリの削除</CardTitle>
-              <p className="text-[12px] leading-relaxed text-[var(--sanba-muted)]">
+              <p className="text-[12px] leading-relaxed text-sanba-muted">
                 削除すると発行済みの深掘りリンクもすべて使えなくなります。
               </p>
               <Divider />
               {confirmDelete ? (
                 <div className="flex flex-col gap-[8px]">
-                  <p className="text-[13px] font-bold text-[var(--sanba-rec-text)]">
+                  <p className="text-[13px] font-bold text-sanba-rec-text">
                     本当に「{product.name}」を削除しますか？この操作は取り消せません。
                   </p>
                   <div className="flex gap-[8px]">

@@ -83,7 +83,7 @@ export default function ProductsPage() {
       <main className="mx-auto flex w-full max-w-[480px] flex-1 flex-col gap-[18px] pt-2">
         <Card>
           <CardTitle>アプリを登録</CardTitle>
-          <p className="text-[12px] leading-relaxed text-[var(--sanba-muted)]">
+          <p className="text-[12px] leading-relaxed text-sanba-muted">
             深掘りの対象になるアプリです。登録すると、リポジトリの紐づけと
             深掘りリンクの発行ができます。
           </p>
@@ -106,7 +106,7 @@ export default function ProductsPage() {
             />
           </Field>
           {error && (
-            <p role="alert" className="text-[12px] text-[var(--sanba-rec-text)]">
+            <p role="alert" className="text-[12px] text-sanba-rec-text">
               {error}
             </p>
           )}
@@ -119,9 +119,9 @@ export default function ProductsPage() {
           <CardTitle>登録済みのアプリ</CardTitle>
           <Divider />
           {products === null ? (
-            <p className="text-[12px] text-[var(--sanba-muted)]">読み込み中…</p>
+            <p className="text-[12px] text-sanba-muted">読み込み中…</p>
           ) : products.length === 0 ? (
-            <p className="text-[12px] text-[var(--sanba-muted)]">
+            <p className="text-[12px] text-sanba-muted">
               まだアプリがありません。上のフォームから登録してください。
             </p>
           ) : (

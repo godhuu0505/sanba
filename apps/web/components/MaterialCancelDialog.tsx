@@ -76,7 +76,7 @@ export function MaterialCancelDialog({
         role="dialog"
         aria-modal="true"
         aria-label="中断の確認"
-        className="relative z-10 flex w-[318px] flex-col items-center gap-3 rounded-[16px] border-2 border-[var(--sanba-frame)] bg-[var(--sanba-surface)] px-[18px] pb-4 pt-[18px] shadow-[4px_4px_0_var(--sanba-shadow)]"
+        className="relative z-10 flex w-[318px] flex-col items-center gap-3 rounded-[16px] border-2 border-sanba-frame bg-sanba-surface px-[18px] pb-4 pt-[18px] shadow-[4px_4px_0_var(--sanba-shadow)]"
       >
         <div
           aria-hidden="true"
@@ -85,10 +85,10 @@ export function MaterialCancelDialog({
         >
           <X size={22} aria-hidden />
         </div>
-        <p className="text-center text-[16px] font-bold text-[var(--sanba-gold-text)]">
+        <p className="text-center text-[16px] font-bold text-sanba-gold-text">
           中断しますか？
         </p>
-        <p className="text-center text-[12px] text-[var(--sanba-muted)]">
+        <p className="text-center text-[12px] text-sanba-muted">
           「{materialName}」の解析を中断します。途中までの結果は破棄されます。
         </p>
         <div className="flex w-full gap-2">
@@ -96,14 +96,14 @@ export function MaterialCancelDialog({
             ref={continueRef}
             type="button"
             onClick={onContinue}
-            className="flex-1 rounded-[12px] border border-[var(--sanba-frame)] py-[13px] text-[13px] font-bold text-[var(--sanba-gold-text)]"
+            className="flex-1 rounded-[12px] border border-sanba-frame py-[13px] text-[13px] font-bold text-sanba-gold-text"
           >
             続ける
           </button>
           <button
             type="button"
             onClick={onConfirm}
-            className="flex-1 rounded-[12px] bg-[var(--sanba-rec-text)] py-[13px] text-[13px] font-bold text-white"
+            className="flex-1 rounded-[12px] bg-sanba-rec-text py-[13px] text-[13px] font-bold text-white"
           >
             中断する
           </button>

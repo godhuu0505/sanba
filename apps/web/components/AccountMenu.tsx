@@ -60,7 +60,7 @@ export function AccountMenu({ profile, hideAdmin, hideSettings }: AccountMenuPro
         aria-expanded={open}
         aria-label="アカウントメニュー"
         onClick={() => setOpen((v) => !v)}
-        className="flex size-[44px] items-center justify-center rounded-full text-[var(--sanba-cream)] transition-colors hover:bg-[var(--sanba-surface)]"
+        className="flex size-[44px] items-center justify-center rounded-full text-sanba-cream transition-colors hover:bg-sanba-surface"
       >
         {profile?.picture ? (
           // 装飾目的（隣接でアカウント名は menu 内に出す）。
@@ -87,11 +87,11 @@ export function AccountMenu({ profile, hideAdmin, hideSettings }: AccountMenuPro
           <div
             role="menu"
             aria-label="アカウント"
-            className="absolute right-0 top-[calc(100%+8px)] z-50 flex w-[220px] flex-col gap-[6px] rounded-[14px] border border-[var(--sanba-border)] bg-[var(--sanba-surface)] p-[8px] shadow-lg"
+            className="absolute right-0 top-[calc(100%+8px)] z-50 flex w-[220px] flex-col gap-[6px] rounded-[14px] border border-sanba-border bg-sanba-surface p-[8px] shadow-lg"
           >
-            <p className="truncate px-[10px] pt-[4px] text-[12px] text-[var(--sanba-muted)]">
+            <p className="truncate px-[10px] pt-[4px] text-[12px] text-sanba-muted">
               <CircleCheck size={13} aria-hidden className="mr-1 inline-block align-[-2px]" />
-              ログイン中: <span className="text-[var(--sanba-cream)]">{email}</span>
+              ログイン中: <span className="text-sanba-cream">{email}</span>
             </p>
             <Divider />
             {!hideSettings && (
@@ -99,7 +99,7 @@ export function AccountMenu({ profile, hideAdmin, hideSettings }: AccountMenuPro
                 href="/settings"
                 role="menuitem"
                 onClick={() => setOpen(false)}
-                className="flex items-center gap-[8px] rounded-[10px] px-[10px] py-[10px] text-[14px] text-[var(--sanba-cream)] transition-colors hover:bg-[var(--sanba-bg)]"
+                className="flex items-center gap-[8px] rounded-[10px] px-[10px] py-[10px] text-[14px] text-sanba-cream transition-colors hover:bg-sanba-bg"
               >
                 <Settings size={16} aria-hidden /> アカウント設定
               </Link>
@@ -109,7 +109,7 @@ export function AccountMenu({ profile, hideAdmin, hideSettings }: AccountMenuPro
                 href="/admin"
                 role="menuitem"
                 onClick={() => setOpen(false)}
-                className="flex items-center gap-[8px] rounded-[10px] px-[10px] py-[10px] text-[14px] text-[var(--sanba-cream)] transition-colors hover:bg-[var(--sanba-bg)]"
+                className="flex items-center gap-[8px] rounded-[10px] px-[10px] py-[10px] text-[14px] text-sanba-cream transition-colors hover:bg-sanba-bg"
               >
                 <Wrench size={16} aria-hidden /> 管理者画面
               </Link>
@@ -118,7 +118,7 @@ export function AccountMenu({ profile, hideAdmin, hideSettings }: AccountMenuPro
               type="button"
               role="menuitem"
               onClick={handleLogout}
-              className="flex items-center gap-[8px] rounded-[10px] px-[10px] py-[10px] text-left text-[14px] text-[var(--sanba-cream)] transition-colors hover:bg-[var(--sanba-bg)]"
+              className="flex items-center gap-[8px] rounded-[10px] px-[10px] py-[10px] text-left text-[14px] text-sanba-cream transition-colors hover:bg-sanba-bg"
             >
               <LogOut size={16} aria-hidden /> ログアウト
             </button>
