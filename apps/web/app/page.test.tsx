@@ -91,6 +91,12 @@ describe("入口フロー（#140）", () => {
     uploadContextFile.mockImplementation(async () => ({ indexed_chunks: 1 }));
     fetchMySessions.mockClear();
     fetchMySessions.mockImplementation(async () => []);
+    fetchGithubRepos.mockClear();
+    fetchGithubRepos.mockImplementation(async () => ({
+      enabled: false,
+      repos: [],
+      default: null,
+    }));
   });
   afterEach(() => {
     cleanup();
@@ -234,6 +240,16 @@ describe("入口フロー（#140）", () => {
   });
 
   // ── 02 連携リポジトリ（ADR-0027）─────────────────────────────────────────
+  it("ホーム表示だけでは候補一覧を取得しない（02 準備で初めて取得する / Codex P2）", async () => {
+    authState.loggedIn = true;
+    render(<Home />);
+    // ホーム（01）では叩かない = /user/repos 全ページ取得を無駄に発火させない。
+    await waitFor(() => expect(fetchMySessions).toHaveBeenCalled());
+    expect(fetchGithubRepos).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText("＋ 壁打ちを始める"));
+    await waitFor(() => expect(fetchGithubRepos).toHaveBeenCalledTimes(1));
+  });
+
   it("コネクタ無効（既定）では連携リポジトリのフィールドを出さない", async () => {
     authState.loggedIn = true;
     render(<Home />);
@@ -260,7 +276,7 @@ describe("入口フロー（#140）", () => {
     expect(createSession.mock.calls[0][4]).toBe("acme/product-a");
   });
 
-  it("未選択（連携しない）なら createSession にリポジトリを渡さない", async () => {
+  it("「連携しない」は空文字（明示的オプトアウト）として createSession に渡る", async () => {
     authState.loggedIn = true;
     fetchGithubRepos.mockResolvedValueOnce({
       enabled: true,
@@ -273,7 +289,28 @@ describe("入口フロー（#140）", () => {
     fireEvent.click(screen.getByRole("checkbox"));
     fireEvent.click(screen.getByRole("button", { name: "インタビューを始める" }));
     await waitFor(() => expect(createSession).toHaveBeenCalledTimes(1));
-    expect(createSession.mock.calls[0][4]).toBeUndefined();
+    // 空文字 = 「既定リポジトリにも送らない」を API に明示する（Codex P2）。
+    expect(createSession.mock.calls[0][4]).toBe("");
+  });
+
+  it("既定リポジトリは初期選択に反映され、そのまま開始すると既定が渡る", async () => {
+    authState.loggedIn = true;
+    fetchGithubRepos.mockResolvedValueOnce({
+      enabled: true,
+      repos: ["acme/product-a", "o/r"],
+      default: "o/r",
+    });
+    render(<Home />);
+    fireEvent.click(screen.getByText("＋ 壁打ちを始める"));
+    const select = (await screen.findByLabelText(
+      "連携リポジトリ（任意）",
+    )) as HTMLSelectElement;
+    // 表示と挙動の一致（Codex P2）: フォールバック先が選択状態として見える。
+    await waitFor(() => expect(select.value).toBe("o/r"));
+    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(screen.getByRole("button", { name: "インタビューを始める" }));
+    await waitFor(() => expect(createSession).toHaveBeenCalledTimes(1));
+    expect(createSession.mock.calls[0][4]).toBe("o/r");
   });
 
   it("候補一覧が空（取得失敗）でも手入力欄にフォールバックして選べる", async () => {

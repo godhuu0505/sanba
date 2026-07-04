@@ -94,13 +94,13 @@ describe("createSession（ADR-0027 連携リポジトリ）", () => {
     expect(JSON.parse(init.body).github_repo).toBe("acme/product-a");
   });
 
-  it("未指定・空文字なら github_repo を送らない（連携しない）", async () => {
+  it("未指定なら送らず（フォールバック）、空文字は明示的な連携なしとして送る", async () => {
     const fetchMock = ok();
     vi.stubGlobal("fetch", fetchMock);
     await createSession(["pm"], true, null);
     expect(JSON.parse(fetchMock.mock.calls[0][1].body).github_repo).toBeUndefined();
     await createSession(["pm"], true, null, undefined, "");
-    expect(JSON.parse(fetchMock.mock.calls[1][1].body).github_repo).toBeUndefined();
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body).github_repo).toBe("");
   });
 });
 

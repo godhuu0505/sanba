@@ -385,6 +385,27 @@ def test_export_uses_session_selected_repo(monkeypatch: pytest.MonkeyPatch) -> N
     assert captured["repo"] == "acme/product-a"
 
 
+def test_export_respects_explicit_opt_out(monkeypatch: pytest.MonkeyPatch) -> None:
+    # 空文字 = 明示的な「連携しない」。環境変数 "o/r" が設定されていてもフォールバックしない
+    # （Codex P2: 「連携しない」を選んだのに既定リポへ起票される事故を防ぐ）。
+    created = client.post(
+        "/api/sessions",
+        json={"roles": ["pm"], "consent_acknowledged": True, "github_repo": ""},
+    )
+    sid = created.json()["session_id"]
+    _read_repo._seed_requirement(
+        sid,
+        {"id": "c1", "statement": "確定", "category": "functional", "priority": "must"},
+    )
+    captured = _enable_github(monkeypatch)
+    client.post(f"/api/sessions/{sid}/finalize", headers=_auth(_token(sid)))
+
+    res = client.post(f"/api/sessions/{sid}/export", headers=_auth(_token(sid)))
+    body = res.json()
+    assert body["exported"] is False
+    assert "repo" not in captured  # create_issue は呼ばれない
+
+
 def test_export_falls_back_to_env_repo_without_selection(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

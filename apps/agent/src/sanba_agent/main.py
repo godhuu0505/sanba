@@ -524,15 +524,18 @@ def _resolve_github_repo(repo: SessionRepository, session_id: str) -> str:
     """連携リポジトリを「セッション選択 → 環境変数」の順で解決する（ADR-0027）。
 
     02 準備で選ばれた値はセッション文書（`sessions/{id}.github_repo`）に載る。
-    未選択・旧文書は環境変数 GITHUB_REPO（従来挙動）。どちらも無ければ空文字を返し、
-    呼び出し側の `_github_ready` が黙って断る。
+    None（未指定・旧文書）だけ環境変数 GITHUB_REPO へフォールバックし、空文字は
+    明示的な「連携しない」なのでそのまま返す（フォールバックしない / Codex P2）。
+    空文字は呼び出し側の `_github_ready` が黙って断る。
     """
     try:
         meta = repo.get_session(session_id)
-    except Exception as exc:  # pragma: no cover - Firestore 障害でも本流を止めない
+    except Exception as exc:  # pragma: no cover - Firestore 障害でも本流（会話）は止めない
+        # 選択値を確認できないときは既定リポへ流さず連携を無効側へ倒す（Codex P2:
+        # 別リポを選んだセッションの要件・文脈が意図しない既定リポへ送られる事故を防ぐ）。
         log.warning("github_repo_resolve_failed", session=session_id, error=str(exc))
-        return settings.github_repo
-    if meta is not None and meta.github_repo:
+        return ""
+    if meta is not None and meta.github_repo is not None:
         return meta.github_repo
     return settings.github_repo
 

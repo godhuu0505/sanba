@@ -126,13 +126,12 @@ export default function Home() {
     };
   }, [auth.loggedIn, auth.credential]);
 
-  // 連携リポジトリの候補を取得する（ADR-0027）。ログイン済みのときだけ叩き、
+  // 連携リポジトリの候補を取得する（ADR-0027）。02 準備に入るまで叩かない（Codex P2:
+  // ホーム/履歴閲覧だけで共有トークンの /user/repos 全ページ取得を発火させ、GitHub
+  // レート制限と API ワーカー時間を浪費しない）。取得済みなら再取得しない。
   // 無効（enabled=false）・取得失敗はフィールドを出さない/手入力のみで、本流は止めない。
   useEffect(() => {
-    if (!auth.loggedIn) {
-      setRepoChoices(null);
-      return;
-    }
+    if (step !== "prepare" || !auth.loggedIn || repoChoices !== null) return;
     let cancelled = false;
     fetchGithubRepos(auth.credential)
       .then((choices) => {
@@ -151,7 +150,7 @@ export default function Home() {
     return () => {
       cancelled = true;
     };
-  }, [auth.loggedIn, auth.credential]);
+  }, [step, auth.loggedIn, auth.credential, repoChoices]);
 
   // 02 準備フォーム（ゴール/役割/同意）を /login 往復で失わないよう復元・保存する（#179）。
   // ハイドレーション不一致を避けるためマウント後に復元し（読み出しが先）、以降の変更を保存する。
@@ -186,6 +185,7 @@ export default function Home() {
       setGoal("");
       setConsent(false);
       setGithubRepo("");
+      setRepoChoices(null);
     }
     prevLoggedIn.current = auth.loggedIn;
   }, [auth.loggedIn]);
@@ -203,13 +203,15 @@ export default function Home() {
       // 同意ゲート後にセッションを作成（issue #10）。createSession → join で
       // 「join 済みトークン」を得てから、ゴール文を文脈として投稿する（契約 §4）。
       // 本人確認は Google ログイン（ADR-0012）。
-      // 連携リポジトリ（任意 / ADR-0027）は選択があるときだけ渡す（空 = 連携しない）。
+      // 連携リポジトリ（任意 / ADR-0027）。フィールドを出した（コネクタ有効）ときは選択値を
+      // そのまま送る: 空文字 = 明示的な「連携しない」（既定リポジトリへもフォールバックさせない
+      // / Codex P2）。フィールド非表示（無効・候補取得失敗）は未指定 = 従来のフォールバック。
       const session = await createSession(
         [role],
         consent,
         auth.credential,
         undefined,
-        githubRepo.trim() || undefined,
+        repoChoices?.enabled ? githubRepo.trim() : undefined,
       );
       const invite = session.invites[role];
       const joined = await joinSession({

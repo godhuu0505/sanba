@@ -84,7 +84,8 @@ def test_create_session_rejects_malformed_github_repo() -> None:
         assert res.status_code == 400, bad
 
 
-def test_create_session_normalizes_empty_github_repo_to_none() -> None:
+def test_create_session_keeps_empty_github_repo_as_explicit_opt_out() -> None:
+    # 空文字は明示的な「連携しない」（Codex P2）。None（未指定=フォールバック）と区別して保存する。
     res = client.post(
         "/api/sessions",
         json={"roles": ["pm"], "consent_acknowledged": True, "github_repo": "  "},
@@ -94,7 +95,39 @@ def test_create_session_normalizes_empty_github_repo_to_none() -> None:
 
     meta = _repo.get_session(res.json()["session_id"])
     assert meta is not None
+    assert meta.github_repo == ""
+
+
+def test_create_session_omitted_github_repo_stays_none() -> None:
+    # 未指定（旧クライアント）は None のまま = 環境変数フォールバックの従来挙動。
+    res = client.post("/api/sessions", json={"roles": ["pm"], "consent_acknowledged": True})
+    from sanba_api.main import _repo
+
+    meta = _repo.get_session(res.json()["session_id"])
+    assert meta is not None
     assert meta.github_repo is None
+
+
+def test_create_session_rejects_repo_outside_allowlist(monkeypatch: pytest.MonkeyPatch) -> None:
+    # 許可リスト設定時は一覧に出ないリポを直接 POST で保存する抜け道も塞ぐ（Codex P1）。
+    from sanba_api.config import settings
+
+    monkeypatch.setattr(settings, "github_repo_allowlist", "acme, other/repo")
+    ok = client.post(
+        "/api/sessions",
+        json={"roles": ["pm"], "consent_acknowledged": True, "github_repo": "acme/anything"},
+    )
+    assert ok.status_code == 200
+    ok2 = client.post(
+        "/api/sessions",
+        json={"roles": ["pm"], "consent_acknowledged": True, "github_repo": "other/repo"},
+    )
+    assert ok2.status_code == 200
+    ng = client.post(
+        "/api/sessions",
+        json={"roles": ["pm"], "consent_acknowledged": True, "github_repo": "intruder/secret"},
+    )
+    assert ng.status_code == 400
 
 
 def test_github_repos_disabled_by_default() -> None:
@@ -125,6 +158,24 @@ def test_github_repos_lists_candidates_when_enabled(monkeypatch: pytest.MonkeyPa
     assert body["enabled"] is True
     assert body["repos"] == ["acme/product-a", "acme/product-b"]
     assert body["default"] == "o/r"
+
+
+def test_github_repos_filtered_by_allowlist(monkeypatch: pytest.MonkeyPatch) -> None:
+    # 共有トークンが読める private リポ名を許可リスト外のユーザー環境へ漏らさない（Codex P1）。
+    from sanba_api import github_export, main
+    from sanba_api.config import settings
+
+    monkeypatch.setattr(settings, "github_connector_enabled", True)
+    monkeypatch.setattr(settings, "github_token", "t")
+    monkeypatch.setattr(settings, "github_repo_allowlist", "acme")
+    monkeypatch.setattr(
+        github_export, "list_repos", lambda token, per_page=100: ["acme/a", "intruder/secret"]
+    )
+    monkeypatch.setattr(
+        main.github_export, "list_repos", lambda token, per_page=100: ["acme/a", "intruder/secret"]
+    )
+    res = client.get("/api/github/repos")
+    assert res.json()["repos"] == ["acme/a"]
 
 
 def test_create_then_join_happy_path() -> None:

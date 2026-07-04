@@ -88,8 +88,9 @@ class SessionMeta(BaseModel):
     owner_sub: str
     owner_email: str
     roles: list[str] = Field(default_factory=list)
-    # セッション単位の GitHub リポジトリ（"owner/name" / ADR-0027）。02 準備で選択され、
-    # grounding 取り込みと要件→Issue 起票の対象になる。None は未選択＝環境変数へフォールバック。
+    # セッション単位の GitHub リポジトリ（ADR-0027）。02 準備で選択され、grounding 取り込みと
+    # 要件→Issue 起票の対象になる。None = 未指定（環境変数へフォールバック / 旧文書の互換）、
+    # 空文字 = 明示的な「連携しない」（既定リポジトリにも送らない）、"owner/name" = 選択済み。
     github_repo: str | None = None
     # active → finalized（07 判定で参加者が要件を確定したとき / #186）。
     status: str = "active"

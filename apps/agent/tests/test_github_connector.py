@@ -92,3 +92,25 @@ def test_resolve_github_repo_falls_back_to_env(monkeypatch) -> None:
     monkeypatch.setattr(settings, "github_repo", "org/env-default")
     assert _resolve_github_repo(repo, "sess-plain") == "org/env-default"
     assert _resolve_github_repo(repo, "sess-unknown") == "org/env-default"
+
+
+def test_resolve_github_repo_respects_explicit_opt_out(monkeypatch) -> None:
+    """空文字 = 明示的な「連携しない」。環境変数へフォールバックしない（Codex P2）。"""
+    from sanba_shared.models import SessionMeta
+    from sanba_shared.repository import SessionRepository
+
+    from sanba_agent.config import settings
+    from sanba_agent.main import _resolve_github_repo
+
+    repo = SessionRepository()
+    repo.create_session_doc(
+        SessionMeta(
+            id="sess-optout",
+            title="t",
+            owner_sub="owner-sub",
+            owner_email="owner@example.com",
+            github_repo="",
+        )
+    )
+    monkeypatch.setattr(settings, "github_repo", "org/env-default")
+    assert _resolve_github_repo(repo, "sess-optout") == ""
