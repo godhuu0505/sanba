@@ -343,6 +343,37 @@ export async function fetchMySessions(idToken: string | null): Promise<MySession
   return res.json();
 }
 
+/** GET /api/sessions/mine/{id}/requirements の応答。過去要件の絵巻閲覧画面（/sessions/[id]）用。 */
+export interface MySessionRequirements {
+  id: string;
+  title: string;
+  /** ISO 8601 の作成時刻。表示用の整形は呼び出し側で行う。 */
+  created_at: string;
+  /** 07 判定で確定済みか（#186）。 */
+  finalized: boolean;
+  /** 契約 §3 の requirement 形（会話中のハイドレーションと同じ）。 */
+  items: Requirement[];
+}
+
+/**
+ * GET /api/sessions/mine/{id}/requirements。本人の過去セッションの要件絵巻を取得する。
+ *
+ * 会話終了後は join 済み session_token が残らないため、認証は Google idToken（ADR-0012）。
+ * 非所有・不存在はどちらも 404（存在を応答差で漏らさない）。404 は ApiError で投げ、
+ * 呼び出し側（/sessions/[id]）が「見つからない」表示に分岐する。
+ */
+export async function fetchMySessionRequirements(
+  sessionId: string,
+  idToken: string | null,
+): Promise<MySessionRequirements> {
+  const res = await fetch(
+    `${API_URL}/api/sessions/mine/${encodeURIComponent(sessionId)}/requirements`,
+    { headers: authHeaders(idToken) },
+  );
+  if (!res.ok) throw new ApiError(res.status, `fetch my session requirements failed: ${res.status}`);
+  return res.json();
+}
+
 export async function joinSession(params: {
   invite: string;
   participantName: string;
@@ -375,8 +406,6 @@ export class ApiError extends Error {
   }
 }
 
-export type RequirementStatus = "draft" | "approved" | "rejected";
-
 export interface AdminSession {
   id: string;
   title: string;
@@ -385,19 +414,6 @@ export interface AdminSession {
   roles: string[];
   status: string;
   created_at: string;
-}
-
-export interface AdminRequirement {
-  id: string;
-  category: string;
-  statement: string;
-  priority: string;
-  source_speaker: string | null;
-  confidence: number;
-  created_at: string;
-  status: RequirementStatus;
-  approved_by: string | null;
-  approved_at: string | null;
 }
 
 async function adminFetch<T>(path: string, idToken: string | null, init?: RequestInit): Promise<T> {
@@ -412,34 +428,8 @@ async function adminFetch<T>(path: string, idToken: string | null, init?: Reques
   return res.json() as Promise<T>;
 }
 
+// 旧「93 要件を検める」の listSessionRequirements / updateRequirement は管理画面の
+// 要件確認廃止に伴い削除した。要件の閲覧は本人限定の fetchMySessionRequirements が担う。
 export function listAdminSessions(idToken: string | null): Promise<AdminSession[]> {
   return adminFetch<AdminSession[]>("/api/admin/sessions", idToken);
-}
-
-export function listSessionRequirements(
-  sessionId: string,
-  idToken: string | null,
-): Promise<AdminRequirement[]> {
-  return adminFetch<AdminRequirement[]>(
-    `/api/admin/sessions/${sessionId}/requirements`,
-    idToken,
-  );
-}
-
-export function updateRequirement(
-  sessionId: string,
-  rid: string,
-  patch: {
-    statement?: string;
-    priority?: string;
-    category?: string;
-    status?: RequirementStatus;
-  },
-  idToken: string | null,
-): Promise<AdminRequirement> {
-  return adminFetch<AdminRequirement>(
-    `/api/admin/sessions/${sessionId}/requirements/${rid}`,
-    idToken,
-    { method: "PATCH", body: JSON.stringify(patch) },
-  );
 }
