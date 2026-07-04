@@ -11,6 +11,18 @@ class Settings(BaseSettings):
     livekit_url: str = "ws://localhost:7880"
     livekit_api_key: str = "devkey"
     livekit_api_secret: str = "secret"
+    # server-side publish（analysis.progress/visual を RoomService.send_data で送る / ADR-0023）
+    # 用の LiveKit URL。通常は livekit_url と同一だが、docker-compose ローカルでは食い違う:
+    # ブラウザへ返す join URL は host から見た localhost、api コンテナからの publish 先は
+    # compose のサービス名（ws://livekit:7880）である必要がある（agent の AGENT_LIVEKIT_URL と
+    # 同じ発想）。未設定なら livekit_url にフォールバックする（LiveKit Cloud 等、両者が同じ
+    # 公開 wss URL で足りる本番では設定不要）。
+    livekit_server_url: str = ""
+
+    @property
+    def livekit_publish_url(self) -> str:
+        """server-side publish に使う URL（未設定ならブラウザ向けと同じ livekit_url）。"""
+        return self.livekit_server_url or self.livekit_url
 
     otel_exporter_otlp_endpoint: str = ""
     otel_service_name: str = "sanba-api"

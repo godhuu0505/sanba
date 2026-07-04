@@ -115,3 +115,19 @@ def test_build_sender_returns_null_when_unconfigured() -> None:
     assert isinstance(build_sender("ws://x", "k", "s", ""), NullSender)
     # 全て揃えば本番送信（LiveKitServerSender）。
     assert not isinstance(build_sender("ws://x", "k", "s", "room"), NullSender)
+
+
+def test_livekit_publish_url_falls_back_to_livekit_url() -> None:
+    # server-side publish 用 URL は、未設定なら join 用 livekit_url に等しい（本番 Cloud 等）。
+    from sanba_api.config import Settings
+
+    s = Settings(livekit_url="ws://browser:7880", livekit_server_url="")
+    assert s.livekit_publish_url == "ws://browser:7880"
+
+
+def test_livekit_publish_url_overrides_join_url_when_set() -> None:
+    # docker-compose ローカル: ブラウザ向け join URL(localhost) と publish 先(サービス名)を分離。
+    from sanba_api.config import Settings
+
+    s = Settings(livekit_url="ws://localhost:7880", livekit_server_url="ws://livekit:7880")
+    assert s.livekit_publish_url == "ws://livekit:7880"
