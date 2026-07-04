@@ -27,7 +27,13 @@ RUN if [ "$DOWNLOAD_MODELS" = "1" ]; then \
     fi
 
 # Run as an unprivileged user (defense in depth).
-RUN useradd --create-home --uid 10001 appuser
+# .cache を事前に uid 10001 所有で作成することで、compose の named volume
+# (agent-cache:/home/appuser/.cache) 初回マウント時に volume root が appuser
+# 所有としてコピーされ、HF/torch 等のキャッシュ書き込みが permission denied
+# にならないようにする。
+RUN useradd --create-home --uid 10001 appuser && \
+    mkdir -p /home/appuser/.cache && \
+    chown -R 10001:10001 /home/appuser/.cache
 USER appuser
 
 ENTRYPOINT ["python", "-m", "sanba_agent.main"]
