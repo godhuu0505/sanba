@@ -534,6 +534,152 @@ export async function listGithubBranches(
   return (await res.json()).items;
 }
 
+// ===== Products: アプリと深掘りリンク (ADR-0031) ==============================
+// 認証はすべて Google idToken（require_user）。認可の源泉は API 側
+// （_require_product_access）で、非所有・不存在はどちらも 404 が返る（存在秘匿）。
+// web は 404 を「見つからない」表示に平すだけで、owner 判定を複製しない。
+
+/** GET/POST /api/products の 1 件（ProductResponse）。owner_sub は API が返さない。 */
+export interface Product {
+  id: string;
+  name: string;
+  description: string;
+  /** 利用者向け語彙（画面名・機能の呼び名）。end_user モードのプロンプトにシードされる。 */
+  glossary: string[];
+  created_at: string;
+  github_repo: string | null;
+  github_branch: string | null;
+  github_commit_sha: string | null;
+  // none | pending | indexing | ready | partial | failed
+  github_index_status: string;
+}
+
+/** 深掘りリンク 1 件（ProductInviteResponse）。token から /join/{token} URL を組む。 */
+export interface ProductInvite {
+  id: string;
+  scope: "developer" | "end_user";
+  expires_at: string | null;
+  max_uses: number | null;
+  use_count: number;
+  revoked: boolean;
+  created_at: string;
+  token: string;
+}
+
+/** products 系の共通 fetch。404（存在秘匿）等を ApiError で返し、呼び出し側が分岐する。 */
+async function productFetch<T>(
+  path: string,
+  idToken: string | null,
+  init?: RequestInit,
+): Promise<T> {
+  const res = await fetch(`${API_URL}${path}`, {
+    ...init,
+    headers: { ...authHeaders(idToken), ...(init?.headers ?? {}) },
+  });
+  if (!res.ok) {
+    throw new ApiError(res.status, `${init?.method ?? "GET"} ${path} failed: ${res.status}`);
+  }
+  return res.json() as Promise<T>;
+}
+
+export function createProduct(
+  name: string,
+  description: string,
+  idToken: string | null,
+): Promise<Product> {
+  return productFetch<Product>("/api/products", idToken, {
+    method: "POST",
+    body: JSON.stringify({ name, description }),
+  });
+}
+
+export function fetchMyProducts(idToken: string | null): Promise<Product[]> {
+  return productFetch<Product[]>("/api/products/mine", idToken);
+}
+
+export function fetchProduct(productId: string, idToken: string | null): Promise<Product> {
+  return productFetch<Product>(`/api/products/${encodeURIComponent(productId)}`, idToken);
+}
+
+export function updateProduct(
+  productId: string,
+  patch: { name?: string; description?: string; glossary?: string[] },
+  idToken: string | null,
+): Promise<Product> {
+  return productFetch<Product>(`/api/products/${encodeURIComponent(productId)}`, idToken, {
+    method: "PATCH",
+    body: JSON.stringify(patch),
+  });
+}
+
+export function deleteProduct(
+  productId: string,
+  idToken: string | null,
+): Promise<{ deleted: boolean }> {
+  return productFetch<{ deleted: boolean }>(
+    `/api/products/${encodeURIComponent(productId)}`,
+    idToken,
+    { method: "DELETE" },
+  );
+}
+
+/**
+ * POST /api/products/{id}/github。product に前提 repo を紐づけ非同期索引をキックする。
+ * セッション版（selectSessionRepo / session_token）と違い、owner の idToken で認可される。
+ */
+export function selectProductRepo(
+  productId: string,
+  repo: string,
+  branch: string | null,
+  idToken: string | null,
+): Promise<SessionGitHub> {
+  const body: Record<string, unknown> = { repo };
+  if (branch) body.branch = branch;
+  return productFetch<SessionGitHub>(
+    `/api/products/${encodeURIComponent(productId)}/github`,
+    idToken,
+    { method: "POST", body: JSON.stringify(body) },
+  );
+}
+
+export function createProductInvite(
+  productId: string,
+  params: { scope: "developer" | "end_user"; ttlSeconds?: number; maxUses?: number },
+  idToken: string | null,
+): Promise<ProductInvite> {
+  const body: Record<string, unknown> = { scope: params.scope };
+  // 未指定（undefined）は「制限なし」= API に送らない（None 既定に委ねる）。
+  if (params.ttlSeconds !== undefined) body.ttl_seconds = params.ttlSeconds;
+  if (params.maxUses !== undefined) body.max_uses = params.maxUses;
+  return productFetch<ProductInvite>(
+    `/api/products/${encodeURIComponent(productId)}/invites`,
+    idToken,
+    { method: "POST", body: JSON.stringify(body) },
+  );
+}
+
+export function listProductInvites(
+  productId: string,
+  idToken: string | null,
+): Promise<ProductInvite[]> {
+  return productFetch<ProductInvite[]>(
+    `/api/products/${encodeURIComponent(productId)}/invites`,
+    idToken,
+  );
+}
+
+export function revokeProductInvite(
+  productId: string,
+  inviteId: string,
+  idToken: string | null,
+): Promise<ProductInvite> {
+  return productFetch<ProductInvite>(
+    `/api/products/${encodeURIComponent(productId)}/invites/${encodeURIComponent(inviteId)}/revoke`,
+    idToken,
+    { method: "POST" },
+  );
+}
+
 // repo 選択・状態取得は join 済みトークン（session_token / 契約 §4）で認可される。
 export async function selectSessionRepo(
   sessionId: string,
