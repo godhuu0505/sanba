@@ -14,10 +14,12 @@ import {
   Divider,
   Field,
   Figure,
+  InsightCard,
   Input,
   ListRow,
   Logo,
   PhoneFrame,
+  RecPill,
   RequirementCard,
   SessionRow,
   StatTile,
@@ -28,28 +30,29 @@ import {
 
 export const metadata: Metadata = {
   title: "SANBA — UI Kit",
-  description: "SANBA デザインシステムのショーケース（白い紙×原色×棒人間 / ADR-0025）。",
+  description: "SANBA デザインシステムのショーケース（白い紙×原色×ステッカー×棒人間 / ADR-0033）。",
 };
 
 /**
  * SANBA デザインシステムの生きたカタログ。
- * Figma 正本（node 31:2）の主要画面をコンポーネントだけで組み直し、
- * 「最適な使い回し」が成立しているかを目視で検証するための開発用ページ。
+ * ADR-0033「白い紙の上の問答」の確定意匠（ステッカー×原色×動く棒人間）を、
+ * components/sanba の再利用部品だけで主要画面に組み直し、目視で検証するための開発用ページ。
  */
 export default function DesignKitPage() {
   if (process.env.NODE_ENV === "production") notFound();
   return (
-    <main className="min-h-screen bg-neutral-100 px-6 py-10 text-neutral-800">
+    <main className="min-h-screen bg-sanba-surface-strong px-6 py-10 text-sanba-cream">
       <header className="mx-auto mb-8 max-w-6xl">
-        <h1 className="text-2xl font-bold text-neutral-900">SANBA UI Kit</h1>
-        <p className="mt-1 text-sm text-neutral-500">
-          白い紙×原色×棒人間（ADR-0025）。<code>@/components/sanba</code> の再利用部品で主要画面を再構成。
+        <h1 className="sanba-display text-2xl font-bold text-sanba-cream">SANBA UI Kit</h1>
+        <p className="mt-1 text-sm text-sanba-muted">
+          白い紙×原色×ステッカー×棒人間（ADR-0033）。<code>@/components/sanba</code>{" "}
+          の再利用部品で主要画面を再構成。
         </p>
       </header>
 
       {/* プリミティブ一覧 */}
-      <section className="mx-auto mb-10 max-w-6xl rounded-2xl border border-neutral-300 bg-white p-6">
-        <h2 className="mb-4 text-lg font-semibold text-neutral-900">Primitives</h2>
+      <section className="mx-auto mb-10 max-w-6xl rounded-2xl border border-sanba-border bg-sanba-surface p-6">
+        <h2 className="mb-4 text-lg font-semibold text-sanba-cream">Primitives</h2>
         <div className="sanba-font flex flex-wrap items-start gap-8 rounded-xl sanba-screen-bg p-6">
           <Stack label="Logo">
             <Logo />
@@ -84,9 +87,7 @@ export default function DesignKitPage() {
             <Chip tone="danger" solid>
               却下
             </Chip>
-            <Chip tone="danger" dot solid>
-              REC 12:46
-            </Chip>
+            <RecPill>12:46</RecPill>
           </Stack>
           <Stack label="Avatar / Waveform">
             <div className="flex items-center gap-2">
@@ -95,6 +96,11 @@ export default function DesignKitPage() {
             </div>
             <Waveform />
             <Waveform state="muted" />
+          </Stack>
+          <Stack label="InsightCard（ひらめき）">
+            <div className="w-[260px]">
+              <InsightCard>並び順は関連度順を要とすると、話が一つに定まりました。</InsightCard>
+            </div>
           </Stack>
           <Stack label="Field">
             <div className="w-[240px]">
@@ -114,7 +120,7 @@ export default function DesignKitPage() {
 
       {/* 画面再構成 */}
       <section className="mx-auto max-w-6xl">
-        <h2 className="mb-4 text-lg font-semibold text-neutral-900">Screens</h2>
+        <h2 className="mb-4 text-lg font-semibold text-sanba-cream">Screens</h2>
         <div className="flex flex-wrap gap-8">
           <LoginScreen />
           <ConversationScreen />
@@ -129,7 +135,7 @@ export default function DesignKitPage() {
 function Stack({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-3">
-      <span className="text-[11px] uppercase tracking-wide text-[var(--sanba-muted)]">{label}</span>
+      <span className="text-[11px] uppercase tracking-wide text-sanba-muted">{label}</span>
       <div className="flex flex-wrap items-center gap-3">{children}</div>
     </div>
   );
@@ -141,10 +147,12 @@ function LoginScreen() {
     <PhoneFrame>
       <StatusBar />
       <div className="flex flex-col gap-[18px] px-[16px] pt-[10px]">
-        <AppHeader brand />
+        <AppHeader />
         <div className="flex flex-col gap-[6px] pt-[40px]">
-          <h2 className="text-[24px] font-bold text-[var(--sanba-gold-text)]">ようこそ戻られました</h2>
-          <p className="text-[13px] leading-relaxed text-[var(--sanba-muted)]">
+          <h2 className="sanba-display text-[24px] font-bold text-sanba-gold-text">
+            ようこそ戻られました
+          </h2>
+          <p className="text-[13px] leading-relaxed text-sanba-muted">
             問答を始めるも、要件を検めるも、御心のままに。
           </p>
         </div>
@@ -153,7 +161,7 @@ function LoginScreen() {
             <Mic size={18} aria-hidden className="mr-1 inline-block align-[-3px]" />
             SANBA にログイン
           </CardTitle>
-          <CardDescription className="text-[var(--sanba-cream)]">
+          <CardDescription className="text-sanba-cream">
             <CircleCheck size={14} aria-hidden className="mr-1 inline-block align-[-2px]" />
             ログイン中: user@example.com
           </CardDescription>
@@ -177,28 +185,19 @@ function LoginScreen() {
   );
 }
 
-/* ── 07 会話（返答＋矛盾検知）────────────────────────── */
+/* ── 07 会話（返答＋矛盾検知＋音声ドック）──────────────── */
 function ConversationScreen() {
   return (
     <PhoneFrame>
       <StatusBar />
-      <AppHeader
-        title="問答"
-        back
-        right={
-          <Chip tone="danger" dot solid>
-            REC 12:46
-          </Chip>
-        }
-      />
-      <div className="flex flex-1 flex-col gap-[12px] px-[16px] pb-[16px] pt-[6px]">
+      <AppHeader title="問答" back right={<RecPill>12:46</RecPill>} />
+      <div className="flex flex-1 flex-col gap-[12px] px-[16px] pt-[6px]">
         <ChatBubble author="agent">
           結果の並び順は、何を規矩といたしましょう。新しき順か、ゆかりの深き順か。
         </ChatBubble>
         <ChatBubble author="user">関連度順で…いや、さきほど新着順とも申したやも。</ChatBubble>
         <ChatBubble author="agent">その二つ、先ほどより相和しませぬ。いずれを先と。</ChatBubble>
-        <div className="mt-auto flex flex-col gap-[12px]">
-          <VoiceInputBar state="listening" />
+        <div className="mt-auto flex flex-col gap-[12px] pb-[12px]">
           <BottomSheet
             title="緋 — 矛盾を検知"
             actions={
@@ -216,6 +215,8 @@ function ConversationScreen() {
           </BottomSheet>
         </div>
       </div>
+      {/* 音声ドックは会話面の底に全幅で敷く（上辺2px墨 / ADR-0033 §7）。 */}
+      <VoiceInputBar state="listening" />
     </PhoneFrame>
   );
 }
@@ -230,14 +231,14 @@ function AdminListScreen() {
         <Button variant="gold" block>
           ＋ セッションを興す
         </Button>
-        <p className="pt-[4px] text-[13px] font-bold text-[var(--sanba-muted)]">進行中の問答</p>
+        <p className="pt-[4px] text-[13px] font-bold text-sanba-muted">進行中の問答</p>
         <SessionRow
           title="検索機能の要件インタビュー"
           meta="user@example.com ・ 2026-06-22"
         />
         <SessionRow title="オンボーディング改善" meta="pm@example.com ・ 2026-06-20" />
         <SessionRow title="決済フロー見直し" meta="customer@example.com ・ 2026-06-18" />
-        <p className="pt-[8px] text-[13px] font-bold text-[var(--sanba-muted)]">素材を渡す</p>
+        <p className="pt-[8px] text-[13px] font-bold text-sanba-muted">素材を渡す</p>
         <ListRow icon={<ImageIcon size={18} />} title="画像をアップロード" subtitle="PNG / JPG" />
         <ListRow icon={<Video size={18} />} title="動画をアップロード" subtitle="MP4 / MOV" />
       </div>
@@ -257,6 +258,9 @@ function ReviewScreen() {
           <StatTile value="4" label="抜け発見" />
           <StatTile value="6" label="Issue化" />
         </div>
+        <InsightCard>
+          関連度順を既定と定めたことで、検索体験の軸が一本に通りました。
+        </InsightCard>
         <RequirementCard status="draft" confidence="企画 ・ 確度 82%" meta="優先度: must ・ 分類: scope">
           キーワード検索を新設し、無限の巻物で結果を顕す。
         </RequirementCard>

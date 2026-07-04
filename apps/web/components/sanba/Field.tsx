@@ -2,8 +2,9 @@ import * as React from "react";
 
 import { cn } from "@/lib/utils";
 
+// 1.5px 墨枠＋角丸12（コントロール規定 / ADR-0033）。フォーカスで山吹の輪が灯る。
 const baseControl =
-  "w-full rounded-[12px] border border-[var(--sanba-border)] bg-[var(--sanba-surface)] px-[14px] py-[12px] text-[14px] text-[var(--sanba-cream)] placeholder:text-[var(--sanba-muted)]/70 transition-colors focus-visible:outline-none focus-visible:border-[var(--sanba-frame)] focus-visible:ring-1 focus-visible:ring-[var(--sanba-gold)] disabled:cursor-not-allowed disabled:opacity-50";
+  "w-full rounded-[12px] border-[1.5px] border-sanba-frame bg-sanba-surface px-[14px] py-[12px] text-[14px] text-sanba-cream placeholder:text-sanba-muted/70 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sanba-gold disabled:cursor-not-allowed disabled:opacity-50";
 
 /** SANBA 配色の 1 行入力。Figma の goal-input / Input に対応。 */
 export const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement>>(
@@ -56,11 +57,11 @@ export function Field({ className, label, htmlFor, hint, children, ...props }: F
   });
   return (
     <div className={cn("flex w-full flex-col gap-[6px]", className)} {...props}>
-      <label htmlFor={fieldId} className="text-[13px] font-bold text-[var(--sanba-muted)]">
+      <label htmlFor={fieldId} className="text-[13px] font-bold text-sanba-muted">
         {label}
       </label>
       {clonedChildren}
-      {hint && <p className="text-[12px] text-[var(--sanba-muted)]/80">{hint}</p>}
+      {hint && <p className="text-[12px] text-sanba-muted/80">{hint}</p>}
     </div>
   );
 }

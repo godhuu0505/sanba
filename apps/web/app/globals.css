@@ -206,6 +206,19 @@ body {
   .sanba-wave-bar { animation: none; }
 }
 
+/* REC ドットの発光脈動（ADR-0033 glowPulse）。朱の点が録音中を静かに知らせる。
+   透明→朱の後光を吐くリングで「灯っている」感を出す。純黒は使わず朱ベースの後光。 */
+@keyframes sanba-glow-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(224, 64, 42, 0.55); opacity: 1; }
+  50% { box-shadow: 0 0 0 4px rgba(224, 64, 42, 0); opacity: 0.6; }
+}
+.sanba-rec-dot {
+  animation: sanba-glow-pulse 1.5s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sanba-rec-dot { animation: none; }
+}
+
 /* ── 棒人間「サンバさん」（components/sanba/Figure.tsx）───────────────
    SVG 線画の関節を CSS で駆動する。transform-box: view-box により
    transform-origin を viewBox 座標（関節位置）で指定できる。 */

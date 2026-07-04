@@ -47,7 +47,7 @@ export function AppHeader({
           type="button"
           onClick={onBack}
           aria-label="戻る"
-          className="flex size-7.5 shrink-0 items-center justify-center rounded-[9px] border border-sanba-border bg-sanba-surface text-[16px] text-sanba-cream transition-colors hover:border-sanba-frame"
+          className="flex size-7.5 shrink-0 items-center justify-center rounded-[10px] border-[1.5px] border-sanba-frame bg-sanba-surface text-[16px] text-sanba-cream transition-[box-shadow,transform] hover:shadow-[2px_2px_0_var(--sanba-shadow)]"
         >
           ‹
         </button>

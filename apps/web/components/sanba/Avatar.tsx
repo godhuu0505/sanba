@@ -23,10 +23,10 @@ export function Avatar({ className, tone = "agent", glyph, size = 32, ...props }
         fontSize: Math.round(size * 0.47),
       }}
       className={cn(
-        "flex shrink-0 items-center justify-center rounded-full border-[1.5px] border-[var(--sanba-frame)] font-bold",
+        "flex shrink-0 items-center justify-center rounded-full border-[1.5px] border-sanba-frame font-bold",
         isAgent
-          ? "sanba-gold-gradient sanba-serif text-[var(--sanba-ink)]"
-          : "bg-[var(--sanba-select-pale)] text-[var(--sanba-select)]",
+          ? "sanba-gold-gradient sanba-serif text-sanba-ink"
+          : "bg-sanba-select-pale text-sanba-select",
         className,
       )}
       {...props}

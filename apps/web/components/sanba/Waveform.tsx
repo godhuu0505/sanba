@@ -33,10 +33,11 @@ export function Waveform({ className, state = "active", bars = DEFAULT_BARS, ...
             "w-[5px] shrink-0 rounded-[3px]",
             active
               ? cn(
+                  // 墨のバー地、偶数番目（1-index）のバーだけ萌黄で息づく（ADR-0033 §7）。
                   "sanba-wave-bar",
-                  i % 2 === 0 ? "bg-[var(--sanba-frame)]" : "bg-[var(--sanba-speak)]",
+                  i % 2 === 0 ? "bg-sanba-frame" : "bg-sanba-speak",
                 )
-              : "bg-[var(--sanba-border-strong)]",
+              : "bg-sanba-border-strong",
           )}
         />
       ))}

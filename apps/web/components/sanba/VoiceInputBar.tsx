@@ -44,15 +44,20 @@ export function VoiceInputBar({
   const label = status ?? (muted ? "● ミュート中" : "● 認識中...（あなたが発話中）");
   return (
     <div
-      className={cn("flex w-full items-center justify-between gap-[12px] pt-[4px]", className)}
+      // 会話ドック：上辺 2px 墨・白地（ADR-0033 §7）。会話面の底に全幅で置く。
+      className={cn(
+        "flex w-full items-center justify-between gap-[12px] border-t-2 border-sanba-frame bg-sanba-surface px-[16px] pb-[12px] pt-[12px]",
+        className,
+      )}
       {...props}
     >
       <div className="flex items-center gap-[12px]">
         <Waveform state={muted ? "muted" : "active"} />
         <span
           className={cn(
+            // ステータス文言は萌黄テキスト＝--sanba-speak-text（白地 AA / ADR-0033）。
             "whitespace-nowrap text-[12.5px] font-bold",
-            muted ? "text-[var(--sanba-muted)]" : "text-[var(--sanba-speak-text)]",
+            muted ? "text-sanba-muted" : "text-sanba-speak-text",
           )}
         >
           {label}
@@ -64,10 +69,11 @@ export function VoiceInputBar({
         aria-pressed={muted}
         aria-label="マイクのミュート切替"
         className={cn(
-          "flex size-[56px] shrink-0 items-center justify-center rounded-full transition-[opacity,transform,box-shadow]",
+          // マイク＝46px の山吹ステッカー（2px墨枠＋墨オフセット影）。押下で影が潰れて沈む。
+          "flex size-[46px] shrink-0 items-center justify-center rounded-full transition-[opacity,transform,box-shadow]",
           muted
-            ? "border-2 border-[var(--sanba-border-strong)] bg-[var(--sanba-surface)] text-[var(--sanba-muted)]"
-            : "sanba-sticker sanba-gold-gradient text-[var(--sanba-ink)] hover:opacity-95 active:translate-x-[1px] active:translate-y-[1px] active:shadow-[1px_1px_0_var(--sanba-shadow)]",
+            ? "border-2 border-sanba-border-strong bg-sanba-surface text-sanba-muted"
+            : "sanba-sticker sanba-gold-gradient text-sanba-ink hover:opacity-95 active:translate-x-[2px] active:translate-y-[2px] active:shadow-none",
         )}
       >
         <MicIcon muted={muted} />

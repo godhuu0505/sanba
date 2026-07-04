@@ -21,8 +21,8 @@ export function Screen({ className, bordered = false, ...props }: ScreenProps) {
     <div
       data-sanba-screen=""
       className={cn(
-        "sanba-screen-bg sanba-font flex min-h-dvh w-full flex-col text-[var(--sanba-cream)]",
-        bordered && "border-[3px] border-[var(--sanba-frame)]",
+        "sanba-screen-bg sanba-font flex min-h-dvh w-full flex-col text-sanba-cream",
+        bordered && "border-[2.5px] border-sanba-frame",
         className,
       )}
       {...props}
@@ -43,7 +43,8 @@ export function PhoneFrame({ className, fluidHeight = false, children, ...props 
   return (
     <div
       className={cn(
-        "w-[390px] shrink-0 overflow-hidden rounded-[28px] border-[3px] border-[var(--sanba-frame)]",
+        // 端末枠：2.5px 墨・角丸30・墨のオフセット影（ADR-0033 §7）。
+        "w-[390px] shrink-0 overflow-hidden rounded-[30px] border-[2.5px] border-sanba-frame shadow-[8px_8px_0_var(--sanba-shadow)]",
         !fluidHeight && "h-[844px]",
         className,
       )}

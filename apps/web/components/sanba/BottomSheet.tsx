@@ -29,28 +29,29 @@ export function BottomSheet({
       role="dialog"
       aria-labelledby={title != null ? titleId : undefined}
       className={cn(
-        "flex w-full flex-col gap-[12px] rounded-t-[18px] border border-[var(--sanba-border)] bg-[var(--sanba-surface)] px-[18px] pb-[20px] pt-[10px]",
+        // せり上がるシート。上辺を 2px 墨で締め、両脇は 1.5px 墨・角丸18（ADR-0033 のドック/札の縁）。
+        "flex w-full flex-col gap-[12px] rounded-t-[18px] border-x-[1.5px] border-t-2 border-sanba-frame bg-sanba-surface px-[18px] pb-[20px] pt-[10px]",
         className,
       )}
       {...props}
     >
       <span
         aria-hidden
-        className="mx-auto h-[4px] w-[40px] shrink-0 rounded-full bg-[var(--sanba-border-strong)]"
+        className="mx-auto h-[4px] w-[40px] shrink-0 rounded-full bg-sanba-border-strong"
       />
       {title != null && (
         <h2
           id={titleId}
           className={cn(
             "text-[15px] font-bold",
-            tone === "danger" ? "text-[var(--sanba-rec-text)]" : "text-[var(--sanba-cream)]",
+            tone === "danger" ? "text-sanba-rec-text" : "text-sanba-cream",
           )}
         >
           {title}
         </h2>
       )}
       {children && (
-        <div className="text-[13px] leading-relaxed text-[var(--sanba-muted)]">{children}</div>
+        <div className="text-[13px] leading-relaxed text-sanba-muted">{children}</div>
       )}
       {actions && <div className="flex flex-col gap-[8px]">{actions}</div>}
     </div>

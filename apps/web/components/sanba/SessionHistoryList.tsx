@@ -46,13 +46,13 @@ export const SessionHistoryList = React.forwardRef<HTMLElement, SessionHistoryLi
         className={cn("flex w-full flex-col gap-[10px]", className)}
         {...props}
       >
-        <h2 id={HEADING_ID} className="text-[13px] font-bold text-[var(--sanba-muted)]">
+        <h2 id={HEADING_ID} className="text-[13px] font-bold text-sanba-muted">
           過去の要件を見る
         </h2>
         {items.length === 0 ? (
-          // 空状態。棒人間はホームのヒーロー側が担うため出さない（ADR-0025「1画面1体まで」）。
-          <div className="flex items-center rounded-[12px] border border-dashed border-[var(--sanba-border-strong)] bg-[var(--sanba-surface)] px-[14px] py-[12px]">
-            <p className="text-[13px] leading-relaxed text-[var(--sanba-muted)]">{emptyText}</p>
+          // 空状態。棒人間はホームのヒーロー側が担うため出さない（ADR-0033「1画面1体まで」）。
+          <div className="flex items-center rounded-[16px] border-[1.5px] border-dashed border-sanba-border-strong bg-sanba-surface px-[14px] py-[12px]">
+            <p className="text-[13px] leading-relaxed text-sanba-muted">{emptyText}</p>
           </div>
         ) : (
           <ul className="flex flex-col gap-[8px]">

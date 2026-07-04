@@ -49,7 +49,9 @@ export function RequirementCard({
   return (
     <div
       className={cn(
-        "flex w-full flex-col gap-[10px] rounded-[14px] border border-[var(--sanba-border)] bg-[var(--sanba-surface)] px-[16px] py-[14px]",
+        // 要件を検めるレビュー札。主要カードより軽い 1.5px 墨枠＋手描きの揺らぎ角丸＋
+        // 3px の淡い墨影（積み重なっても重くならない札の質感 / ADR-0033）。
+        "sanba-wobble flex w-full flex-col gap-[10px] border-[1.5px] border-sanba-frame bg-sanba-surface px-[16px] py-[14px] shadow-[3px_3px_0_var(--sanba-shadow)]",
         className,
       )}
       {...props}
@@ -59,11 +61,11 @@ export function RequirementCard({
           {s.label}
         </Chip>
         {confidence != null && (
-          <span className="text-[12px] text-[var(--sanba-muted)]">{confidence}</span>
+          <span className="text-[12px] text-sanba-muted">{confidence}</span>
         )}
       </div>
-      <p className="text-[14px] leading-[1.5] text-[var(--sanba-cream)]">{statement ?? children}</p>
-      {meta != null && <p className="text-[12px] text-[var(--sanba-muted)]">{meta}</p>}
+      <p className="text-[14px] leading-[1.5] text-sanba-cream">{statement ?? children}</p>
+      {meta != null && <p className="text-[12px] text-sanba-muted">{meta}</p>}
       {hasActions && (
         <div className="flex gap-[8px] pt-[2px]">
           {/* showActions はショーケース用で全ボタンを強制表示。通常は handler が渡された分だけ描く。 */}

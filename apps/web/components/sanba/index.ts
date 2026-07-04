@@ -34,6 +34,8 @@ export { Avatar } from "./Avatar";
 export type { AvatarProps } from "./Avatar";
 export { Figure } from "./Figure";
 export type { FigureProps, FigureState } from "./Figure";
+export { RecPill } from "./RecPill";
+export type { RecPillProps } from "./RecPill";
 
 // 合成・領域コンポーネント
 export { ChatBubble } from "./ChatBubble";
@@ -52,5 +54,7 @@ export { SessionHistoryList } from "./SessionHistoryList";
 export type { SessionHistoryItem, SessionHistoryListProps } from "./SessionHistoryList";
 export { RequirementCard } from "./RequirementCard";
 export type { RequirementCardProps, RequirementStatus } from "./RequirementCard";
+export { InsightCard } from "./InsightCard";
+export type { InsightCardProps } from "./InsightCard";
 export { StatTile } from "./StatTile";
 export type { StatTileProps } from "./StatTile";
