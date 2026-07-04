@@ -76,10 +76,87 @@ def verify_invite(token: str, secret: str) -> Invite:
     except Exception as exc:
         raise InvalidInvite("malformed payload") from exc
 
-    if int(payload.get("exp", 0)) < int(time.time()):
+    # exp が欠落・null（例: 無期限の product invite トークン）の別種トークンでも
+    # int(None) の 500 にせず弾く。セッション invite は常に int の exp を持つ。
+    exp = payload.get("exp")
+    if not isinstance(exp, int) or exp < int(time.time()):
         raise InvalidInvite("expired")
 
+    # 同一シークレットで署名された別種トークン（product invite / session token）を
+    # 誤って渡されても KeyError の 500 にせず 403 に落とす。
+    if not isinstance(payload.get("sid"), str):
+        raise InvalidInvite("wrong token kind")
     return Invite(session_id=payload["sid"], role=payload.get("role", "participant"))
+
+
+# ── Product-invite tokens（深掘りリンク / ADR-0031 決定3）───────────────────────
+# product の再利用可能な入場リンク。セッション invite（1 セッション・短命）と違い、
+# 失効・使用回数・期限の「正」は Firestore の invite 文書側にあり、このトークンは
+# 「owner が発行した本物のリンクである」ことだけを証明する（二段検証の 1 段目）。
+# そのため exp は invite 文書の expires_at を写した任意項目で、None（無期限リンク）を許す。
+# 検証側は必ず consume_invite（文書照合＋トランザクション消費）を併用すること。
+
+
+class InvalidProductInvite(Exception):
+    """Raised when a product-invite token is malformed, tampered, or expired."""
+
+
+@dataclass(frozen=True)
+class ProductInviteClaim:
+    """署名検証済みトークンが指す (product_id, invite_id)。文書照合の鍵。"""
+
+    product_id: str
+    invite_id: str
+
+
+def create_product_invite_token(
+    product_id: str, invite_id: str, secret: str, expires_at_epoch: int | None
+) -> str:
+    """Mint a signed standing link token for a product invite.
+
+    `expires_at_epoch` は invite 文書の expires_at（UNIX 秒）。None = 無期限リンク
+    （失効・max_uses で止める運用）。scope で他トークン種との取り違えを防ぐ。
+    """
+    payload = {
+        "pid": product_id,
+        "iid": invite_id,
+        "scope": "product_invite",
+        "exp": expires_at_epoch,
+    }
+    payload_b64 = _b64url_encode(json.dumps(payload, separators=(",", ":")).encode())
+    return f"{payload_b64}.{_sign(payload_b64, secret)}"
+
+
+def verify_product_invite_token(token: str, secret: str) -> ProductInviteClaim:
+    """Validate signature + scope (+ expiry when set) and return the claim.
+
+    ここを通っても入場可否はまだ確定しない: 失効・使用回数・期限の正は
+    Firestore の invite 文書（consume_invite）が持つ（ADR-0031 決定3 の二段検証）。
+    """
+    try:
+        payload_b64, sig = token.split(".", 1)
+    except ValueError as exc:
+        raise InvalidProductInvite("malformed token") from exc
+
+    expected = _sign(payload_b64, secret)
+    if not hmac.compare_digest(sig, expected):
+        raise InvalidProductInvite("bad signature")
+
+    try:
+        payload = json.loads(_b64url_decode(payload_b64))
+    except Exception as exc:
+        raise InvalidProductInvite("malformed payload") from exc
+
+    if payload.get("scope") != "product_invite":
+        raise InvalidProductInvite("wrong scope")
+    exp = payload.get("exp")
+    if exp is not None and int(exp) < int(time.time()):
+        raise InvalidProductInvite("expired")
+    product_id = payload.get("pid")
+    invite_id = payload.get("iid")
+    if not isinstance(product_id, str) or not isinstance(invite_id, str):
+        raise InvalidProductInvite("malformed claim")
+    return ProductInviteClaim(product_id=product_id, invite_id=invite_id)
 
 
 # ── Session-access tokens（契約 §4 / Issue #100）─────────────────────────────

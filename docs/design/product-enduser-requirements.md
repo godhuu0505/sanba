@@ -33,7 +33,7 @@ ADR 未起票のものは実装計画の Step 0 で起票する。
 | ID | 要件 | 受け入れ基準（AC） |
 |---|---|---|
 | FR-1.1 | **アプリ登録**: ログイン済みユーザーが name / description を登録し `products/{id}` を作成できる。`owner_sub` は作成者 | 作成後 `GET /api/products/mine` に現れる。name 空は 400 |
-| FR-1.2 | **アプリの閲覧・更新**: owner と admin のみ更新できる。閲覧は owner / admin | owner 以外の更新・削除は 403。認可判定は API の単一ヘルパー経由（web 側判定は表示制御のみ） |
+| FR-1.2 | **アプリの閲覧・更新**: owner と admin のみ更新できる。閲覧は owner / admin | 非所有・不存在の GET/PATCH/DELETE はどちらも **404 に平す**（応答差で他人の product ID の存在を漏らさない。`/api/sessions/mine/{id}` と同方針）。`/github` の owner-only のみ 403。認可判定は API の単一ヘルパー経由（web 側判定は表示制御のみ） |
 | FR-1.3 | **repo 紐づけの product 持ち上げ**: product に GitHub repo / branch / 索引状態（ADR-0027/0028 と同じ形）を持たせ、既存の (repo, branch, sha) 索引・GitHub App 経路を再利用する | product に repo を紐づけると既存 `repo_indexing` パイプラインで索引される。同一 (repo, branch, sha) は再索引しない |
 | FR-1.4 | **セッションの product 従属**: `SessionMeta.product_id` を追加。product 経由で作られたセッションは repo 設定を product から継承する（セッション個別指定・環境変数フォールバックは互換維持） | product 従属セッションで 02 準備の repo 初期値が product の設定になる。`product_id` の無い旧セッションは従来どおり動く |
 | FR-1.5 | **深掘りリンクの発行**: owner が product に対しリンクを発行できる。リンクは HMAC 署名付き・`expires_at` / `max_uses` / `revoked` を持ち、一覧・失効ができる | 期限切れ・失効・回数超過のリンクは開けない（明確なエラー画面）。URL は推測不可（ランダム ID、連番禁止） |
