@@ -11,6 +11,7 @@
 [![CI](https://github.com/godhuu0505/sanba/actions/workflows/ci.yml/badge.svg)](https://github.com/godhuu0505/sanba/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/godhuu0505/sanba/actions/workflows/codeql.yml/badge.svg)](https://github.com/godhuu0505/sanba/actions/workflows/codeql.yml)
 [![Security](https://github.com/godhuu0505/sanba/actions/workflows/security.yml/badge.svg)](https://github.com/godhuu0505/sanba/actions/workflows/security.yml)
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/godhuu0505/sanba/badge)](https://securityscorecards.dev/viewer/?uri=github.com/godhuu0505/sanba)
 
 <!-- 技術スタック -->
 ![Cloud Run](https://img.shields.io/badge/Cloud_Run-4285F4?logo=googlecloud&logoColor=white)
