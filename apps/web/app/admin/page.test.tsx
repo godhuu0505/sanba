@@ -30,8 +30,6 @@ vi.mock("@/lib/api", () => ({
   },
   createSession: vi.fn(),
   listAdminSessions: vi.fn(async () => []),
-  listSessionRequirements: vi.fn(async () => []),
-  updateRequirement: vi.fn(),
 }));
 
 import { ApiError, listAdminSessions } from "@/lib/api";
