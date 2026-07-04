@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import { Button, Figure, Screen } from "@/components/sanba";
+import { AppHeader, Button, Figure, Screen } from "@/components/sanba";
 
 /**
  * 404。白い紙×原色×棒人間（ADR-0025）の意匠で、迷子をホームへ導く。
@@ -8,8 +8,10 @@ import { Button, Figure, Screen } from "@/components/sanba";
  */
 export default function NotFound() {
   return (
-    <Screen className="items-center justify-center px-6 py-10">
-      <div className="flex w-full max-w-[360px] flex-col items-center gap-[14px] text-center">
+    <Screen>
+      {/* どの画面でも SANBA ヘッダー（2026-07 要望）。迷子の頁でもブランドを保つ。 */}
+      <AppHeader />
+      <div className="mx-auto flex w-full max-w-90 flex-1 flex-col items-center justify-center gap-3.5 px-6 py-10 text-center">
         <Figure state="asking" className="w-[84px]" label="頁が見つからず首をかしげる棒人間" />
         <p className="text-[13px] font-bold tracking-[0.3em] text-[var(--sanba-muted)]">404</p>
         <h1 className="sanba-display text-[22px] font-bold text-[var(--sanba-cream)]">
