@@ -6,7 +6,7 @@
 
 import { Check, CircleDot, Cloud, FileText, type LucideIcon } from "lucide-react";
 
-import { Button } from "@/components/sanba";
+import { Button, Figure } from "@/components/sanba";
 import { categoryPresentation, priorityLabel } from "../lib/realtime/mapping";
 import type { Priority, Requirement } from "../lib/realtime/types";
 
@@ -93,9 +93,10 @@ export function ResultView({
 
   return (
     <div className="flex h-full flex-col items-center px-4 pb-4 pt-5">
-      <div className="sanba-gold-gradient sanba-serif flex size-[78px] items-center justify-center rounded-full border-2 border-[var(--sanba-frame)] text-[28px] font-bold text-[var(--sanba-ink)]">
-        産
-      </div>
+      {/* 結果の主役はサンバさん（ADR-0033 §6）。確定＝両手を挙げるひらめき、暫定＝書き留める姿。
+          産章は胸のバッジに宿り、静止した金章から「動く産婆さん」へ。意味は下の見出しが読み上げる
+          ので figure は装飾（label 無し＝aria-hidden・reduced-motion 静止）。 */}
+      <Figure state={provisional ? "writing" : "insight"} className="w-[84px]" />
       <p className="mt-[10px] text-center text-[18px] font-bold text-[var(--sanba-gold-text)]">
         {provisional ? "暫定で書き留めました" : "オーレ！ 要件、産まれました"}
       </p>
