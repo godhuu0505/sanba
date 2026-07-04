@@ -3,12 +3,15 @@ name: Terraform (infra)
 # 本番インフラ (Cloud Run / LB / DNS / Secret Manager 等) の IaC を CI で回す。
 #   - main 向け PR で infra/terraform を触ったら `terraform plan` を実行し、結果を PR に貼る
 #     (人間が plan を確認してからマージ → 本番反映、というフローを担保)。
-#   - GitHub Mobile の Actions → Run workflow で `apply` を選ぶと本番反映できる。
-#     その場で plan を出し、保存した plan を適用するので「plan で問題なければ apply」になる。
+#   - main へのマージは deploy.yml の migrate ジョブが本ワークフローを workflow_call で
+#     呼び出して自動 apply する (マイグレーション工程。ADR-0026)。
+#   - GitHub Mobile の Actions → Run workflow で `apply` を選ぶと手動でも本番反映できる
+#     (ロールバック・初回構築用)。その場で plan を出し、保存した plan を適用するので
+#     「plan で問題なければ apply」になる。
 #
 # 認証は deploy.yml と同じ Workload Identity Federation (キーレス)。ただし apply は
 # LB/DNS/Secret/IAM を作るため、deploy 用 SA より広い権限を持つ Terraform 用 SA を使う
-# (secrets.TF_DEPLOY_SA。runbook 参照)。
+# (vars.TF_DEPLOY_SA。SA email は公開識別子なので Variables 管理。runbook 参照)。
 on:
   pull_request:
     paths:
@@ -21,6 +24,13 @@ on:
         type: choice
         default: plan
         options: [plan, apply]
+  # deploy.yml (main マージ) から呼ばれる。inputs.action は dispatch と同じ意味。
+  workflow_call:
+    inputs:
+      action:
+        description: "plan か apply。apply は本番反映。"
+        type: string
+        default: plan
 
 permissions:
   contents: read
@@ -46,15 +56,17 @@ jobs:
     #     既存インフラを読めるため、fork 由来の改変コードに plan を走らせない
     #     (claude-review-response.yml と同じ一次防御。WIF 側だけだと PR の OIDC token の
     #     repository クレームは base リポジトリになり fork を判別できないため、ここで止める)。
-    #   - workflow_dispatch (mobile からの plan/apply) では pull_request 文脈が無く
-    #     head.repo.fork は null になるので、pull_request イベントのときだけ fork を判定する。
+    #   - workflow_dispatch (mobile からの plan/apply) や workflow_call (main への push) では
+    #     pull_request 文脈が無く head.repo.fork は null になるので、
+    #     pull_request イベントのときだけ fork を判定する。
     if: >-
       ${{ vars.GCP_PROJECT_ID != '' &&
           (github.event_name != 'pull_request' ||
            github.event.pull_request.head.repo.fork == false) }}
-    # apply のときだけ production 環境を要求する。リポジトリ設定で production に
-    # required reviewers を付ければ「モバイルで実行 → 承認 → 反映」の承認ゲートになる。
-    environment: ${{ (github.event_name == 'workflow_dispatch' && inputs.action == 'apply') && 'production' || '' }}
+    # apply のときだけ production 環境を要求する (dispatch / workflow_call 共通。
+    # pull_request では inputs が空なので plan のみ)。リポジトリ設定で production に
+    # required reviewers を付ければ「実行 → 承認 → 反映」の承認ゲートになる。
+    environment: ${{ inputs.action == 'apply' && 'production' || '' }}
     defaults:
       run:
         working-directory: ${{ env.WORKDIR }}
@@ -184,6 +196,7 @@ jobs:
           exit 1
 
       # 保存した plan をそのまま適用 = 「plan で問題なければ apply」。
+      # dispatch (手動) と workflow_call (main マージの migrate) の両方で有効。
       - name: Terraform Apply
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.action == 'apply' }}
+        if: ${{ inputs.action == 'apply' }}
         run: terraform apply -input=false -auto-approve tfplan
