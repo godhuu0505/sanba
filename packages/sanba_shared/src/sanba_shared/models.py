@@ -88,6 +88,9 @@ class SessionMeta(BaseModel):
     owner_sub: str
     owner_email: str
     roles: list[str] = Field(default_factory=list)
+    # セッション単位の GitHub リポジトリ（"owner/name" / ADR-0026）。02 準備で選択され、
+    # grounding 取り込みと要件→Issue 起票の対象になる。None は未選択＝環境変数へフォールバック。
+    github_repo: str | None = None
     # active → finalized（07 判定で参加者が要件を確定したとき / #186）。
     status: str = "active"
     created_at: datetime = Field(default_factory=_now)

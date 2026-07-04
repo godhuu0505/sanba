@@ -60,6 +60,73 @@ def test_create_without_consent_is_rejected() -> None:
     assert res.status_code == 400
 
 
+# ── セッション単位の連携リポジトリ（ADR-0026）─────────────────────────────
+def test_create_session_accepts_github_repo() -> None:
+    res = client.post(
+        "/api/sessions",
+        json={"roles": ["pm"], "consent_acknowledged": True, "github_repo": "acme/product-a"},
+    )
+    assert res.status_code == 200
+    # 保存されたメタに反映される（export / agent がここから解決する）。
+    from sanba_api.main import _repo
+
+    meta = _repo.get_session(res.json()["session_id"])
+    assert meta is not None
+    assert meta.github_repo == "acme/product-a"
+
+
+def test_create_session_rejects_malformed_github_repo() -> None:
+    for bad in ["not-a-repo", "a/b/c", "owner/", "/name", "own er/name"]:
+        res = client.post(
+            "/api/sessions",
+            json={"roles": ["pm"], "consent_acknowledged": True, "github_repo": bad},
+        )
+        assert res.status_code == 400, bad
+
+
+def test_create_session_normalizes_empty_github_repo_to_none() -> None:
+    res = client.post(
+        "/api/sessions",
+        json={"roles": ["pm"], "consent_acknowledged": True, "github_repo": "  "},
+    )
+    assert res.status_code == 200
+    from sanba_api.main import _repo
+
+    meta = _repo.get_session(res.json()["session_id"])
+    assert meta is not None
+    assert meta.github_repo is None
+
+
+def test_github_repos_disabled_by_default() -> None:
+    res = client.get("/api/github/repos")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["enabled"] is False
+    assert body["repos"] == []
+
+
+def test_github_repos_lists_candidates_when_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    from sanba_api import github_export, main
+    from sanba_api.config import settings
+
+    monkeypatch.setattr(settings, "github_connector_enabled", True)
+    monkeypatch.setattr(settings, "github_token", "t")
+    monkeypatch.setattr(settings, "github_repo", "o/r")
+
+    def fake_list_repos(token: str, per_page: int = 100) -> list[str]:
+        assert token == "t"
+        return ["acme/product-a", "acme/product-b"]
+
+    monkeypatch.setattr(github_export, "list_repos", fake_list_repos)
+    monkeypatch.setattr(main.github_export, "list_repos", fake_list_repos)
+    res = client.get("/api/github/repos")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["enabled"] is True
+    assert body["repos"] == ["acme/product-a", "acme/product-b"]
+    assert body["default"] == "o/r"
+
+
 def test_create_then_join_happy_path() -> None:
     created = _create(["pm"])
     invite = created["invites"]["pm"]

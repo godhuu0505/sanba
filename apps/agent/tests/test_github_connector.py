@@ -48,3 +48,47 @@ def test_requirements_to_issue_body_handles_empty() -> None:
     title, body = requirements_to_issue_body([], "sess-2")
     assert "sess-2" in title
     assert "確定した要件はありません" in body
+
+
+def test_resolve_github_repo_prefers_session_selection(monkeypatch) -> None:
+    """02 準備で選んだリポジトリが環境変数より優先される（ADR-0026）。"""
+    from sanba_shared.models import SessionMeta
+    from sanba_shared.repository import SessionRepository
+
+    from sanba_agent.config import settings
+    from sanba_agent.main import _resolve_github_repo
+
+    repo = SessionRepository()
+    repo.create_session_doc(
+        SessionMeta(
+            id="sess-x",
+            title="t",
+            owner_sub="owner-sub",
+            owner_email="owner@example.com",
+            github_repo="acme/product-a",
+        )
+    )
+    monkeypatch.setattr(settings, "github_repo", "org/env-default")
+    assert _resolve_github_repo(repo, "sess-x") == "acme/product-a"
+
+
+def test_resolve_github_repo_falls_back_to_env(monkeypatch) -> None:
+    """未選択セッション・未知セッションは環境変数へフォールバック（従来挙動の互換）。"""
+    from sanba_shared.models import SessionMeta
+    from sanba_shared.repository import SessionRepository
+
+    from sanba_agent.config import settings
+    from sanba_agent.main import _resolve_github_repo
+
+    repo = SessionRepository()
+    repo.create_session_doc(
+        SessionMeta(
+            id="sess-plain",
+            title="t",
+            owner_sub="owner-sub",
+            owner_email="owner@example.com",
+        )
+    )
+    monkeypatch.setattr(settings, "github_repo", "org/env-default")
+    assert _resolve_github_repo(repo, "sess-plain") == "org/env-default"
+    assert _resolve_github_repo(repo, "sess-unknown") == "org/env-default"

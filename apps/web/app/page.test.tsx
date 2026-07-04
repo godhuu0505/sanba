@@ -39,12 +39,22 @@ const joinSession = vi.fn(async (..._a: unknown[]) => ({
 const addSessionContext = vi.fn(async (..._a: unknown[]) => ({ indexed_chunks: 0 }));
 const uploadContextFile = vi.fn(async (..._a: unknown[]) => ({ indexed_chunks: 1 }));
 const fetchMySessions = vi.fn(async (..._a: unknown[]) => [] as unknown[]);
+// 連携リポジトリ候補（ADR-0026）。既定はコネクタ無効 = フィールド非表示（既存テストを変えない）。
+const fetchGithubRepos = vi.fn(
+  async (..._a: unknown[]) =>
+    ({ enabled: false, repos: [], default: null }) as {
+      enabled: boolean;
+      repos: string[];
+      default: string | null;
+    },
+);
 vi.mock("../lib/api", () => ({
   createSession: (...a: unknown[]) => createSession(...a),
   joinSession: (...a: unknown[]) => joinSession(...a),
   addSessionContext: (...a: unknown[]) => addSessionContext(...a),
   uploadContextFile: (...a: unknown[]) => uploadContextFile(...a),
   fetchMySessions: (...a: unknown[]) => fetchMySessions(...a),
+  fetchGithubRepos: (...a: unknown[]) => fetchGithubRepos(...a),
   // 実装と同じ受理範囲・判定（PNG/JPG・MP4/MOV）。テストではロジックをそのまま使う。
   ACCEPTED_IMAGE: ".png,.jpg,.jpeg,image/png,image/jpeg",
   ACCEPTED_VIDEO: ".mp4,.mov,video/mp4,video/quicktime",
@@ -221,6 +231,62 @@ describe("入口フロー（#140）", () => {
     expect(createSession.mock.calls[0][1]).toBe(true);
     // 開始後は 03 会話開始（開始前サマリ）へ。接続/許可はここから先（ConversationStart）。
     await waitFor(() => expect(screen.getByText("支度、相整いまして")).toBeTruthy());
+  });
+
+  // ── 02 連携リポジトリ（ADR-0026）─────────────────────────────────────────
+  it("コネクタ無効（既定）では連携リポジトリのフィールドを出さない", async () => {
+    authState.loggedIn = true;
+    render(<Home />);
+    fireEvent.click(screen.getByText("＋ 壁打ちを始める"));
+    await waitFor(() => expect(fetchGithubRepos).toHaveBeenCalled());
+    expect(screen.queryByLabelText("連携リポジトリ（任意）")).toBeNull();
+  });
+
+  it("候補一覧から選んだリポジトリが createSession に渡る", async () => {
+    authState.loggedIn = true;
+    fetchGithubRepos.mockResolvedValueOnce({
+      enabled: true,
+      repos: ["acme/product-a", "acme/product-b"],
+      default: null,
+    });
+    render(<Home />);
+    fireEvent.click(screen.getByText("＋ 壁打ちを始める"));
+    const select = await screen.findByLabelText("連携リポジトリ（任意）");
+    fireEvent.change(select, { target: { value: "acme/product-a" } });
+    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(screen.getByRole("button", { name: "インタビューを始める" }));
+    await waitFor(() => expect(createSession).toHaveBeenCalledTimes(1));
+    // (roles, consent, idToken, title, githubRepo)
+    expect(createSession.mock.calls[0][4]).toBe("acme/product-a");
+  });
+
+  it("未選択（連携しない）なら createSession にリポジトリを渡さない", async () => {
+    authState.loggedIn = true;
+    fetchGithubRepos.mockResolvedValueOnce({
+      enabled: true,
+      repos: ["acme/product-a"],
+      default: null,
+    });
+    render(<Home />);
+    fireEvent.click(screen.getByText("＋ 壁打ちを始める"));
+    await screen.findByLabelText("連携リポジトリ（任意）");
+    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(screen.getByRole("button", { name: "インタビューを始める" }));
+    await waitFor(() => expect(createSession).toHaveBeenCalledTimes(1));
+    expect(createSession.mock.calls[0][4]).toBeUndefined();
+  });
+
+  it("候補一覧が空（取得失敗）でも手入力欄にフォールバックして選べる", async () => {
+    authState.loggedIn = true;
+    fetchGithubRepos.mockResolvedValueOnce({ enabled: true, repos: [], default: null });
+    render(<Home />);
+    fireEvent.click(screen.getByText("＋ 壁打ちを始める"));
+    const input = await screen.findByLabelText("連携リポジトリ（任意）");
+    fireEvent.change(input, { target: { value: "acme/manual" } });
+    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(screen.getByRole("button", { name: "インタビューを始める" }));
+    await waitFor(() => expect(createSession).toHaveBeenCalledTimes(1));
+    expect(createSession.mock.calls[0][4]).toBe("acme/manual");
   });
 
   // ── 02 参考資料（バイナリ添付）#222 ──────────────────────────────────────

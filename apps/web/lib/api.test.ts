@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { deleteContextFile, fetchMySessions, sendTelemetry } from "./api";
+import {
+  createSession,
+  deleteContextFile,
+  fetchGithubRepos,
+  fetchMySessions,
+  sendTelemetry,
+} from "./api";
 
 // 素材の観測テレメトリ送信（#232/#243）とサーバ破棄（#245）の API シーム。
 // fetch をスタブし、送信先・列挙属性・失敗の握りつぶし・冪等 DELETE の契約を検証する。
@@ -69,6 +75,51 @@ describe("deleteContextFile（#245 真の破棄）", () => {
     await expect(deleteContextFile("s1", "asset-abc", null)).rejects.toThrow(
       /500/,
     );
+  });
+});
+
+describe("createSession（ADR-0026 連携リポジトリ）", () => {
+  const ok = () =>
+    vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ session_id: "s1", invites: {} }),
+    });
+
+  it("githubRepo を渡すと body に github_repo を含める", async () => {
+    const fetchMock = ok();
+    vi.stubGlobal("fetch", fetchMock);
+    await createSession(["pm"], true, null, undefined, "acme/product-a");
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toContain("/api/sessions");
+    expect(JSON.parse(init.body).github_repo).toBe("acme/product-a");
+  });
+
+  it("未指定・空文字なら github_repo を送らない（連携しない）", async () => {
+    const fetchMock = ok();
+    vi.stubGlobal("fetch", fetchMock);
+    await createSession(["pm"], true, null);
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).github_repo).toBeUndefined();
+    await createSession(["pm"], true, null, undefined, "");
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body).github_repo).toBeUndefined();
+  });
+});
+
+describe("fetchGithubRepos（ADR-0026 候補一覧）", () => {
+  it("GET /api/github/repos を idToken 付きで叩き、結果を返す", async () => {
+    const body = { enabled: true, repos: ["acme/product-a"], default: "o/r" };
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve(body) });
+    vi.stubGlobal("fetch", fetchMock);
+    const res = await fetchGithubRepos("idtok");
+    expect(res).toEqual(body);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toContain("/api/github/repos");
+    expect(init.headers.Authorization).toBe("Bearer idtok");
+  });
+
+  it("非 2xx は例外を投げる（呼び出し側＝02 準備がフィールド非表示を維持する）", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 500 });
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(fetchGithubRepos("idtok")).rejects.toThrow(/500/);
   });
 });
 

@@ -15,6 +15,7 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import re
 import time
 import uuid
 from collections import defaultdict, deque
@@ -180,10 +181,9 @@ def require_session_access(
     return access
 
 
-def _github_ready() -> bool:
-    return bool(
-        settings.github_connector_enabled and settings.github_token and settings.github_repo
-    )
+# "owner/name" 形式（ADR-0026）。GitHub の実際の命名規則より緩いが、パス注入
+# （`/` の追加や空文字）を弾ければ十分（トークン権限外のリポは GitHub 側が 404 を返す）。
+_GITHUB_REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 
 
 def _confirmed_requirements(session_id: str) -> list[dict[str, Any]]:
@@ -204,6 +204,9 @@ class CreateSessionRequest(BaseModel):
     roles: list[str] = ["pm", "engineer", "customer"]
     # Explicit consent to recording + AI processing (issue #10).
     consent_acknowledged: bool = False
+    # セッション単位の連携リポジトリ "owner/name"（任意 / ADR-0026）。未指定・空は
+    # 「連携しない」= 環境変数 GITHUB_REPO へのフォールバック（従来挙動）。
+    github_repo: str | None = None
 
 
 class CreateSessionResponse(BaseModel):
@@ -333,6 +336,11 @@ def create_session(
             status_code=400,
             detail="consent required: recording and AI processing must be acknowledged",
         )
+    # 連携リポジトリ（任意 / ADR-0026）。空文字は「連携しない」= None に正規化し、
+    # 形式不正（owner/name 以外）は黙って落とさず 400 で返す（起票時の失敗より早く気づける）。
+    github_repo = (req.github_repo or "").strip() or None
+    if github_repo is not None and not _GITHUB_REPO_RE.match(github_repo):
+        raise HTTPException(status_code=400, detail="github_repo must be in 'owner/name' format")
     session_id = f"sess-{uuid.uuid4().hex[:8]}"
     invites = {
         role: create_invite(
@@ -348,9 +356,16 @@ def create_session(
             owner_sub=user.sub,
             owner_email=user.email,
             roles=req.roles,
+            github_repo=github_repo,
         )
     )
-    log.info("session_created", session=session_id, roles=req.roles, owner=user.sub)
+    log.info(
+        "session_created",
+        session=session_id,
+        roles=req.roles,
+        owner=user.sub,
+        github_repo=github_repo or "(none)",
+    )
     return CreateSessionResponse(session_id=session_id, invites=invites)
 
 
@@ -391,6 +406,31 @@ def list_my_sessions(user: AuthUser = Depends(require_user)) -> list[MySession]:
         )
         for s in sessions
     ]
+
+
+class GithubReposResponse(BaseModel):
+    """`GET /api/github/repos`（ADR-0026）。02 準備「連携リポジトリ」の候補一覧。"""
+
+    # コネクタが使える状態か。False のとき UI はフィールドごと隠す（ADR-0007 の不干渉）。
+    enabled: bool
+    # 設定済みトークンで読める "owner/name" の一覧（更新が新しい順）。
+    repos: list[str]
+    # 環境変数の既定リポジトリ（あれば UI が初期選択に使える）。
+    default: str | None = None
+
+
+@app.get("/api/github/repos", response_model=GithubReposResponse)
+def list_github_repos(user: AuthUser = Depends(require_user)) -> GithubReposResponse:
+    """セッション実施前に選べる GitHub リポジトリの候補を返す（ADR-0026）。
+
+    コネクタ無効/トークン未設定は `enabled=False`。一覧取得の失敗は `repos=[]` のまま
+    `enabled=True` で返し、UI は手入力（owner/name）へフォールバックする（開始を止めない）。
+    """
+    if not (settings.github_connector_enabled and settings.github_token):
+        return GithubReposResponse(enabled=False, repos=[])
+    repos = github_export.list_repos(settings.github_token)
+    log.info("github_repos_listed", count=len(repos), sub=user.sub)
+    return GithubReposResponse(enabled=True, repos=repos, default=settings.github_repo or None)
 
 
 @app.post("/api/sessions/{session_id}/context", response_model=ContextResponse)
@@ -909,11 +949,17 @@ def export_requirements(
     持たない（既定 []）。`status==finalized` かつ確定件数 > 0 で ID 集合だけ欠落しているケースは
     旧挙動（確定要件の再計算）にフォールバックし、確定済みセッションを空 Issue 化しない。
     """
-    if not _github_ready():
+    # コネクタ無効/トークン未設定は従来どおりセッション照会前に黙って断る（既定 OFF の不干渉）。
+    if not (settings.github_connector_enabled and settings.github_token):
         return ExportResponse(exported=False, reason="github connector disabled")
     session = _repo.get_session(session_id)
     if session is None:
         raise HTTPException(status_code=404, detail="session not found")
+    # 起票先はセッションで選んだリポジトリを最優先し、未選択は環境変数へフォールバック
+    # （ADR-0026）。どちらも無ければ従来どおり黙って断る。
+    export_repo = session.github_repo or settings.github_repo
+    if not export_repo:
+        return ExportResponse(exported=False, reason="github connector disabled")
     # 確定時の要件 ID 集合だけを取得して起票する（再計算しない / #213）。
     snapshot_ids = session.finalized_requirement_ids
     # 旧データのみ再計算へフォールバック（snapshot 欠落の finalized セッション / Codex P1）。
@@ -927,7 +973,7 @@ def export_requirements(
     else:
         confirmed = _read_repo.get_requirements_by_ids(session_id, snapshot_ids)
     title, body = github_export.requirements_to_issue_body(confirmed, session_id)
-    url = github_export.create_issue(settings.github_token, settings.github_repo, title, body)
+    url = github_export.create_issue(settings.github_token, export_repo, title, body)
     if url is None:
         return ExportResponse(exported=False, reason="issue creation failed")
     log.info(
@@ -936,6 +982,8 @@ def export_requirements(
         count=len(confirmed),
         id_count=len(snapshot_ids),
         legacy_fallback=legacy_finalized_without_snapshot,
+        repo=export_repo,
+        session_selected=session.github_repo is not None,
         url=url,
         sub=access.sub,
     )

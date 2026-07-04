@@ -18,7 +18,9 @@ import {
   Chip,
   Field,
   Figure,
+  Input,
   Screen,
+  Select,
   SessionHistoryList,
   type SessionHistoryItem,
   Textarea,
@@ -29,7 +31,9 @@ import {
   addSessionContext,
   classifyUpload,
   createSession,
+  fetchGithubRepos,
   fetchMySessions,
+  type GithubRepos,
   joinSession,
   uploadContextFile,
   type JoinResponse,
@@ -87,6 +91,10 @@ export default function Home() {
   const fileInput = useRef<HTMLInputElement>(null);
   // ホーム「過去の要件を見る」履歴リスト（#215）の中身（#250）。取得できるまでは空 = 空状態。
   const [history, setHistory] = useState<SessionHistoryItem[]>([]);
+  // 連携リポジトリ（任意 / ADR-0026）。空文字 = 連携しない。
+  const [githubRepo, setGithubRepo] = useState("");
+  // リポジトリ候補（GET /api/github/repos）。null = 未取得/取得失敗 → フィールドを出さない。
+  const [repoChoices, setRepoChoices] = useState<GithubRepos | null>(null);
   const auth = useAuth();
 
   // 本人のセッション履歴を取得して履歴リストへ供給する（#250）。ログイン済みのときだけ叩き、
@@ -118,6 +126,26 @@ export default function Home() {
     };
   }, [auth.loggedIn, auth.credential]);
 
+  // 連携リポジトリの候補を取得する（ADR-0026）。ログイン済みのときだけ叩き、
+  // 無効（enabled=false）・取得失敗はフィールドを出さない/手入力のみで、本流は止めない。
+  useEffect(() => {
+    if (!auth.loggedIn) {
+      setRepoChoices(null);
+      return;
+    }
+    let cancelled = false;
+    fetchGithubRepos(auth.credential)
+      .then((choices) => {
+        if (!cancelled) setRepoChoices(choices);
+      })
+      .catch(() => {
+        if (!cancelled) setRepoChoices(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [auth.loggedIn, auth.credential]);
+
   // 02 準備フォーム（ゴール/役割/同意）を /login 往復で失わないよう復元・保存する（#179）。
   // ハイドレーション不一致を避けるためマウント後に復元し（読み出しが先）、以降の変更を保存する。
   // prepHydrated は *state*（ref ではない）。ref だと同じ初回 effect flush 内で persist が
@@ -132,12 +160,13 @@ export default function Home() {
     if (saved.role && ROLES.some((r) => r.value === saved.role)) setRole(saved.role);
     if (typeof saved.goal === "string") setGoal(saved.goal);
     if (typeof saved.consent === "boolean") setConsent(saved.consent);
+    if (typeof saved.githubRepo === "string") setGithubRepo(saved.githubRepo);
     setPrepHydrated(true);
   }, []);
   useEffect(() => {
     if (!prepHydrated) return;
-    writePrep({ role, goal, consent });
-  }, [prepHydrated, role, goal, consent]);
+    writePrep({ role, goal, consent, githubRepo });
+  }, [prepHydrated, role, goal, consent, githubRepo]);
 
   // ログアウト時（ログイン中→未ログインの遷移）は準備フォームを破棄する（#179 / Codex P2）。
   // 固定キー sessionStorage を同一タブの別ユーザーへ引き継がせない（goal に PII が入り得る）。
@@ -149,6 +178,7 @@ export default function Home() {
       setRole("pm");
       setGoal("");
       setConsent(false);
+      setGithubRepo("");
     }
     prevLoggedIn.current = auth.loggedIn;
   }, [auth.loggedIn]);
@@ -166,7 +196,14 @@ export default function Home() {
       // 同意ゲート後にセッションを作成（issue #10）。createSession → join で
       // 「join 済みトークン」を得てから、ゴール文を文脈として投稿する（契約 §4）。
       // 本人確認は Google ログイン（ADR-0012）。
-      const session = await createSession([role], consent, auth.credential);
+      // 連携リポジトリ（任意 / ADR-0026）は選択があるときだけ渡す（空 = 連携しない）。
+      const session = await createSession(
+        [role],
+        consent,
+        auth.credential,
+        undefined,
+        githubRepo.trim() || undefined,
+      );
       const invite = session.invites[role];
       const joined = await joinSession({
         invite,
@@ -315,6 +352,48 @@ export default function Home() {
               placeholder="タップしてテーマを入力…"
             />
           </Field>
+
+          {/* 連携リポジトリ（任意 / ADR-0026）。コネクタ無効・候補未取得のときは出さない
+              （ADR-0007 の不干渉）。候補一覧があれば選択、無ければ owner/name の手入力へ
+              フォールバックする。確定要件の Issue 起票先と、Issue/README の文脈取り込みに使う。 */}
+          {repoChoices?.enabled &&
+            (repoChoices.repos.length > 0 ? (
+              <Field
+                label="連携リポジトリ（任意）"
+                htmlFor="github-repo"
+                hint="確定した要件を GitHub Issue として起票する先。Issue/README は問いの文脈にも使われます。"
+              >
+                <Select
+                  id="github-repo"
+                  value={githubRepo}
+                  onChange={(e) => setGithubRepo(e.target.value)}
+                >
+                  <option value="">連携しない</option>
+                  {/* 復元値が候補一覧に無い場合（手入力の持ち越し等）も選択状態を保てるよう補う。 */}
+                  {githubRepo && !repoChoices.repos.includes(githubRepo) && (
+                    <option value={githubRepo}>{githubRepo}</option>
+                  )}
+                  {repoChoices.repos.map((r) => (
+                    <option key={r} value={r}>
+                      {r}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+            ) : (
+              <Field
+                label="連携リポジトリ（任意）"
+                htmlFor="github-repo"
+                hint="owner/name 形式で入力（候補一覧を取得できなかったため手入力）。空欄で連携しない。"
+              >
+                <Input
+                  id="github-repo"
+                  value={githubRepo}
+                  onChange={(e) => setGithubRepo(e.target.value)}
+                  placeholder="owner/name"
+                />
+              </Field>
+            ))}
 
           {/* 参考資料（バイナリ添付）。Figma 89:25 / 91:10。押下で手段選択シート（#201 再利用）を開く。
               準備画面は LiveKit ルーム外のためカメラ/画面共有は渡さず、アップロード/Drive のみ。

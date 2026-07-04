@@ -46,6 +46,40 @@ def requirements_to_issue_body(
     return title, "\n".join(lines).strip()
 
 
+def list_repos(token: str, per_page: int = 100) -> list[str]:  # pragma: no cover - network
+    """Return repo full names ("owner/name") the token can read, newest activity first.
+
+    02 準備「連携リポジトリ」の候補一覧（ADR-0026）。失敗は空リストで返し、
+    UI 側の手入力フォールバックに委ねる（一覧の不調で開始を止めない）。
+    """
+    import httpx
+
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    try:
+        with httpx.Client(timeout=15) as client:
+            res = client.get(
+                f"{_API}/user/repos",
+                headers=headers,
+                params={"per_page": per_page, "sort": "updated"},
+            )
+    except Exception as exc:
+        log.warning("github_list_repos_failed", error=str(exc))
+        return []
+    if res.status_code != 200:
+        log.warning("github_list_repos_failed", status=res.status_code)
+        return []
+    body = res.json()
+    if not isinstance(body, list):
+        return []
+    return [
+        r["full_name"] for r in body if isinstance(r, dict) and isinstance(r.get("full_name"), str)
+    ]
+
+
 def create_issue(
     token: str, repo: str, title: str, body: str
 ) -> str | None:  # pragma: no cover - network

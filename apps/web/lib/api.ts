@@ -30,10 +30,13 @@ export async function createSession(
   consentAcknowledged: boolean,
   idToken: string | null,
   title?: string,
+  githubRepo?: string,
 ): Promise<CreateSessionResponse> {
   const body: Record<string, unknown> = { roles, consent_acknowledged: consentAcknowledged };
   // title 未指定なら API 既定 ("要件インタビュー") に委ねる。
   if (title !== undefined) body.title = title;
+  // 連携リポジトリ（任意 / ADR-0026）。未指定・空は「連携しない」= 送らない。
+  if (githubRepo) body.github_repo = githubRepo;
   const res = await fetch(`${API_URL}/api/sessions`, {
     method: "POST",
     headers: authHeaders(idToken),
@@ -340,6 +343,29 @@ export async function fetchMySessions(idToken: string | null): Promise<MySession
     headers: authHeaders(idToken),
   });
   if (!res.ok) throw new Error(`fetch my sessions failed: ${res.status}`);
+  return res.json();
+}
+
+/** `GET /api/github/repos`（ADR-0026）。02 準備「連携リポジトリ」の候補一覧。 */
+export interface GithubRepos {
+  /** コネクタが使える状態か。false なら UI はフィールドごと隠す。 */
+  enabled: boolean;
+  /** 選べる "owner/name" の一覧（更新が新しい順）。空なら手入力へフォールバック。 */
+  repos: string[];
+  /** 環境変数の既定リポジトリ（あれば初期選択に使える）。 */
+  default: string | null;
+}
+
+/**
+ * GET /api/github/repos（ADR-0026）。セッション実施前に選べるリポジトリ候補を取得する。
+ * 認証は Google idToken（ADR-0012）。失敗時は例外を投げ、呼び出し側（02 準備）が
+ * フィールド非表示のまま開始を止めないことを判断する。
+ */
+export async function fetchGithubRepos(idToken: string | null): Promise<GithubRepos> {
+  const res = await fetch(`${API_URL}/api/github/repos`, {
+    headers: authHeaders(idToken),
+  });
+  if (!res.ok) throw new Error(`fetch github repos failed: ${res.status}`);
   return res.json();
 }
 
