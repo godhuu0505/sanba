@@ -163,6 +163,35 @@ def test_my_requirements_empty_items_when_none_recorded() -> None:
     assert body["items"] == []
 
 
+def test_my_requirements_finalized_returns_frozen_snapshot_only() -> None:
+    """確定済みは finalize 時の凍結スナップショットだけを見せる（Codex P1）。
+
+    確定後に遅延 agent が追加した要件は、export と同様に過去要件閲覧にも混ぜない（#213）。
+    """
+    _seed("sess-1", "alice", created=datetime(2024, 6, 20, tzinfo=UTC))
+    _seed_requirement("sess-1", "r1")
+    _repo.finalize_session("sess-1", confirmed_count=1, finalized_requirement_ids=["r1"])
+    # 確定後の遅延追加（凍結集合の外）。
+    _seed_requirement("sess-1", "r2")
+    _login("alice")
+
+    body = client.get("/api/sessions/mine/sess-1/requirements").json()
+    assert body["finalized"] is True
+    assert [i["id"] for i in body["items"]] == ["r1"]
+
+
+def test_my_requirements_legacy_finalized_without_snapshot_falls_back() -> None:
+    """旧データ（ID スナップショット無しの finalized）は export と同じ再計算フォールバック。"""
+    _seed("sess-1", "alice", created=datetime(2024, 6, 20, tzinfo=UTC))
+    _seed_requirement("sess-1", "r1")
+    _repo.finalize_session("sess-1", confirmed_count=1, finalized_requirement_ids=[])
+    _login("alice")
+
+    body = client.get("/api/sessions/mine/sess-1/requirements").json()
+    assert body["finalized"] is True
+    assert [i["id"] for i in body["items"]] == ["r1"]
+
+
 def test_my_requirements_hides_other_owners_session_as_404() -> None:
     """非所有は 404 (403 ではない): 応答差で他人のセッション ID の存在を漏らさない。"""
     _seed("sess-bob", "bob", created=datetime(2024, 6, 20, tzinfo=UTC))

@@ -231,6 +231,54 @@ def test_finalize_marks_session_and_counts_confirmed() -> None:
     assert meta.finalized_requirement_ids == ["c1"]
 
 
+def test_finalize_approves_confirmed_requirements_for_preservation() -> None:
+    """確定時集合は approved になり TTL 保全の対象になる（Codex P1）。
+
+    管理画面の承認 UI 廃止に伴い、draft のまま 30 日 TTL で消えると過去要件閲覧
+    （/sessions/{id}）と export が欠落する。finalize が set_requirement_status(APPROVED)
+    を通すことで expireAt が外れる（TTL 削除自体は Firestore 経路の既存責務）。
+    """
+    from sanba_shared.models import Priority, Requirement, RequirementCategory
+
+    created = client.post("/api/sessions", json={"roles": ["pm"], "consent_acknowledged": True})
+    sid = created.json()["session_id"]
+    # 書き込み側（_repo）と読み出し側（_read_repo）はメモリ fallback では別ストアのため
+    # 両方に同じ要件を置く（本番は同一 Firestore）。
+    _repo.save_requirement(
+        sid,
+        Requirement(
+            id="c1",
+            statement="確定",
+            category=RequirementCategory.FUNCTIONAL,
+            priority=Priority.MUST,
+        ),
+    )
+    _read_repo._seed_requirement(
+        sid, {"id": "c1", "statement": "確定", "category": "functional", "priority": "must"}
+    )
+    res = client.post(f"/api/sessions/{sid}/finalize", headers=_auth(_token(sid)))
+    assert res.status_code == 200
+    stored = _repo.get_requirement(sid, "c1")
+    assert stored is not None
+    assert stored.status.value == "approved"
+    # 承認主体は確定操作の join 済みトークンの sub。
+    assert stored.approved_by == "owner-123456789"
+    assert stored.approved_at is not None
+
+
+def test_finalize_survives_missing_requirement_on_preservation() -> None:
+    """読み出し側にだけ在る要件（TTL 失効等）は保全をスキップし finalize は成立する。"""
+    created = client.post("/api/sessions", json={"roles": ["pm"], "consent_acknowledged": True})
+    sid = created.json()["session_id"]
+    # _repo（書き込み側）には無い = set_requirement_status が RequirementNotFound を投げる状況。
+    _read_repo._seed_requirement(
+        sid, {"id": "gone", "statement": "消えた", "category": "scope", "priority": "should"}
+    )
+    res = client.post(f"/api/sessions/{sid}/finalize", headers=_auth(_token(sid)))
+    assert res.status_code == 200
+    assert res.json()["confirmed_count"] == 1
+
+
 def test_finalize_rejects_when_unresolved_detections_remain() -> None:
     # 07 判定の「未解消 0 件で確定可」をサーバ側でも担保（Codex P2）。
     created = client.post("/api/sessions", json={"roles": ["pm"], "consent_acknowledged": True})
