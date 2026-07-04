@@ -4,6 +4,8 @@
 // 仕様: docs/design/conversation-experience.md §4。
 // 観点データ（どう並ぶ/効き目/留意/出所）は contract に無いため任意。与えられたものだけ描く。
 
+import { Mic, X } from "lucide-react";
+
 export interface ChoiceOptionDetail {
   label: string;
   /** どう並ぶ？ */
@@ -65,7 +67,7 @@ export function ChoiceDetailSheet({
           onClick={onClose}
           className="flex size-[26px] items-center justify-center rounded-full border border-[var(--sanba-border)] bg-[var(--sanba-surface)] text-[12px] text-[var(--sanba-muted)]"
         >
-          ✕
+          <X size={14} aria-hidden />
         </button>
       </div>
 
@@ -80,9 +82,9 @@ export function ChoiceDetailSheet({
       <button
         type="button"
         onClick={onSelect}
-        className="sanba-sticker sanba-gold-gradient rounded-[13px] py-[13px] text-center text-[14px] font-bold text-[var(--sanba-ink)] active:translate-x-[2px] active:translate-y-[2px] active:shadow-[1px_1px_0_var(--sanba-shadow)]"
+        className="sanba-sticker sanba-gold-gradient inline-flex items-center justify-center gap-1.5 rounded-[13px] py-[13px] text-center text-[14px] font-bold text-[var(--sanba-ink)] active:translate-x-[2px] active:translate-y-[2px] active:shadow-[1px_1px_0_var(--sanba-shadow)]"
       >
-        🎙 「{option.label}」を選ぶ
+        <Mic size={16} aria-hidden /> 「{option.label}」を選ぶ
       </button>
 
       <div className="flex gap-2">

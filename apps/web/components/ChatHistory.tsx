@@ -3,6 +3,8 @@
 // 会話履歴タブの本文。SessionState.transcript を吹き出しで描く。
 // 仕様: docs/design/conversation-experience.md §2（会話履歴）/ screens/04-conversation.md。
 
+import { Mic } from "lucide-react";
+
 import type { TranscriptLine } from "@/lib/realtime/store";
 
 import { ChatBubble } from "./sanba/ChatBubble";
@@ -20,7 +22,9 @@ export function ChatHistory({ transcript }: ChatHistoryProps) {
   if (transcript.length === 0) {
     return (
       <div className="flex h-full items-center justify-center px-6 py-8">
-        <p className="text-center text-[13px] text-[var(--sanba-muted)]">🎙 話しかけてください</p>
+        <p className="inline-flex items-center justify-center gap-1.5 text-center text-[13px] text-[var(--sanba-muted)]">
+          <Mic size={15} aria-hidden /> 話しかけてください
+        </p>
       </div>
     );
   }

@@ -13,6 +13,7 @@
 //   見た目（古語）に依らない現代語ラベル（MaterialSourceSheet を踏襲）。
 
 import { useEffect, useRef } from "react";
+import { Check, Image as ImageIcon, X } from "lucide-react";
 
 import { detectionPresentation } from "../lib/realtime/mapping";
 import type { MaterialDetail } from "../lib/realtime/selectors";
@@ -112,23 +113,25 @@ export function MaterialDetailSheet({
             onClick={onClose}
             className="flex size-[26px] items-center justify-center rounded-full border border-[var(--sanba-border)] bg-[var(--sanba-surface)] text-[12px] text-[var(--sanba-muted)]"
           >
-            ✕
+            <X size={14} aria-hidden />
           </button>
         </div>
 
         {/* プレビュー枠（画像 URL は store に無いためプレースホルダ・Figma 150:2 踏襲）。 */}
         <div
           aria-hidden="true"
-          className="flex h-[140px] items-center justify-center rounded-[12px] border border-[var(--sanba-border)] bg-[var(--sanba-surface-strong)] text-[13px] text-[var(--sanba-muted)]"
+          className="flex h-[140px] items-center justify-center gap-1.5 rounded-[12px] border border-[var(--sanba-border)] bg-[var(--sanba-surface-strong)] text-[13px] text-[var(--sanba-muted)]"
         >
-          🖼 {detail.name}
+          <ImageIcon size={16} aria-hidden /> {detail.name}
         </div>
 
         {/* メタ（名前・解析状態）。解析中は進捗バーで状態を可視化（色のみに依存しない）。 */}
         <div className="flex flex-col gap-[6px]">
           <span className="text-[11.5px] font-bold text-[var(--sanba-cream)]">{detail.name}</span>
           {done ? (
-            <span className="text-[11px] font-bold text-[var(--sanba-speak)]">✓ 解析済</span>
+            <span className="inline-flex items-center gap-1 text-[11px] font-bold text-[var(--sanba-speak)]">
+              <Check size={13} aria-hidden /> 解析済
+            </span>
           ) : (
             <div className="flex items-center gap-2">
               <span className="text-[11px] text-[var(--sanba-muted)]">解析中</span>

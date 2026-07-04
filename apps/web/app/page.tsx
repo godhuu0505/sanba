@@ -8,6 +8,7 @@
 // 認証は /login へ寄せる（#140）。本ページはログイン状態を「開始ゲート」としてのみ参照し、
 // 未ログインなら理由提示＋/login への導線を出す（インラインのログインパネルは廃止）。
 
+import { FileText, Mic, X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
@@ -543,16 +544,16 @@ export default function Home() {
                 {staged.map((file, i) => (
                   <li key={`${file.name}:${file.size}`}>
                     <Chip tone="gold" size="md">
-                      <span aria-hidden="true">📄 </span>
+                      <FileText size={13} aria-hidden className="mr-1 inline-block align-[-2px]" />
                       <span className="max-w-[180px] truncate align-middle">{file.name}</span>
                       <button
                         type="button"
                         onClick={() => removeStaged(i)}
                         disabled={busy}
                         aria-label={`${file.name} を取り外す`}
-                        className="ml-[6px] text-[var(--sanba-muted)] disabled:opacity-50"
+                        className="ml-[6px] align-middle text-[var(--sanba-muted)] disabled:opacity-50"
                       >
-                        ✕
+                        <X size={12} aria-hidden className="inline-block align-[-2px]" />
                       </button>
                     </Chip>
                   </li>
@@ -614,7 +615,13 @@ export default function Home() {
               disabled={!canStart}
               aria-label="インタビューを始める"
             >
-              {busy ? "準備しています…" : "🎙️ インタビューを始める"}
+              {busy ? (
+                "準備しています…"
+              ) : (
+                <span className="inline-flex items-center justify-center gap-1.5">
+                  <Mic size={16} aria-hidden /> インタビューを始める
+                </span>
+              )}
             </Button>
             {!auth.loggedIn && (
               <p className="text-[12px] text-[var(--sanba-muted)]">

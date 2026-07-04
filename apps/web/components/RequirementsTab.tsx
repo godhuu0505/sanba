@@ -5,6 +5,7 @@
 // 編集はしない（確定操作は 07 判定 → 08 結果）。
 
 import { useEffect, useRef } from "react";
+import { TriangleAlert } from "lucide-react";
 
 import type { Detection, Requirement } from "@/lib/realtime/types";
 
@@ -58,9 +59,9 @@ export function RequirementsTab({
       <h2
         ref={deepDiveRef}
         tabIndex={-1}
-        className="mt-1 scroll-mt-2 text-[12px] font-bold text-[var(--sanba-caution)]"
+        className="mt-1 inline-flex scroll-mt-2 items-center gap-1 text-[12px] font-bold text-[var(--sanba-caution)]"
       >
-        ⚠ 深掘り対象（未解消 {deepDive.length}）
+        <TriangleAlert size={13} aria-hidden /> 深掘り対象（未解消 {deepDive.length}）
       </h2>
       <DeepDiveList detections={deepDive} onJump={onJump} />
     </div>

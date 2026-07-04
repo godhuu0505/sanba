@@ -375,7 +375,7 @@ describe("ConversationSessionView（会話シェル結線）", () => {
     fireEvent.click(screen.getByRole("button", { name: "会話を終了" }));
     fireEvent.click(screen.getByRole("button", { name: "終了する" }));
     fireEvent.click(screen.getByRole("button", { name: "要件を確定する" }));
-    const issueBtn = await screen.findByRole("button", { name: "🐙 Issue" });
+    const issueBtn = await screen.findByRole("button", { name: /Issue/ });
     fireEvent.click(issueBtn);
     fireEvent.click(issueBtn); // 連打
     expect(onExport).toHaveBeenCalledTimes(1);

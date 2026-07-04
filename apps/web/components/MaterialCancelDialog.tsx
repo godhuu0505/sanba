@@ -6,6 +6,7 @@
 // ChoiceDetailSheet のパターンに倣う（見た目に依らない現代語ラベル・ADR-0017）。
 
 import { useEffect, useRef } from "react";
+import { X } from "lucide-react";
 
 export interface MaterialCancelDialogProps {
   /** 中断対象の素材名（確認文に出す）。 */
@@ -82,7 +83,7 @@ export function MaterialCancelDialog({
           className="flex size-12 items-center justify-center rounded-full border-2 text-[22px] font-bold"
           style={{ borderColor: "var(--sanba-rec)", color: "var(--sanba-rec)" }}
         >
-          ✕
+          <X size={22} aria-hidden />
         </div>
         <p className="text-center text-[16px] font-bold text-[var(--sanba-gold-text)]">
           中断しますか？

@@ -10,6 +10,8 @@
 // a11y: 色だけに依存せずラベル＋アイコンで表す（ADR-0017）。role=status / aria-live で
 // 状態変化をスクリーンリーダーへ通知する。
 
+import { type LucideIcon, Mic, Pause, Volume2, VolumeX } from "lucide-react";
+
 import type { SessionPhase } from "@/lib/realtime/types";
 
 export type VoiceStatus = "muted" | "agent-speaking" | "listening" | "idle";
@@ -49,28 +51,28 @@ export function resolveVoiceStatus({
 // アイコン＋ラベルで状態を表す（色は補助・ADR-0017）。pulse は発話/聞き取りの「生きている」感。
 const PRESENTATION: Record<
   VoiceStatus,
-  { icon: string; label: string; tone: string; pulse: boolean }
+  { icon: LucideIcon; label: string; tone: string; pulse: boolean }
 > = {
   "agent-speaking": {
-    icon: "🔊",
+    icon: Volume2,
     label: "発話中／読み上げ中",
     tone: "border-[var(--sanba-gold)] text-[var(--sanba-gold-text)]",
     pulse: true,
   },
   listening: {
-    icon: "🎙",
+    icon: Mic,
     label: "聞き取り中",
     tone: "border-[var(--sanba-border-strong)] text-[var(--sanba-cream)]",
     pulse: true,
   },
   muted: {
-    icon: "🔇",
+    icon: VolumeX,
     label: "消音中",
     tone: "border-[var(--sanba-rec)] text-[var(--sanba-rec)]",
     pulse: false,
   },
   idle: {
-    icon: "⏸",
+    icon: Pause,
     label: "待機中",
     tone: "border-[var(--sanba-border)] text-[var(--sanba-muted)]",
     pulse: false,
@@ -79,7 +81,7 @@ const PRESENTATION: Record<
 
 export function VoiceStatusIndicator(props: VoiceStatusIndicatorProps) {
   const status = resolveVoiceStatus(props);
-  const { icon, label, tone, pulse } = PRESENTATION[status];
+  const { icon: Icon, label, tone, pulse } = PRESENTATION[status];
 
   return (
     <div
@@ -94,7 +96,7 @@ export function VoiceStatusIndicator(props: VoiceStatusIndicatorProps) {
         aria-hidden
         className={`inline-block h-1.5 w-1.5 rounded-full bg-current ${pulse ? "animate-pulse" : ""}`}
       />
-      <span aria-hidden>{icon}</span>
+      <Icon size={14} aria-hidden />
       <span>{label}</span>
     </div>
   );

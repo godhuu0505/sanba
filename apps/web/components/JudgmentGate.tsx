@@ -4,6 +4,8 @@
 // 仕様: docs/design/conversation-experience.md §7 / screens/07-judgment.md。
 // 未解消が 1 件でも残れば確定不可（戻って解く / 未解消のまま終う）。0 件なら確定可。
 
+import { Scale, TriangleAlert } from "lucide-react";
+
 import type { Detection } from "@/lib/realtime/types";
 
 import { Button } from "@/components/sanba";
@@ -50,7 +52,7 @@ export function JudgmentGate({
               }
         }
       >
-        {resolved ? "⚖" : "⚠"}
+        {resolved ? <Scale size={32} aria-hidden /> : <TriangleAlert size={32} aria-hidden />}
       </div>
       <p className="mt-3 text-[18px] font-bold text-[var(--sanba-gold-text)]">見極めの刻にございます</p>
 

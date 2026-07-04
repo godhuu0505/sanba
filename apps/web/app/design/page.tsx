@@ -1,3 +1,4 @@
+import { CircleCheck, Image as ImageIcon, Mic, Video, Wrench } from "lucide-react";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import {
@@ -148,15 +149,23 @@ function LoginScreen() {
           </p>
         </div>
         <Card>
-          <CardTitle>🎙️ SANBA にログイン</CardTitle>
+          <CardTitle>
+            <Mic size={18} aria-hidden className="mr-1 inline-block align-[-3px]" />
+            SANBA にログイン
+          </CardTitle>
           <CardDescription className="text-[var(--sanba-cream)]">
-            ✅ ログイン中: user@example.com
+            <CircleCheck size={14} aria-hidden className="mr-1 inline-block align-[-2px]" />
+            ログイン中: user@example.com
           </CardDescription>
           <Button variant="gold" block>
-            🎙️ インタビューを始める
+            <span className="inline-flex items-center justify-center gap-1.5">
+              <Mic size={16} aria-hidden /> インタビューを始める
+            </span>
           </Button>
           <Button variant="outline" block>
-            🛠 管理画面へ
+            <span className="inline-flex items-center justify-center gap-1.5">
+              <Wrench size={16} aria-hidden /> 管理画面へ
+            </span>
           </Button>
           <Divider />
           <Button variant="ghost" className="self-center">
@@ -229,8 +238,8 @@ function AdminListScreen() {
         <SessionRow title="オンボーディング改善" meta="pm@example.com ・ 2026-06-20" />
         <SessionRow title="決済フロー見直し" meta="customer@example.com ・ 2026-06-18" />
         <p className="pt-[8px] text-[13px] font-bold text-[var(--sanba-muted)]">素材を渡す</p>
-        <ListRow icon="🖼" title="画像をアップロード" subtitle="PNG / JPG" />
-        <ListRow icon="🎥" title="動画をアップロード" subtitle="MP4 / MOV" />
+        <ListRow icon={<ImageIcon size={18} />} title="画像をアップロード" subtitle="PNG / JPG" />
+        <ListRow icon={<Video size={18} />} title="動画をアップロード" subtitle="MP4 / MOV" />
       </div>
     </PhoneFrame>
   );

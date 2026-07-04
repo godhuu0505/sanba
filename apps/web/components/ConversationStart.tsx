@@ -10,6 +10,7 @@
 
 import { LiveKitRoom, StartAudio, useConnectionState } from "@livekit/components-react";
 import { ConnectionState } from "livekit-client";
+import { Check, Circle, LoaderCircle, Mic, TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { AppHeader, Button, Card, Screen } from "@/components/sanba";
@@ -146,7 +147,7 @@ function RoomGate({ conn, onCancel }: { conn: JoinResponse; onCancel: () => void
   const reconnecting = state !== ConnectionState.Connected;
   return (
     <Screen className="px-4 py-3">
-      <AppHeader brand right={<StartAudio label="🔊 音声を有効に" />} />
+      <AppHeader brand right={<StartAudio label="音声を有効に" />} />
       <main className="mx-auto w-full max-w-[640px] flex-1">
         <p className="mb-2 text-[12px] text-[var(--sanba-muted)]">
           セッション: <code>{conn.session_id}</code>
@@ -244,13 +245,16 @@ export function StartIntro({
         </Card>
 
         {/* OS プロンプトの前にマイク使用の理由を提示する（03 AC）。 */}
-        <p className="text-[12px] leading-relaxed text-[var(--sanba-muted)]">
-          🎙 音声で問答するためマイクを使用します。次の画面で許可を求めます。
+        <p className="flex items-start gap-1.5 text-[12px] leading-relaxed text-[var(--sanba-muted)]">
+          <Mic size={14} aria-hidden className="mt-0.5 shrink-0" />
+          <span>音声で問答するためマイクを使用します。次の画面で許可を求めます。</span>
         </p>
 
         <div className="mt-1 flex flex-col gap-[8px]">
           <Button variant="gold" size="lg" block onClick={onStartVoice} aria-label="音声で会話を始める">
-            🎙 問答を始める
+            <span className="inline-flex items-center justify-center gap-1.5">
+              <Mic size={16} aria-hidden /> 問答を始める
+            </span>
           </Button>
           <Button variant="ghost" block onClick={onStartText} aria-label="音声を使わずテキストで進める">
             テキストで進める
@@ -297,7 +301,7 @@ export function MicPermissionModal({ onAllow, onText, onDismiss }: MicPermission
             aria-hidden="true"
             className="sanba-gold-gradient flex size-14 items-center justify-center rounded-full border-2 border-[var(--sanba-frame)] text-[24px]"
           >
-            🎙
+            <Mic size={26} aria-hidden />
           </div>
           <p className="text-center text-[16px] font-bold text-[var(--sanba-gold-text)]">
             声を聞かせてくださいませ
@@ -357,7 +361,7 @@ export function ConnectingOverlay({ state, onCancel }: ConnectingOverlayProps) {
 }
 
 function Step({ done, active, label }: { done: boolean; active?: boolean; label: string }) {
-  const icon = done ? "✓" : active ? "◌" : "・";
+  const Icon = done ? Check : active ? LoaderCircle : Circle;
   const tone = done
     ? "var(--sanba-gold-text)"
     : active
@@ -365,7 +369,7 @@ function Step({ done, active, label }: { done: boolean; active?: boolean; label:
       : "var(--sanba-muted)";
   return (
     <li className="flex items-center gap-2" style={{ color: tone }}>
-      <span aria-hidden="true">{icon}</span>
+      <Icon size={15} aria-hidden className={active ? "animate-spin" : undefined} />
       <span>{label}</span>
     </li>
   );
@@ -397,7 +401,7 @@ export function StartFailed({ kind, onRetry, onText, onBack }: StartFailedProps)
             color: "var(--sanba-rec)",
           }}
         >
-          ⚠
+          <TriangleAlert size={32} aria-hidden />
         </div>
         <p className="text-[16px] font-bold text-[var(--sanba-rec)]">
           {isMic ? "声を捉えられませなんだ" : "繋ぐことが叶いませなんだ"}

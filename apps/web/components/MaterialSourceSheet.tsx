@@ -16,7 +16,8 @@
 // Google ドライブは ADR-0007 で未承認（保留）。実 OAuth スコープ追加は別チケットのため、ここでは
 // 導線（最小ピッカ）のみを出し、押下時に「準備中」を案内する（onDrive 注入で実導線に差し替え可能）。
 
-import { useEffect, useRef, useState } from "react";
+import { Camera, Cloud, Monitor, Upload, X } from "lucide-react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 
 /** 投入手段の種別（計測キー）。 */
 export type MaterialSource = "camera" | "screen" | "upload" | "drive";
@@ -137,7 +138,7 @@ export function MaterialSourceSheet({
             onClick={onClose}
             className="flex size-[26px] items-center justify-center rounded-full border border-[var(--sanba-border)] bg-[var(--sanba-surface)] text-[12px] text-[var(--sanba-muted)]"
           >
-            ✕
+            <X size={14} aria-hidden />
           </button>
         </div>
         <p className="text-[12px] text-[var(--sanba-muted)]">
@@ -146,7 +147,7 @@ export function MaterialSourceSheet({
 
         {onToggleCamera && (
           <SourceRow
-            icon="📷"
+            icon={<Camera size={20} />}
             title="カメラで撮影"
             sub="ホワイトボード／手書き（撮影して渡す）"
             active={cameraActive}
@@ -156,7 +157,7 @@ export function MaterialSourceSheet({
         )}
 
         <SourceRow
-          icon="📤"
+          icon={<Upload size={20} />}
           title="ファイルをアップロード"
           sub="モック・スクショ・写真（PNG/JPG）・録画（MP4/MOV）"
           onClick={() => pick("upload", onUpload)}
@@ -164,7 +165,7 @@ export function MaterialSourceSheet({
 
         {onToggleScreenShare && (
           <SourceRow
-            icon="🖥"
+            icon={<Monitor size={20} />}
             title={screenShareActive ? "画面共有を停止" : "画面を共有"}
             sub="ライブ（Figma 等）を一緒に見る"
             active={screenShareActive}
@@ -174,7 +175,7 @@ export function MaterialSourceSheet({
         )}
 
         <SourceRow
-          icon="☁️"
+          icon={<Cloud size={20} />}
           title="Google ドライブから選ぶ"
           sub="保存済みの資料を渡す"
           onClick={() => pick("drive", onDrive ?? (() => setDriveNotice(true)))}
@@ -211,7 +212,7 @@ function SourceRow({
   actionLabel,
   onClick,
 }: {
-  icon: string;
+  icon: ReactNode;
   title: string;
   sub: string;
   active?: boolean;
