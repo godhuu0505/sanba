@@ -95,31 +95,29 @@ export function VoiceStatusIndicator(props: VoiceStatusIndicatorProps) {
   const { icon: Icon, label, tone, pulse } = PRESENTATION[status];
   const figState = figureStateForVoiceStatus(status);
 
-  const pill = (
+  // role="status" を常に同一のルートノードに固定し live region を安定させる（a11y）。
+  // 遷移で Figure の有無が変わっても role="status" ノード自体は差し替わらない。
+  return (
     <div
       role="status"
       aria-live="polite"
       aria-label={`音声状態: ${label}`}
       data-status={status}
-      className={`flex items-center justify-center gap-1.5 rounded-full border bg-[var(--sanba-surface)] px-3 py-1 text-[11px] font-bold ${tone}`}
+      className="flex flex-col items-center gap-1"
     >
-      {/* 発話/聞き取り中は点滅ドットで「生きている」状態を示す（色のみに依存しない補助）。 */}
-      <span
-        aria-hidden
-        className={`inline-block h-1.5 w-1.5 rounded-full bg-current ${pulse ? "animate-pulse" : ""}`}
-      />
-      <Icon size={14} aria-hidden />
-      <span>{label}</span>
-    </div>
-  );
-
-  // 聞き取り中はサンバさんが耳を澄ます。意味はステータスピル（role=status/aria-live）が既に
-  // 読み上げるので、figure は装飾（label 無し＝aria-hidden・reduced-motion で静止）。
-  if (!figState) return pill;
-  return (
-    <div className="flex flex-col items-center gap-1">
-      <Figure state={figState} className="w-[34px]" />
-      {pill}
+      {/* 聞き取り中だけサンバさんが耳を澄ます。意味はこの role=status/aria-live が読み上げるので装飾（aria-hidden）。 */}
+      {figState && <Figure state={figState} className="w-[34px]" />}
+      <div
+        className={`flex items-center justify-center gap-1.5 rounded-full border bg-[var(--sanba-surface)] px-3 py-1 text-[11px] font-bold ${tone}`}
+      >
+        {/* 発話/聞き取り中は点滅ドットで「生きている」状態を示す（色のみに依存しない補助）。 */}
+        <span
+          aria-hidden
+          className={`inline-block h-1.5 w-1.5 rounded-full bg-current ${pulse ? "animate-pulse" : ""}`}
+        />
+        <Icon size={14} aria-hidden />
+        <span>{label}</span>
+      </div>
     </div>
   );
 }
