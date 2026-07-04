@@ -9,6 +9,7 @@ Falls back to an in-memory store when Firestore is unavailable (e.g. unit tests)
 
 from __future__ import annotations
 
+import threading
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -17,6 +18,8 @@ import structlog
 from .models import (
     GitHubIndexStatus,
     GitHubLink,
+    Product,
+    ProductInvite,
     Requirement,
     RequirementStatus,
     SessionMeta,
@@ -33,6 +36,26 @@ EDITABLE_REQUIREMENT_FIELDS = frozenset({"statement", "priority", "category"})
 
 class RequirementNotFound(Exception):
     """対象の要件が存在しないときに送出。"""
+
+
+class ProductNotFound(Exception):
+    """対象の product が存在しないときに送出 (ADR-0031)。"""
+
+
+class InviteNotFound(Exception):
+    """対象の深掘りリンクが存在しないときに送出 (ADR-0031)。"""
+
+
+class InviteNotUsable(Exception):
+    """深掘りリンクが失効・期限切れ・上限到達で使えないときに送出 (ADR-0031 決定3)。
+
+    `reason` は "revoked" / "expired" / "exhausted"。api 層がエラー表示の出し分けに使う。
+    どの理由でも `use_count` は消費しない。
+    """
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+        self.reason = reason
 
 
 class SessionRepository:
@@ -63,6 +86,12 @@ class SessionRepository:
         self._mem_questions: dict[str, dict[str, Any]] = {}
         # ユーザーの GitHub App 連携 (`users/{sub}` / ADR-0028)。sub -> GitHubLink。
         self._mem_github_links: dict[str, GitHubLink] = {}
+        # product と深掘りリンク (ADR-0031)。product_id -> Product / invite_id -> ProductInvite。
+        self._mem_products: dict[str, Product] = {}
+        self._mem_invites: dict[str, dict[str, ProductInvite]] = {}
+        # in-memory での invite 消費をアトミックにするためのロック（Firestore 経路は
+        # トランザクションが担う。consume_invite の read-check-increment を直列化する）。
+        self._mem_invite_lock = threading.Lock()
 
     @staticmethod
     def _init_client():  # type: ignore[no-untyped-def]
@@ -250,6 +279,257 @@ class SessionRepository:
             ref.set({"github": firestore.DELETE_FIELD}, merge=True)
             return True
         return self._mem_github_links.pop(sub, None) is not None
+
+    # ---- Products (ADR-0031) -----------------------------------------------
+    def create_product(self, product: Product) -> None:
+        """`products/{id}` 文書を作成する。所有・repo 紐づけ・深掘りリンクの土台。
+
+        product は owner が明示的に削除するまで残す運用資産なので、発話や draft 要件と
+        違い TTL（expireAt）は付けない（ADR-0031 影響節）。
+        """
+        if self._client is not None:
+            self._client.collection("products").document(product.id).set(
+                product.model_dump(mode="json")
+            )
+            return
+        self._mem_products[product.id] = product
+
+    def get_product(self, product_id: str) -> Product | None:
+        if self._client is not None:
+            snap = self._client.collection("products").document(product_id).get()
+            return Product.model_validate(snap.to_dict()) if snap.exists else None
+        return self._mem_products.get(product_id)
+
+    def list_products_by_owner(self, owner_sub: str) -> list[Product]:
+        """呼び出しユーザー本人 (owner_sub) の product を新しい順で返す。
+
+        `list_sessions_by_owner` と同じ意味論: Firestore は等価クエリ、in-memory は
+        フィルタ。複合インデックス不要なよう order_by は使わずアプリ側で整列する。
+        """
+        if self._client is not None:
+            from google.cloud.firestore_v1.base_query import FieldFilter
+
+            docs = (
+                self._client.collection("products")
+                .where(filter=FieldFilter("owner_sub", "==", owner_sub))
+                .stream()
+            )
+            products = [Product.model_validate(d.to_dict()) for d in docs]
+        else:
+            products = [p for p in self._mem_products.values() if p.owner_sub == owner_sub]
+        return sorted(products, key=lambda p: p.created_at, reverse=True)
+
+    def update_product(
+        self,
+        product_id: str,
+        *,
+        name: str | None = None,
+        description: str | None = None,
+        glossary: list[str] | None = None,
+    ) -> Product:
+        """name / description / glossary のみ上書きする。
+
+        所有と出所 (owner_sub / created_at) は不変。repo 紐づけは `set_product_github` が
+        担う（`update_requirement` と同じ「編集可能フィールドを閉じる」パターン）。
+        """
+        current = self.get_product(product_id)
+        if current is None:
+            raise ProductNotFound(product_id)
+        updates: dict[str, object] = {}
+        if name is not None:
+            updates["name"] = name
+        if description is not None:
+            updates["description"] = description
+        if glossary is not None:
+            updates["glossary"] = list(glossary)
+        if not updates:
+            return current
+        # dict に適用してから検証する（name 空などの不正値検出を一度で行う）。
+        data = current.model_dump()
+        data.update(updates)
+        updated = Product.model_validate(data)
+
+        if self._client is not None:
+            # github_* などの並行更新を巻き戻さないよう、編集対象フィールドのみ patch する。
+            self._client.collection("products").document(product_id).set(
+                updates, merge=True
+            )
+        else:
+            self._mem_products[product_id] = updated
+        return updated
+
+    def set_product_github(
+        self,
+        product_id: str,
+        *,
+        repo: str | None,
+        branch: str | None,
+        commit_sha: str | None,
+        index_status: GitHubIndexStatus,
+        summary: str | None = None,
+    ) -> Product | None:
+        """product に紐づけた GitHub repo/branch/sha/索引状態/要約を保存する (ADR-0031)。
+
+        `set_session_github` の product 版。存在しなければ None。merge 保存で
+        name/glossary 等の他フィールドを温存する。
+        """
+        current = self.get_product(product_id)
+        if current is None:
+            return None
+        updated = current.model_copy(
+            update={
+                "github_repo": repo,
+                "github_branch": branch,
+                "github_commit_sha": commit_sha,
+                "github_index_status": index_status,
+                "github_summary": summary,
+            }
+        )
+        if self._client is not None:
+            self._client.collection("products").document(product_id).set(
+                {
+                    "github_repo": repo,
+                    "github_branch": branch,
+                    "github_commit_sha": commit_sha,
+                    "github_index_status": index_status.value,
+                    "github_summary": summary,
+                },
+                merge=True,
+            )
+        else:
+            self._mem_products[product_id] = updated
+        return updated
+
+    def delete_product(self, product_id: str) -> bool:
+        """product と配下の深掘りリンクを削除する。実体を消したら True (冪等)。
+
+        Firestore はサブコレクションをカスケード削除しないため、invites を明示的に
+        消してから product 文書を消す（リンクだけ残ると join 検証が親なしで通り得る）。
+        """
+        if self._client is not None:
+            ref = self._client.collection("products").document(product_id)
+            if not ref.get().exists:
+                return False
+            for inv in ref.collection("invites").stream():
+                inv.reference.delete()
+            ref.delete()
+            return True
+        if product_id not in self._mem_products:
+            return False
+        del self._mem_products[product_id]
+        self._mem_invites.pop(product_id, None)
+        return True
+
+    # ---- Product invites (深掘りリンク / ADR-0031) ---------------------------
+    def create_invite(self, invite: ProductInvite) -> None:
+        """深掘りリンクを作成する。親 product が無ければ ProductNotFound。
+
+        親の存在を確認するのは、product 削除後に古いリンクだけが復活する事故を防ぐため。
+        """
+        if self.get_product(invite.product_id) is None:
+            raise ProductNotFound(invite.product_id)
+        if self._client is not None:
+            self._invite_doc(invite.product_id, invite.id).set(invite.model_dump(mode="json"))
+            return
+        self._mem_invites.setdefault(invite.product_id, {})[invite.id] = invite
+
+    def get_invite(self, product_id: str, invite_id: str) -> ProductInvite | None:
+        if self._client is not None:
+            snap = self._invite_doc(product_id, invite_id).get()
+            return ProductInvite.model_validate(snap.to_dict()) if snap.exists else None
+        return self._mem_invites.get(product_id, {}).get(invite_id)
+
+    def list_invites(self, product_id: str) -> list[ProductInvite]:
+        """product の深掘りリンク一覧を新しい順で返す（発行・失効の管理 UI 用）。"""
+        if self._client is not None:
+            docs = (
+                self._client.collection("products")
+                .document(product_id)
+                .collection("invites")
+                .stream()
+            )
+            invites = [ProductInvite.model_validate(d.to_dict()) for d in docs]
+        else:
+            invites = list(self._mem_invites.get(product_id, {}).values())
+        return sorted(invites, key=lambda i: i.created_at, reverse=True)
+
+    def revoke_invite(self, product_id: str, invite_id: str) -> bool:
+        """深掘りリンクを失効させる。失効できたら True（冪等: 既失効でも True）。"""
+        if self._client is not None:
+            ref = self._invite_doc(product_id, invite_id)
+            if not ref.get().exists:
+                return False
+            ref.set({"revoked": True}, merge=True)
+            return True
+        invite = self._mem_invites.get(product_id, {}).get(invite_id)
+        if invite is None:
+            return False
+        self._mem_invites[product_id][invite_id] = invite.model_copy(update={"revoked": True})
+        return True
+
+    def consume_invite(self, product_id: str, invite_id: str) -> ProductInvite:
+        """深掘りリンクの使用回数を 1 消費し、消費後の invite を返す (ADR-0031 決定3)。
+
+        検証（revoked / expires_at / max_uses）と `use_count` の増分を原子的に行う:
+        Firestore はトランザクション、in-memory はロックで read-check-increment を
+        直列化する。使えない場合は InviteNotUsable（消費しない）、無ければ InviteNotFound。
+        並行 join が上限を跨いでも `use_count` が `max_uses` を超えないことを保証する。
+        """
+        if self._client is not None:
+            return self._consume_invite_txn(product_id, invite_id)
+        with self._mem_invite_lock:
+            invite = self._mem_invites.get(product_id, {}).get(invite_id)
+            if invite is None:
+                raise InviteNotFound(invite_id)
+            self._check_invite_usable(invite)
+            updated = invite.model_copy(update={"use_count": invite.use_count + 1})
+            self._mem_invites[product_id][invite_id] = updated
+            return updated
+
+    def _consume_invite_txn(self, product_id: str, invite_id: str) -> ProductInvite:
+        from google.cloud import firestore
+
+        doc_ref = self._invite_doc(product_id, invite_id)
+
+        @firestore.transactional  # type: ignore[misc]
+        def _txn(transaction: Any) -> ProductInvite:
+            # delete_product との競合で孤立した invite を消費させない。
+            product_snap = (
+                self._client.collection("products")
+                .document(product_id)
+                .get(transaction=transaction)
+            )
+            if not product_snap.exists:
+                raise ProductNotFound(product_id)
+            snap = doc_ref.get(transaction=transaction)
+            if not snap.exists:
+                raise InviteNotFound(invite_id)
+            invite = ProductInvite.model_validate(snap.to_dict())
+            # 検証と増分を同一トランザクションにし、並行 join でも max_uses を超えない。
+            self._check_invite_usable(invite)
+            transaction.set(doc_ref, {"use_count": invite.use_count + 1}, merge=True)
+            return invite.model_copy(update={"use_count": invite.use_count + 1})
+
+        consumed: ProductInvite = _txn(self._client.transaction())
+        return consumed
+
+    @staticmethod
+    def _check_invite_usable(invite: ProductInvite) -> None:
+        """使用可否を検証する。使えない理由を InviteNotUsable(reason) で送出。"""
+        if invite.revoked:
+            raise InviteNotUsable("revoked")
+        if invite.expires_at is not None and invite.expires_at <= datetime.now(UTC):
+            raise InviteNotUsable("expired")
+        if invite.max_uses is not None and invite.use_count >= invite.max_uses:
+            raise InviteNotUsable("exhausted")
+
+    def _invite_doc(self, product_id: str, invite_id: str):  # type: ignore[no-untyped-def]
+        return (
+            self._client.collection("products")
+            .document(product_id)
+            .collection("invites")
+            .document(invite_id)
+        )
 
     # ---- Utterances --------------------------------------------------------
     def add_utterance(self, session_id: str, utterance: Utterance) -> None:
