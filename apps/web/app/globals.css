@@ -263,3 +263,53 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .sanba-fig-joint { animation: none !important; }
 }
+
+/* ── 帯と動き（ADR-0033 §5・no.meets から借りる軽やかさ）──────────────── */
+
+/* マーキー帯：中身を 2 連結し -50% まで流して継ぎ目を消す。duration は
+   コンポーネント側の inline style（animation-duration）で上書きする。 */
+@keyframes sanba-slide {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+.sanba-marquee-track {
+  animation-name: sanba-slide;
+  animation-duration: 22s;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+/* hover で一時停止（読みたい人のために）。 */
+.sanba-marquee:hover .sanba-marquee-track {
+  animation-play-state: paused;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sanba-marquee-track {
+    animation: none;
+    transform: none;
+  }
+}
+
+/* マーカー下線強調：見出しの要語の背後に朱の蛍光ハイライト（文字は墨のまま）。
+   下 32% にだけ朱 38% を敷く。折返しにも乗るよう box-decoration-break: clone。 */
+.u-shu {
+  background-image: linear-gradient(transparent 68%, rgba(224, 64, 42, 0.38) 68%);
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
+/* 歩く一団パレード：各体を左端→右端へ横断させる。left(%) は配置コンテナ基準なので
+   幅に依らず端まで渡る。歩行アニメ（sanba-fig-swing 等）は Figure 内側の g が担うので両立する。 */
+@keyframes sanba-parade-move {
+  from { left: -14%; }
+  to { left: 114%; }
+}
+.sanba-parade-walker {
+  animation-name: sanba-parade-move;
+  animation-duration: 18s;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  /* 静止時は各体の inline left（等間隔）で並ぶ。横断は止める。 */
+  .sanba-parade-walker { animation: none; }
+}

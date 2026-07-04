@@ -8,6 +8,8 @@ import {
   Chip,
   InsightCard,
   ListRow,
+  Marquee,
+  Parade,
   RecPill,
   RequirementCard,
   SessionRow,
@@ -145,6 +147,25 @@ describe("SANBA design system", () => {
     // 山吹淡の面＋破線（電球アイコンは装飾）。
     expect(container.firstElementChild?.className).toContain("bg-sanba-gold-pale");
     expect(container.firstElementChild?.className).toContain("border-dashed");
+  });
+
+  it("Marquee は継ぎ目消しで items を 2 連結し、帯全体は装飾（aria-hidden）（ADR-0033 §5）", () => {
+    const { container } = render(<Marquee items={["問いは答えを産む", "選ぶのはあなた"]} />);
+    // 無限ループの継ぎ目を消すため各メッセージは 2 度描かれる。
+    expect(screen.getAllByText("問いは答えを産む")).toHaveLength(2);
+    // 帯は読み上げ対象にしない純装飾。
+    expect(container.firstElementChild?.getAttribute("aria-hidden")).not.toBeNull();
+    // 流れるトラック（reduced-motion で globals 側が静止させる）。
+    expect(container.querySelector(".sanba-marquee-track")).not.toBeNull();
+  });
+
+  it("Parade は count 体の棒人間を横断させる装飾帯（aria-hidden）（ADR-0033 §5）", () => {
+    const { container } = render(<Parade count={3} />);
+    // 装飾チェーン（状態表示ではない）なので読み上げしない。
+    expect(container.firstElementChild?.getAttribute("aria-hidden")).not.toBeNull();
+    // walking の棒人間が count 体。横断アニメの担い手 .sanba-parade-walker も同数。
+    expect(container.querySelectorAll("svg")).toHaveLength(3);
+    expect(container.querySelectorAll(".sanba-parade-walker")).toHaveLength(3);
   });
 });
 

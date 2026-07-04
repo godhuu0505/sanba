@@ -18,6 +18,8 @@ import {
   Input,
   ListRow,
   Logo,
+  Marquee,
+  Parade,
   PhoneFrame,
   RecPill,
   RequirementCard,
@@ -115,6 +117,53 @@ export default function DesignKitPage() {
               <Divider label="または" />
             </div>
           </Stack>
+        </div>
+      </section>
+
+      {/* 帯と動き（ADR-0033 §5） */}
+      <section className="mx-auto mb-10 max-w-6xl rounded-2xl border border-sanba-border bg-sanba-surface p-6">
+        <h2 className="mb-4 text-lg font-semibold text-sanba-cream">帯と動き（Motion）</h2>
+        <div className="sanba-font flex flex-col gap-6 rounded-xl sanba-screen-bg p-6">
+          <div className="flex flex-col gap-2">
+            <span className="text-[11px] uppercase tracking-wide text-sanba-muted">
+              Marquee（マーキー帯）
+            </span>
+            <Marquee
+              items={[
+                <span key="1" className="text-sanba-rec-text">
+                  問いは答えを産む
+                </span>,
+                <span key="2" className="text-sanba-select">
+                  選ぶのはあなた
+                </span>,
+                <span key="3" className="text-sanba-gold-text">
+                  ひらめきを掬う
+                </span>,
+                <span key="4" className="text-sanba-cream">
+                  産婆術で要件を
+                </span>,
+              ]}
+            />
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <span className="text-[11px] uppercase tracking-wide text-sanba-muted">
+              .u-shu（マーカー下線強調）
+            </span>
+            <h3 className="sanba-display text-[22px] font-bold leading-snug text-sanba-cream">
+              その二つ、<span className="u-shu">相和しませぬ</span>。<br />
+              いずれを<span className="u-shu">規矩</span>とすべきか。
+            </h3>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <span className="text-[11px] uppercase tracking-wide text-sanba-muted">
+              Parade（歩く一団）
+            </span>
+            <div className="rounded-xl border-[1.5px] border-sanba-border bg-sanba-surface">
+              <Parade />
+            </div>
+          </div>
         </div>
       </section>
 
