@@ -157,6 +157,16 @@ def require_user(
 CurrentUser = Annotated[AuthUser, Depends(require_user)]
 
 
+def is_admin(user: AuthUser) -> bool:
+    """ADMIN_EMAILS 許可リストに含まれるか (ADR-0014 §2)。
+
+    `require_admin`（依存性・403/503 を返す）と違い、任意箇所での認可判定に使う
+    真偽値ヘルパー（例: product の owner or admin 判定 / ADR-0031）。
+    未設定（空リスト）は False = フェイルクローズ。
+    """
+    return user.email.lower() in settings.admin_email_set
+
+
 def require_admin(user: Annotated[AuthUser, Depends(require_user)]) -> AuthUser:
     """FastAPI 依存性: 管理者 (ADMIN_EMAILS 許可リスト) のみ通す。それ以外は 403 (ADR-0014 §2)。
 

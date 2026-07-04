@@ -115,6 +115,22 @@ def record_material_event(
         pass
 
 
+# product 管理イベント（登録/更新/削除/repo 紐づけ / ADR-0031）のカウンタ。深掘りリンクの
+# 準備がどれだけ行われているかを観測する（CLAUDE.md 原則3）。event は列挙値のみ・PII 非送信。
+_product_counter = metrics.get_meter("sanba_api.products").create_counter(
+    "sanba_product_events_total",
+    description="product 管理イベント数 (event=created/updated/deleted/github_set ごと / ADR-0031)",
+)
+
+
+def record_product_event(event: str) -> None:
+    """product 管理イベントを計上する（event=created/updated/deleted/github_set）。"""
+    try:
+        _product_counter.add(1, {"event": event})
+    except Exception:  # pragma: no cover - メトリクスは本処理を止めない
+        pass
+
+
 # 本人セッション一覧 (GET /api/sessions/mine) のカウンタ (#250)。ホーム「過去の要件を見る」
 # (#215) に供給する一覧の取得を計測する (契約 §5 / CLAUDE.md 原則3)。リクエストを 1 ずつ計上し
 # (record_auth_event と統一)、result=empty/listed で「履歴が空のユーザーの頻度」を観測する。
