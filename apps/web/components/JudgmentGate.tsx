@@ -6,6 +6,7 @@
 
 import type { Detection } from "@/lib/realtime/types";
 
+import { Button } from "@/components/sanba";
 import { DeepDiveList } from "./DeepDiveList";
 
 export interface JudgmentGateProps {
@@ -64,13 +65,9 @@ export function JudgmentGate({
               {error}
             </p>
           )}
-          <button
-            type="button"
-            onClick={onConfirm}
-            className="sanba-gold-gradient w-full rounded-[13px] py-[15px] text-[14px] font-bold text-[var(--sanba-ink)]"
-          >
+          <Button variant="gold" size="lg" block onClick={onConfirm}>
             要件を確定する
-          </button>
+          </Button>
         </>
       ) : (
         <>
@@ -86,13 +83,9 @@ export function JudgmentGate({
             </div>
           )}
           <div className="flex-1" />
-          <button
-            type="button"
-            onClick={onBack}
-            className="sanba-gold-gradient w-full rounded-[13px] py-[15px] text-[14px] font-bold text-[var(--sanba-ink)]"
-          >
+          <Button variant="gold" size="lg" block onClick={onBack}>
             問答に戻って解く
-          </button>
+          </Button>
           <button
             type="button"
             onClick={onForceEnd}

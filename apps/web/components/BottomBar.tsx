@@ -81,7 +81,7 @@ export function BottomBar({
           onClick={onToggleMic}
           className={`flex-1 rounded-[12px] py-3 text-[13px] font-bold ${
             micOn
-              ? "sanba-gold-gradient text-[var(--sanba-ink)]"
+              ? "sanba-gold-gradient border-2 border-[var(--sanba-frame)] text-[var(--sanba-ink)]"
               : "border border-[var(--sanba-border)] bg-[var(--sanba-surface)] text-[var(--sanba-muted)]"
           }`}
         >
@@ -106,7 +106,7 @@ export function BottomBar({
           type="button"
           aria-label="送信"
           onClick={send}
-          className="sanba-gold-gradient rounded-full px-4 py-[11px] text-[14px] font-bold text-[var(--sanba-ink)]"
+          className="sanba-gold-gradient rounded-full border-2 border-[var(--sanba-frame)] px-4 py-[10px] text-[14px] font-bold text-[var(--sanba-ink)]"
         >
           ▶
         </button>
