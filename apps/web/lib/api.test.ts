@@ -78,7 +78,7 @@ describe("deleteContextFile（#245 真の破棄）", () => {
   });
 });
 
-describe("createSession（ADR-0026 連携リポジトリ）", () => {
+describe("createSession（ADR-0027 連携リポジトリ）", () => {
   const ok = () =>
     vi.fn().mockResolvedValue({
       ok: true,
@@ -104,7 +104,7 @@ describe("createSession（ADR-0026 連携リポジトリ）", () => {
   });
 });
 
-describe("fetchGithubRepos（ADR-0026 候補一覧）", () => {
+describe("fetchGithubRepos（ADR-0027 候補一覧）", () => {
   it("GET /api/github/repos を idToken 付きで叩き、結果を返す", async () => {
     const body = { enabled: true, repos: ["acme/product-a"], default: "o/r" };
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve(body) });

@@ -91,7 +91,7 @@ export default function Home() {
   const fileInput = useRef<HTMLInputElement>(null);
   // ホーム「過去の要件を見る」履歴リスト（#215）の中身（#250）。取得できるまでは空 = 空状態。
   const [history, setHistory] = useState<SessionHistoryItem[]>([]);
-  // 連携リポジトリ（任意 / ADR-0026）。空文字 = 連携しない。
+  // 連携リポジトリ（任意 / ADR-0027）。空文字 = 連携しない。
   const [githubRepo, setGithubRepo] = useState("");
   // リポジトリ候補（GET /api/github/repos）。null = 未取得/取得失敗 → フィールドを出さない。
   const [repoChoices, setRepoChoices] = useState<GithubRepos | null>(null);
@@ -126,7 +126,7 @@ export default function Home() {
     };
   }, [auth.loggedIn, auth.credential]);
 
-  // 連携リポジトリの候補を取得する（ADR-0026）。ログイン済みのときだけ叩き、
+  // 連携リポジトリの候補を取得する（ADR-0027）。ログイン済みのときだけ叩き、
   // 無効（enabled=false）・取得失敗はフィールドを出さない/手入力のみで、本流は止めない。
   useEffect(() => {
     if (!auth.loggedIn) {
@@ -138,7 +138,7 @@ export default function Home() {
       .then((choices) => {
         if (!cancelled) {
           setRepoChoices(choices);
-          // 未選択（空）のとき既定リポジトリを初期選択する（ADR-0026）。
+          // 未選択（空）のとき既定リポジトリを初期選択する（ADR-0027）。
           // 関数形式で「保存済み値は上書きしない」を保証する。
           if (choices.default) {
             setGithubRepo((cur) => cur || choices.default!);
@@ -203,7 +203,7 @@ export default function Home() {
       // 同意ゲート後にセッションを作成（issue #10）。createSession → join で
       // 「join 済みトークン」を得てから、ゴール文を文脈として投稿する（契約 §4）。
       // 本人確認は Google ログイン（ADR-0012）。
-      // 連携リポジトリ（任意 / ADR-0026）は選択があるときだけ渡す（空 = 連携しない）。
+      // 連携リポジトリ（任意 / ADR-0027）は選択があるときだけ渡す（空 = 連携しない）。
       const session = await createSession(
         [role],
         consent,
@@ -360,7 +360,7 @@ export default function Home() {
             />
           </Field>
 
-          {/* 連携リポジトリ（任意 / ADR-0026）。コネクタ無効・候補未取得のときは出さない
+          {/* 連携リポジトリ（任意 / ADR-0027）。コネクタ無効・候補未取得のときは出さない
               （ADR-0007 の不干渉）。候補一覧があれば選択、無ければ owner/name の手入力へ
               フォールバックする。確定要件の Issue 起票先と、Issue/README の文脈取り込みに使う。 */}
           {repoChoices?.enabled &&

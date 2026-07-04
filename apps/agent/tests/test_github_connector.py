@@ -51,7 +51,7 @@ def test_requirements_to_issue_body_handles_empty() -> None:
 
 
 def test_resolve_github_repo_prefers_session_selection(monkeypatch) -> None:
-    """02 準備で選んだリポジトリが環境変数より優先される（ADR-0026）。"""
+    """02 準備で選んだリポジトリが環境変数より優先される（ADR-0027）。"""
     from sanba_shared.models import SessionMeta
     from sanba_shared.repository import SessionRepository
 

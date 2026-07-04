@@ -39,7 +39,7 @@ const joinSession = vi.fn(async (..._a: unknown[]) => ({
 const addSessionContext = vi.fn(async (..._a: unknown[]) => ({ indexed_chunks: 0 }));
 const uploadContextFile = vi.fn(async (..._a: unknown[]) => ({ indexed_chunks: 1 }));
 const fetchMySessions = vi.fn(async (..._a: unknown[]) => [] as unknown[]);
-// 連携リポジトリ候補（ADR-0026）。既定はコネクタ無効 = フィールド非表示（既存テストを変えない）。
+// 連携リポジトリ候補（ADR-0027）。既定はコネクタ無効 = フィールド非表示（既存テストを変えない）。
 const fetchGithubRepos = vi.fn(
   async (..._a: unknown[]) =>
     ({ enabled: false, repos: [], default: null }) as {
@@ -233,7 +233,7 @@ describe("入口フロー（#140）", () => {
     await waitFor(() => expect(screen.getByText("支度、相整いまして")).toBeTruthy());
   });
 
-  // ── 02 連携リポジトリ（ADR-0026）─────────────────────────────────────────
+  // ── 02 連携リポジトリ（ADR-0027）─────────────────────────────────────────
   it("コネクタ無効（既定）では連携リポジトリのフィールドを出さない", async () => {
     authState.loggedIn = true;
     render(<Home />);

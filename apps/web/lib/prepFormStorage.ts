@@ -8,7 +8,7 @@ export interface PrepForm {
   role?: string;
   goal?: string;
   consent?: boolean;
-  /** 連携リポジトリ "owner/name"（任意 / ADR-0026）。空文字は「連携しない」。 */
+  /** 連携リポジトリ "owner/name"（任意 / ADR-0027）。空文字は「連携しない」。 */
   githubRepo?: string;
 }
 

@@ -60,7 +60,7 @@ def test_create_without_consent_is_rejected() -> None:
     assert res.status_code == 400
 
 
-# ── セッション単位の連携リポジトリ（ADR-0026）─────────────────────────────
+# ── セッション単位の連携リポジトリ（ADR-0027）─────────────────────────────
 def test_create_session_accepts_github_repo() -> None:
     res = client.post(
         "/api/sessions",

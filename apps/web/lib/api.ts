@@ -35,7 +35,7 @@ export async function createSession(
   const body: Record<string, unknown> = { roles, consent_acknowledged: consentAcknowledged };
   // title 未指定なら API 既定 ("要件インタビュー") に委ねる。
   if (title !== undefined) body.title = title;
-  // 連携リポジトリ（任意 / ADR-0026）。未指定・空は「連携しない」= 送らない。
+  // 連携リポジトリ（任意 / ADR-0027）。未指定・空は「連携しない」= 送らない。
   if (githubRepo) body.github_repo = githubRepo;
   const res = await fetch(`${API_URL}/api/sessions`, {
     method: "POST",
@@ -346,7 +346,7 @@ export async function fetchMySessions(idToken: string | null): Promise<MySession
   return res.json();
 }
 
-/** `GET /api/github/repos`（ADR-0026）。02 準備「連携リポジトリ」の候補一覧。 */
+/** `GET /api/github/repos`（ADR-0027）。02 準備「連携リポジトリ」の候補一覧。 */
 export interface GithubRepos {
   /** コネクタが使える状態か。false なら UI はフィールドごと隠す。 */
   enabled: boolean;
@@ -357,7 +357,7 @@ export interface GithubRepos {
 }
 
 /**
- * GET /api/github/repos（ADR-0026）。セッション実施前に選べるリポジトリ候補を取得する。
+ * GET /api/github/repos（ADR-0027）。セッション実施前に選べるリポジトリ候補を取得する。
  * 認証は Google idToken（ADR-0012）。失敗時は例外を投げ、呼び出し側（02 準備）が
  * フィールド非表示のまま開始を止めないことを判断する。
  */

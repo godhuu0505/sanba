@@ -319,7 +319,7 @@ def _enable_github(monkeypatch: pytest.MonkeyPatch) -> dict[str, object]:
 
 
 def test_export_uses_session_selected_repo(monkeypatch: pytest.MonkeyPatch) -> None:
-    # 02 準備で選んだリポジトリへ起票する（ADR-0026）。環境変数 "o/r" ではなく選択値が勝つ。
+    # 02 準備で選んだリポジトリへ起票する（ADR-0027）。環境変数 "o/r" ではなく選択値が勝つ。
     created = client.post(
         "/api/sessions",
         json={"roles": ["pm"], "consent_acknowledged": True, "github_repo": "acme/product-a"},
@@ -340,7 +340,7 @@ def test_export_uses_session_selected_repo(monkeypatch: pytest.MonkeyPatch) -> N
 def test_export_falls_back_to_env_repo_without_selection(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # リポジトリ未選択のセッションは従来どおり環境変数 GITHUB_REPO へ（ADR-0026 の互換）。
+    # リポジトリ未選択のセッションは従来どおり環境変数 GITHUB_REPO へ（ADR-0027 の互換）。
     created = client.post("/api/sessions", json={"roles": ["pm"], "consent_acknowledged": True})
     sid = created.json()["session_id"]
     _read_repo._seed_requirement(

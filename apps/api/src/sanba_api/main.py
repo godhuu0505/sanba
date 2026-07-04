@@ -181,7 +181,7 @@ def require_session_access(
     return access
 
 
-# "owner/name" 形式（ADR-0026）。GitHub の実際の命名規則より緩いが、パス注入
+# "owner/name" 形式（ADR-0027）。GitHub の実際の命名規則より緩いが、パス注入
 # （`/` の追加や空文字）を弾ければ十分（トークン権限外のリポは GitHub 側が 404 を返す）。
 _GITHUB_REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 
@@ -204,7 +204,7 @@ class CreateSessionRequest(BaseModel):
     roles: list[str] = ["pm", "engineer", "customer"]
     # Explicit consent to recording + AI processing (issue #10).
     consent_acknowledged: bool = False
-    # セッション単位の連携リポジトリ "owner/name"（任意 / ADR-0026）。未指定・空は
+    # セッション単位の連携リポジトリ "owner/name"（任意 / ADR-0027）。未指定・空は
     # 「連携しない」= 環境変数 GITHUB_REPO へのフォールバック（従来挙動）。
     github_repo: str | None = None
 
@@ -336,7 +336,7 @@ def create_session(
             status_code=400,
             detail="consent required: recording and AI processing must be acknowledged",
         )
-    # 連携リポジトリ（任意 / ADR-0026）。空文字は「連携しない」= None に正規化し、
+    # 連携リポジトリ（任意 / ADR-0027）。空文字は「連携しない」= None に正規化し、
     # 形式不正（owner/name 以外）は黙って落とさず 400 で返す（起票時の失敗より早く気づける）。
     github_repo = (req.github_repo or "").strip() or None
     if github_repo is not None and not _GITHUB_REPO_RE.match(github_repo):
@@ -409,7 +409,7 @@ def list_my_sessions(user: AuthUser = Depends(require_user)) -> list[MySession]:
 
 
 class GithubReposResponse(BaseModel):
-    """`GET /api/github/repos`（ADR-0026）。02 準備「連携リポジトリ」の候補一覧。"""
+    """`GET /api/github/repos`（ADR-0027）。02 準備「連携リポジトリ」の候補一覧。"""
 
     # コネクタが使える状態か。False のとき UI はフィールドごと隠す（ADR-0007 の不干渉）。
     enabled: bool
@@ -421,7 +421,7 @@ class GithubReposResponse(BaseModel):
 
 @app.get("/api/github/repos", response_model=GithubReposResponse)
 def list_github_repos(user: AuthUser = Depends(require_user)) -> GithubReposResponse:
-    """セッション実施前に選べる GitHub リポジトリの候補を返す（ADR-0026）。
+    """セッション実施前に選べる GitHub リポジトリの候補を返す（ADR-0027）。
 
     コネクタ無効/トークン未設定は `enabled=False`。一覧取得の失敗は `repos=[]` のまま
     `enabled=True` で返し、UI は手入力（owner/name）へフォールバックする（開始を止めない）。
@@ -956,7 +956,7 @@ def export_requirements(
     if session is None:
         raise HTTPException(status_code=404, detail="session not found")
     # 起票先はセッションで選んだリポジトリを最優先し、未選択は環境変数へフォールバック
-    # （ADR-0026）。どちらも無ければ従来どおり黙って断る。
+    # （ADR-0027）。どちらも無ければ従来どおり黙って断る。
     export_repo = session.github_repo or settings.github_repo
     if not export_repo:
         return ExportResponse(exported=False, reason="github connector disabled")

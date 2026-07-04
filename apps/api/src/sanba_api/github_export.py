@@ -49,7 +49,7 @@ def requirements_to_issue_body(
 def list_repos(token: str, per_page: int = 100, max_pages: int = 10) -> list[str]:  # pragma: no cover - network
     """Return repo full names ("owner/name") the token can read, newest activity first.
 
-    02 準備「連携リポジトリ」の候補一覧（ADR-0026）。失敗は空リストで返し、
+    02 準備「連携リポジトリ」の候補一覧（ADR-0027）。失敗は空リストで返し、
     UI 側の手入力フォールバックに委ねる（一覧の不調で開始を止めない）。
     最大 max_pages * per_page 件（既定 1000 件）まで全ページ取得する。
     """

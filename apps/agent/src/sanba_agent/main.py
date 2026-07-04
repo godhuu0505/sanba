@@ -460,7 +460,7 @@ class SANBAAgent(Agent):
 
         インタビューの締めくくりで、合意した要件を実装チームに引き継ぐときに使う。
         """
-        # 起票先は 02 準備で選んだセッションのリポジトリを最優先する（ADR-0026）。
+        # 起票先は 02 準備で選んだセッションのリポジトリを最優先する（ADR-0027）。
         gh_repo = _resolve_github_repo(self._repo, self._session_id)
         if not _github_ready(gh_repo):
             return {"exported": False, "reason": "github connector disabled"}
@@ -521,7 +521,7 @@ def _github_ready(repo_name: str) -> bool:
 
 
 def _resolve_github_repo(repo: SessionRepository, session_id: str) -> str:
-    """連携リポジトリを「セッション選択 → 環境変数」の順で解決する（ADR-0026）。
+    """連携リポジトリを「セッション選択 → 環境変数」の順で解決する（ADR-0027）。
 
     02 準備で選ばれた値はセッション文書（`sessions/{id}.github_repo`）に載る。
     未選択・旧文書は環境変数 GITHUB_REPO（従来挙動）。どちらも無ければ空文字を返し、
@@ -538,7 +538,7 @@ def _resolve_github_repo(repo: SessionRepository, session_id: str) -> str:
 
 
 def seed_github_context(grounding: GroundingStore, session_id: str, repo_name: str) -> None:
-    """Pull the session's GitHub repo issues/README into grounding (issue #7 / ADR-0026).
+    """Pull the session's GitHub repo issues/README into grounding (issue #7 / ADR-0027).
 
     OFF unless the connector is explicitly enabled, so it never affects the demo path.
     """
