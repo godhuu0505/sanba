@@ -136,7 +136,14 @@ export default function Home() {
     let cancelled = false;
     fetchGithubRepos(auth.credential)
       .then((choices) => {
-        if (!cancelled) setRepoChoices(choices);
+        if (!cancelled) {
+          setRepoChoices(choices);
+          // 未選択（空）のとき既定リポジトリを初期選択する（ADR-0026）。
+          // 関数形式で「保存済み値は上書きしない」を保証する。
+          if (choices.default) {
+            setGithubRepo((cur) => cur || choices.default!);
+          }
+        }
       })
       .catch(() => {
         if (!cancelled) setRepoChoices(null);
