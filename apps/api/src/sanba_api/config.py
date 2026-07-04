@@ -82,6 +82,10 @@ class Settings(BaseSettings):
     github_connector_enabled: bool = False
     github_token: str = ""
     github_repo: str = ""  # "owner/name"
+    # セッション単位で選択・保存できるリポジトリの許可リスト（ADR-0027 / Codex P1）。
+    # "owner"（配下すべて）または "owner/name" のカンマ区切り。空 = 制限なし
+    # （単一チームでの利用前提。SANBA にログインできる全員が候補一覧を見られる点に注意）。
+    github_repo_allowlist: str = ""
 
     # ---- GitHub App: per-user repo linking (ADR-0028) ----
     # 連携機能のフラグ。未設定（app id/秘密鍵なし）の構成では連携経路をフェイルクローズする。

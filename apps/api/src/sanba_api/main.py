@@ -211,6 +211,20 @@ def require_session_access(
 _GITHUB_REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 
 
+def _github_repo_allowed(repo: str) -> bool:
+    """許可リスト（GITHUB_REPO_ALLOWLIST / ADR-0027）に照らして選択可否を返す。
+
+    エントリは "owner"（配下すべて）または "owner/name"。リスト空 = 制限なし。
+    候補一覧（GET /api/github/repos）と保存（POST /api/sessions）の両方が同じ判定を使い、
+    一覧に出ないリポジトリを直接 POST で保存する抜け道を塞ぐ（Codex P1）。
+    """
+    entries = [e.strip() for e in settings.github_repo_allowlist.split(",") if e.strip()]
+    if not entries:
+        return True
+    owner = repo.split("/", 1)[0]
+    return any(e == repo or e == owner for e in entries)
+
+
 def _confirmed_requirements(session_id: str) -> list[dict[str, Any]]:
     """会話確定軸（contract: confirmed）の要件のみを返す（確定判定の単一の定義 / #213）。
 
@@ -249,8 +263,10 @@ class CreateSessionRequest(BaseModel):
     roles: list[str] = ["pm", "engineer", "customer"]
     # Explicit consent to recording + AI processing (issue #10).
     consent_acknowledged: bool = False
-    # セッション単位の連携リポジトリ "owner/name"（任意 / ADR-0027）。未指定・空は
-    # 「連携しない」= 環境変数 GITHUB_REPO へのフォールバック（従来挙動）。
+    # セッション単位の連携リポジトリ（任意 / ADR-0027）。
+    #  - 未指定（None）: 従来挙動 = 環境変数 GITHUB_REPO へフォールバック。
+    #  - 空文字: 明示的な「連携しない」（既定リポジトリにも送らない / Codex P2）。
+    #  - "owner/name": このセッションの起票・grounding 先。
     github_repo: str | None = None
 
 
@@ -381,11 +397,18 @@ def create_session(
             status_code=400,
             detail="consent required: recording and AI processing must be acknowledged",
         )
-    # 連携リポジトリ（任意 / ADR-0027）。空文字は「連携しない」= None に正規化し、
-    # 形式不正（owner/name 以外）は黙って落とさず 400 で返す（起票時の失敗より早く気づける）。
-    github_repo = (req.github_repo or "").strip() or None
-    if github_repo is not None and not _GITHUB_REPO_RE.match(github_repo):
-        raise HTTPException(status_code=400, detail="github_repo must be in 'owner/name' format")
+    # 連携リポジトリ（任意 / ADR-0027）。未指定（None）はフォールバック、空文字は明示的な
+    # 「連携しない」としてそのまま保存する（Codex P2: 既定リポとオプトアウトを区別）。
+    # 形式不正・許可リスト外は黙って落とさず 400 で返す（起票時の失敗より早く気づける）。
+    github_repo: str | None = None
+    if req.github_repo is not None:
+        github_repo = req.github_repo.strip()
+        if github_repo and not _GITHUB_REPO_RE.match(github_repo):
+            raise HTTPException(
+                status_code=400, detail="github_repo must be in 'owner/name' format"
+            )
+        if github_repo and not _github_repo_allowed(github_repo):
+            raise HTTPException(status_code=400, detail="github_repo is not allowed")
     session_id = f"sess-{uuid.uuid4().hex[:8]}"
     invites = {
         role: create_invite(
@@ -633,17 +656,25 @@ def list_github_repos(user: AuthUser = Depends(require_user)) -> GithubReposResp
     """
     client = _github_app_client()
     link = _repo.get_github_link(user.sub)
+    # 既定リポジトリも許可リストを通す（Codex P2: 許可外の既定はリポ名の露出になり、
+    # UI が候補外の既定値を選択肢として補ってしまう）。App/connector の両経路で共通。
+    default = settings.github_repo if settings.github_repo else None
+    if default is not None and not _github_repo_allowed(default):
+        default = None
     if client is not None and link is not None:
         try:
             app_repos = client.list_repos(link.installation_id)
         except Exception as exc:  # pragma: no cover - network
             log.warning("github_list_repos_failed", error=str(exc))
             app_repos = []
+        # 許可リスト（設定時）は App 由来の候補にも一貫適用する（Codex P1 と同旨。connector
+        # だけ絞って App 側に許可外リポの選択経路が残るのを防ぐ）。
+        app_repos = [r for r in app_repos if _github_repo_allowed(r.full_name)]
         log.info("github_repos_listed", count=len(app_repos), sub=user.sub, source="app")
         return GithubReposResponse(
             enabled=True,
             repos=[r.full_name for r in app_repos],
-            default=settings.github_repo or None,
+            default=default,
             linked=True,
             items=[
                 GitHubRepoItem(
@@ -654,9 +685,11 @@ def list_github_repos(user: AuthUser = Depends(require_user)) -> GithubReposResp
         )
     if not (settings.github_connector_enabled and settings.github_token):
         return GithubReposResponse(enabled=False, repos=[])
-    repos = github_export.list_repos(settings.github_token)
+    # 許可リスト（設定時）で候補を絞る。SANBA にログインできる ≠ 対象 GitHub 組織の
+    # メンバーである環境で、共有トークンが読める private リポ名を漏らさない（Codex P1）。
+    repos = [r for r in github_export.list_repos(settings.github_token) if _github_repo_allowed(r)]
     log.info("github_repos_listed", count=len(repos), sub=user.sub, source="connector")
-    return GithubReposResponse(enabled=True, repos=repos, default=settings.github_repo or None)
+    return GithubReposResponse(enabled=True, repos=repos, default=default)
 
 
 @app.get("/api/github/branches", response_model=GitHubBranchesResponse)
@@ -775,6 +808,10 @@ def select_session_repo(
     # owner 固定（ADR-0028）: セッション所有者のみが前提 repo を紐づけられる。
     if access.sub != meta.owner_sub:
         raise HTTPException(status_code=403, detail="owner only")
+    # 許可リスト（GITHUB_REPO_ALLOWLIST）は App 経路の保存にも一貫適用する（Codex P1 と
+    # 同旨。候補一覧に出ないリポを直接 POST で紐づけ・索引する抜け道を塞ぐ）。
+    if not _github_repo_allowed(req.repo):
+        raise HTTPException(status_code=400, detail="github_repo is not allowed")
     client = _github_app_client()
     link = _repo.get_github_link(meta.owner_sub)
     if client is None or link is None:
@@ -1412,11 +1449,16 @@ def export_requirements(
     session = _repo.get_session(session_id)
     if session is None:
         raise HTTPException(status_code=404, detail="session not found")
-    # 起票先はセッションで選んだリポジトリを最優先し、未選択は環境変数へフォールバック
-    # （ADR-0027）。どちらも無ければ従来どおり黙って断る。
-    export_repo = session.github_repo or settings.github_repo
+    # 起票先の解決（ADR-0027）: セッション値が None のときだけ環境変数へフォールバックする。
+    # 空文字は明示的な「連携しない」なのでフォールバックしない（Codex P2）。
+    export_repo = session.github_repo if session.github_repo is not None else settings.github_repo
     if not export_repo:
         return ExportResponse(exported=False, reason="github connector disabled")
+    # 解決後の値にも許可リストを掛ける（Codex P2: 一覧・保存で絞っても、フォールバック先の
+    # 既定リポや allowlist 導入前に保存された値が許可外なら起票しない = fail-closed）。
+    if not _github_repo_allowed(export_repo):
+        log.warning("export_repo_not_allowed", session=session_id, repo=export_repo)
+        return ExportResponse(exported=False, reason="github repo not allowed")
     # 確定時の要件 ID 集合だけを取得して起票する（再計算しない / #213）。
     confirmed = _finalized_snapshot_requirements(session)
     title, body = github_export.requirements_to_issue_body(confirmed, session_id)

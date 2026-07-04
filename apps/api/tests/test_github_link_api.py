@@ -211,6 +211,21 @@ def test_list_repos_prefers_app_link_over_connector(monkeypatch: pytest.MonkeyPa
     assert res.json()["linked"] is True
 
 
+def test_list_repos_app_candidates_filtered_by_allowlist(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # 許可リスト（GITHUB_REPO_ALLOWLIST）は App 由来の候補一覧にも一貫適用する（Codex P1 と
+    # 同旨）。既定リポジトリも同じ判定を通す（許可外の既定はリポ名の露出になる）。
+    _link()
+    monkeypatch.setattr(main.settings, "github_repo_allowlist", "acme")
+    monkeypatch.setattr(main.settings, "github_repo", "octo/demo")
+    body = client.get("/api/github/repos").json()
+    assert body["linked"] is True
+    assert body["repos"] == []  # octo/demo は許可外
+    assert body["items"] == []
+    assert body["default"] is None
+
+
 def test_list_branches() -> None:
     _link()
     res = client.get("/api/github/branches", params={"repo": "octo/demo"})
@@ -266,6 +281,23 @@ def test_select_repo_requires_link() -> None:
     try:
         res = client.post(f"/api/sessions/{sid}/github", json={"repo": "octo/demo"})
         assert res.status_code == 409
+    finally:
+        app.dependency_overrides.pop(require_session_access, None)
+
+
+def test_select_repo_rejects_repo_outside_allowlist(monkeypatch: pytest.MonkeyPatch) -> None:
+    # 候補一覧を許可リストで絞っても、直接 POST で許可外リポを紐づけ・索引する抜け道を塞ぐ
+    # （Codex P1 と同旨 / App 経路の保存にも一貫適用）。
+    _link()
+    sid = _make_session()
+    _override_session_access(sid, OWNER)
+    monkeypatch.setattr(main.settings, "github_repo_allowlist", "acme")
+    try:
+        res = client.post(f"/api/sessions/{sid}/github", json={"repo": "octo/demo"})
+        assert res.status_code == 400
+        # 索引もキックされない（選択は保存されないまま）。
+        meta = main._repo.get_session(sid)
+        assert meta is not None and meta.github_repo is None
     finally:
         app.dependency_overrides.pop(require_session_access, None)
 

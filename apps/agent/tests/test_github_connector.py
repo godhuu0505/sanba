@@ -153,7 +153,7 @@ def test_resolve_github_repo_prefers_session_selection(monkeypatch) -> None:
 
 
 def test_resolve_github_repo_falls_back_to_env(monkeypatch) -> None:
-    """未選択セッション・未知セッションは環境変数へフォールバック（従来挙動の互換）。"""
+    """未選択セッション（文書あり・github_repo=None）は環境変数へフォールバック（互換）。"""
     from sanba_shared.models import SessionMeta
     from sanba_shared.repository import SessionRepository
 
@@ -171,4 +171,38 @@ def test_resolve_github_repo_falls_back_to_env(monkeypatch) -> None:
     )
     monkeypatch.setattr(settings, "github_repo", "org/env-default")
     assert _resolve_github_repo(repo, "sess-plain") == "org/env-default"
-    assert _resolve_github_repo(repo, "sess-unknown") == "org/env-default"
+
+
+def test_resolve_github_repo_missing_session_is_fail_closed(monkeypatch) -> None:
+    """セッション文書が無い（未作成/削除済み/誤設定の空ストア）は既定リポへ流さない
+    （Codex P2: 選択値を確認できないときは連携しない扱い = fail-closed）。"""
+    from sanba_shared.repository import SessionRepository
+
+    from sanba_agent.config import settings
+    from sanba_agent.main import _resolve_github_repo
+
+    repo = SessionRepository()
+    monkeypatch.setattr(settings, "github_repo", "org/env-default")
+    assert _resolve_github_repo(repo, "sess-unknown") == ""
+
+
+def test_resolve_github_repo_respects_explicit_opt_out(monkeypatch) -> None:
+    """空文字 = 明示的な「連携しない」。環境変数へフォールバックしない（Codex P2）。"""
+    from sanba_shared.models import SessionMeta
+    from sanba_shared.repository import SessionRepository
+
+    from sanba_agent.config import settings
+    from sanba_agent.main import _resolve_github_repo
+
+    repo = SessionRepository()
+    repo.create_session_doc(
+        SessionMeta(
+            id="sess-optout",
+            title="t",
+            owner_sub="owner-sub",
+            owner_email="owner@example.com",
+            github_repo="",
+        )
+    )
+    monkeypatch.setattr(settings, "github_repo", "org/env-default")
+    assert _resolve_github_repo(repo, "sess-optout") == ""

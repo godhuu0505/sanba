@@ -35,8 +35,9 @@ export async function createSession(
   const body: Record<string, unknown> = { roles, consent_acknowledged: consentAcknowledged };
   // title 未指定なら API 既定 ("要件インタビュー") に委ねる。
   if (title !== undefined) body.title = title;
-  // 連携リポジトリ（任意 / ADR-0027）。未指定・空は「連携しない」= 送らない。
-  if (githubRepo) body.github_repo = githubRepo;
+  // 連携リポジトリ（任意 / ADR-0027）。undefined = 未指定（API が既定へフォールバック）、
+  // 空文字 = 明示的な「連携しない」（既定にも送らない）なので、空文字もそのまま送る。
+  if (githubRepo !== undefined) body.github_repo = githubRepo;
   const res = await fetch(`${API_URL}/api/sessions`, {
     method: "POST",
     headers: authHeaders(idToken),

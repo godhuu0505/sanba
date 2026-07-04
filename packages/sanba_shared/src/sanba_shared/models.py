@@ -128,8 +128,9 @@ class SessionMeta(BaseModel):
     finalized_requirement_ids: list[str] = Field(default_factory=list)
 
     # ---- 連携 GitHub リポジトリ (ADR-0027 / ADR-0028) ----
-    # セッション単位の GitHub リポジトリ（"owner/name" / ADR-0027）。02 準備で選択され、
-    # grounding 取り込みと要件→Issue 起票の対象になる。None は未選択＝環境変数へフォールバック。
+    # セッション単位の GitHub リポジトリ（ADR-0027）。02 準備で選択され、grounding 取り込みと
+    # 要件→Issue 起票の対象になる。None = 未指定（環境変数へフォールバック / 旧文書の互換）、
+    # 空文字 = 明示的な「連携しない」（既定リポジトリにも送らない）、"owner/name" = 選択済み。
     github_repo: str | None = None
     # 以下は GitHub App 連携（ADR-0028）での拡張。owner の App installation が読める repo を
     # 選ぶと branch を確定し ES 索引される。旧文書・connector 選択は既定（None / none）のまま。

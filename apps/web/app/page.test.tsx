@@ -105,6 +105,11 @@ describe("入口フロー（#140）", () => {
     fetchMySessions.mockClear();
     fetchMySessions.mockImplementation(async () => []);
     fetchGithubRepos.mockClear();
+    fetchGithubRepos.mockImplementation(async () => ({
+      enabled: false,
+      repos: [],
+      default: null,
+    }));
     listGithubBranches.mockClear();
     listGithubBranches.mockImplementation(async () => []);
     selectSessionRepo.mockClear();
@@ -246,6 +251,8 @@ describe("入口フロー（#140）", () => {
     authState.loggedIn = true;
     render(<Home />);
     fireEvent.click(screen.getByText("＋ 壁打ちを始める"));
+    // 候補取得の settle を待つ（取得中は開始が無効 / Codex P2）。
+    await act(async () => {});
     fireEvent.click(screen.getByRole("radio", { name: "エンジニア" }));
     fireEvent.click(screen.getByRole("checkbox"));
     fireEvent.click(screen.getByRole("button", { name: "インタビューを始める" }));
@@ -257,6 +264,16 @@ describe("入口フロー（#140）", () => {
   });
 
   // ── 02 連携リポジトリ（ADR-0027）─────────────────────────────────────────
+  it("ホーム表示だけでは候補一覧を取得しない（02 準備で初めて取得する / Codex P2）", async () => {
+    authState.loggedIn = true;
+    render(<Home />);
+    // ホーム（01）では叩かない = /user/repos 全ページ取得を無駄に発火させない。
+    await waitFor(() => expect(fetchMySessions).toHaveBeenCalled());
+    expect(fetchGithubRepos).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText("＋ 壁打ちを始める"));
+    await waitFor(() => expect(fetchGithubRepos).toHaveBeenCalledTimes(1));
+  });
+
   it("コネクタ無効（既定）では連携リポジトリのフィールドを出さない", async () => {
     authState.loggedIn = true;
     render(<Home />);
@@ -283,7 +300,7 @@ describe("入口フロー（#140）", () => {
     expect(createSession.mock.calls[0][4]).toBe("acme/product-a");
   });
 
-  it("未選択（連携しない）なら createSession にリポジトリを渡さない", async () => {
+  it("「連携しない」は空文字（明示的オプトアウト）として createSession に渡る", async () => {
     authState.loggedIn = true;
     fetchGithubRepos.mockResolvedValueOnce({
       enabled: true,
@@ -296,7 +313,67 @@ describe("入口フロー（#140）", () => {
     fireEvent.click(screen.getByRole("checkbox"));
     fireEvent.click(screen.getByRole("button", { name: "インタビューを始める" }));
     await waitFor(() => expect(createSession).toHaveBeenCalledTimes(1));
-    expect(createSession.mock.calls[0][4]).toBeUndefined();
+    // 空文字 = 「既定リポジトリにも送らない」を API に明示する（Codex P2）。
+    expect(createSession.mock.calls[0][4]).toBe("");
+  });
+
+  it("既定リポジトリは初期選択に反映され、そのまま開始すると既定が渡る", async () => {
+    authState.loggedIn = true;
+    fetchGithubRepos.mockResolvedValueOnce({
+      enabled: true,
+      repos: ["acme/product-a", "o/r"],
+      default: "o/r",
+    });
+    render(<Home />);
+    fireEvent.click(screen.getByText("＋ 壁打ちを始める"));
+    const select = (await screen.findByLabelText(
+      "連携リポジトリ（任意）",
+    )) as HTMLSelectElement;
+    // 表示と挙動の一致（Codex P2）: フォールバック先が選択状態として見える。
+    await waitFor(() => expect(select.value).toBe("o/r"));
+    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(screen.getByRole("button", { name: "インタビューを始める" }));
+    await waitFor(() => expect(createSession).toHaveBeenCalledTimes(1));
+    expect(createSession.mock.calls[0][4]).toBe("o/r");
+  });
+
+  it("保存済みの「連携しない」（空文字）は既定リポの初期選択で上書きされない", async () => {
+    // 前回明示的に「連携しない」を選んで保存されている状態（Codex P2）。
+    window.sessionStorage.setItem("sanba.prep.v1", JSON.stringify({ githubRepo: "" }));
+    authState.loggedIn = true;
+    fetchGithubRepos.mockResolvedValueOnce({
+      enabled: true,
+      repos: ["o/r"],
+      default: "o/r",
+    });
+    render(<Home />);
+    fireEvent.click(screen.getByText("＋ 壁打ちを始める"));
+    const select = (await screen.findByLabelText("連携リポジトリ（任意）")) as HTMLSelectElement;
+    await act(async () => {});
+    // 既定 "o/r" で上書きされず「連携しない」のまま。
+    expect(select.value).toBe("");
+    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(screen.getByRole("button", { name: "インタビューを始める" }));
+    await waitFor(() => expect(createSession).toHaveBeenCalledTimes(1));
+    expect(createSession.mock.calls[0][4]).toBe("");
+  });
+
+  it("候補取得が終わるまで開始は無効（確認前の既定リポ起票を防ぐ / Codex P2）", async () => {
+    authState.loggedIn = true;
+    let resolveFetch!: (v: { enabled: boolean; repos: string[]; default: string | null }) => void;
+    fetchGithubRepos.mockImplementationOnce(
+      () => new Promise((resolve) => (resolveFetch = resolve)),
+    );
+    render(<Home />);
+    fireEvent.click(screen.getByText("＋ 壁打ちを始める"));
+    fireEvent.click(screen.getByRole("checkbox"));
+    const cta = screen.getByRole("button", { name: "インタビューを始める" }) as HTMLButtonElement;
+    // 取得中は無効。settle（成功/失敗どちらでも）で解放される。
+    expect(cta.disabled).toBe(true);
+    await act(async () => {
+      resolveFetch({ enabled: false, repos: [], default: null });
+    });
+    expect(cta.disabled).toBe(false);
   });
 
   it("候補一覧が空（取得失敗）でも手入力欄にフォールバックして選べる", async () => {
@@ -402,10 +479,13 @@ describe("入口フロー（#140）", () => {
   });
 
   // ── 02 参考資料（バイナリ添付）#222 ──────────────────────────────────────
-  function gotoPrepare() {
+  // 候補取得（fetchGithubRepos）が settle するまで CTA は無効（Codex P2）なので、
+  // 準備画面に入ったらマイクロタスクを流して repoLoading を落としてから操作する。
+  async function gotoPrepare() {
     authState.loggedIn = true;
     const view = render(<Home />);
     fireEvent.click(screen.getByText("＋ 壁打ちを始める"));
+    await act(async () => {});
     return view;
   }
 
@@ -414,8 +494,8 @@ describe("入口フロー（#140）", () => {
     fireEvent.change(input, { target: { files } });
   }
 
-  it("「＋ ファイルを追加」で手段選択シートが開き、アップロード/Drive のみ（カメラ/画面共有は出さない）", () => {
-    gotoPrepare();
+  it("「＋ ファイルを追加」で手段選択シートが開き、アップロード/Drive のみ（カメラ/画面共有は出さない）", async () => {
+    await gotoPrepare();
     fireEvent.click(screen.getByRole("button", { name: "＋ ファイルを追加" }));
     expect(screen.getByRole("dialog", { name: "資料の追加方法" })).toBeTruthy();
     expect(screen.getByText("ファイルをアップロード")).toBeTruthy();
@@ -425,8 +505,8 @@ describe("入口フロー（#140）", () => {
     expect(screen.queryByText("画面を共有")).toBeNull();
   });
 
-  it("ファイルを添付するとチップ表示され、削除できる", () => {
-    const { container } = gotoPrepare();
+  it("ファイルを添付するとチップ表示され、削除できる", async () => {
+    const { container } = await gotoPrepare();
     const png = new File(["x"], "mock.png", { type: "image/png" });
     pickFiles(container, [png]);
     const list = screen.getByRole("list", { name: "添付した参考資料" });
@@ -435,8 +515,8 @@ describe("入口フロー（#140）", () => {
     expect(screen.queryByText("mock.png")).toBeNull();
   });
 
-  it("非対応形式は弾いて理由を出し、ステージしない", () => {
-    const { container } = gotoPrepare();
+  it("非対応形式は弾いて理由を出し、ステージしない", async () => {
+    const { container } = await gotoPrepare();
     const bad = new File(["x"], "secret.txt", { type: "text/plain" });
     pickFiles(container, [bad]);
     expect(screen.getByRole("alert").textContent).toContain("対応していない形式");
@@ -444,7 +524,7 @@ describe("入口フロー（#140）", () => {
   });
 
   it("開始時にステージ済みファイルが join 後に投入され、03-0 サマリに件数/名が反映される", async () => {
-    const { container } = gotoPrepare();
+    const { container } = await gotoPrepare();
     fireEvent.click(screen.getByRole("checkbox"));
     pickFiles(container, [
       new File(["x"], "PRD.png", { type: "image/png" }),
@@ -462,7 +542,7 @@ describe("入口フロー（#140）", () => {
   });
 
   it("投入失敗分は開始は止めず、サマリで添付済み扱いにせず失敗件数を出す（Codex P2）", async () => {
-    const { container } = gotoPrepare();
+    const { container } = await gotoPrepare();
     fireEvent.click(screen.getByRole("checkbox"));
     uploadContextFile.mockRejectedValueOnce(new Error("upload failed: 500"));
     pickFiles(container, [new File(["x"], "ng.png", { type: "image/png" })]);
@@ -475,8 +555,8 @@ describe("入口フロー（#140）", () => {
     expect(screen.getByText(/1件は投入できませんでした/)).toBeTruthy();
   });
 
-  it("拡張子が無くても MIME が画像/動画なら受理する（API と整合 / Codex P2）", () => {
-    const { container } = gotoPrepare();
+  it("拡張子が無くても MIME が画像/動画なら受理する（API と整合 / Codex P2）", async () => {
+    const { container } = await gotoPrepare();
     pickFiles(container, [new File(["x"], "clipboard-image", { type: "image/png" })]);
     expect(
       screen.getByRole("list", { name: "添付した参考資料" }).textContent,
@@ -490,6 +570,7 @@ describe("入口フロー（#140）", () => {
     createSession.mockImplementationOnce(() => new Promise((r) => { release = r; }));
     const { container } = render(<Home />);
     fireEvent.click(screen.getByText("＋ 壁打ちを始める"));
+    await act(async () => {}); // 候補取得の settle（取得中は開始が無効 / Codex P2）
     fireEvent.click(screen.getByRole("checkbox"));
     pickFiles(container, [new File(["x"], "a.png", { type: "image/png" })]);
     fireEvent.click(screen.getByRole("button", { name: "インタビューを始める" }));
@@ -512,6 +593,7 @@ describe("入口フロー（#140）", () => {
     );
     render(<Home />);
     fireEvent.click(screen.getByText("＋ 壁打ちを始める"));
+    await act(async () => {}); // 候補取得の settle（取得中は開始が無効 / Codex P2）
     fireEvent.click(screen.getByRole("checkbox"));
     const cta = screen.getByRole("button", { name: "インタビューを始める" });
     fireEvent.click(cta);
