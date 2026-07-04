@@ -349,12 +349,19 @@ export async function fetchMySessions(idToken: string | null): Promise<MySession
 
 /** `GET /api/github/repos`（ADR-0027）。02 準備「連携リポジトリ」の候補一覧。 */
 export interface GithubRepos {
-  /** コネクタが使える状態か。false なら UI はフィールドごと隠す。 */
+  /** コネクタ/App 連携のいずれかが使える状態か。false なら UI はフィールドごと隠す。 */
   enabled: boolean;
   /** 選べる "owner/name" の一覧（更新が新しい順）。空なら手入力へフォールバック。 */
   repos: string[];
   /** 環境変数の既定リポジトリ（あれば初期選択に使える）。 */
   default: string | null;
+  /**
+   * 本人が GitHub App 連携済みで一覧が App 由来か（ADR-0028 / additive）。
+   * true のとき UI は branch 選択と開始時の索引キックを有効化する。
+   */
+  linked?: boolean;
+  /** App 由来のときの詳細（default_branch / private）。connector 由来では省略/空。 */
+  items?: GitHubRepoItem[];
 }
 
 /**
@@ -459,4 +466,99 @@ async function adminFetch<T>(path: string, idToken: string | null, init?: Reques
 // 要件確認廃止に伴い削除した。要件の閲覧は本人限定の fetchMySessionRequirements が担う。
 export function listAdminSessions(idToken: string | null): Promise<AdminSession[]> {
   return adminFetch<AdminSession[]>("/api/admin/sessions", idToken);
+}
+
+// ===== GitHub repo linking (ADR-0028) =======================================
+
+export interface GitHubLinkStatus {
+  linked: boolean;
+  github_login: string | null;
+}
+
+export interface GitHubRepoItem {
+  full_name: string;
+  default_branch: string;
+  private: boolean;
+}
+
+export interface GitHubBranchItem {
+  name: string;
+  sha: string;
+}
+
+export interface SessionGitHub {
+  repo: string | null;
+  branch: string | null;
+  commit_sha: string | null;
+  // none | pending | indexing | ready | partial | failed
+  status: string;
+}
+
+// 連携状態の取得・開始・解除は Google idToken（require_user）で認可される。
+export async function getGithubLinkStatus(idToken: string | null): Promise<GitHubLinkStatus> {
+  const res = await fetch(`${API_URL}/api/github/link`, { headers: authHeaders(idToken) });
+  if (!res.ok) throw new Error(`github link status failed: ${res.status}`);
+  return res.json();
+}
+
+export async function startGithubLink(idToken: string | null): Promise<{ install_url: string }> {
+  const res = await fetch(`${API_URL}/api/github/link/start`, {
+    method: "POST",
+    headers: authHeaders(idToken),
+  });
+  if (!res.ok) throw new Error(`github link start failed: ${res.status}`);
+  return res.json();
+}
+
+export async function unlinkGithub(idToken: string | null): Promise<GitHubLinkStatus> {
+  const res = await fetch(`${API_URL}/api/github/link`, {
+    method: "DELETE",
+    headers: authHeaders(idToken),
+  });
+  if (!res.ok) throw new Error(`github unlink failed: ${res.status}`);
+  return res.json();
+}
+
+// repo 候補一覧は fetchGithubRepos（GET /api/github/repos）に統一されている（ADR-0027）。
+// App 連携済みなら linked=true と items（default_branch/private 付き）が載る。
+
+export async function listGithubBranches(
+  repo: string,
+  idToken: string | null,
+): Promise<GitHubBranchItem[]> {
+  const res = await fetch(
+    `${API_URL}/api/github/branches?repo=${encodeURIComponent(repo)}`,
+    { headers: authHeaders(idToken) },
+  );
+  if (!res.ok) throw new Error(`github branches failed: ${res.status}`);
+  return (await res.json()).items;
+}
+
+// repo 選択・状態取得は join 済みトークン（session_token / 契約 §4）で認可される。
+export async function selectSessionRepo(
+  sessionId: string,
+  repo: string,
+  branch: string | null,
+  sessionToken: string | null,
+): Promise<SessionGitHub> {
+  const body: Record<string, unknown> = { repo };
+  if (branch) body.branch = branch;
+  const res = await fetch(`${API_URL}/api/sessions/${sessionId}/github`, {
+    method: "POST",
+    headers: authHeaders(sessionToken),
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`select repo failed: ${res.status}`);
+  return res.json();
+}
+
+export async function getSessionRepo(
+  sessionId: string,
+  sessionToken: string | null,
+): Promise<SessionGitHub> {
+  const res = await fetch(`${API_URL}/api/sessions/${sessionId}/github`, {
+    headers: authHeaders(sessionToken),
+  });
+  if (!res.ok) throw new Error(`get session repo failed: ${res.status}`);
+  return res.json();
 }

@@ -259,19 +259,24 @@ gcloud compute ssl-certificates describe sanba-cert --global --format='value(man
 
 ---
 
-## 6.6. Terraform を CI/CD で回す（PR で plan・GitHub Mobile で apply）
+## 6.6. Terraform を CI/CD で回す（PR で plan・main マージで自動 apply）
 
-`infra/terraform` の変更を **PR で `terraform plan` 自動確認**し、**GitHub Mobile から `apply`** で
-本番反映するためのワークフロー `.github/workflows/terraform.yml`。`deploy.yml`（イメージ差し替え）
-とは別物で、こちらは env/secret/LB/DNS など**インフラそのもの**を反映する。
+`infra/terraform` の変更を **PR で `terraform plan` 自動確認**し、**main マージで自動 `apply`**
+するためのワークフロー `.github/workflows/terraform.yml`（ADR-0026）。env/secret/LB/DNS など
+**インフラそのもの**を反映する（このプロダクトのマイグレーション工程に相当）。
 
 ### フロー
 - **PR（`infra/terraform/**` を変更）** → `plan` を実行し、結果を PR にコメント。人間が plan を
   確認してマージ。
-- **本番反映** → GitHub Mobile の **Actions → Terraform (infra) → Run workflow → `action=apply`**。
-  その場で plan → 保存した plan を `apply`（＝「plan で問題なければ apply」）。
-- 安全弁: `production` 環境に **required reviewers** を付ければ、apply 実行時に承認ゲートが入る
-  （**Settings → Environments → New environment `production`** で設定）。
+- **main マージ** → `deploy.yml` の `migrate` ジョブが `terraform.yml` を workflow_call で呼び、
+  その場で plan → 保存した plan を `apply`（＝「plan で問題なければ apply」）。**apply 成功後に**
+  変更 app のイメージ差し替え（`deploy` ジョブ）へ進む。infra 変更が無いマージでは `migrate` は
+  skip され、イメージ差し替えだけが走る。
+- **手動反映（ロールバック・初回構築用）** → GitHub Mobile の
+  **Actions → Terraform (infra) → Run workflow → `action=apply`**。
+- 安全弁: `production` 環境に **required reviewers** を付ければ、apply 実行時（自動・手動とも）に
+  承認ゲートが入る（**Settings → Environments → New environment `production`** で設定）。
+  承認されるまで後段の deploy も待つ。
 
 ### 事前準備（一度きりの手作業）
 

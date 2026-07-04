@@ -28,7 +28,8 @@ flowchart LR
 
 - **CI** (`.github/workflows/ci.yml`): push/PR で lint（ruff/biome）・型チェック（mypy/tsc）・単体&結合テスト・Docker ビルド。
 - **LLM 評価** (`.github/workflows/llm-eval.yml`): プロンプト変更時に Langfuse のデータセットで回帰評価。スコア低下で fail。
-- **CD** (`.github/workflows/deploy.yml`): main マージで Cloud Build → Cloud Run へデプロイ。Workload Identity Federation で鍵レス認証。
+- **CD** (`.github/workflows/deploy.yml`): main マージで「マイグレーション（`infra/terraform` 変更時の terraform apply）→ イメージビルド → Cloud Run デプロイ」を順序保証つきで自動実行（ADR-0026）。Workload Identity Federation で鍵レス認証。
+- **IaC の plan/apply** (`.github/workflows/terraform.yml`): PR で `terraform plan` を自動コメント（人間レビュー）。apply は main マージで `deploy.yml` から自動、または手動 dispatch（ロールバック用）。
 
 ## 2. IaC（とどける基盤）
 

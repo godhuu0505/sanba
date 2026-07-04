@@ -38,6 +38,9 @@ GitHub コネクタ（ADR-0007）は「読み取り grounding（Issue/README →
    GitHub 組織のメンバーである環境では、共有トークンが読める private リポ名が候補一覧から
    漏れ得る。"owner" または "owner/name" のカンマ区切りで**候補一覧と保存の両方**を制限する
    （空 = 制限なし。単一チーム利用の既定）。一覧は `/user/repos` を最大 10 ページ辿る。
+   さらに**解決後の起票先**（フォールバック先の既定リポ・allowlist 導入前の保存値を含む）
+   にも同じ判定を掛け、GitHub App 経路（ADR-0028: App 由来の候補一覧・
+   `POST /api/sessions/{id}/github` の repo 選択/索引キック）にも一貫適用する。
 
 ## 影響
 

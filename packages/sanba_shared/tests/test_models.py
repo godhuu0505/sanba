@@ -44,3 +44,20 @@ def test_session_meta_roundtrips_through_json() -> None:
     restored = SessionMeta.model_validate(meta.model_dump(mode="json"))
     assert restored == meta
     assert restored.status == "active"
+
+
+def test_session_meta_github_fields_default_for_legacy_docs() -> None:
+    from sanba_shared.models import GitHubIndexStatus
+
+    # 旧文書（github_* 無し）は None / none でフォールバックする (ADR-0028)。
+    legacy = {
+        "id": "sess-old",
+        "title": "t",
+        "owner_sub": "sub",
+        "owner_email": "o@example.com",
+    }
+    meta = SessionMeta.model_validate(legacy)
+    assert meta.github_repo is None
+    assert meta.github_branch is None
+    assert meta.github_commit_sha is None
+    assert meta.github_index_status is GitHubIndexStatus.NONE

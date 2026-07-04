@@ -70,6 +70,35 @@ class Requirement(BaseModel):
     approved_at: datetime | None = None
 
 
+class GitHubIndexStatus(StrEnum):
+    """セッションに紐づけた repo の ES 索引状態 (ADR-0028)。
+
+    none: 未紐づけ。pending: キュー投入済み。indexing: 索引中。
+    ready: 完了（search_grounding で参照可）。partial: 総量キャップ等で一部のみ。
+    failed: 取得/索引に失敗。
+    """
+
+    NONE = "none"
+    PENDING = "pending"
+    INDEXING = "indexing"
+    READY = "ready"
+    PARTIAL = "partial"
+    FAILED = "failed"
+
+
+class GitHubLink(BaseModel):
+    """ユーザーの GitHub App 連携 (`users/{sub}`)。ADR-0028。
+
+    生のアクセストークンは保存しない。installation token は都度 App 秘密鍵から発行する。
+    `sub` は Google ID トークンの subject（所有者の検証済み identity）。
+    """
+
+    sub: str
+    installation_id: int
+    github_login: str
+    linked_at: datetime = Field(default_factory=_now)
+
+
 class Utterance(BaseModel):
     speaker: str
     text: str
@@ -88,10 +117,6 @@ class SessionMeta(BaseModel):
     owner_sub: str
     owner_email: str
     roles: list[str] = Field(default_factory=list)
-    # セッション単位の GitHub リポジトリ（ADR-0027）。02 準備で選択され、grounding 取り込みと
-    # 要件→Issue 起票の対象になる。None = 未指定（環境変数へフォールバック / 旧文書の互換）、
-    # 空文字 = 明示的な「連携しない」（既定リポジトリにも送らない）、"owner/name" = 選択済み。
-    github_repo: str | None = None
     # active → finalized（07 判定で参加者が要件を確定したとき / #186）。
     status: str = "active"
     created_at: datetime = Field(default_factory=_now)
@@ -101,6 +126,21 @@ class SessionMeta(BaseModel):
     # 確定時点の要件 ID の不可逆スナップショット（#213）。finalize 後に要件が増減/却下
     # されても export はこの集合に固定して起票する。旧文書は既定 [] でフォールバック。
     finalized_requirement_ids: list[str] = Field(default_factory=list)
+
+    # ---- 連携 GitHub リポジトリ (ADR-0027 / ADR-0028) ----
+    # セッション単位の GitHub リポジトリ（ADR-0027）。02 準備で選択され、grounding 取り込みと
+    # 要件→Issue 起票の対象になる。None = 未指定（環境変数へフォールバック / 旧文書の互換）、
+    # 空文字 = 明示的な「連携しない」（既定リポジトリにも送らない）、"owner/name" = 選択済み。
+    github_repo: str | None = None
+    # 以下は GitHub App 連携（ADR-0028）での拡張。owner の App installation が読める repo を
+    # 選ぶと branch を確定し ES 索引される。旧文書・connector 選択は既定（None / none）のまま。
+    github_branch: str | None = None
+    # 索引をピン留めした commit sha（鮮度の基準・(repo,branch,sha) 索引キー）。
+    github_commit_sha: str | None = None
+    github_index_status: GitHubIndexStatus = GitHubIndexStatus.NONE
+    # 索引時に組み立てた repo 要約（名/説明/README先頭/ツリー概要）。agent が初期 instructions に
+    # proactive シードする（ADR-0028・retrieval 任せにしない）。索引完了時に書き込む。
+    github_summary: str | None = None
 
 
 class AnalysisResult(BaseModel):

@@ -35,6 +35,8 @@ import {
   fetchMySessions,
   type GithubRepos,
   joinSession,
+  listGithubBranches,
+  selectSessionRepo,
   uploadContextFile,
   type JoinResponse,
 } from "../lib/api";
@@ -102,7 +104,18 @@ export default function Home() {
   // 永続化 effect が復元直後から常に githubRepo を書くため readPrep では判別できない。
   // 保存値の復元・ユーザー操作で true になり、以後は既定リポの初期選択で上書きしない。
   const githubRepoTouched = useRef(false);
+  // GitHub App 連携時の branch 選択（ADR-0028）。既定はデフォルトブランチ。
+  const [githubBranch, setGithubBranch] = useState("");
+  const [branchChoices, setBranchChoices] = useState<string[]>([]);
   const auth = useAuth();
+
+  // App 由来の候補として選ばれた repo（ADR-0028）。手入力・connector 由来の選択は対象外
+  //（開始時の索引キックは App installation が読める repo に限る）。
+  const appRepoItem =
+    repoChoices?.linked && githubRepo
+      ? (repoChoices.items ?? []).find((i) => i.full_name === githubRepo)
+      : undefined;
+  const appDefaultBranch = appRepoItem?.default_branch ?? null;
 
   // 本人のセッション履歴を取得して履歴リストへ供給する（#250）。ログイン済みのときだけ叩き、
   // 失敗時は空状態を維持する（履歴は補助情報なので本流＝壁打ち開始は止めない）。idToken が
@@ -160,6 +173,40 @@ export default function Home() {
       cancelled = true;
     };
   }, [step, auth.loggedIn, auth.credential, repoChoices]);
+
+  // App 由来の repo が確定したら branch 一覧を取得する（ADR-0028。既定はデフォルトブランチ）。
+  // 一覧が来るまで（または取得失敗時も）デフォルトブランチだけで開始できる（本流を止めない）。
+  // repo を素早く切り替えたときの古い応答は cancelled で破棄し、選択を巻き戻さない（Codex P2）。
+  useEffect(() => {
+    if (!appDefaultBranch) {
+      setBranchChoices([]);
+      setGithubBranch("");
+      return;
+    }
+    let cancelled = false;
+    setGithubBranch(appDefaultBranch);
+    setBranchChoices([appDefaultBranch]);
+    listGithubBranches(githubRepo, auth.credential)
+      .then((items) => {
+        if (cancelled) return;
+        const names = items.map((b) => b.name);
+        if (names.length === 0) return;
+        setBranchChoices(names);
+        setGithubBranch((cur) =>
+          names.includes(cur)
+            ? cur
+            : names.includes(appDefaultBranch)
+              ? appDefaultBranch
+              : names[0],
+        );
+      })
+      .catch(() => {
+        // branch 一覧の不調はデフォルトブランチのまま開始できる（開始を止めない）。
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [githubRepo, appDefaultBranch, auth.credential]);
 
   // 02 準備フォーム（ゴール/役割/同意）を /login 往復で失わないよう復元・保存する（#179）。
   // ハイドレーション不一致を避けるためマウント後に復元し（読み出しが先）、以降の変更を保存する。
@@ -246,6 +293,27 @@ export default function Home() {
       if (goal.trim()) {
         // ゴールは RAG・会話初期文脈へ取り込む（source_name=goal / 02-prepare.md AC）。
         await addSessionContext(joined.session_id, goal, joined.session_token, "goal");
+      }
+      if (appRepoItem) {
+        // App 連携済みの repo は branch を確定して非同期索引をキックする（ADR-0028）。
+        // 索引完了は会話開始までに間に合わなくても部分結果で深掘りできるため待たない。ただし
+        // キック自体に失敗（権限変更/branch削除/GitHub 502 等）したら、ユーザーが前提 repo を
+        // 明示選択しているのに索引無しで開始すると気づけないため、開始を止めて理由を表示する
+        // （Codex P2）。session は TTL で消えるので再開始でやり直せる。
+        try {
+          await selectSessionRepo(
+            joined.session_id,
+            githubRepo,
+            githubBranch || null,
+            joined.session_token,
+          );
+        } catch (repoErr) {
+          console.error("select session repo failed", { error: repoErr });
+          setError(
+            `前提リポジトリ「${githubRepo}」の紐づけに失敗しました。時間をおいて再度お試しください。`,
+          );
+          return;
+        }
       }
       // 準備画面でステージした参考資料を、会話開始前に join 済みトークンで順次投入する
       // （契約 §4 / ADR-0017 一本道。join 前 upload 経路が無いためここで一括投入）。
@@ -389,7 +457,7 @@ export default function Home() {
             />
           </Field>
 
-          {/* 連携リポジトリ（任意 / ADR-0027）。コネクタ無効・候補未取得のときは出さない
+          {/* 連携リポジトリ（任意 / ADR-0027）。コネクタ・App 連携とも無効のときは出さない
               （ADR-0007 の不干渉）。候補一覧があれば選択、無ければ owner/name の手入力へ
               フォールバックする。確定要件の Issue 起票先と、Issue/README の文脈取り込みに使う。 */}
           {repoChoices?.enabled &&
@@ -436,6 +504,28 @@ export default function Home() {
                 />
               </Field>
             ))}
+
+          {/* App 連携済みの候補を選んだときだけ branch 選択を出す（ADR-0028。既定=デフォルト
+              ブランチ）。開始時に repo+branch をセッションへバインドし、非同期で索引される。 */}
+          {appRepoItem && (
+            <Field
+              label="ブランチ"
+              htmlFor="github-branch"
+              hint="開始時にこのブランチの内容を索引し、問いの前提として使います（既定はデフォルトブランチ）。"
+            >
+              <Select
+                id="github-branch"
+                value={githubBranch}
+                onChange={(e) => setGithubBranch(e.target.value)}
+              >
+                {branchChoices.map((b) => (
+                  <option key={b} value={b}>
+                    {b}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          )}
 
           {/* 参考資料（バイナリ添付）。Figma 89:25 / 91:10。押下で手段選択シート（#201 再利用）を開く。
               準備画面は LiveKit ルーム外のためカメラ/画面共有は渡さず、アップロード/Drive のみ。
