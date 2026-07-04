@@ -99,7 +99,7 @@ export function MaterialsList({
               <span className="text-[13px] font-bold text-[var(--sanba-cream)]">{it.name}</span>
 
               {it.status === "done" && (
-                <span className="inline-flex items-center gap-1 text-[11px] font-bold text-[var(--sanba-speak)]">
+                <span className="inline-flex items-center gap-1 text-[11px] font-bold text-[var(--sanba-speak-text)]">
                   <Check size={13} aria-hidden /> 解析済
                   {typeof it.extracted === "number" ? ` ・ 要件 ${it.extracted} 件を抽出` : ""}
                 </span>
@@ -155,7 +155,7 @@ export function MaterialsList({
 
               {it.status === "failed" && (
                 <div className="flex items-center gap-2">
-                  <span className="text-[11px] font-bold text-[var(--sanba-rec)]">アップロード/解析に失敗</span>
+                  <span className="text-[11px] font-bold text-[var(--sanba-rec-text)]">アップロード/解析に失敗</span>
                   {onRetry && (
                     <button
                       type="button"

@@ -15,7 +15,7 @@ export const sanbaButtonVariants = cva(
     variants: {
       variant: {
         // 朱ベタの主 CTA（ステッカー）。押下で影の分だけ沈む。
-        gold: "sanba-sticker bg-[var(--sanba-rec)] text-white hover:opacity-95 active:translate-x-[2px] active:translate-y-[2px] active:shadow-[1px_1px_0_var(--sanba-shadow)]",
+        gold: "sanba-sticker bg-[var(--sanba-rec-text)] text-white hover:opacity-95 active:translate-x-[2px] active:translate-y-[2px] active:shadow-[1px_1px_0_var(--sanba-shadow)]",
         // 白面＋墨枠の副次ボタン（ステッカー）。
         outline:
           "sanba-sticker bg-[var(--sanba-surface)] text-[var(--sanba-cream)] active:translate-x-[2px] active:translate-y-[2px] active:shadow-[1px_1px_0_var(--sanba-shadow)]",

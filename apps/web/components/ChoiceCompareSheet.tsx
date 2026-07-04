@@ -35,7 +35,7 @@ export function ChoiceCompareSheet({ rows, onSelect, onClose, onDetail }: Choice
         </button>
       </div>
       <div className="flex gap-3 text-[11px] font-bold">
-        <span className="inline-flex items-center gap-1 text-[var(--sanba-speak)]">
+        <span className="inline-flex items-center gap-1 text-[var(--sanba-speak-text)]">
           <Check size={13} aria-hidden /> 効き目
         </span>
         <span className="inline-flex items-center gap-1 text-[var(--sanba-caution)]">
@@ -70,7 +70,7 @@ export function ChoiceCompareSheet({ rows, onSelect, onClose, onDetail }: Choice
           </div>
           <div className="flex gap-2">
             <div className="flex-1 rounded-[9px] bg-[var(--sanba-surface)] px-[9px] py-2">
-              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-[var(--sanba-speak)]">
+              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-[var(--sanba-speak-text)]">
                 <Check size={12} aria-hidden /> 効き目
               </span>
               <p className="text-[11.5px] text-[var(--sanba-muted)]">{r.effect ?? "—"}</p>

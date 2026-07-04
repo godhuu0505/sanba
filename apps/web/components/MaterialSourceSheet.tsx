@@ -187,7 +187,7 @@ export function MaterialSourceSheet({
         )}
 
         {error && (
-          <p role="alert" className="px-1 text-[11.5px] font-bold text-[var(--sanba-rec)]">
+          <p role="alert" className="px-1 text-[11.5px] font-bold text-[var(--sanba-rec-text)]">
             {error}
           </p>
         )}

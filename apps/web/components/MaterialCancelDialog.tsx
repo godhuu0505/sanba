@@ -103,7 +103,7 @@ export function MaterialCancelDialog({
           <button
             type="button"
             onClick={onConfirm}
-            className="flex-1 rounded-[12px] bg-[var(--sanba-rec)] py-[13px] text-[13px] font-bold text-white"
+            className="flex-1 rounded-[12px] bg-[var(--sanba-rec-text)] py-[13px] text-[13px] font-bold text-white"
           >
             中断する
           </button>

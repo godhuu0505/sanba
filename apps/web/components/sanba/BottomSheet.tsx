@@ -43,7 +43,7 @@ export function BottomSheet({
           id={titleId}
           className={cn(
             "text-[15px] font-bold",
-            tone === "danger" ? "text-[var(--sanba-rec)]" : "text-[var(--sanba-cream)]",
+            tone === "danger" ? "text-[var(--sanba-rec-text)]" : "text-[var(--sanba-cream)]",
           )}
         >
           {title}

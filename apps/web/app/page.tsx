@@ -577,7 +577,7 @@ export default function Home() {
             </button>
 
             {attachError && (
-              <p role="alert" className="text-[12px] text-[var(--sanba-rec)]">
+              <p role="alert" className="text-[12px] text-[var(--sanba-rec-text)]">
                 {attachError}
               </p>
             )}
@@ -636,7 +636,7 @@ export default function Home() {
                 録音と AI 処理への同意が必要です。
               </p>
             )}
-            {error && <p className="text-[12px] text-[var(--sanba-rec)]">{error}</p>}
+            {error && <p className="text-[12px] text-[var(--sanba-rec-text)]">{error}</p>}
           </div>
         </main>
 

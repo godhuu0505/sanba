@@ -25,12 +25,13 @@ const TONES: Record<ChipTone, ToneStyle> = {
     solid: "sanba-gold-gradient border border-[var(--sanba-frame)] text-[var(--sanba-ink)]",
   },
   success: {
-    soft: "border border-[var(--sanba-speak)]/40 bg-transparent text-[var(--sanba-speak)]",
-    solid: "border border-transparent bg-[var(--sanba-speak)] text-white",
+    soft: "border border-[var(--sanba-speak)]/40 bg-transparent text-[var(--sanba-speak-text)]",
+    // 萌黄(#7fa83c)は明色で白文字だと 2.8:1（AA不可）。墨文字を載せる（5.9:1）。
+    solid: "border border-transparent bg-[var(--sanba-speak)] text-[var(--sanba-ink)]",
   },
   danger: {
-    soft: "border border-[var(--sanba-rec)]/40 bg-transparent text-[var(--sanba-rec)]",
-    solid: "border border-transparent bg-[var(--sanba-rec)] text-white",
+    soft: "border border-[var(--sanba-rec)]/40 bg-transparent text-[var(--sanba-rec-text)]",
+    solid: "border border-transparent bg-[var(--sanba-rec-text)] text-white",
   },
   info: {
     soft: "border border-[var(--sanba-border)] bg-transparent text-[var(--sanba-cream)]",

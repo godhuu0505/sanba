@@ -47,7 +47,7 @@ export function EndConfirmDialog({ unresolved, onContinue, onEnd }: EndConfirmDi
         <button
           type="button"
           onClick={onEnd}
-          className="flex-1 rounded-[12px] bg-[var(--sanba-rec)] py-[13px] text-[13px] font-bold text-white"
+          className="flex-1 rounded-[12px] bg-[var(--sanba-rec-text)] py-[13px] text-[13px] font-bold text-white"
         >
           終了する
         </button>
