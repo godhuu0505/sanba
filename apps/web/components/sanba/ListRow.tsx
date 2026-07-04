@@ -30,24 +30,25 @@ export const ListRow = React.forwardRef<HTMLElement, ListRowProps>(
       <Comp
         ref={ref as never}
         className={cn(
-          "flex w-full items-center gap-[12px] rounded-[12px] border border-[var(--sanba-border)] bg-[var(--sanba-surface)] px-[14px] py-[12px] text-left transition-colors hover:border-[var(--sanba-frame)]",
+          // 1.5px 墨枠＋角丸16 の札。ホバーで墨のオフセット影が生えて浮く（ADR-0033）。
+          "flex w-full items-center gap-[12px] rounded-[16px] border-[1.5px] border-sanba-frame bg-sanba-surface px-[14px] py-[12px] text-left transition-[box-shadow,transform] hover:shadow-[3px_3px_0_var(--sanba-shadow)]",
           className,
         )}
         {...props}
       >
         {icon != null && (
-          <span className="flex size-[34px] shrink-0 items-center justify-center rounded-[10px] bg-[var(--sanba-surface-strong)] text-[18px]">
+          <span className="flex size-[34px] shrink-0 items-center justify-center rounded-[12px] border-[1.5px] border-sanba-frame bg-sanba-surface-strong text-[18px]">
             {icon}
           </span>
         )}
         <span className="flex min-w-0 flex-1 flex-col">
-          <span className="truncate text-[14px] font-bold text-[var(--sanba-cream)]">{title}</span>
+          <span className="truncate text-[14px] font-bold text-sanba-cream">{title}</span>
           {subtitle != null && (
-            <span className="truncate text-[12px] text-[var(--sanba-muted)]">{subtitle}</span>
+            <span className="truncate text-[12px] text-sanba-muted">{subtitle}</span>
           )}
         </span>
         {trailing === undefined ? (
-          <span className="shrink-0 text-[18px] text-[var(--sanba-muted)]" aria-hidden>
+          <span className="shrink-0 text-[18px] text-sanba-muted" aria-hidden>
             ›
           </span>
         ) : (

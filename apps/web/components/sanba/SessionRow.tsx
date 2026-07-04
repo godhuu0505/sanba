@@ -27,15 +27,16 @@ export const SessionRow = React.forwardRef<HTMLElement, SessionRowProps>(
       <Comp
         ref={ref as never}
         className={cn(
-          "flex w-full items-center gap-[12px] rounded-[12px] border border-[var(--sanba-border)] bg-[var(--sanba-surface)] px-[14px] py-[13px] transition-colors hover:border-[var(--sanba-frame)]",
+          // 1.5px 墨枠＋角丸16 の札。ホバーで墨のオフセット影が生えて浮く（ADR-0033）。
+          "flex w-full items-center gap-[12px] rounded-[16px] border-[1.5px] border-sanba-frame bg-sanba-surface px-[14px] py-[13px] transition-[box-shadow,transform] hover:shadow-[3px_3px_0_var(--sanba-shadow)]",
           className,
         )}
         {...props}
       >
         <span className="flex min-w-0 flex-1 flex-col gap-[2px]">
-          <span className="truncate text-[14px] font-bold text-[var(--sanba-cream)]">{title}</span>
+          <span className="truncate text-[14px] font-bold text-sanba-cream">{title}</span>
           {meta != null && (
-            <span className="truncate text-[12px] text-[var(--sanba-muted)]">{meta}</span>
+            <span className="truncate text-[12px] text-sanba-muted">{meta}</span>
           )}
         </span>
         {/* action=null は操作ピルを出さない: 押せない行に操作の見た目を残さない（Codex P2）。 */}
