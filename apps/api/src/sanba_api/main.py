@@ -1558,7 +1558,7 @@ async def add_context_file(
         # 失敗してもアップロードを止めない（GET context/files でも状態を復元できる）。
         sender = (
             build_sender(
-                settings.livekit_url,
+                settings.livekit_publish_url,
                 settings.livekit_api_key,
                 settings.livekit_api_secret,
                 session_id,

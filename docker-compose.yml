@@ -46,6 +46,12 @@ services:
       dockerfile: apps/api/Dockerfile
     env_file: .env.local
     environment:
+      # server-side publish (analysis.progress/visual を RoomService.send_data で送る / ADR-0023)
+      # は api コンテナから livekit サービスへ直接届く必要がある。.env.local の LIVEKIT_URL
+      # (ws://localhost:7880) はブラウザへ返す join URL 用でありコンテナ内では api 自身を指すため、
+      # publish 先だけを compose のサービス名へ振り向ける (agent の AGENT_LIVEKIT_URL と同じ発想。
+      # 未設定なら api は livekit_url にフォールバックする)。
+      LIVEKIT_SERVER_URL: ${API_LIVEKIT_URL:-ws://livekit:7880}
       # GOOGLE_GENAI_USE_VERTEXAI=true のとき、Vertex AI への認証は ADC に依存する。
       # ローカルでは ~/.config/gcloud を read-only でマウントし、GOOGLE_APPLICATION_CREDENTIALS
       # でユーザの application_default_credentials.json を指す（コンテナ内 path）。

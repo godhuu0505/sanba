@@ -11,6 +11,18 @@ class Settings(BaseSettings):
     livekit_url: str = "ws://localhost:7880"
     livekit_api_key: str = "devkey"
     livekit_api_secret: str = "secret"
+    # server-side publish（analysis.progress/visual を RoomService.send_data で送る / ADR-0023）
+    # 用の LiveKit URL。通常は livekit_url と同一だが、docker-compose ローカルでは食い違う:
+    # ブラウザへ返す join URL は host から見た localhost、api コンテナからの publish 先は
+    # compose のサービス名（ws://livekit:7880）である必要がある（agent の AGENT_LIVEKIT_URL と
+    # 同じ発想）。未設定なら livekit_url にフォールバックする（LiveKit Cloud 等、両者が同じ
+    # 公開 wss URL で足りる本番では設定不要）。
+    livekit_server_url: str = ""
+
+    @property
+    def livekit_publish_url(self) -> str:
+        """server-side publish に使う URL（未設定ならブラウザ向けと同じ livekit_url）。"""
+        return self.livekit_server_url or self.livekit_url
 
     otel_exporter_otlp_endpoint: str = ""
     otel_service_name: str = "sanba-api"
@@ -73,9 +85,10 @@ class Settings(BaseSettings):
     # 動画解析は未実装（web では「準備中」でグレーアウト）。有効化は別 PR。
     enable_video_analysis: bool = False
     # アップロード解析の進捗を LiveKit データチャネルへ live publish するか（#145 / ADR-0023）。
-    # 既定 OFF: ローカル/CI/未接続では no-op にし、LiveKit へ実接続できる本番でのみ有効化する
-    # （web は OFF でも GET context/files のハイドレーションで状態を復元できる）。
-    enable_realtime_publish: bool = False
+    # 既定 ON（#287 で実ルームへの publish 到達・LiveKit 断時の fail-open をスモークテスト済み）。
+    # ローカル/CI では LiveKit へ未接続だと送信が失敗し警告ログになるだけで本処理は止まらない
+    # （web は未接続でも GET context/files のハイドレーションで状態を復元できる）。
+    enable_realtime_publish: bool = True
 
     # ---- Requirement export -> GitHub Issue (契約 §4 POST /export, #39) ----
     # OFF by default. Enable + provide a token/repo to let 09 要件絵巻 起票する。
