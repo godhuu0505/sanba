@@ -1,0 +1,7 @@
+# build context = apps/web。ホストの node_modules/.next (macOS ネイティブビルド) が
+# COPY . . で紛れ込むと、deps ステージで入れた Linux 用 node_modules を上書きしてしまう。
+node_modules
+.next
+.env
+.env.*
+.git

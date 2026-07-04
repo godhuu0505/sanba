@@ -91,8 +91,10 @@ export default function AdminPage() {
         </p>
         {/* 401 では共有 AuthProvider に期限切れ credential が残り loggedIn=true のまま。
             そのまま /login へ送ると即 / へ replace され GIS 再認証ボタンが出ない。ここで
-            signOut して credential を clear し、authGate 経由で /login?next=/admin（GIS）へ送る。 */}
-        <Button variant="gold" block onClick={() => auth.signOut()}>
+            signOut して credential を clear し、authGate 経由で /login?next=/admin（GIS）へ送る。
+            期限切れ回復であり明示ログアウトではないため、他タブへは伝播させない
+            （broadcast:false / 別タブの進行中会話を巻き添えにしない / ADR-0030）。 */}
+        <Button variant="gold" block onClick={() => auth.signOut({ broadcast: false })}>
           ログインへ
         </Button>
       </Gate>
@@ -189,8 +191,10 @@ function Gate({
   children: React.ReactNode;
 }) {
   return (
-    <Screen className="items-center justify-center px-6 py-10">
-      <div className="mx-auto w-full max-w-md">
+    <Screen>
+      {/* どの画面でも SANBA ヘッダー（2026-07 要望）。アクセスゲート中もブランドを保つ。 */}
+      <AppHeader />
+      <div className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center px-6 py-10">
         {eyebrow && (
           <p className="mb-2 text-[12px] tracking-[0.2em] text-[var(--sanba-gold-text)]">
             ✦ {eyebrow} ✦

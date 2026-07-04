@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const replace = vi.fn();
@@ -29,8 +29,9 @@ describe("LoginPage ログイン/ログアウト フロー（dev モード）", 
   it("11 → 12 → ログイン後はホーム / へ送る（13 ナビハブは無い）", () => {
     renderLogin();
 
-    // 11 未認証
-    expect(screen.getByText("問答の間へ、ようこそ")).toBeTruthy();
+    // 11 未認証（「問答の間へ、ようこそ」は常時表示の左ペインへ移したため、
+    // 状態 11 の判定は右メインの「サインイン」見出しで行う）。
+    expect(screen.getByRole("heading", { name: "サインイン" })).toBeTruthy();
     const bypass = screen.getByText("開発用ログイン（bypass）");
 
     // 11 → 12 サインイン中
@@ -91,6 +92,55 @@ describe("LoginPage ログイン/ログアウト フロー（dev モード）", 
     act(() => {
       fireEvent.click(screen.getByText("再びログインする"));
     });
-    expect(screen.getByText("問答の間へ、ようこそ")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "サインイン" })).toBeTruthy();
+  });
+
+  // ── 2 ペイン構成（2026-07 整理: 左 1/3 ブランド＋サインアップ / 右 サインイン）──────
+
+  it("11 は 2 ペイン構成: 左にブランド＋サインアップ、右メインにサインイン（メール/パスワード欄は無い）", () => {
+    renderLogin();
+
+    // 共通ヘッダー（banner）: SANBA ブランドは全画面ヘッダーに一本化（aside と二重にしない）。
+    expect(within(screen.getByRole("banner")).getByText("SANBA")).toBeTruthy();
+
+    // 左ペイン（aside = complementary）: SANBA の世界観とサインアップ導線。
+    const aside = screen.getByRole("complementary");
+    expect(within(aside).getByText("問答の間へ、ようこそ")).toBeTruthy();
+    expect(within(aside).queryByText("SANBA")).toBeNull();
+    expect(within(aside).getByRole("button", { name: "今すぐサインアップ" })).toBeTruthy();
+
+    // 右メイン: サインイン見出しとログインボタン（dev モードでは bypass）。
+    const main = screen.getByRole("main");
+    expect(within(main).getByRole("heading", { name: "サインイン" })).toBeTruthy();
+    expect(within(main).getByText("開発用ログイン（bypass）")).toBeTruthy();
+
+    // メール/パスワードでのログインは持たない（Google のみ / 要件）。
+    expect(document.querySelector("input")).toBeNull();
+  });
+
+  it("12・14 でも共通ヘッダーと左ペイン（ブランド＋サインアップ）は残る", () => {
+    window.history.replaceState({}, "", "/login?loggedOut=1");
+    renderLogin();
+
+    // 14 ログアウト完了でも SANBA ヘッダーと左ペインは出たまま。
+    expect(screen.getByText("おつかれさまでした")).toBeTruthy();
+    expect(within(screen.getByRole("banner")).getByText("SANBA")).toBeTruthy();
+    expect(
+      within(screen.getByRole("complementary")).getByRole("button", { name: "今すぐサインアップ" }),
+    ).toBeTruthy();
+  });
+
+  it("「今すぐサインアップ」は右のサインイン枠へ誘導する（Google 初回サインインが登録を兼ねる）", () => {
+    // jsdom は scrollIntoView 未実装のため、プロトタイプへ注入して呼び出しを観測する。
+    const scrollIntoView = vi.fn();
+    window.HTMLElement.prototype.scrollIntoView = scrollIntoView;
+    renderLogin();
+
+    act(() => {
+      fireEvent.click(screen.getByRole("button", { name: "今すぐサインアップ" }));
+    });
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+    // 誘導先はサインイン枠＝ログインボタンのある右メイン側。
+    expect(screen.getByRole("heading", { name: "サインイン" })).toBeTruthy();
   });
 });

@@ -33,7 +33,7 @@ describe("MaterialDetailSheet（05-1 資料詳細）", () => {
     // 種別②: 言葉×画の矛盾。
     const conflicts = within(dialog).getByRole("region", { name: "言葉×画の矛盾" });
     expect(within(conflicts).getByText(/検索バーが無いが/)).toBeTruthy();
-    expect(screen.getByText("✓ 解析済")).toBeTruthy();
+    expect(screen.getByText("解析済")).toBeTruthy();
   });
 
   it("矛盾バッジは色のみに依らずラベル＋現代語の説明（ariaLabel）を伴う（ADR-0017）", () => {

@@ -6,7 +6,7 @@
 
 import { useEffect } from "react";
 
-import { Button, Card, CardTitle, Screen } from "@/components/sanba";
+import { AppHeader, Button, Card, CardTitle, Screen } from "@/components/sanba";
 
 export default function Error({
   error,
@@ -26,8 +26,10 @@ export default function Error({
   );
 
   return (
-    <Screen className="items-center justify-center px-6 py-10">
-      <div className="mx-auto w-full max-w-md">
+    <Screen>
+      {/* どの画面でも SANBA ヘッダー（2026-07 要望）。エラー時もブランドと現在地を保つ。 */}
+      <AppHeader />
+      <div className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center px-6 py-10">
         <p className="mb-2 text-[12px] tracking-[0.2em] text-[var(--sanba-gold-text)]">
           ✦ しくじり ✦
         </p>

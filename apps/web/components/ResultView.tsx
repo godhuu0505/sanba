@@ -4,6 +4,8 @@
 // 仕様: docs/design/conversation-experience.md §7 / screens/08-result.md / Figma 144:86。
 // 画面で確認＝必須。PDF/Drive/Issue 出力＝任意（ハンドラがあるものだけ出す）。
 
+import { Check, CircleDot, Cloud, FileText, type LucideIcon } from "lucide-react";
+
 import { Button } from "@/components/sanba";
 import { categoryPresentation, priorityLabel } from "../lib/realtime/mapping";
 import type { Priority, Requirement } from "../lib/realtime/types";
@@ -71,10 +73,10 @@ export function ResultView({
 }: ResultViewProps) {
   // 信頼できない URL scheme（javascript: 等）は表示しない（Codex P2 / XSS 防止）。
   const artifactLinks = (artifacts ?? []).filter((a) => isSafeHttpUrl(a.url));
-  const outputs: { label: string; handler?: () => void }[] = [
-    { label: "📄 PDF", handler: onExportPdf },
-    { label: "☁ Drive", handler: onExportDrive },
-    { label: "🐙 Issue", handler: onExportIssue },
+  const outputs: { label: string; icon: LucideIcon; handler?: () => void }[] = [
+    { label: "PDF", icon: FileText, handler: onExportPdf },
+    { label: "Drive", icon: Cloud, handler: onExportDrive },
+    { label: "Issue", icon: CircleDot, handler: onExportIssue },
   ];
   const available = outputs.filter((o) => o.handler);
 
@@ -141,8 +143,8 @@ export function ResultView({
                       <span className="flex-1 text-[12.5px] leading-[1.5] text-[var(--sanba-ink)]">
                         {r.statement}
                       </span>
-                      <span aria-hidden className="mt-[1px] text-[11px] text-[var(--sanba-gold-text)]">
-                        ✓
+                      <span aria-hidden className="mt-[1px] text-[var(--sanba-gold-text)]">
+                        <Check size={12} />
                       </span>
                       <span className="sr-only">確定済み</span>
                     </li>
@@ -195,16 +197,19 @@ export function ResultView({
         <>
           <p className="mt-2 self-start text-[10.5px] font-bold text-[var(--sanba-muted)]">書き出す（任意）</p>
           <div className="mt-[6px] flex w-full gap-2">
-            {available.map((o) => (
-              <button
-                key={o.label}
-                type="button"
-                onClick={o.handler}
-                className="flex-1 rounded-[11px] border border-[var(--sanba-border)] bg-[var(--sanba-surface)] py-[11px] text-[11.5px] font-bold text-[var(--sanba-muted)]"
-              >
-                {o.label}
-              </button>
-            ))}
+            {available.map((o) => {
+              const Icon = o.icon;
+              return (
+                <button
+                  key={o.label}
+                  type="button"
+                  onClick={o.handler}
+                  className="flex flex-1 items-center justify-center gap-1.5 rounded-[11px] border border-[var(--sanba-border)] bg-[var(--sanba-surface)] py-[11px] text-[11.5px] font-bold text-[var(--sanba-muted)]"
+                >
+                  <Icon size={14} aria-hidden /> {o.label}
+                </button>
+              );
+            })}
           </div>
         </>
       )}

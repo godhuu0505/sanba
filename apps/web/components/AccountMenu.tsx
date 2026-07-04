@@ -6,6 +6,7 @@
 // scrim は ChoicePin と同じ暗幕パターンを踏襲。認可（管理者判定）は API 側 ADMIN_EMAILS が源泉で、
 // ここは導線のみ。項目順は Figma 正本（106:45）に合わせ ⚙ アカウント設定 → 🛠 管理者画面 → ⎋ ログアウト（#227）。
 
+import { CircleCheck, LogOut, Settings, Wrench } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -89,7 +90,8 @@ export function AccountMenu({ profile, hideAdmin, hideSettings }: AccountMenuPro
             className="absolute right-0 top-[calc(100%+8px)] z-50 flex w-[220px] flex-col gap-[6px] rounded-[14px] border border-[var(--sanba-border)] bg-[var(--sanba-surface)] p-[8px] shadow-lg"
           >
             <p className="truncate px-[10px] pt-[4px] text-[12px] text-[var(--sanba-muted)]">
-              ✅ ログイン中: <span className="text-[var(--sanba-cream)]">{email}</span>
+              <CircleCheck size={13} aria-hidden className="mr-1 inline-block align-[-2px]" />
+              ログイン中: <span className="text-[var(--sanba-cream)]">{email}</span>
             </p>
             <Divider />
             {!hideSettings && (
@@ -99,7 +101,7 @@ export function AccountMenu({ profile, hideAdmin, hideSettings }: AccountMenuPro
                 onClick={() => setOpen(false)}
                 className="flex items-center gap-[8px] rounded-[10px] px-[10px] py-[10px] text-[14px] text-[var(--sanba-cream)] transition-colors hover:bg-[var(--sanba-bg)]"
               >
-                <span aria-hidden="true">⚙</span> アカウント設定
+                <Settings size={16} aria-hidden /> アカウント設定
               </Link>
             )}
             {!hideAdmin && (
@@ -109,7 +111,7 @@ export function AccountMenu({ profile, hideAdmin, hideSettings }: AccountMenuPro
                 onClick={() => setOpen(false)}
                 className="flex items-center gap-[8px] rounded-[10px] px-[10px] py-[10px] text-[14px] text-[var(--sanba-cream)] transition-colors hover:bg-[var(--sanba-bg)]"
               >
-                <span aria-hidden="true">🛠</span> 管理者画面
+                <Wrench size={16} aria-hidden /> 管理者画面
               </Link>
             )}
             <button
@@ -118,7 +120,7 @@ export function AccountMenu({ profile, hideAdmin, hideSettings }: AccountMenuPro
               onClick={handleLogout}
               className="flex items-center gap-[8px] rounded-[10px] px-[10px] py-[10px] text-left text-[14px] text-[var(--sanba-cream)] transition-colors hover:bg-[var(--sanba-bg)]"
             >
-              <span aria-hidden="true">⎋</span> ログアウト
+              <LogOut size={16} aria-hidden /> ログアウト
             </button>
           </div>
         </>

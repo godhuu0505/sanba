@@ -3,6 +3,8 @@
 // 終了確認ダイアログ。⏹ 押下時に確定ゲート（未解消件数）を提示する。
 // 仕様: docs/design/conversation-experience.md §C(横断)/§7 / screens/07-judgment.md。
 
+import { Scale, TriangleAlert } from "lucide-react";
+
 export interface EndConfirmDialogProps {
   /** 未解消（矛盾/抜け/不明瞭）の件数。 */
   unresolved: number;
@@ -26,7 +28,7 @@ export function EndConfirmDialog({ unresolved, onContinue, onEnd }: EndConfirmDi
           color: hasUnresolved ? "var(--sanba-rec)" : "var(--sanba-gold-text)",
         }}
       >
-        {hasUnresolved ? "⚠" : "⚖"}
+        {hasUnresolved ? <TriangleAlert size={22} aria-hidden /> : <Scale size={22} aria-hidden />}
       </div>
       <p className="text-center text-[16px] font-bold text-[var(--sanba-gold-text)]">問答を終えますか？</p>
       <p className="text-center text-[12px] text-[var(--sanba-muted)]">

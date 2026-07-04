@@ -5,6 +5,7 @@
 // 固定UI（ヘッダ・ミニ状況・タブ・問いピン・2行ボトムバー）は常時表示し、本文だけタブで切替える。
 // 音声会話はタブに依らず継続するため、問いピン/ボトムバーはどのタブでも描画し続ける。
 
+import { Diamond, Paperclip, Square, TriangleAlert } from "lucide-react";
 import { useState, type ReactNode } from "react";
 
 import type { MiniStatus } from "@/lib/realtime/selectors";
@@ -92,7 +93,7 @@ export function ConversationShell({
           disabled={!onEnd}
           className="flex size-7 items-center justify-center rounded-full border border-[var(--sanba-border)] bg-[var(--sanba-surface)] text-[13px] text-[var(--sanba-muted)] disabled:opacity-40"
         >
-          ⏹
+          <Square size={13} aria-hidden />
         </button>
       </header>
 
@@ -103,8 +104,12 @@ export function ConversationShell({
           className="flex items-center gap-2 rounded-[10px] border border-[var(--sanba-border)] bg-[var(--sanba-surface)] px-3 py-2 text-[11.5px]"
         >
           {/* タップで該当タブへ（要件/未確定→要件絵巻、資料→参考資料）。 */}
-          <button type="button" onClick={() => setTab("scroll")} className="font-bold text-[var(--sanba-gold-text)]">
-            ◆ 要件 {mini.requirements}
+          <button
+            type="button"
+            onClick={() => setTab("scroll")}
+            className="inline-flex items-center gap-1 font-bold text-[var(--sanba-gold-text)]"
+          >
+            <Diamond size={12} aria-hidden /> 要件 {mini.requirements}
           </button>
           <span className="text-[var(--sanba-border-strong)]">・</span>
           <button
@@ -113,13 +118,17 @@ export function ConversationShell({
               setTab("scroll");
               onUnresolvedJump?.();
             }}
-            className="font-bold text-[var(--sanba-caution)]"
+            className="inline-flex items-center gap-1 font-bold text-[var(--sanba-caution)]"
           >
-            ⚠ 未確定 {mini.unresolved}
+            <TriangleAlert size={12} aria-hidden /> 未確定 {mini.unresolved}
           </button>
           <span className="text-[var(--sanba-border-strong)]">・</span>
-          <button type="button" onClick={() => setTab("files")} className="text-[var(--sanba-muted)]">
-            📎 資料 {mini.materials}
+          <button
+            type="button"
+            onClick={() => setTab("files")}
+            className="inline-flex items-center gap-1 text-[var(--sanba-muted)]"
+          >
+            <Paperclip size={12} aria-hidden /> 資料 {mini.materials}
             {mini.analyzing ? "（解析中）" : ""}
           </button>
           <span className="flex-1" />

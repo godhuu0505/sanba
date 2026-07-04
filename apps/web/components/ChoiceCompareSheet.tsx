@@ -3,6 +3,8 @@
 // 選択肢の比較（ボトムシート）。全選択肢を効き目（萌黄）/留意（黄土）で横並びに見比べ、各行で選べる。
 // 仕様: docs/design/conversation-experience.md §4。
 
+import { Check, TriangleAlert, X } from "lucide-react";
+
 export interface CompareRow {
   label: string;
   effect?: string;
@@ -29,12 +31,16 @@ export function ChoiceCompareSheet({ rows, onSelect, onClose, onDetail }: Choice
           onClick={onClose}
           className="flex size-[26px] items-center justify-center rounded-full border border-[var(--sanba-border)] bg-[var(--sanba-surface)] text-[12px] text-[var(--sanba-muted)]"
         >
-          ✕
+          <X size={14} aria-hidden />
         </button>
       </div>
       <div className="flex gap-3 text-[11px] font-bold">
-        <span className="text-[var(--sanba-speak)]">✓ 効き目</span>
-        <span className="text-[var(--sanba-caution)]">⚠ 留意</span>
+        <span className="inline-flex items-center gap-1 text-[var(--sanba-speak)]">
+          <Check size={13} aria-hidden /> 効き目
+        </span>
+        <span className="inline-flex items-center gap-1 text-[var(--sanba-caution)]">
+          <TriangleAlert size={13} aria-hidden /> 留意
+        </span>
       </div>
 
       {rows.map((r, i) => (
@@ -64,11 +70,15 @@ export function ChoiceCompareSheet({ rows, onSelect, onClose, onDetail }: Choice
           </div>
           <div className="flex gap-2">
             <div className="flex-1 rounded-[9px] bg-[var(--sanba-surface)] px-[9px] py-2">
-              <span className="text-[10px] font-bold text-[var(--sanba-speak)]">✓ 効き目</span>
+              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-[var(--sanba-speak)]">
+                <Check size={12} aria-hidden /> 効き目
+              </span>
               <p className="text-[11.5px] text-[var(--sanba-muted)]">{r.effect ?? "—"}</p>
             </div>
             <div className="flex-1 rounded-[9px] bg-[var(--sanba-surface)] px-[9px] py-2">
-              <span className="text-[10px] font-bold text-[var(--sanba-caution)]">⚠ 留意</span>
+              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-[var(--sanba-caution)]">
+                <TriangleAlert size={12} aria-hidden /> 留意
+              </span>
               <p className="text-[11.5px] text-[var(--sanba-muted)]">{r.caution ?? "—"}</p>
             </div>
           </div>

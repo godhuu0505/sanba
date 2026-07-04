@@ -1,6 +1,8 @@
 # ADR-0025: UI アートディレクション刷新（漆黒×金 → 白い紙×原色×棒人間）
 
-- ステータス: **Accepted（受理・2026-07-03 確定）**
+- ステータス: **Superseded（2026-07-05・[ADR-0033](0033-ui-redesign-v2-sticker-paper.md) が置き換え）**
+  — 白基調への移行方針は 0033 に継承。トークンの**値・分析は 0033（確定デザイン HTML 由来）を正**とし、
+  本 ADR の具体値は破棄する（歴史的記録として残置）。
 - 日付: 2026-07-03
 - 関連: [ADR-0014](0014-admin-and-login-screens.md)（light テーマの admin/login）/
   [ADR-0017](0017-figma-canonical-onepath-archaic-copy.md)（一本道 navigation・金彩 serif）/

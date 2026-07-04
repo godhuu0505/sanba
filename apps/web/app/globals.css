@@ -103,6 +103,12 @@
   --color-sanba-caution: var(--sanba-caution);
   --color-sanba-select: var(--sanba-select);
   --color-sanba-select-pale: var(--sanba-select-pale);
+  /* 書体は @fontsource でセルフホスト（layout.tsx で woff2 を同梱）。
+     以前は next/font/google がこの --font-* 変数を注入していたが、自前配信に伴い
+     ここで font-family 名に束ねる（未定義だと var() が宣言全体を無効化するため必須）。 */
+  --font-noto-sans-jp: "Noto Sans JP";
+  --font-zen-kaku: "Zen Kaku Gothic New";
+  --font-noto-serif-jp: "Noto Serif JP";
   --font-serif-jp: var(--font-noto-serif-jp), "Noto Serif JP", serif;
   --font-sans-jp: var(--font-noto-sans-jp), "Noto Sans JP", "Hiragino Kaku Gothic ProN", sans-serif;
   --font-display-jp: var(--font-zen-kaku), var(--font-noto-sans-jp), "Hiragino Kaku Gothic ProN", sans-serif;

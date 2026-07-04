@@ -86,8 +86,10 @@ export default function PastRequirementsPage() {
               ログインの期限が切れました。もう一度ログインしてください。
             </p>
             {/* 期限切れ credential が残ったままだと同じ無効トークンで再試行し続けるため、
-                admin と同様に signOut で clear し、authGate 経由で /login?next= へ送る（Codex P2）。 */}
-            <Button variant="gold" block onClick={() => auth.signOut()}>
+                admin と同様に signOut で clear し、authGate 経由で /login?next= へ送る（Codex P2）。
+                期限切れ回復であり明示ログアウトではないため、他タブへは伝播させない
+                （broadcast:false / 別タブの進行中会話を巻き添えにしない / ADR-0030）。 */}
+            <Button variant="gold" block onClick={() => auth.signOut({ broadcast: false })}>
               ログインへ
             </Button>
           </div>

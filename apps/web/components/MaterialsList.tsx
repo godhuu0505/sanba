@@ -6,6 +6,7 @@
 
 // 素材ビューモデルは共有セレクタ層（selectMaterials）に寄せ、ここでは再エクスポートのみ。
 import { useEffect, useState } from "react";
+import { Check, X } from "lucide-react";
 
 import type { MaterialItem, MaterialStatus } from "@/lib/realtime/selectors";
 
@@ -98,8 +99,9 @@ export function MaterialsList({
               <span className="text-[13px] font-bold text-[var(--sanba-cream)]">{it.name}</span>
 
               {it.status === "done" && (
-                <span className="text-[11px] font-bold text-[var(--sanba-speak)]">
-                  ✓ 解析済{typeof it.extracted === "number" ? ` ・ 要件 ${it.extracted} 件を抽出` : ""}
+                <span className="inline-flex items-center gap-1 text-[11px] font-bold text-[var(--sanba-speak)]">
+                  <Check size={13} aria-hidden /> 解析済
+                  {typeof it.extracted === "number" ? ` ・ 要件 ${it.extracted} 件を抽出` : ""}
                 </span>
               )}
 
@@ -122,9 +124,9 @@ export function MaterialsList({
                       type="button"
                       aria-label={`${it.name} の解析を中断`}
                       onClick={() => setCancelTarget(it)}
-                      className="rounded-full border border-[var(--sanba-frame)] px-[9px] py-[3px] text-[11px] font-bold text-[var(--sanba-muted)]"
+                      className="inline-flex items-center gap-1 rounded-full border border-[var(--sanba-frame)] px-[9px] py-[3px] text-[11px] font-bold text-[var(--sanba-muted)]"
                     >
-                      ✕ 中断
+                      <X size={12} aria-hidden /> 中断
                     </button>
                   )}
                 </div>
