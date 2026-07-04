@@ -680,6 +680,44 @@ export function revokeProductInvite(
   );
 }
 
+/** POST /api/products/join の応答（api の ProductJoinResponse と同形）。 */
+export interface ProductJoinResult {
+  session_id: string;
+  /** 既存 POST /api/sessions/join へ渡す役割 invite（LiveKit トークン交換は join に委譲）。 */
+  invite: string;
+  product_id: string;
+  product_name: string;
+  interview_mode: "developer" | "end_user";
+}
+
+/**
+ * POST /api/products/join。深掘りリンクを検証・消費し、product 従属セッションを自動作成する。
+ *
+ * **呼ぶたびにリンクの use_count を 1 消費する**（ADR-0031 決定3）。ページ表示や
+ * 自動リトライで無駄撃ちしないこと（呼び出しは「開始する」タップの 1 回だけ）。
+ * 失敗は ApiError で投げ、message に API の detail（403 の expired / revoked /
+ * exhausted 等）を保持する — /join 画面がエラーの出し分けに使う。
+ */
+export async function joinProduct(
+  token: string,
+  consentAcknowledged: boolean,
+  idToken: string | null,
+): Promise<ProductJoinResult> {
+  const res = await fetch(`${API_URL}/api/products/join`, {
+    method: "POST",
+    headers: authHeaders(idToken),
+    body: JSON.stringify({ token, consent_acknowledged: consentAcknowledged }),
+  });
+  if (!res.ok) {
+    const detail = await res
+      .json()
+      .then((b: { detail?: unknown }) => String(b?.detail ?? ""))
+      .catch(() => "");
+    throw new ApiError(res.status, detail || `join product failed: ${res.status}`);
+  }
+  return res.json();
+}
+
 // repo 選択・状態取得は join 済みトークン（session_token / 契約 §4）で認可される。
 export async function selectSessionRepo(
   sessionId: string,
