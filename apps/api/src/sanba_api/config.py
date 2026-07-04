@@ -73,9 +73,10 @@ class Settings(BaseSettings):
     # 動画解析は未実装（web では「準備中」でグレーアウト）。有効化は別 PR。
     enable_video_analysis: bool = False
     # アップロード解析の進捗を LiveKit データチャネルへ live publish するか（#145 / ADR-0023）。
-    # 既定 OFF: ローカル/CI/未接続では no-op にし、LiveKit へ実接続できる本番でのみ有効化する
-    # （web は OFF でも GET context/files のハイドレーションで状態を復元できる）。
-    enable_realtime_publish: bool = False
+    # 既定 ON（#287 で実ルームへの publish 到達・LiveKit 断時の fail-open をスモークテスト済み）。
+    # ローカル/CI では LiveKit へ未接続だと送信が失敗し警告ログになるだけで本処理は止まらない
+    # （web は未接続でも GET context/files のハイドレーションで状態を復元できる）。
+    enable_realtime_publish: bool = True
 
     # ---- Requirement export -> GitHub Issue (契約 §4 POST /export, #39) ----
     # OFF by default. Enable + provide a token/repo to let 09 要件絵巻 起票する。
