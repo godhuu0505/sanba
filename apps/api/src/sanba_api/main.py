@@ -19,7 +19,7 @@ import re
 import time
 import uuid
 from collections import defaultdict, deque
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import structlog
@@ -40,13 +40,18 @@ from pydantic import BaseModel, Field
 from sanba_shared.models import (
     GitHubIndexStatus,
     GitHubLink,
+    InviteScope,
     Product,
+    ProductInvite,
     Requirement,
     RequirementStatus,
     SessionMeta,
+    new_invite_id,
     new_product_id,
 )
 from sanba_shared.repository import (
+    InviteNotFound,
+    InviteNotUsable,
     ProductNotFound,
     RequirementNotFound,
     SessionRepository,
@@ -55,11 +60,14 @@ from sanba_shared.repository import (
 from . import github_export
 from .auth import (
     InvalidInvite,
+    InvalidProductInvite,
     InvalidSessionToken,
     SessionAccess,
     create_invite,
+    create_product_invite_token,
     create_session_token,
     verify_invite,
+    verify_product_invite_token,
     verify_session_token,
 )
 from .auth_google import AuthUser, is_admin, require_admin, require_user
@@ -148,7 +156,11 @@ async def _rate_limit_join(request: Request, call_next: Any) -> Any:
     超過時は body に触れず 429 を返す。CORS より内側で動くよう CORS の前に登録し、429 応答にも
     CORS ヘッダが付くようにする（ミドルウェアは後から add した方が外側になる）。
     """
-    if request.method == "POST" and request.url.path == "/api/sessions/join":
+    # 深掘りリンク入場（/api/products/join）も同じ未認証スパム面を持つため同枠で制限する。
+    if request.method == "POST" and request.url.path in (
+        "/api/sessions/join",
+        "/api/products/join",
+    ):
         client_ip = request.client.host if request.client else "unknown"
         if _over_rate_limit(client_ip):
             # 認証より前に短絡するため auth イベントに現れない。DoS 緩和の発火をログ＋
@@ -1186,6 +1198,235 @@ def select_product_repo(
         branch=branch,
         commit_sha=commit_sha,
         status=GitHubIndexStatus.INDEXING.value,
+    )
+
+
+# ---- Product invites: 深掘りリンク (ADR-0031 決定3 / FR-1.5, FR-1.6) ----------
+class CreateProductInviteRequest(BaseModel):
+    """`POST /api/products/{id}/invites`。期限は ttl_seconds で受け expires_at に変換する。
+
+    ttl_seconds / max_uses の None は「その制限を掛けない」（ProductInvite と同じ意味論。
+    失効ボタンともう一方の制限で止める運用を許す）。
+    """
+
+    scope: InviteScope = InviteScope.DEVELOPER
+    ttl_seconds: int | None = Field(default=None, ge=60)
+    max_uses: int | None = Field(default=None, ge=1)
+
+
+class ProductInviteResponse(BaseModel):
+    """発行済み深掘りリンク 1 件。web は token から /join/{token} の URL を組む。"""
+
+    id: str
+    scope: str
+    expires_at: datetime | None
+    max_uses: int | None
+    use_count: int
+    revoked: bool
+    created_at: datetime
+    token: str
+
+
+class ProductJoinRequest(BaseModel):
+    token: str
+    # 録音・AI 処理への同意（issue #10）。セッション作成を伴うため create_session と同じゲート。
+    consent_acknowledged: bool = False
+
+
+class ProductJoinResponse(BaseModel):
+    """深掘りリンク入場の結果（FR-1.6）。
+
+    LiveKit トークンはここでは発行しない: 返した `invite`（create_session が返すものと
+    同じ署名付き役割 invite）を既存 `POST /api/sessions/join` に渡して交換する。
+    トークン発行・identity 束縛・レート制限のロジックを join 1 箇所に保つための分割。
+    """
+
+    session_id: str
+    invite: str
+    product_id: str
+    product_name: str
+    interview_mode: str
+
+
+def _invite_response(invite: ProductInvite) -> ProductInviteResponse:
+    token = create_product_invite_token(
+        invite.product_id,
+        invite.id,
+        settings.session_signing_secret,
+        int(invite.expires_at.timestamp()) if invite.expires_at else None,
+    )
+    return ProductInviteResponse(
+        id=invite.id,
+        scope=invite.scope.value,
+        expires_at=invite.expires_at,
+        max_uses=invite.max_uses,
+        use_count=invite.use_count,
+        revoked=invite.revoked,
+        created_at=invite.created_at,
+        token=token,
+    )
+
+
+# invite の scope → 既存セッションの役割語彙（ubiquitous-language §2: 企画/エンジニア/顧客）。
+# developer リンクは PdM 壁打ち、end_user リンクは「顧客」役として入場する。
+_INVITE_ROLE = {InviteScope.DEVELOPER: "pm", InviteScope.END_USER: "customer"}
+
+
+@app.post("/api/products/{product_id}/invites", response_model=ProductInviteResponse)
+def create_product_invite(
+    product_id: str, req: CreateProductInviteRequest, user: AuthUser = Depends(require_user)
+) -> ProductInviteResponse:
+    """深掘りリンクを発行する（FR-1.5）。
+
+    発行は owner のみ（admin 不可）: リンクは owner が準備した product への入場券であり、
+    repo 紐づけ（owner の installation）と同じく所有者の意思で発行する。
+    """
+    product = _require_product_access(product_id, user)
+    if user.sub != product.owner_sub:
+        raise HTTPException(status_code=403, detail="owner only")
+    expires_at = datetime.now(UTC) + timedelta(seconds=req.ttl_seconds) if req.ttl_seconds else None
+    invite = ProductInvite(
+        id=new_invite_id(),
+        product_id=product_id,
+        scope=req.scope,
+        expires_at=expires_at,
+        max_uses=req.max_uses,
+    )
+    try:
+        _repo.create_invite(invite)
+    except ProductNotFound as exc:
+        raise HTTPException(status_code=404, detail="product not found") from exc
+    record_product_event("invite_created")
+    log.info(
+        "invite_created",
+        product=product_id,
+        invite=invite.id,
+        scope=invite.scope.value,
+        ttl_seconds=req.ttl_seconds,
+        max_uses=req.max_uses,
+        owner=user.sub,
+    )
+    return _invite_response(invite)
+
+
+@app.get("/api/products/{product_id}/invites", response_model=list[ProductInviteResponse])
+def list_product_invites(
+    product_id: str, user: AuthUser = Depends(require_user)
+) -> list[ProductInviteResponse]:
+    """発行済み深掘りリンクの一覧（owner / admin。FR-1.5 の管理 UI 用）。"""
+    _require_product_access(product_id, user)
+    return [_invite_response(i) for i in _repo.list_invites(product_id)]
+
+
+@app.post(
+    "/api/products/{product_id}/invites/{invite_id}/revoke",
+    response_model=ProductInviteResponse,
+)
+def revoke_product_invite(
+    product_id: str, invite_id: str, user: AuthUser = Depends(require_user)
+) -> ProductInviteResponse:
+    """深掘りリンクを失効させる（owner / admin。FR-1.5）。冪等（既失効でも 200）。"""
+    _require_product_access(product_id, user)
+    if not _repo.revoke_invite(product_id, invite_id):
+        raise HTTPException(status_code=404, detail="invite not found")
+    invite = _repo.get_invite(product_id, invite_id)
+    if invite is None:  # revoke 直後の削除と競合した稀ケース
+        raise HTTPException(status_code=404, detail="invite not found")
+    record_product_event("invite_revoked")
+    log.info("invite_revoked", product=product_id, invite=invite_id, by=user.sub)
+    return _invite_response(invite)
+
+
+@app.post("/api/products/join", response_model=ProductJoinResponse)
+def join_product(
+    req: ProductJoinRequest, user: AuthUser = Depends(require_user)
+) -> ProductJoinResponse:
+    """深掘りリンクからセッションを自動作成する（FR-1.6 / ADR-0031 決定3）。
+
+    Stage 1 はログイン必須（ゲスト入場は ADR-0032 の guest_join_enabled 待ち）。
+    検証は二段: 署名（owner が発行した本物のリンクか）→ invite 文書
+    （失効・期限・回数をトランザクションで消費。文書側が正）。02 準備は出さず、
+    ゴール（title）と repo 設定は product から継承する（FR-1.4）。
+    レート制限はミドルウェア `_rate_limit_join` が body 解析前に掛ける。
+    """
+    if settings.require_consent and not req.consent_acknowledged:
+        raise HTTPException(
+            status_code=400,
+            detail="consent required: recording and AI processing must be acknowledged",
+        )
+    try:
+        claim = verify_product_invite_token(req.token, settings.session_signing_secret)
+    except InvalidProductInvite as exc:
+        log.warning("product_invite_rejected", reason=str(exc))
+        raise HTTPException(status_code=403, detail=f"invalid invite link: {exc}") from exc
+    # 消費（use_count++）は最後の関門: consent・署名を先に検証し、失敗する要求で
+    # 使用回数を減らさない。文書照合と消費は原子的（ADR-0031 / consume_invite）。
+    try:
+        invite = _repo.consume_invite(claim.product_id, claim.invite_id)
+    except (InviteNotFound, ProductNotFound) as exc:
+        # Firestore 経路は join と product 削除の競合で ProductNotFound を投げ得る
+        # （トランザクション内の親存在チェック）。invite 不在と同じ 404 に平す。
+        raise HTTPException(status_code=404, detail="invite not found") from exc
+    except InviteNotUsable as exc:
+        log.warning(
+            "product_invite_not_usable",
+            product=claim.product_id,
+            invite=claim.invite_id,
+            reason=exc.reason,
+        )
+        raise HTTPException(status_code=403, detail=f"invite not usable: {exc.reason}") from exc
+    product = _repo.get_product(claim.product_id)
+    if product is None:
+        raise HTTPException(status_code=404, detail="product not found")
+
+    role = _INVITE_ROLE[invite.scope]
+    session_id = f"sess-{uuid.uuid4().hex[:8]}"
+    _repo.create_session_doc(
+        SessionMeta(
+            id=session_id,
+            title=product.name,
+            owner_sub=user.sub,
+            owner_email=user.email,
+            roles=[role],
+            product_id=product.id,
+            interview_mode=invite.scope,
+            # repo 設定の継承（FR-1.4）: 「セッション明示 > product > 環境変数」の
+            # product 段。索引済み要約ごと写すので agent のシードもそのまま効く。
+            github_repo=product.github_repo,
+            github_branch=product.github_branch,
+            github_commit_sha=product.github_commit_sha,
+            github_index_status=product.github_index_status,
+            github_summary=product.github_summary,
+        )
+    )
+    session_invite = create_invite(
+        session_id, role, settings.session_signing_secret, settings.invite_ttl_seconds
+    )
+    record_product_event("invite_redeemed")
+    log.info(
+        "session_created",
+        session=session_id,
+        roles=[role],
+        owner=user.sub,
+        github_repo=product.github_repo or "(none)",
+        product_id=product.id,
+        interview_mode=invite.scope.value,
+        source="product_invite",
+    )
+    log.info(
+        "invite_redeemed",
+        product=product.id,
+        invite=invite.id,
+        use_count=invite.use_count,
+        max_uses=invite.max_uses,
+        session=session_id,
+    )
+    return ProductJoinResponse(
+        session_id=session_id,
+        invite=session_invite,
+        product_id=product.id,
+        product_name=product.name,
+        interview_mode=invite.scope.value,
     )
 
 

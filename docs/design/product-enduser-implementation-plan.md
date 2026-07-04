@@ -109,6 +109,11 @@ Stage 内は PR1→PR2 以外おおむね並行可能。Stage の境界は「デ
   glossary を読み、instructions にシード（ADR-0028 の repo 要約シードと同じ機械的組み立て）。
 - Langfuse: end_user モードの評価データセットと CI 回帰（FR-2.8。ADR-0005 の枠組み）。
 - テスト: プロンプト整形の単体、モード別の instructions スナップショット。
+- **注記（PR2/PR3 からの引き継ぎ）**: agent の grounding 参照（`search_grounding` /
+  過去セッション呼び戻し）は現状**セッションスコープのみ**。product の repo 索引は
+  `prod-*` の product スコープに入るため、配下セッションから product スコープの索引を
+  引く配線（retrieval のスコープ拡張）がこの PR か PR12 までに必要。PR3 の repo 継承は
+  `github_summary`（初期シード）までは効くが、深掘り検索は未配線。
 
 ### PR8: agent/api — grounding 出力制御（規模 S〜M）
 - `apps/agent/src/sanba_agent/retrieval.py` / `prompts/interview.py`: end_user モードでは
