@@ -46,6 +46,20 @@ def test_session_meta_roundtrips_through_json() -> None:
     assert restored.status == "active"
 
 
+def test_session_meta_product_fields_default_for_legacy_docs() -> None:
+    # 旧文書（product_id / interview_mode 無し）は None / developer でフォールバックする
+    # (ADR-0031 / ADR-0032。既存セッションの挙動を変えない = 要件定義 NFR-5)。
+    legacy = {
+        "id": "sess-old",
+        "title": "t",
+        "owner_sub": "sub",
+        "owner_email": "o@example.com",
+    }
+    meta = SessionMeta.model_validate(legacy)
+    assert meta.product_id is None
+    assert meta.interview_mode == "developer"
+
+
 def test_session_meta_github_fields_default_for_legacy_docs() -> None:
     from sanba_shared.models import GitHubIndexStatus
 

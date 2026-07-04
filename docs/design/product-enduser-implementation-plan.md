@@ -12,7 +12,7 @@
 |---|---|---|---|
 | [ADR-0031](../adr/0031-product-entity-and-invite-links.md)（**起票済み・Proposed**） | product エンティティ・所有（owner_sub）・深掘りリンク。org 非導入と将来挿入余地の担保もここに明記 | 1, 2 の前半, 6 | Stage 1 全体 |
 | [ADR-0032](../adr/0032-guest-join-and-enduser-mode.md)（**起票済み・Proposed**） | ゲスト入場（ログイン原則 ADR-0012 の例外）と `interview_mode`・grounding 出力制御 | 2 の後半, 3 | Stage 2 全体 |
-| ADR-0033（未起票 — Stage 3 着手前に） | 利用者向け成果物（ユースケース記述）と生成プレビューの採否（design/README §3.6 の保留の決着） | 4 | Stage 3 の FR-3.1 |
+| 後続 ADR（未起票 — Stage 3 着手前に採番。0033 は UI デザイン刷新 v2 に使用済み） | 利用者向け成果物（ユースケース記述）と生成プレビューの採否（design/README §3.6 の保留の決着） | 4 | Stage 3 の FR-3.1 |
 | — | ADR-0008 との整合（「PdM が現場の声を集める道具」としての拡張と位置づけ）は ADR-0031 の「影響」節で README / roadmap 改訂として扱う | 5 | — |
 
 ## 1. 全体の依存関係
@@ -33,7 +33,7 @@ flowchart LR
     PR7["PR7 agent: interview_mode・語彙"] --> PR8["PR8 agent/api: grounding 出力制御"]
     PR7 --> PR9
   end
-  ADR33["ADR-0033<br/>利用者向け成果物"] --> PR10
+  ADR33["後続 ADR<br/>利用者向け成果物"] --> PR10
   subgraph S3["Stage 3 — 成果物と集約"]
     PR10["PR10 web/agent: 利用者向け結果"]
     PR11["PR11 api/web: 横断集約ビュー"]
@@ -125,7 +125,7 @@ Stage 内は PR1→PR2 以外おおむね並行可能。Stage の境界は「デ
 
 ## 4. Stage 3 — 成果物と集約
 
-### PR10: 利用者向け結果画面（規模 M・ADR-0033 待ち）
+### PR10: 利用者向け結果画面（規模 M・利用者向け成果物 ADR 待ち）
 - セッション終端でユースケース記述（いつ・どの画面で・困りごと・望む結果）を生成・表示し、
   訂正・承認を受ける（FR-3.1）。`RequirementScroll`（MoSCoW ボード）は end_user では出さない。
 

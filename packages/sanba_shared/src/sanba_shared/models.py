@@ -7,6 +7,7 @@ Pydantic v2 のモデル。Firestore とのシリアライズは `model_dump(mod
 
 from __future__ import annotations
 
+import secrets
 from datetime import UTC, datetime
 from enum import StrEnum
 
@@ -15,6 +16,20 @@ from pydantic import BaseModel, Field
 
 def _now() -> datetime:
     return datetime.now(UTC)
+
+
+def new_product_id() -> str:
+    """product のランダム ID を採番する（連番禁止 / ADR-0031 決定5）。"""
+    return f"prod-{secrets.token_urlsafe(9)}"
+
+
+def new_invite_id() -> str:
+    """深掘りリンクのランダム ID を採番する。
+
+    リンク URL の一部になるため product より長い 16 バイト（128 bit）にする。
+    推測・列挙への耐性は署名（api 層の HMAC）と二段で持つ（ADR-0031 決定3/5）。
+    """
+    return f"inv-{secrets.token_urlsafe(16)}"
 
 
 class RequirementCategory(StrEnum):
@@ -99,6 +114,66 @@ class GitHubLink(BaseModel):
     linked_at: datetime = Field(default_factory=_now)
 
 
+class Product(BaseModel):
+    """深掘り対象のアプリ (`products/{id}`)。ADR-0031。
+
+    開発者 / PdM が登録し、セッションが `product_id` で従属する。repo 解決は
+    「セッション明示 > product > 環境変数」の優先順（ADR-0027 の解決を一段持ち上げ）。
+    所有は `owner_sub` のフラット 1 値（owner / admin の 2 値運用 / ADR-0031 決定4）。
+    id は `new_product_id` でランダム採番する（連番禁止 / 決定5）。
+    """
+
+    id: str
+    name: str = Field(min_length=1)
+    description: str = ""
+    owner_sub: str
+    created_at: datetime = Field(default_factory=_now)
+    # 利用者向け語彙（画面名・機能の呼び名）。end_user モードのプロンプトへ機械的に
+    # シードする（ADR-0032 決定7）。Stage 1 では保持のみで未使用。
+    glossary: list[str] = Field(default_factory=list)
+
+    # ---- 連携 GitHub リポジトリ (ADR-0027 / ADR-0028 を product に持ち上げ) ----
+    # 意味は SessionMeta の同名フィールドと同じ。None = 未指定（環境変数フォールバック）、
+    # 空文字 = 明示的な「連携しない」、"owner/name" = 選択済み。
+    github_repo: str | None = None
+    github_branch: str | None = None
+    # 索引をピン留めした commit sha（(repo,branch,sha) 共有索引のキー / ADR-0028）。
+    github_commit_sha: str | None = None
+    github_index_status: GitHubIndexStatus = GitHubIndexStatus.NONE
+    github_summary: str | None = None
+
+
+class InviteScope(StrEnum):
+    """深掘りリンクの対象ペルソナ (ADR-0031 / ADR-0032)。
+
+    developer: ログイン済みの開発者 / PdM 向け（Stage 1 で解禁）。
+    end_user: 利用者向け。ゲスト入場の解禁は ADR-0032（`guest_join_enabled`）。
+    """
+
+    DEVELOPER = "developer"
+    END_USER = "end_user"
+
+
+class ProductInvite(BaseModel):
+    """product の深掘りリンク (`products/{id}/invites/{inviteId}`)。ADR-0031 決定3。
+
+    再利用可能なリンクの永続側。URL の署名・組み立ては api 層（`auth.py` の HMAC 基盤）が
+    担い、ここは期限・回数・失効の判定材料を持つ。`expires_at` / `max_uses` の None は
+    「その制限を掛けない」（失効・もう一方の制限で止める運用を許す）。
+    `use_count` の消費は `SessionRepository.consume_invite` でアトミックに行い、
+    ここを直接書き換えない。id は `new_invite_id` でランダム採番する（決定5）。
+    """
+
+    id: str
+    product_id: str
+    scope: InviteScope = InviteScope.DEVELOPER
+    expires_at: datetime | None = None
+    max_uses: int | None = Field(default=None, ge=1)
+    use_count: int = Field(default=0, ge=0)
+    revoked: bool = False
+    created_at: datetime = Field(default_factory=_now)
+
+
 class Utterance(BaseModel):
     speaker: str
     text: str
@@ -126,6 +201,15 @@ class SessionMeta(BaseModel):
     # 確定時点の要件 ID の不可逆スナップショット（#213）。finalize 後に要件が増減/却下
     # されても export はこの集合に固定して起票する。旧文書は既定 [] でフォールバック。
     finalized_requirement_ids: list[str] = Field(default_factory=list)
+
+    # ---- product 従属 (ADR-0031) ----
+    # 深掘りリンク経由で作られたセッションが従属する product。None = 従来どおりの
+    # 単発セッション（旧文書の互換）。repo 解決は「セッション明示 > product > 環境変数」。
+    product_id: str | None = None
+    # インタビュー・モード（ADR-0032）。リンクの scope から決まり、agent がプロンプト・
+    # 語彙・成果物の形式を分岐する。値は InviteScope と同じ語彙（developer / end_user）。
+    # 旧文書は既定 developer でフォールバックする。
+    interview_mode: str = "developer"
 
     # ---- 連携 GitHub リポジトリ (ADR-0027 / ADR-0028) ----
     # セッション単位の GitHub リポジトリ（ADR-0027）。02 準備で選択され、grounding 取り込みと

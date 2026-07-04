@@ -1,6 +1,6 @@
 # ADR-0031: product エンティティ・所有・深掘りリンク
 
-- ステータス: **Proposed（提案中）**
+- ステータス: **Accepted（受理・2026-07-05 確定）**
 - 日付: 2026-07-05
 - 関連: [ADR-0008](0008-product-concept.md)（プロダクトコンセプト — 本 ADR が対象ペルソナを拡張）/
   [ADR-0027](0027-per-session-github-repo.md)（セッション単位 repo 選択 — repo 解決を product へ持ち上げ）/
@@ -73,4 +73,5 @@
   「PdM が現場の声を集める道具」としての拡張と位置づけ、README / roadmap の記述を
   本 ADR の Accepted 時に改訂する。
 - 後続: ゲスト入場・interview_mode は [ADR-0032](0032-guest-join-and-enduser-mode.md)、
-  利用者向け成果物（生成プレビュー採否）は Stage 3 着手前に ADR-0033 として起票する。
+  利用者向け成果物（生成プレビュー採否）は Stage 3 着手前に別 ADR として起票する
+  （番号は起票時に採番。当初 0033 を予定していたが UI デザイン刷新 v2 に採番済み）。
