@@ -61,8 +61,13 @@ variable "use_vertexai" {
 }
 
 variable "gemini_live_model" {
-  type    = string
-  default = "gemini-2.0-flash-live-001"
+  type = string
+  # 本番は use_vertexai=true（キーレス）で動くため、Vertex AI の Live モデル名にする。
+  # Vertex 経路のモデルは `gemini-live-*` 系。`gemini-2.0-flash-live-001` は AI Studio 系の
+  # 名前で Vertex(us-central1) には存在せず、agent が Gemini Live 接続時に 1008
+  # "Publisher model ... was not found" でクラッシュし会話が成立しない（実機で確認）。
+  # agent のコード既定（apps/agent/src/sanba_agent/config.py）と一致させる。
+  default = "gemini-live-2.5-flash-native-audio"
 }
 
 variable "gemini_reasoning_model" {

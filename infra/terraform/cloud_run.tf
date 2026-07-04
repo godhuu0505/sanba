@@ -108,7 +108,9 @@ resource "google_cloud_run_v2_service" "agent" {
       # 起動プローブをそのポートに合わせる (未指定だと 8080 を probe して起動失敗する)。
       ports { container_port = 8081 }
       resources {
-        limits   = { cpu = "2", memory = "1Gi" }
+        # 常駐ワーカー。Gemini Live セッション中に 1Gi を超過し OOM で再起動する事象を実機で
+        # 確認したため 2Gi にする（"Memory limit of 1024 MiB exceeded"）。
+        limits   = { cpu = "2", memory = "2Gi" }
         cpu_idle = false # 常駐ワーカーなので常時 CPU 割当
       }
       dynamic "env" {
