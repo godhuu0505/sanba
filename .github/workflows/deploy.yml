@@ -122,6 +122,10 @@ jobs:
       ${{ !cancelled() &&
           (needs.migrate.result == 'success' || needs.migrate.result == 'skipped') &&
           needs.changes.outputs.apps != '[]' && needs.changes.outputs.apps != '' }}
+    permissions:
+      contents: read
+      id-token: write # Workload Identity Federation
+      attestations: write # SLSA build provenance (actions/attest-build-provenance)
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -166,6 +170,7 @@ jobs:
           [ "$missing" -eq 0 ] || exit 1
 
       - name: Build & push (with layer cache)
+        id: build
         uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
         with:
           # agent/api は共有パッケージを同梱するため context=リポジトリ直下 (ADR-0014 §9)。
@@ -189,3 +194,12 @@ jobs:
             --image "${REGION}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${REPO}/${{ matrix.app }}:${GITHUB_SHA}" \
             --region "$REGION" \
             --quiet
+
+      - name: Attest build provenance (SLSA)
+        # ビルドしたイメージの来歴を GitHub に署名付きで記録する (SLSA provenance)。
+        # デプロイ後に実行し、attestation の失敗が本番反映を止めないようにする。
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        with:
+          subject-name: ${{ env.REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ env.REPO }}/${{ matrix.app }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: false
