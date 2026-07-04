@@ -476,7 +476,11 @@ def list_github_repos(user: AuthUser = Depends(require_user)) -> GithubReposResp
     # メンバーである環境で、共有トークンが読める private リポ名を漏らさない（Codex P1）。
     repos = [r for r in github_export.list_repos(settings.github_token) if _github_repo_allowed(r)]
     log.info("github_repos_listed", count=len(repos), sub=user.sub)
-    return GithubReposResponse(enabled=True, repos=repos, default=settings.github_repo or None)
+    # 既定リポジトリも許可リストを通す。許可リストに含まれない settings.github_repo を
+    # そのまま返すと、候補一覧には出ないリポジトリ名が UI に露出する（Codex P2）。
+    _env_default = settings.github_repo
+    _default = _env_default if _env_default and _github_repo_allowed(_env_default) else None
+    return GithubReposResponse(enabled=True, repos=repos, default=_default)
 
 
 class MySessionRequirementsResponse(BaseModel):

@@ -95,6 +95,9 @@ export default function Home() {
   const [githubRepo, setGithubRepo] = useState("");
   // リポジトリ候補（GET /api/github/repos）。null = 未取得/取得失敗 → フィールドを出さない。
   const [repoChoices, setRepoChoices] = useState<GithubRepos | null>(null);
+  // リポジトリ候補取得中フラグ。取得完了まで開始ボタンを無効にし、既定値の確定前に
+  // セッションを作らせない（Codex P2: 3522999976）。
+  const [fetchingRepos, setFetchingRepos] = useState(false);
   const auth = useAuth();
 
   // 本人のセッション履歴を取得して履歴リストへ供給する（#250）。ログイン済みのときだけ叩き、
@@ -133,22 +136,32 @@ export default function Home() {
   useEffect(() => {
     if (step !== "prepare" || !auth.loggedIn || repoChoices !== null) return;
     let cancelled = false;
+    setFetchingRepos(true);
     fetchGithubRepos(auth.credential)
       .then((choices) => {
         if (!cancelled) {
           setRepoChoices(choices);
-          // 未選択（空）のとき既定リポジトリを初期選択する（ADR-0027）。
-          // 関数形式で「保存済み値は上書きしない」を保証する。
+          setFetchingRepos(false);
+          // 未選択（かつ sessionStorage に保存値がない）とき既定リポジトリを初期選択する
+          // （ADR-0027）。空文字が明示オプトアウト（"" として保存済み）の場合は上書きしない
+          // — cur が空でも readPrep().githubRepo が string なら保存済みとみなす（Codex P2）。
           if (choices.default) {
-            setGithubRepo((cur) => cur || choices.default!);
+            setGithubRepo((cur) => {
+              if (cur) return cur;
+              return typeof readPrep().githubRepo !== "string" ? choices.default! : cur;
+            });
           }
         }
       })
       .catch(() => {
-        if (!cancelled) setRepoChoices(null);
+        if (!cancelled) {
+          setRepoChoices(null);
+          setFetchingRepos(false);
+        }
       });
     return () => {
       cancelled = true;
+      setFetchingRepos(false);
     };
   }, [step, auth.loggedIn, auth.credential, repoChoices]);
 
@@ -324,7 +337,7 @@ export default function Home() {
 
   // ── 02 準備 ───────────────────────────────────────────────────────────
   if (step === "prepare") {
-    const canStart = consent && auth.loggedIn && !busy;
+    const canStart = consent && auth.loggedIn && !busy && !fetchingRepos;
     return (
       <Screen className="px-4 py-3">
         <AppHeader title="セッション準備" onBack={() => setStep("home")} />
