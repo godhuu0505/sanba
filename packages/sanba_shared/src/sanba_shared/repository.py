@@ -136,9 +136,10 @@ class SessionRepository:
         """07 判定の「確定」を永続化する（#186 / #213）。
 
         セッションを finalized にし、確定した要件件数・確定時の要件 ID 集合・刻を刻む。
-        存在しなければ None。要件そのものの承認（draft→approved）は管理画面の責務
-        （ADR-0014）なのでここでは触れない。確定スナップショットはあくまでセッション単位の
-        不可逆マーカ。`finalized_requirement_ids` は export が固定集合を起票する土台（#213）。
+        存在しなければ None。要件そのものの承認（draft→approved / TTL 解除）はここでは
+        触れず、呼び出し側（API の finalize エンドポイント）が set_requirement_status で
+        行う。確定スナップショットはあくまでセッション単位の不可逆マーカ。
+        `finalized_requirement_ids` は export が固定集合を起票する土台（#213）。
         """
         meta = self.get_session(session_id)
         if meta is None:

@@ -8,7 +8,7 @@ const SIZES = {
   lg: { box: "size-[40px]", glyph: "text-[19px]", word: "text-[20px]" },
 } as const;
 
-/** SANBA のロゴ。金箔の円章「産」＋任意のワードマーク。 */
+/** SANBA のロゴ。山吹の円章「産」（一字だけ明朝＝旧・金章の系譜）＋任意のワードマーク。 */
 export interface LogoProps extends React.HTMLAttributes<HTMLDivElement> {
   size?: keyof typeof SIZES;
   /** ワードマーク「SANBA」を併記するか。 */
@@ -23,7 +23,7 @@ export function Logo({ className, size = "md", wordmark = true, glyph = "産", .
     <div className={cn("flex items-center gap-[10px]", className)} {...props}>
       <span
         className={cn(
-          "sanba-gold-gradient flex items-center justify-center rounded-full font-bold text-[var(--sanba-ink)]",
+          "sanba-gold-gradient sanba-serif flex items-center justify-center rounded-full border-2 border-[var(--sanba-frame)] font-bold text-[var(--sanba-ink)]",
           s.box,
           s.glyph,
         )}
@@ -32,7 +32,9 @@ export function Logo({ className, size = "md", wordmark = true, glyph = "産", .
         {glyph}
       </span>
       {wordmark && (
-        <span className={cn("font-bold text-[var(--sanba-cream)]", s.word)}>SANBA</span>
+        <span className={cn("sanba-display font-bold text-[var(--sanba-cream)]", s.word)}>
+          SANBA
+        </span>
       )}
     </div>
   );

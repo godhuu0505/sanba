@@ -127,10 +127,12 @@ class SessionMeta(BaseModel):
     # されても export はこの集合に固定して起票する。旧文書は既定 [] でフォールバック。
     finalized_requirement_ids: list[str] = Field(default_factory=list)
 
-    # ---- 紐づけ GitHub リポジトリ (ADR-0025) ----
-    # 準備画面で owner が選んだ前提 repo。agent が要約シードに、web が状態表示に使う。
-    # 旧文書は既定（None / none）でフォールバックする。
-    github_repo: str | None = None  # "owner/name"
+    # ---- 連携 GitHub リポジトリ (ADR-0027 / ADR-0025) ----
+    # セッション単位の GitHub リポジトリ（"owner/name" / ADR-0027）。02 準備で選択され、
+    # grounding 取り込みと要件→Issue 起票の対象になる。None は未選択＝環境変数へフォールバック。
+    github_repo: str | None = None
+    # 以下は GitHub App 連携（ADR-0025）での拡張。owner の App installation が読める repo を
+    # 選ぶと branch を確定し ES 索引される。旧文書・connector 選択は既定（None / none）のまま。
     github_branch: str | None = None
     # 索引をピン留めした commit sha（鮮度の基準・(repo,branch,sha) 索引キー）。
     github_commit_sha: str | None = None

@@ -1,13 +1,13 @@
 /**
- * SANBA デザインシステム（dark + gold / 明朝）。
- * Figma「SANBA — UI/UX 機能拡張デザイン」正本（node 31:2）を下地に、
- * 産婆術の世界観を担う再利用コンポーネント群を 1 か所から提供する。
+ * SANBA デザインシステム（白い紙×原色×棒人間 / ADR-0025）。
+ * 「白い紙の上の問答」——紙色の下地に墨の線、行動=朱・選択=瑠璃・ひらめき=山吹の
+ * 原色アクセントで、産婆術の世界観を担う再利用コンポーネント群を 1 か所から提供する。
  *
  * 使い方:
  *   import { Screen, AppHeader, Button, Card, ChatBubble } from "@/components/sanba";
  *
  * 注: 既存の components/ui/*（shadcn light テーマ）とは別系統。
- *     admin/login など light な画面は従来どおり components/ui を使う。
+ *     admin/login など従来 light な画面は components/ui を使う（トーンは本系統と地続き）。
  */
 
 // 文脈・レイアウト
@@ -32,6 +32,8 @@ export { Divider } from "./Divider";
 export type { DividerProps } from "./Divider";
 export { Avatar } from "./Avatar";
 export type { AvatarProps } from "./Avatar";
+export { Figure } from "./Figure";
+export type { FigureProps, FigureState } from "./Figure";
 
 // 合成・領域コンポーネント
 export { ChatBubble } from "./ChatBubble";

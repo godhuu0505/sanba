@@ -231,6 +231,54 @@ def test_finalize_marks_session_and_counts_confirmed() -> None:
     assert meta.finalized_requirement_ids == ["c1"]
 
 
+def test_finalize_approves_confirmed_requirements_for_preservation() -> None:
+    """確定時集合は approved になり TTL 保全の対象になる（Codex P1）。
+
+    管理画面の承認 UI 廃止に伴い、draft のまま 30 日 TTL で消えると過去要件閲覧
+    （/sessions/{id}）と export が欠落する。finalize が set_requirement_status(APPROVED)
+    を通すことで expireAt が外れる（TTL 削除自体は Firestore 経路の既存責務）。
+    """
+    from sanba_shared.models import Priority, Requirement, RequirementCategory
+
+    created = client.post("/api/sessions", json={"roles": ["pm"], "consent_acknowledged": True})
+    sid = created.json()["session_id"]
+    # 書き込み側（_repo）と読み出し側（_read_repo）はメモリ fallback では別ストアのため
+    # 両方に同じ要件を置く（本番は同一 Firestore）。
+    _repo.save_requirement(
+        sid,
+        Requirement(
+            id="c1",
+            statement="確定",
+            category=RequirementCategory.FUNCTIONAL,
+            priority=Priority.MUST,
+        ),
+    )
+    _read_repo._seed_requirement(
+        sid, {"id": "c1", "statement": "確定", "category": "functional", "priority": "must"}
+    )
+    res = client.post(f"/api/sessions/{sid}/finalize", headers=_auth(_token(sid)))
+    assert res.status_code == 200
+    stored = _repo.get_requirement(sid, "c1")
+    assert stored is not None
+    assert stored.status.value == "approved"
+    # 承認主体は確定操作の join 済みトークンの sub。
+    assert stored.approved_by == "owner-123456789"
+    assert stored.approved_at is not None
+
+
+def test_finalize_survives_missing_requirement_on_preservation() -> None:
+    """読み出し側にだけ在る要件（TTL 失効等）は保全をスキップし finalize は成立する。"""
+    created = client.post("/api/sessions", json={"roles": ["pm"], "consent_acknowledged": True})
+    sid = created.json()["session_id"]
+    # _repo（書き込み側）には無い = set_requirement_status が RequirementNotFound を投げる状況。
+    _read_repo._seed_requirement(
+        sid, {"id": "gone", "statement": "消えた", "category": "scope", "priority": "should"}
+    )
+    res = client.post(f"/api/sessions/{sid}/finalize", headers=_auth(_token(sid)))
+    assert res.status_code == 200
+    assert res.json()["confirmed_count"] == 1
+
+
 def test_finalize_rejects_when_unresolved_detections_remain() -> None:
     # 07 判定の「未解消 0 件で確定可」をサーバ側でも担保（Codex P2）。
     created = client.post("/api/sessions", json={"roles": ["pm"], "consent_acknowledged": True})
@@ -309,12 +357,50 @@ def _enable_github(monkeypatch: pytest.MonkeyPatch) -> dict[str, object]:
     captured: dict[str, object] = {}
 
     def fake_create_issue(token: str, repo: str, title: str, body: str) -> str:
+        captured["repo"] = repo
         captured["body"] = body
         return "https://github.com/o/r/issues/1"
 
     monkeypatch.setattr(github_export, "create_issue", fake_create_issue)
     monkeypatch.setattr(main.github_export, "create_issue", fake_create_issue)
     return captured
+
+
+def test_export_uses_session_selected_repo(monkeypatch: pytest.MonkeyPatch) -> None:
+    # 02 準備で選んだリポジトリへ起票する（ADR-0027）。環境変数 "o/r" ではなく選択値が勝つ。
+    created = client.post(
+        "/api/sessions",
+        json={"roles": ["pm"], "consent_acknowledged": True, "github_repo": "acme/product-a"},
+    )
+    sid = created.json()["session_id"]
+    _read_repo._seed_requirement(
+        sid,
+        {"id": "c1", "statement": "確定", "category": "functional", "priority": "must"},
+    )
+    captured = _enable_github(monkeypatch)
+    client.post(f"/api/sessions/{sid}/finalize", headers=_auth(_token(sid)))
+
+    res = client.post(f"/api/sessions/{sid}/export", headers=_auth(_token(sid)))
+    assert res.json()["exported"] is True
+    assert captured["repo"] == "acme/product-a"
+
+
+def test_export_falls_back_to_env_repo_without_selection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # リポジトリ未選択のセッションは従来どおり環境変数 GITHUB_REPO へ（ADR-0027 の互換）。
+    created = client.post("/api/sessions", json={"roles": ["pm"], "consent_acknowledged": True})
+    sid = created.json()["session_id"]
+    _read_repo._seed_requirement(
+        sid,
+        {"id": "c1", "statement": "確定", "category": "functional", "priority": "must"},
+    )
+    captured = _enable_github(monkeypatch)
+    client.post(f"/api/sessions/{sid}/finalize", headers=_auth(_token(sid)))
+
+    res = client.post(f"/api/sessions/{sid}/export", headers=_auth(_token(sid)))
+    assert res.json()["exported"] is True
+    assert captured["repo"] == "o/r"
 
 
 def test_export_uses_only_confirmed_requirements(monkeypatch: pytest.MonkeyPatch) -> None:

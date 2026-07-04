@@ -37,10 +37,14 @@ flowchart LR
 
 ## 3. 可観測性（Observability）
 
-- **トレース**: OpenTelemetry で API・Agent・ADK ツール呼び出しを分散トレース。ローカルは Tempo、本番は Cloud Trace。
-- **メトリクス**: Prometheus（ローカル）/ Cloud Monitoring（本番）。音声往復レイテンシ・トークン消費・エラー率。
-- **ログ**: Loki（ローカル）/ Cloud Logging（本番）。構造化ログ。
-- **ダッシュボード**: Grafana にレイテンシ・コスト・DORA を集約。
+> **AS-IS / TO-BE**: 「OpenTelemetry 一本化」は方針（TO-BE）で、現状アプリが OTLP で実送信しているのは
+> **トレースのみ**。メトリクス・ログの OTLP 配線は今後の課題（Collector・IAM 側の受け皿は先行整備済み）。
+> 信号ごとの実配線は [architecture-analysis.md §10](architecture-analysis.md) の表が一次情報。
+
+- **トレース**（✅ 実配線）: OpenTelemetry で API・Agent・ADK ツール呼び出しを分散トレース。ローカルは Tempo、本番は Cloud Trace。
+- **メトリクス**（⚠️ 計画）: カウンタは OTel API で定義済みだが MeterProvider 未設定のため現状 no-op。MeterProvider/Reader を足せば Prometheus（ローカル）/ Cloud Monitoring（本番）へ流れる。観測対象は音声往復レイテンシ・トークン消費・エラー率。
+- **ログ**（✅ ただし経路は stdout）: structlog の構造化ログを stdout に出し、本番は Cloud Logging が自動収集。Loki への OTLP ログ送信（ローカル）は未配線。
+- **ダッシュボード**: Grafana にレイテンシ・コスト・DORA を集約（メトリクス配線後に完全化）。
 
 ## 4. LLMOps（AIの継続的改善）
 
@@ -89,7 +93,9 @@ just down      # 停止
 ## 8. 本番デプロイのコスト設計
 
 - **Cloud Run**: api/web は `cpu_idle` + `min=0` で scale-to-zero（リクエスト時のみ課金）。
-  agent は常駐ワーカーのため `agent_min_instances`（既定 1）で制御し、不要時は 0 に絞れる。
+  agent は常駐ワーカーのため `agent_min_instances` で制御する。**Terraform 変数の既定は 1 だが、CI 経由デプロイ
+  （`terraform.yml`）は GitHub Variable `AGENT_MIN_INSTANCES` 未設定時に `0` へ上書きする**ため、初期構築した
+  本番環境はワーカー非常駐（LiveKit を実接続したら `AGENT_MIN_INSTANCES=1` を設定して常駐させる）。
 - **CI/CD**: 変更のあった app だけビルド&デプロイ（paths-filter）、Buildx GHA キャッシュ、
   `concurrency` で古い実行をキャンセル。env/secret は Terraform が設定し CI は画像差し替えのみ。
 - **Secret Manager**: 機微情報は Terraform が宣言。本番は Vertex AI でキーレス（API キー不要）。

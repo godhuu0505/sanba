@@ -26,6 +26,7 @@
 
 - [ユビキタス言語](ubiquitous-language.md) — プロダクト・設計・コード・UI で同じ言葉を同じ意味で使う用語集。
 - [アーキテクチャ設計](architecture.md) — コンポーネント / 二層構造 / データモデル / 非機能要件。
+- [アーキテクチャ & インフラ徹底解析](architecture-analysis.md) — 実装から起こした全体像。GCP サービス一覧・外部サービスの配置とタイミング・LB/CI-CD/可観測性を複数の図で図示。
 - [セキュリティ & データガバナンス](security.md) — アクセス制御・PII マスキング・保持期間・CI スキャン。
 - アプリ別 README — [agent](../apps/agent/README.md) / [api](../apps/api/README.md) / [web](../apps/web/README.md)
 - [Four Keys / DORA 自己計測](../infra/four-keys/README.md)

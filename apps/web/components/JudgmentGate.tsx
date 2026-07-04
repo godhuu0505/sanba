@@ -6,6 +6,7 @@
 
 import type { Detection } from "@/lib/realtime/types";
 
+import { Button } from "@/components/sanba";
 import { DeepDiveList } from "./DeepDiveList";
 
 export interface JudgmentGateProps {
@@ -42,7 +43,11 @@ export function JudgmentGate({
         style={
           resolved
             ? { background: "var(--sanba-gold)", color: "var(--sanba-ink)" }
-            : { backgroundColor: "#241216", border: "2px solid #d2564b", color: "#d2564b" }
+            : {
+                backgroundColor: "var(--sanba-rec-pale)",
+                border: "2px solid var(--sanba-rec)",
+                color: "var(--sanba-rec)",
+              }
         }
       >
         {resolved ? "⚖" : "⚠"}
@@ -60,18 +65,14 @@ export function JudgmentGate({
               {error}
             </p>
           )}
-          <button
-            type="button"
-            onClick={onConfirm}
-            className="sanba-gold-gradient w-full rounded-[13px] py-[15px] text-[14px] font-bold text-[var(--sanba-ink)]"
-          >
+          <Button variant="gold" size="lg" block onClick={onConfirm}>
             要件を確定する
-          </button>
+          </Button>
         </>
       ) : (
         <>
-          <div className="mt-4 w-full rounded-[14px] border-[1.5px] border-[#d2564b] bg-[#241216] p-[14px]">
-            <p className="text-[16px] font-bold text-[#e0857c]">未解消 {unresolved} 件 ・ 確定不可</p>
+          <div className="mt-4 w-full rounded-[14px] border-[1.5px] border-[var(--sanba-rec)] bg-[var(--sanba-rec-pale)] p-[14px]">
+            <p className="text-[16px] font-bold text-[var(--sanba-rec)]">未解消 {unresolved} 件 ・ 確定不可</p>
             <p className="mt-1 text-[11.5px] text-[var(--sanba-muted)]">
               ひとつでも残れば、要件は確定できませぬ。
             </p>
@@ -82,17 +83,13 @@ export function JudgmentGate({
             </div>
           )}
           <div className="flex-1" />
-          <button
-            type="button"
-            onClick={onBack}
-            className="sanba-gold-gradient w-full rounded-[13px] py-[15px] text-[14px] font-bold text-[var(--sanba-ink)]"
-          >
+          <Button variant="gold" size="lg" block onClick={onBack}>
             問答に戻って解く
-          </button>
+          </Button>
           <button
             type="button"
             onClick={onForceEnd}
-            className="mt-2 w-full rounded-[12px] border border-[#7a3a36] py-3 text-[12.5px] font-bold text-[var(--sanba-rec)]"
+            className="mt-2 w-full rounded-[12px] border border-[var(--sanba-rec)]/40 py-3 text-[12.5px] font-bold text-[var(--sanba-rec)]"
           >
             未解消のまま終う
           </button>

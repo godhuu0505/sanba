@@ -98,7 +98,7 @@ export function MaterialDetailSheet({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="relative z-10 flex max-h-[85vh] w-full max-w-[420px] flex-col gap-3 overflow-y-auto rounded-t-[18px] border-t border-[var(--sanba-frame)] bg-[#221910] px-4 pb-[18px] pt-[12px]"
+        className="relative z-10 flex max-h-[85vh] w-full max-w-[420px] flex-col gap-3 overflow-y-auto rounded-t-[18px] border-t-2 border-[var(--sanba-frame)] bg-[var(--sanba-surface)] px-4 pb-[18px] pt-[12px]"
       >
         <div className="flex items-center gap-2">
           <span id={titleId} className="text-[15px] font-bold text-[var(--sanba-gold-text)]">
@@ -119,7 +119,7 @@ export function MaterialDetailSheet({
         {/* プレビュー枠（画像 URL は store に無いためプレースホルダ・Figma 150:2 踏襲）。 */}
         <div
           aria-hidden="true"
-          className="flex h-[140px] items-center justify-center rounded-[12px] border border-[var(--sanba-border)] bg-[#241a0f] text-[13px] text-[var(--sanba-muted)]"
+          className="flex h-[140px] items-center justify-center rounded-[12px] border border-[var(--sanba-border)] bg-[var(--sanba-surface-strong)] text-[13px] text-[var(--sanba-muted)]"
         >
           🖼 {detail.name}
         </div>
@@ -138,7 +138,7 @@ export function MaterialDetailSheet({
                 aria-valuemin={0}
                 aria-valuemax={100}
                 aria-label="解析の進捗"
-                className="h-[5px] flex-1 overflow-hidden rounded-full bg-[var(--sanba-surface)]"
+                className="h-[5px] flex-1 overflow-hidden rounded-full bg-[var(--sanba-border)]"
               >
                 <div className="sanba-gold-gradient h-full" style={{ width: `${detail.pct}%` }} />
               </div>
@@ -155,7 +155,7 @@ export function MaterialDetailSheet({
               {detail.extracted.map((e, i) => (
                 <li
                   key={`${e}-${i}`}
-                  className="rounded-[999px] border border-[#7a5a1e] bg-[#2e2214] px-[11px] py-[6px] text-[12px] font-bold text-[var(--sanba-gold-text)]"
+                  className="rounded-[999px] border border-[var(--sanba-gold-deep)] bg-[var(--sanba-surface-strong)] px-[11px] py-[6px] text-[12px] font-bold text-[var(--sanba-gold-text)]"
                 >
                   {e}
                 </li>
@@ -178,12 +178,12 @@ export function MaterialDetailSheet({
               <div
                 key={`${c.summary}-${i}`}
                 className="flex flex-col gap-[6px] rounded-[12px] border-[1.5px] px-[12px] py-[11px]"
-                style={{ borderColor: CONFLICT.color, background: "#241216" }}
+                style={{ borderColor: CONFLICT.color, background: "var(--sanba-rec-pale)" }}
               >
                 <span
                   role="status"
                   aria-label={CONFLICT.ariaLabel}
-                  className="inline-flex w-fit items-center gap-1 rounded-[999px] px-[7px] py-[2px] text-[10px] font-bold text-[var(--sanba-ink)]"
+                  className="inline-flex w-fit items-center gap-1 rounded-[999px] px-[7px] py-[2px] text-[10px] font-bold text-white"
                   style={{ background: CONFLICT.color }}
                 >
                   <span aria-hidden="true">{CONFLICT.icon}</span>

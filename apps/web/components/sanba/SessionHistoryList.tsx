@@ -20,7 +20,7 @@ export interface SessionHistoryItem {
 
 export interface SessionHistoryListProps extends React.HTMLAttributes<HTMLElement> {
   items: SessionHistoryItem[];
-  /** 行の遷移先。既定は当面のプレースホルダ /admin?session={id}（詳細ルートは別 issue）。 */
+  /** 行の遷移先。既定は過去要件の絵巻閲覧画面 /sessions/{id}。 */
   hrefFor?: (id: string) => string;
   /** 空状態の文言。 */
   emptyText?: string;
@@ -33,7 +33,7 @@ export const SessionHistoryList = React.forwardRef<HTMLElement, SessionHistoryLi
     {
       className,
       items,
-      hrefFor = (id) => `/admin?session=${encodeURIComponent(id)}`,
+      hrefFor = (id) => `/sessions/${encodeURIComponent(id)}`,
       emptyText = "過去の要件はまだございません。壁打ちを始めると、ここに残ります。",
       ...props
     },
@@ -50,7 +50,10 @@ export const SessionHistoryList = React.forwardRef<HTMLElement, SessionHistoryLi
           過去の要件を見る
         </h2>
         {items.length === 0 ? (
-          <p className="text-[13px] leading-relaxed text-[var(--sanba-muted)]">{emptyText}</p>
+          // 空状態。棒人間はホームのヒーロー側が担うため出さない（ADR-0025「1画面1体まで」）。
+          <div className="flex items-center rounded-[12px] border border-dashed border-[var(--sanba-border-strong)] bg-[var(--sanba-surface)] px-[14px] py-[12px]">
+            <p className="text-[13px] leading-relaxed text-[var(--sanba-muted)]">{emptyText}</p>
+          </div>
         ) : (
           <ul className="flex flex-col gap-[8px]">
             {items.map((item) => (

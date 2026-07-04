@@ -516,12 +516,16 @@ class SANBAAgent(Agent):
 
         セッションに repo が紐づいているのに owner の GitHub 連携が消えていれば revoked=True。
         Firestore 不通時は安全側に倒し、repo 紐づけがあるなら revoked 扱いにする。
+        対象は GitHub App の ES 索引フローのみ（index_status=none は connector 選択 / env
+        フォールバック＝ADR-0027 の seed 経路で、遮断すると正当な seed まで落ちる）。
         """
         try:
             meta = self._repo.get_session(self._session_id)
         except Exception:  # pragma: no cover - depends on backend
             return None, False
         if meta is None or not meta.github_repo:
+            return None, False
+        if meta.github_index_status is GitHubIndexStatus.NONE:
             return None, False
         try:
             link = self._repo.get_github_link(meta.owner_sub)
@@ -537,14 +541,16 @@ class SANBAAgent(Agent):
 
         インタビューの締めくくりで、合意した要件を実装チームに引き継ぐときに使う。
         """
-        if not _github_ready():
+        # 起票先は 02 準備で選んだセッションのリポジトリを最優先する（ADR-0027）。
+        gh_repo = _resolve_github_repo(self._repo, self._session_id)
+        if not _github_ready(gh_repo):
             return {"exported": False, "reason": "github connector disabled"}
         from .connectors import GitHubConnector, requirements_to_issue_body
 
         requirements = self._repo.list_requirements(self._session_id)
         title, body = requirements_to_issue_body(requirements, self._session_id)
-        url = GitHubConnector(settings.github_token, settings.github_repo).create_issue(title, body)
-        log.info("requirements_exported", session=self._session_id, url=url)
+        url = GitHubConnector(settings.github_token, gh_repo).create_issue(title, body)
+        log.info("requirements_exported", session=self._session_id, repo=gh_repo, url=url)
         if self._publisher is not None and url is not None:
             # ループの締め（09→10）。スタッツは publish 済みの実測から組み立てる
             # （gaps_found は抜けのみ、contradictions_resolved は解消済みの矛盾のみ）。
@@ -591,37 +597,57 @@ def seed_knowledge_base(grounding: GroundingStore) -> None:
         grounding.index_passage(text=text, source=source, kind="knowledge")
 
 
-def _github_ready() -> bool:
-    return bool(
-        settings.github_connector_enabled and settings.github_token and settings.github_repo
-    )
+def _github_ready(repo_name: str) -> bool:
+    return bool(settings.github_connector_enabled and settings.github_token and repo_name)
+
+
+def _resolve_github_repo(repo: SessionRepository, session_id: str) -> str:
+    """連携リポジトリを「セッション選択 → 環境変数」の順で解決する（ADR-0027）。
+
+    02 準備で選ばれた値はセッション文書（`sessions/{id}.github_repo`）に載る。
+    未選択・旧文書は環境変数 GITHUB_REPO（従来挙動）。どちらも無ければ空文字を返し、
+    呼び出し側の `_github_ready` が黙って断る。
+    """
+    try:
+        meta = repo.get_session(session_id)
+    except Exception as exc:  # pragma: no cover - Firestore 障害でも本流を止めない
+        log.warning("github_repo_resolve_failed", session=session_id, error=str(exc))
+        return settings.github_repo
+    if meta is not None and meta.github_repo:
+        return meta.github_repo
+    return settings.github_repo
 
 
 def seed_github_context(
-    grounding: GroundingStore, session_id: str, repo: SessionRepository
+    grounding: GroundingStore, session_id: str, repo: SessionRepository, repo_name: str
 ) -> None:
-    """Pull a configured GitHub repo's issues/README into grounding (issue #7).
+    """Pull the session's GitHub repo issues/README into grounding (issue #7 / ADR-0027).
 
     OFF unless the connector is explicitly enabled, so it never affects the demo path.
-    セッションに GitHub App の repo が紐づいている場合は、グローバル `GITHUB_REPO` の
-    断片が選択 repo の前提に混ざるのを避けるため旧 connector seed をスキップする
-    （ADR-0025・Codex P2。検索は session_id だけで通すため混在すると誤った根拠になる）。
+    `repo_name` は `_resolve_github_repo`（セッション選択→環境変数）の解決結果を渡す。
+    セッションの repo が GitHub App 経由で ES 索引済み/索引中（index_status が none/failed
+    以外）の場合は、repo 本体の chunk と README/Issue seed が二重になるためスキップする
+    （ADR-0025・Codex P2。検索は session_id だけで通すため重複すると根拠が水増しされる）。
     """
-    if not _github_ready():
+    if not _github_ready(repo_name):
         return
     try:
         meta = repo.get_session(session_id)
-        if meta is not None and meta.github_repo:
-            log.info("github_seed_skipped_linked_repo", session=session_id, repo=meta.github_repo)
+        if meta is not None and meta.github_index_status not in (
+            GitHubIndexStatus.NONE,
+            GitHubIndexStatus.FAILED,
+        ):
+            log.info("github_seed_skipped_indexed_repo", session=session_id, repo=meta.github_repo)
             return
     except Exception as exc:  # pragma: no cover - depends on backend
         log.warning("github_seed_link_check_failed", error=str(exc))
     try:
         from .connectors import GitHubConnector
 
-        connector = GitHubConnector(settings.github_token, settings.github_repo)
+        connector = GitHubConnector(settings.github_token, repo_name)
         for text, source in connector.fetch_context_passages():
             grounding.index_passage(text=text, source=source, kind="context", session_id=session_id)
+        log.info("github_context_seeded", session=session_id, repo=repo_name)
     except Exception as exc:  # pragma: no cover - network/optional
         log.warning("github_seed_failed", error=str(exc))
 
@@ -638,7 +664,7 @@ async def entrypoint(ctx: JobContext) -> None:
     )
     grounding = GroundingStore()
     seed_knowledge_base(grounding)
-    seed_github_context(grounding, session_id, repo)
+    seed_github_context(grounding, session_id, repo, _resolve_github_repo(repo, session_id))
     # data channel publish（#94）。音声と同一ルーム接続を再利用して web へ差分を流す。
     # reliable seq は last_seq と current question の asked_seq/cleared_seq の最大値でシード
     # （#123・#270）。question.asked/cleared は set_session_seq を呼ばず pub._seq を消費するため、

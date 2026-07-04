@@ -173,12 +173,42 @@ def test_unlink_removes_link() -> None:
     assert client.get("/api/github/link").json()["linked"] is False
 
 
-def test_list_repos_requires_link() -> None:
-    assert client.get("/api/github/repos").status_code == 409
+def test_list_repos_unlinked_and_connector_disabled_is_hidden() -> None:
+    # 統一エンドポイント（ADR-0027 応答形）: 未連携かつ connector 無効は enabled=False
+    # （フィールドごと隠す。409 にはしない＝#283 の挙動が正）。
+    res = client.get("/api/github/repos")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["enabled"] is False
+    assert body["repos"] == []
+    assert body["linked"] is False
+
+
+def test_list_repos_uses_app_installation_when_linked() -> None:
+    # App 連携済みなら installation 由来の一覧（linked=True + items に default_branch 付き）。
     _link()
     res = client.get("/api/github/repos")
     assert res.status_code == 200
-    assert res.json()["items"][0]["full_name"] == "octo/demo"
+    body = res.json()
+    assert body["enabled"] is True
+    assert body["linked"] is True
+    assert body["repos"] == ["octo/demo"]
+    assert body["items"][0]["full_name"] == "octo/demo"
+    assert body["items"][0]["default_branch"] == "main"
+
+
+def test_list_repos_prefers_app_link_over_connector(monkeypatch: pytest.MonkeyPatch) -> None:
+    # connector も有効な環境では App 連携（本人の repo）を優先する。未連携なら connector 一覧。
+    monkeypatch.setattr(main.settings, "github_connector_enabled", True)
+    monkeypatch.setattr(main.settings, "github_token", "t")
+    monkeypatch.setattr(main.github_export, "list_repos", lambda token: ["conn/repo"])
+    res = client.get("/api/github/repos")
+    assert res.json()["repos"] == ["conn/repo"]
+    assert res.json()["linked"] is False
+    _link()
+    res = client.get("/api/github/repos")
+    assert res.json()["repos"] == ["octo/demo"]
+    assert res.json()["linked"] is True
 
 
 def test_list_branches() -> None:

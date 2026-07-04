@@ -1,24 +1,16 @@
 "use client";
 
 // 管理画面「管理の間」(ADR-0014 §3 / Figma 正本 31:2・黄金テーマ 73-8..11)。
-// 91 一覧 → 92 作成（招待発行）→ 93 要件を検める（改める/認める/退ける）→ 94 アクセスゲート。
-// 閲覧は requirements のみ。生の発話 (utterances) は出さない (issue #10 / §3)。
+// 91 一覧 → 92 作成（招待発行）→ 94 アクセスゲート。
+// 旧 93「要件を検める」(改める/認める/退ける) は廃止: 要件の閲覧はホーム履歴からの
+// 絵巻閲覧画面 (/sessions/[id]) が担い、管理画面はセッションの興し・一覧に限定する。
 // 認可の源泉は API 側 (ADMIN_EMAILS)。クライアントのガードは UX 用で、真偽は 401/403 で判定する (§7)。
 // 意匠は SANBA デザインシステム（components/sanba/*）の金彩テーマを再利用し、ロジックは変えない。
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import {
-  ApiError,
-  type AdminRequirement,
-  type AdminSession,
-  type RequirementStatus,
-  createSession,
-  listAdminSessions,
-  listSessionRequirements,
-  updateRequirement,
-} from "@/lib/api";
+import { ApiError, type AdminSession, createSession, listAdminSessions } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { AccountMenu } from "@/components/AccountMenu";
 import { authGate } from "@/components/RequireAuth";
@@ -30,21 +22,9 @@ import {
   Chip,
   Field,
   Input,
-  RequirementCard,
   Screen,
-  Select,
   SessionRow,
-  Textarea,
 } from "@/components/sanba";
-
-const PRIORITIES = ["must", "should", "could", "wont"] as const;
-const CATEGORIES = [
-  "functional",
-  "non_functional",
-  "constraint",
-  "scope",
-  "open_question",
-] as const;
 
 // 招く者の役割。selected の単一選択ではなく複数選択（既定は全員）。
 const ROLES: { value: string; label: string }[] = [
@@ -62,7 +42,6 @@ export default function AdminPage() {
 
   const [access, setAccess] = useState<Access>("loading");
   const [sessions, setSessions] = useState<AdminSession[]>([]);
-  const [selected, setSelected] = useState<string | null>(null);
   // 91 一覧 ⇆ 92 作成の画面遷移（Figma 73:8/73:9）。実装は 91 内アコーディオンだったが、
   // Figma 正本に合わせ「＋ セッションを興す」CTA → 専用画面 92 へ分離する（#220）。
   const [view, setView] = useState<"home" | "create">("home");
@@ -177,42 +156,20 @@ export default function AdminPage() {
             <p className="text-[13px] text-[var(--sanba-muted)]">問答がまだございません。</p>
           ) : (
             <div className="flex flex-col gap-[10px]">
-              {sessions.map((s) => {
-                const open = selected === s.id;
-                const toggle = () => setSelected(open ? null : s.id);
-                return (
-                  // SessionRow は内部で複数の子（標題＋操作ピル）を描くため asChild(Slot) は使えない。
-                  // div のまま role/tabIndex/キー操作を載せてクリック可能な行にする。
-                  <SessionRow
-                    key={s.id}
-                    role="button"
-                    tabIndex={0}
-                    aria-expanded={open}
-                    onClick={toggle}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        toggle();
-                      }
-                    }}
-                    className="cursor-pointer text-left focus-visible:outline-none focus-visible:border-[var(--sanba-gold)]"
-                    title={s.title}
-                    meta={`${s.owner_email} ・ ${formatDate(s.created_at)}`}
-                    action={open ? "閉じる" : "検める ›"}
-                  />
-                );
-              })}
+              {/* 旧 93「要件を検める」展開は廃止（要件閲覧は /sessions/[id] の絵巻閲覧画面へ）。
+                  行は閲覧専用のメタ表示に留める。 */}
+              {sessions.map((s) => (
+                <SessionRow
+                  key={s.id}
+                  title={s.title}
+                  meta={`${s.owner_email} ・ ${formatDate(s.created_at)}`}
+                  // 押せない行に既定の「検める ›」ピルを残さない（Codex P2）。
+                  action={null}
+                />
+              ))}
             </div>
           )}
         </section>
-
-        {selected && (
-          <RequirementsPanel
-            sessionId={selected}
-            title={sessions.find((s) => s.id === selected)?.title ?? ""}
-            idToken={idToken}
-          />
-        )}
       </main>
     </Screen>
   );
@@ -333,178 +290,6 @@ function CreateSessionCard({
         </div>
       )}
     </Card>
-  );
-}
-
-// ── 93 要件を検める ─────────────────────────────────────────────
-function RequirementsPanel({
-  sessionId,
-  title,
-  idToken,
-}: {
-  sessionId: string;
-  title: string;
-  idToken: string | null;
-}) {
-  const [reqs, setReqs] = useState<AdminRequirement[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  const load = useCallback(async () => {
-    try {
-      setError(null);
-      setReqs(await listSessionRequirements(sessionId, idToken));
-    } catch (e) {
-      setError(String(e));
-    }
-  }, [sessionId, idToken]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  function replace(updated: AdminRequirement) {
-    setReqs((prev) => prev?.map((r) => (r.id === updated.id ? updated : r)) ?? null);
-  }
-
-  return (
-    <section className="flex flex-col gap-[12px]">
-      <div className="flex flex-col gap-[2px]">
-        <h2 className="text-[18px] font-bold text-[var(--sanba-cream)]">要件を検める</h2>
-        <p className="text-[12px] text-[var(--sanba-muted)]">
-          {sessionId}
-          {title ? ` ・ ${title}` : ""}
-        </p>
-      </div>
-      {error && <p className="text-[13px] text-[var(--sanba-rec)]">{error}</p>}
-      {reqs === null ? (
-        <p className="text-[13px] text-[var(--sanba-muted)]">読み込み中…</p>
-      ) : reqs.length === 0 ? (
-        <p className="text-[13px] text-[var(--sanba-muted)]">
-          この要件はまだ生まれておりませぬ。
-        </p>
-      ) : (
-        <div className="flex flex-col gap-[10px]">
-          {reqs.map((r) => (
-            <RequirementRow
-              key={r.id}
-              sessionId={sessionId}
-              idToken={idToken}
-              req={r}
-              onChange={replace}
-            />
-          ))}
-        </div>
-      )}
-    </section>
-  );
-}
-
-function RequirementRow({
-  sessionId,
-  idToken,
-  req,
-  onChange,
-}: {
-  sessionId: string;
-  idToken: string | null;
-  req: AdminRequirement;
-  onChange: (r: AdminRequirement) => void;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [statement, setStatement] = useState(req.statement);
-  const [priority, setPriority] = useState(req.priority);
-  const [category, setCategory] = useState(req.category);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function persist(patch: Parameters<typeof updateRequirement>[2]) {
-    try {
-      setBusy(true);
-      setError(null);
-      onChange(await updateRequirement(sessionId, req.id, patch, idToken));
-    } catch (e) {
-      setError(String(e));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function saveEdits() {
-    await persist({ statement, priority, category });
-    setEditing(false);
-  }
-
-  // 編集中は素の枠で編集フォームを描く。閲覧時は RequirementCard（状態チップ＋三択）。
-  if (editing) {
-    return (
-      <Card>
-        <Field label="記述">
-          <Textarea value={statement} onChange={(e) => setStatement(e.target.value)} rows={3} />
-        </Field>
-        <div className="flex flex-wrap gap-[12px]">
-          <Field label="優先度" className="min-w-[140px] flex-1">
-            <Select value={priority} onChange={(e) => setPriority(e.target.value)}>
-              {PRIORITIES.map((p) => (
-                <option key={p} value={p}>
-                  {p}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          <Field label="分類" className="min-w-[140px] flex-1">
-            <Select value={category} onChange={(e) => setCategory(e.target.value)}>
-              {CATEGORIES.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </Select>
-          </Field>
-        </div>
-        <div className="flex gap-[8px]">
-          <Button variant="gold" size="sm" onClick={() => void saveEdits()} disabled={busy}>
-            奉る
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              setStatement(req.statement);
-              setPriority(req.priority);
-              setCategory(req.category);
-              setEditing(false);
-            }}
-          >
-            取りやめる
-          </Button>
-        </div>
-        {error && <p className="text-[13px] text-[var(--sanba-rec)]">{error}</p>}
-      </Card>
-    );
-  }
-
-  return (
-    <>
-      {error && <p className="text-[13px] text-[var(--sanba-rec)]">{error}</p>}
-      <RequirementCard
-        status={req.status}
-        confidence={`${req.source_speaker ?? "—"} ・ 確度 ${Math.round(req.confidence * 100)}%`}
-        statement={req.statement}
-        meta={
-          <>
-            優先度: {req.priority} ・ 分類: {req.category}
-            {req.approved_by ? ` ・ 認: ${req.approved_by}` : ""}
-          </>
-        }
-        onRevise={busy ? undefined : () => setEditing(true)}
-        onApprove={
-          busy || req.status === "approved" ? undefined : () => void persist({ status: "approved" })
-        }
-        onReject={
-          busy || req.status === "rejected" ? undefined : () => void persist({ status: "rejected" })
-        }
-      />
-    </>
   );
 }
 

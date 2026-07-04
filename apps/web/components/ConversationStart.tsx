@@ -291,11 +291,11 @@ export function MicPermissionModal({ onAllow, onText, onDismiss }: MicPermission
           role="dialog"
           aria-modal="true"
           aria-label="マイクの使用許可"
-          className="pointer-events-auto flex w-[316px] flex-col items-center gap-3 rounded-[16px] border-[1.5px] border-[#7a5a1e] bg-[#221910] px-[18px] pb-[18px] pt-5 shadow-[0px_10px_28px_0px_rgba(0,0,0,0.5)]"
+          className="pointer-events-auto flex w-[316px] flex-col items-center gap-3 rounded-[16px] border-2 border-[var(--sanba-frame)] bg-[var(--sanba-surface)] px-[18px] pb-[18px] pt-5 shadow-[4px_4px_0_var(--sanba-shadow)]"
         >
           <div
             aria-hidden="true"
-            className="sanba-gold-gradient flex size-14 items-center justify-center rounded-full text-[24px]"
+            className="sanba-gold-gradient flex size-14 items-center justify-center rounded-full border-2 border-[var(--sanba-frame)] text-[24px]"
           >
             🎙
           </div>
@@ -335,7 +335,7 @@ export function ConnectingOverlay({ state, onCancel }: ConnectingOverlayProps) {
       <main className="mx-auto flex w-full max-w-[420px] flex-1 flex-col items-center gap-6 pt-12">
         <div
           aria-hidden="true"
-          className="sanba-gold-gradient flex size-20 animate-pulse items-center justify-center rounded-full text-[30px]"
+          className="sanba-gold-gradient sanba-serif flex size-20 animate-pulse items-center justify-center rounded-full border-2 border-[var(--sanba-frame)] text-[30px] font-bold text-[var(--sanba-ink)]"
         >
           産
         </div>
@@ -391,14 +391,18 @@ export function StartFailed({ kind, onRetry, onText, onBack }: StartFailedProps)
         <div
           aria-hidden="true"
           className="flex size-20 items-center justify-center rounded-full text-[32px] font-bold"
-          style={{ backgroundColor: "#241216", border: "2px solid #d2564b", color: "#d2564b" }}
+          style={{
+            backgroundColor: "var(--sanba-rec-pale)",
+            border: "2px solid var(--sanba-rec)",
+            color: "var(--sanba-rec)",
+          }}
         >
           ⚠
         </div>
-        <p className="text-[16px] font-bold text-[#e0857c]">
+        <p className="text-[16px] font-bold text-[var(--sanba-rec)]">
           {isMic ? "声を捉えられませなんだ" : "繋ぐことが叶いませなんだ"}
         </p>
-        <div className="w-full rounded-[14px] border border-[#7a3a36] bg-[#241216] p-[14px] text-[12.5px] leading-relaxed text-[var(--sanba-muted)]">
+        <div className="w-full rounded-[14px] border border-[var(--sanba-rec)]/40 bg-[var(--sanba-rec-pale)] p-[14px] text-[12.5px] leading-relaxed text-[var(--sanba-muted)]">
           {isMic ? (
             <ul className="list-disc pl-4">
               <li>ブラウザのマイク許可が拒否されています。</li>
@@ -432,7 +436,7 @@ export function StartFailed({ kind, onRetry, onText, onBack }: StartFailedProps)
                   id="mic-settings-guide"
                   role="region"
                   aria-label="マイク許可の手順"
-                  className="rounded-[12px] border border-[#4a3a1e] bg-[#1b140b] p-[14px] text-left text-[12px] leading-relaxed text-[var(--sanba-muted)]"
+                  className="rounded-[12px] border border-[var(--sanba-border)] bg-[var(--sanba-surface)] p-[14px] text-left text-[12px] leading-relaxed text-[var(--sanba-muted)]"
                 >
                   <ol className="list-decimal space-y-1 pl-4">
                     <li>アドレスバーの 🔒 / ⓘ をタップ</li>

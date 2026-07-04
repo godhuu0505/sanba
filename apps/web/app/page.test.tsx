@@ -39,18 +39,35 @@ const joinSession = vi.fn(async (..._a: unknown[]) => ({
 const addSessionContext = vi.fn(async (..._a: unknown[]) => ({ indexed_chunks: 0 }));
 const uploadContextFile = vi.fn(async (..._a: unknown[]) => ({ indexed_chunks: 1 }));
 const fetchMySessions = vi.fn(async (..._a: unknown[]) => [] as unknown[]);
+// 連携リポジトリ候補（ADR-0027）。既定はコネクタ無効 = フィールド非表示（既存テストを変えない）。
+// linked/items は GitHub App 連携時の additive 拡張（ADR-0025）。
+const fetchGithubRepos = vi.fn(
+  async (..._a: unknown[]) =>
+    ({ enabled: false, repos: [], default: null }) as {
+      enabled: boolean;
+      repos: string[];
+      default: string | null;
+      linked?: boolean;
+      items?: { full_name: string; default_branch: string; private: boolean }[];
+    },
+);
+// GitHub App 連携の拡張（ADR-0025）: branch 一覧と開始時の索引キック。
+const listGithubBranches = vi.fn(async (..._a: unknown[]) => [] as { name: string; sha: string }[]);
+const selectSessionRepo = vi.fn(async (..._a: unknown[]) => ({
+  repo: null as string | null,
+  branch: null as string | null,
+  commit_sha: null as string | null,
+  status: "none",
+}));
 vi.mock("../lib/api", () => ({
   createSession: (...a: unknown[]) => createSession(...a),
   joinSession: (...a: unknown[]) => joinSession(...a),
   addSessionContext: (...a: unknown[]) => addSessionContext(...a),
   uploadContextFile: (...a: unknown[]) => uploadContextFile(...a),
   fetchMySessions: (...a: unknown[]) => fetchMySessions(...a),
-  // GitHub 連携（ADR-0025）: 入口フローのテストでは未連携扱いにし、RepoSelectField は
-  // 設定画面導線のみを描く（repo 一覧/branch は呼ばれない）。selectSessionRepo は no-op。
-  getGithubLinkStatus: () => Promise.resolve({ linked: false, github_login: null }),
-  listGithubRepos: () => Promise.resolve([]),
-  listGithubBranches: () => Promise.resolve([]),
-  selectSessionRepo: () => Promise.resolve({ repo: null, branch: null, commit_sha: null, status: "none" }),
+  fetchGithubRepos: (...a: unknown[]) => fetchGithubRepos(...a),
+  listGithubBranches: (...a: unknown[]) => listGithubBranches(...a),
+  selectSessionRepo: (...a: unknown[]) => selectSessionRepo(...a),
   // 実装と同じ受理範囲・判定（PNG/JPG・MP4/MOV）。テストではロジックをそのまま使う。
   ACCEPTED_IMAGE: ".png,.jpg,.jpeg,image/png,image/jpeg",
   ACCEPTED_VIDEO: ".mp4,.mov,video/mp4,video/quicktime",
@@ -87,6 +104,16 @@ describe("入口フロー（#140）", () => {
     uploadContextFile.mockImplementation(async () => ({ indexed_chunks: 1 }));
     fetchMySessions.mockClear();
     fetchMySessions.mockImplementation(async () => []);
+    fetchGithubRepos.mockClear();
+    listGithubBranches.mockClear();
+    listGithubBranches.mockImplementation(async () => []);
+    selectSessionRepo.mockClear();
+    selectSessionRepo.mockImplementation(async () => ({
+      repo: null,
+      branch: null,
+      commit_sha: null,
+      status: "none",
+    }));
   });
   afterEach(() => {
     cleanup();
@@ -145,9 +172,9 @@ describe("入口フロー（#140）", () => {
     expect(await screen.findByText("新機能要件定義")).toBeTruthy();
     // 日付は YYYY/MM/DD へ整形して表示する（タイムゾーン差を避け書式のみ検証）。
     expect(screen.getByText(/^\d{4}\/\d{2}\/\d{2}$/)).toBeTruthy();
-    // 行は遷移リンク化される（プレースホルダ詳細ルート /admin?session=）。
-    expect(screen.getByRole("link", { name: /新機能要件定義/ }).getAttribute("href")).toContain(
-      "session=sess-1",
+    // 行は過去要件の絵巻閲覧画面（/sessions/{id}）への遷移リンクになる。
+    expect(screen.getByRole("link", { name: /新機能要件定義/ }).getAttribute("href")).toBe(
+      "/sessions/sess-1",
     );
     // 空状態の文言は出ない。
     expect(screen.queryByText(/過去の要件はまだございません/)).toBeNull();
@@ -227,6 +254,151 @@ describe("入口フロー（#140）", () => {
     expect(createSession.mock.calls[0][1]).toBe(true);
     // 開始後は 03 会話開始（開始前サマリ）へ。接続/許可はここから先（ConversationStart）。
     await waitFor(() => expect(screen.getByText("支度、相整いまして")).toBeTruthy());
+  });
+
+  // ── 02 連携リポジトリ（ADR-0027）─────────────────────────────────────────
+  it("コネクタ無効（既定）では連携リポジトリのフィールドを出さない", async () => {
+    authState.loggedIn = true;
+    render(<Home />);
+    fireEvent.click(screen.getByText("＋ 壁打ちを始める"));
+    await waitFor(() => expect(fetchGithubRepos).toHaveBeenCalled());
+    expect(screen.queryByLabelText("連携リポジトリ（任意）")).toBeNull();
+  });
+
+  it("候補一覧から選んだリポジトリが createSession に渡る", async () => {
+    authState.loggedIn = true;
+    fetchGithubRepos.mockResolvedValueOnce({
+      enabled: true,
+      repos: ["acme/product-a", "acme/product-b"],
+      default: null,
+    });
+    render(<Home />);
+    fireEvent.click(screen.getByText("＋ 壁打ちを始める"));
+    const select = await screen.findByLabelText("連携リポジトリ（任意）");
+    fireEvent.change(select, { target: { value: "acme/product-a" } });
+    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(screen.getByRole("button", { name: "インタビューを始める" }));
+    await waitFor(() => expect(createSession).toHaveBeenCalledTimes(1));
+    // (roles, consent, idToken, title, githubRepo)
+    expect(createSession.mock.calls[0][4]).toBe("acme/product-a");
+  });
+
+  it("未選択（連携しない）なら createSession にリポジトリを渡さない", async () => {
+    authState.loggedIn = true;
+    fetchGithubRepos.mockResolvedValueOnce({
+      enabled: true,
+      repos: ["acme/product-a"],
+      default: null,
+    });
+    render(<Home />);
+    fireEvent.click(screen.getByText("＋ 壁打ちを始める"));
+    await screen.findByLabelText("連携リポジトリ（任意）");
+    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(screen.getByRole("button", { name: "インタビューを始める" }));
+    await waitFor(() => expect(createSession).toHaveBeenCalledTimes(1));
+    expect(createSession.mock.calls[0][4]).toBeUndefined();
+  });
+
+  it("候補一覧が空（取得失敗）でも手入力欄にフォールバックして選べる", async () => {
+    authState.loggedIn = true;
+    fetchGithubRepos.mockResolvedValueOnce({ enabled: true, repos: [], default: null });
+    render(<Home />);
+    fireEvent.click(screen.getByText("＋ 壁打ちを始める"));
+    const input = await screen.findByLabelText("連携リポジトリ（任意）");
+    fireEvent.change(input, { target: { value: "acme/manual" } });
+    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(screen.getByRole("button", { name: "インタビューを始める" }));
+    await waitFor(() => expect(createSession).toHaveBeenCalledTimes(1));
+    expect(createSession.mock.calls[0][4]).toBe("acme/manual");
+  });
+
+  it("connector 由来（App 未連携）の選択では branch 選択を出さず、索引キックも呼ばない", async () => {
+    authState.loggedIn = true;
+    fetchGithubRepos.mockResolvedValueOnce({
+      enabled: true,
+      repos: ["acme/product-a"],
+      default: null,
+    });
+    render(<Home />);
+    fireEvent.click(screen.getByText("＋ 壁打ちを始める"));
+    const select = await screen.findByLabelText("連携リポジトリ（任意）");
+    fireEvent.change(select, { target: { value: "acme/product-a" } });
+    expect(screen.queryByLabelText("ブランチ")).toBeNull();
+    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(screen.getByRole("button", { name: "インタビューを始める" }));
+    await waitFor(() => expect(createSession).toHaveBeenCalledTimes(1));
+    expect(selectSessionRepo).not.toHaveBeenCalled();
+  });
+
+  // ── 02 GitHub App 連携の repo+branch（ADR-0025 拡張）───────────────────────
+  function mockLinkedRepos() {
+    fetchGithubRepos.mockResolvedValueOnce({
+      enabled: true,
+      repos: ["octo/demo"],
+      default: null,
+      linked: true,
+      items: [{ full_name: "octo/demo", default_branch: "main", private: true }],
+    });
+    listGithubBranches.mockResolvedValueOnce([
+      { name: "dev", sha: "s1" },
+      { name: "main", sha: "s2" },
+    ]);
+  }
+
+  it("App 連携済み候補を選ぶと branch 選択が出て、既定はデフォルトブランチ", async () => {
+    authState.loggedIn = true;
+    mockLinkedRepos();
+    render(<Home />);
+    fireEvent.click(screen.getByText("＋ 壁打ちを始める"));
+    const select = await screen.findByLabelText("連携リポジトリ（任意）");
+    fireEvent.change(select, { target: { value: "octo/demo" } });
+    const branchSelect = await screen.findByLabelText("ブランチ");
+    // branch 一覧を idToken で取得し、既定はデフォルトブランチ（main）。
+    await waitFor(() => expect(listGithubBranches).toHaveBeenCalledWith("octo/demo", null));
+    await waitFor(() =>
+      expect((screen.getByLabelText("ブランチ") as HTMLSelectElement).value).toBe("main"),
+    );
+    expect(branchSelect.textContent).toContain("dev");
+  });
+
+  it("App 連携候補で開始すると join 後に repo+branch をバインドし索引をキックする", async () => {
+    authState.loggedIn = true;
+    mockLinkedRepos();
+    render(<Home />);
+    fireEvent.click(screen.getByText("＋ 壁打ちを始める"));
+    const select = await screen.findByLabelText("連携リポジトリ（任意）");
+    fireEvent.change(select, { target: { value: "octo/demo" } });
+    await screen.findByLabelText("ブランチ");
+    await waitFor(() =>
+      expect((screen.getByLabelText("ブランチ") as HTMLSelectElement).value).toBe("main"),
+    );
+    // デフォルト以外の branch も選べる。
+    fireEvent.change(screen.getByLabelText("ブランチ"), { target: { value: "dev" } });
+    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(screen.getByRole("button", { name: "インタビューを始める" }));
+    await waitFor(() => expect(selectSessionRepo).toHaveBeenCalledTimes(1));
+    // (sessionId, repo, branch, sessionToken)。join 済みトークンで認可する（契約 §4）。
+    expect(selectSessionRepo).toHaveBeenCalledWith("s1", "octo/demo", "dev", "st");
+    // createSession にも repo が渡る（起票先・Issue/README 文脈は #283 の経路のまま）。
+    expect(createSession.mock.calls[0][4]).toBe("octo/demo");
+    await waitFor(() => expect(screen.getByText("支度、相整いまして")).toBeTruthy());
+  });
+
+  it("索引キック（バインド）に失敗したら開始を止めて理由を出す（Codex P2）", async () => {
+    authState.loggedIn = true;
+    mockLinkedRepos();
+    selectSessionRepo.mockRejectedValueOnce(new Error("bind failed: 502"));
+    render(<Home />);
+    fireEvent.click(screen.getByText("＋ 壁打ちを始める"));
+    const select = await screen.findByLabelText("連携リポジトリ（任意）");
+    fireEvent.change(select, { target: { value: "octo/demo" } });
+    await screen.findByLabelText("ブランチ");
+    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(screen.getByRole("button", { name: "インタビューを始める" }));
+    await waitFor(() => expect(selectSessionRepo).toHaveBeenCalledTimes(1));
+    // 03 開始前サマリへは進まず、02 のまま理由を表示する。
+    expect(await screen.findByText(/紐づけに失敗しました/)).toBeTruthy();
+    expect(screen.queryByText("支度、相整いまして")).toBeNull();
   });
 
   // ── 02 参考資料（バイナリ添付）#222 ──────────────────────────────────────

@@ -75,12 +75,12 @@ export function MaterialCancelDialog({
         role="dialog"
         aria-modal="true"
         aria-label="中断の確認"
-        className="relative z-10 flex w-[318px] flex-col items-center gap-3 rounded-[16px] border border-[var(--sanba-frame)] bg-[#221910] px-[18px] pb-4 pt-[18px]"
+        className="relative z-10 flex w-[318px] flex-col items-center gap-3 rounded-[16px] border-2 border-[var(--sanba-frame)] bg-[var(--sanba-surface)] px-[18px] pb-4 pt-[18px] shadow-[4px_4px_0_var(--sanba-shadow)]"
       >
         <div
           aria-hidden="true"
           className="flex size-12 items-center justify-center rounded-full border-2 text-[22px] font-bold"
-          style={{ borderColor: "#d2564b", color: "#d2564b" }}
+          style={{ borderColor: "var(--sanba-rec)", color: "var(--sanba-rec)" }}
         >
           ✕
         </div>
@@ -102,7 +102,7 @@ export function MaterialCancelDialog({
           <button
             type="button"
             onClick={onConfirm}
-            className="flex-1 rounded-[12px] bg-[#7a2a26] py-[13px] text-[13px] font-bold text-[#f7d9d4]"
+            className="flex-1 rounded-[12px] bg-[var(--sanba-rec)] py-[13px] text-[13px] font-bold text-white"
           >
             中断する
           </button>

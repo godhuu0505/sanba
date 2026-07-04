@@ -160,7 +160,7 @@
 
 | 用語 | 英語 / 識別子 | 定義 | 出典 |
 |---|---|---|---|
-| 成果物 | artifact / `artifacts/{sessionId}` | 生成された要件ドキュメント（Cloud Storage 参照）。 | [architecture.md §6](architecture.md) |
+| 成果物 | artifact / `artifacts/{sessionId}` | 生成された要件ドキュメント（Cloud Storage 参照）。**Cloud Storage 連携は計画（TO-BE）**で、現状の成果物出力は GitHub Issue 起票。 | [architecture.md §6](architecture.md) |
 | Issue 化 | export / `export_requirements_to_github` | 確定要件を GitHub Issue に書き戻す（`POST /api/sessions/{id}/export`）。Figma 演出「奉る」＝機能名「Issue 化」。 | [realtime-contract.md §4](design/realtime-contract.md) / [api.ts](../apps/web/lib/api.ts) |
 | 完了 | `session.completed` | セッション締め。サマリ（`contradictions_resolved` / `gaps_found` / `issues_created`）と `artifacts` を運ぶ。 | [events.py](../apps/agent/src/sanba_agent/events.py) |
 

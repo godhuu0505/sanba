@@ -17,11 +17,14 @@ export function EndConfirmDialog({ unresolved, onContinue, onEnd }: EndConfirmDi
       role="dialog"
       aria-label="終了確認"
       aria-modal="true"
-      className="flex w-[318px] flex-col items-center gap-3 rounded-[16px] border border-[var(--sanba-frame)] bg-[#221910] px-[18px] pb-4 pt-[18px]"
+      className="flex w-[318px] flex-col items-center gap-3 rounded-[16px] border-2 border-[var(--sanba-frame)] bg-[var(--sanba-surface)] px-[18px] pb-4 pt-[18px] shadow-[4px_4px_0_var(--sanba-shadow)]"
     >
       <div
         className="flex size-12 items-center justify-center rounded-full border-2 text-[22px] font-bold"
-        style={{ borderColor: hasUnresolved ? "#d2564b" : "#7a5a1e", color: hasUnresolved ? "#d2564b" : "#f0d67a" }}
+        style={{
+          borderColor: hasUnresolved ? "var(--sanba-rec)" : "var(--sanba-gold-deep)",
+          color: hasUnresolved ? "var(--sanba-rec)" : "var(--sanba-gold-text)",
+        }}
       >
         {hasUnresolved ? "⚠" : "⚖"}
       </div>
@@ -42,7 +45,7 @@ export function EndConfirmDialog({ unresolved, onContinue, onEnd }: EndConfirmDi
         <button
           type="button"
           onClick={onEnd}
-          className="flex-1 rounded-[12px] bg-[#7a2a26] py-[13px] text-[13px] font-bold text-[#f7d9d4]"
+          className="flex-1 rounded-[12px] bg-[var(--sanba-rec)] py-[13px] text-[13px] font-bold text-white"
         >
           終了する
         </button>

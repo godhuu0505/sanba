@@ -15,6 +15,7 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import re
 import time
 import uuid
 from collections import defaultdict, deque
@@ -35,7 +36,7 @@ from fastapi import (
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from livekit import api
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sanba_shared.models import (
     GitHubIndexStatus,
     GitHubLink,
@@ -68,6 +69,7 @@ from .ingestion import ContextIndexer, chunk_text, extract_text_from_upload
 from .observability import (
     record_asset_upload,
     record_material_event,
+    record_my_requirements_viewed,
     record_my_sessions_listed,
     record_question_hydration,
     record_rate_limited,
@@ -204,10 +206,9 @@ def require_session_access(
     return access
 
 
-def _github_ready() -> bool:
-    return bool(
-        settings.github_connector_enabled and settings.github_token and settings.github_repo
-    )
+# "owner/name" 形式（ADR-0027）。GitHub の実際の命名規則より緩いが、パス注入
+# （`/` の追加や空文字）を弾ければ十分（トークン権限外のリポは GitHub 側が 404 を返す）。
+_GITHUB_REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 
 
 def _confirmed_requirements(session_id: str) -> list[dict[str, Any]]:
@@ -221,6 +222,26 @@ def _confirmed_requirements(session_id: str) -> list[dict[str, Any]]:
     return [r for r in _read_repo.list_requirements(session_id) if r["status"] == "confirmed"]
 
 
+def _finalized_snapshot_requirements(session: SessionMeta) -> list[dict[str, Any]]:
+    """finalize 時に凍結した要件集合を契約形で返す（#213 凍結保証の単一定義）。
+
+    export と過去要件閲覧（GET /api/sessions/mine/{id}/requirements）が共有する。確定後に
+    遅延 agent が要件を追加したり管理画面 API で却下されても、確定時集合を再計算せず固定する
+    （Codex P2 / discussion_r3481706919）。未 finalize ならスナップショットは空。
+
+    後方互換（Codex P1）: 本機能デプロイ前に finalized になった旧文書は ID スナップショットを
+    持たない（既定 []）。`status==finalized` かつ確定件数 > 0 で ID 集合だけ欠落しているケースは
+    旧挙動（確定要件の再計算）にフォールバックし、確定済みセッションを空にしない。
+    """
+    snapshot_ids = session.finalized_requirement_ids
+    legacy_finalized_without_snapshot = (
+        not snapshot_ids and session.status == "finalized" and (session.finalized_count or 0) > 0
+    )
+    if legacy_finalized_without_snapshot:
+        return _confirmed_requirements(session.id)
+    return _read_repo.get_requirements_by_ids(session.id, snapshot_ids)
+
+
 # ---- Schemas ---------------------------------------------------------------
 class CreateSessionRequest(BaseModel):
     title: str = "要件インタビュー"
@@ -228,6 +249,9 @@ class CreateSessionRequest(BaseModel):
     roles: list[str] = ["pm", "engineer", "customer"]
     # Explicit consent to recording + AI processing (issue #10).
     consent_acknowledged: bool = False
+    # セッション単位の連携リポジトリ "owner/name"（任意 / ADR-0027）。未指定・空は
+    # 「連携しない」= 環境変数 GITHUB_REPO へのフォールバック（従来挙動）。
+    github_repo: str | None = None
 
 
 class CreateSessionResponse(BaseModel):
@@ -357,6 +381,11 @@ def create_session(
             status_code=400,
             detail="consent required: recording and AI processing must be acknowledged",
         )
+    # 連携リポジトリ（任意 / ADR-0027）。空文字は「連携しない」= None に正規化し、
+    # 形式不正（owner/name 以外）は黙って落とさず 400 で返す（起票時の失敗より早く気づける）。
+    github_repo = (req.github_repo or "").strip() or None
+    if github_repo is not None and not _GITHUB_REPO_RE.match(github_repo):
+        raise HTTPException(status_code=400, detail="github_repo must be in 'owner/name' format")
     session_id = f"sess-{uuid.uuid4().hex[:8]}"
     invites = {
         role: create_invite(
@@ -372,9 +401,16 @@ def create_session(
             owner_sub=user.sub,
             owner_email=user.email,
             roles=req.roles,
+            github_repo=github_repo,
         )
     )
-    log.info("session_created", session=session_id, roles=req.roles, owner=user.sub)
+    log.info(
+        "session_created",
+        session=session_id,
+        roles=req.roles,
+        owner=user.sub,
+        github_repo=github_repo or "(none)",
+    )
     return CreateSessionResponse(session_id=session_id, invites=invites)
 
 
@@ -445,10 +481,6 @@ class GitHubRepoItem(BaseModel):
     full_name: str
     default_branch: str
     private: bool
-
-
-class GitHubReposResponse(BaseModel):
-    items: list[GitHubRepoItem]
 
 
 class GitHubBranchItem(BaseModel):
@@ -570,26 +602,61 @@ def github_unlink(user: AuthUser = Depends(require_user)) -> GitHubLinkStatus:
     return GitHubLinkStatus(linked=False)
 
 
-@app.get("/api/github/repos", response_model=GitHubReposResponse)
-def github_list_repos(user: AuthUser = Depends(require_user)) -> GitHubReposResponse:
-    """連携アカウントが管理する repo 一覧（準備画面の選択母集合 / ADR-0025）。"""
+class GithubReposResponse(BaseModel):
+    """`GET /api/github/repos`（ADR-0027）。02 準備「連携リポジトリ」の候補一覧。"""
+
+    # コネクタ/App 連携のいずれかが使える状態か。False のとき UI はフィールドごと隠す
+    # （ADR-0007 の不干渉）。
+    enabled: bool
+    # 読める "owner/name" の一覧（更新が新しい順）。
+    repos: list[str]
+    # 環境変数の既定リポジトリ（あれば UI が初期選択に使える）。
+    default: str | None = None
+    # ---- 追加情報（ADR-0025 / 後方互換の additive）----
+    # 本人が GitHub App 連携済みで一覧が App installation 由来か。True のとき web は
+    # branch 選択と開始時の索引キック（POST /api/sessions/{id}/github）を有効化する。
+    linked: bool = False
+    # App 由来のときの詳細（default_branch / private）。connector 由来では空。
+    items: list[GitHubRepoItem] = Field(default_factory=list)
+
+
+@app.get("/api/github/repos", response_model=GithubReposResponse)
+def list_github_repos(user: AuthUser = Depends(require_user)) -> GithubReposResponse:
+    """セッション実施前に選べる GitHub リポジトリの候補を返す（ADR-0027 / ADR-0025）。
+
+    1 本のエンドポイントに統一し、次の順で解決する:
+      1. 本人が GitHub App 連携済み → 連携アカウントの installation が読める一覧（ADR-0025）。
+      2. 未連携でデプロイ単位コネクタが有効 → 設定済みトークンで読める一覧（ADR-0027）。
+      3. どちらも不可 → `enabled=False`（UI はフィールドごと隠す）。
+    一覧取得の失敗は `repos=[]` のまま `enabled=True` で返し、UI は手入力（owner/name）へ
+    フォールバックする（一覧の不調で開始を止めない）。
+    """
     client = _github_app_client()
     link = _repo.get_github_link(user.sub)
-    if client is None or link is None:
-        raise HTTPException(status_code=409, detail="github not linked")
-    try:
-        repos = client.list_repos(link.installation_id)
-    except Exception as exc:  # pragma: no cover - network
-        log.warning("github_list_repos_failed", error=str(exc))
-        raise HTTPException(status_code=502, detail="github error") from exc
-    return GitHubReposResponse(
-        items=[
-            GitHubRepoItem(
-                full_name=r.full_name, default_branch=r.default_branch, private=r.private
-            )
-            for r in repos
-        ]
-    )
+    if client is not None and link is not None:
+        try:
+            app_repos = client.list_repos(link.installation_id)
+        except Exception as exc:  # pragma: no cover - network
+            log.warning("github_list_repos_failed", error=str(exc))
+            app_repos = []
+        log.info("github_repos_listed", count=len(app_repos), sub=user.sub, source="app")
+        return GithubReposResponse(
+            enabled=True,
+            repos=[r.full_name for r in app_repos],
+            default=settings.github_repo or None,
+            linked=True,
+            items=[
+                GitHubRepoItem(
+                    full_name=r.full_name, default_branch=r.default_branch, private=r.private
+                )
+                for r in app_repos
+            ],
+        )
+    if not (settings.github_connector_enabled and settings.github_token):
+        return GithubReposResponse(enabled=False, repos=[])
+    repos = github_export.list_repos(settings.github_token)
+    log.info("github_repos_listed", count=len(repos), sub=user.sub, source="connector")
+    return GithubReposResponse(enabled=True, repos=repos, default=settings.github_repo or None)
 
 
 @app.get("/api/github/branches", response_model=GitHubBranchesResponse)
@@ -759,6 +826,57 @@ def get_session_repo(
         branch=meta.github_branch,
         commit_sha=meta.github_commit_sha,
         status=meta.github_index_status.value,
+    )
+
+
+class MySessionRequirementsResponse(BaseModel):
+    """`GET /api/sessions/mine/{id}/requirements` の応答。
+
+    過去セッションの要件絵巻閲覧画面 (web /sessions/{id}) に、見出し用の最小メタ
+    (標題・作成時刻・確定状態) と要件スナップショットをまとめて供給する。
+    items は契約 §3 の requirement 形 (get_requirements と同じ contract 形) で、
+    PII (owner_email/owner_sub) は MySession と同じく載せない (最小権限)。
+    """
+
+    id: str
+    title: str
+    created_at: datetime
+    finalized: bool
+    items: list[dict[str, Any]]
+
+
+@app.get(
+    "/api/sessions/mine/{session_id}/requirements",
+    response_model=MySessionRequirementsResponse,
+)
+def get_my_session_requirements(
+    session_id: str, user: AuthUser = Depends(require_user)
+) -> MySessionRequirementsResponse:
+    """本人 (owner_sub) の過去セッションの要件絵巻を返す。
+
+    ホーム「過去の要件を見る」(#215/#250) からの詳細閲覧。join 済みトークンは会話終了後には
+    残らないため、`require_session_access` ではなく idToken (ADR-0012) で本人確認し、
+    owner_sub 一致で認可する。非所有・不存在はどちらも 404 に平す (他人のセッション ID の
+    存在を応答差で漏らさない)。
+    """
+    session = _repo.get_session(session_id)
+    if session is None or session.owner_sub != user.sub:
+        raise HTTPException(status_code=404, detail="session not found")
+    # 確定済みは finalize 時の凍結スナップショットだけを見せる（Codex P1）。確定後に遅延 agent
+    # が追加した要件や管理画面 API での却下を混ぜず、export と同じ成果物を表示する。
+    # 未確定（進行中）は現在の全要件を出す（会話中の絵巻タブと同じ見え方）。
+    if session.status == "finalized":
+        items = _finalized_snapshot_requirements(session)
+    else:
+        items = _read_repo.list_requirements(session_id)
+    record_my_requirements_viewed(len(items))
+    log.info("my_requirements_viewed", session=session_id, owner=user.sub, count=len(items))
+    return MySessionRequirementsResponse(
+        id=session.id,
+        title=session.title,
+        created_at=session.created_at,
+        finalized=session.status == "finalized",
+        items=items,
     )
 
 
@@ -1226,8 +1344,12 @@ def finalize_session_requirements(
     """07 判定の「確定」を永続化する（#186）。
 
     会話を締めて要件を確定したとき、確定した要件件数のスナップショットを刻み、セッションを
-    finalized にする（不可逆マーカ）。要件カードの draft→approved 承認は管理画面の責務
-    （ADR-0014）なのでここでは行わない。確定後の export（GitHub Issue）はこの件数と一致する。
+    finalized にする（不可逆マーカ）。確定後の export（GitHub Issue）はこの件数と一致する。
+
+    確定時集合は approved にして TTL（expireAt）を解除する（Codex P1）: 管理画面の承認 UI
+    廃止に伴い、draft のまま 30 日 TTL で消えると過去要件閲覧（/sessions/{id}）と export が
+    欠落するため、参加者の「確定」を成果物保全の起点にする。TTL 解除は既存の
+    set_requirement_status（approved で expireAt 削除）に集約済みのものを再利用する。
 
     ガード（Codex P2）:
       - 既に finalized なら open 検知に関係なく保存済みスナップショット件数を返す（冪等）。
@@ -1253,6 +1375,16 @@ def finalize_session_requirements(
     )
     if meta is None:
         raise HTTPException(status_code=404, detail="session not found")
+    # 確定時集合を成果物として保全する: approved で expireAt が外れ 30 日 TTL の対象外になる
+    # （Codex P1）。approved_by は確定操作の主体（join 済みトークンの sub）。
+    for rid in confirmed_ids:
+        try:
+            _repo.set_requirement_status(
+                session_id, rid, RequirementStatus.APPROVED, approved_by=access.sub
+            )
+        except RequirementNotFound:
+            # 確定直前に TTL 失効等で消えた要件はスキップする（finalize 自体は成立させる）。
+            log.warning("finalize_preserve_missing_requirement", session=session_id, rid=rid)
     count = meta.finalized_count if meta.finalized_count is not None else len(confirmed)
     log.info(
         "session_finalized",
@@ -1271,40 +1403,33 @@ def export_requirements(
     """確定要件を GitHub Issue として起票する（契約 §4 P1 / #39 ループ / #213）。
 
     finalize 時に凍結した要件 ID スナップショット（`finalized_requirement_ids`）の集合だけを
-    起票する。確定後に遅延 agent が要件を追加したり管理画面で却下されても、確定時集合を再計算
-    せず固定する（Codex P2 / discussion_r3481706919）。未 finalize ならスナップショットは空。
-
-    後方互換（Codex P1）: 本機能デプロイ前に finalized になった旧文書は ID スナップショットを
-    持たない（既定 []）。`status==finalized` かつ確定件数 > 0 で ID 集合だけ欠落しているケースは
-    旧挙動（確定要件の再計算）にフォールバックし、確定済みセッションを空 Issue 化しない。
+    起票する。凍結の定義（旧データのフォールバック含む）は _finalized_snapshot_requirements
+    に一元化し、過去要件閲覧と共有する。
     """
-    if not _github_ready():
+    # コネクタ無効/トークン未設定は従来どおりセッション照会前に黙って断る（既定 OFF の不干渉）。
+    if not (settings.github_connector_enabled and settings.github_token):
         return ExportResponse(exported=False, reason="github connector disabled")
     session = _repo.get_session(session_id)
     if session is None:
         raise HTTPException(status_code=404, detail="session not found")
+    # 起票先はセッションで選んだリポジトリを最優先し、未選択は環境変数へフォールバック
+    # （ADR-0027）。どちらも無ければ従来どおり黙って断る。
+    export_repo = session.github_repo or settings.github_repo
+    if not export_repo:
+        return ExportResponse(exported=False, reason="github connector disabled")
     # 確定時の要件 ID 集合だけを取得して起票する（再計算しない / #213）。
-    snapshot_ids = session.finalized_requirement_ids
-    # 旧データのみ再計算へフォールバック（snapshot 欠落の finalized セッション / Codex P1）。
-    # 新セッションは snapshot を正とし固定集合のまま（凍結保証を維持）。確定判定は
-    # _confirmed_requirements に一元化済みのものを再利用する（重複定義しない）。
-    legacy_finalized_without_snapshot = (
-        not snapshot_ids and session.status == "finalized" and (session.finalized_count or 0) > 0
-    )
-    if legacy_finalized_without_snapshot:
-        confirmed = _confirmed_requirements(session_id)
-    else:
-        confirmed = _read_repo.get_requirements_by_ids(session_id, snapshot_ids)
+    confirmed = _finalized_snapshot_requirements(session)
     title, body = github_export.requirements_to_issue_body(confirmed, session_id)
-    url = github_export.create_issue(settings.github_token, settings.github_repo, title, body)
+    url = github_export.create_issue(settings.github_token, export_repo, title, body)
     if url is None:
         return ExportResponse(exported=False, reason="issue creation failed")
     log.info(
         "requirements_exported",
         session=session_id,
         count=len(confirmed),
-        id_count=len(snapshot_ids),
-        legacy_fallback=legacy_finalized_without_snapshot,
+        id_count=len(session.finalized_requirement_ids),
+        repo=export_repo,
+        session_selected=session.github_repo is not None,
         url=url,
         sub=access.sub,
     )
