@@ -10,9 +10,9 @@
 
 | ADR | 内容 | 対応する論点（personas §7） | ブロックする対象 |
 |---|---|---|---|
-| ADR-0031（仮） | product エンティティ・所有（owner_sub）・深掘りリンク。org 非導入と将来挿入余地の担保もここに明記 | 1, 2 の前半, 6 | Stage 1 全体 |
-| ADR-0032（仮） | ゲスト入場（ログイン原則 ADR-0012 の例外）と `interview_mode`・grounding 出力制御 | 2 の後半, 3 | Stage 2 全体 |
-| ADR-0033（仮） | 利用者向け成果物（ユースケース記述）と生成プレビューの採否（design/README §3.6 の保留の決着） | 4 | Stage 3 の FR-3.1 |
+| [ADR-0031](../adr/0031-product-entity-and-invite-links.md)（**起票済み・Proposed**） | product エンティティ・所有（owner_sub）・深掘りリンク。org 非導入と将来挿入余地の担保もここに明記 | 1, 2 の前半, 6 | Stage 1 全体 |
+| [ADR-0032](../adr/0032-guest-join-and-enduser-mode.md)（**起票済み・Proposed**） | ゲスト入場（ログイン原則 ADR-0012 の例外）と `interview_mode`・grounding 出力制御 | 2 の後半, 3 | Stage 2 全体 |
+| ADR-0033（未起票 — Stage 3 着手前に） | 利用者向け成果物（ユースケース記述）と生成プレビューの採否（design/README §3.6 の保留の決着） | 4 | Stage 3 の FR-3.1 |
 | — | ADR-0008 との整合（「PdM が現場の声を集める道具」としての拡張と位置づけ）は ADR-0031 の「影響」節で README / roadmap 改訂として扱う | 5 | — |
 
 ## 1. 全体の依存関係

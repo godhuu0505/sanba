@@ -4,6 +4,8 @@
 > 決定が必要な論点は [§7](#7-adr-に切り出すべき決定) に列挙する。関連: ADR-0008（プロダクトコンセプト）/
 > ADR-0027（セッション単位 repo 選択）/ ADR-0028（GitHub App 連携・ES 索引）/ ADR-0012（Google ログイン）/
 > ADR-0024（grill-me インタビューペルソナ）。
+>
+> 後続文書: [要件定義](product-enduser-requirements.md) / [実装計画](product-enduser-implementation-plan.md)。
 
 ## 1. 出発点 — なぜ分けるのか
 
