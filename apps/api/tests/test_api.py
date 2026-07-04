@@ -178,6 +178,23 @@ def test_github_repos_filtered_by_allowlist(monkeypatch: pytest.MonkeyPatch) -> 
     assert res.json()["repos"] == ["acme/a"]
 
 
+def test_github_repos_default_outside_allowlist_is_hidden(monkeypatch: pytest.MonkeyPatch) -> None:
+    # 既定リポジトリも許可リストを通す（Codex P2: 許可外の既定はリポ名の露出になり、
+    # UI が候補外の既定値を選択肢として補ってしまう）。
+    from sanba_api import github_export, main
+    from sanba_api.config import settings
+
+    monkeypatch.setattr(settings, "github_connector_enabled", True)
+    monkeypatch.setattr(settings, "github_token", "t")
+    monkeypatch.setattr(settings, "github_repo", "secretorg/hidden")
+    monkeypatch.setattr(settings, "github_repo_allowlist", "acme")
+    monkeypatch.setattr(github_export, "list_repos", lambda token, per_page=100: ["acme/a"])
+    monkeypatch.setattr(main.github_export, "list_repos", lambda token, per_page=100: ["acme/a"])
+    body = client.get("/api/github/repos").json()
+    assert body["repos"] == ["acme/a"]
+    assert body["default"] is None
+
+
 def test_create_then_join_happy_path() -> None:
     created = _create(["pm"])
     invite = created["invites"]["pm"]

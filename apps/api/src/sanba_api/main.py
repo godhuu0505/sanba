@@ -475,12 +475,13 @@ def list_github_repos(user: AuthUser = Depends(require_user)) -> GithubReposResp
     # 許可リスト（設定時）で候補を絞る。SANBA にログインできる ≠ 対象 GitHub 組織の
     # メンバーである環境で、共有トークンが読める private リポ名を漏らさない（Codex P1）。
     repos = [r for r in github_export.list_repos(settings.github_token) if _github_repo_allowed(r)]
+    # 既定リポジトリも同じ判定を通す（Codex P2: 許可外の既定はリポ名の露出になり、
+    # UI が候補外の既定値を選択肢として補ってしまう）。
+    default = settings.github_repo if settings.github_repo else None
+    if default is not None and not _github_repo_allowed(default):
+        default = None
     log.info("github_repos_listed", count=len(repos), sub=user.sub)
-    # 既定リポジトリも許可リストを通す。許可リストに含まれない settings.github_repo を
-    # そのまま返すと、候補一覧には出ないリポジトリ名が UI に露出する（Codex P2）。
-    _env_default = settings.github_repo
-    _default = _env_default if _env_default and _github_repo_allowed(_env_default) else None
-    return GithubReposResponse(enabled=True, repos=repos, default=_default)
+    return GithubReposResponse(enabled=True, repos=repos, default=default)
 
 
 class MySessionRequirementsResponse(BaseModel):

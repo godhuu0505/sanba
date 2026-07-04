@@ -96,8 +96,12 @@ export default function Home() {
   // リポジトリ候補（GET /api/github/repos）。null = 未取得/取得失敗 → フィールドを出さない。
   const [repoChoices, setRepoChoices] = useState<GithubRepos | null>(null);
   // リポジトリ候補取得中フラグ。取得完了まで開始ボタンを無効にし、既定値の確定前に
-  // セッションを作らせない（Codex P2: 3522999976）。
+  // セッションを作らせない（Codex P2: 3522999976）。取得は成功/失敗/離脱で必ず settle する。
   const [fetchingRepos, setFetchingRepos] = useState(false);
+  // 「未初期化」と「明示的な連携しない（空文字）」の区別（Codex P2）。sessionStorage は
+  // 永続化 effect が復元直後から常に githubRepo を書くため readPrep では判別できない。
+  // 保存値の復元・ユーザー操作で true になり、以後は既定リポの初期選択で上書きしない。
+  const githubRepoTouched = useRef(false);
   const auth = useAuth();
 
   // 本人のセッション履歴を取得して履歴リストへ供給する（#250）。ログイン済みのときだけ叩き、
@@ -142,14 +146,10 @@ export default function Home() {
         if (!cancelled) {
           setRepoChoices(choices);
           setFetchingRepos(false);
-          // 未選択（かつ sessionStorage に保存値がない）とき既定リポジトリを初期選択する
-          // （ADR-0027）。空文字が明示オプトアウト（"" として保存済み）の場合は上書きしない
-          // — cur が空でも readPrep().githubRepo が string なら保存済みとみなす（Codex P2）。
-          if (choices.default) {
-            setGithubRepo((cur) => {
-              if (cur) return cur;
-              return typeof readPrep().githubRepo !== "string" ? choices.default! : cur;
-            });
+          // 未初期化のときだけ既定リポジトリを初期選択する（ADR-0027）。保存済みの値
+          // （明示的な「連携しない」= 空文字を含む）とユーザー操作は上書きしない（Codex P2）。
+          if (choices.default && !githubRepoTouched.current) {
+            setGithubRepo((cur) => cur || choices.default!);
           }
         }
       })
@@ -179,7 +179,11 @@ export default function Home() {
     if (saved.role && ROLES.some((r) => r.value === saved.role)) setRole(saved.role);
     if (typeof saved.goal === "string") setGoal(saved.goal);
     if (typeof saved.consent === "boolean") setConsent(saved.consent);
-    if (typeof saved.githubRepo === "string") setGithubRepo(saved.githubRepo);
+    if (typeof saved.githubRepo === "string") {
+      setGithubRepo(saved.githubRepo);
+      // 保存値あり = 空文字でも「明示的な連携しない」。既定リポの初期選択で上書きしない。
+      githubRepoTouched.current = true;
+    }
     setPrepHydrated(true);
   }, []);
   useEffect(() => {
@@ -199,6 +203,7 @@ export default function Home() {
       setConsent(false);
       setGithubRepo("");
       setRepoChoices(null);
+      githubRepoTouched.current = false;
     }
     prevLoggedIn.current = auth.loggedIn;
   }, [auth.loggedIn]);
@@ -218,13 +223,16 @@ export default function Home() {
       // 本人確認は Google ログイン（ADR-0012）。
       // 連携リポジトリ（任意 / ADR-0027）。フィールドを出した（コネクタ有効）ときは選択値を
       // そのまま送る: 空文字 = 明示的な「連携しない」（既定リポジトリへもフォールバックさせない
-      // / Codex P2）。フィールド非表示（無効・候補取得失敗）は未指定 = 従来のフォールバック。
+      // / Codex P2）。フィールドを出せなかったとき（無効・候補取得失敗）も空文字 = 連携しない。
+      // ユーザーが見ても確認してもいない既定リポへ grounding/起票を流さない（fail-closed /
+      // Codex P2）。環境変数フォールバック（未指定 = undefined）は本フォームを持たない
+      // 旧クライアント・API 直叩きの互換のためだけに残る。
       const session = await createSession(
         [role],
         consent,
         auth.credential,
         undefined,
-        repoChoices?.enabled ? githubRepo.trim() : undefined,
+        repoChoices?.enabled ? githubRepo.trim() : "",
       );
       const invite = session.invites[role];
       const joined = await joinSession({
@@ -337,6 +345,8 @@ export default function Home() {
 
   // ── 02 準備 ───────────────────────────────────────────────────────────
   if (step === "prepare") {
+    // 候補取得中は開始を待たせる: ユーザーが連携先を確認する前にセッションが
+    // 作られるのを防ぐ（Codex P2）。取得は失敗/離脱でも settle するので詰まらない。
     const canStart = consent && auth.loggedIn && !busy && !fetchingRepos;
     return (
       <Screen className="px-4 py-3">
@@ -388,7 +398,10 @@ export default function Home() {
                 <Select
                   id="github-repo"
                   value={githubRepo}
-                  onChange={(e) => setGithubRepo(e.target.value)}
+                  onChange={(e) => {
+                    githubRepoTouched.current = true;
+                    setGithubRepo(e.target.value);
+                  }}
                 >
                   <option value="">連携しない</option>
                   {/* 復元値が候補一覧に無い場合（手入力の持ち越し等）も選択状態を保てるよう補う。 */}
@@ -411,7 +424,10 @@ export default function Home() {
                 <Input
                   id="github-repo"
                   value={githubRepo}
-                  onChange={(e) => setGithubRepo(e.target.value)}
+                  onChange={(e) => {
+                    githubRepoTouched.current = true;
+                    setGithubRepo(e.target.value);
+                  }}
                   placeholder="owner/name"
                 />
               </Field>
