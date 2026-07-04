@@ -91,8 +91,10 @@ export default function AdminPage() {
         </p>
         {/* 401 では共有 AuthProvider に期限切れ credential が残り loggedIn=true のまま。
             そのまま /login へ送ると即 / へ replace され GIS 再認証ボタンが出ない。ここで
-            signOut して credential を clear し、authGate 経由で /login?next=/admin（GIS）へ送る。 */}
-        <Button variant="gold" block onClick={() => auth.signOut()}>
+            signOut して credential を clear し、authGate 経由で /login?next=/admin（GIS）へ送る。
+            期限切れ回復であり明示ログアウトではないため、他タブへは伝播させない
+            （broadcast:false / 別タブの進行中会話を巻き添えにしない / ADR-0030）。 */}
+        <Button variant="gold" block onClick={() => auth.signOut({ broadcast: false })}>
           ログインへ
         </Button>
       </Gate>

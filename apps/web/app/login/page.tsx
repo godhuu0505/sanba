@@ -57,6 +57,7 @@ export default function LoginPage() {
     // ?loggedOut=1（アカウントメニューからのログアウト遷移）はここで実際に signOut する
     // （共有 credential を clear＋auto_select 無効化）。元ページ側で signOut しないことで
     // authGate の誤リダイレクトと競合しない（Codex P2）。14 ゴールを表示する。
+    // 明示ログアウトなので既定どおり他タブへも伝播する（要件⑤ / ADR-0030）。
     if (loggedOutRef.current) {
       setJustLoggedOut(true);
       signOut();
@@ -91,9 +92,11 @@ export default function LoginPage() {
   }, [loggedIn, justLoggedOut]);
 
   // 12 のキャンセル（Figma 75:14）。本人確認の待ちを取りやめ、サインアウトして 11 未認証へ戻す。
+  // このタブのサインイン中断であり明示ログアウトではないため、他タブへは伝播させない
+  // （broadcast:false / 既にログイン済みの他タブを巻き添えにしない / ADR-0030）。
   function handleCancelSignIn() {
     setWelcoming(false);
-    signOut();
+    signOut({ broadcast: false });
   }
 
   // ── 14 ログアウト完了 ──────────────────────────────────────────

@@ -71,7 +71,9 @@ describe("管理画面の認証ゲート（厳密・全画面保護）", () => {
     await waitFor(() => expect(screen.getByText("ログインへ")).toBeTruthy());
     fireEvent.click(screen.getByText("ログインへ"));
     // 期限切れ credential を clear（loggedIn=false）して authGate 経由で再認証へ送る。
+    // 明示ログアウトではないため他タブへは伝播させない（broadcast:false / ADR-0030）。
     expect(authState.signOut).toHaveBeenCalledTimes(1);
+    expect(authState.signOut).toHaveBeenCalledWith({ broadcast: false });
   });
 
   it("戻るはホーム / へ送る（/login ではない＝戻るループ防止）", async () => {

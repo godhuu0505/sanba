@@ -16,6 +16,14 @@ const CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? "";
 // だけだとユーザーのブラウザ/Google 設定に依存し「Google で続行」に揃わない場合がある (ADR-0019)。
 const GSI_SRC = "https://accounts.google.com/gsi/client?hl=ja";
 
+// 別タブでのログアウトを同一オリジンの他タブへ伝えるチャネル名（ADR-0030。要件: 別タブで
+// ログアウトしたら元タブも次のアクションで /login へ）。流すのは「ログアウトした」という
+// 非機微な事実のみで、トークンそのものは決して載せない（ADR-0014 §7: ID トークンは永続化
+// しない＝XSS 漏えい回避、の方針は不変）。localStorage の storage イベントではなく
+// BroadcastChannel を使う: 残留アーティファクトが無く、同値書き込みで発火しない癖への
+// ユニーク値細工も不要になる（比較は ADR-0030）。
+export const LOGOUT_CHANNEL = "sanba.auth.logout.v1";
+
 export interface GoogleProfile {
   email: string;
   name: string;
@@ -69,7 +77,12 @@ export interface GoogleAuth {
   buttonRef: React.RefObject<HTMLDivElement | null>;
   /** dev モードのログイン (トークン無しで通す)。 */
   devSignIn: () => void;
-  signOut: () => void;
+  /**
+   * ログアウト。既定（broadcast 省略/true）で他タブへも伝播する（ADR-0030）。401 期限切れ回復や
+   * サインインのキャンセル等、ユーザーの明示ログアウトでない経路は { broadcast: false } で
+   * 自タブに留める（他タブの進行中セッションを巻き添えにしない）。
+   */
+  signOut: (opts?: { broadcast?: boolean }) => void;
   /** ログアウト→再ログイン導線で GIS ボタンを再描画させる。state 14 → 11 への遷移時に呼ぶ。 */
   resetButton: () => void;
 }
@@ -97,6 +110,8 @@ export function useGoogleAuth(): GoogleAuth {
   const [renderCount, setRenderCount] = useState(0);
   const [gisSettled, setGisSettled] = useState(false);
   const buttonRef = useRef<HTMLDivElement | null>(null);
+  // 他タブへのログアウト伝播チャネル（ADR-0030）。購読 effect が生成し、signOut が送信に使う。
+  const logoutChannelRef = useRef<BroadcastChannel | null>(null);
 
   const onCredential = useCallback((res: CredentialResponse) => {
     if (res.credential) setCredential(res.credential);
@@ -175,12 +190,52 @@ export function useGoogleAuth(): GoogleAuth {
 
   const resetButton = useCallback(() => setRenderCount((c) => c + 1), []);
   const devSignIn = useCallback(() => setDevLoggedIn(true), []);
-  const signOut = useCallback(() => {
+
+  // このタブ（ローカル）の認証状態だけを落とす共通処理。明示ログアウト（signOut）と、
+  // 別タブ由来のログアウト（BroadcastChannel 受信）の両方が使う。他タブへの伝播・ボタン再描画は
+  // 含めない（強制ログアウト時に保護ページで One Tap を再表示させないため）。
+  const resetLocalAuth = useCallback(() => {
     setCredential(null);
     setDevLoggedIn(false);
-    setRenderCount((c) => c + 1);
     if (!devMode) window.google?.accounts.id.disableAutoSelect();
   }, [devMode]);
+
+  const signOut = useCallback(
+    (opts?: { broadcast?: boolean }) => {
+      resetLocalAuth();
+      // 再ログイン導線（/login）で GIS 純正ボタンを描き直せるよう renderCount を進める（従来どおり）。
+      setRenderCount((c) => c + 1);
+      // 明示ログアウト（既定）のみ他タブへ伝える（ADR-0030）。401 期限切れ回復・サインイン
+      // キャンセルは { broadcast: false } で自タブに留める: 会話中の API は session_token で
+      // 動くため idToken 失効では止まらないのに、伝播すると他タブの進行中会話を authGate 経由で
+      // 殺してしまう。自インスタンスからの postMessage は自分の onmessage に届かない
+      // （BroadcastChannel 仕様）ためループしない。dev モード・BroadcastChannel 不在環境では
+      // ref が null のままなので no-op（自タブのログアウトは成立する）。
+      if (opts?.broadcast ?? true) logoutChannelRef.current?.postMessage("logout");
+    },
+    [resetLocalAuth],
+  );
+
+  // 別タブでのログアウトを検知して、このタブの認証状態も落とす（ADR-0030）。credential を落とすと
+  // loggedIn=false になり、保護ページ（authGate）が次の描画で /login?next= へ送る＝「別タブで
+  // ログアウトしたら元タブも次のアクションでログイン画面へ」を満たす。dev モードは AUTH_DEV_BYPASS
+  // に委ねるため購読しない（他タブがローカルの devLoggedIn を落とさない）。BroadcastChannel の
+  // 無い環境ではタブ間伝播だけを諦める（自タブのログアウトは成立）。
+  useEffect(() => {
+    if (devMode || typeof BroadcastChannel === "undefined") return;
+    const channel = new BroadcastChannel(LOGOUT_CHANNEL);
+    channel.onmessage = () => {
+      // 強制ログアウトはユーザーには「突然ログイン画面へ飛ばされた」と見えるため、調査用の
+      // 痕跡を残す（CLAUDE.md 原則3。PII なし・受信の事実のみ）。
+      console.info("[auth] cross-tab logout received");
+      resetLocalAuth();
+    };
+    logoutChannelRef.current = channel;
+    return () => {
+      logoutChannelRef.current = null;
+      channel.close();
+    };
+  }, [devMode, resetLocalAuth]);
 
   return {
     credential,
