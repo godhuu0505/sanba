@@ -110,7 +110,7 @@ export function ProductInvitesCard({ productId }: { productId: string }) {
   return (
     <Card>
       <CardTitle>深掘りリンク</CardTitle>
-      <p className="text-[12px] leading-relaxed text-[var(--sanba-muted)]">
+      <p className="text-[12px] leading-relaxed text-sanba-muted">
         URL を開くだけでこのアプリの深掘りセッションを始められるリンクです。
         現在はログインした人のみ開けます（利用者向けのゲスト入場は準備中）。
       </p>
@@ -150,22 +150,22 @@ export function ProductInvitesCard({ productId }: { productId: string }) {
           ＋ リンクを発行する
         </Button>
         {error && (
-          <p role="alert" className="text-[12px] text-[var(--sanba-rec-text)]">
+          <p role="alert" className="text-[12px] text-sanba-rec-text">
             {error}
           </p>
         )}
       </div>
       <Divider />
       {invites === null ? (
-        <p className="text-[12px] text-[var(--sanba-muted)]">読み込み中…</p>
+        <p className="text-[12px] text-sanba-muted">読み込み中…</p>
       ) : invites.length === 0 ? (
-        <p className="text-[12px] text-[var(--sanba-muted)]">発行済みのリンクはありません。</p>
+        <p className="text-[12px] text-sanba-muted">発行済みのリンクはありません。</p>
       ) : (
         <ul className="flex list-none flex-col gap-[10px] p-0">
           {invites.map((inv) => (
             <li
               key={inv.id}
-              className="flex flex-col gap-[8px] rounded-[12px] border border-[var(--sanba-border)] bg-[var(--sanba-surface)] p-[12px]"
+              className="flex flex-col gap-[8px] rounded-[12px] border border-sanba-border bg-sanba-surface p-[12px]"
             >
               <div className="flex items-center gap-[8px]">
                 <Chip tone="gold" size="sm">
@@ -176,11 +176,11 @@ export function ProductInvitesCard({ productId }: { productId: string }) {
                     失効済み
                   </Chip>
                 )}
-                <span className="ml-auto text-[11px] text-[var(--sanba-muted)]">
+                <span className="ml-auto text-[11px] text-sanba-muted">
                   {formatDate(inv.created_at)} 発行
                 </span>
               </div>
-              <dl className="flex gap-[16px] text-[12px] text-[var(--sanba-muted)]">
+              <dl className="flex gap-[16px] text-[12px] text-sanba-muted">
                 <div className="flex gap-[4px]">
                   <dt>期限:</dt>
                   <dd>{formatDate(inv.expires_at)}</dd>

@@ -17,7 +17,7 @@ export interface DeepDiveListProps {
 export function DeepDiveList({ detections, onJump }: DeepDiveListProps) {
   if (detections.length === 0) {
     return (
-      <p className="px-1 py-3 text-[12px] text-[var(--sanba-muted)]">
+      <p className="px-1 py-3 text-[12px] text-sanba-muted">
         未解消はありません（すべて解けました）。
       </p>
     );
@@ -31,7 +31,7 @@ export function DeepDiveList({ detections, onJump }: DeepDiveListProps) {
           <div
             key={d.id}
             aria-label={`深掘り ${k.ariaLabel}`}
-            className="flex flex-col gap-[6px] rounded-[12px] border bg-[var(--sanba-surface)] px-3 py-[11px]"
+            className="flex flex-col gap-[6px] rounded-[12px] border bg-sanba-surface px-3 py-[11px]"
             style={{ borderColor: k.color }}
           >
             <div className="flex items-start gap-2">
@@ -41,12 +41,12 @@ export function DeepDiveList({ detections, onJump }: DeepDiveListProps) {
               >
                 {k.icon} {k.label}
               </span>
-              <p className="flex-1 text-[12.5px] text-[var(--sanba-cream)]">{d.summary}</p>
+              <p className="flex-1 text-[12.5px] text-sanba-cream">{d.summary}</p>
             </div>
             <button
               type="button"
               onClick={() => onJump(d.id)}
-              className="self-start text-[11px] font-bold text-[var(--sanba-gold-text)]"
+              className="self-start text-[11px] font-bold text-sanba-gold-text"
             >
               会話で確認 ›
             </button>

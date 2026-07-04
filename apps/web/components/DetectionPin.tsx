@@ -26,7 +26,7 @@ export function DetectionPin({ summary, kind }: DetectionPinProps) {
   return (
     <div
       role="status"
-      className="flex items-center gap-2 border-t-2 bg-[var(--sanba-surface-strong)] px-4 py-[11px]"
+      className="flex items-center gap-2 border-t-2 bg-sanba-surface-strong px-4 py-[11px]"
       style={{ borderTopColor: presentation.color }}
     >
       <span
@@ -36,7 +36,7 @@ export function DetectionPin({ summary, kind }: DetectionPinProps) {
       >
         {presentation.icon} {presentation.label}
       </span>
-      <span className="text-[12px] font-bold text-[var(--sanba-gold-text)]">{summary}</span>
+      <span className="text-[12px] font-bold text-sanba-gold-text">{summary}</span>
     </div>
   );
 }

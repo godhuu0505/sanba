@@ -390,7 +390,7 @@ export function ConversationSessionView({
       {metrics && (
         <p
           aria-hidden
-          className="pointer-events-none fixed bottom-1 left-1 z-40 text-[9px] text-[var(--sanba-muted)] opacity-40"
+          className="pointer-events-none fixed bottom-1 left-1 z-40 text-[9px] text-sanba-muted opacity-40"
         >
           受信 {metrics.received}・重複 {metrics.duplicates}・破棄 {metrics.dropped}・欠番 {metrics.gaps}
         </p>
@@ -409,7 +409,7 @@ export function ConversationSessionView({
       )}
 
       {endOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 px-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-sanba-frame/55 px-4">
           <EndConfirmDialog
             unresolved={mini.unresolved}
             onContinue={() => setEndOpen(false)}

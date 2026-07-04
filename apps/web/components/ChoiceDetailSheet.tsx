@@ -38,7 +38,7 @@ function Section({ label, color, value }: { label: string; color: string; value?
       <span className="text-[11px] font-bold" style={{ color }}>
         {label}
       </span>
-      <span className="text-[12.5px] text-[var(--sanba-muted)]">{value}</span>
+      <span className="text-[12.5px] text-sanba-muted">{value}</span>
     </div>
   );
 }
@@ -54,10 +54,10 @@ export function ChoiceDetailSheet({
   onCompare,
 }: ChoiceDetailSheetProps) {
   return (
-    <div className="flex flex-col gap-3 rounded-t-[18px] border-t-2 border-[var(--sanba-frame)] bg-[var(--sanba-surface)] px-4 pb-[18px] pt-[10px]">
+    <div className="flex flex-col gap-3 rounded-t-[18px] border-t-2 border-sanba-frame bg-sanba-surface px-4 pb-[18px] pt-[10px]">
       <div className="flex items-center gap-2">
-        <span className="text-[14px] font-bold text-[var(--sanba-gold-text)]">選択肢の詳細</span>
-        <span className="text-[11px] text-[var(--sanba-muted)]">
+        <span className="text-[14px] font-bold text-sanba-gold-text">選択肢の詳細</span>
+        <span className="text-[11px] text-sanba-muted">
           {index + 1} / {total}
         </span>
         <span className="flex-1" />
@@ -65,14 +65,14 @@ export function ChoiceDetailSheet({
           type="button"
           aria-label="閉じる"
           onClick={onClose}
-          className="flex size-[26px] items-center justify-center rounded-full border border-[var(--sanba-border)] bg-[var(--sanba-surface)] text-[12px] text-[var(--sanba-muted)]"
+          className="flex size-[26px] items-center justify-center rounded-full border border-sanba-border bg-sanba-surface text-[12px] text-sanba-muted"
         >
           <X size={14} aria-hidden />
         </button>
       </div>
 
-      <div className="flex flex-col gap-[11px] rounded-[14px] border border-[var(--sanba-border)] bg-[var(--sanba-surface-strong)] p-[14px]">
-        <span className="text-[16px] font-bold text-[var(--sanba-cream)]">{option.label}</span>
+      <div className="flex flex-col gap-[11px] rounded-[14px] border border-sanba-border bg-sanba-surface-strong p-[14px]">
+        <span className="text-[16px] font-bold text-sanba-cream">{option.label}</span>
         <Section label="どう並ぶ？" color="var(--sanba-gold-text)" value={option.how} />
         <Section label="効き目" color="var(--sanba-speak-text)" value={option.effect} />
         <Section label="留意" color="var(--sanba-caution)" value={option.caution} />
@@ -82,7 +82,7 @@ export function ChoiceDetailSheet({
       <button
         type="button"
         onClick={onSelect}
-        className="sanba-sticker sanba-gold-gradient inline-flex items-center justify-center gap-1.5 rounded-[13px] py-[13px] text-center text-[14px] font-bold text-[var(--sanba-ink)] active:translate-x-[2px] active:translate-y-[2px] active:shadow-[1px_1px_0_var(--sanba-shadow)]"
+        className="sanba-sticker sanba-gold-gradient inline-flex items-center justify-center gap-1.5 rounded-[13px] py-[13px] text-center text-[14px] font-bold text-sanba-ink active:translate-x-[2px] active:translate-y-[2px] active:shadow-[1px_1px_0_var(--sanba-shadow)]"
       >
         <Mic size={16} aria-hidden /> 「{option.label}」を選ぶ
       </button>
@@ -91,21 +91,21 @@ export function ChoiceDetailSheet({
         <button
           type="button"
           onClick={onPrev}
-          className="flex-1 rounded-[11px] border border-[var(--sanba-border)] py-[11px] text-[12px] font-bold text-[var(--sanba-muted)]"
+          className="flex-1 rounded-[11px] border border-sanba-border py-[11px] text-[12px] font-bold text-sanba-muted"
         >
           ‹ 前の選択肢
         </button>
         <button
           type="button"
           onClick={onCompare}
-          className="rounded-[11px] border border-[var(--sanba-frame)] px-[12px] py-[11px] text-[12px] font-bold text-[var(--sanba-gold-text)]"
+          className="rounded-[11px] border border-sanba-frame px-[12px] py-[11px] text-[12px] font-bold text-sanba-gold-text"
         >
           比較
         </button>
         <button
           type="button"
           onClick={onNext}
-          className="flex-1 rounded-[11px] border border-[var(--sanba-border)] py-[11px] text-[12px] font-bold text-[var(--sanba-muted)]"
+          className="flex-1 rounded-[11px] border border-sanba-border py-[11px] text-[12px] font-bold text-sanba-muted"
         >
           次の選択肢 ›
         </button>

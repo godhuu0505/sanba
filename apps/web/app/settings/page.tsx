@@ -71,10 +71,10 @@ export default function SettingsPage() {
               <Avatar tone="user" glyph={glyph} size={44} />
             )}
             <div className="flex min-w-0 flex-col">
-              <span className="truncate text-[15px] font-bold text-[var(--sanba-cream)]">
+              <span className="truncate text-[15px] font-bold text-sanba-cream">
                 {name}
               </span>
-              <span className="truncate text-[12px] text-[var(--sanba-muted)]">{email}</span>
+              <span className="truncate text-[12px] text-sanba-muted">{email}</span>
             </div>
           </div>
         </Card>
@@ -84,13 +84,13 @@ export default function SettingsPage() {
           <CardTitle>データの取り扱い</CardTitle>
           <dl className="flex flex-col gap-[6px]">
             <div className="flex items-baseline justify-between gap-[12px]">
-              <dt className="text-[13px] text-[var(--sanba-muted)]">保持日数</dt>
-              <dd className="text-[14px] font-bold text-[var(--sanba-gold-text)]">
+              <dt className="text-[13px] text-sanba-muted">保持日数</dt>
+              <dd className="text-[14px] font-bold text-sanba-gold-text">
                 最大 {RETENTION_DAYS} 日
               </dd>
             </div>
           </dl>
-          <p className="text-[12px] leading-relaxed text-[var(--sanba-muted)]">
+          <p className="text-[12px] leading-relaxed text-sanba-muted">
             録音と要件は最大 {RETENTION_DAYS} 日保持し、保存前に個人情報をマスクします。
           </p>
         </Card>

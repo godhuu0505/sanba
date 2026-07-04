@@ -57,25 +57,25 @@ const PRESENTATION: Record<
   "agent-speaking": {
     icon: Volume2,
     label: "発話中／読み上げ中",
-    tone: "border-[var(--sanba-gold)] text-[var(--sanba-gold-text)]",
+    tone: "border-sanba-gold text-sanba-gold-text",
     pulse: true,
   },
   listening: {
     icon: Mic,
     label: "聞き取り中",
-    tone: "border-[var(--sanba-border-strong)] text-[var(--sanba-cream)]",
+    tone: "border-sanba-border-strong text-sanba-cream",
     pulse: true,
   },
   muted: {
     icon: VolumeX,
     label: "消音中",
-    tone: "border-[var(--sanba-rec)] text-[var(--sanba-rec-text)]",
+    tone: "border-sanba-rec text-sanba-rec-text",
     pulse: false,
   },
   idle: {
     icon: Pause,
     label: "待機中",
-    tone: "border-[var(--sanba-border)] text-[var(--sanba-muted)]",
+    tone: "border-sanba-border text-sanba-muted",
     pulse: false,
   },
 };
@@ -108,7 +108,7 @@ export function VoiceStatusIndicator(props: VoiceStatusIndicatorProps) {
       {/* 聞き取り中だけサンバさんが耳を澄ます。意味はこの role=status/aria-live が読み上げるので装飾（aria-hidden）。 */}
       {figState && <Figure state={figState} className="w-[34px]" />}
       <div
-        className={`flex items-center justify-center gap-1.5 rounded-full border bg-[var(--sanba-surface)] px-3 py-1 text-[11px] font-bold ${tone}`}
+        className={`flex items-center justify-center gap-1.5 rounded-full border bg-sanba-surface px-3 py-1 text-[11px] font-bold ${tone}`}
       >
         {/* 発話/聞き取り中は点滅ドットで「生きている」状態を示す（色のみに依存しない補助）。 */}
         <span

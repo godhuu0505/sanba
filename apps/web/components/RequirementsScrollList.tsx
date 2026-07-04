@@ -24,7 +24,7 @@ export function RequirementsScrollList({
   emptyText = "まだ要件はありません。問答が進むと、ここに育っていきます。",
 }: RequirementsScrollListProps) {
   if (requirements.length === 0) {
-    return <p className="px-1 py-3 text-[12.5px] text-[var(--sanba-muted)]">{emptyText}</p>;
+    return <p className="px-1 py-3 text-[12.5px] text-sanba-muted">{emptyText}</p>;
   }
   return (
     <>
@@ -33,14 +33,14 @@ export function RequirementsScrollList({
         if (group.length === 0) return null;
         return (
           <section key={pr} aria-label={priorityLabel(pr)} className="flex flex-col gap-[6px]">
-            <h3 className="text-[12px] font-bold text-[var(--sanba-gold-text)]">{priorityLabel(pr)}</h3>
+            <h3 className="text-[12px] font-bold text-sanba-gold-text">{priorityLabel(pr)}</h3>
             {group.map((r) => (
               <div
                 key={r.id}
-                className="flex flex-col gap-[3px] rounded-[12px] border border-[var(--sanba-border)] bg-[var(--sanba-surface)] px-3 py-[11px]"
+                className="flex flex-col gap-[3px] rounded-[12px] border border-sanba-border bg-sanba-surface px-3 py-[11px]"
               >
-                <p className="text-[13px] font-bold text-[var(--sanba-cream)]">{r.statement}</p>
-                <span className="text-[10.5px] text-[var(--sanba-muted)]">
+                <p className="text-[13px] font-bold text-sanba-cream">{r.statement}</p>
+                <span className="text-[10.5px] text-sanba-muted">
                   確信 {confidenceLabel(r.confidence)}　・　出所 {r.source_speaker}
                 </span>
               </div>

@@ -64,7 +64,7 @@ export const SessionHistoryList = React.forwardRef<HTMLElement, SessionHistoryLi
                 <Link
                   href={hrefFor(item.id)}
                   aria-label={`${item.title}（${item.date}）`}
-                  className="block rounded-[12px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--sanba-gold)]"
+                  className="block rounded-[12px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sanba-gold"
                 >
                   <ListRow className="min-h-[44px]" title={item.title} subtitle={item.date} />
                 </Link>

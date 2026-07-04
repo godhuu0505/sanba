@@ -97,10 +97,10 @@ export function ResultView({
           産章は胸のバッジに宿り、静止した金章から「動く産婆さん」へ。意味は下の見出しが読み上げる
           ので figure は装飾（label 無し＝aria-hidden・reduced-motion 静止）。 */}
       <Figure state={provisional ? "writing" : "insight"} className="w-[84px]" />
-      <p className="mt-[10px] text-center text-[18px] font-bold text-[var(--sanba-gold-text)]">
+      <p className="mt-[10px] text-center text-[18px] font-bold text-sanba-gold-text">
         {provisional ? "暫定で書き留めました" : "オーレ！ 要件、産まれました"}
       </p>
-      <p className="mt-1 text-center text-[12px] text-[var(--sanba-muted)]">
+      <p className="mt-1 text-center text-[12px] text-sanba-muted">
         {provisional ? "暫定要件 " : "確定要件 "}
         {confirmedCount} 件
         {breakdown ? `（Must ${breakdown.must} ・ Should ${breakdown.should} ・ Could ${breakdown.could}）` : ""}
@@ -108,7 +108,7 @@ export function ResultView({
       </p>
 
       {summary && (
-        <p className="mt-[6px] text-center text-[11px] text-[var(--sanba-muted)]">
+        <p className="mt-[6px] text-center text-[11px] text-sanba-muted">
           矛盾解消 {summary.contradictions_resolved} ・ 抜け検知 {summary.gaps_found} ・ Issue 起票{" "}
           {summary.issues_created}
         </p>
@@ -122,7 +122,7 @@ export function ResultView({
         >
           {previewGroups.map((g) => (
             <div key={g.priority}>
-              <h3 className="text-[10.5px] font-bold text-[var(--sanba-muted)]">
+              <h3 className="text-[10.5px] font-bold text-sanba-muted">
                 {priorityLabel(g.priority)}
               </h3>
               <ul className="mt-[6px] space-y-[6px]">
@@ -131,7 +131,7 @@ export function ResultView({
                   return (
                     <li
                       key={r.id}
-                      className="flex items-start gap-2 rounded-[11px] border border-[var(--sanba-border)] bg-[var(--sanba-surface)] px-3 py-[9px]"
+                      className="flex items-start gap-2 rounded-[11px] border border-sanba-border bg-sanba-surface px-3 py-[9px]"
                     >
                       <span
                         aria-hidden
@@ -141,10 +141,10 @@ export function ResultView({
                         {cat.icon}
                       </span>
                       <span className="sr-only">{cat.ariaLabel}</span>
-                      <span className="flex-1 text-[12.5px] leading-[1.5] text-[var(--sanba-ink)]">
+                      <span className="flex-1 text-[12.5px] leading-[1.5] text-sanba-ink">
                         {r.statement}
                       </span>
-                      <span aria-hidden className="mt-[1px] text-[var(--sanba-gold-text)]">
+                      <span aria-hidden className="mt-[1px] text-sanba-gold-text">
                         <Check size={12} />
                       </span>
                       <span className="sr-only">確定済み</span>
@@ -158,7 +158,7 @@ export function ResultView({
             <button
               type="button"
               onClick={onView}
-              className="text-[11.5px] font-bold text-[var(--sanba-gold-text)]"
+              className="text-[11.5px] font-bold text-sanba-gold-text"
             >
               ほか {overflowCount} 件 ・ タップで全文 ›
             </button>
@@ -174,7 +174,7 @@ export function ResultView({
               href={a.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="rounded-[11px] border border-[var(--sanba-border)] bg-[var(--sanba-surface)] px-3 py-[10px] text-center text-[11.5px] font-bold text-[var(--sanba-gold-text)]"
+              className="rounded-[11px] border border-sanba-border bg-sanba-surface px-3 py-[10px] text-center text-[11.5px] font-bold text-sanba-gold-text"
             >
               {a.kind} を開く
             </a>
@@ -196,7 +196,7 @@ export function ResultView({
 
       {available.length > 0 && (
         <>
-          <p className="mt-2 self-start text-[10.5px] font-bold text-[var(--sanba-muted)]">書き出す（任意）</p>
+          <p className="mt-2 self-start text-[10.5px] font-bold text-sanba-muted">書き出す（任意）</p>
           <div className="mt-[6px] flex w-full gap-2">
             {available.map((o) => {
               const Icon = o.icon;
@@ -205,7 +205,7 @@ export function ResultView({
                   key={o.label}
                   type="button"
                   onClick={o.handler}
-                  className="flex flex-1 items-center justify-center gap-1.5 rounded-[11px] border border-[var(--sanba-border)] bg-[var(--sanba-surface)] py-[11px] text-[11.5px] font-bold text-[var(--sanba-muted)]"
+                  className="flex flex-1 items-center justify-center gap-1.5 rounded-[11px] border border-sanba-border bg-sanba-surface py-[11px] text-[11.5px] font-bold text-sanba-muted"
                 >
                   <Icon size={14} aria-hidden /> {o.label}
                 </button>
@@ -218,7 +218,7 @@ export function ResultView({
       <button
         type="button"
         onClick={onRestart}
-        className="mt-[10px] text-[12px] font-bold text-[var(--sanba-gold-text)]"
+        className="mt-[10px] text-[12px] font-bold text-sanba-gold-text"
       >
         新しい問答を始める
       </button>

@@ -54,16 +54,16 @@ export function JudgmentGate({
       >
         {resolved ? <Scale size={32} aria-hidden /> : <TriangleAlert size={32} aria-hidden />}
       </div>
-      <p className="mt-3 text-[18px] font-bold text-[var(--sanba-gold-text)]">見極めの刻にございます</p>
+      <p className="mt-3 text-[18px] font-bold text-sanba-gold-text">見極めの刻にございます</p>
 
       {resolved ? (
         <>
-          <p className="mt-1 text-center text-[12.5px] text-[var(--sanba-muted)]">
+          <p className="mt-1 text-center text-[12.5px] text-sanba-muted">
             すべて解けました。要件を確定できます。
           </p>
           <div className="flex-1" />
           {error && (
-            <p role="alert" className="mb-2 w-full text-center text-[12px] text-[var(--sanba-rec-text)]">
+            <p role="alert" className="mb-2 w-full text-center text-[12px] text-sanba-rec-text">
               {error}
             </p>
           )}
@@ -73,9 +73,9 @@ export function JudgmentGate({
         </>
       ) : (
         <>
-          <div className="mt-4 w-full rounded-[14px] border-[1.5px] border-[var(--sanba-rec)] bg-[var(--sanba-rec-pale)] p-[14px]">
-            <p className="text-[16px] font-bold text-[var(--sanba-rec-text)]">未解消 {unresolved} 件 ・ 確定不可</p>
-            <p className="mt-1 text-[11.5px] text-[var(--sanba-muted)]">
+          <div className="mt-4 w-full rounded-[14px] border-[1.5px] border-sanba-rec bg-sanba-rec-pale p-[14px]">
+            <p className="text-[16px] font-bold text-sanba-rec-text">未解消 {unresolved} 件 ・ 確定不可</p>
+            <p className="mt-1 text-[11.5px] text-sanba-muted">
               ひとつでも残れば、要件は確定できませぬ。
             </p>
           </div>
@@ -91,7 +91,7 @@ export function JudgmentGate({
           <button
             type="button"
             onClick={onForceEnd}
-            className="mt-2 w-full rounded-[12px] border border-[var(--sanba-rec)]/40 py-3 text-[12.5px] font-bold text-[var(--sanba-rec-text)]"
+            className="mt-2 w-full rounded-[12px] border border-sanba-rec/40 py-3 text-[12.5px] font-bold text-sanba-rec-text"
           >
             未解消のまま終う
           </button>

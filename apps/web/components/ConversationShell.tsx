@@ -76,11 +76,11 @@ export function ConversationShell({
       <header className="flex items-center gap-2 px-4 pb-2 pt-2">
         <span
           aria-hidden
-          className="sanba-gold-gradient sanba-serif flex size-7 items-center justify-center rounded-full border border-[var(--sanba-frame)] text-[13px] font-bold text-[var(--sanba-ink)]"
+          className="sanba-gold-gradient sanba-serif flex size-7 items-center justify-center rounded-full border border-sanba-frame text-[13px] font-bold text-sanba-ink"
         >
           産
         </span>
-        <h1 className="text-[15px] font-bold text-[var(--sanba-cream)]">問答</h1>
+        <h1 className="text-[15px] font-bold text-sanba-cream">問答</h1>
         <span className="flex-1" />
         {recording && <RecPill>{elapsed}</RecPill>}
         <button
@@ -88,7 +88,7 @@ export function ConversationShell({
           aria-label="会話を終了"
           onClick={onEnd}
           disabled={!onEnd}
-          className="flex size-7 items-center justify-center rounded-full border border-[var(--sanba-border)] bg-[var(--sanba-surface)] text-[13px] text-[var(--sanba-muted)] disabled:opacity-40"
+          className="flex size-7 items-center justify-center rounded-full border border-sanba-border bg-sanba-surface text-[13px] text-sanba-muted disabled:opacity-40"
         >
           <Square size={13} aria-hidden />
         </button>
@@ -98,38 +98,38 @@ export function ConversationShell({
       <div className="px-4 pb-[6px]">
         <div
           aria-label="状況"
-          className="flex items-center gap-2 rounded-[10px] border border-[var(--sanba-border)] bg-[var(--sanba-surface)] px-3 py-2 text-[11.5px]"
+          className="flex items-center gap-2 rounded-[10px] border border-sanba-border bg-sanba-surface px-3 py-2 text-[11.5px]"
         >
           {/* タップで該当タブへ（要件/未確定→要件絵巻、資料→参考資料）。 */}
           <button
             type="button"
             onClick={() => setTab("scroll")}
-            className="inline-flex items-center gap-1 font-bold text-[var(--sanba-gold-text)]"
+            className="inline-flex items-center gap-1 font-bold text-sanba-gold-text"
           >
             <Diamond size={12} aria-hidden /> 要件 {mini.requirements}
           </button>
-          <span className="text-[var(--sanba-border-strong)]">・</span>
+          <span className="text-sanba-border-strong">・</span>
           <button
             type="button"
             onClick={() => {
               setTab("scroll");
               onUnresolvedJump?.();
             }}
-            className="inline-flex items-center gap-1 font-bold text-[var(--sanba-caution)]"
+            className="inline-flex items-center gap-1 font-bold text-sanba-caution"
           >
             <TriangleAlert size={12} aria-hidden /> 未確定 {mini.unresolved}
           </button>
-          <span className="text-[var(--sanba-border-strong)]">・</span>
+          <span className="text-sanba-border-strong">・</span>
           <button
             type="button"
             onClick={() => setTab("files")}
-            className="inline-flex items-center gap-1 text-[var(--sanba-muted)]"
+            className="inline-flex items-center gap-1 text-sanba-muted"
           >
             <Paperclip size={12} aria-hidden /> 資料 {mini.materials}
             {mini.analyzing ? "（解析中）" : ""}
           </button>
           <span className="flex-1" />
-          <span aria-hidden className="text-[var(--sanba-gold-text)]">›</span>
+          <span aria-hidden className="text-sanba-gold-text">›</span>
         </div>
       </div>
 
@@ -137,7 +137,7 @@ export function ConversationShell({
       <div
         role="tablist"
         aria-label="情報タブ"
-        className="flex gap-5 border-b border-[var(--sanba-border)] px-4"
+        className="flex gap-5 border-b border-sanba-border px-4"
       >
         {TAB_ORDER.map((k) => {
           const active = tab === k;
@@ -149,11 +149,11 @@ export function ConversationShell({
               aria-selected={active}
               onClick={() => setTab(k)}
               className={`flex flex-col items-center gap-1.5 pt-1.5 text-[13px] ${
-                active ? "font-bold text-[var(--sanba-gold-text)]" : "text-[var(--sanba-muted)]"
+                active ? "font-bold text-sanba-gold-text" : "text-sanba-muted"
               }`}
             >
               <span>{TAB_LABELS[k]}</span>
-              <span className={`h-[2px] w-full ${active ? "bg-[var(--sanba-gold)]" : "bg-transparent"}`} />
+              <span className={`h-[2px] w-full ${active ? "bg-sanba-gold" : "bg-transparent"}`} />
             </button>
           );
         })}

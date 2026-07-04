@@ -72,7 +72,7 @@ export function ChoiceStrip({
 
   return (
     <div
-      className="flex flex-col gap-2 border-t-2 bg-[var(--sanba-surface-strong)] px-4 py-[9px]"
+      className="flex flex-col gap-2 border-t-2 bg-sanba-surface-strong px-4 py-[9px]"
       style={{ borderTopColor: accent }}
     >
       {/* 見出し：検知バッジ＋問い＋開閉 */}
@@ -86,12 +86,12 @@ export function ChoiceStrip({
             {presentation.icon} {presentation.label}
           </span>
         )}
-        <span className="text-[12px] font-bold text-[var(--sanba-gold-text)]">{question}</span>
+        <span className="text-[12px] font-bold text-sanba-gold-text">{question}</span>
         <span className="flex-1" />
         <button
           type="button"
           onClick={mode === "min" ? onExpand : onCollapse}
-          className="rounded-full border border-[var(--sanba-frame)] bg-[var(--sanba-surface)] px-[9px] py-1 text-[10.5px] font-bold text-[var(--sanba-gold-text)]"
+          className="rounded-full border border-sanba-frame bg-sanba-surface px-[9px] py-1 text-[10.5px] font-bold text-sanba-gold-text"
         >
           {mode === "min" ? "⤢ 広げる" : "⤡ 閉じる"}
         </button>
@@ -119,8 +119,8 @@ export function ChoiceStrip({
                 {...longPress}
                 className={`shrink-0 rounded-full border px-[11px] py-[6px] text-[12px] font-bold ${
                   o.fixed
-                    ? "border-dashed border-[var(--sanba-border-strong)] text-[var(--sanba-muted)]"
-                    : "border-[var(--sanba-frame)] bg-[var(--sanba-surface)] text-[var(--sanba-gold-text)]"
+                    ? "border-dashed border-sanba-border-strong text-sanba-muted"
+                    : "border-sanba-frame bg-sanba-surface text-sanba-gold-text"
                 }`}
               >
                 {o.label}
@@ -137,18 +137,18 @@ export function ChoiceStrip({
                 onClick={() => onSelect(i)}
                 className={`flex flex-1 flex-col items-start rounded-[10px] border px-[10px] py-[9px] text-left ${
                   o.fixed
-                    ? "border-dashed border-[var(--sanba-border-strong)] bg-[var(--sanba-bg)]"
-                    : "border-[var(--sanba-border)] bg-[var(--sanba-surface)]"
+                    ? "border-dashed border-sanba-border-strong bg-sanba-bg"
+                    : "border-sanba-border bg-sanba-surface"
                 }`}
               >
-                <span className="text-[13px] font-bold text-[var(--sanba-cream)]">{o.label}</span>
-                {o.sub && <span className="text-[10.5px] text-[var(--sanba-muted)]">{o.sub}</span>}
+                <span className="text-[13px] font-bold text-sanba-cream">{o.label}</span>
+                {o.sub && <span className="text-[10.5px] text-sanba-muted">{o.sub}</span>}
               </button>
               {!o.fixed && (
                 <button
                   type="button"
                   onClick={() => onOpenDetail(i)}
-                  className="shrink-0 rounded-full border border-[var(--sanba-frame)] px-[9px] py-[5px] text-[10.5px] font-bold text-[var(--sanba-gold-text)]"
+                  className="shrink-0 rounded-full border border-sanba-frame px-[9px] py-[5px] text-[10.5px] font-bold text-sanba-gold-text"
                 >
                   詳細 ›
                 </button>

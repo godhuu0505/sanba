@@ -428,7 +428,7 @@ export default function Home() {
         <main className="mx-auto flex w-full max-w-[480px] flex-1 flex-col gap-[18px] pt-2">
           {/* フィールド順は Figma 正本に合わせて 役割 → ゴール（02-prepare）。 */}
           <div className="flex flex-col gap-[8px]">
-            <span className="text-[13px] font-bold text-[var(--sanba-muted)]">あなたの役割</span>
+            <span className="text-[13px] font-bold text-sanba-muted">あなたの役割</span>
             <div role="radiogroup" aria-label="あなたの役割" className="flex flex-wrap gap-[8px]">
               {ROLES.map((r) => {
                 const selected = role === r.value;
@@ -533,10 +533,10 @@ export default function Home() {
               準備画面は LiveKit ルーム外のためカメラ/画面共有は渡さず、アップロード/Drive のみ。
               選んだファイルはステージ（チップ表示・削除可）し、handleStart で会話開始前に投入する。 */}
           <div className="flex flex-col gap-[8px]">
-            <span className="text-[13px] font-bold text-[var(--sanba-muted)]">
+            <span className="text-[13px] font-bold text-sanba-muted">
               参考資料（任意）
             </span>
-            <p className="text-[12px] leading-relaxed text-[var(--sanba-muted)]">
+            <p className="text-[12px] leading-relaxed text-sanba-muted">
               モック・スクショ・写真（PNG/JPG）や録画（MP4/MOV）を、会話の前に渡しておけます。
             </p>
 
@@ -552,7 +552,7 @@ export default function Home() {
                         onClick={() => removeStaged(i)}
                         disabled={busy}
                         aria-label={`${file.name} を取り外す`}
-                        className="ml-[6px] align-middle text-[var(--sanba-muted)] disabled:opacity-50"
+                        className="ml-[6px] align-middle text-sanba-muted disabled:opacity-50"
                       >
                         <X size={12} aria-hidden className="inline-block align-[-2px]" />
                       </button>
@@ -572,13 +572,13 @@ export default function Home() {
               }}
               disabled={busy}
               aria-haspopup="dialog"
-              className="rounded-[12px] border border-dashed border-[var(--sanba-gold-deep)] bg-[var(--sanba-surface)] px-3 py-[13px] text-left text-[12.5px] font-bold text-[var(--sanba-gold-text)] disabled:opacity-50"
+              className="rounded-[12px] border border-dashed border-sanba-gold-deep bg-sanba-surface px-3 py-[13px] text-left text-[12.5px] font-bold text-sanba-gold-text disabled:opacity-50"
             >
               ＋ ファイルを追加
             </button>
 
             {attachError && (
-              <p role="alert" className="text-[12px] text-[var(--sanba-rec-text)]">
+              <p role="alert" className="text-[12px] text-sanba-rec-text">
                 {attachError}
               </p>
             )}
@@ -595,12 +595,12 @@ export default function Home() {
           />
 
           {/* 同意ゲート（issue #10）。保持日数・PII マスク文言を併記。 */}
-          <label className="flex items-start gap-[10px] text-[13px] leading-relaxed text-[var(--sanba-cream)]">
+          <label className="flex items-start gap-[10px] text-[13px] leading-relaxed text-sanba-cream">
             <input
               type="checkbox"
               checked={consent}
               onChange={(e) => setConsent(e.target.checked)}
-              className="mt-[3px] size-[16px] accent-[var(--sanba-gold)]"
+              className="mt-[3px] size-[16px] accent-sanba-gold"
             />
             <span>
               録音と AI 処理に同意します（最大 {RETENTION_DAYS} 日保持・保存前に個人情報をマスク）。
@@ -625,19 +625,19 @@ export default function Home() {
               )}
             </Button>
             {!auth.loggedIn && (
-              <p className="text-[12px] text-[var(--sanba-muted)]">
+              <p className="text-[12px] text-sanba-muted">
                 開始するには本人確認が必要です。
-                <Link href="/login" className="ml-1 text-[var(--sanba-gold-text)] underline">
+                <Link href="/login" className="ml-1 text-sanba-gold-text underline">
                   ログインへ
                 </Link>
               </p>
             )}
             {auth.loggedIn && !consent && (
-              <p className="text-[12px] text-[var(--sanba-muted)]">
+              <p className="text-[12px] text-sanba-muted">
                 録音と AI 処理への同意が必要です。
               </p>
             )}
-            {error && <p className="text-[12px] text-[var(--sanba-rec-text)]">{error}</p>}
+            {error && <p className="text-[12px] text-sanba-rec-text">{error}</p>}
           </div>
         </main>
 
@@ -671,10 +671,10 @@ export default function Home() {
         <Card>
           <div className="flex items-start justify-between gap-[12px]">
             <div className="flex flex-col gap-[8px]">
-              <h1 className="sanba-display text-[23px] font-bold leading-snug text-[var(--sanba-cream)]">
+              <h1 className="sanba-display text-[23px] font-bold leading-snug text-sanba-cream">
                 会議の前に、五分の問答を
               </h1>
-              <p className="text-[13px] leading-relaxed text-[var(--sanba-muted)]">
+              <p className="text-[13px] leading-relaxed text-sanba-muted">
                 一問ずつ問いかけ、抜けと矛盾をその場で取り上げます。
               </p>
             </div>
