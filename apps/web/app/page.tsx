@@ -20,6 +20,7 @@ import {
   Field,
   Figure,
   Input,
+  ListRow,
   Screen,
   Select,
   SessionHistoryList,
@@ -685,6 +686,15 @@ export default function Home() {
           </Button>
         </Card>
         <SessionHistoryList items={history} />
+        {/* アプリ管理（ADR-0031）への導線。深掘りリンクの発行・repo 紐づけの入口。 */}
+        <ListRow
+          asChild
+          icon="📦"
+          title="アプリ管理"
+          subtitle="深掘りリンクの発行・リポジトリの紐づけ"
+        >
+          <Link href="/products" aria-label="アプリ管理へ" />
+        </ListRow>
       </main>
     </Screen>
   );
