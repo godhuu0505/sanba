@@ -76,7 +76,7 @@ CONTRADICTION_AGENT_INSTRUCTIONS = """\
 def build_repo_premise(
     repo: str, branch: str | None, ready: bool, summary: str | None = None
 ) -> str:
-    """紐づけ GitHub リポジトリを「前提」として agent に明示する一節（ADR-0025）。
+    """紐づけ GitHub リポジトリを「前提」として agent に明示する一節（ADR-0028）。
 
     準備画面で owner が選んだ repo を深掘りの前提に据える。索引時に組み立てた `summary`
     （名/説明/README先頭/ツリー概要）があれば初期 instructions に**そのまま埋め込み**、

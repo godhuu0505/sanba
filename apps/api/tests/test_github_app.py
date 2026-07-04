@@ -1,4 +1,4 @@
-"""Unit tests for the pure GitHub App linking helpers (ADR-0025).
+"""Unit tests for the pure GitHub App linking helpers (ADR-0028).
 
 No network: state signing, App JWT, secret redaction, relevance/size selection,
 and summary assembly are all exercised in-memory.

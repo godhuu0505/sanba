@@ -95,7 +95,7 @@ export default function SettingsPage() {
           </p>
         </Card>
 
-        {/* GitHub 連携（ADR-0025 / 仕様①）。連携アカウントの repo を準備画面で前提化できる。 */}
+        {/* GitHub 連携（ADR-0028 / 仕様①）。連携アカウントの repo を準備画面で前提化できる。 */}
         <GitHubLinkCard />
 
         {/* ログアウト導線（アカウントメニューと同じ遷移先に一本化）。 */}

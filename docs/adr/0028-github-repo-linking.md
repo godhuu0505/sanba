@@ -1,8 +1,20 @@
-# ADR-0025: GitHub リポジトリ紐づけと前提情報化
+# ADR-0028: GitHub App 個別連携・ES 索引・branch 対応
 
 - ステータス: Accepted
-- 日付: 2026-06-29
-- 関連: ADR-0003（Elasticsearch grounding）/ ADR-0007（外部コネクタ）/ ADR-0012（Google ログイン）/ ADR-0014（管理・ログイン画面）/ ADR-0023（段階アップロード進捗）
+- 日付: 2026-06-29（改訂: 2026-07-04）
+- 関連: ADR-0027（セッション単位の GitHub repo 選択 — 本 ADR はこれを拡張する）/
+  ADR-0003（Elasticsearch grounding）/ ADR-0007（外部コネクタ）/ ADR-0012（Google ログイン）/
+  ADR-0014（管理・ログイン画面）/ ADR-0023（段階アップロード進捗）
+
+> **改訂注記（2026-07-04）**: 本 ADR は当初 ADR-0025 として起票されたが、番号衝突の解消で
+> ADR-0028 に振り直した。また「セッション単位の repo 選択」（`SessionMeta.github_repo`、
+> `POST /api/sessions` での受理・検証、export / agent の「セッション文書→環境変数」解決、
+> 02 準備の「連携リポジトリ（任意）」欄）は **ADR-0027 の決定**となったため、本 ADR の
+> スコープはそれを拡張する **GitHub App によるユーザー個別連携・リポジトリの ES 索引・
+> branch 対応（branch/sha/index_status）** に改訂する。repo 候補一覧
+> `GET /api/github/repos` は ADR-0027 の応答形（enabled/repos/default）を基準に 1 本へ
+> 統一し、App 連携済みのときは additive な `linked` / `items`（default_branch 付き）を
+> 加えて App 由来の一覧を返す。
 
 ## コンテキスト
 要件サンバの深掘りは、対象プロダクトの「いま在るコード・ドキュメント・課題」を前提に

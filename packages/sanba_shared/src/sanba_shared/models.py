@@ -71,7 +71,7 @@ class Requirement(BaseModel):
 
 
 class GitHubIndexStatus(StrEnum):
-    """セッションに紐づけた repo の ES 索引状態 (ADR-0025)。
+    """セッションに紐づけた repo の ES 索引状態 (ADR-0028)。
 
     none: 未紐づけ。pending: キュー投入済み。indexing: 索引中。
     ready: 完了（search_grounding で参照可）。partial: 総量キャップ等で一部のみ。
@@ -87,7 +87,7 @@ class GitHubIndexStatus(StrEnum):
 
 
 class GitHubLink(BaseModel):
-    """ユーザーの GitHub App 連携 (`users/{sub}`)。ADR-0025。
+    """ユーザーの GitHub App 連携 (`users/{sub}`)。ADR-0028。
 
     生のアクセストークンは保存しない。installation token は都度 App 秘密鍵から発行する。
     `sub` は Google ID トークンの subject（所有者の検証済み identity）。
@@ -127,18 +127,18 @@ class SessionMeta(BaseModel):
     # されても export はこの集合に固定して起票する。旧文書は既定 [] でフォールバック。
     finalized_requirement_ids: list[str] = Field(default_factory=list)
 
-    # ---- 連携 GitHub リポジトリ (ADR-0027 / ADR-0025) ----
+    # ---- 連携 GitHub リポジトリ (ADR-0027 / ADR-0028) ----
     # セッション単位の GitHub リポジトリ（"owner/name" / ADR-0027）。02 準備で選択され、
     # grounding 取り込みと要件→Issue 起票の対象になる。None は未選択＝環境変数へフォールバック。
     github_repo: str | None = None
-    # 以下は GitHub App 連携（ADR-0025）での拡張。owner の App installation が読める repo を
+    # 以下は GitHub App 連携（ADR-0028）での拡張。owner の App installation が読める repo を
     # 選ぶと branch を確定し ES 索引される。旧文書・connector 選択は既定（None / none）のまま。
     github_branch: str | None = None
     # 索引をピン留めした commit sha（鮮度の基準・(repo,branch,sha) 索引キー）。
     github_commit_sha: str | None = None
     github_index_status: GitHubIndexStatus = GitHubIndexStatus.NONE
     # 索引時に組み立てた repo 要約（名/説明/README先頭/ツリー概要）。agent が初期 instructions に
-    # proactive シードする（ADR-0025・retrieval 任せにしない）。索引完了時に書き込む。
+    # proactive シードする（ADR-0028・retrieval 任せにしない）。索引完了時に書き込む。
     github_summary: str | None = None
 
 

@@ -1,4 +1,4 @@
-"""Orchestration test for repo -> grounding indexing (ADR-0025).
+"""Orchestration test for repo -> grounding indexing (ADR-0028).
 
 Uses a fake fetcher + the in-memory ContextIndexer (no GitHub, no Elasticsearch).
 """

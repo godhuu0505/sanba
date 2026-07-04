@@ -53,7 +53,7 @@ def test_requirements_to_issue_body_handles_empty() -> None:
 def test_seed_github_context_skips_when_repo_indexed(monkeypatch) -> None:
     # セッションの repo が GitHub App 経由で ES 索引済み（index_status が none/failed 以外）
     # なら connector seed を走らせない（repo 本体 chunk と README/Issue seed の二重化を防ぐ /
-    # ADR-0025・Codex P2）。
+    # ADR-0028・Codex P2）。
     from sanba_shared.models import GitHubIndexStatus, SessionMeta
     from sanba_shared.repository import SessionRepository
 

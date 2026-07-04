@@ -355,7 +355,7 @@ export interface GithubRepos {
   /** 環境変数の既定リポジトリ（あれば初期選択に使える）。 */
   default: string | null;
   /**
-   * 本人が GitHub App 連携済みで一覧が App 由来か（ADR-0025 / additive）。
+   * 本人が GitHub App 連携済みで一覧が App 由来か（ADR-0028 / additive）。
    * true のとき UI は branch 選択と開始時の索引キックを有効化する。
    */
   linked?: boolean;
@@ -467,7 +467,7 @@ export function listAdminSessions(idToken: string | null): Promise<AdminSession[
   return adminFetch<AdminSession[]>("/api/admin/sessions", idToken);
 }
 
-// ===== GitHub repo linking (ADR-0025) =======================================
+// ===== GitHub repo linking (ADR-0028) =======================================
 
 export interface GitHubLinkStatus {
   linked: boolean;

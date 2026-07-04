@@ -1,9 +1,9 @@
 "use client";
 
-// 設定画面の GitHub 連携カード（ADR-0025 / 仕様①）。連携アカウントの表示・連携開始・解除を行う。
+// 設定画面の GitHub 連携カード（ADR-0028 / 仕様①）。連携アカウントの表示・連携開始・解除を行う。
 // 連携状態は Google idToken（require_user）で取得する。連携開始は GitHub App のインストール
 // URL へ遷移し、完了後 ?linked=1 で戻る。解除は users/{sub} の installation 記録のみ消す
-// （共有索引は残す / ADR-0025）。
+// （共有索引は残す / ADR-0028）。
 
 import { useEffect, useState } from "react";
 

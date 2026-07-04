@@ -61,7 +61,7 @@ class SessionRepository:
         # 現在の未回答質問の単一ポインタ (#212 / ADR-0020)。最新1問モデルなのでセッション
         # ごとに 1 ドキュメント。tombstone（cleared）も含めて保持し GET で cleared_seq を返す。
         self._mem_questions: dict[str, dict[str, Any]] = {}
-        # ユーザーの GitHub App 連携 (`users/{sub}` / ADR-0025)。sub -> GitHubLink。
+        # ユーザーの GitHub App 連携 (`users/{sub}` / ADR-0028)。sub -> GitHubLink。
         self._mem_github_links: dict[str, GitHubLink] = {}
 
     @staticmethod
@@ -181,7 +181,7 @@ class SessionRepository:
         index_status: GitHubIndexStatus,
         summary: str | None = None,
     ) -> SessionMeta | None:
-        """セッションに紐づけた GitHub repo/branch/sha/索引状態/要約を保存する (ADR-0025)。
+        """セッションに紐づけた GitHub repo/branch/sha/索引状態/要約を保存する (ADR-0028)。
 
         agent は `SessionMeta` を読んで要約をシードし、web は状態表示・進捗に使う。
         存在しなければ None。merge 保存で他フィールド（要件確定スナップショット等）を温存する。
@@ -213,7 +213,7 @@ class SessionRepository:
             self._mem_sessions[session_id] = updated
         return updated
 
-    # ---- User GitHub link (`users/{sub}` / ADR-0025) -----------------------
+    # ---- User GitHub link (`users/{sub}` / ADR-0028) -----------------------
     def get_github_link(self, sub: str) -> GitHubLink | None:
         """ユーザー (Google sub) の GitHub App 連携を取得する。未連携なら None。"""
         if self._client is not None:
@@ -226,7 +226,7 @@ class SessionRepository:
         return self._mem_github_links.get(sub)
 
     def set_github_link(self, link: GitHubLink) -> None:
-        """ユーザーの GitHub App 連携を upsert する。生トークンは保存しない (ADR-0025)。"""
+        """ユーザーの GitHub App 連携を upsert する。生トークンは保存しない (ADR-0028)。"""
         if self._client is not None:
             self._client.collection("users").document(link.sub).set(
                 {"github": link.model_dump(mode="json")}, merge=True
@@ -235,7 +235,7 @@ class SessionRepository:
         self._mem_github_links[link.sub] = link
 
     def delete_github_link(self, sub: str) -> bool:
-        """連携解除: `users/{sub}` の installation 記録のみ削除する (ADR-0025)。
+        """連携解除: `users/{sub}` の installation 記録のみ削除する (ADR-0028)。
 
         共有 (repo,branch,sha) 索引は他 installation が参照し得るため消さない。
         記録があれば True（冪等: 無くても安全に False）。

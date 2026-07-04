@@ -126,7 +126,7 @@ def test_reject_clears_approval_fields() -> None:
     assert rejected.approved_at is None
 
 
-# ── GitHub link / session repo binding (ADR-0025) ────────────────────────────
+# ── GitHub link / session repo binding (ADR-0028) ────────────────────────────
 def test_github_link_set_get_delete() -> None:
     from sanba_shared.models import GitHubLink
 

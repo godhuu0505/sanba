@@ -1,4 +1,4 @@
-"""API tests for GitHub repo linking endpoints (ADR-0025).
+"""API tests for GitHub repo linking endpoints (ADR-0028).
 
 require_user / require_session_access are overridden (a verified owner is
 assumed), and the GitHub App client is replaced by a fake (no network).

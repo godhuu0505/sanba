@@ -1,4 +1,4 @@
-"""Repo -> Elasticsearch grounding indexing orchestration (ADR-0025).
+"""Repo -> Elasticsearch grounding indexing orchestration (ADR-0028).
 
 Ties the pure selection/redaction helpers (github_app.py) to the existing
 ContextIndexer pipeline. The network fetch is delegated to a small protocol so
@@ -134,7 +134,7 @@ def fetch_and_index_repo(
         repo_source_name(repo, branch, commit_sha, "_summary"),
     )
 
-    # Issue も前提情報として索引する（ADR-0025 索引範囲 / agent 指示も Issue 参照を前提とする）。
+    # Issue も前提情報として索引する（ADR-0028 索引範囲 / agent 指示も Issue 参照を前提とする）。
     issues_failed = False
     try:
         issues = fetcher.fetch_issues(installation_id, repo)

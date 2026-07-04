@@ -97,12 +97,12 @@ export default function Home() {
   const [githubRepo, setGithubRepo] = useState("");
   // リポジトリ候補（GET /api/github/repos）。null = 未取得/取得失敗 → フィールドを出さない。
   const [repoChoices, setRepoChoices] = useState<GithubRepos | null>(null);
-  // GitHub App 連携時の branch 選択（ADR-0025）。既定はデフォルトブランチ。
+  // GitHub App 連携時の branch 選択（ADR-0028）。既定はデフォルトブランチ。
   const [githubBranch, setGithubBranch] = useState("");
   const [branchChoices, setBranchChoices] = useState<string[]>([]);
   const auth = useAuth();
 
-  // App 由来の候補として選ばれた repo（ADR-0025）。手入力・connector 由来の選択は対象外
+  // App 由来の候補として選ばれた repo（ADR-0028）。手入力・connector 由来の選択は対象外
   //（開始時の索引キックは App installation が読める repo に限る）。
   const appRepoItem =
     repoChoices?.linked && githubRepo
@@ -166,7 +166,7 @@ export default function Home() {
     };
   }, [auth.loggedIn, auth.credential]);
 
-  // App 由来の repo が確定したら branch 一覧を取得する（ADR-0025。既定はデフォルトブランチ）。
+  // App 由来の repo が確定したら branch 一覧を取得する（ADR-0028。既定はデフォルトブランチ）。
   // 一覧が来るまで（または取得失敗時も）デフォルトブランチだけで開始できる（本流を止めない）。
   // repo を素早く切り替えたときの古い応答は cancelled で破棄し、選択を巻き戻さない（Codex P2）。
   useEffect(() => {
@@ -269,7 +269,7 @@ export default function Home() {
         await addSessionContext(joined.session_id, goal, joined.session_token, "goal");
       }
       if (appRepoItem) {
-        // App 連携済みの repo は branch を確定して非同期索引をキックする（ADR-0025）。
+        // App 連携済みの repo は branch を確定して非同期索引をキックする（ADR-0028）。
         // 索引完了は会話開始までに間に合わなくても部分結果で深掘りできるため待たない。ただし
         // キック自体に失敗（権限変更/branch削除/GitHub 502 等）したら、ユーザーが前提 repo を
         // 明示選択しているのに索引無しで開始すると気づけないため、開始を止めて理由を表示する
@@ -470,7 +470,7 @@ export default function Home() {
               </Field>
             ))}
 
-          {/* App 連携済みの候補を選んだときだけ branch 選択を出す（ADR-0025。既定=デフォルト
+          {/* App 連携済みの候補を選んだときだけ branch 選択を出す（ADR-0028。既定=デフォルト
               ブランチ）。開始時に repo+branch をセッションへバインドし、非同期で索引される。 */}
           {appRepoItem && (
             <Field

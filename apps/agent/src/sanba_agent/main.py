@@ -63,7 +63,7 @@ if settings.firestore_emulator_host:
 
 
 def _repo_premise(repo: SessionRepository, session_id: str) -> str:
-    """SessionMeta を読み、紐づけ repo の前提一節を返す（無ければ空文字 / ADR-0025）。
+    """SessionMeta を読み、紐づけ repo の前提一節を返す（無ければ空文字 / ADR-0028）。
 
     索引状態が ready/partial/indexing のときだけ前提化する（none/failed は付けない）。
     Firestore 不通などで読めない場合も会話は成立させる（前提は付加価値）。
@@ -83,7 +83,7 @@ def _repo_premise(repo: SessionRepository, session_id: str) -> str:
 
 
 def _is_stale_repo_passage(source: str, current_sha: str) -> bool:
-    """repo 索引 chunk のうち現在の commit sha 以外を stale と判定する（ADR-0025）。
+    """repo 索引 chunk のうち現在の commit sha 以外を stale と判定する（ADR-0028）。
 
     repo 索引の source は `github:{repo}@{branch}@{sha}:{path}` で sha を内包する。旧
     env connector の source（`github:{repo}#...`）は `@` を含まないため対象外（False）。
@@ -103,7 +103,7 @@ class SANBAAgent(Agent):
         grounding: GroundingStore,
         publisher: EventPublisher | None = None,
     ) -> None:
-        # 紐づけ GitHub リポジトリがあれば「前提」を初期 instructions にシードする（ADR-0025）。
+        # 紐づけ GitHub リポジトリがあれば「前提」を初期 instructions にシードする（ADR-0028）。
         # retrieval 任せにせず proactive に前提化し、詳細は search_grounding で掘らせる。
         instructions = VOICE_AGENT_INSTRUCTIONS + _repo_premise(repo, session_id)
         super().__init__(instructions=instructions)
@@ -486,13 +486,13 @@ class SANBAAgent(Agent):
         確認したいときに使う。返り値の sources を会話で言及して根拠を示すこと。
         """
         # session_id を渡してセッション固有素材（context: ゴール/資料/紐づけ repo）を本セッション
-        # に限定する（他者の private リポジトリ断片の越境ヒットを防ぐ / ADR-0025）。
+        # に限定する（他者の private リポジトリ断片の越境ヒットを防ぐ / ADR-0028）。
         # 紐づけ repo を素早く選び直すと、旧 commit の chunk が索引中に書き込まれて残り得る。
         # 現在の commit sha を持つ repo chunk 以外は落とし、stale な断片を会話に出さない
         # （Codex P2。source は github:{repo}@{branch}@{sha}:{path} 形式で sha を内包）。
         # stale 除外で上位が削られても現在 repo の有効 chunk が残るよう、多めに取得してから絞る。
         # owner が連携解除/権限剥奪したら、索引済み repo chunk を検索時に遮断する（query-time
-        # access control / ADR-0025・Codex P2）。共有索引は消さない方針なので、ここで弾く。
+        # access control / ADR-0028・Codex P2）。共有索引は消さない方針なので、ここで弾く。
         want = 4
         current_sha, revoked = self._repo_access()
         fetch_k = want * 4 if (current_sha is not None or revoked) else want
@@ -627,7 +627,7 @@ def seed_github_context(
     `repo_name` は `_resolve_github_repo`（セッション選択→環境変数）の解決結果を渡す。
     セッションの repo が GitHub App 経由で ES 索引済み/索引中（index_status が none/failed
     以外）の場合は、repo 本体の chunk と README/Issue seed が二重になるためスキップする
-    （ADR-0025・Codex P2。検索は session_id だけで通すため重複すると根拠が水増しされる）。
+    （ADR-0028・Codex P2。検索は session_id だけで通すため重複すると根拠が水増しされる）。
     """
     if not _github_ready(repo_name):
         return

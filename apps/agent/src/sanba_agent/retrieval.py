@@ -75,7 +75,7 @@ class GroundingStore:
     def _ensure_index(self) -> None:  # pragma: no cover - needs live ES
         if self._client.indices.exists(index=INDEX):
             # 既存 index は PR 以前の mapping で作られている可能性がある。session_id が keyword で
-            # 無いと term フィルタ（session スコープ / ADR-0025）がヒットせず context が検索から
+            # 無いと term フィルタ（session スコープ / ADR-0028）がヒットせず context が検索から
             # 消えるため、起動時に keyword mapping を明示する（既に keyword なら冪等・型衝突時は
             # ログのみで会話は止めない / Codex P2）。
             try:
@@ -135,7 +135,7 @@ class GroundingStore:
         """Retrieve grounding passages.
 
         ``session_id`` を渡すと、セッション固有の素材（``kind="context"``: ゴール文・
-        アップロード資料・紐づけ repo のコード本文 / ADR-0025）を **そのセッションに限定**する。
+        アップロード資料・紐づけ repo のコード本文 / ADR-0028）を **そのセッションに限定**する。
         知識/過去要件 (knowledge/requirement/utterance) は ADR-0003 の通り横断的に呼び戻す。
         これが無いと、別セッションの参加者が repo 名や実装語で検索したとき他者の private
         リポジトリ断片が返り得る（cross-tenant leak）。
@@ -210,7 +210,7 @@ class GroundingStore:
         for doc in self._mem:
             if kinds and doc.kind not in kinds:
                 continue
-            # context（セッション固有素材）は当該セッションのものだけを返す（ADR-0025 隔離）。
+            # context（セッション固有素材）は当該セッションのものだけを返す（ADR-0028 隔離）。
             if session_id is not None and doc.kind == "context" and doc.session_id != session_id:
                 continue
             overlap = len(tokens & _tokenize(doc.text))

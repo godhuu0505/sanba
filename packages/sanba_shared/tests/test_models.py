@@ -49,7 +49,7 @@ def test_session_meta_roundtrips_through_json() -> None:
 def test_session_meta_github_fields_default_for_legacy_docs() -> None:
     from sanba_shared.models import GitHubIndexStatus
 
-    # 旧文書（github_* 無し）は None / none でフォールバックする (ADR-0025)。
+    # 旧文書（github_* 無し）は None / none でフォールバックする (ADR-0028)。
     legacy = {
         "id": "sess-old",
         "title": "t",

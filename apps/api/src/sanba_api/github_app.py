@@ -1,4 +1,4 @@
-"""GitHub App per-user repo linking (ADR-0025).
+"""GitHub App per-user repo linking (ADR-0028).
 
 Mirrors the philosophy of connectors/github.py: the security-critical *pure*
 functions (state signing, App JWT claims, secret redaction, relevance-priority
@@ -30,7 +30,7 @@ log = structlog.get_logger(__name__)
 
 _API = "https://api.github.com"
 
-# ── state 署名（連携の CSRF/誤紐づけ対策・ADR-0025）────────────────────────────
+# ── state 署名（連携の CSRF/誤紐づけ対策・ADR-0028）────────────────────────────
 # install フロー開始時に検証済み sub を署名 state に詰めて GitHub へ渡し、callback で
 # 検証してから users/{sub} に保存する。auth.py の invite/session token と同じ HMAC 方式。
 
@@ -114,7 +114,7 @@ def build_app_jwt(app_id: str, private_key_pem: str, now: int) -> str:
     return jwt.encode(build_app_jwt_claims(app_id, now), private_key_pem, algorithm="RS256")
 
 
-# ── コード索引前の秘匿レダクト（ADR-0025）──────────────────────────────────────
+# ── コード索引前の秘匿レダクト（ADR-0028）──────────────────────────────────────
 # gitleaks 相当の代表的なシークレットパターンをマスクしてから ES に入れる。完璧な検出は
 # 目的ではなく、生のトークン/鍵が grounding 索引・検索結果に残らないようにする一次防御。
 
@@ -156,7 +156,7 @@ def redact_secrets(text: str) -> str:
     return redacted
 
 
-# ── 索引対象ファイルの関連度優先 + 総量キャップ（ADR-0025）──────────────────────
+# ── 索引対象ファイルの関連度優先 + 総量キャップ（ADR-0028）──────────────────────
 
 # 索引から除外するディレクトリ/拡張子（生成物・依存・binary・lockfile・秘匿）。
 _EXCLUDED_DIR_PARTS = frozenset(
@@ -343,7 +343,7 @@ def select_indexable_files(
     return result
 
 
-# ── repo 要約のシード（機械的組み立て・ADR-0025）──────────────────────────────
+# ── repo 要約のシード（機械的組み立て・ADR-0028）──────────────────────────────
 
 
 def build_repo_summary(
@@ -383,7 +383,7 @@ def repo_source_name(repo: str, branch: str, sha: str, path: str) -> str:
     """grounding 索引の出所名。`github:{repo}@{branch}@{sha}:{path}` で一意化する。
 
     sha を含めることで、repo を素早く選び直した際に残存し得る旧 commit の chunk を、
-    検索側が現在の sha で峻別して除外できる（stale 索引の越境ヒット防止 / ADR-0025）。
+    検索側が現在の sha で峻別して除外できる（stale 索引の越境ヒット防止 / ADR-0028）。
     """
     return f"github:{repo}@{branch}@{sha}:{path}"
 
@@ -435,7 +435,7 @@ class GitHubAppClient:  # pragma: no cover - network
     ) -> None:
         self.app_id = app_id
         self.private_key_pem = private_key_pem
-        # user-to-server OAuth（install 時の所有権検証用 / ADR-0025・Codex P1）。
+        # user-to-server OAuth（install 時の所有権検証用 / ADR-0028・Codex P1）。
         self.oauth_client_id = oauth_client_id
         self.oauth_client_secret = oauth_client_secret
         # installation token は短命だが 1h 有効。1 索引ジョブで 1500 ファイル取得しても
@@ -454,7 +454,7 @@ class GitHubAppClient:  # pragma: no cover - network
         """install 時の OAuth code から user token を得て、当該 installation を保有するか検証する。
 
         別人が他者の installation_id を署名 state と組み合わせて横取りするのを防ぐ
-        （ADR-0025・Codex P1）。OAuth 未設定なら呼ばれない前提。
+        （ADR-0028・Codex P1）。OAuth 未設定なら呼ばれない前提。
         """
         import httpx
 
@@ -697,7 +697,7 @@ class GitHubAppClient:  # pragma: no cover - network
     def fetch_issues(
         self, installation_id: int, repo: str, max_issues: int = 30
     ) -> list[dict[str, object]]:
-        """直近の Issue を取得する（PR は除く。前提情報として索引する / ADR-0025 索引範囲）。"""
+        """直近の Issue を取得する（PR は除く。前提情報として索引する / ADR-0028 索引範囲）。"""
         import httpx
 
         with httpx.Client(timeout=15) as client:

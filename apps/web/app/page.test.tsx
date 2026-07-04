@@ -40,7 +40,7 @@ const addSessionContext = vi.fn(async (..._a: unknown[]) => ({ indexed_chunks: 0
 const uploadContextFile = vi.fn(async (..._a: unknown[]) => ({ indexed_chunks: 1 }));
 const fetchMySessions = vi.fn(async (..._a: unknown[]) => [] as unknown[]);
 // 連携リポジトリ候補（ADR-0027）。既定はコネクタ無効 = フィールド非表示（既存テストを変えない）。
-// linked/items は GitHub App 連携時の additive 拡張（ADR-0025）。
+// linked/items は GitHub App 連携時の additive 拡張（ADR-0028）。
 const fetchGithubRepos = vi.fn(
   async (..._a: unknown[]) =>
     ({ enabled: false, repos: [], default: null }) as {
@@ -51,7 +51,7 @@ const fetchGithubRepos = vi.fn(
       items?: { full_name: string; default_branch: string; private: boolean }[];
     },
 );
-// GitHub App 連携の拡張（ADR-0025）: branch 一覧と開始時の索引キック。
+// GitHub App 連携の拡張（ADR-0028）: branch 一覧と開始時の索引キック。
 const listGithubBranches = vi.fn(async (..._a: unknown[]) => [] as { name: string; sha: string }[]);
 const selectSessionRepo = vi.fn(async (..._a: unknown[]) => ({
   repo: null as string | null,
@@ -330,7 +330,7 @@ describe("入口フロー（#140）", () => {
     expect(selectSessionRepo).not.toHaveBeenCalled();
   });
 
-  // ── 02 GitHub App 連携の repo+branch（ADR-0025 拡張）───────────────────────
+  // ── 02 GitHub App 連携の repo+branch（ADR-0028 拡張）───────────────────────
   function mockLinkedRepos() {
     fetchGithubRepos.mockResolvedValueOnce({
       enabled: true,

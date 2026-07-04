@@ -140,7 +140,7 @@ class ContextIndexer:
         """セッションの GitHub repo 由来 chunk（source が `github:` 始まり）を全削除する。
 
         準備画面で repo を選び直した / 別 branch へ変えた / 再同期したとき、古い repo・commit の
-        コード断片が search_grounding に残って混ざるのを防ぐ（ADR-0025・Codex P2）。repo/path に
+        コード断片が search_grounding に残って混ざるのを防ぐ（ADR-0028・Codex P2）。repo/path に
         依らず一括で消すため、`delete_context` の `#` 境界一致ではなく `github:` 前方一致で消す。
         削除件数を返す（冪等: 0 件でも安全）。
         """

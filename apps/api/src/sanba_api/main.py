@@ -453,7 +453,7 @@ def list_my_sessions(user: AuthUser = Depends(require_user)) -> list[MySession]:
     ]
 
 
-# ---- GitHub App: per-user repo linking (ADR-0025) --------------------------
+# ---- GitHub App: per-user repo linking (ADR-0028) --------------------------
 def _github_app_client() -> GitHubAppClient | None:
     """設定済みなら App クライアントを返す。未設定はフェイルクローズ（None）。"""
     if not (
@@ -494,7 +494,7 @@ class GitHubBranchesResponse(BaseModel):
 
 class SelectRepoRequest(BaseModel):
     repo: str  # "owner/name"
-    # 省略時はデフォルトブランチを使う（ADR-0025: branch 既定=デフォルト）。
+    # 省略時はデフォルトブランチを使う（ADR-0028: branch 既定=デフォルト）。
     branch: str | None = None
 
 
@@ -517,7 +517,7 @@ def github_link_status(user: AuthUser = Depends(require_user)) -> GitHubLinkStat
 
 @app.post("/api/github/link/start", response_model=GitHubLinkStart)
 def github_link_start(user: AuthUser = Depends(require_user)) -> GitHubLinkStart:
-    """連携開始: 署名 state 付きの GitHub App インストール URL を返す（ADR-0025）。
+    """連携開始: 署名 state 付きの GitHub App インストール URL を返す（ADR-0028）。
 
     state に検証済み sub を束縛し、callback で CSRF/誤紐づけを防ぐ。
     """
@@ -541,7 +541,7 @@ def github_link_start(user: AuthUser = Depends(require_user)) -> GitHubLinkStart
 
 @app.get("/api/github/link/callback")
 def github_link_callback(installation_id: int, state: str, code: str | None = None) -> JSONResponse:
-    """GitHub からの install コールバック。state を検証して連携を保存する（ADR-0025）。
+    """GitHub からの install コールバック。state を検証して連携を保存する（ADR-0028）。
 
     認証ヘッダは無い（GitHub リダイレクト）。署名 state が sub を束縛し CSRF を防ぐが、
     state だけでは「その sub が当該 installation を保有するか」は証明できない。OAuth
@@ -596,7 +596,7 @@ def github_link_callback(installation_id: int, state: str, code: str | None = No
 
 @app.delete("/api/github/link", response_model=GitHubLinkStatus)
 def github_unlink(user: AuthUser = Depends(require_user)) -> GitHubLinkStatus:
-    """連携解除: users/{sub} の installation 記録のみ削除する（共有索引は残す / ADR-0025）。"""
+    """連携解除: users/{sub} の installation 記録のみ削除する（共有索引は残す / ADR-0028）。"""
     removed = _repo.delete_github_link(user.sub)
     log.info("github_unlinked", sub=user.sub, removed=removed)
     return GitHubLinkStatus(linked=False)
@@ -612,7 +612,7 @@ class GithubReposResponse(BaseModel):
     repos: list[str]
     # 環境変数の既定リポジトリ（あれば UI が初期選択に使える）。
     default: str | None = None
-    # ---- 追加情報（ADR-0025 / 後方互換の additive）----
+    # ---- 追加情報（ADR-0028 / 後方互換の additive）----
     # 本人が GitHub App 連携済みで一覧が App installation 由来か。True のとき web は
     # branch 選択と開始時の索引キック（POST /api/sessions/{id}/github）を有効化する。
     linked: bool = False
@@ -622,10 +622,10 @@ class GithubReposResponse(BaseModel):
 
 @app.get("/api/github/repos", response_model=GithubReposResponse)
 def list_github_repos(user: AuthUser = Depends(require_user)) -> GithubReposResponse:
-    """セッション実施前に選べる GitHub リポジトリの候補を返す（ADR-0027 / ADR-0025）。
+    """セッション実施前に選べる GitHub リポジトリの候補を返す（ADR-0027 / ADR-0028）。
 
     1 本のエンドポイントに統一し、次の順で解決する:
-      1. 本人が GitHub App 連携済み → 連携アカウントの installation が読める一覧（ADR-0025）。
+      1. 本人が GitHub App 連携済み → 連携アカウントの installation が読める一覧（ADR-0028）。
       2. 未連携でデプロイ単位コネクタが有効 → 設定済みトークンで読める一覧（ADR-0027）。
       3. どちらも不可 → `enabled=False`（UI はフィールドごと隠す）。
     一覧取得の失敗は `repos=[]` のまま `enabled=True` で返し、UI は手入力（owner/name）へ
@@ -663,7 +663,7 @@ def list_github_repos(user: AuthUser = Depends(require_user)) -> GithubReposResp
 def github_list_branches(
     repo: str, user: AuthUser = Depends(require_user)
 ) -> GitHubBranchesResponse:
-    """選択 repo の branch 一覧（準備画面の branch 選択 / ADR-0025）。"""
+    """選択 repo の branch 一覧（準備画面の branch 選択 / ADR-0028）。"""
     client = _github_app_client()
     link = _repo.get_github_link(user.sub)
     if client is None or link is None:
@@ -764,7 +764,7 @@ def select_session_repo(
     background: BackgroundTasks,
     access: SessionAccess = Depends(require_session_access),
 ) -> SessionGitHubResponse:
-    """準備画面で repo+branch を選び、非同期索引をキックする（ADR-0025）。
+    """準備画面で repo+branch を選び、非同期索引をキックする（ADR-0028）。
 
     連携主体は owner 固定: owner の installation でのみ索引する。branch 省略時は
     デフォルトブランチを使い、選択時の HEAD sha にピン留めする。
@@ -772,7 +772,7 @@ def select_session_repo(
     meta = _repo.get_session(session_id)
     if meta is None:
         raise HTTPException(status_code=404, detail="session not found")
-    # owner 固定（ADR-0025）: セッション所有者のみが前提 repo を紐づけられる。
+    # owner 固定（ADR-0028）: セッション所有者のみが前提 repo を紐づけられる。
     if access.sub != meta.owner_sub:
         raise HTTPException(status_code=403, detail="owner only")
     client = _github_app_client()
@@ -817,7 +817,7 @@ def select_session_repo(
 def get_session_repo(
     session_id: str, access: SessionAccess = Depends(require_session_access)
 ) -> SessionGitHubResponse:
-    """セッションの紐づけ repo と索引状態を返す（準備画面の進捗ポーリング / ADR-0025）。"""
+    """セッションの紐づけ repo と索引状態を返す（準備画面の進捗ポーリング / ADR-0028）。"""
     meta = _repo.get_session(session_id)
     if meta is None:
         raise HTTPException(status_code=404, detail="session not found")
