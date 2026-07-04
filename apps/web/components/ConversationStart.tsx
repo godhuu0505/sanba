@@ -158,7 +158,7 @@ function RoomGate({ conn, onCancel }: { conn: JoinResponse; onCancel: () => void
         <div
           role="status"
           aria-live="polite"
-          className="fixed inset-x-0 top-0 z-50 bg-[var(--sanba-rec)]/90 py-1 text-center text-[12px] font-bold text-white"
+          className="fixed inset-x-0 top-0 z-50 bg-[var(--sanba-rec-text)]/90 py-1 text-center text-[12px] font-bold text-white"
         >
           繋ぎ直しております… しばらくお待ちください
         </div>

@@ -18,14 +18,14 @@ describe("SANBA design system", () => {
   it("Button は variant に応じてクラスを切り替える", () => {
     const { rerender } = render(<Button variant="gold">主</Button>);
     const btn = screen.getByRole("button", { name: "主" });
-    // 主 CTA は朱ベタのステッカー様式（ADR-0025）。
+    // 主 CTA は朱ベタのステッカー様式。白文字を載せる面は AA 安全な朱 #C43A20（--sanba-rec-text / ADR-0033）。
     expect(btn.className).toContain("sanba-sticker");
-    expect(btn.className).toContain("bg-[var(--sanba-rec)]");
+    expect(btn.className).toContain("bg-[var(--sanba-rec-text)]");
 
     rerender(<Button variant="outline">枠</Button>);
     const outline = screen.getByRole("button", { name: "枠" }).className;
     expect(outline).toContain("sanba-sticker");
-    expect(outline).not.toContain("bg-[var(--sanba-rec)]");
+    expect(outline).not.toContain("bg-[var(--sanba-rec-text)]");
   });
 
   it("Button asChild はラッパ要素に化ける（アンカー化）", () => {
