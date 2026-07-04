@@ -6,7 +6,9 @@ import {
   Button,
   ChatBubble,
   Chip,
+  InsightCard,
   ListRow,
+  RecPill,
   RequirementCard,
   SessionRow,
   Waveform,
@@ -124,6 +126,25 @@ describe("SANBA design system", () => {
     expect(screen.getByRole("img", { name: "集音中" })).toBeTruthy();
     rerender(<Waveform state="muted" />);
     expect(screen.getByRole("img", { name: "ミュート中" })).toBeTruthy();
+  });
+
+  it("RecPill は朱枠の丸薬に glowPulse のドットと REC 文言を出す（ADR-0033 §7）", () => {
+    const { container } = render(<RecPill>12:46</RecPill>);
+    // 先頭ラベル＋経過時間が同じピル内に並ぶ。
+    expect(screen.getByText(/REC 12:46/)).toBeTruthy();
+    // 発光ドットは reduced-motion で静止する .sanba-rec-dot を持つ（装飾なので aria-hidden）。
+    const dot = container.querySelector(".sanba-rec-dot");
+    expect(dot).not.toBeNull();
+    expect(dot?.getAttribute("aria-hidden")).not.toBeNull();
+  });
+
+  it("InsightCard は既定見出し「ひらめき」＋山吹淡・破線の札（ADR-0033 §7）", () => {
+    const { container } = render(<InsightCard>結果の並びは関連度順が要でした。</InsightCard>);
+    expect(screen.getByText("ひらめき")).toBeTruthy();
+    expect(screen.getByText("結果の並びは関連度順が要でした。")).toBeTruthy();
+    // 山吹淡の面＋破線（電球アイコンは装飾）。
+    expect(container.firstElementChild?.className).toContain("bg-sanba-gold-pale");
+    expect(container.firstElementChild?.className).toContain("border-dashed");
   });
 });
 

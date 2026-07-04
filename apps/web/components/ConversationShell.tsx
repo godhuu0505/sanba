@@ -8,6 +8,7 @@
 import { Diamond, Paperclip, Square, TriangleAlert } from "lucide-react";
 import { useState, type ReactNode } from "react";
 
+import { RecPill } from "@/components/sanba";
 import type { MiniStatus } from "@/lib/realtime/selectors";
 
 export type ShellTab = "history" | "files" | "scroll";
@@ -81,11 +82,7 @@ export function ConversationShell({
         </span>
         <h1 className="text-[15px] font-bold text-[var(--sanba-cream)]">問答</h1>
         <span className="flex-1" />
-        {recording && (
-          <span className="rounded-full border border-[var(--sanba-rec)] bg-[var(--sanba-rec-pale)] px-[9px] py-1 text-[11px] font-bold text-[var(--sanba-rec-text)]">
-            ● REC {elapsed}
-          </span>
-        )}
+        {recording && <RecPill>{elapsed}</RecPill>}
         <button
           type="button"
           aria-label="会話を終了"
