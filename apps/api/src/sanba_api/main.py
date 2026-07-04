@@ -46,6 +46,7 @@ from .ingestion import ContextIndexer, chunk_text, extract_text_from_upload
 from .observability import (
     record_asset_upload,
     record_material_event,
+    record_my_requirements_viewed,
     record_my_sessions_listed,
     record_question_hydration,
     record_rate_limited,
@@ -391,6 +392,51 @@ def list_my_sessions(user: AuthUser = Depends(require_user)) -> list[MySession]:
         )
         for s in sessions
     ]
+
+
+class MySessionRequirementsResponse(BaseModel):
+    """`GET /api/sessions/mine/{id}/requirements` の応答。
+
+    過去セッションの要件絵巻閲覧画面 (web /sessions/{id}) に、見出し用の最小メタ
+    (標題・作成時刻・確定状態) と要件スナップショットをまとめて供給する。
+    items は契約 §3 の requirement 形 (get_requirements と同じ contract 形) で、
+    PII (owner_email/owner_sub) は MySession と同じく載せない (最小権限)。
+    """
+
+    id: str
+    title: str
+    created_at: datetime
+    finalized: bool
+    items: list[dict[str, Any]]
+
+
+@app.get(
+    "/api/sessions/mine/{session_id}/requirements",
+    response_model=MySessionRequirementsResponse,
+)
+def get_my_session_requirements(
+    session_id: str, user: AuthUser = Depends(require_user)
+) -> MySessionRequirementsResponse:
+    """本人 (owner_sub) の過去セッションの要件絵巻を返す。
+
+    ホーム「過去の要件を見る」(#215/#250) からの詳細閲覧。join 済みトークンは会話終了後には
+    残らないため、`require_session_access` ではなく idToken (ADR-0012) で本人確認し、
+    owner_sub 一致で認可する。非所有・不存在はどちらも 404 に平す (他人のセッション ID の
+    存在を応答差で漏らさない)。
+    """
+    session = _repo.get_session(session_id)
+    if session is None or session.owner_sub != user.sub:
+        raise HTTPException(status_code=404, detail="session not found")
+    items = _read_repo.list_requirements(session_id)
+    record_my_requirements_viewed(len(items))
+    log.info("my_requirements_viewed", session=session_id, owner=user.sub, count=len(items))
+    return MySessionRequirementsResponse(
+        id=session.id,
+        title=session.title,
+        created_at=session.created_at,
+        finalized=session.status == "finalized",
+        items=items,
+    )
 
 
 @app.post("/api/sessions/{session_id}/context", response_model=ContextResponse)
