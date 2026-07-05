@@ -84,6 +84,7 @@ from .ingestion import ContextIndexer, chunk_text, extract_text_from_upload
 from .observability import (
     record_asset_upload,
     record_guest_join,
+    record_join_ui_event,
     record_material_event,
     record_my_requirements_viewed,
     record_my_sessions_listed,
@@ -400,7 +401,9 @@ class FinalizeResponse(BaseModel):
 # 未知の属性値は other へ丸めて高カーディナリティ/PII 流入を防ぐ（観測は UX を止めない）。
 # material.discard は含めない: 破棄結果はサーバ（DELETE エンドポイント）が直接 record_material_event
 # で計上する内部イベントで、クライアントからの受領は想定しない（送ってきても 422 で弾く）。
-_TELEMETRY_EVENTS = {"material.source_selected", "material.cancel"}
+# join.abort（PR9 / FR-2.1）: リンク入場でセッション作成後に会話開始へ至らず離脱した事象。
+# ゲスト経路の join 成立（sanba_guest_join_total）と会話成立の間の離脱点を埋める。
+_TELEMETRY_EVENTS = {"material.source_selected", "material.cancel", "join.abort"}
 _TELEMETRY_SOURCES = {"camera", "screen", "upload", "drive"}
 _TELEMETRY_STATUSES = {"uploading", "analyzing"}
 _TELEMETRY_RESULTS = {"aborted", "discarded", "error"}
@@ -1791,6 +1794,17 @@ def post_telemetry(
     source = _enum_or_other(body.source, _TELEMETRY_SOURCES)
     status = _enum_or_other(body.status, _TELEMETRY_STATUSES)
     result = _enum_or_other(body.result, _TELEMETRY_RESULTS)
+    if body.event.startswith("join."):
+        # リンク入場の離脱（PR9 / FR-2.1）。素材カウンタと混ぜず専用カウンタへ計上する。
+        record_join_ui_event(body.event, result=result)
+        log.info(
+            "join_ui_event",
+            session=session_id,
+            event_name=body.event,
+            result=result,
+            sub=access.sub,
+        )
+        return TelemetryResponse(recorded=True)
     record_material_event(body.event, source=source, status=status, result=result)
     log.info(
         "material_event",

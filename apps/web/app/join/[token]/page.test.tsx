@@ -4,13 +4,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApiError } from "@/lib/api";
 
-// 深掘りリンク入場（FR-1.6）:
+// 深掘りリンク入場（FR-1.6 / FR-2.1 ゲスト入場）:
 // - 表示だけでは POST しない（use_count を消費しない）— 最重要 AC
-// - 未ログインは /login?next=/join/{token} へ
-// - 同意なしで開始不可・403 reason 別の明確なエラー画面・成功時は invite が joinSession へ渡り会話へ
+// - 未ログインでもログインへ飛ばさず同意ゲートを出す（Stage 2 / issue #319）
+// - ゲストは joinProduct の join 直返しで接続する（joinSession を呼ばない）
+// - 401 はログイン誘導、403 reason 別の明確なエラー画面、成功時は会話へ
 
 const authState = {
-  credential: "id-token",
+  credential: "id-token" as string | null,
   profile: { name: "話し手" } as { name?: string } | null,
   loggedIn: true,
   ready: true,
@@ -31,25 +32,50 @@ vi.mock("next/navigation", () => ({
 
 const joinProduct = vi.fn();
 const joinSession = vi.fn();
+const sendTelemetry = vi.fn();
 vi.mock("@/lib/api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/api")>();
   return {
     ...actual,
     joinProduct: (...args: unknown[]) => joinProduct(...args),
     joinSession: (...args: unknown[]) => joinSession(...args),
+    sendTelemetry: (...args: unknown[]) => sendTelemetry(...args),
   };
 });
 
 // LiveKit 接続を持つ ConversationStart は挙動テストの関心外なのでマーカーに差し替える。
 vi.mock("@/components/ConversationStart", () => ({
-  ConversationStart: ({ conn, goal, roleLabel }: { conn: { session_id: string }; goal: string; roleLabel: string }) => (
-    <div data-testid="conversation-start">
+  ConversationStart: ({
+    conn,
+    goal,
+    roleLabel,
+    readOnly,
+    onCancel,
+  }: {
+    conn: { session_id: string };
+    goal: string;
+    roleLabel: string;
+    readOnly?: boolean;
+    onCancel: () => void;
+  }) => (
+    <div data-testid="conversation-start" data-readonly={readOnly ? "1" : "0"}>
       {conn.session_id} / {goal} / {roleLabel}
+      <button type="button" onClick={onCancel}>
+        中断
+      </button>
     </div>
   ),
 }));
 
 import JoinPage, { classifyJoinError } from "./page";
+
+const GUEST_JOIN = {
+  token: "lk-guest",
+  livekit_url: "ws://x",
+  session_id: "sess-9",
+  identity: "guest:abc123",
+  session_token: "guest-st",
+};
 
 function joined(overrides: Record<string, unknown> = {}) {
   return {
@@ -58,6 +84,7 @@ function joined(overrides: Record<string, unknown> = {}) {
     product_id: "prod-1",
     product_name: "経費精算アプリ",
     interview_mode: "end_user",
+    join: null,
     ...overrides,
   };
 }
@@ -67,12 +94,14 @@ async function startWithConsent() {
   fireEvent.click(screen.getByRole("button", { name: "深掘りを開始する" }));
 }
 
-describe("深掘りリンク入場画面（ADR-0031 / FR-1.6）", () => {
+describe("深掘りリンク入場画面（ADR-0031 / ADR-0032 / FR-1.6 / FR-2.1）", () => {
   beforeEach(() => {
+    authState.credential = "id-token";
     authState.loggedIn = true;
     authState.ready = true;
     replace.mockClear();
     push.mockClear();
+    sendTelemetry.mockClear();
     joinProduct.mockReset().mockResolvedValue(joined());
     joinSession.mockReset().mockResolvedValue({
       token: "lk",
@@ -84,18 +113,25 @@ describe("深掘りリンク入場画面（ADR-0031 / FR-1.6）", () => {
   });
   afterEach(() => cleanup());
 
-  it("未ログインなら /login?next=/join/{token} へリダイレクトする", () => {
+  it("未ログインでもログインへ飛ばさず、同意ゲートを表示する（FR-2.1）", () => {
     authState.loggedIn = false;
+    authState.credential = null;
     render(<JoinPage />);
-    expect(replace).toHaveBeenCalledWith(
-      `/login?next=${encodeURIComponent("/join/tok.sig")}`,
-    );
+    expect(replace).not.toHaveBeenCalled();
+    expect(screen.getByText("リンクから会話に参加します")).toBeTruthy();
     expect(joinProduct).not.toHaveBeenCalled();
+  });
+
+  it("同意文言に保持期間（30 日）と発行者側に残る旨を明示する（FR-2.2 / FR-2.7）", () => {
+    render(<JoinPage />);
+    const gate = screen.getByText("はじめる前にご確認ください").parentElement;
+    expect(gate?.textContent).toContain("30 日たつと自動で削除");
+    expect(gate?.textContent).toContain("発行者の手元には残ります");
+    expect(gate?.textContent).toContain("録音");
   });
 
   it("表示・リロードだけでは join を呼ばない（use_count を消費しない）", () => {
     render(<JoinPage />);
-    expect(screen.getByText("深掘りリンクから参加します")).toBeTruthy();
     expect(joinProduct).not.toHaveBeenCalled();
     expect(joinSession).not.toHaveBeenCalled();
   });
@@ -108,7 +144,17 @@ describe("深掘りリンク入場画面（ADR-0031 / FR-1.6）", () => {
     expect(joinProduct).not.toHaveBeenCalled();
   });
 
-  it("開始すると join → joinSession（invite 引き渡し）→ 会話コンポーネントへ", async () => {
+  it("認証解決前（ready=false）は開始できない（GIS 復元前の誤ゲスト入場を防ぐ）", () => {
+    authState.ready = false;
+    authState.loggedIn = false;
+    authState.credential = null;
+    render(<JoinPage />);
+    fireEvent.click(screen.getByRole("checkbox"));
+    const button = screen.getByRole("button", { name: "深掘りを開始する" });
+    expect((button as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("ログイン済み: join → joinSession（invite 引き渡し）→ 会話コンポーネントへ", async () => {
     render(<JoinPage />);
     await startWithConsent();
     await waitFor(() => expect(screen.getByTestId("conversation-start")).toBeTruthy());
@@ -122,6 +168,53 @@ describe("深掘りリンク入場画面（ADR-0031 / FR-1.6）", () => {
     // product_name と interview_mode（end_user → 顧客）がサマリに引き継がれる。
     expect(screen.getByTestId("conversation-start").textContent).toContain("経費精算アプリ");
     expect(screen.getByTestId("conversation-start").textContent).toContain("顧客");
+    // ログイン済み（invite 経由）は読取専用にしない。
+    expect(screen.getByTestId("conversation-start").dataset.readonly).toBe("0");
+  });
+
+  it("ゲスト: join 直返しでそのまま接続し、joinSession を呼ばない（issue #319）", async () => {
+    authState.loggedIn = false;
+    authState.credential = null;
+    joinProduct.mockResolvedValue(joined({ invite: null, join: GUEST_JOIN, session_id: "sess-9" }));
+    render(<JoinPage />);
+    await startWithConsent();
+    await waitFor(() => expect(screen.getByTestId("conversation-start")).toBeTruthy());
+    // Authorization なし（credential null）で joinProduct を呼ぶ。
+    expect(joinProduct).toHaveBeenCalledWith("tok.sig", true, null);
+    expect(joinSession).not.toHaveBeenCalled();
+    // ゲストは読取専用の会話画面（素材/確定/起票 UI を出さない）。
+    expect(screen.getByTestId("conversation-start").dataset.readonly).toBe("1");
+    expect(screen.getByTestId("conversation-start").textContent).toContain("sess-9");
+  });
+
+  it("ゲストの離脱（中断）は join.abort telemetry を送る", async () => {
+    authState.loggedIn = false;
+    authState.credential = null;
+    joinProduct.mockResolvedValue(joined({ invite: null, join: GUEST_JOIN, session_id: "sess-9" }));
+    render(<JoinPage />);
+    await startWithConsent();
+    await waitFor(() => expect(screen.getByTestId("conversation-start")).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "中断" }));
+    expect(sendTelemetry).toHaveBeenCalledWith(
+      "sess-9",
+      "join.abort",
+      { result: "aborted" },
+      "guest-st",
+    );
+    expect(push).toHaveBeenCalledWith("/");
+  });
+
+  it("401（flag off / developer リンク）はログイン誘導を出す", async () => {
+    authState.loggedIn = false;
+    authState.credential = null;
+    joinProduct.mockRejectedValueOnce(new ApiError(401, "authentication required"));
+    render(<JoinPage />);
+    await startWithConsent();
+    expect(await screen.findByText("参加にはログインが必要です")).toBeTruthy();
+    // 開始 UI は出さない（再タップさせない）。ログイン導線から /login?next= へ。
+    expect(screen.queryByRole("button", { name: "深掘りを開始する" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "ログインして参加する" }));
+    expect(push).toHaveBeenCalledWith(`/login?next=${encodeURIComponent("/join/tok.sig")}`);
   });
 
   it("403 は reason 別の死リンク画面になり、開始 UI を出さない（再試行させない）", async () => {
@@ -175,5 +268,6 @@ describe("深掘りリンク入場画面（ADR-0031 / FR-1.6）", () => {
     expect(classifyJoinError(new ApiError(403, "invalid invite link: bad signature")).retryable).toBe(
       false,
     );
+    expect(classifyJoinError(new ApiError(401, "authentication required")).loginRequired).toBe(true);
   });
 });

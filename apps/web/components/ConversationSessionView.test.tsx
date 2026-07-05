@@ -2,6 +2,7 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { InterviewModeProvider } from "@/lib/interviewMode";
 import type { SessionState } from "@/lib/realtime/store";
 import type { Detection, Requirement } from "@/lib/realtime/types";
 
@@ -246,7 +247,7 @@ describe("ConversationSessionView（会話シェル結線）", () => {
 
   it("ボトムバーのマイク/消音トグルとテキスト送信が配線される", () => {
     const { onToggleMic, onToggleMute, onSendText } = renderView();
-    fireEvent.click(screen.getByRole("button", { name: "会話（マイク）" }));
+    fireEvent.click(screen.getByRole("button", { name: "マイクをミュート" }));
     expect(onToggleMic).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole("button", { name: "消音" }));
     expect(onToggleMute).toHaveBeenCalledTimes(1);
@@ -389,5 +390,94 @@ describe("ConversationSessionView（会話シェル結線）", () => {
     const jumps = screen.getAllByRole("button", { name: "会話で確認 ›" });
     fireEvent.click(jumps[0]);
     expect(screen.getByText("検索は関連度順で。")).toBeTruthy();
+  });
+});
+
+describe("ConversationSessionView（読取専用ゲスト / ADR-0032 決定4）", () => {
+  afterEach(() => cleanup());
+
+  it("参考資料タブ・資料ミニ状況・素材追加ボタンを出さない（403 を踏ませない）", () => {
+    renderView({ readOnly: true });
+    expect(screen.queryByRole("tab", { name: "参考資料" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /資料/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /素材を追加/ })).toBeNull();
+    // 会話（履歴・要件）タブは従来どおり見える。
+    expect(screen.getByRole("tab", { name: "会話履歴" })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "要件絵巻" })).toBeTruthy();
+  });
+
+  it("会話（選択肢回答）は読取専用でも送れる（realtime write は許可されている）", () => {
+    const { sendSelection } = renderView({ readOnly: true });
+    fireEvent.click(screen.getByRole("button", { name: "関連度順にする" }));
+    expect(sendSelection).toHaveBeenCalledWith("d1", "relevance");
+  });
+
+  it("確定は finalize API を呼ばずに結果へ進み、Issue 起票 UI を出さない", async () => {
+    const onFinalize = vi.fn(async () => ({ finalized: true, confirmed_count: 1 }));
+    const onExport = vi.fn(async () => ({ exported: true }));
+    renderView({ state: baseState({ detections: [] }), readOnly: true, onFinalize, onExport });
+    fireEvent.click(screen.getByRole("button", { name: "会話を終了" }));
+    fireEvent.click(screen.getByRole("button", { name: "終了する" }));
+    fireEvent.click(screen.getByRole("button", { name: "要件を確定する" }));
+    // finalize は 403 になるため呼ばない（結果への遷移のみ）。
+    expect(onFinalize).not.toHaveBeenCalled();
+    expect(await screen.findByText(/要件、産まれました/)).toBeTruthy();
+    // 起票（export）は 403 になるためボタン自体を出さない。
+    expect(screen.queryByRole("button", { name: /Issue/ })).toBeNull();
+  });
+});
+
+describe("ConversationSessionView（end_user モード語彙 / FR-2.4）", () => {
+  afterEach(() => cleanup());
+
+  function renderEndUser(
+    props: Partial<React.ComponentProps<typeof ConversationSessionView>> = {},
+  ) {
+    render(
+      <InterviewModeProvider value="end_user">
+        <ConversationSessionView
+          state={baseState()}
+          sendSelection={vi.fn()}
+          sendAnswer={vi.fn()}
+          micOn
+          muted={false}
+          onToggleMic={vi.fn()}
+          onToggleMute={vi.fn()}
+          onSendText={vi.fn()}
+          onAddMaterial={vi.fn()}
+          onExport={vi.fn(async () => ({ exported: true }))}
+          {...props}
+        />
+      </InterviewModeProvider>,
+    );
+  }
+
+  it("検知バッジが利用者向け文言（食い違い）になり、開発語彙（矛盾）を出さない", () => {
+    renderEndUser();
+    // baseState の最新検知 d1 は contradiction（選択肢つき）。バッジは「食い違い」。
+    expect(screen.getByLabelText(/食い違い/)).toBeTruthy();
+    expect(screen.queryByLabelText("矛盾を検知")).toBeNull();
+  });
+
+  it("要件タブの見出しから MoSCoW を外し、優先度も利用者の言葉にする", () => {
+    renderEndUser();
+    fireEvent.click(screen.getByRole("tab", { name: "要件絵巻" }));
+    expect(screen.queryByText(/MoSCoW/)).toBeNull();
+    expect(screen.getByText("うかがった内容の整理（閲覧のみ）")).toBeTruthy();
+    // must セクション見出しは「ぜひ必要」（Must は出さない）。
+    expect(screen.getByText("ぜひ必要")).toBeTruthy();
+    expect(screen.queryByText(/Must/)).toBeNull();
+  });
+
+  it("判定・結果画面も利用者向け文言（確定→伝える / Must 内訳なし）", async () => {
+    renderEndUser({ state: baseState({ detections: [] }), readOnly: true });
+    fireEvent.click(screen.getByRole("button", { name: "会話を終了" }));
+    fireEvent.click(screen.getByRole("button", { name: "終了する" }));
+    // 判定: 「要件を確定する」ではなく「この内容で伝える」。
+    expect(screen.queryByRole("button", { name: "要件を確定する" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "この内容で伝える" }));
+    // 結果: MoSCoW 内訳（Must n ・ Should n）を出さない。
+    expect(await screen.findByText("お話の内容を整理できました")).toBeTruthy();
+    expect(screen.queryByText(/Must \d/)).toBeNull();
   });
 });

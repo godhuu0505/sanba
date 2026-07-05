@@ -153,6 +153,24 @@ def record_guest_join(result: str) -> None:
         pass
 
 
+# リンク入場後の離脱（web /join → 会話開始前の中断 / PR9・FR-2.1 の離脱観測）。
+# join 成立（sanba_guest_join_total{result=granted}）と会話成立（agent 側ログ）の間の
+# 落ち込みを web からの join.abort telemetry で埋める。result は列挙値のみ
+# （aborted=利用者の中断 / error=接続・マイク失敗）・PII 非送信。
+_join_ui_counter = metrics.get_meter("sanba_api.guest").create_counter(
+    "sanba_join_ui_events_total",
+    description="リンク入場 UI の離脱イベント数 (event=join.abort, result=aborted/error)",
+)
+
+
+def record_join_ui_event(event: str, result: str = "none") -> None:
+    """リンク入場 UI イベントを計上する（event=join.abort / result=aborted/error/other/none）。"""
+    try:
+        _join_ui_counter.add(1, {"event": event, "result": result})
+    except Exception:  # pragma: no cover - メトリクスは本処理を止めない
+        pass
+
+
 # 本人セッション一覧 (GET /api/sessions/mine) のカウンタ (#250)。ホーム「過去の要件を見る」
 # (#215) に供給する一覧の取得を計測する (契約 §5 / CLAUDE.md 原則3)。リクエストを 1 ずつ計上し
 # (record_auth_event と統一)、result=empty/listed で「履歴が空のユーザーの頻度」を観測する。

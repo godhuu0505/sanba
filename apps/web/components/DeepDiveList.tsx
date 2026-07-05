@@ -4,6 +4,7 @@
 // 仕様: docs/design/conversation-experience.md §7 / screens/06-requirements-scroll.md。
 // 色は意味の写像（矛盾=緋 / 抜け=黄土）。色のみに依存せずラベル併記（ADR-0017）。
 
+import { useInterviewMode } from "@/lib/interviewMode";
 import { detectionPresentation } from "@/lib/realtime/mapping";
 import type { Detection } from "@/lib/realtime/types";
 
@@ -15,6 +16,8 @@ export interface DeepDiveListProps {
 }
 
 export function DeepDiveList({ detections, onJump }: DeepDiveListProps) {
+  // end_user モードでは「矛盾/抜け」等の開発語彙を利用者向けに切替える（FR-2.4 / ADR-0032）。
+  const interviewMode = useInterviewMode();
   if (detections.length === 0) {
     return (
       <p className="px-1 py-3 text-[12px] text-sanba-muted">
@@ -26,7 +29,7 @@ export function DeepDiveList({ detections, onJump }: DeepDiveListProps) {
   return (
     <div className="flex flex-col gap-[9px]">
       {detections.map((d) => {
-        const k = detectionPresentation(d.kind);
+        const k = detectionPresentation(d.kind, interviewMode);
         return (
           <div
             key={d.id}

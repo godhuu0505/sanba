@@ -43,6 +43,12 @@ import { ResultView } from "./ResultView";
 
 export interface ConversationSessionViewProps {
   state: SessionState;
+  /**
+   * ゲスト入場（読取専用 session_token / ADR-0032 決定4）。素材（参考資料タブ・追加）・
+   * 確定（finalize）・起票（export）の UI を出さず、サーバの 403 を踏ませない。
+   * 会話（音声・テキスト・選択肢回答）は従来どおり使える。
+   */
+  readOnly?: boolean;
   /** 検知カードの回答を agent へ送る（契約 §4.5）。 */
   sendSelection: SendSelection;
   /** 通常質問（金枠）の回答を agent へ送る（契約 §4.5 / #181）。 */
@@ -99,6 +105,12 @@ export interface ConversationSessionViewProps {
   materialAliases?: ReadonlyMap<string, string>;
   /** 会話フェーズを離れる（終了→判定）瞬間。親はここでマイク送信を止める。 */
   onLeaveConversation?: () => void;
+  /**
+   * セッションを実際に終了する瞬間（判定を抜けて 08 結果へ確定/強制終了で入るとき）。親は
+   * ここで LiveKit ルームを切断し、agent worker のセッション（課金・音声・スコアリング）を
+   * 畳む。判定（07）は「戻る」があり会話へ復帰し得るため終了しない。冪等（多重呼び出し可）。
+   */
+  onEndSession?: () => void;
   /** 「新しい問答を始める」。 */
   onRestart?: () => void;
   /** 受信状況の観測値（取りこぼし調査の足場・CLAUDE.md 原則3）。 */
@@ -111,6 +123,7 @@ type Phase = "shell" | "judgment" | "result";
 
 export function ConversationSessionView({
   state,
+  readOnly = false,
   sendSelection,
   sendAnswer,
   micOn,
@@ -129,6 +142,7 @@ export function ConversationSessionView({
   cancelledIds,
   materialAliases,
   onLeaveConversation,
+  onEndSession,
   onRestart,
   metrics,
   recording = true,
@@ -239,9 +253,18 @@ export function ConversationSessionView({
         onBack={() => setPhase("shell")}
         onForceEnd={() => {
           setProvisional(true);
+          // 未解消を残したまま強制終了する経路もセッションは実際に終える（ルーム切断）。
+          onEndSession?.();
           setPhase("result");
         }}
         onConfirm={() => {
+          // 読取専用（ゲスト / ADR-0032 決定4）: finalize はサーバが 403 で拒む。呼ばずに
+          // 結果へ進める（要件の承認・保全は owner が管理画面で行う）。
+          if (readOnly) {
+            setProvisional(false);
+            setPhase("result");
+            return;
+          }
           // 確定スナップショットを finalize API へ書き込む（#186）。成功を待ってから結果へ
           // 遷移し、失敗（409: 未解消残り / 401 等）なら判定画面に留めて理由を出す（Codex P2）。
           // finalize 未指定（テスト等）は解決済み扱いでそのまま遷移する。二重確定は ref で防ぐ。
@@ -251,6 +274,8 @@ export function ConversationSessionView({
           Promise.resolve(onFinalize?.())
             .then(() => {
               setProvisional(false);
+              // 確定できたのでセッションを実際に終える（ルーム切断→agent のスコアリング/後始末）。
+              onEndSession?.();
               setPhase("result");
             })
             .catch((e) => {
@@ -290,7 +315,8 @@ export function ConversationSessionView({
         onRestart={() => onRestart?.()}
         onExportIssue={
           // confirmed が 0 件のときはボタン自体を出さない（空 Issue 起票防止）。
-          confirmed.length > 0
+          // 読取専用（ゲスト）は起票 UI を出さない（サーバも 403 / ADR-0032 決定4）。
+          !readOnly && confirmed.length > 0
             ? () => {
                 // 連打による重複起票を防ぐ（ref で同期ガード）。失敗は握りつぶさずログに残す。
                 // success URL / 失敗理由 / busy 表示は #186（finalize）と併せた seam（follow-up）。
@@ -346,6 +372,7 @@ export function ConversationSessionView({
         mini={mini}
         recording={recording}
         elapsed={elapsed}
+        hideMaterials={readOnly}
         tab={tab}
         onTabChange={setTab}
         onUnresolvedJump={() => setFocusDeepDive(true)}
@@ -364,7 +391,9 @@ export function ConversationSessionView({
         }
         tabs={{
           history: <ChatHistory transcript={state.transcript} />,
-          files: (
+          // 読取専用（ゲスト）は参考資料タブ自体を出さない（hideMaterials）。null で埋めて
+          // タブ切替の対象外にする（素材投入は 403 になるため導線ごと消す）。
+          files: readOnly ? null : (
             <MaterialsList
               items={materials}
               onAdd={onAddMaterial}

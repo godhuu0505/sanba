@@ -237,6 +237,13 @@ def test_guest_session_token_is_read_only(guest_enabled: None) -> None:
         json={"event": "material.cancel"},
     )
     assert telemetry.status_code == 200
+    # PR9: ゲストの離脱観測（join.abort）もゲスト token で通る（FR-2.1 の離脱点を追う）。
+    join_abort = client.post(
+        f"/api/sessions/{sid}/telemetry",
+        headers=headers,
+        json={"event": "join.abort", "result": "aborted"},
+    )
+    assert join_abort.status_code == 200
 
     # 素材投入・削除・確定・起票は 403（ADR-0032 決定4）。
     denied = [

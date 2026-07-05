@@ -262,6 +262,12 @@ class SANBAAgent(Agent):
         # data channel publish（#94）。未設定でも会話は成立する（publish は付加価値）。
         self._publisher = publisher
         self._utterance_seq = 0
+        # 認識中（partial）のユーザー発話に割り当てた安定 utterance_id。final まで同じ id を
+        # 使い回し、web の吹き出しを 1 つに畳む（partial→final を同一 id で upsert）。
+        self._pending_user_uid: str | None = None
+        # SANBA（エージェント）発話の連番。会話履歴に SANBA の発言も出すため、participant の
+        # u{n} とは別空間（a{n}）で採番して衝突を避ける。分析用 transcript には載せない。
+        self._agent_utterance_seq = 0
         # 問い発行ごとの連番（question.asked の ID を一意にする / Codex P2）。
         self._question_seq = 0
         # question_id → 問い本文。回答を「何への回答か」分かる形で記録するため保持する
@@ -317,11 +323,14 @@ class SANBAAgent(Agent):
         if not task.cancelled() and task.exception() is not None:
             log.warning("publish_task_failed", error=str(task.exception()))
 
-    def record_utterance(self, speaker: str, text: str) -> str:
+    def record_utterance(self, speaker: str, text: str, *, utterance_id: str | None = None) -> str:
         # 発話 id を先に採番し、本文に前置して LLM に見せる。これにより
         # save_requirement の citations（根拠発話 id）を LLM が実際に参照できる（#133）。
-        self._utterance_seq += 1
-        utterance_id = f"u{self._utterance_seq}"
+        # 認識中（partial）で先に id を割り当て済みなら（utterance_id 指定）それで確定し、
+        # partial の吹き出しをそのまま final に差し替える（同一 id で upsert）。
+        if utterance_id is None:
+            self._utterance_seq += 1
+            utterance_id = f"u{self._utterance_seq}"
         self._transcript.append(f"[{utterance_id}] {speaker}: {text}")
         self._repo.add_utterance(self._session_id, Utterance(speaker=speaker, text=text))
         # Index for later past-session retrieval.
@@ -336,6 +345,46 @@ class SANBAAgent(Agent):
             role = "participant"
             self._publish(self._publisher.transcript_final(speaker, role, utterance_id, text))
         return utterance_id
+
+    def publish_user_partial(self, text: str) -> None:
+        """ユーザー音声の認識中（partial）テキストを web の会話履歴へ流す（#248 拡張）。
+
+        final まで安定した utterance_id を使い回すことで、web は同じ吹き出しを更新し続け、
+        確定前は「文字起こし中」を示せる（partial→final の差し替え）。publisher 未設定なら no-op。
+        """
+        if self._publisher is None:
+            return
+        if self._pending_user_uid is None:
+            self._utterance_seq += 1
+            self._pending_user_uid = f"u{self._utterance_seq}"
+        self._publish(
+            self._publisher.transcript_partial(
+                "participant", "participant", self._pending_user_uid, text
+            )
+        )
+
+    def record_user_final(self, text: str) -> str:
+        """確定したユーザー音声を記録する（会話履歴・分析・grounding）。
+
+        認識中に割り当てた utterance_id があればそれで確定し、web 側で partial の吹き出しを
+        そのまま final に差し替える。無ければ record_utterance が新規採番する。
+        """
+        uid = self._pending_user_uid
+        self._pending_user_uid = None
+        return self.record_utterance("participant", text, utterance_id=uid)
+
+    def publish_agent_utterance(self, text: str) -> None:
+        """SANBA（エージェント）の発話を web の会話履歴へ出す（role=assistant で左吹き出し）。
+
+        音声だけでは聞き逃す発話もテキストで追えるようにする。分析用 transcript には
+        載せない（LLM 応答は要件抽出の入力ではないため）。participant の u{n} と衝突しない
+        a{n} 空間で採番する。publisher 未設定なら no-op。
+        """
+        if self._publisher is None:
+            return
+        self._agent_utterance_seq += 1
+        uid = f"a{self._agent_utterance_seq}"
+        self._publish(self._publisher.transcript_final("SANBA", "assistant", uid, text))
 
     def record_answer(self, question_id: str, answer: str) -> str | None:
         """通常質問（#181）への回答を、問い本文とともに発話として記録する（Codex P2）。
@@ -929,14 +978,31 @@ async def entrypoint(ctx: JobContext) -> None:
     # Persist user turns so the ADK team always has the full transcript.
     @session.on("user_input_transcribed")
     def _on_user_text(ev) -> None:  # type: ignore[no-untyped-def]
-        if getattr(ev, "is_final", False) and ev.transcript:
-            speaker = "participant"
+        text = getattr(ev, "transcript", "")
+        if not text:
+            return
+        if getattr(ev, "is_final", False):
             # §5-6: 受信時点の current 質問 id を束ねてから記録する。未回答の current がある間に
             # 届いた音声発話は、その問いへの回答とみなして（options の有無に依らず）クリアする。
             current_qid = agent.current_question_id
-            agent.record_utterance(speaker, ev.transcript)
+            agent.record_user_final(text)
             if current_qid is not None:
                 _schedule(agent.clear_current_question(current_qid))
+        else:
+            # 認識中（partial）を会話履歴へ流し、確定前は吹き出しで「文字起こし中」を示す。
+            agent.publish_user_partial(text)
+
+    # SANBA（エージェント）の発話も会話履歴にテキストで出す。conversation_item_added は
+    # user/assistant 双方で発火するため、assistant のみ拾って participant 側と二重計上しない
+    # （user は上の user_input_transcribed が確定発話を記録済み）。
+    @session.on("conversation_item_added")
+    def _on_item_added(ev) -> None:  # type: ignore[no-untyped-def]
+        item = getattr(ev, "item", None)
+        if getattr(item, "role", None) != "assistant":
+            return
+        text = getattr(item, "text_content", None)
+        if text:
+            agent.publish_agent_utterance(text)
 
     # web → agent の操作イベントを受信する（契約 §4.5）。
     #   - user.selection（#102）: 検知カードの選択肢タップ → 検知を解消。

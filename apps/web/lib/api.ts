@@ -136,8 +136,13 @@ export async function uploadContextFile(
 // SDK は導入せず、既存 metrics 基盤（apps/api observability.py）に載せる（CLAUDE.md 原則3）。
 // PII/自由記述は送らない: 列挙属性のみ（source/status/result）。
 
-/** 受け付けるイベント種別（API 側の許可リストと一致）。 */
-export type TelemetryEvent = "material.source_selected" | "material.cancel";
+/**
+ * 受け付けるイベント種別（API 側の許可リストと一致）。
+ * join.abort はリンク入場（/join）でセッション作成後に会話開始へ至らず離脱した事象
+ * （FR-2.1 ゲスト経路の離脱観測 / ADR-0032）。result=aborted は利用者の中断、
+ * error は接続・マイク失敗による離脱。
+ */
+export type TelemetryEvent = "material.source_selected" | "material.cancel" | "join.abort";
 
 /** 列挙属性のみ（PII/自由記述は送らない）。API 側で許可リスト検証される。 */
 export interface TelemetryAttrs {
@@ -145,7 +150,7 @@ export interface TelemetryAttrs {
   source?: "camera" | "screen" | "upload" | "drive";
   /** #243 中断対象の状態。 */
   status?: "uploading" | "analyzing";
-  /** #243 中断結果（abort 有無・破棄失敗）。 */
+  /** #243 中断結果（abort 有無・破棄失敗）/ join.abort の離脱要因。 */
   result?: "aborted" | "discarded" | "error";
 }
 
@@ -690,14 +695,23 @@ export function revokeProductInvite(
   );
 }
 
-/** POST /api/products/join の応答（api の ProductJoinResponse と同形）。 */
+/** POST /api/products/join の応答（api の ProductJoinResponse と同形 / ADR-0032 決定1）。 */
 export interface ProductJoinResult {
   session_id: string;
-  /** 既存 POST /api/sessions/join へ渡す役割 invite（LiveKit トークン交換は join に委譲）。 */
-  invite: string;
+  /**
+   * ログイン済み入場: 既存 POST /api/sessions/join へ渡す役割 invite
+   * （LiveKit トークン交換は join に委譲）。ゲスト入場では null。
+   */
+  invite: string | null;
   product_id: string;
   product_name: string;
   interview_mode: "developer" | "end_user";
+  /**
+   * ゲスト入場（Authorization 無し・guest_join_enabled・scope=end_user）のときのみ非 null。
+   * sessions/join を経由せず、LiveKit トークン + session_token をここで直接受け取る
+   * （issue #319）。ログイン済みは従来どおり null（invite 経由）。
+   */
+  join: JoinResponse | null;
 }
 
 /**
