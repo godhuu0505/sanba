@@ -7,6 +7,7 @@
 import { Check, CircleDot, Cloud, FileText, type LucideIcon } from "lucide-react";
 
 import { Button, Figure } from "@/components/sanba";
+import { useInterviewMode } from "../lib/interviewMode";
 import { categoryPresentation, priorityLabel } from "../lib/realtime/mapping";
 import type { Priority, Requirement } from "../lib/realtime/types";
 
@@ -71,6 +72,11 @@ export function ResultView({
   onExportDrive,
   onExportIssue,
 }: ResultViewProps) {
+  // end_user モード（FR-2.4 / ADR-0032）: MoSCoW の内訳文字列（Must n ・ Should n ...）は
+  // 内部分類の露出になるため出さない。セクション見出しは priorityLabel(mode) が利用者の
+  // 言葉に差し替える。summary の「矛盾解消/抜け検知/Issue 起票」も開発語彙なので出さない。
+  const interviewMode = useInterviewMode();
+  const endUser = interviewMode === "end_user";
   // 信頼できない URL scheme（javascript: 等）は表示しない（Codex P2 / XSS 防止）。
   const artifactLinks = (artifacts ?? []).filter((a) => isSafeHttpUrl(a.url));
   const outputs: { label: string; icon: LucideIcon; handler?: () => void }[] = [
@@ -98,16 +104,24 @@ export function ResultView({
           ので figure は装飾（label 無し＝aria-hidden・reduced-motion 静止）。 */}
       <Figure state={provisional ? "writing" : "insight"} className="w-[84px]" />
       <p className="mt-[10px] text-center text-[18px] font-bold text-sanba-gold-text">
-        {provisional ? "暫定で書き留めました" : "オーレ！ 要件、産まれました"}
+        {endUser
+          ? provisional
+            ? "ここまでのお話を書き留めました"
+            : "お話の内容を整理できました"
+          : provisional
+            ? "暫定で書き留めました"
+            : "オーレ！ 要件、産まれました"}
       </p>
       <p className="mt-1 text-center text-[12px] text-sanba-muted">
-        {provisional ? "暫定要件 " : "確定要件 "}
+        {endUser ? "うかがった内容 " : provisional ? "暫定要件 " : "確定要件 "}
         {confirmedCount} 件
-        {breakdown ? `（Must ${breakdown.must} ・ Should ${breakdown.should} ・ Could ${breakdown.could}）` : ""}
-        {provisional ? " ・ 未確定を残したまま終了" : ""}
+        {!endUser && breakdown
+          ? `（Must ${breakdown.must} ・ Should ${breakdown.should} ・ Could ${breakdown.could}）`
+          : ""}
+        {provisional && !endUser ? " ・ 未確定を残したまま終了" : ""}
       </p>
 
-      {summary && (
+      {summary && !endUser && (
         <p className="mt-[6px] text-center text-[11px] text-sanba-muted">
           矛盾解消 {summary.contradictions_resolved} ・ 抜け検知 {summary.gaps_found} ・ Issue 起票{" "}
           {summary.issues_created}
@@ -123,11 +137,11 @@ export function ResultView({
           {previewGroups.map((g) => (
             <div key={g.priority}>
               <h3 className="text-[10.5px] font-bold text-sanba-muted">
-                {priorityLabel(g.priority)}
+                {priorityLabel(g.priority, interviewMode)}
               </h3>
               <ul className="mt-[6px] space-y-[6px]">
                 {g.items.map((r) => {
-                  const cat = categoryPresentation(r.category);
+                  const cat = categoryPresentation(r.category, interviewMode);
                   return (
                     <li
                       key={r.id}

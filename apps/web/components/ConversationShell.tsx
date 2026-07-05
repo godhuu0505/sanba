@@ -39,6 +39,11 @@ export interface ConversationShellProps {
    * 対象へ視線を誘導するために親が使う。タブ移動自体は onTabChange("scroll") で別途発火する。
    */
   onUnresolvedJump?: () => void;
+  /**
+   * 参考資料（素材）系 UI を丸ごと出さない（ゲスト読取専用 / ADR-0032 決定4）。
+   * タブ「参考資料」とミニ状況の「資料」を隠す。既定 false（従来表示）。
+   */
+  hideMaterials?: boolean;
   /** タブ本文（active のみ描画）。 */
   tabs: Record<ShellTab, ReactNode>;
   /** 常時ピンの「問い＋選択肢」。 */
@@ -56,11 +61,13 @@ export function ConversationShell({
   tab: controlledTab,
   onTabChange,
   onUnresolvedJump,
+  hideMaterials = false,
   tabs,
   choicePin,
   bottomBar,
 }: ConversationShellProps) {
   const [internalTab, setInternalTab] = useState<ShellTab>(defaultTab);
+  const tabOrder = hideMaterials ? TAB_ORDER.filter((t) => t !== "files") : TAB_ORDER;
   // 制御/非制御を明確に二分する。制御時（tab 指定）は内部 state を書かず親を単一の真実とし、
   // defaultTab/internalTab との二重管理を避ける。非制御時のみ内部 state を更新する。
   const isControlled = controlledTab !== undefined;
@@ -119,15 +126,19 @@ export function ConversationShell({
           >
             <TriangleAlert size={12} aria-hidden /> 未確定 {mini.unresolved}
           </button>
-          <span className="text-sanba-border-strong">・</span>
-          <button
-            type="button"
-            onClick={() => setTab("files")}
-            className="inline-flex items-center gap-1 text-sanba-muted"
-          >
-            <Paperclip size={12} aria-hidden /> 資料 {mini.materials}
-            {mini.analyzing ? "（解析中）" : ""}
-          </button>
+          {!hideMaterials && (
+            <>
+              <span className="text-sanba-border-strong">・</span>
+              <button
+                type="button"
+                onClick={() => setTab("files")}
+                className="inline-flex items-center gap-1 text-sanba-muted"
+              >
+                <Paperclip size={12} aria-hidden /> 資料 {mini.materials}
+                {mini.analyzing ? "（解析中）" : ""}
+              </button>
+            </>
+          )}
           <span className="flex-1" />
           <span aria-hidden className="text-sanba-gold-text">›</span>
         </div>
@@ -139,7 +150,7 @@ export function ConversationShell({
         aria-label="情報タブ"
         className="flex gap-5 border-b border-sanba-border px-4"
       >
-        {TAB_ORDER.map((k) => {
+        {tabOrder.map((k) => {
           const active = tab === k;
           return (
             <button

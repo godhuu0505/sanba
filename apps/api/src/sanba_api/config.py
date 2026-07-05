@@ -44,6 +44,15 @@ class Settings(BaseSettings):
     # Simple per-IP rate limit on join (requests per minute).
     join_rate_per_minute: int = 30
 
+    # ---- ゲスト入場 (ADR-0032) ----
+    # scope=end_user の深掘りリンクを Google ログインなしで受けるか。既定 off（フェイル
+    # クローズ）。段階リリース用のフラグで、on でも他 API の認可は変わらない（決定1）。
+    guest_join_enabled: bool = False
+    # 深掘りリンク（invite）単位のセッション作成レート制限（毎分・ADR-0032 決定5 / FR-2.6）。
+    # IP 単位の join_rate_per_minute と重ねて掛かる。多インスタンスでも Firestore の
+    # invite 文書カウンタで整合する（in-memory fallback あり）。超過は 429。
+    invite_join_rate_per_minute: int = 10
+
     # ---- Identity: Google ログイン (ADR-0012) ----
     # OAuth 2.0 Web クライアント ID。ID トークン検証の `aud` に使う (秘匿物ではない)。
     # 未設定かつ auth_dev_bypass=false の本番構成では認証経路をフェイルクローズする。

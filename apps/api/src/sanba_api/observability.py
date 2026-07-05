@@ -33,19 +33,23 @@ def record_auth_event(result: str) -> None:
         pass
 
 
-# join エンドポイントのレートリミット発火カウンタ（#80 / #257 Codex 指摘）。認証より前に
-# 429 で短絡するため、auth イベント（sanba_auth_events_total）には現れない。DoS 緩和が
-# 本番で実際に発動しているかを計測する（CLAUDE.md 原則3: 観測できないものは運用できない）。
+# join エンドポイントのレートリミット発火カウンタ（#80 / #257 Codex 指摘）。IP 単位は
+# 認証より前に 429 で短絡するため、auth イベント（sanba_auth_events_total）には現れない。
+# DoS 緩和が本番で実際に発動しているかを計測する（CLAUDE.md 原則3）。
 _rate_limit_counter = metrics.get_meter("sanba_api.ratelimit").create_counter(
     "sanba_join_rate_limited_total",
-    description="join レートリミットで 429 短絡した回数",
+    description="join レートリミットで 429 短絡した回数 (limiter=ip/invite ごと)",
 )
 
 
-def record_rate_limited() -> None:
-    """join レートリミット発火（429 短絡）を計上する。"""
+def record_rate_limited(limiter: str = "ip") -> None:
+    """join レートリミット発火（429 短絡）を計上する。
+
+    limiter=ip: ミドルウェアの IP 単位（#80）。limiter=invite: 深掘りリンク単位
+    （ADR-0032 決定5 / FR-2.6）。
+    """
     try:
-        _rate_limit_counter.add(1)
+        _rate_limit_counter.add(1, {"limiter": limiter})
     except Exception:  # pragma: no cover - メトリクスは本処理を止めない
         pass
 
@@ -127,6 +131,42 @@ def record_product_event(event: str) -> None:
     """product 管理イベントを計上する（event=created/updated/deleted/github_set）。"""
     try:
         _product_counter.add(1, {"event": event})
+    except Exception:  # pragma: no cover - メトリクスは本処理を止めない
+        pass
+
+
+# ゲスト入場（ADR-0032 / FR-2.1）のカウンタ。匿名入口の成功と拒否理由を分計し、
+# abuse 兆候（flag off への試行・scope 不一致・レート超過の急増）を本番で追える形にする。
+_guest_join_counter = metrics.get_meter("sanba_api.guest").create_counter(
+    "sanba_guest_join_total",
+    description=(
+        "ゲスト入場の試行数 (result=granted/flag_off/scope_mismatch/rate_limited / ADR-0032)"
+    ),
+)
+
+
+def record_guest_join(result: str) -> None:
+    """ゲスト入場イベントを計上する（result=granted/flag_off/scope_mismatch/rate_limited）。"""
+    try:
+        _guest_join_counter.add(1, {"result": result})
+    except Exception:  # pragma: no cover - メトリクスは本処理を止めない
+        pass
+
+
+# リンク入場後の離脱（web /join → 会話開始前の中断 / PR9・FR-2.1 の離脱観測）。
+# join 成立（sanba_guest_join_total{result=granted}）と会話成立（agent 側ログ）の間の
+# 落ち込みを web からの join.abort telemetry で埋める。result は列挙値のみ
+# （aborted=利用者の中断 / error=接続・マイク失敗）・PII 非送信。
+_join_ui_counter = metrics.get_meter("sanba_api.guest").create_counter(
+    "sanba_join_ui_events_total",
+    description="リンク入場 UI の離脱イベント数 (event=join.abort, result=aborted/error)",
+)
+
+
+def record_join_ui_event(event: str, result: str = "none") -> None:
+    """リンク入場 UI イベントを計上する（event=join.abort / result=aborted/error/other/none）。"""
+    try:
+        _join_ui_counter.add(1, {"event": event, "result": result})
     except Exception:  # pragma: no cover - メトリクスは本処理を止めない
         pass
 
