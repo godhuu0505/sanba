@@ -217,3 +217,62 @@ def test_invite_rate_limit_applies_to_logged_in_joins_too(
     app.dependency_overrides[maybe_user] = lambda: user
     assert _join(token).status_code == 200
     assert _join(token).status_code == 429
+
+
+# ---- ADR-0032 決定4 / #320: ゲスト token の write 系拒否 -------------------------
+def test_guest_session_token_is_read_only(guest_enabled: None) -> None:
+    """ゲスト token はハイドレーション読取と telemetry のみ。write 系は 403。"""
+    token = _issue_token(scope="end_user")
+    joined = _join(token).json()["join"]
+    sid = joined["session_id"]
+    headers = {"Authorization": f"Bearer {joined['session_token']}"}
+
+    # 読取（ハイドレーション）と telemetry は通る。
+    assert client.get(f"/api/sessions/{sid}/requirements", headers=headers).status_code == 200
+    assert client.get(f"/api/sessions/{sid}/detections", headers=headers).status_code == 200
+    assert client.get(f"/api/sessions/{sid}/context/files", headers=headers).status_code == 200
+    telemetry = client.post(
+        f"/api/sessions/{sid}/telemetry",
+        headers=headers,
+        json={"event": "material.cancel"},
+    )
+    assert telemetry.status_code == 200
+
+    # 素材投入・削除・確定・起票は 403（ADR-0032 決定4）。
+    denied = [
+        client.post(
+            f"/api/sessions/{sid}/context", headers=headers, json={"text": "x", "source_name": "s"}
+        ),
+        client.post(
+            f"/api/sessions/{sid}/context/file",
+            headers=headers,
+            files={"file": ("a.txt", b"hello", "text/plain")},
+        ),
+        client.delete(f"/api/sessions/{sid}/context/file/asset-1", headers=headers),
+        client.post(f"/api/sessions/{sid}/finalize", headers=headers),
+        client.post(f"/api/sessions/{sid}/export", headers=headers),
+    ]
+    for res in denied:
+        assert res.status_code == 403, res.text
+        assert "guests cannot" in res.json()["detail"]
+
+
+def test_logged_in_session_token_keeps_write_access(guest_enabled: None) -> None:
+    """ログイン済み参加者の token は従来どおり write 系が通る（回帰防止）。"""
+    token = _issue_token(scope="end_user")
+    user = AuthUser(sub="1234567890", email="u@example.com", email_verified=True, name="U")
+    app.dependency_overrides[maybe_user] = lambda: user
+    app.dependency_overrides[require_user] = lambda: user
+    body = client.post(
+        "/api/products/join", json={"token": token, "consent_acknowledged": True}
+    ).json()
+    joined = client.post(
+        "/api/sessions/join", json={"invite": body["invite"], "participant_name": "話し手"}
+    ).json()
+    headers = {"Authorization": f"Bearer {joined['session_token']}"}
+    res = client.post(
+        f"/api/sessions/{body['session_id']}/context",
+        headers=headers,
+        json={"text": "参考資料", "source_name": "s"},
+    )
+    assert res.status_code == 200, res.text

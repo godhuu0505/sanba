@@ -227,6 +227,29 @@ def require_session_access(
     return access
 
 
+# ゲスト identity の接頭辞（ADR-0032 決定2）。Google の sub は数値文字列でこの形を
+# 取り得ないため、署名済み session_token の sub がこれで始まる = ゲスト、は偽装できない。
+_GUEST_SUB_PREFIX = "guest:"
+
+
+def forbid_guest_writes(access: SessionAccess, operation: str) -> None:
+    """ゲスト session_token の権限最小性を強制する（ADR-0032 決定4 / #320）。
+
+    ゲスト token に許すのは当該セッションの読取（ハイドレーション）と telemetry・
+    realtime の client event のみ。素材投入（grounding 汚染）・確定・起票（owner の
+    repo への Issue 作成）・素材削除は 403 で拒む。ゲストセッションの要件の承認・
+    保全は owner が管理画面で行う（承認時に TTL 解除するかは owner の意思）。
+    """
+    if access.sub.startswith(_GUEST_SUB_PREFIX):
+        log.warning(
+            "guest_write_denied",
+            session=access.session_id,
+            operation=operation,
+            sub=access.sub,
+        )
+        raise HTTPException(status_code=403, detail="guests cannot perform this operation")
+
+
 # "owner/name" 形式（ADR-0027）。GitHub の実際の命名規則より緩いが、パス注入
 # （`/` の追加や空文字）を弾ければ十分（トークン権限外のリポは GitHub 側が 404 を返す）。
 _GITHUB_REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
@@ -1597,7 +1620,9 @@ def add_context(
 
     認可（契約 §4）: join 済みセッショントークン必須。これが無いと匿名で任意
     session_id の RAG グラウンディングを汚染できてしまう（参加者以外の書き込み禁止）。
+    ゲスト token（ADR-0032 決定4）は読取専用のため素材投入は不可。
     """
+    forbid_guest_writes(access, "context")
     if len(req.text) > settings.max_context_chars:
         raise HTTPException(status_code=413, detail="context too large")
     chunks = chunk_text(req.text)
@@ -1623,7 +1648,9 @@ async def add_context_file(
     （`analysis_pending=true`、web では「準備中」）。非対応形式は 415 で弾く。
 
     観測性: アップロード〜解析を span/log で追い、素材数を kind/result で計測する（契約 §5）。
+    ゲスト token（ADR-0032 決定4）は読取専用のため素材投入は不可。
     """
+    forbid_guest_writes(access, "context_file")
     filename = file.filename or "upload"
     raw = await file.read()
 
@@ -1786,7 +1813,9 @@ def delete_context_file(
     本 API で (1) 保存 binary、(2) material メタ、(3) 出所 `asset:{asset_id}` の grounding chunk
     をまとめて取り消し、以後の会話・ハイドレーションから外す。冪等: 存在しない asset でも 200 を
     一貫して返す（existed=false）。in-memory/ES/GCS 未接続のフォールバックでも安全に動く。
+    ゲスト token（ADR-0032 決定4）は読取専用のため削除も不可。
     """
+    forbid_guest_writes(access, "context_file_delete")
     tracer = _get_tracer()
     span_cm = (
         tracer.start_as_current_span("context.file.delete") if tracer else contextlib.nullcontext()
@@ -2075,7 +2104,11 @@ def finalize_session_requirements(
         確定後に遅延 agent が open 検知を保存しても、再送/リロードの再 POST が 409 にならない。
       - 未確定セッションは、未解消検知が 1 件でも残るなら 409 で拒否する（07 判定の
         「未解消 0 件で確定可」をサーバ側でも担保。直接 POST や古いクライアント状態を防ぐ）。
+
+    ゲスト token（ADR-0032 決定4 / #320）は確定不可: ゲストセッションの要件の承認・保全は
+    owner が管理画面で行う（承認 = TTL 解除は owner の意思に限る）。
     """
+    forbid_guest_writes(access, "finalize")
     existing = _repo.get_session(session_id)
     if existing is None:
         raise HTTPException(status_code=404, detail="session not found")
@@ -2131,7 +2164,11 @@ def export_requirements(
     finalize 時に凍結した要件 ID スナップショット（`finalized_requirement_ids`）の集合だけを
     起票する。凍結の定義（旧データのフォールバック含む）は _finalized_snapshot_requirements
     に一元化し、過去要件閲覧と共有する。
+
+    ゲスト token（ADR-0032 決定4 / #320）は起票不可: 匿名の URL 保持者が owner の
+    リポジトリへ Issue を作れてしまうため（connector 有効時）、コネクタ判定より前に拒む。
     """
+    forbid_guest_writes(access, "export")
     # コネクタ無効/トークン未設定は従来どおりセッション照会前に黙って断る（既定 OFF の不干渉）。
     if not (settings.github_connector_enabled and settings.github_token):
         return ExportResponse(exported=False, reason="github connector disabled")

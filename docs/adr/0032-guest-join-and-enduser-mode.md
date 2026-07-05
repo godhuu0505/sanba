@@ -37,7 +37,11 @@
    「連携主体はセッション owner」という ADR-0028 の前提とも整合し、ゲストが GitHub 連携等の
    owner 権限を持つことはない）。
 4. ゲスト join token の権限は当該セッションの読取（ハイドレーション）と既存 write 系
-   （`user.selection` 等）のみ。**同意ゲート（`consent_acknowledged`）は省略しない**。
+   （`user.selection` 等の realtime client event・UI telemetry）のみ。
+   素材投入/削除（grounding 汚染）・finalize・export（owner の repo への Issue 起票）は
+   ゲスト token では 403 で拒む（sub の `guest:` 接頭辞で判定。Google sub は数値のため
+   衝突しない）。ゲストセッションの要件の承認・保全（TTL 解除）は owner が管理画面で行う。
+   **同意ゲート（`consent_acknowledged`）は省略しない**。
    同意文言は利用者向け（技術用語なし）とし、保持期間（既存 30 日 TTL）を明示する。
 5. **abuse 対策**: リンク単位・IP 単位のセッション作成レート制限（超過 429）、
    `max_uses` のトランザクション消費（ADR-0031）、設定フラグ `guest_join_enabled`
