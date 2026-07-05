@@ -291,6 +291,11 @@ class CreateSessionRequest(BaseModel):
     # product の索引済み repo を継承する（repo 解決は「セッション明示 > product > 環境変数」）。
     # None = 従来どおりの単発セッション。本人がアクセスできる product に限る（非所有は 404）。
     product_id: str | None = None
+    # 02 準備フォームのゴールと詳細（ADR-0034）。SessionMeta に保存し、agent が起動時に
+    # 初期 instructions へシードする（join 後の RAG 投入と違い agent 起動に確実に間に合う）。
+    # 上限は準備フォームの自由記述として十分な長さ（prompt の肥大は premise 側で丸めない設計）。
+    goal: str | None = Field(default=None, max_length=2000)
+    goal_detail: str | None = Field(default=None, max_length=8000)
 
 
 class CreateSessionResponse(BaseModel):
@@ -463,6 +468,9 @@ def create_session(
             owner_sub=user.sub,
             owner_email=user.email,
             roles=req.roles,
+            # 準備フォームのゴール（ADR-0034）。空白のみは未入力扱いに正規化する。
+            goal=(req.goal or "").strip() or None,
+            goal_detail=(req.goal_detail or "").strip() or None,
             product_id=product.id if product is not None else None,
             **repo_fields,
         )

@@ -192,6 +192,13 @@ class SessionMeta(BaseModel):
     owner_sub: str
     owner_email: str
     roles: list[str] = Field(default_factory=list)
+    # ---- セッション準備情報 (02 準備フォーム / ADR-0034) ----
+    # 準備画面で入力されたゴールとその詳細（背景・現状・制約）。agent が起動時に読んで
+    # 初期 instructions へ proactive にシードする（ADR-0028 と同じく retrieval 任せにしない）。
+    # RAG（kind=context）への投入は join 後で agent 起動と競合し得るため、こちらが正本。
+    # None = 未入力（旧文書の互換）。
+    goal: str | None = None
+    goal_detail: str | None = None
     # active → finalized（07 判定で参加者が要件を確定したとき / #186）。
     status: str = "active"
     created_at: datetime = Field(default_factory=_now)

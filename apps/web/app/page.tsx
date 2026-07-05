@@ -381,6 +381,10 @@ export default function Home() {
         repoChoices?.enabled ? githubRepo.trim() : undefined,
         // 取得済み候補に実在する product だけ送る（stale な sessionStorage 値を弾く / PR#314 P2）。
         selectedProduct?.id,
+        // ゴール・詳細は作成時に SessionMeta へも保存する（ADR-0034）。join 後の
+        // addSessionContext（RAG）は agent 起動と競合し得るため、agent の初期前提はこちらが担う。
+        goal,
+        goalDetail,
       );
       const invite = session.invites[role];
       const joined = await joinSession({
@@ -635,6 +639,8 @@ export default function Home() {
               aria-required="true"
               placeholder="ゴールを入力・・・"
               className="resize-y"
+              // API の上限（ADR-0034）と揃える。超過ペーストで開始が 422 に落ちるのを防ぐ。
+              maxLength={2000}
             />
             {/* 記入例（役割で内容が変わる）。表示専用でクリック挙動は持たない（#222）。 */}
             <div className="flex flex-col gap-[3px] text-[12px] leading-relaxed text-sanba-muted/80">
@@ -657,6 +663,8 @@ export default function Home() {
               rows={4}
               placeholder="背景・現状・制約・期待する成果などを自由に入力・・・"
               className="resize-y"
+              // API の上限（ADR-0034）と揃える。超過ペーストで開始が 422 に落ちるのを防ぐ。
+              maxLength={8000}
             />
           </Field>
 

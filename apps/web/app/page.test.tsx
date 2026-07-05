@@ -693,6 +693,20 @@ describe("入口フロー（#140）", () => {
     );
   });
 
+  it("ゴール・詳細は createSession にも渡り SessionMeta へ保存される（ADR-0034）", async () => {
+    // agent の初期前提はこちらが正本（join 後の RAG 投入は agent 起動と競合し得るため）。
+    await gotoPrepare();
+    fireEvent.change(screen.getByLabelText("ゴールの詳細"), {
+      target: { value: "現状は検索が遅い。範囲と優先度を整理したい。" },
+    });
+    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(screen.getByRole("button", { name: "要件サンバを始める" }));
+    await waitFor(() => expect(createSession).toHaveBeenCalledTimes(1));
+    // 位置引数: (roles, consent, idToken, title, githubRepo, productId, goal, goalDetail)
+    expect(createSession.mock.calls[0][6]).toBe("テストゴール");
+    expect(createSession.mock.calls[0][7]).toBe("現状は検索が遅い。範囲と優先度を整理したい。");
+  });
+
   it("同意文言と開始ボタン文言が更新されている（#222）", async () => {
     await gotoPrepare();
     expect(screen.getByText("録音と AI 処理に同意します（最大 30 日保持）。")).toBeTruthy();
