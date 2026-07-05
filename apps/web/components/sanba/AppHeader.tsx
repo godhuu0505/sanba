@@ -1,3 +1,4 @@
+import { ChevronLeft } from "lucide-react";
 import * as React from "react";
 
 import { cn } from "@/lib/utils";
@@ -47,9 +48,9 @@ export function AppHeader({
           type="button"
           onClick={onBack}
           aria-label="戻る"
-          className="flex size-7.5 shrink-0 items-center justify-center rounded-[10px] border-[1.5px] border-sanba-frame bg-sanba-surface text-[16px] text-sanba-cream transition-[box-shadow,transform] hover:shadow-[2px_2px_0_var(--sanba-shadow)]"
+          className="flex size-7.5 shrink-0 items-center justify-center rounded-[10px] border-[1.5px] border-sanba-frame bg-sanba-surface text-sanba-cream transition-[box-shadow,transform] hover:shadow-[2px_2px_0_var(--sanba-shadow)]"
         >
-          ‹
+          <ChevronLeft size={16} aria-hidden />
         </button>
       )}
       {/* SANBA ブランドは全画面で出す。タイトルがある画面は小ロゴ＋縦罫で場所を譲る。 */}

@@ -583,7 +583,7 @@ describe("入口フロー（#140）", () => {
 
   it("「＋ ファイルを追加」で手段選択シートが開き、アップロード/Drive のみ（カメラ/画面共有は出さない）", async () => {
     await gotoPrepare();
-    fireEvent.click(screen.getByRole("button", { name: "＋ ファイルを追加" }));
+    fireEvent.click(screen.getByRole("button", { name: "ファイルを追加" }));
     expect(screen.getByRole("dialog", { name: "資料の追加方法" })).toBeTruthy();
     expect(screen.getByText("ファイルをアップロード")).toBeTruthy();
     expect(screen.getByText("Google ドライブから選ぶ")).toBeTruthy();
@@ -663,7 +663,7 @@ describe("入口フロー（#140）", () => {
     pickFiles(container, [new File(["x"], "a.png", { type: "image/png" })]);
     fireEvent.click(screen.getByRole("button", { name: "要件サンバを始める" }));
     expect(
-      (screen.getByRole("button", { name: "＋ ファイルを追加" }) as HTMLButtonElement).disabled,
+      (screen.getByRole("button", { name: "ファイルを追加" }) as HTMLButtonElement).disabled,
     ).toBe(true);
     expect(
       (screen.getByRole("button", { name: "a.png を取り外す" }) as HTMLButtonElement).disabled,
