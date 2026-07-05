@@ -27,7 +27,7 @@ from sanba_api.auth import (
     verify_invite,
     verify_product_invite_token,
 )
-from sanba_api.auth_google import AuthUser, require_user
+from sanba_api.auth_google import AuthUser, maybe_user, require_user
 from sanba_api.main import app
 
 client = TestClient(app)
@@ -50,10 +50,14 @@ def _reset() -> Iterator[None]:
     assert main._repo._client is None, "テストは Firestore 非接続のメモリ fallback 前提"
     yield
     app.dependency_overrides.pop(require_user, None)
+    app.dependency_overrides.pop(maybe_user, None)
 
 
 def _login(sub: str, email: str = "u@example.com") -> None:
+    # join_product はゲスト候補を許す maybe_user を使う（ADR-0032）。ログイン済みとして
+    # 振る舞わせるため、require_user と併せて両方を上書きする。
     app.dependency_overrides[require_user] = lambda: _user(sub, email)
+    app.dependency_overrides[maybe_user] = lambda: _user(sub, email)
 
 
 def _seed_product(pid: str = "prod-1", owner: str = OWNER, **kwargs: Any) -> None:
@@ -194,6 +198,7 @@ def test_join_requires_consent_and_login(monkeypatch: pytest.MonkeyPatch) -> Non
     monkeypatch.setattr(auth_google.settings, "google_oauth_client_id", "cid", raising=True)
     monkeypatch.setattr(auth_google.settings, "auth_dev_bypass", False, raising=True)
     app.dependency_overrides.pop(require_user, None)
+    app.dependency_overrides.pop(maybe_user, None)
     assert _join(token).status_code == 401
 
 

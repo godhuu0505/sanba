@@ -112,6 +112,16 @@ resource "google_firestore_field" "questions_ttl" {
   ttl_config {}
 }
 
+# ゲスト作成セッションのメタ文書 TTL（ADR-0032 / FR-2.7）。ゲスト join 時のみ api が
+# `expireAt` を書き、同意文言の「30 日で削除」をセッション文書にも効かせる。
+# ログイン済みセッションは expireAt を持たないため対象外（フィールド欠落は TTL されない）。
+resource "google_firestore_field" "sessions_ttl" {
+  database   = google_firestore_database.default.name
+  collection = "sessions"
+  field      = "expireAt"
+  ttl_config {}
+}
+
 # ---- Service account for Cloud Run workloads (least privilege) ----
 resource "google_service_account" "runtime" {
   account_id   = "sanba-runtime"

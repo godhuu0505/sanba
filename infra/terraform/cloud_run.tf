@@ -37,6 +37,9 @@ locals {
     GOOGLE_OAUTH_CLIENT_ID = var.google_oauth_client_id
     # 管理画面の許可リスト (ADR-0014 §2)。email 集合で秘匿物ではないため平文 env。
     ADMIN_EMAILS = var.admin_emails
+    # ゲスト入場 (ADR-0032)。段階リリース用フラグ（既定 false）。
+    GUEST_JOIN_ENABLED          = tostring(var.guest_join_enabled)
+    INVITE_JOIN_RATE_PER_MINUTE = tostring(var.invite_join_rate_per_minute)
     # CORS は web のオリジンに限定する。独自ドメイン有効時は web を配信するホスト (local.web_hosts:
     # apex モードは apex+www、subdomain モードは <sub>.<domain>) に加え、カットオーバー中も現行の
     # run.app web が落ちないよう web.uri も併許可する (DNS 伝播・証明書 ACTIVE・web 再デプロイが

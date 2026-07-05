@@ -157,6 +157,26 @@ def require_user(
 CurrentUser = Annotated[AuthUser, Depends(require_user)]
 
 
+def maybe_user(
+    authorization: Annotated[str | None, Header()] = None,
+) -> AuthUser | None:
+    """FastAPI 依存性: ゲスト候補を許す本人確認（ADR-0032 決定1 の 1 経路専用）。
+
+    Authorization ヘッダが無ければ None（＝ゲスト候補。許可するかはエンドポイント側が
+    `guest_join_enabled` と invite の scope で判定する）。ヘッダが有れば `require_user` と
+    完全に同じ検証（フェイルクローズ / 401 を含む）: 「無効なトークンを付けたら
+    ゲスト扱いに落ちる」という認可のすり抜けを作らない。
+    例外: `auth_dev_bypass`（ローカル限定）はヘッダ無しでも dev identity を返す。
+    dev モードの web は Authorization を付けず bypass に委ねるため（lib/api.ts）、
+    ここで None にするとローカルのログイン経路が壊れる。ローカルでゲスト経路を通したい
+    ときは AUTH_DEV_BYPASS=false + GUEST_JOIN_ENABLED=true にする（Google 設定は不要）。
+    ここ以外のエンドポイントで使わないこと（例外面を 1 経路に閉じる）。
+    """
+    if authorization is None and not settings.auth_dev_bypass:
+        return None
+    return require_user(authorization)
+
+
 def is_admin(user: AuthUser) -> bool:
     """ADMIN_EMAILS 許可リストに含まれるか (ADR-0014 §2)。
 
