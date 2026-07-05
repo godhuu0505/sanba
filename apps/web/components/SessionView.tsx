@@ -7,6 +7,7 @@
 
 import {
   RoomAudioRenderer,
+  useRoomContext,
   useSpeakingParticipants,
   useTrackToggle,
 } from "@livekit/components-react";
@@ -29,6 +30,17 @@ import type { MaterialItem } from "../lib/realtime/selectors";
 import { useRealtimeSession } from "../lib/realtime/useRealtimeSession";
 import { ConversationSessionView } from "./ConversationSessionView";
 import { MaterialSourceSheet } from "./MaterialSourceSheet";
+
+/** 経過ミリ秒を mm:ss（1 時間以上は h:mm:ss）へ整形する。ヘッダの録音ピル表示用。 */
+function formatElapsed(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const s = total % 60;
+  const m = Math.floor(total / 60) % 60;
+  const h = Math.floor(total / 3600);
+  const mm = h > 0 ? String(m).padStart(2, "0") : String(m);
+  const ss = String(s).padStart(2, "0");
+  return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+}
 
 export function SessionView({
   sessionId,
@@ -58,6 +70,20 @@ export function SessionView({
   const screenShare = useTrackToggle({ source: Track.Source.ScreenShare });
   // 音声出力（SANBA の読み上げ）の消音。RoomAudioRenderer の muted で実際に止める。
   const [muted, setMuted] = useState(false);
+  // 会話ルーム。セッション終了時に切断して agent worker の後始末（スコアリング/課金停止）を促す。
+  const room = useRoomContext();
+  // 会話の経過時間（会話開始＝この画面のマウント時から集計）。ヘッダの録音ピルに mm:ss で出す。
+  // 1 秒ごとに更新し、セッション終了で止めて最終値を保持する（結果画面では非表示）。
+  const [startedAt] = useState(() => Date.now());
+  const [elapsed, setElapsed] = useState("0:00");
+  const [timerRunning, setTimerRunning] = useState(true);
+  useEffect(() => {
+    if (!timerRunning) return;
+    const tick = () => setElapsed(formatElapsed(Date.now() - startedAt));
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [timerRunning, startedAt]);
   // エージェント発話／読み上げ中の検知（#248）。useSpeakingParticipants は ActiveSpeakersChanged で
   // reactive に更新され、購読は本コンポーネント（会話画面）のマウント中だけに閉じる（リーク防止）。
   // ローカル参加者（自分）を除いたリモート＝エージェントの発話を音声状態インジケータへ渡す。
@@ -337,12 +363,19 @@ export function SessionView({
         onCancelMaterial={handleCancelMaterial}
         cancelledIds={cancelledIds}
         materialAliases={uploadAliases}
+        elapsed={elapsed}
         // 会話を離れる瞬間にローカル送信を止める（判定/結果ではボトムバーが無く止められないため）。
         // マイクに加え、映像トラック（カメラ/画面共有）も止めて帯域/コストを抑える（ADR-0004）。
         onLeaveConversation={() => {
           if (mic.enabled) void mic.toggle(false);
           if (camera.enabled) void camera.toggle(false);
           if (screenShare.enabled) void screenShare.toggle(false);
+        }}
+        // セッションを実際に終える（08 結果へ確定/強制終了で入るとき）: 経過タイマーを止め、
+        // ルームを切断して agent worker のセッション（音声・課金・スコアリング後始末）を畳む。
+        onEndSession={() => {
+          setTimerRunning(false);
+          void room.disconnect();
         }}
         onRestart={() => window.location.reload()}
         metrics={metrics}

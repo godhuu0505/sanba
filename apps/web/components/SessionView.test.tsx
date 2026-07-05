@@ -13,6 +13,7 @@ vi.mock("@livekit/components-react", () => ({
   RoomAudioRenderer: () => null,
   useTrackToggle: () => ({ enabled: false, toggle: vi.fn() }),
   useSpeakingParticipants: () => [],
+  useRoomContext: () => ({ disconnect: vi.fn() }),
 }));
 vi.mock("livekit-client", () => ({ Track: { Source: { Microphone: "microphone" } } }));
 
