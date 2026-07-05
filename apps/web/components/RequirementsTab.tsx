@@ -20,8 +20,11 @@ export interface RequirementsTabProps {
   requirements: Requirement[];
   /** 未解消の検知（深掘り対象）。 */
   deepDive: Detection[];
-  /** 深掘りの「会話で確認」押下。 */
-  onJump: (detectionId: string) => void;
+  /**
+   * 深掘りの「会話で確認」押下。未指定なら導線を出さない
+   * （セッション終了後の閲覧など、会話へ戻れない文脈で偽ボタンを作らない）。
+   */
+  onJump?: (detectionId: string) => void;
   /**
    * ミニ状況「未確定」からの遷移時に true（#195）。深掘り（未解消）対象の見出しへスクロールして
    * 視線を誘導する。要件タブを開いただけ（要件タップ）では false。タブ再マウントで誤発火しない

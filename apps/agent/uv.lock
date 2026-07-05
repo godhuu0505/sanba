@@ -2324,7 +2324,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "elasticsearch", specifier = ">=8.14,<9" },
+    { name = "elasticsearch", specifier = ">=8.14,<10" },
     { name = "google-adk", specifier = ">=1.0.0" },
     { name = "google-cloud-firestore", specifier = ">=2.16.0" },
     { name = "google-genai", specifier = ">=1.0.0" },

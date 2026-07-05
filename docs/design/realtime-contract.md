@@ -99,8 +99,8 @@ web 側の適用規則: **`(type, id)` で冪等**（同じ要件/検知は upse
 | `type` | 発火条件 | ペイロード |
 |---|---|---|
 | `user.selection` | 検知カードの選択肢ボタンタップ | `detection_id`（対象 detection の `id`）, `selected_value`（選択した `options[].value`）, `session_id` |
-| `user.text` | ボトムバーのテキスト送信（#185） | `text`（本文）, `session_id`。agent は発話として記録（`transcript.final` で会話履歴へ反映）し応答を生成する。従来のセッション文脈投入の暫定動線を置換 |
-| `user.answered` | 通常質問（金枠）の回答（#181） | `question_id`（対象 `question.asked` の `id`）, `selected_value?`（選択肢タップ時）/ `text?`（自由記述）, `session_id`。agent は発話として記録し次の問いへ進む |
+| `user.text` | ボトムバーのテキスト送信（#185） | `text`（本文）, `session_id`。agent は発話として記録（`transcript.final` で会話履歴へ反映）し、**音声のバージインと同様に読み上げ中の応答を中断**した上で、本文を user ターンとして会話文脈へ注入して応答を生成する（音声入力と同等の扱い）。従来のセッション文脈投入の暫定動線を置換 |
+| `user.answered` | 通常質問（金枠）の回答（#181） | `question_id`（対象 `question.asked` の `id`）, `selected_value?`（選択肢タップ時）/ `text?`（自由記述）, `session_id`。agent は発話として記録し、読み上げ中なら中断して次の問いへ進む |
 
 ```
 apps/web

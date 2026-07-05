@@ -63,7 +63,7 @@ from .prompts.interview import (
     build_prep_premise,
     build_repo_premise,
 )
-from .retrieval import GroundingStore
+from .retrieval import GroundingStore, Passage
 from .tools.analysis import analyze_transcript, make_requirement_id
 
 log = structlog.get_logger(__name__)
@@ -128,8 +128,9 @@ def build_agent_instructions(repo: SessionRepository, session_id: str) -> AgentS
 
     developer: 従来どおり grill-me ペルソナ + repo 前提（ADR-0028）。
     end_user: 利用者向けペルソナ + glossary シード。repo 前提は**シードしない**:
-    grounding の出力遮断（決定8）が PR8 で入るまでの暫定フェイルクローズで、
-    private repo 由来の情報が利用者の会話に露出する面を作らない（#321）。
+    grounding の出力遮断（決定8 / search_grounding の allowlist）に加えて、
+    private repo 由来の情報が利用者の会話に露出する面を初期 instructions にも
+    作らない（#321 / 多層防御として PR8 以降も維持）。
 
     developer では準備フォームのゴール・詳細（ADR-0035）も前提としてシードし、
     analyze 用の事前情報ノート（prep_note）を併せて返す。repo 由来のシード可否は
@@ -163,7 +164,10 @@ def build_agent_instructions(repo: SessionRepository, session_id: str) -> AgentS
         instructions = (
             VOICE_AGENT_INSTRUCTIONS + prep_premise + (_repo_premise(meta) if confirmed else "")
         )
-        allow_repo_grounding = confirmed
+        # meta is None（セッション未作成/削除済み）は confirmed であってもモード不明と同義。
+        # repo grounding を許可すると end_user セッションが None で作られた場合にフェイルオープン
+        # するため、「読めた + meta が実在する」を両方満たすときだけ True にする。
+        allow_repo_grounding = confirmed and meta is not None
     # モード分岐の観測性（CLAUDE.md 原則3）: どのモードでどれだけシードしたかを追える形に。
     log.info(
         "agent_instructions_built",
@@ -201,6 +205,37 @@ def _is_stale_repo_passage(source: str, current_sha: str) -> bool:
     return f"@{current_sha}:" not in source
 
 
+# ADR-0032 決定8（FR-2.5 / NFR-2）: repo 由来素材を許さないセッション（end_user・モード
+# 未確認）で search_grounding の返り値に残してよい kind の allowlist。利用者の発話と
+# 確定要件（過去セッション由来を含む / ADR-0003）のみ。repo 由来（kind=context の
+# github: 索引・README/Issue シード / ADR-0028）と開発語彙の knowledge（MoSCoW 等 /
+# FR-2.4）は本文・source ともモデルへ渡さない。denylist の source 文字列判定に頼らない
+# ため、大文字小文字・前後空白・形式変更などの表記揺れによるすり抜けが構造的に起きない。
+_USER_DERIVED_KINDS = frozenset({"utterance", "requirement"})
+
+
+def _partition_passages_for_output(
+    passages: list[Passage],
+) -> tuple[list[Passage], int, int]:
+    """出力制御の allowlist で passage を分け、(返す, repo由来の遮断数, その他の遮断数) を返す。
+
+    repo 由来の判別は kind（allowlist 外）に加えて source の `github:` 接頭辞でも数える
+    （観測性と background シグナル用の分類。遮断そのものは kind の allowlist が決めるので、
+    source の表記揺れで遮断がすり抜けることはない）。
+    """
+    kept: list[Passage] = []
+    dropped_repo = 0
+    dropped_other = 0
+    for p in passages:
+        if p.kind in _USER_DERIVED_KINDS:
+            kept.append(p)
+        elif p.source.strip().lower().startswith("github:"):
+            dropped_repo += 1
+        else:
+            dropped_other += 1
+    return kept, dropped_repo, dropped_other
+
+
 class SANBAAgent(Agent):
     """The voice interviewer. Owns the tools that bridge to the ADK team."""
 
@@ -227,6 +262,12 @@ class SANBAAgent(Agent):
         # data channel publish（#94）。未設定でも会話は成立する（publish は付加価値）。
         self._publisher = publisher
         self._utterance_seq = 0
+        # 認識中（partial）のユーザー発話に割り当てた安定 utterance_id。final まで同じ id を
+        # 使い回し、web の吹き出しを 1 つに畳む（partial→final を同一 id で upsert）。
+        self._pending_user_uid: str | None = None
+        # SANBA（エージェント）発話の連番。会話履歴に SANBA の発言も出すため、participant の
+        # u{n} とは別空間（a{n}）で採番して衝突を避ける。分析用 transcript には載せない。
+        self._agent_utterance_seq = 0
         # 問い発行ごとの連番（question.asked の ID を一意にする / Codex P2）。
         self._question_seq = 0
         # question_id → 問い本文。回答を「何への回答か」分かる形で記録するため保持する
@@ -282,11 +323,14 @@ class SANBAAgent(Agent):
         if not task.cancelled() and task.exception() is not None:
             log.warning("publish_task_failed", error=str(task.exception()))
 
-    def record_utterance(self, speaker: str, text: str) -> str:
+    def record_utterance(self, speaker: str, text: str, *, utterance_id: str | None = None) -> str:
         # 発話 id を先に採番し、本文に前置して LLM に見せる。これにより
         # save_requirement の citations（根拠発話 id）を LLM が実際に参照できる（#133）。
-        self._utterance_seq += 1
-        utterance_id = f"u{self._utterance_seq}"
+        # 認識中（partial）で先に id を割り当て済みなら（utterance_id 指定）それで確定し、
+        # partial の吹き出しをそのまま final に差し替える（同一 id で upsert）。
+        if utterance_id is None:
+            self._utterance_seq += 1
+            utterance_id = f"u{self._utterance_seq}"
         self._transcript.append(f"[{utterance_id}] {speaker}: {text}")
         self._repo.add_utterance(self._session_id, Utterance(speaker=speaker, text=text))
         # Index for later past-session retrieval.
@@ -301,6 +345,46 @@ class SANBAAgent(Agent):
             role = "participant"
             self._publish(self._publisher.transcript_final(speaker, role, utterance_id, text))
         return utterance_id
+
+    def publish_user_partial(self, text: str) -> None:
+        """ユーザー音声の認識中（partial）テキストを web の会話履歴へ流す（#248 拡張）。
+
+        final まで安定した utterance_id を使い回すことで、web は同じ吹き出しを更新し続け、
+        確定前は「文字起こし中」を示せる（partial→final の差し替え）。publisher 未設定なら no-op。
+        """
+        if self._publisher is None:
+            return
+        if self._pending_user_uid is None:
+            self._utterance_seq += 1
+            self._pending_user_uid = f"u{self._utterance_seq}"
+        self._publish(
+            self._publisher.transcript_partial(
+                "participant", "participant", self._pending_user_uid, text
+            )
+        )
+
+    def record_user_final(self, text: str) -> str:
+        """確定したユーザー音声を記録する（会話履歴・分析・grounding）。
+
+        認識中に割り当てた utterance_id があればそれで確定し、web 側で partial の吹き出しを
+        そのまま final に差し替える。無ければ record_utterance が新規採番する。
+        """
+        uid = self._pending_user_uid
+        self._pending_user_uid = None
+        return self.record_utterance("participant", text, utterance_id=uid)
+
+    def publish_agent_utterance(self, text: str) -> None:
+        """SANBA（エージェント）の発話を web の会話履歴へ出す（role=assistant で左吹き出し）。
+
+        音声だけでは聞き逃す発話もテキストで追えるようにする。分析用 transcript には
+        載せない（LLM 応答は要件抽出の入力ではないため）。participant の u{n} と衝突しない
+        a{n} 空間で採番する。publisher 未設定なら no-op。
+        """
+        if self._publisher is None:
+            return
+        self._agent_utterance_seq += 1
+        uid = f"a{self._agent_utterance_seq}"
+        self._publish(self._publisher.transcript_final("SANBA", "assistant", uid, text))
 
     def record_answer(self, question_id: str, answer: str) -> str | None:
         """通常質問（#181）への回答を、問い本文とともに発話として記録する（Codex P2）。
@@ -616,6 +700,8 @@ class SANBAAgent(Agent):
 
         質問の妥当性を裏付けたいとき、または「過去に似た議論がなかったか」を
         確認したいときに使う。返り値の sources を会話で言及して根拠を示すこと。
+        返り値に `background`（引用できない内部資料の関連ヒット件数のみ）が付くことがある。
+        その場合は内容・出所に一切触れず、話題の関連が深い合図としてだけ扱うこと。
         """
         # session_id を渡してセッション固有素材（context: ゴール/資料/紐づけ repo）を本セッション
         # に限定する（他者の private リポジトリ断片の越境ヒットを防ぐ / ADR-0028）。
@@ -627,21 +713,72 @@ class SANBAAgent(Agent):
         # access control / ADR-0028・Codex P2）。共有索引は消さない方針なので、ここで弾く。
         want = 4
         current_sha, revoked = self._repo_access()
-        fetch_k = want * 4 if (current_sha is not None or revoked) else want
+        # 出力制御（ADR-0032 決定8）の判定は build_agent_instructions の単一読みで確定した
+        # _allow_repo_grounding に揃える（ここで再読すると読み失敗時にフェイルオープンし得る）。
+        output_filtered = not self._allow_repo_grounding
+        fetch_k = want * 4 if (current_sha is not None or revoked or output_filtered) else want
         passages = self._grounding.search(query, k=fetch_k, session_id=self._session_id)
-        if revoked:
-            # 連携が無効: あらゆる repo 索引 chunk（github:）を落とす。
-            passages = [p for p in passages if not p.source.startswith("github:")]
-        elif current_sha is not None:
-            passages = [p for p in passages if not _is_stale_repo_passage(p.source, current_sha)]
-        passages = passages[:want]
-        log.info("grounding_search", session=self._session_id, query=query, hits=len(passages))
-        return {
+        dropped_repo = dropped_other = 0
+        if output_filtered:
+            # end_user（およびモード未確認）: 利用者由来 kind の allowlist だけ返し、repo 由来
+            # （context）・開発語彙（knowledge）は本文・source ともモデルへ渡さない（FR-2.5）。
+            # 音声応答は事後フィルタできないため、「渡すが引用禁止」には倒さない（NFR-2）。
+            #
+            # ACL（revoked/stale）を先に適用してアクセス不能 chunk を除いた上で背景シグナルを
+            # 数える（revoked/stale chunk を related_internal_hits に混ぜない）。
+            if revoked:
+                passages = [p for p in passages if not p.source.startswith("github:")]
+            elif current_sha is not None:
+                passages = [
+                    p for p in passages if not _is_stale_repo_passage(p.source, current_sha)
+                ]
+            _, dropped_repo, dropped_other = _partition_passages_for_output(passages)
+            # 出力用は allowlist kind 専用で別検索して取りこぼしを防ぐ。repo/knowledge が
+            # 多い索引でも utterance/requirement が上位 want 件に入れなくなる問題を避ける。
+            passages = self._grounding.search(
+                query,
+                k=want,
+                kinds=list(_USER_DERIVED_KINDS),
+                session_id=self._session_id,
+            )
+        else:
+            if revoked:
+                # 連携が無効: あらゆる repo 索引 chunk（github:）を落とす。
+                passages = [p for p in passages if not p.source.startswith("github:")]
+            elif current_sha is not None:
+                passages = [
+                    p for p in passages if not _is_stale_repo_passage(p.source, current_sha)
+                ]
+            passages = passages[:want]
+        log.info(
+            "grounding_search",
+            session=self._session_id,
+            query=query,
+            hits=len(passages),
+            interview_mode=self._interview_mode.value,
+            output_filtered=output_filtered,
+        )
+        if dropped_repo or dropped_other:
+            # モード別フィルタの発動を構造化ログへ（CLAUDE.md 原則3 / NFR-3）。
+            log.info(
+                "grounding_output_filtered",
+                session=self._session_id,
+                interview_mode=self._interview_mode.value,
+                dropped_repo=dropped_repo,
+                dropped_other=dropped_other,
+                returned=len(passages),
+            )
+        result: dict[str, Any] = {
             "passages": [
                 {"text": p.text, "source": p.source, "kind": p.kind, "score": p.score}
                 for p in passages
             ]
         }
+        if dropped_repo:
+            # 決定8 の「次に聞くことの判断材料」: repo 由来ヒットは件数のみの機械可読シグナル。
+            # 内容・出所を含めない。speech-to-speech でモデルが読み上げられる文を渡さない（NFR-2）。
+            result["background"] = {"related_internal_hits": dropped_repo}
+        return result
 
     def _repo_access(self) -> tuple[str | None, bool]:
         """(現在の commit sha, 連携無効か) を返す（repo chunk の峻別・遮断に使う）。
@@ -792,6 +929,51 @@ def seed_github_context(
         log.warning("github_seed_failed", error=str(exc))
 
 
+async def respond_to_user_text(
+    agent: SANBAAgent, session: AgentSession, text: str, current_qid: str | None
+) -> None:
+    """テキスト入力（user.text, 契約 §4.5 / #185）を音声発話と同じ会話ターンとして扱う。
+
+    発話を記録（transcript.final で会話履歴へ反映）し、§5-6 に従い未回答 current を
+    クリアした上で、音声のバージインと同様に読み上げ中の応答を中断してから、本文を
+    user ターンとして Live セッションの会話文脈へ注入し応答を生成する
+    （livekit-agents 既定のテキスト入力コールバックと同じ interrupt + user_input 方式）。
+    旧 instructions 方式は (1) 読み上げ中は再生キュー待ちになり音声のように即時反応しない、
+    (2) 本文が user ターンとして会話文脈に残らない、の2点で音声入力と挙動が揃わなかった。
+    """
+    agent.record_utterance("participant", text)
+    # §5-6: options の有無に依らず、未回答 current への次回答とみなしてクリアする
+    # （current_qid は受信時点で束ねた id。CAS が id 一致時のみクリアする）。
+    if current_qid is not None:
+        await agent.clear_current_question(current_qid)
+    # 読み上げ中なら中断（音声のバージインと同じ扱い）。再生中でなければ no-op。
+    await session.interrupt()
+    await session.generate_reply(user_input=text)
+
+
+async def respond_to_answer(
+    agent: SANBAAgent, session: AgentSession, question_id: str, answer: str
+) -> None:
+    """通常質問（金枠, #181）への回答を記録し、要件を一歩進める応答を生成する。
+
+    回答を「問い本文つき」で発話記録し（Codex P2）、何への回答か後続の
+    analyze_requirements が分かるようにする。テキスト/タップ回答も音声回答と同様、
+    読み上げ中なら中断してから応答する（user.text と同じ即時反応）。
+    """
+    prompt = agent.record_answer(question_id, answer)
+    # §5-3: タップ回答は question_id 一致時に CAS でクリア（早期クリア経路）。これで
+    # 回答済みの問いが再ハイドレーション（GET /questions/current）で復活しない。
+    await agent.clear_current_question(question_id)
+    topic = f"問い「{prompt}」" if prompt else "先ほどの問い"
+    await session.interrupt()
+    await session.generate_reply(
+        instructions=(
+            f"{topic}に対し参加者は「{answer}」と答えました。"
+            "これを踏まえて要件を一歩進め、必要なら次の問いを1つだけ投げてください。"
+        )
+    )
+
+
 async def entrypoint(ctx: JobContext) -> None:
     """LiveKit job entrypoint: one invocation per room."""
     setup_observability()
@@ -817,9 +999,10 @@ async def entrypoint(ctx: JobContext) -> None:
     )
     agent = SANBAAgent(session_id=session_id, repo=repo, grounding=grounding, publisher=publisher)
     # repo 由来素材（GitHub seed）はモード判定と同じ 1 回の読み（build_agent_instructions）に
-    # 従う: end_user とモード不明では**シードしない**（ADR-0032 決定8 の出力遮断が PR8 で
-    # 入るまでの暫定フェイルクローズ / #321。README/Issue 断片が search_grounding 経由で
-    # 利用者の会話に露出する面を作らない）。確認済み developer のみ従来どおり。
+    # 従う: end_user とモード不明では**シードしない**（#321 / ADR-0032 決定8）。
+    # search_grounding の出力 allowlist が第一防衛線だが、シード自体も止めたままにする
+    # （多層防御: フィルタが万一退行しても索引に露出面が増えない・ゲスト起点のセッション
+    # 乱造で GitHub API を消費しない）。確認済み developer のみ従来どおり。
     if agent.allow_repo_grounding:
         seed_github_context(grounding, session_id, repo, _resolve_github_repo(repo, session_id))
     else:
@@ -840,18 +1023,35 @@ async def entrypoint(ctx: JobContext) -> None:
     # Persist user turns so the ADK team always has the full transcript.
     @session.on("user_input_transcribed")
     def _on_user_text(ev) -> None:  # type: ignore[no-untyped-def]
-        if getattr(ev, "is_final", False) and ev.transcript:
-            speaker = "participant"
+        text = getattr(ev, "transcript", "")
+        if not text:
+            return
+        if getattr(ev, "is_final", False):
             # §5-6: 受信時点の current 質問 id を束ねてから記録する。未回答の current がある間に
             # 届いた音声発話は、その問いへの回答とみなして（options の有無に依らず）クリアする。
             current_qid = agent.current_question_id
-            agent.record_utterance(speaker, ev.transcript)
+            agent.record_user_final(text)
             if current_qid is not None:
                 _schedule(agent.clear_current_question(current_qid))
+        else:
+            # 認識中（partial）を会話履歴へ流し、確定前は吹き出しで「文字起こし中」を示す。
+            agent.publish_user_partial(text)
+
+    # SANBA（エージェント）の発話も会話履歴にテキストで出す。conversation_item_added は
+    # user/assistant 双方で発火するため、assistant のみ拾って participant 側と二重計上しない
+    # （user は上の user_input_transcribed が確定発話を記録済み）。
+    @session.on("conversation_item_added")
+    def _on_item_added(ev) -> None:  # type: ignore[no-untyped-def]
+        item = getattr(ev, "item", None)
+        if getattr(item, "role", None) != "assistant":
+            return
+        text = getattr(item, "text_content", None)
+        if text:
+            agent.publish_agent_utterance(text)
 
     # web → agent の操作イベントを受信する（契約 §4.5）。
     #   - user.selection（#102）: 検知カードの選択肢タップ → 検知を解消。
-    #   - user.text（#185）: テキスト入力 → 発話として記録し音声で応答（会話ターン化）。
+    #   - user.text（#185）: テキスト入力 → 読み上げを中断し user ターンとして応答（音声と同等）。
     #   - user.answered（#181）: 通常質問への回答 → 発話として記録し次の問いへ進む。
     # fire-and-forget タスクは set に退避して GC を防ぐ（#128。完了時に除去・例外をログ）。
     _bg_tasks: set[asyncio.Task] = set()
@@ -865,36 +1065,6 @@ async def entrypoint(ctx: JobContext) -> None:
         task = asyncio.create_task(coro)
         _bg_tasks.add(task)
         task.add_done_callback(_on_bg_done)
-
-    async def _respond_to_user_text(text: str, current_qid: str | None) -> None:
-        # テキスト入力を会話ターンとして扱う（#185）。発話を記録（transcript.final で会話履歴へ
-        # 反映）し、それを踏まえて音声で応答する。従来のセッション文脈投入（捨て足場）を置換。
-        agent.record_utterance("participant", text)
-        # §5-6: options の有無に依らず、未回答 current への次回答とみなしてクリアする
-        # （current_qid は受信時点で束ねた id。CAS が id 一致時のみクリアする）。
-        if current_qid is not None:
-            await agent.clear_current_question(current_qid)
-        await session.generate_reply(
-            instructions=(
-                f"参加者がテキストで次のように述べました：「{text}」。"
-                "これを会話の発話として受け止め、必要なら一問だけ掘り下げて応答してください。"
-            )
-        )
-
-    async def _respond_to_answer(question_id: str, answer: str) -> None:
-        # 通常質問（金枠）への回答（#181）。回答を「問い本文つき」で発話記録し（Codex P2）、
-        # 何への回答か後続の analyze_requirements が分かるようにしてから要件を一歩進める。
-        prompt = agent.record_answer(question_id, answer)
-        # §5-3: タップ回答は question_id 一致時に CAS でクリア（早期クリア経路）。これで
-        # 回答済みの問いが再ハイドレーション（GET /questions/current）で復活しない。
-        await agent.clear_current_question(question_id)
-        topic = f"問い「{prompt}」" if prompt else "先ほどの問い"
-        await session.generate_reply(
-            instructions=(
-                f"{topic}に対し参加者は「{answer}」と答えました。"
-                "これを踏まえて要件を一歩進め、必要なら次の問いを1つだけ投げてください。"
-            )
-        )
 
     def _on_data(packet) -> None:  # type: ignore[no-untyped-def]
         if getattr(packet, "topic", None) != WEB_EVENTS_TOPIC:
@@ -910,12 +1080,12 @@ async def entrypoint(ctx: JobContext) -> None:
         if text is not None:
             # §5-6: 受信時点（同期コールバック内）の current 質問 id を束ねて渡す。後続の非同期
             # 処理が遅れる間に current が別の問いへ上書きされても、CAS が id 一致時のみクリアする。
-            _schedule(_respond_to_user_text(text, agent.current_question_id))
+            _schedule(respond_to_user_text(agent, session, text, agent.current_question_id))
             return
         answered = decode_user_answered(data, expected_session_id=session_id)
         if answered is not None:
             question_id, answer = answered
-            _schedule(_respond_to_answer(question_id, answer))
+            _schedule(respond_to_answer(agent, session, question_id, answer))
 
     ctx.room.on("data_received", _on_data)
 
