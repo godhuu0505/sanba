@@ -929,6 +929,51 @@ def seed_github_context(
         log.warning("github_seed_failed", error=str(exc))
 
 
+async def respond_to_user_text(
+    agent: SANBAAgent, session: AgentSession, text: str, current_qid: str | None
+) -> None:
+    """テキスト入力（user.text, 契約 §4.5 / #185）を音声発話と同じ会話ターンとして扱う。
+
+    発話を記録（transcript.final で会話履歴へ反映）し、§5-6 に従い未回答 current を
+    クリアした上で、音声のバージインと同様に読み上げ中の応答を中断してから、本文を
+    user ターンとして Live セッションの会話文脈へ注入し応答を生成する
+    （livekit-agents 既定のテキスト入力コールバックと同じ interrupt + user_input 方式）。
+    旧 instructions 方式は (1) 読み上げ中は再生キュー待ちになり音声のように即時反応しない、
+    (2) 本文が user ターンとして会話文脈に残らない、の2点で音声入力と挙動が揃わなかった。
+    """
+    agent.record_utterance("participant", text)
+    # §5-6: options の有無に依らず、未回答 current への次回答とみなしてクリアする
+    # （current_qid は受信時点で束ねた id。CAS が id 一致時のみクリアする）。
+    if current_qid is not None:
+        await agent.clear_current_question(current_qid)
+    # 読み上げ中なら中断（音声のバージインと同じ扱い）。再生中でなければ no-op。
+    await session.interrupt()
+    await session.generate_reply(user_input=text)
+
+
+async def respond_to_answer(
+    agent: SANBAAgent, session: AgentSession, question_id: str, answer: str
+) -> None:
+    """通常質問（金枠, #181）への回答を記録し、要件を一歩進める応答を生成する。
+
+    回答を「問い本文つき」で発話記録し（Codex P2）、何への回答か後続の
+    analyze_requirements が分かるようにする。テキスト/タップ回答も音声回答と同様、
+    読み上げ中なら中断してから応答する（user.text と同じ即時反応）。
+    """
+    prompt = agent.record_answer(question_id, answer)
+    # §5-3: タップ回答は question_id 一致時に CAS でクリア（早期クリア経路）。これで
+    # 回答済みの問いが再ハイドレーション（GET /questions/current）で復活しない。
+    await agent.clear_current_question(question_id)
+    topic = f"問い「{prompt}」" if prompt else "先ほどの問い"
+    await session.interrupt()
+    await session.generate_reply(
+        instructions=(
+            f"{topic}に対し参加者は「{answer}」と答えました。"
+            "これを踏まえて要件を一歩進め、必要なら次の問いを1つだけ投げてください。"
+        )
+    )
+
+
 async def entrypoint(ctx: JobContext) -> None:
     """LiveKit job entrypoint: one invocation per room."""
     setup_observability()
@@ -1006,7 +1051,7 @@ async def entrypoint(ctx: JobContext) -> None:
 
     # web → agent の操作イベントを受信する（契約 §4.5）。
     #   - user.selection（#102）: 検知カードの選択肢タップ → 検知を解消。
-    #   - user.text（#185）: テキスト入力 → 発話として記録し音声で応答（会話ターン化）。
+    #   - user.text（#185）: テキスト入力 → 読み上げを中断し user ターンとして応答（音声と同等）。
     #   - user.answered（#181）: 通常質問への回答 → 発話として記録し次の問いへ進む。
     # fire-and-forget タスクは set に退避して GC を防ぐ（#128。完了時に除去・例外をログ）。
     _bg_tasks: set[asyncio.Task] = set()
@@ -1020,36 +1065,6 @@ async def entrypoint(ctx: JobContext) -> None:
         task = asyncio.create_task(coro)
         _bg_tasks.add(task)
         task.add_done_callback(_on_bg_done)
-
-    async def _respond_to_user_text(text: str, current_qid: str | None) -> None:
-        # テキスト入力を会話ターンとして扱う（#185）。発話を記録（transcript.final で会話履歴へ
-        # 反映）し、それを踏まえて音声で応答する。従来のセッション文脈投入（捨て足場）を置換。
-        agent.record_utterance("participant", text)
-        # §5-6: options の有無に依らず、未回答 current への次回答とみなしてクリアする
-        # （current_qid は受信時点で束ねた id。CAS が id 一致時のみクリアする）。
-        if current_qid is not None:
-            await agent.clear_current_question(current_qid)
-        await session.generate_reply(
-            instructions=(
-                f"参加者がテキストで次のように述べました：「{text}」。"
-                "これを会話の発話として受け止め、必要なら一問だけ掘り下げて応答してください。"
-            )
-        )
-
-    async def _respond_to_answer(question_id: str, answer: str) -> None:
-        # 通常質問（金枠）への回答（#181）。回答を「問い本文つき」で発話記録し（Codex P2）、
-        # 何への回答か後続の analyze_requirements が分かるようにしてから要件を一歩進める。
-        prompt = agent.record_answer(question_id, answer)
-        # §5-3: タップ回答は question_id 一致時に CAS でクリア（早期クリア経路）。これで
-        # 回答済みの問いが再ハイドレーション（GET /questions/current）で復活しない。
-        await agent.clear_current_question(question_id)
-        topic = f"問い「{prompt}」" if prompt else "先ほどの問い"
-        await session.generate_reply(
-            instructions=(
-                f"{topic}に対し参加者は「{answer}」と答えました。"
-                "これを踏まえて要件を一歩進め、必要なら次の問いを1つだけ投げてください。"
-            )
-        )
 
     def _on_data(packet) -> None:  # type: ignore[no-untyped-def]
         if getattr(packet, "topic", None) != WEB_EVENTS_TOPIC:
@@ -1065,12 +1080,12 @@ async def entrypoint(ctx: JobContext) -> None:
         if text is not None:
             # §5-6: 受信時点（同期コールバック内）の current 質問 id を束ねて渡す。後続の非同期
             # 処理が遅れる間に current が別の問いへ上書きされても、CAS が id 一致時のみクリアする。
-            _schedule(_respond_to_user_text(text, agent.current_question_id))
+            _schedule(respond_to_user_text(agent, session, text, agent.current_question_id))
             return
         answered = decode_user_answered(data, expected_session_id=session_id)
         if answered is not None:
             question_id, answer = answered
-            _schedule(_respond_to_answer(question_id, answer))
+            _schedule(respond_to_answer(agent, session, question_id, answer))
 
     ctx.room.on("data_received", _on_data)
 
