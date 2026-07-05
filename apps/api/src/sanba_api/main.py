@@ -289,6 +289,10 @@ class CreateSessionRequest(BaseModel):
     #  - 空文字: 明示的な「連携しない」（既定リポジトリにも送らない / Codex P2）。
     #  - "owner/name": このセッションの起票・grounding 先。
     github_repo: str | None = None
+    # 対象のプロダクト・アプリ（ADR-0031）。指定するとセッションを product に従属させ、
+    # product の索引済み repo を継承する（repo 解決は「セッション明示 > product > 環境変数」）。
+    # None = 従来どおりの単発セッション。本人がアクセスできる product に限る（非所有は 404）。
+    product_id: str | None = None
 
 
 class CreateSessionResponse(BaseModel):
@@ -430,6 +434,22 @@ def create_session(
             )
         if github_repo and not _github_repo_allowed(github_repo):
             raise HTTPException(status_code=400, detail="github_repo is not allowed")
+    # 対象プロダクト（ADR-0031）。本人がアクセスできる product に限る（非所有・不存在は 404）。
+    product: Product | None = None
+    if req.product_id is not None:
+        product = _require_product_access(req.product_id, user)
+    # repo 解決は「セッション明示 > product > 環境変数」（ADR-0027/0031 FR-1.4）。セッションで
+    # 明示（"owner/name" or 空文字=連携しない）があれば尊重し、未指定かつ product があれば
+    # product の索引済み repo を継承する（join 経路と同じく索引済み要約ごと写す）。
+    repo_fields: dict[str, Any] = {"github_repo": github_repo}
+    if req.github_repo is None and product is not None:
+        repo_fields = {
+            "github_repo": product.github_repo,
+            "github_branch": product.github_branch,
+            "github_commit_sha": product.github_commit_sha,
+            "github_index_status": product.github_index_status,
+            "github_summary": product.github_summary,
+        }
     session_id = f"sess-{uuid.uuid4().hex[:8]}"
     invites = {
         role: create_invite(
@@ -445,7 +465,8 @@ def create_session(
             owner_sub=user.sub,
             owner_email=user.email,
             roles=req.roles,
-            github_repo=github_repo,
+            product_id=product.id if product is not None else None,
+            **repo_fields,
         )
     )
     log.info(
@@ -453,7 +474,8 @@ def create_session(
         session=session_id,
         roles=req.roles,
         owner=user.sub,
-        github_repo=github_repo or "(none)",
+        github_repo=repo_fields.get("github_repo") or "(none)",
+        product_id=product.id if product is not None else None,
     )
     return CreateSessionResponse(session_id=session_id, invites=invites)
 

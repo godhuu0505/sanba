@@ -31,13 +31,17 @@ export async function createSession(
   idToken: string | null,
   title?: string,
   githubRepo?: string,
+  productId?: string,
 ): Promise<CreateSessionResponse> {
   const body: Record<string, unknown> = { roles, consent_acknowledged: consentAcknowledged };
   // title 未指定なら API 既定 ("要件インタビュー") に委ねる。
   if (title !== undefined) body.title = title;
-  // 連携リポジトリ（任意 / ADR-0027）。undefined = 未指定（API が既定へフォールバック）、
+  // 連携リポジトリ（任意 / ADR-0027）。undefined = 未指定（API が product/既定へフォールバック）、
   // 空文字 = 明示的な「連携しない」（既定にも送らない）なので、空文字もそのまま送る。
   if (githubRepo !== undefined) body.github_repo = githubRepo;
+  // 対象のプロダクト・アプリ（ADR-0031）。指定するとセッションを product に従属させ、
+  // API 側で product の索引済み repo を継承する。空/未指定は従来どおりの単発セッション。
+  if (productId) body.product_id = productId;
   const res = await fetch(`${API_URL}/api/sessions`, {
     method: "POST",
     headers: authHeaders(idToken),

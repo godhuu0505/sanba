@@ -38,9 +38,14 @@ export interface FieldProps extends React.HTMLAttributes<HTMLDivElement> {
   label: React.ReactNode;
   htmlFor?: string;
   hint?: React.ReactNode;
+  /**
+   * ラベル脇の目印（必須/任意バッジ等）。<label> 要素の *外* に置くので、
+   * getByLabelText で参照するアクセシブルなラベル文字列を汚さない。
+   */
+  marker?: React.ReactNode;
 }
 
-export function Field({ className, label, htmlFor, hint, children, ...props }: FieldProps) {
+export function Field({ className, label, htmlFor, hint, marker, children, ...props }: FieldProps) {
   const autoId = React.useId();
   // htmlFor が未指定のとき、先頭の子が既に id を持つならそれを採用する。
   // こうしないと label の htmlFor が autoId を指す一方で子は独自 id を持ち、関連付けが壊れる。
@@ -57,9 +62,12 @@ export function Field({ className, label, htmlFor, hint, children, ...props }: F
   });
   return (
     <div className={cn("flex w-full flex-col gap-[6px]", className)} {...props}>
-      <label htmlFor={fieldId} className="text-[13px] font-bold text-sanba-muted">
-        {label}
-      </label>
+      <div className="flex items-center">
+        <label htmlFor={fieldId} className="text-[13px] font-bold text-sanba-muted">
+          {label}
+        </label>
+        {marker}
+      </div>
       {clonedChildren}
       {hint && <p className="text-[12px] text-sanba-muted/80">{hint}</p>}
     </div>

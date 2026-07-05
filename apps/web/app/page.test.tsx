@@ -39,6 +39,20 @@ const joinSession = vi.fn(async (..._a: unknown[]) => ({
 const addSessionContext = vi.fn(async (..._a: unknown[]) => ({ indexed_chunks: 0 }));
 const uploadContextFile = vi.fn(async (..._a: unknown[]) => ({ indexed_chunks: 1 }));
 const fetchMySessions = vi.fn(async (..._a: unknown[]) => [] as unknown[]);
+// 対象プロダクト候補（ADR-0031）。対象アプリは開始の必須条件なので、既定で 1 件返し
+// 開始系テストが選択できるようにする（0 件の挙動は個別テストで上書きして検証する）。
+const DEFAULT_PRODUCT = {
+  id: "p0",
+  name: "既定アプリ",
+  description: "",
+  glossary: [] as string[],
+  created_at: "2024-06-20T03:00:00Z",
+  github_repo: null as string | null,
+  github_branch: null as string | null,
+  github_commit_sha: null as string | null,
+  github_index_status: "none",
+};
+const fetchMyProducts = vi.fn(async (..._a: unknown[]) => [DEFAULT_PRODUCT] as unknown[]);
 // 連携リポジトリ候補（ADR-0027）。既定はコネクタ無効 = フィールド非表示（既存テストを変えない）。
 // linked/items は GitHub App 連携時の additive 拡張（ADR-0028）。
 const fetchGithubRepos = vi.fn(
@@ -65,6 +79,7 @@ vi.mock("../lib/api", () => ({
   addSessionContext: (...a: unknown[]) => addSessionContext(...a),
   uploadContextFile: (...a: unknown[]) => uploadContextFile(...a),
   fetchMySessions: (...a: unknown[]) => fetchMySessions(...a),
+  fetchMyProducts: (...a: unknown[]) => fetchMyProducts(...a),
   fetchGithubRepos: (...a: unknown[]) => fetchGithubRepos(...a),
   listGithubBranches: (...a: unknown[]) => listGithubBranches(...a),
   selectSessionRepo: (...a: unknown[]) => selectSessionRepo(...a),
@@ -104,6 +119,8 @@ describe("入口フロー（#140）", () => {
     uploadContextFile.mockImplementation(async () => ({ indexed_chunks: 1 }));
     fetchMySessions.mockClear();
     fetchMySessions.mockImplementation(async () => []);
+    fetchMyProducts.mockClear();
+    fetchMyProducts.mockImplementation(async () => [DEFAULT_PRODUCT]);
     fetchGithubRepos.mockClear();
     fetchGithubRepos.mockImplementation(async () => ({
       enabled: false,
@@ -124,6 +141,11 @@ describe("入口フロー（#140）", () => {
     cleanup();
     window.sessionStorage.clear();
   });
+
+  // 対象アプリは開始の必須条件（ADR-0031）。候補 settle 後に既定アプリを選ぶ共通操作。
+  function selectProduct(id = "p0") {
+    fireEvent.change(screen.getByLabelText("対象のプロダクト・アプリ"), { target: { value: id } });
+  }
 
   it("real モードで未ログインなら /login?next=/ へリダイレクトしホームを描画しない", () => {
     authState.devMode = false;
@@ -205,12 +227,12 @@ describe("入口フロー（#140）", () => {
     expect(screen.getByText("＋ 壁打ちを始める")).toBeTruthy();
   });
 
-  it("CTA で 02 準備へ遷移し、役割の既定が企画(PdM)", () => {
+  it("CTA で 02 準備へ遷移し、役割の既定が利用者", () => {
     render(<Home />);
     fireEvent.click(screen.getByText("＋ 壁打ちを始める"));
     expect(screen.getByText("セッション準備")).toBeTruthy();
-    expect(screen.getByRole("radio", { name: /企画/ }).getAttribute("aria-checked")).toBe("true");
-    expect(screen.getByRole("radio", { name: "エンジニア" }).getAttribute("aria-checked")).toBe(
+    expect(screen.getByRole("radio", { name: /利用者/ }).getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByRole("radio", { name: "開発者" }).getAttribute("aria-checked")).toBe(
       "false",
     );
   });
@@ -226,14 +248,14 @@ describe("入口フロー（#140）", () => {
     // goal/consent は復元される。
     expect(screen.getByDisplayValue("復元ゴール")).toBeTruthy();
     expect((screen.getByRole("checkbox") as HTMLInputElement).checked).toBe(true);
-    // 未知 role は適用せず既定 pm（チップ未選択や未サポート role の createSession を防ぐ）。
-    expect(screen.getByRole("radio", { name: /企画/ }).getAttribute("aria-checked")).toBe("true");
+    // 未知 role は適用せず既定 customer（チップ未選択や未サポート role の createSession を防ぐ）。
+    expect(screen.getByRole("radio", { name: /利用者/ }).getAttribute("aria-checked")).toBe("true");
   });
 
   it("未ログインでは開始が無効でログイン導線を示す", () => {
     render(<Home />);
     fireEvent.click(screen.getByText("＋ 壁打ちを始める"));
-    const cta = screen.getByRole("button", { name: "インタビューを始める" });
+    const cta = screen.getByRole("button", { name: "要件サンバを始める" });
     expect((cta as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByText("ログインへ").getAttribute("href")).toBe("/login");
   });
@@ -242,7 +264,7 @@ describe("入口フロー（#140）", () => {
     authState.loggedIn = true;
     render(<Home />);
     fireEvent.click(screen.getByText("＋ 壁打ちを始める"));
-    const cta = screen.getByRole("button", { name: "インタビューを始める" });
+    const cta = screen.getByRole("button", { name: "要件サンバを始める" });
     expect((cta as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByText("録音と AI 処理への同意が必要です。")).toBeTruthy();
   });
@@ -253,9 +275,10 @@ describe("入口フロー（#140）", () => {
     fireEvent.click(screen.getByText("＋ 壁打ちを始める"));
     // 候補取得の settle を待つ（取得中は開始が無効 / Codex P2）。
     await act(async () => {});
-    fireEvent.click(screen.getByRole("radio", { name: "エンジニア" }));
+    fireEvent.click(screen.getByRole("radio", { name: "開発者" }));
+    fireEvent.change(screen.getByLabelText("ゴール"), { target: { value: "テストゴール" } });
     fireEvent.click(screen.getByRole("checkbox"));
-    fireEvent.click(screen.getByRole("button", { name: "インタビューを始める" }));
+    fireEvent.click(screen.getByRole("button", { name: "要件サンバを始める" }));
     await waitFor(() => expect(createSession).toHaveBeenCalledTimes(1));
     expect(createSession.mock.calls[0][0]).toEqual(["engineer"]);
     expect(createSession.mock.calls[0][1]).toBe(true);
@@ -293,8 +316,9 @@ describe("入口フロー（#140）", () => {
     fireEvent.click(screen.getByText("＋ 壁打ちを始める"));
     const select = await screen.findByLabelText("連携リポジトリ（任意）");
     fireEvent.change(select, { target: { value: "acme/product-a" } });
+    fireEvent.change(screen.getByLabelText("ゴール"), { target: { value: "テストゴール" } });
     fireEvent.click(screen.getByRole("checkbox"));
-    fireEvent.click(screen.getByRole("button", { name: "インタビューを始める" }));
+    fireEvent.click(screen.getByRole("button", { name: "要件サンバを始める" }));
     await waitFor(() => expect(createSession).toHaveBeenCalledTimes(1));
     // (roles, consent, idToken, title, githubRepo)
     expect(createSession.mock.calls[0][4]).toBe("acme/product-a");
@@ -310,8 +334,9 @@ describe("入口フロー（#140）", () => {
     render(<Home />);
     fireEvent.click(screen.getByText("＋ 壁打ちを始める"));
     await screen.findByLabelText("連携リポジトリ（任意）");
+    fireEvent.change(screen.getByLabelText("ゴール"), { target: { value: "テストゴール" } });
     fireEvent.click(screen.getByRole("checkbox"));
-    fireEvent.click(screen.getByRole("button", { name: "インタビューを始める" }));
+    fireEvent.click(screen.getByRole("button", { name: "要件サンバを始める" }));
     await waitFor(() => expect(createSession).toHaveBeenCalledTimes(1));
     // 空文字 = 「既定リポジトリにも送らない」を API に明示する（Codex P2）。
     expect(createSession.mock.calls[0][4]).toBe("");
@@ -331,8 +356,9 @@ describe("入口フロー（#140）", () => {
     )) as HTMLSelectElement;
     // 表示と挙動の一致（Codex P2）: フォールバック先が選択状態として見える。
     await waitFor(() => expect(select.value).toBe("o/r"));
+    fireEvent.change(screen.getByLabelText("ゴール"), { target: { value: "テストゴール" } });
     fireEvent.click(screen.getByRole("checkbox"));
-    fireEvent.click(screen.getByRole("button", { name: "インタビューを始める" }));
+    fireEvent.click(screen.getByRole("button", { name: "要件サンバを始める" }));
     await waitFor(() => expect(createSession).toHaveBeenCalledTimes(1));
     expect(createSession.mock.calls[0][4]).toBe("o/r");
   });
@@ -352,8 +378,9 @@ describe("入口フロー（#140）", () => {
     await act(async () => {});
     // 既定 "o/r" で上書きされず「連携しない」のまま。
     expect(select.value).toBe("");
+    fireEvent.change(screen.getByLabelText("ゴール"), { target: { value: "テストゴール" } });
     fireEvent.click(screen.getByRole("checkbox"));
-    fireEvent.click(screen.getByRole("button", { name: "インタビューを始める" }));
+    fireEvent.click(screen.getByRole("button", { name: "要件サンバを始める" }));
     await waitFor(() => expect(createSession).toHaveBeenCalledTimes(1));
     expect(createSession.mock.calls[0][4]).toBe("");
   });
@@ -366,8 +393,9 @@ describe("入口フロー（#140）", () => {
     );
     render(<Home />);
     fireEvent.click(screen.getByText("＋ 壁打ちを始める"));
+    fireEvent.change(screen.getByLabelText("ゴール"), { target: { value: "テストゴール" } });
     fireEvent.click(screen.getByRole("checkbox"));
-    const cta = screen.getByRole("button", { name: "インタビューを始める" }) as HTMLButtonElement;
+    const cta = screen.getByRole("button", { name: "要件サンバを始める" }) as HTMLButtonElement;
     // 取得中は無効。settle（成功/失敗どちらでも）で解放される。
     expect(cta.disabled).toBe(true);
     await act(async () => {
@@ -383,8 +411,9 @@ describe("入口フロー（#140）", () => {
     fireEvent.click(screen.getByText("＋ 壁打ちを始める"));
     const input = await screen.findByLabelText("連携リポジトリ（任意）");
     fireEvent.change(input, { target: { value: "acme/manual" } });
+    fireEvent.change(screen.getByLabelText("ゴール"), { target: { value: "テストゴール" } });
     fireEvent.click(screen.getByRole("checkbox"));
-    fireEvent.click(screen.getByRole("button", { name: "インタビューを始める" }));
+    fireEvent.click(screen.getByRole("button", { name: "要件サンバを始める" }));
     await waitFor(() => expect(createSession).toHaveBeenCalledTimes(1));
     expect(createSession.mock.calls[0][4]).toBe("acme/manual");
   });
@@ -401,8 +430,9 @@ describe("入口フロー（#140）", () => {
     const select = await screen.findByLabelText("連携リポジトリ（任意）");
     fireEvent.change(select, { target: { value: "acme/product-a" } });
     expect(screen.queryByLabelText("ブランチ")).toBeNull();
+    fireEvent.change(screen.getByLabelText("ゴール"), { target: { value: "テストゴール" } });
     fireEvent.click(screen.getByRole("checkbox"));
-    fireEvent.click(screen.getByRole("button", { name: "インタビューを始める" }));
+    fireEvent.click(screen.getByRole("button", { name: "要件サンバを始める" }));
     await waitFor(() => expect(createSession).toHaveBeenCalledTimes(1));
     expect(selectSessionRepo).not.toHaveBeenCalled();
   });
@@ -451,8 +481,9 @@ describe("入口フロー（#140）", () => {
     );
     // デフォルト以外の branch も選べる。
     fireEvent.change(screen.getByLabelText("ブランチ"), { target: { value: "dev" } });
+    fireEvent.change(screen.getByLabelText("ゴール"), { target: { value: "テストゴール" } });
     fireEvent.click(screen.getByRole("checkbox"));
-    fireEvent.click(screen.getByRole("button", { name: "インタビューを始める" }));
+    fireEvent.click(screen.getByRole("button", { name: "要件サンバを始める" }));
     await waitFor(() => expect(selectSessionRepo).toHaveBeenCalledTimes(1));
     // (sessionId, repo, branch, sessionToken)。join 済みトークンで認可する（契約 §4）。
     expect(selectSessionRepo).toHaveBeenCalledWith("s1", "octo/demo", "dev", "st");
@@ -470,8 +501,9 @@ describe("入口フロー（#140）", () => {
     const select = await screen.findByLabelText("連携リポジトリ（任意）");
     fireEvent.change(select, { target: { value: "octo/demo" } });
     await screen.findByLabelText("ブランチ");
+    fireEvent.change(screen.getByLabelText("ゴール"), { target: { value: "テストゴール" } });
     fireEvent.click(screen.getByRole("checkbox"));
-    fireEvent.click(screen.getByRole("button", { name: "インタビューを始める" }));
+    fireEvent.click(screen.getByRole("button", { name: "要件サンバを始める" }));
     await waitFor(() => expect(selectSessionRepo).toHaveBeenCalledTimes(1));
     // 03 開始前サマリへは進まず、02 のまま理由を表示する。
     expect(await screen.findByText(/紐づけに失敗しました/)).toBeTruthy();
@@ -486,6 +518,9 @@ describe("入口フロー（#140）", () => {
     const view = render(<Home />);
     fireEvent.click(screen.getByText("＋ 壁打ちを始める"));
     await act(async () => {});
+    // ゴール・対象アプリは開始の必須条件（#222 / ADR-0031）。既定で埋め、開始系テストの前提を揃える。
+    fireEvent.change(screen.getByLabelText("ゴール"), { target: { value: "テストゴール" } });
+    selectProduct();
     return view;
   }
 
@@ -530,7 +565,7 @@ describe("入口フロー（#140）", () => {
       new File(["x"], "PRD.png", { type: "image/png" }),
       new File(["y"], "demo.mp4", { type: "video/mp4" }),
     ]);
-    fireEvent.click(screen.getByRole("button", { name: "インタビューを始める" }));
+    fireEvent.click(screen.getByRole("button", { name: "要件サンバを始める" }));
     await waitFor(() => expect(uploadContextFile).toHaveBeenCalledTimes(2));
     // join 済みトークン（session_token）で投入する（契約 §4）。
     expect(uploadContextFile.mock.calls[0][2]).toBe("st");
@@ -546,7 +581,7 @@ describe("入口フロー（#140）", () => {
     fireEvent.click(screen.getByRole("checkbox"));
     uploadContextFile.mockRejectedValueOnce(new Error("upload failed: 500"));
     pickFiles(container, [new File(["x"], "ng.png", { type: "image/png" })]);
-    fireEvent.click(screen.getByRole("button", { name: "インタビューを始める" }));
+    fireEvent.click(screen.getByRole("button", { name: "要件サンバを始める" }));
     // 失敗しても開始前サマリ（03-0）へ進む。
     await waitFor(() => expect(screen.getByText("支度、相整いまして")).toBeTruthy());
     // 失敗分は「添付済み」に出さない（誤認防止）。0 件成功なので従来文言＋失敗注記。
@@ -571,9 +606,10 @@ describe("入口フロー（#140）", () => {
     const { container } = render(<Home />);
     fireEvent.click(screen.getByText("＋ 壁打ちを始める"));
     await act(async () => {}); // 候補取得の settle（取得中は開始が無効 / Codex P2）
+    fireEvent.change(screen.getByLabelText("ゴール"), { target: { value: "テストゴール" } });
     fireEvent.click(screen.getByRole("checkbox"));
     pickFiles(container, [new File(["x"], "a.png", { type: "image/png" })]);
-    fireEvent.click(screen.getByRole("button", { name: "インタビューを始める" }));
+    fireEvent.click(screen.getByRole("button", { name: "要件サンバを始める" }));
     expect(
       (screen.getByRole("button", { name: "＋ ファイルを追加" }) as HTMLButtonElement).disabled,
     ).toBe(true);
@@ -594,8 +630,9 @@ describe("入口フロー（#140）", () => {
     render(<Home />);
     fireEvent.click(screen.getByText("＋ 壁打ちを始める"));
     await act(async () => {}); // 候補取得の settle（取得中は開始が無効 / Codex P2）
+    fireEvent.change(screen.getByLabelText("ゴール"), { target: { value: "テストゴール" } });
     fireEvent.click(screen.getByRole("checkbox"));
-    const cta = screen.getByRole("button", { name: "インタビューを始める" });
+    const cta = screen.getByRole("button", { name: "要件サンバを始める" });
     fireEvent.click(cta);
     fireEvent.click(cta); // 連打
     expect((cta as HTMLButtonElement).disabled).toBe(true);
@@ -604,5 +641,154 @@ describe("入口フロー（#140）", () => {
       release({ session_id: "s1", invites: { pm: "inv-pm" } });
     });
     expect(createSession).toHaveBeenCalledTimes(1);
+  });
+
+  // ── 02 ゴール（プレースホルダ・役割別の例・詳細）/ 対象プロダクト #222・ADR-0031 ──
+  it("ゴールのプレースホルダが更新され、例は役割で切り替わる表示専用テキスト（#222）", async () => {
+    await gotoPrepare();
+    const goal = screen.getByLabelText("ゴール") as HTMLTextAreaElement;
+    expect(goal.getAttribute("placeholder")).toBe("ゴールを入力・・・");
+    // 既定（利用者）の記入例。表示専用なのでボタンではない。
+    expect(screen.getByText("例：ボタンを押しても動かない状況を改善したい")).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: /ボタンを押しても動かない状況を改善したい/ }),
+    ).toBeNull();
+    // 役割を企画者に切り替えると例文も企画者向けに変わる。
+    fireEvent.click(screen.getByRole("radio", { name: "企画者" }));
+    expect(screen.getByText("例：検索機能のリニューアル要件を固めたい")).toBeTruthy();
+    expect(screen.queryByText("例：ボタンを押しても動かない状況を改善したい")).toBeNull();
+  });
+
+  it("ゴール未入力の間は開始できず理由を示す（必須 / #222）", async () => {
+    authState.loggedIn = true;
+    render(<Home />);
+    fireEvent.click(screen.getByText("＋ 壁打ちを始める"));
+    await act(async () => {});
+    fireEvent.click(screen.getByRole("checkbox"));
+    // 同意済み・候補 settle 済みでも、ゴールが空なら開始は無効。
+    expect(
+      (screen.getByRole("button", { name: "要件サンバを始める" }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+    expect(screen.getByText("ゴールの入力が必要です。")).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("ゴール"), { target: { value: "テストゴール" } });
+    expect(
+      (screen.getByRole("button", { name: "要件サンバを始める" }) as HTMLButtonElement).disabled,
+    ).toBe(false);
+  });
+
+  it("ゴールの詳細は goal_detail 文脈として開始時に投入する（#222）", async () => {
+    await gotoPrepare();
+    fireEvent.change(screen.getByLabelText("ゴールの詳細"), {
+      target: { value: "現状は検索が遅い。範囲と優先度を整理したい。" },
+    });
+    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(screen.getByRole("button", { name: "要件サンバを始める" }));
+    await waitFor(() => expect(createSession).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(
+        addSessionContext.mock.calls.some(
+          (c) => c[3] === "goal_detail" && c[1] === "現状は検索が遅い。範囲と優先度を整理したい。",
+        ),
+      ).toBe(true),
+    );
+  });
+
+  it("同意文言と開始ボタン文言が更新されている（#222）", async () => {
+    await gotoPrepare();
+    expect(screen.getByText("録音と AI 処理に同意します（最大 30 日保持）。")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "要件サンバを始める" })).toBeTruthy();
+  });
+
+  it("プロダクト候補が 0 件でもセレクトは常に表示し、無効化して開始も塞ぐ（ADR-0031）", async () => {
+    authState.loggedIn = true;
+    fetchMyProducts.mockResolvedValueOnce([]);
+    render(<Home />);
+    fireEvent.click(screen.getByText("＋ 壁打ちを始める"));
+    await act(async () => {});
+    const select = screen.getByLabelText("対象のプロダクト・アプリ") as HTMLSelectElement;
+    expect(select.disabled).toBe(true);
+    // 未選択なので、ゴール・同意を満たしても開始は無効（fail-closed）。
+    fireEvent.change(screen.getByLabelText("ゴール"), { target: { value: "テストゴール" } });
+    fireEvent.click(screen.getByRole("checkbox"));
+    expect(
+      (screen.getByRole("button", { name: "要件サンバを始める" }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+    expect(screen.getByText("対象のプロダクト・アプリの選択が必要です。")).toBeTruthy();
+  });
+
+  it("登録済みプロダクトを選ぶと product_id を渡し用語文脈を投入する（repo は API 継承 / ADR-0031）", async () => {
+    authState.loggedIn = true;
+    fetchMyProducts.mockResolvedValueOnce([
+      {
+        id: "p1",
+        name: "検索アプリ",
+        description: "社内ドキュメント検索",
+        glossary: ["絞り込み", "サジェスト"],
+        created_at: "2024-06-20T03:00:00Z",
+        github_repo: "acme/search",
+        github_branch: "main",
+        github_commit_sha: null,
+        github_index_status: "ready",
+      },
+    ]);
+    render(<Home />);
+    fireEvent.click(screen.getByText("＋ 壁打ちを始める"));
+    const select = await screen.findByLabelText("対象のプロダクト・アプリ");
+    fireEvent.change(select, { target: { value: "p1" } });
+    fireEvent.change(screen.getByLabelText("ゴール"), { target: { value: "テストゴール" } });
+    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(screen.getByRole("button", { name: "要件サンバを始める" }));
+    await waitFor(() => expect(createSession).toHaveBeenCalledTimes(1));
+    // product_id を createSession に渡す（API 側で SessionMeta に紐づけ、前提 repo を継承する）。
+    // (roles, consent, idToken, title, githubRepo, productId)
+    expect(createSession.mock.calls[0][5]).toBe("p1");
+    // コネクタ無効時は github_repo を明示送信せず undefined（product 継承に委ねる）。
+    expect(createSession.mock.calls[0][4]).toBeUndefined();
+    // 前提 repo のクライアント側バインド（selectSessionRepo）はしない（API 継承 / PR#314 P1）。
+    expect(selectSessionRepo).not.toHaveBeenCalled();
+    // 用語/説明は補助グラウンディングとして product 文脈に投入する。
+    await waitFor(() =>
+      expect(addSessionContext.mock.calls.some((c) => c[3] === "product")).toBe(true),
+    );
+  });
+
+  it("stale な productId（候補に無い保存値）はクリアし、開始を塞ぐ（PR#314 P2）", async () => {
+    // 削除済み product の id が sessionStorage に残っているケース。
+    window.sessionStorage.setItem("sanba.prep.v1", JSON.stringify({ productId: "gone" }));
+    authState.loggedIn = true;
+    fetchMyProducts.mockResolvedValueOnce([
+      {
+        id: "p1",
+        name: "検索アプリ",
+        description: "",
+        glossary: [],
+        created_at: "2024-06-20T03:00:00Z",
+        github_repo: null,
+        github_branch: null,
+        github_commit_sha: null,
+        github_index_status: "none",
+      },
+      {
+        id: "p2",
+        name: "別アプリ",
+        description: "",
+        glossary: [],
+        created_at: "2024-06-20T03:00:00Z",
+        github_repo: null,
+        github_branch: null,
+        github_commit_sha: null,
+        github_index_status: "none",
+      },
+    ]);
+    render(<Home />);
+    fireEvent.click(screen.getByText("＋ 壁打ちを始める"));
+    // 候補は 2 件（自動選択しない）。stale な "gone" はクリアされ未選択に戻る。
+    const select = (await screen.findByLabelText("対象のプロダクト・アプリ")) as HTMLSelectElement;
+    await waitFor(() => expect(select.value).toBe(""));
+    fireEvent.change(screen.getByLabelText("ゴール"), { target: { value: "テストゴール" } });
+    fireEvent.click(screen.getByRole("checkbox"));
+    expect(
+      (screen.getByRole("button", { name: "要件サンバを始める" }) as HTMLButtonElement).disabled,
+    ).toBe(true);
   });
 });
