@@ -7,6 +7,7 @@
 // 重要: **色のみに依存しない**（DoD / 05・08 の AC）。色覚特性に関わらず判別できるよう、
 // 必ず label と icon を伴わせる。色は補助。
 
+import type { InterviewMode } from "../interviewMode";
 import type { DetectionKind } from "./types";
 
 export interface KindPresentation {
@@ -45,8 +46,22 @@ const DETECTION_PRESENTATION: Record<DetectionKind, KindPresentation> = {
   },
 };
 
-export function detectionPresentation(kind: DetectionKind): KindPresentation {
-  return DETECTION_PRESENTATION[kind];
+// end_user モード（ADR-0032 / FR-2.4）: 「矛盾」「抜け」等の開発語彙を利用者向けの
+// 言い回しへ差し替える。色・アイコンは developer と共有し（色のみ非依存の原則は不変）、
+// ラベル・読み上げだけ切替える。
+const DETECTION_PRESENTATION_END_USER: Record<DetectionKind, Partial<KindPresentation>> = {
+  contradiction: { label: "食い違い", ariaLabel: "お話に食い違いがある点" },
+  gap: { label: "確認", ariaLabel: "確認したい点" },
+  ambiguous: { label: "あいまい", ariaLabel: "あいまいな点" },
+};
+
+export function detectionPresentation(
+  kind: DetectionKind,
+  mode: InterviewMode = "developer",
+): KindPresentation {
+  const base = DETECTION_PRESENTATION[kind];
+  if (mode !== "end_user") return base;
+  return { ...base, ...DETECTION_PRESENTATION_END_USER[kind] };
 }
 
 // 要件カテゴリの表示（08/09 のチップ・セクション用）。色は補助、ラベル＋アイコンが主。
@@ -76,8 +91,22 @@ const UNKNOWN_CATEGORY: KindPresentation = {
   ariaLabel: "要件",
 };
 
-export function categoryPresentation(category: string): KindPresentation {
-  return CATEGORY_PRESENTATION[category] ?? UNKNOWN_CATEGORY;
+// end_user モード（FR-2.4）: 「非機能」「スコープ」等の開発語彙を日常語へ寄せる。
+const CATEGORY_PRESENTATION_END_USER: Record<string, Partial<KindPresentation>> = {
+  functional: { label: "機能", ariaLabel: "機能のこと" },
+  non_functional: { label: "使い心地", ariaLabel: "使い心地のこと" },
+  constraint: { label: "前提", ariaLabel: "前提のこと" },
+  scope: { label: "範囲", ariaLabel: "対象範囲のこと" },
+  open_question: { label: "確認中", ariaLabel: "確認中のこと" },
+};
+
+export function categoryPresentation(
+  category: string,
+  mode: InterviewMode = "developer",
+): KindPresentation {
+  const base = CATEGORY_PRESENTATION[category] ?? UNKNOWN_CATEGORY;
+  if (mode !== "end_user") return base;
+  return { ...base, label: "要望", ariaLabel: "要望", ...CATEGORY_PRESENTATION_END_USER[category] };
 }
 
 // MoSCoW 優先度の表示（09 要件絵巻のセクション）。
@@ -88,7 +117,17 @@ const PRIORITY_LABEL: Record<string, string> = {
   wont: "Won't 今回は対象外",
 };
 
-export function priorityLabel(priority: string): string {
+// end_user モード（FR-2.4）: MoSCoW という内部分類名（Must/Should/...）を露出させない。
+// 区分の構造（優先度順の並び）は保ち、名前だけ利用者の言葉に差し替える。
+const PRIORITY_LABEL_END_USER: Record<string, string> = {
+  must: "ぜひ必要",
+  should: "あると助かる",
+  could: "できれば",
+  wont: "今回は見送り",
+};
+
+export function priorityLabel(priority: string, mode: InterviewMode = "developer"): string {
+  if (mode === "end_user") return PRIORITY_LABEL_END_USER[priority] ?? "その他";
   return PRIORITY_LABEL[priority] ?? priority;
 }
 

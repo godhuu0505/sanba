@@ -4,6 +4,7 @@
 // 会話中の 06 要件絵巻タブ（RequirementsTab）と、ホーム履歴からの過去要件閲覧画面
 // （/sessions/[id]）の両方で同じ見た目を共有する。編集操作は持たない（表示のみ）。
 
+import { useInterviewMode } from "@/lib/interviewMode";
 import { PRIORITY_ORDER, priorityLabel } from "@/lib/realtime/mapping";
 import type { Requirement } from "@/lib/realtime/types";
 
@@ -23,6 +24,9 @@ export function RequirementsScrollList({
   requirements,
   emptyText = "まだ要件はありません。問答が進むと、ここに育っていきます。",
 }: RequirementsScrollListProps) {
+  // end_user モードでは MoSCoW（Must/Should/...）の内部分類名を露出させない（FR-2.4）。
+  // 区分の構造は保ち、見出しだけ利用者の言葉に差し替える（mapping.ts）。
+  const interviewMode = useInterviewMode();
   if (requirements.length === 0) {
     return <p className="px-1 py-3 text-[12.5px] text-sanba-muted">{emptyText}</p>;
   }
@@ -32,8 +36,14 @@ export function RequirementsScrollList({
         const group = requirements.filter((r) => r.priority === pr);
         if (group.length === 0) return null;
         return (
-          <section key={pr} aria-label={priorityLabel(pr)} className="flex flex-col gap-[6px]">
-            <h3 className="text-[12px] font-bold text-sanba-gold-text">{priorityLabel(pr)}</h3>
+          <section
+            key={pr}
+            aria-label={priorityLabel(pr, interviewMode)}
+            className="flex flex-col gap-[6px]"
+          >
+            <h3 className="text-[12px] font-bold text-sanba-gold-text">
+              {priorityLabel(pr, interviewMode)}
+            </h3>
             {group.map((r) => (
               <div
                 key={r.id}
