@@ -1817,6 +1817,10 @@ def create_product_member_invite(
         raise HTTPException(status_code=400, detail="cannot invite yourself")
     if any(m.email.lower() == email for m in _repo.list_product_members(product_id)):
         raise HTTPException(status_code=409, detail="already a member")
+    # 重複チェックは read-check-create で、並行 POST では保留中招待が 2 通できる余地を
+    # 許容する（Cloud Run 多インスタンス）。実害は「余分な招待行」に留まる: メンバーの
+    # doc id は product__sub の upsert なのでどちらを承諾しても同じメンバーシップになり、
+    # 承諾の直列化は respond_member_invite のトランザクションが担う。
     has_pending = any(
         i.email == email and _invite_effective_status(i) == "pending"
         for i in _repo.list_member_invites(product_id)
@@ -1898,7 +1902,8 @@ def list_my_member_invites(user: AuthUser = Depends(require_user)) -> list[MyMem
 
     検証済み identity の email（require_user が email_verified を保証）と宛先の
     小文字照合で絞る。期限切れ・応答済みは出さない。招待元 product が消えていれば
-    スキップする（カスケード削除の競合窓）。
+    スキップする（カスケード削除の競合窓）。ページングは持たない（list_sessions と同じ
+    MVP 方針。宛先ごとの保留中招待はごく少数で、product の追加 read もその件数に比例）。
     """
     invites = _repo.list_member_invites_by_email(user.email.lower())
     rows: list[MyMemberInviteDisplay] = []
