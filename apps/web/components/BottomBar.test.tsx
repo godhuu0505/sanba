@@ -25,12 +25,20 @@ describe("BottomBar（常時2行：消音/マイク・テキスト/送信）", (
     expect(cb.onToggleMute).toHaveBeenCalledTimes(1);
   });
 
-  it("マイク（会話）は micOn を aria-pressed で表し、押下で onToggleMic", () => {
+  it("マイク・ミュートは micOn=true で未ミュート（aria-pressed=false / マイク オン）", () => {
     const cb = setup({ micOn: true });
-    const mic = screen.getByRole("button", { name: "会話（マイク）" });
-    expect(mic.getAttribute("aria-pressed")).toBe("true");
+    const mic = screen.getByRole("button", { name: "マイクをミュート" });
+    expect(mic.getAttribute("aria-pressed")).toBe("false");
+    expect(mic.textContent).toContain("マイク オン");
     fireEvent.click(mic);
     expect(cb.onToggleMic).toHaveBeenCalledTimes(1);
+  });
+
+  it("マイク OFF はミュート中を明示する（aria-pressed=true / ミュート中）", () => {
+    setup({ micOn: false });
+    const mic = screen.getByRole("button", { name: "マイクをミュート" });
+    expect(mic.getAttribute("aria-pressed")).toBe("true");
+    expect(mic.textContent).toContain("ミュート中");
   });
 
   it("テキストを入力して送信すると onSend(本文) を呼び、入力を空にする", () => {

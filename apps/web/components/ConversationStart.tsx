@@ -134,7 +134,10 @@ function RoomGate({
 
   // 接続後は SessionView を載せたまま保持する。一時的な再接続中は状態を壊さないよう
   // アンマウントせず、上から非破壊のオーバーレイ帯で知らせるだけにする。
-  const reconnecting = state !== ConnectionState.Connected;
+  // 「再接続中」に限定して帯を出す（Disconnected は含めない）。セッション終了で意図的に
+  // ルームを切断したとき（08 結果画面）に「繋ぎ直しております」を誤表示しないため。
+  const reconnecting =
+    state === ConnectionState.Reconnecting || state === ConnectionState.SignalReconnecting;
   return (
     <Screen className="px-4 py-3">
       <AppHeader brand right={<StartAudio label="音声を有効に" />} />
