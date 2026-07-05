@@ -10,6 +10,11 @@
 locals {
   image_base = "${var.region}-docker.pkg.dev/${var.project_id}/sanba"
 
+  # use_vertexai に応じた Gemini Live モデル名。変数で明示指定した場合はそちらを優先する。
+  # Vertex AI (use_vertexai=true): gemini-live-* 系。`gemini-2.0-flash-live-001` は AI Studio
+  # 名で Vertex(us-central1) に存在せず 1008 クラッシュになるため別名が必要（実機で確認）。
+  gemini_live_model = coalesce(var.gemini_live_model, var.use_vertexai ? "gemini-live-2.5-flash-native-audio" : "gemini-2.0-flash-live-001")
+
   # agent / api 共通の平文 env。
   common_env = {
     GOOGLE_CLOUD_PROJECT        = var.project_id
@@ -23,7 +28,7 @@ locals {
   }
 
   agent_env = merge(local.common_env, {
-    GEMINI_LIVE_MODEL      = var.gemini_live_model
+    GEMINI_LIVE_MODEL      = local.gemini_live_model
     GEMINI_REASONING_MODEL = var.gemini_reasoning_model
     OTEL_SERVICE_NAME      = "sanba-agent"
   })
