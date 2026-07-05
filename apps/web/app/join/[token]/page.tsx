@@ -167,7 +167,7 @@ export default function JoinPage() {
           // リンクが死んでいる（期限切れ・失効・上限・不正・消滅）: 開始 UI は出さない。
           <Card>
             <CardTitle>{error.title}</CardTitle>
-            <p className="text-[12px] leading-relaxed text-[var(--sanba-muted)]">
+            <p className="text-[12px] leading-relaxed text-sanba-muted">
               {error.description}
             </p>
             <Button variant="outline" block onClick={() => router.push("/")}>
@@ -177,17 +177,17 @@ export default function JoinPage() {
         ) : (
           <Card>
             <CardTitle>深掘りリンクから参加します</CardTitle>
-            <p className="text-[13px] leading-relaxed text-[var(--sanba-cream)]">
+            <p className="text-[13px] leading-relaxed text-sanba-cream">
               このリンクの発行者が対象のアプリを準備済みです。開始すると、音声で一問ずつ
               問いかける深掘りセッションが始まります（準備の入力は不要です）。
             </p>
             {/* 同意ゲート（issue #10）。02 準備と同じ文言・保持日数を明示する。 */}
-            <label className="flex items-start gap-[10px] text-[13px] leading-relaxed text-[var(--sanba-cream)]">
+            <label className="flex items-start gap-[10px] text-[13px] leading-relaxed text-sanba-cream">
               <input
                 type="checkbox"
                 checked={consent}
                 onChange={(e) => setConsent(e.target.checked)}
-                className="mt-[3px] size-[16px] accent-[var(--sanba-gold)]"
+                className="mt-[3px] size-[16px] accent-sanba-gold"
               />
               <span>
                 録音と AI 処理に同意します（最大 {RETENTION_DAYS}{" "}
@@ -195,7 +195,7 @@ export default function JoinPage() {
               </span>
             </label>
             {error && (
-              <p role="alert" className="text-[12px] text-[var(--sanba-rec-text)]">
+              <p role="alert" className="text-[12px] text-sanba-rec-text">
                 {error.title} — {error.description}
               </p>
             )}

@@ -20,7 +20,7 @@ export const sanbaButtonVariants = cva(
         gold: "sanba-display border-2 border-sanba-frame bg-sanba-rec-text text-white font-extrabold shadow-[3.5px_3.5px_0_var(--sanba-frame)] hover:opacity-95 active:translate-x-[3.5px] active:translate-y-[3.5px] active:shadow-none",
         // 白ステッカーの副次ボタン（ADR-0033 §4）。白面・墨文字・2px 墨枠・3px の淡い墨影。
         outline:
-          "border-2 border-sanba-frame bg-sanba-surface text-sanba-cream shadow-[3px_3px_0_rgba(34,30,26,0.15)] hover:opacity-95 active:translate-x-[3px] active:translate-y-[3px] active:shadow-none",
+          "border-2 border-sanba-frame bg-sanba-surface text-sanba-cream shadow-[3px_3px_0_var(--sanba-shadow-strong)] hover:opacity-95 active:translate-x-[3px] active:translate-y-[3px] active:shadow-none",
         // テキストのみの第三ボタン（退ける・ログアウト等）。
         ghost: "text-sanba-muted hover:text-sanba-cream",
       },

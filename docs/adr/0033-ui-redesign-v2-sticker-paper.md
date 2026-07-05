@@ -1,6 +1,9 @@
 # ADR-0033: UI デザイン刷新 v2（白い紙の上の問答 — ステッカー×原色×動く棒人間）
 
-- ステータス: **Accepted（受理・2026-07-05 確定）**
+- ステータス: **Accepted（受理・2026-07-05 確定 / 全 Phase 実装・検証完了 2026-07-05）**
+  - Phase 1〜4: トークン・ステッカー意匠・棒人間配線・帯/動き（#305/#306/#308 ほか）。
+  - Phase 5: 一貫性クリーンアップ（暗幕→墨・mapping トークン化・色クラス記法統一 / #310）。
+  - Phase 6: 品質検証（AA / reduced-motion / 純黒 / 実機スモーク）→ [検証記録](../a11y-contrast-adr0033.md)。**実欠陥なし。**
 - 日付: 2026-07-05
 - 関連:
   - **[ADR-0025](0025-light-paper-redesign.md) を Superseded にする**（本 ADR が唯一の正）。
@@ -134,3 +137,24 @@ no fill、頭は白 fill。**5 状態**と**実画面への配線**:
 - **Lottie 等による棒人間アニメ**: 依存とバンドル増。SVG＋CSS で十分軽量（提案 HTML が実証）。
 - **トークン全面リネーム**（`--sanba-gold`→`--sanba-yamabuki` 等）: 参照 348 箇所超に及び差分が肥大。
   名前空間を維持し値のみ差し替える。
+
+## 検証（Phase 6・2026-07-05）
+
+全 Phase 実装後の品質ゲート総点検。詳細と実測表は
+[docs/a11y-contrast-adr0033.md](../a11y-contrast-adr0033.md)。**AA・reduced-motion・色のみ非依存・
+純黒禁止のいずれも実欠陥なし**（UI 是正ゼロ・意匠不変）。要点:
+
+- **AA コントラスト（WCAG 2.1 相対輝度で実測）**: 本文トークンは全て実使用面で 4.5:1 以上。
+  図形/アイコンは 3:1 以上、または装飾（`aria-hidden`＋意味は隣接テキスト）で色に意味を負わせない。
+  萌黄・山吹を素の文字色に使う箇所は 0（暗色 speak-text / gold-text を使用）。
+- **§影響の概算コントラスト値を実測で更新**（本節を正とする）:
+  瑠璃 select `#2A5CDB` = **5.75:1**（白地。旧記載 6.1）／朱文字 rec-text `#C43A20` = **5.29:1**（白地。
+  旧記載 4.6 は淡面 4.68 相当）／萌黄 speak `#7FA83C` = **2.77:1**（白地。旧記載 3.2 は不正確）。
+  萌黄は 3:1 未満だが、波形/音波の装飾（`role="img"` ＋ 墨バーと交互で形状判別）に限定のため許容。
+- **reduced-motion**: 全 `@keyframes`（wave / glow-pulse / fig-* / slide / parade-move）に
+  `prefers-reduced-motion: reduce` の静止規則が対応。JS 駆動アニメは無し（全て CSS メディアクエリで静止）。
+- **純黒・直書き色**: `apps/web` で `bg-black`/`#000`/`rgba(0,0,0)`・素の `[var(--sanba-*)]` 記法・
+  直書き rgba/hex いずれも 0。Phase 6 の是正は不統一解消のみ（`join/[token]` の記法回帰、
+  未定義 `--sanba-danger`→`rec-text`、ghost 影を `--sanba-shadow-strong` へトークン化）で見た目 no-op。
+- **実機スモーク**: `next start` で主要ルートが 200、not-found が 404。フルスタック docker の人手目視と
+  Playwright E2E は推奨フォローアップ（本フェーズ未実施）。
