@@ -62,7 +62,9 @@ variable "use_vertexai" {
 
 variable "gemini_live_model" {
   type    = string
-  default = "gemini-2.0-flash-live-001"
+  default = null
+  # null（未指定）のとき cloud_run.tf の agent_env で "gemini-live-2.5-flash-native-audio" になる。
+  # 明示指定した場合はその値を優先する。
 }
 
 variable "gemini_reasoning_model" {

@@ -23,7 +23,9 @@ locals {
   }
 
   agent_env = merge(local.common_env, {
-    GEMINI_LIVE_MODEL      = var.gemini_live_model
+    # Gemini Live のモデル名。明示指定(var.gemini_live_model)を優先し、未指定なら
+    # gemini-live-2.5-flash-native-audio（Vertex GA）。gemini-2.0-flash-live-001 は廃止済み。
+    GEMINI_LIVE_MODEL      = coalesce(var.gemini_live_model, "gemini-live-2.5-flash-native-audio")
     GEMINI_REASONING_MODEL = var.gemini_reasoning_model
     OTEL_SERVICE_NAME      = "sanba-agent"
   })
@@ -108,7 +110,9 @@ resource "google_cloud_run_v2_service" "agent" {
       # 起動プローブをそのポートに合わせる (未指定だと 8080 を probe して起動失敗する)。
       ports { container_port = 8081 }
       resources {
-        limits   = { cpu = "2", memory = "1Gi" }
+        # 常駐ワーカー。Gemini Live セッション中に 1Gi を超過し OOM で再起動する事象を実機で
+        # 確認したため 2Gi にする（"Memory limit of 1024 MiB exceeded"）。
+        limits   = { cpu = "2", memory = "2Gi" }
         cpu_idle = false # 常駐ワーカーなので常時 CPU 割当
       }
       dynamic "env" {
