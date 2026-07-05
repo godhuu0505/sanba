@@ -246,7 +246,7 @@ describe("ConversationSessionView（会話シェル結線）", () => {
 
   it("ボトムバーのマイク/消音トグルとテキスト送信が配線される", () => {
     const { onToggleMic, onToggleMute, onSendText } = renderView();
-    fireEvent.click(screen.getByRole("button", { name: "会話（マイク）" }));
+    fireEvent.click(screen.getByRole("button", { name: "マイクをミュート" }));
     expect(onToggleMic).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole("button", { name: "消音" }));
     expect(onToggleMute).toHaveBeenCalledTimes(1);

@@ -1,12 +1,12 @@
 "use client";
 
 // 常時2行ボトムバー。仕様: docs/design/conversation-experience.md §5。
-// 1行目: 消音（音声出力 ON/OFF）/ 会話（マイク入力 ON/OFF）の2系統トグル。
+// 1行目: 消音（音声出力 ON/OFF）/ マイク・ミュート（マイク入力 ON/OFF）の2系統トグル。
 // 2行目: テキスト入力欄 + 送信（音声と併用）。
 // a11y: 見た目が古語でも aria-label は現代語の機能名（ADR-0017）。
 
 import { useState } from "react";
-import { Mic, Volume2, VolumeX } from "lucide-react";
+import { Mic, MicOff, Volume2, VolumeX } from "lucide-react";
 
 import type { SessionPhase } from "@/lib/realtime/types";
 import { VoiceStatusIndicator } from "./VoiceStatusIndicator";
@@ -60,7 +60,7 @@ export function BottomBar({
         />
       </div>
 
-      {/* 1行目: 消音 / 会話（マイク） */}
+      {/* 1行目: 消音（音声出力）/ マイク・ミュート（マイク入力） */}
       <div className="flex gap-2">
         <button
           type="button"
@@ -85,16 +85,24 @@ export function BottomBar({
         </button>
         <button
           type="button"
-          aria-label="会話（マイク）"
-          aria-pressed={micOn}
+          aria-label="マイクをミュート"
+          aria-pressed={!micOn}
           onClick={onToggleMic}
-          className={`flex flex-1 items-center justify-center gap-1.5 rounded-[12px] py-3 text-[13px] font-bold ${
+          className={`flex flex-1 items-center justify-center gap-1.5 rounded-[12px] border py-3 text-[13px] font-bold ${
             micOn
               ? "sanba-gold-gradient border-2 border-sanba-frame text-sanba-ink"
-              : "border border-sanba-border bg-sanba-surface text-sanba-muted"
+              : "border-sanba-rec bg-sanba-rec-pale text-sanba-rec-text"
           }`}
         >
-          <Mic size={15} aria-hidden /> {micOn ? "会話（マイク）" : "会話オフ"}
+          {micOn ? (
+            <>
+              <Mic size={15} aria-hidden /> マイク オン
+            </>
+          ) : (
+            <>
+              <MicOff size={15} aria-hidden /> ミュート中
+            </>
+          )}
         </button>
       </div>
 
