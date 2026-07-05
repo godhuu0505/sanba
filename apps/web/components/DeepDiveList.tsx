@@ -11,8 +11,11 @@ import type { Detection } from "@/lib/realtime/types";
 export interface DeepDiveListProps {
   /** 未解消の検知（深掘り対象）。 */
   detections: Detection[];
-  /** 「会話で確認」押下。該当検知の id を渡す。 */
-  onJump: (detectionId: string) => void;
+  /**
+   * 「会話で確認」押下。該当検知の id を渡す。
+   * 未指定なら導線を出さない（セッション終了後の閲覧など、会話へ戻れない文脈で偽ボタンを作らない）。
+   */
+  onJump?: (detectionId: string) => void;
 }
 
 export function DeepDiveList({ detections, onJump }: DeepDiveListProps) {
@@ -46,13 +49,15 @@ export function DeepDiveList({ detections, onJump }: DeepDiveListProps) {
               </span>
               <p className="flex-1 text-[12.5px] text-sanba-cream">{d.summary}</p>
             </div>
-            <button
-              type="button"
-              onClick={() => onJump(d.id)}
-              className="self-start text-[11px] font-bold text-sanba-gold-text"
-            >
-              会話で確認 ›
-            </button>
+            {onJump && (
+              <button
+                type="button"
+                onClick={() => onJump(d.id)}
+                className="self-start text-[11px] font-bold text-sanba-gold-text"
+              >
+                会話で確認 ›
+              </button>
+            )}
           </div>
         );
       })}

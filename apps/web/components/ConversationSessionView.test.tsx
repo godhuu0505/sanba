@@ -393,6 +393,68 @@ describe("ConversationSessionView（会話シェル結線）", () => {
   });
 });
 
+describe("ConversationSessionView（セッション終了後の閲覧モード）", () => {
+  afterEach(() => cleanup());
+
+  // 確定（未解消0件）で終了し、結果（08）から「この絵巻を画面で確認する」でシェルへ戻る。
+  async function endAndView(props: Partial<React.ComponentProps<typeof ConversationSessionView>> = {}) {
+    const handles = renderView({ state: baseState({ detections: [] }), ...props });
+    fireEvent.click(screen.getByRole("button", { name: "会話を終了" }));
+    fireEvent.click(screen.getByRole("button", { name: "終了する" }));
+    fireEvent.click(screen.getByRole("button", { name: "要件を確定する" }));
+    await screen.findByText(/要件、産まれました/);
+    fireEvent.click(screen.getByRole("button", { name: /この絵巻を画面で確認する/ }));
+    return handles;
+  }
+
+  it("終了後の確認ではボトムバー（テキスト入力・消音・マイク）と REC・終了を出さない", async () => {
+    await endAndView();
+    // シェル（要件絵巻タブ）へは戻る。
+    expect(screen.getByRole("tab", { name: "要件絵巻" }).getAttribute("aria-selected")).toBe("true");
+    // セッション中専用の会話コントロールは出さない。
+    expect(screen.queryByLabelText("テキストで入力")).toBeNull();
+    expect(screen.queryByRole("button", { name: "送信" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "消音" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "会話（マイク）" })).toBeNull();
+    expect(screen.queryByText(/REC/)).toBeNull();
+    expect(screen.queryByRole("button", { name: "会話を終了" })).toBeNull();
+  });
+
+  it("『結果に戻る』で結果（08）へ戻れる", async () => {
+    await endAndView();
+    fireEvent.click(screen.getByRole("button", { name: "結果に戻る" }));
+    expect(screen.getByText(/要件、産まれました/)).toBeTruthy();
+  });
+
+  it("終了後の参考資料タブは一覧のみで『＋素材を追加』を出さない", async () => {
+    await endAndView({
+      state: baseState({
+        detections: [],
+        analysis: [{ asset_id: "a1", pct: 100, stage: "完了", extracted: [], conflicts: [] }],
+      }),
+    });
+    fireEvent.click(screen.getByRole("tab", { name: "参考資料" }));
+    // 素材は閲覧できるが、投入・中断の導線はセッション中のみ。
+    expect(screen.getByRole("button", { name: "資料 a1 の詳細を開く" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /素材を追加/ })).toBeNull();
+  });
+
+  it("未解消のまま終えた後の確認では問いピンと『会話で確認』を出さない", async () => {
+    // baseState は未解消 d1（選択肢つき）・d2 を持つ。強制終了（暫定）で結果へ。
+    renderView();
+    fireEvent.click(screen.getByRole("button", { name: "会話を終了" }));
+    fireEvent.click(screen.getByRole("button", { name: "終了する" }));
+    fireEvent.click(screen.getByRole("button", { name: "未解消のまま終う" }));
+    expect(await screen.findByText(/暫定で書き留めました/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /この絵巻を画面で確認する/ }));
+    // 選択肢つき検知 d1 が残っていても、回答導線（問いピン）は出さない。
+    expect(screen.queryByRole("button", { name: "関連度順にする" })).toBeNull();
+    // 深掘り一覧は閲覧できるが「会話で確認」は出さない。
+    expect(screen.getByText("『該当なし』の空状態が未定義。")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "会話で確認 ›" })).toBeNull();
+  });
+});
+
 describe("ConversationSessionView（読取専用ゲスト / ADR-0032 決定4）", () => {
   afterEach(() => cleanup());
 

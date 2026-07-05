@@ -144,6 +144,10 @@ export function ConversationSessionView({
   const [phase, setPhase] = useState<Phase>("shell");
   const [tab, setTab] = useState<ShellTab>("history");
   const [endOpen, setEndOpen] = useState(false);
+  // セッションを終えたか（08 結果へ一度でも到達したか）。結果から「この絵巻を画面で確認する」で
+  // シェルへ戻るときは閲覧モードになり、会話専用 UI（ボトムバー・問いピン・REC・終了・素材追加・
+  // 「会話で確認」）を出さない。07 判定の「問答に戻って解く」は会話継続なので立てない。
+  const [ended, setEnded] = useState(false);
   // 05-1 資料詳細シートで開いている素材の asset_id（#202）。null なら閉じている。
   const [detailId, setDetailId] = useState<string | null>(null);
   const [provisional, setProvisional] = useState(false);
@@ -246,6 +250,7 @@ export function ConversationSessionView({
         onBack={() => setPhase("shell")}
         onForceEnd={() => {
           setProvisional(true);
+          setEnded(true);
           setPhase("result");
         }}
         onConfirm={() => {
@@ -253,6 +258,7 @@ export function ConversationSessionView({
           // 結果へ進める（要件の承認・保全は owner が管理画面で行う）。
           if (readOnly) {
             setProvisional(false);
+            setEnded(true);
             setPhase("result");
             return;
           }
@@ -265,6 +271,7 @@ export function ConversationSessionView({
           Promise.resolve(onFinalize?.())
             .then(() => {
               setProvisional(false);
+              setEnded(true);
               setPhase("result");
             })
             .catch((e) => {
@@ -324,7 +331,8 @@ export function ConversationSessionView({
   }
 
   // ── 04/05/06 会話シェル ─────────────────────────────────
-  const choicePin = activeChoice ? (
+  // 終了後の閲覧モードでは回答導線（問いピン）を出さない（回答はセッション中のみ）。
+  const choicePin = ended ? undefined : activeChoice ? (
     <ChoicePin
       questionId={activeChoice.id}
       question={activeChoice.summary}
@@ -359,24 +367,29 @@ export function ConversationSessionView({
     <>
       <ConversationShell
         mini={mini}
-        recording={recording}
+        recording={recording && !ended}
         elapsed={elapsed}
         hideMaterials={readOnly}
+        review={ended}
+        onBackToResult={() => setPhase("result")}
         tab={tab}
         onTabChange={setTab}
         onUnresolvedJump={() => setFocusDeepDive(true)}
-        onEnd={() => setEndOpen(true)}
+        onEnd={ended ? undefined : () => setEndOpen(true)}
         choicePin={choicePin}
         bottomBar={
-          <BottomBar
-            micOn={micOn}
-            muted={muted}
-            phase={state.phase}
-            agentSpeaking={agentSpeaking}
-            onToggleMic={onToggleMic}
-            onToggleMute={onToggleMute}
-            onSend={onSendText}
-          />
+          // ボトムバー（消音/マイク・テキスト入力・音声状態）はセッション中のみ。終了後の閲覧では出さない。
+          ended ? undefined : (
+            <BottomBar
+              micOn={micOn}
+              muted={muted}
+              phase={state.phase}
+              agentSpeaking={agentSpeaking}
+              onToggleMic={onToggleMic}
+              onToggleMute={onToggleMute}
+              onSend={onSendText}
+            />
+          )
         }
         tabs={{
           history: <ChatHistory transcript={state.transcript} />,
@@ -385,10 +398,11 @@ export function ConversationSessionView({
           files: readOnly ? null : (
             <MaterialsList
               items={materials}
-              onAdd={onAddMaterial}
-              onRetry={onRetryMaterial}
+              // 素材の追加・再試行・中断はセッション中のみ（終了後の閲覧では一覧参照だけ残す）。
+              onAdd={ended ? undefined : onAddMaterial}
+              onRetry={ended ? undefined : onRetryMaterial}
               onOpenDetail={setDetailId}
-              onCancel={onCancelMaterial}
+              onCancel={ended ? undefined : onCancelMaterial}
               aliases={materialAliases}
             />
           ),
@@ -396,7 +410,8 @@ export function ConversationSessionView({
             <RequirementsTab
               requirements={state.requirements}
               deepDive={openDetections}
-              onJump={jumpToConversation}
+              // 「会話で確認」は会話へ戻す導線なのでセッション中のみ（終了後は一覧参照だけ残す）。
+              onJump={ended ? undefined : jumpToConversation}
               focusUnresolved={focusDeepDive}
               onUnresolvedFocusConsumed={() => setFocusDeepDive(false)}
             />
@@ -419,10 +434,15 @@ export function ConversationSessionView({
         <MaterialDetailSheet
           detail={detail}
           onClose={() => setDetailId(null)}
-          onConfirmInConversation={() => {
-            setDetailId(null);
-            jumpToConversation();
-          }}
+          // 「会話で確認」は会話へ戻す導線なのでセッション中のみ（終了後の閲覧では出さない）。
+          onConfirmInConversation={
+            ended
+              ? undefined
+              : () => {
+                  setDetailId(null);
+                  jumpToConversation();
+                }
+          }
         />
       )}
 
