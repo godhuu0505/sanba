@@ -38,13 +38,13 @@ describe("ChatHistory（会話履歴タブ）", () => {
     expect(me.map((n) => n.textContent).join("")).toContain("価格も大事");
   });
 
-  it("partial（final=false）は「認識中」を示す", () => {
+  it("partial（final=false）は「文字起こし中」を示す", () => {
     render(
       <ChatHistory
         transcript={[line({ utterance_id: "u3", role: "participant", text: "価格の安き", final: false })]}
       />,
     );
-    expect(screen.getByText(/認識中/)).toBeTruthy();
+    expect(screen.getByText(/文字起こし中/)).toBeTruthy();
     expect(screen.getByLabelText("あなた").textContent).toContain("価格の安き");
   });
 });

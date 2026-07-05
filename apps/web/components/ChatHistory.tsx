@@ -38,7 +38,7 @@ export function ChatHistory({ transcript }: ChatHistoryProps) {
             {line.text}
             {!line.final && (
               <span className="ml-1 align-middle text-[11px] font-bold text-sanba-speak-text">
-                ‖ 認識中…
+                ‖ 文字起こし中…
               </span>
             )}
           </ChatBubble>

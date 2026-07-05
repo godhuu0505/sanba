@@ -105,6 +105,12 @@ export interface ConversationSessionViewProps {
   materialAliases?: ReadonlyMap<string, string>;
   /** 会話フェーズを離れる（終了→判定）瞬間。親はここでマイク送信を止める。 */
   onLeaveConversation?: () => void;
+  /**
+   * セッションを実際に終了する瞬間（判定を抜けて 08 結果へ確定/強制終了で入るとき）。親は
+   * ここで LiveKit ルームを切断し、agent worker のセッション（課金・音声・スコアリング）を
+   * 畳む。判定（07）は「戻る」があり会話へ復帰し得るため終了しない。冪等（多重呼び出し可）。
+   */
+  onEndSession?: () => void;
   /** 「新しい問答を始める」。 */
   onRestart?: () => void;
   /** 受信状況の観測値（取りこぼし調査の足場・CLAUDE.md 原則3）。 */
@@ -136,6 +142,7 @@ export function ConversationSessionView({
   cancelledIds,
   materialAliases,
   onLeaveConversation,
+  onEndSession,
   onRestart,
   metrics,
   recording = true,
@@ -251,6 +258,8 @@ export function ConversationSessionView({
         onForceEnd={() => {
           setProvisional(true);
           setEnded(true);
+          // 未解消を残したまま強制終了する経路もセッションは実際に終える（ルーム切断）。
+          onEndSession?.();
           setPhase("result");
         }}
         onConfirm={() => {
@@ -272,6 +281,8 @@ export function ConversationSessionView({
             .then(() => {
               setProvisional(false);
               setEnded(true);
+              // 確定できたのでセッションを実際に終える（ルーム切断→agent のスコアリング/後始末）。
+              onEndSession?.();
               setPhase("result");
             })
             .catch((e) => {
