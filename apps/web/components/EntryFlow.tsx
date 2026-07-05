@@ -173,23 +173,31 @@ export default function EntryFlow({ initialStep = "home" }: { initialStep?: Step
   const auth = useAuth();
 
   // ステップ遷移と URL 同期（ADR-0017 一本道 / 固有 URL）。remount を避けて入力（goal 等）を保つ
-  // ため router 遷移ではなく History API でアドレスバーだけを書き換える。ホーム→準備で /prepare を
-  // 積み、戻る ‹ で /（ホーム）へ戻す。同じパスなら積まない（多重 push を防ぐ）。
+  // ため router 遷移ではなく History API でアドレスバーだけを書き換える。ホーム→準備は pushState
+  // で /prepare を積み、戻る ‹（準備→ホーム）は replaceState で /prepare を置き換える。
+  // replaceState にすることで「/prepare を積み残さない」= ブラウザバックで準備画面が復活しない。
   function navigateStep(next: Step) {
     setStep(next);
     if (typeof window === "undefined") return;
     const path = next === "prepare" ? PREPARE_PATH : HOME_PATH;
     if (window.location.pathname !== path) {
-      window.history.pushState({ sanbaStep: next }, "", path);
+      if (next === "prepare") {
+        window.history.pushState({ sanbaStep: next }, "", path);
+      } else {
+        window.history.replaceState({ sanbaStep: next }, "", path);
+      }
     }
   }
 
   // ブラウザの戻る/進む（popstate）に追随して step をアドレスに一致させる。pushState で積んだ
   // /prepare からハードウェア/ブラウザバックしたときも一本道の見た目を保つ。
+  // ホームへ戻る popstate では conn もクリアする（URL と画面の食い違いを防ぐ）。
   useEffect(() => {
     function onPopState() {
       if (typeof window === "undefined") return;
-      setStep(window.location.pathname === PREPARE_PATH ? "prepare" : "home");
+      const goingHome = window.location.pathname !== PREPARE_PATH;
+      setStep(goingHome ? "home" : "prepare");
+      if (goingHome) setConn(null);
     }
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
