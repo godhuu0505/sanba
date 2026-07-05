@@ -33,6 +33,11 @@ export interface ConversationStartProps {
   materialNames?: string[];
   /** 投入に失敗した参考資料の件数（>0 なら注意書きを出す / Codex P2）。 */
   materialFailedCount?: number;
+  /**
+   * ゲスト入場（読取専用 session_token / ADR-0032 決定4）。素材投入・確定・起票など
+   * サーバが 403 で拒む操作の UI を出さない（SessionView へ委譲）。
+   */
+  readOnly?: boolean;
   /** 中断して準備（02）へ戻す。 */
   onCancel: () => void;
 }
@@ -43,6 +48,7 @@ export function ConversationStart({
   roleLabel,
   materialNames,
   materialFailedCount,
+  readOnly = false,
   onCancel,
 }: ConversationStartProps) {
   const [phase, setPhase] = useState<StartPhase>("intro");
@@ -121,13 +127,21 @@ export function ConversationStart({
         setPhase("failed");
       }}
     >
-      <RoomGate conn={conn} onCancel={onCancel} />
+      <RoomGate conn={conn} readOnly={readOnly} onCancel={onCancel} />
     </LiveKitRoom>
   );
 }
 
 /** ルーム接続が完了するまで 03-1 を出し、Connected で 04（SessionView）へ。 */
-function RoomGate({ conn, onCancel }: { conn: JoinResponse; onCancel: () => void }) {
+function RoomGate({
+  conn,
+  readOnly,
+  onCancel,
+}: {
+  conn: JoinResponse;
+  readOnly: boolean;
+  onCancel: () => void;
+}) {
   const state = useConnectionState();
   // 一度でも接続が成立したか。初回接続前のみ全面ローディングを出し、以後の一時的な再接続では
   // SessionView をアンマウントしない（store・回答済み質問・投入素材・判定/結果フェーズなどの
@@ -152,7 +166,11 @@ function RoomGate({ conn, onCancel }: { conn: JoinResponse; onCancel: () => void
         <p className="mb-2 text-[12px] text-sanba-muted">
           セッション: <code>{conn.session_id}</code>
         </p>
-        <SessionView sessionId={conn.session_id} sessionToken={conn.session_token} />
+        <SessionView
+          sessionId={conn.session_id}
+          sessionToken={conn.session_token}
+          readOnly={readOnly}
+        />
       </main>
       {reconnecting && (
         <div

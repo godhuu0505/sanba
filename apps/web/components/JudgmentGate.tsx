@@ -6,6 +6,7 @@
 
 import { Scale, TriangleAlert } from "lucide-react";
 
+import { useInterviewMode } from "@/lib/interviewMode";
 import type { Detection } from "@/lib/realtime/types";
 
 import { Button } from "@/components/sanba";
@@ -37,6 +38,8 @@ export function JudgmentGate({
   onJump,
 }: JudgmentGateProps) {
   const resolved = unresolved === 0;
+  // end_user モードでは「要件を確定」等の開発語彙を利用者向けに切替える（FR-2.4 / ADR-0032）。
+  const endUser = useInterviewMode() === "end_user";
 
   return (
     <div className="flex h-full flex-col items-center px-4 pb-6 pt-12">
@@ -59,7 +62,9 @@ export function JudgmentGate({
       {resolved ? (
         <>
           <p className="mt-1 text-center text-[12.5px] text-sanba-muted">
-            すべて解けました。要件を確定できます。
+            {endUser
+              ? "確認したいことは残っていません。この内容でお伝えできます。"
+              : "すべて解けました。要件を確定できます。"}
           </p>
           <div className="flex-1" />
           {error && (
@@ -68,15 +73,19 @@ export function JudgmentGate({
             </p>
           )}
           <Button variant="gold" size="lg" block onClick={onConfirm}>
-            要件を確定する
+            {endUser ? "この内容で伝える" : "要件を確定する"}
           </Button>
         </>
       ) : (
         <>
           <div className="mt-4 w-full rounded-[14px] border-[1.5px] border-sanba-rec bg-sanba-rec-pale p-[14px]">
-            <p className="text-[16px] font-bold text-sanba-rec-text">未解消 {unresolved} 件 ・ 確定不可</p>
+            <p className="text-[16px] font-bold text-sanba-rec-text">
+              {endUser ? `確認したいことが ${unresolved} 件残っています` : `未解消 ${unresolved} 件 ・ 確定不可`}
+            </p>
             <p className="mt-1 text-[11.5px] text-sanba-muted">
-              ひとつでも残れば、要件は確定できませぬ。
+              {endUser
+                ? "会話に戻ってお答えいただくと、より正確に伝わります。"
+                : "ひとつでも残れば、要件は確定できませぬ。"}
             </p>
           </div>
           {detections && detections.length > 0 && onJump && (
@@ -86,14 +95,14 @@ export function JudgmentGate({
           )}
           <div className="flex-1" />
           <Button variant="gold" size="lg" block onClick={onBack}>
-            問答に戻って解く
+            {endUser ? "会話に戻って答える" : "問答に戻って解く"}
           </Button>
           <button
             type="button"
             onClick={onForceEnd}
             className="mt-2 w-full rounded-[12px] border border-sanba-rec/40 py-3 text-[12.5px] font-bold text-sanba-rec-text"
           >
-            未解消のまま終う
+            {endUser ? "このまま終える" : "未解消のまま終う"}
           </button>
         </>
       )}

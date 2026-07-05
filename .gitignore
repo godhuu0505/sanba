@@ -25,6 +25,11 @@ out/
 *.tsbuildinfo
 .pnpm-store/
 
+# Playwright (E2E)
+test-results/
+playwright-report/
+blob-report/
+
 # Terraform
 .terraform/
 *.tfstate

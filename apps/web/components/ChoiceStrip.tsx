@@ -9,6 +9,7 @@
 
 import { useEffect, useRef } from "react";
 
+import { useInterviewMode } from "@/lib/interviewMode";
 import { detectionPresentation } from "@/lib/realtime/mapping";
 import type { DetectionKind } from "@/lib/realtime/types";
 
@@ -44,6 +45,9 @@ export function ChoiceStrip({
   onOpenDetail,
   detectionKind,
 }: ChoiceStripProps) {
+  // end_user モードでは検知バッジの開発語彙を利用者向けに切替える（FR-2.4 / ADR-0032）。
+  // hooks は early return（options 空）より前に呼ぶ（rules-of-hooks）。
+  const interviewMode = useInterviewMode();
   // 最小chipの長押し近道：押下で計時、しきい値経過で詳細を開き、その後の click 回答を抑止する。
   const pressTimer = useRef<number | undefined>(undefined);
   const longPressed = useRef(false);
@@ -67,7 +71,7 @@ export function ChoiceStrip({
 
   if (options.length === 0) return null;
 
-  const presentation = detectionKind ? detectionPresentation(detectionKind) : null;
+  const presentation = detectionKind ? detectionPresentation(detectionKind, interviewMode) : null;
   const accent = presentation ? presentation.color : "var(--sanba-gold-deep)";
 
   return (
