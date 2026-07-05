@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import os
-from typing import Any
+from typing import Any, NamedTuple
 
 import structlog
 from livekit.agents import (
@@ -54,10 +54,13 @@ from .events import (
 from .observability import setup_observability
 from .prompts.interview import (
     DEVELOPER_OPENING_INSTRUCTIONS,
+    DEVELOPER_OPENING_WITH_PREP_INSTRUCTIONS,
     END_USER_OPENING_INSTRUCTIONS,
     END_USER_VOICE_AGENT_INSTRUCTIONS,
     VOICE_AGENT_INSTRUCTIONS,
     build_glossary_seed,
+    build_prep_analysis_note,
+    build_prep_premise,
     build_repo_premise,
 )
 from .retrieval import GroundingStore, Passage
@@ -109,9 +112,18 @@ def _glossary_seed(repo: SessionRepository, meta: SessionMeta) -> str:
     return build_glossary_seed(product.name, product.glossary)
 
 
-def build_agent_instructions(
-    repo: SessionRepository, session_id: str
-) -> tuple[str, InviteScope, bool]:
+class AgentSetup(NamedTuple):
+    """build_agent_instructions の結果（初期 instructions と付随フラグの束）。"""
+
+    instructions: str
+    mode: InviteScope
+    allow_repo_grounding: bool
+    # 準備フォーム由来の事前情報ノート（ADR-0035）。analyze_requirements の transcript
+    # 先頭に付し、ADK の統括・矛盾検知が準備情報とも突き合わせられるようにする。無ければ空。
+    prep_note: str
+
+
+def build_agent_instructions(repo: SessionRepository, session_id: str) -> AgentSetup:
     """モードに応じて voice agent の初期 instructions を組み立てる（ADR-0032 決定6・7）。
 
     developer: 従来どおり grill-me ペルソナ + repo 前提（ADR-0028）。
@@ -120,7 +132,8 @@ def build_agent_instructions(
     private repo 由来の情報が利用者の会話に露出する面を初期 instructions にも
     作らない（#321 / 多層防御として PR8 以降も維持）。
 
-    返り値は (instructions, mode, allow_repo_grounding)。repo 由来のシード可否は
+    developer では準備フォームのゴール・詳細（ADR-0035）も前提としてシードし、
+    analyze 用の事前情報ノート（prep_note）を併せて返す。repo 由来のシード可否は
     「セッション文書を正しく読めて、かつ end_user でない」ときだけ True にする。
     文書が読めない（Firestore 不通・enum 版ずれ等）ときは developer ペルソナに
     落としつつ repo 前提・GitHub seed は**付けない**: モードを確認できないまま
@@ -136,12 +149,21 @@ def build_agent_instructions(
     except Exception as exc:  # pragma: no cover - depends on backend
         log.warning("session_meta_read_failed", session=session_id, error=str(exc))
     mode = meta.interview_mode if meta is not None else InviteScope.DEVELOPER
+    prep_note = ""
     if mode is InviteScope.END_USER:
         assert meta is not None  # END_USER は meta が読めたときにしか選ばれない
         instructions = END_USER_VOICE_AGENT_INSTRUCTIONS + _glossary_seed(repo, meta)
         allow_repo_grounding = False
     else:
-        instructions = VOICE_AGENT_INSTRUCTIONS + (_repo_premise(meta) if confirmed else "")
+        # 準備フォームのゴール（ADR-0035）を repo 前提より先にシードする（セッションの主題が
+        # 先、repo はその裏付け）。meta が読めないときは repo 前提と同じく付けない。
+        prep_premise = ""
+        if meta is not None:
+            prep_premise = build_prep_premise(meta.goal, meta.goal_detail, meta.roles)
+            prep_note = build_prep_analysis_note(meta.goal, meta.goal_detail)
+        instructions = (
+            VOICE_AGENT_INSTRUCTIONS + prep_premise + (_repo_premise(meta) if confirmed else "")
+        )
         # meta is None（セッション未作成/削除済み）は confirmed であってもモード不明と同義。
         # repo grounding を許可すると end_user セッションが None で作られた場合にフェイルオープン
         # するため、「読めた + meta が実在する」を両方満たすときだけ True にする。
@@ -153,15 +175,22 @@ def build_agent_instructions(
         interview_mode=mode.value,
         mode_confirmed=confirmed,
         allow_repo_grounding=allow_repo_grounding,
+        has_prep_context=bool(prep_note),
         chars=len(instructions),
     )
-    return instructions, mode, allow_repo_grounding
+    return AgentSetup(instructions, mode, allow_repo_grounding, prep_note)
 
 
-def opening_instructions(mode: InviteScope) -> str:
-    """接続直後の最初の一問の指示（モード別）。"""
+def opening_instructions(mode: InviteScope, has_prep_context: bool = False) -> str:
+    """接続直後の最初の一問の指示（モード別）。
+
+    developer で準備情報がシード済みなら、ゼロからの聞き取りではなく準備情報の
+    認識合わせ→深掘りから始めさせる（ADR-0035）。
+    """
     if mode is InviteScope.END_USER:
         return END_USER_OPENING_INSTRUCTIONS
+    if has_prep_context:
+        return DEVELOPER_OPENING_WITH_PREP_INSTRUCTIONS
     return DEVELOPER_OPENING_INSTRUCTIONS
 
 
@@ -218,11 +247,14 @@ class SANBAAgent(Agent):
         publisher: EventPublisher | None = None,
     ) -> None:
         # モード別に初期 instructions を組み立てる（ADR-0032 決定6・7）。developer は
-        # grill-me + repo 前提（ADR-0028）、end_user は利用者ペルソナ + glossary シード。
-        instructions, mode, allow_repo_grounding = build_agent_instructions(repo, session_id)
-        super().__init__(instructions=instructions)
-        self._interview_mode = mode
-        self._allow_repo_grounding = allow_repo_grounding
+        # grill-me + 準備情報（ADR-0035）+ repo 前提（ADR-0028）、end_user は
+        # 利用者ペルソナ + glossary シード。
+        setup = build_agent_instructions(repo, session_id)
+        super().__init__(instructions=setup.instructions)
+        self._interview_mode = setup.mode
+        self._allow_repo_grounding = setup.allow_repo_grounding
+        # 準備フォームの事前情報ノート（ADR-0035）。analyze_requirements の transcript に前置する。
+        self._prep_note = setup.prep_note
         self._session_id = session_id
         self._repo = repo
         self._grounding = grounding
@@ -253,6 +285,11 @@ class SANBAAgent(Agent):
     def interview_mode(self) -> InviteScope:
         """このセッションのインタビュー・モード（ADR-0032 決定6。entrypoint が参照）。"""
         return self._interview_mode
+
+    @property
+    def has_prep_context(self) -> bool:
+        """準備フォームの事前情報がシード済みか（ADR-0035。開始指示の分岐に使う）。"""
+        return bool(self._prep_note)
 
     @property
     def allow_repo_grounding(self) -> bool:
@@ -345,6 +382,10 @@ class SANBAAgent(Agent):
         会話が一区切りついたとき、または論点が曖昧なときに呼び出す。
         """
         transcript = "\n".join(self._transcript)
+        # 準備フォームの事前情報を先頭に付す（ADR-0035）。ADK の統括・矛盾検知が
+        # 「準備時の記入」対「会話中の回答」の食い違いも検出できるようにする。
+        if self._prep_note:
+            transcript = f"{self._prep_note}\n{transcript}"
         if self._publisher is not None:
             await self._publisher.status("deliberating")
         result = await analyze_transcript(transcript)
@@ -978,7 +1019,9 @@ async def entrypoint(ctx: JobContext) -> None:
     await publisher.status("listening")
     # 最初の一問はモード別（ADR-0032 決定6・7）: developer は要件整理＋画面共有の案内、
     # end_user は利用体験の困りごとを技術用語なしで聞く。
-    await session.generate_reply(instructions=opening_instructions(agent.interview_mode))
+    await session.generate_reply(
+        instructions=opening_instructions(agent.interview_mode, agent.has_prep_context)
+    )
 
     # When the room closes, score the interview (LLM-as-a-judge) and log to Langfuse.
     async def _on_close() -> None:

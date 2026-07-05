@@ -2,7 +2,47 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { LOGOUT_CHANNEL, useGoogleAuth } from "./auth";
+import { decodeProfile, LOGOUT_CHANNEL, useGoogleAuth } from "./auth";
+
+// 検証しない表示用デコード（decodeProfile）用に、任意の payload で JWT 風トークンを組む。
+// header/署名はダミー（本関数は payload だけを見る）。payload は base64url かつ UTF-8。
+function makeIdToken(payload: Record<string, unknown>): string {
+  const b64url = (s: string) =>
+    btoa(String.fromCharCode(...new TextEncoder().encode(s)))
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=+$/, "");
+  return `${b64url('{"alg":"none"}')}.${b64url(JSON.stringify(payload))}.sig`;
+}
+
+describe("decodeProfile", () => {
+  it("UTF-8 の日本語名を文字化けさせずに復号する（#227 プロフィール文字化け回帰）", () => {
+    const token = makeIdToken({
+      email: "godai.tanaka@leverages.jp",
+      name: "田中 五大",
+      picture: "https://example.com/a.png",
+    });
+    const profile = decodeProfile(token);
+    expect(profile).toEqual({
+      email: "godai.tanaka@leverages.jp",
+      name: "田中 五大",
+      picture: "https://example.com/a.png",
+    });
+  });
+
+  it("name 欠落時は email にフォールバックし、picture 欠落は undefined", () => {
+    const token = makeIdToken({ email: "guest@example.com" });
+    expect(decodeProfile(token)).toEqual({
+      email: "guest@example.com",
+      name: "guest@example.com",
+      picture: undefined,
+    });
+  });
+
+  it("壊れたトークンは null を返す（表示用途なので例外を投げない）", () => {
+    expect(decodeProfile("not-a-jwt")).toBeNull();
+  });
+});
 
 // dev モードがログアウト伝播チャネル（ADR-0030）を購読しないことを確かめる最小 Fake。
 // 実仕様どおり、送信元インスタンス以外の同名チャネルへ postMessage を配送する。
