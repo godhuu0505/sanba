@@ -99,7 +99,8 @@ async def test_end_user_background_signal_is_count_only() -> None:
     result = await _search(agent)
 
     background = result["background"]
-    assert set(background.keys()) == {"related_internal_hits", "note"}
+    # 件数のみ: speech-to-speech でモデルが読み上げる文章フィールドは付けない（NFR-2）。
+    assert set(background.keys()) == {"related_internal_hits"}
     assert background["related_internal_hits"] == 2  # ES chunk + README シード
     assert "octo" not in json.dumps(background, ensure_ascii=False).lower()
 
@@ -128,8 +129,7 @@ async def test_developer_session_still_gets_repo_passages() -> None:
 
 @pytest.mark.asyncio
 async def test_unconfirmed_mode_fails_closed() -> None:
-    # セッション文書が読めない（モード未確認）ときはフェイルオープンにせず、end_user と
-    # 同じ allowlist に倒す（build_agent_instructions の単一読みに判定を揃える）。
+    # セッション文書が読めない（例外）ときはフェイルオープンにせず allowlist に倒す。
     repo = _repo(InviteScope.DEVELOPER)
 
     def _boom(session_id: str) -> SessionMeta | None:
@@ -143,8 +143,27 @@ async def test_unconfirmed_mode_fails_closed() -> None:
     kinds = {p["kind"] for p in result["passages"]}
     assert kinds <= {"utterance", "requirement"}
     assert "github:" not in json.dumps(result, ensure_ascii=False).lower()
-    # background の件数シグナル（数値のみ）は残る。
     assert result["background"]["related_internal_hits"] == 2
+
+
+@pytest.mark.asyncio
+async def test_missing_session_meta_fails_closed() -> None:
+    # get_session() が None を返す（セッション未作成/削除済みの room）場合も
+    # フェイルクローズで allowlist に倒す（confirmed=True でも meta is None ならば
+    # repo grounding 不許可）。
+    repo = _repo(InviteScope.DEVELOPER)
+
+    def _none(session_id: str) -> SessionMeta | None:
+        return None
+
+    repo.get_session = _none  # type: ignore[method-assign]
+    agent = SANBAAgent("s1", repo, _grounding_with_mixed_passages())
+    assert agent.allow_repo_grounding is False
+    result = await _search(agent)
+
+    kinds = {p["kind"] for p in result["passages"]}
+    assert kinds <= {"utterance", "requirement"}
+    assert "github:" not in json.dumps(result, ensure_ascii=False).lower()
 
 
 def test_partition_is_allowlist_and_resists_source_spoofing() -> None:

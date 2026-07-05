@@ -142,7 +142,10 @@ def build_agent_instructions(
         allow_repo_grounding = False
     else:
         instructions = VOICE_AGENT_INSTRUCTIONS + (_repo_premise(meta) if confirmed else "")
-        allow_repo_grounding = confirmed
+        # meta is None（セッション未作成/削除済み）は confirmed であってもモード不明と同義。
+        # repo grounding を許可すると end_user セッションが None で作られた場合にフェイルオープン
+        # するため、「読めた + meta が実在する」を両方満たすときだけ True にする。
+        allow_repo_grounding = confirmed and meta is not None
     # モード分岐の観測性（CLAUDE.md 原則3）: どのモードでどれだけシードしたかを追える形に。
     log.info(
         "agent_instructions_built",
@@ -630,13 +633,33 @@ class SANBAAgent(Agent):
             # end_user（およびモード未確認）: 利用者由来 kind の allowlist だけ返し、repo 由来
             # （context）・開発語彙（knowledge）は本文・source ともモデルへ渡さない（FR-2.5）。
             # 音声応答は事後フィルタできないため、「渡すが引用禁止」には倒さない（NFR-2）。
-            passages, dropped_repo, dropped_other = _partition_passages_for_output(passages)
-        if revoked:
-            # 連携が無効: あらゆる repo 索引 chunk（github:）を落とす。
-            passages = [p for p in passages if not p.source.startswith("github:")]
-        elif current_sha is not None:
-            passages = [p for p in passages if not _is_stale_repo_passage(p.source, current_sha)]
-        passages = passages[:want]
+            #
+            # ACL（revoked/stale）を先に適用してアクセス不能 chunk を除いた上で背景シグナルを
+            # 数える（revoked/stale chunk を related_internal_hits に混ぜない）。
+            if revoked:
+                passages = [p for p in passages if not p.source.startswith("github:")]
+            elif current_sha is not None:
+                passages = [
+                    p for p in passages if not _is_stale_repo_passage(p.source, current_sha)
+                ]
+            _, dropped_repo, dropped_other = _partition_passages_for_output(passages)
+            # 出力用は allowlist kind 専用で別検索して取りこぼしを防ぐ。repo/knowledge が
+            # 多い索引でも utterance/requirement が上位 want 件に入れなくなる問題を避ける。
+            passages = self._grounding.search(
+                query,
+                k=want,
+                kinds=list(_USER_DERIVED_KINDS),
+                session_id=self._session_id,
+            )
+        else:
+            if revoked:
+                # 連携が無効: あらゆる repo 索引 chunk（github:）を落とす。
+                passages = [p for p in passages if not p.source.startswith("github:")]
+            elif current_sha is not None:
+                passages = [
+                    p for p in passages if not _is_stale_repo_passage(p.source, current_sha)
+                ]
+            passages = passages[:want]
         log.info(
             "grounding_search",
             session=self._session_id,
@@ -662,16 +685,9 @@ class SANBAAgent(Agent):
             ]
         }
         if dropped_repo:
-            # 決定8 の「次に聞くことの判断材料」: repo 由来ヒットは件数のみの集約シグナルで
-            # 返す（内容・出所は含めない）。関連の深い話題である合図としてだけ使わせる。
-            result["background"] = {
-                "related_internal_hits": dropped_repo,
-                "note": (
-                    "内部資料に関連する情報がありますが、このセッションでは内容を参照・引用"
-                    "できません。関連の深い話題である合図として、次に聞くことの判断にのみ"
-                    "使ってください。"
-                ),
-            }
+            # 決定8 の「次に聞くことの判断材料」: repo 由来ヒットは件数のみの機械可読シグナル。
+            # 内容・出所を含めない。speech-to-speech でモデルが読み上げられる文を渡さない（NFR-2）。
+            result["background"] = {"related_internal_hits": dropped_repo}
         return result
 
     def _repo_access(self) -> tuple[str | None, bool]:
