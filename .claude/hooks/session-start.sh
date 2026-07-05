@@ -35,8 +35,8 @@ fi
 
 # --- Web: Next.js (npm) ---
 if command -v npm >/dev/null 2>&1 && [ -f apps/web/package.json ]; then
-  log "npm install (apps/web)"
-  (cd apps/web && npm install --no-audit --no-fund)
+  log "npm ci (apps/web)"
+  (cd apps/web && npm ci --no-audit --no-fund)
 else
   log "npm または apps/web が無いため Web 依存関係をスキップ"
 fi

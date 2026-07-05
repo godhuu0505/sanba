@@ -1,5 +1,7 @@
 # syntax=docker/dockerfile:1
-FROM python:3.12-slim AS base
+# ベースイメージは digest でピン（Scorecard Pinned-Dependencies / 供給網対策）。
+# タグ 3.12-slim の digest。更新は Dependabot(docker) に任せる。
+FROM python:3.12-slim@sha256:423ed6ab25b1921a477529254bfeeabf5855151dc2c3141699a1bfc852199fbf AS base
 
 ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1
