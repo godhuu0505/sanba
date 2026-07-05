@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120" role="img" aria-label="SANBA">
+  <!-- ファビコン: 小サイズ視認性のため棒人間＋産章のみ（詳細版は public/sanba-app-icon.svg / apple-icon.png） -->
+  <rect x="3" y="3" width="114" height="114" rx="27" fill="#FFFFFF" stroke="#221E1A" stroke-width="5"/>
+  <g fill="none" stroke="#221E1A" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="60" cy="41" r="16" fill="#FFFFFF"/>
+    <line x1="60" y1="57" x2="60" y2="84"/>
+    <line x1="60" y1="70" x2="40" y2="88"/>
+    <line x1="60" y1="70" x2="80" y2="88"/>
+    <line x1="60" y1="84" x2="42" y2="108"/>
+    <line x1="60" y1="84" x2="78" y2="108"/>
+    <circle cx="60" cy="74" r="9.5" fill="#F0A814" stroke-width="4.5"/>
+  </g>
+</svg>
