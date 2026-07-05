@@ -103,6 +103,8 @@ vi.mock("@livekit/components-react", () => ({
 vi.mock("../components/SessionView", () => ({ SessionView: () => <div>session-view</div> }));
 
 import Home from "./page";
+import EntryFlow from "../components/EntryFlow";
+import PreparePage from "./prepare/page";
 
 describe("入口フロー（#140）", () => {
   beforeEach(() => {
@@ -140,6 +142,8 @@ describe("入口フロー（#140）", () => {
   afterEach(() => {
     cleanup();
     window.sessionStorage.clear();
+    // 準備画面の固有 URL テストが積んだ History を持ち越さない（他テストのアドレス判定を汚さない）。
+    window.history.replaceState(null, "", "/");
   });
 
   // 対象アプリは開始の必須条件（ADR-0031）。候補 settle 後に既定アプリを選ぶ共通操作。
@@ -235,6 +239,50 @@ describe("入口フロー（#140）", () => {
     expect(screen.getByRole("radio", { name: "開発者" }).getAttribute("aria-checked")).toBe(
       "false",
     );
+  });
+
+  // ── 02 準備画面の固有 URL（/prepare / ADR-0017 一本道）───────────────────────
+  it("CTA で 02 準備へ進むと URL が /prepare に更新され、戻る ‹ で / に戻る", () => {
+    window.history.replaceState(null, "", "/");
+    render(<Home />);
+    // ホームは "/"。CTA で準備へ進むとアドレスバーが /prepare になる（remount せず入力を保つ）。
+    fireEvent.click(screen.getByText("＋ 壁打ちを始める"));
+    expect(screen.getByText("セッション準備")).toBeTruthy();
+    expect(window.location.pathname).toBe("/prepare");
+    // 戻る ‹ でホーム（/）へ戻る（一本道）。
+    fireEvent.click(screen.getByRole("button", { name: "戻る" }));
+    expect(screen.getByText("会議の前に、五分の問答を")).toBeTruthy();
+    expect(window.location.pathname).toBe("/");
+  });
+
+  it("/prepare 直リンク（PreparePage）は準備画面を直接描画する", () => {
+    window.history.replaceState(null, "", "/prepare");
+    render(<PreparePage />);
+    expect(screen.getByText("セッション準備")).toBeTruthy();
+    // ホームのヒーローは出さない（準備画面へ直接入る）。
+    expect(screen.queryByText("会議の前に、五分の問答を")).toBeNull();
+  });
+
+  it("ブラウザの戻る/進む（popstate）で step がアドレスに追随する", () => {
+    window.history.replaceState(null, "", "/prepare");
+    render(<EntryFlow initialStep="prepare" />);
+    expect(screen.getByText("セッション準備")).toBeTruthy();
+    // 履歴を / に戻して popstate を発火 → ホームへ。
+    act(() => {
+      window.history.replaceState(null, "", "/");
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+    expect(screen.getByText("会議の前に、五分の問答を")).toBeTruthy();
+  });
+
+  it("未ログインで /prepare 直リンクは /login?next=/prepare へ戻す", () => {
+    authState.devMode = false;
+    authState.ready = true;
+    authState.loggedIn = false;
+    window.history.replaceState(null, "", "/prepare");
+    render(<EntryFlow initialStep="prepare" />);
+    expect(replace).toHaveBeenCalledWith(`/login?next=${encodeURIComponent("/prepare")}`);
+    expect(screen.queryByText("セッション準備")).toBeNull();
   });
 
   it("保存済み準備フォーム（goal/consent）を復元し、未知の role は既定 pm に戻す (#179 / Codex P2)", () => {
