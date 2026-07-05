@@ -28,9 +28,11 @@ from livekit.agents.llm import function_tool
 from livekit.plugins import google
 from sanba_shared.models import (
     GitHubIndexStatus,
+    InviteScope,
     Priority,
     Requirement,
     RequirementCategory,
+    SessionMeta,
     Utterance,
 )
 from sanba_shared.repository import SessionRepository
@@ -50,7 +52,14 @@ from .events import (
     decode_user_text,
 )
 from .observability import setup_observability
-from .prompts.interview import VOICE_AGENT_INSTRUCTIONS, build_repo_premise
+from .prompts.interview import (
+    DEVELOPER_OPENING_INSTRUCTIONS,
+    END_USER_OPENING_INSTRUCTIONS,
+    END_USER_VOICE_AGENT_INSTRUCTIONS,
+    VOICE_AGENT_INSTRUCTIONS,
+    build_glossary_seed,
+    build_repo_premise,
+)
 from .retrieval import GroundingStore
 from .tools.analysis import analyze_transcript, make_requirement_id
 
@@ -62,17 +71,14 @@ if settings.firestore_emulator_host:
     os.environ.setdefault("FIRESTORE_EMULATOR_HOST", settings.firestore_emulator_host)
 
 
-def _repo_premise(repo: SessionRepository, session_id: str) -> str:
-    """SessionMeta を読み、紐づけ repo の前提一節を返す（無ければ空文字 / ADR-0028）。
+def _repo_premise(meta: SessionMeta | None) -> str:
+    """読み込み済み SessionMeta から紐づけ repo の前提一節を返す（無ければ空文字 / ADR-0028）。
 
     索引状態が ready/partial/indexing のときだけ前提化する（none/failed は付けない）。
-    Firestore 不通などで読めない場合も会話は成立させる（前提は付加価値）。
+    セッション文書は呼び出し側（build_agent_instructions）が 1 回だけ読む: モード判定と
+    repo 前提で別々に読むと、片方だけ失敗したときに「モード不明のまま repo 前提だけ載る」
+    という食い違いが起き得るため（/security-review 指摘）。
     """
-    try:
-        meta = repo.get_session(session_id)
-    except Exception as exc:  # pragma: no cover - depends on backend
-        log.warning("repo_premise_session_read_failed", error=str(exc))
-        return ""
     if meta is None or not meta.github_repo:
         return ""
     status = meta.github_index_status
@@ -80,6 +86,79 @@ def _repo_premise(repo: SessionRepository, session_id: str) -> str:
         return ""
     ready = status in (GitHubIndexStatus.READY, GitHubIndexStatus.PARTIAL)
     return build_repo_premise(meta.github_repo, meta.github_branch, ready, meta.github_summary)
+
+
+def _glossary_seed(repo: SessionRepository, meta: SessionMeta) -> str:
+    """product の利用者向け語彙シードを組み立てる（ADR-0032 決定7 / FR-2.4）。
+
+    product_id → product の順に辿り、読める範囲で機械的に組み立てる（LLM 追加呼び出し
+    なし・ADR-0028 の repo 要約シードと同型）。product_id なし（単発セッション）・
+    product 削除済み・Firestore 不通では空文字 = シードなしで会話は成立させる
+    （シードは付加価値）。glossary 空でもアプリ名はシードする。
+    """
+    if not meta.product_id:
+        return ""
+    try:
+        product = repo.get_product(meta.product_id)
+    except Exception as exc:  # pragma: no cover - depends on backend
+        log.warning("glossary_seed_read_failed", session=meta.id, error=str(exc))
+        return ""
+    if product is None:
+        log.warning("glossary_seed_product_missing", session=meta.id)
+        return ""
+    return build_glossary_seed(product.name, product.glossary)
+
+
+def build_agent_instructions(
+    repo: SessionRepository, session_id: str
+) -> tuple[str, InviteScope, bool]:
+    """モードに応じて voice agent の初期 instructions を組み立てる（ADR-0032 決定6・7）。
+
+    developer: 従来どおり grill-me ペルソナ + repo 前提（ADR-0028）。
+    end_user: 利用者向けペルソナ + glossary シード。repo 前提は**シードしない**:
+    grounding の出力遮断（決定8）が PR8 で入るまでの暫定フェイルクローズで、
+    private repo 由来の情報が利用者の会話に露出する面を作らない（#321）。
+
+    返り値は (instructions, mode, allow_repo_grounding)。repo 由来のシード可否は
+    「セッション文書を正しく読めて、かつ end_user でない」ときだけ True にする。
+    文書が読めない（Firestore 不通・enum 版ずれ等）ときは developer ペルソナに
+    落としつつ repo 前提・GitHub seed は**付けない**: モードを確認できないまま
+    repo 由来を載せると end_user セッションへ private 情報が漏れ得るため、
+    フェイルオープンにしない（/security-review 指摘・`_repo_access` と同じ倒し方）。
+    セッション文書はここで 1 回だけ読み、判定の食い違いを作らない。
+    """
+    meta: SessionMeta | None = None
+    confirmed = False
+    try:
+        meta = repo.get_session(session_id)
+        confirmed = True
+    except Exception as exc:  # pragma: no cover - depends on backend
+        log.warning("session_meta_read_failed", session=session_id, error=str(exc))
+    mode = meta.interview_mode if meta is not None else InviteScope.DEVELOPER
+    if mode is InviteScope.END_USER:
+        assert meta is not None  # END_USER は meta が読めたときにしか選ばれない
+        instructions = END_USER_VOICE_AGENT_INSTRUCTIONS + _glossary_seed(repo, meta)
+        allow_repo_grounding = False
+    else:
+        instructions = VOICE_AGENT_INSTRUCTIONS + (_repo_premise(meta) if confirmed else "")
+        allow_repo_grounding = confirmed
+    # モード分岐の観測性（CLAUDE.md 原則3）: どのモードでどれだけシードしたかを追える形に。
+    log.info(
+        "agent_instructions_built",
+        session=session_id,
+        interview_mode=mode.value,
+        mode_confirmed=confirmed,
+        allow_repo_grounding=allow_repo_grounding,
+        chars=len(instructions),
+    )
+    return instructions, mode, allow_repo_grounding
+
+
+def opening_instructions(mode: InviteScope) -> str:
+    """接続直後の最初の一問の指示（モード別）。"""
+    if mode is InviteScope.END_USER:
+        return END_USER_OPENING_INSTRUCTIONS
+    return DEVELOPER_OPENING_INSTRUCTIONS
 
 
 def _is_stale_repo_passage(source: str, current_sha: str) -> bool:
@@ -103,10 +182,12 @@ class SANBAAgent(Agent):
         grounding: GroundingStore,
         publisher: EventPublisher | None = None,
     ) -> None:
-        # 紐づけ GitHub リポジトリがあれば「前提」を初期 instructions にシードする（ADR-0028）。
-        # retrieval 任せにせず proactive に前提化し、詳細は search_grounding で掘らせる。
-        instructions = VOICE_AGENT_INSTRUCTIONS + _repo_premise(repo, session_id)
+        # モード別に初期 instructions を組み立てる（ADR-0032 決定6・7）。developer は
+        # grill-me + repo 前提（ADR-0028）、end_user は利用者ペルソナ + glossary シード。
+        instructions, mode, allow_repo_grounding = build_agent_instructions(repo, session_id)
         super().__init__(instructions=instructions)
+        self._interview_mode = mode
+        self._allow_repo_grounding = allow_repo_grounding
         self._session_id = session_id
         self._repo = repo
         self._grounding = grounding
@@ -132,6 +213,16 @@ class SANBAAgent(Agent):
     @property
     def transcript(self) -> list[str]:
         return self._transcript
+
+    @property
+    def interview_mode(self) -> InviteScope:
+        """このセッションのインタビュー・モード（ADR-0032 決定6。entrypoint が参照）。"""
+        return self._interview_mode
+
+    @property
+    def allow_repo_grounding(self) -> bool:
+        """repo 由来素材（GitHub seed）を許すか。モード確認済みの非 end_user のみ True。"""
+        return self._allow_repo_grounding
 
     @property
     def current_question_id(self) -> str | None:
@@ -672,7 +763,6 @@ async def entrypoint(ctx: JobContext) -> None:
     )
     grounding = GroundingStore()
     seed_knowledge_base(grounding)
-    seed_github_context(grounding, session_id, repo, _resolve_github_repo(repo, session_id))
     # data channel publish（#94）。音声と同一ルーム接続を再利用して web へ差分を流す。
     # reliable seq は last_seq と current question の asked_seq/cleared_seq の最大値でシード
     # （#123・#270）。question.asked/cleared は set_session_seq を呼ばず pub._seq を消費するため、
@@ -685,6 +775,18 @@ async def entrypoint(ctx: JobContext) -> None:
         start_lossy_seq=repo.reserve_lossy_seq_base(session_id),
     )
     agent = SANBAAgent(session_id=session_id, repo=repo, grounding=grounding, publisher=publisher)
+    # repo 由来素材（GitHub seed）はモード判定と同じ 1 回の読み（build_agent_instructions）に
+    # 従う: end_user とモード不明では**シードしない**（ADR-0032 決定8 の出力遮断が PR8 で
+    # 入るまでの暫定フェイルクローズ / #321。README/Issue 断片が search_grounding 経由で
+    # 利用者の会話に露出する面を作らない）。確認済み developer のみ従来どおり。
+    if agent.allow_repo_grounding:
+        seed_github_context(grounding, session_id, repo, _resolve_github_repo(repo, session_id))
+    else:
+        log.info(
+            "github_seed_skipped",
+            session=session_id,
+            interview_mode=agent.interview_mode.value,
+        )
 
     session: AgentSession = AgentSession(
         llm=google.beta.realtime.RealtimeModel(
@@ -785,13 +887,9 @@ async def entrypoint(ctx: JobContext) -> None:
     )
     # 接続直後に web の状態表示を「聴いています」に同期する（03/04/05）。
     await publisher.status("listening")
-    await session.generate_reply(
-        instructions=(
-            "まず自己紹介し、これから要件を一緒に整理することを伝え、"
-            "画面共有やモックがあれば見せてほしいと案内した上で、"
-            "最初の問いを1つだけ、推奨回答例を添えて投げかけてください。"
-        )
-    )
+    # 最初の一問はモード別（ADR-0032 決定6・7）: developer は要件整理＋画面共有の案内、
+    # end_user は利用体験の困りごとを技術用語なしで聞く。
+    await session.generate_reply(instructions=opening_instructions(agent.interview_mode))
 
     # When the room closes, score the interview (LLM-as-a-judge) and log to Langfuse.
     async def _on_close() -> None:
