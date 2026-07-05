@@ -8,9 +8,9 @@
 // 認証は /login へ寄せる（#140）。本ページはログイン状態を「開始ゲート」としてのみ参照し、
 // 未ログインなら理由提示＋/login への導線を出す（インラインのログインパネルは廃止）。
 
-import { FileText, Film, Mic, X } from "lucide-react";
+import { FileText, Film, Image as ImageIcon, Mic, X } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   AppHeader,
@@ -173,34 +173,6 @@ export default function Home() {
   const selectedProduct = productId
     ? (products ?? []).find((p) => p.id === productId)
     : undefined;
-
-  // ステージ済みファイルのサムネイル。画像は object URL でプレビューし、動画はアイコンで表す
-  //（#222）。URL はステージ集合が変わるたびに作り直し、前回分は revoke してリークを防ぐ。
-  // jsdom 等 createObjectURL 非対応の環境では null に落としてアイコン表示に委ねる（テスト安全）。
-  const previews = useMemo(
-    () =>
-      staged.map((file) => {
-        const isImage = file.type.toLowerCase().startsWith("image/");
-        const raw =
-          isImage && typeof URL !== "undefined" && typeof URL.createObjectURL === "function"
-            ? URL.createObjectURL(file)
-            : null;
-        // createObjectURL は常にブラウザ生成の blob: URL を返す（攻撃者が HTML を注入できる値では
-        // ない）。プレビューには blob: スキームのみを通し、それ以外は破棄する（防御的検証。
-        // CodeQL js/xss-through-dom はローカル File → 属性の流入を誤検知するため、その打ち消しも兼ねる）。
-        const url = raw !== null && raw.startsWith("blob:") ? raw : null;
-        return { file, url };
-      }),
-    [staged],
-  );
-  useEffect(
-    () => () => {
-      for (const p of previews) {
-        if (p.url) URL.revokeObjectURL(p.url);
-      }
-    },
-    [previews],
-  );
 
   // 本人のセッション履歴を取得して履歴リストへ供給する（#250）。ログイン済みのときだけ叩き、
   // 失敗時は空状態を維持する（履歴は補助情報なので本流＝壁打ち開始は止めない）。idToken が
@@ -789,35 +761,35 @@ export default function Home() {
                 画像は object URL のプレビュー、動画はフィルムアイコンで表す。 */}
             {staged.length > 0 && (
               <ul aria-label="添付した参考資料" className="flex flex-col gap-[8px]">
-                {previews.map(({ file, url }, i) => (
-                  <li
-                    key={`${file.name}:${file.size}`}
-                    className="flex items-center gap-[10px] rounded-[12px] border border-sanba-border bg-sanba-surface px-[10px] py-[8px]"
-                  >
-                    <span className="flex size-[40px] shrink-0 items-center justify-center overflow-hidden rounded-[8px] border border-sanba-border bg-sanba-surface-strong text-sanba-muted">
-                      {url ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={url} alt="" className="size-full object-cover" />
-                      ) : file.type.toLowerCase().startsWith("video/") ? (
-                        <Film size={18} aria-hidden />
-                      ) : (
-                        <FileText size={18} aria-hidden />
-                      )}
-                    </span>
-                    <span className="min-w-0 flex-1 truncate text-[13px] text-sanba-cream">
-                      {file.name}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => removeStaged(i)}
-                      disabled={busy}
-                      aria-label={`${file.name} を取り外す`}
-                      className="flex size-[26px] shrink-0 items-center justify-center rounded-full text-sanba-muted disabled:opacity-50"
+                {staged.map((file, i) => {
+                  // 種別アイコンのサムネイル（画像/動画/その他）。ローカル画像のプレビューは
+                  // object URL 経由になるが、DOM 由来 File → 属性の流入は誤検知の温床（CodeQL
+                  // js/xss-through-dom）なので、種別アイコンで表す方針にする（#222）。
+                  const kind = classifyFile(file);
+                  const Icon = kind === "image" ? ImageIcon : kind === "video" ? Film : FileText;
+                  return (
+                    <li
+                      key={`${file.name}:${file.size}`}
+                      className="flex items-center gap-[10px] rounded-[12px] border border-sanba-border bg-sanba-surface px-[10px] py-[8px]"
                     >
-                      <X size={14} aria-hidden />
-                    </button>
-                  </li>
-                ))}
+                      <span className="flex size-[40px] shrink-0 items-center justify-center rounded-[8px] border border-sanba-border bg-sanba-surface-strong text-sanba-muted">
+                        <Icon size={18} aria-hidden />
+                      </span>
+                      <span className="min-w-0 flex-1 truncate text-[13px] text-sanba-cream">
+                        {file.name}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => removeStaged(i)}
+                        disabled={busy}
+                        aria-label={`${file.name} を取り外す`}
+                        className="flex size-[26px] shrink-0 items-center justify-center rounded-full text-sanba-muted disabled:opacity-50"
+                      >
+                        <X size={14} aria-hidden />
+                      </button>
+                    </li>
+                  );
+                })}
               </ul>
             )}
 
