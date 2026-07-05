@@ -682,10 +682,13 @@ class SessionRepository:
         rid: str,
         status: RequirementStatus,
         approved_by: str | None = None,
+        keep_expiry: bool = False,
     ) -> Requirement:
         """承認/却下/差し戻しを行う (ADR-0014 §11)。
 
-        approved にしたら `expireAt` を削除して TTL の対象外にする。
+        approved にしたら通常は `expireAt` を削除して TTL の対象外にする。
+        `keep_expiry=True`（ゲストセッション向け）のときは approved でも TTL を維持する:
+        セッション文書自体が 30 日 TTL で消えるため、要件を無期限に残すと orphan になる。
         draft/rejected は `expireAt` を張り直して 30 日自動削除に任せる。
         """
         current = self.get_requirement(session_id, rid)
@@ -706,12 +709,13 @@ class SessionRepository:
             doc = updated.model_dump(mode="json")
             from google.cloud import firestore
 
-            if is_approved:
+            if is_approved and not keep_expiry:
                 # null 代入では「null フィールド」が残り TTL が効き続ける懸念があるため
                 # センチネルで明示削除する (ADR-0014 §17)。
                 doc["expireAt"] = firestore.DELETE_FIELD
-            elif (exp := self._expire_at()) is not None:
+            elif not is_approved and (exp := self._expire_at()) is not None:
                 doc["expireAt"] = exp
+            # is_approved かつ keep_expiry=True: expireAt を触らず既存 TTL を温存する。
             self._req_doc(session_id, rid).set(doc, merge=True)
         else:
             self._mem_requirements.setdefault(session_id, {})[rid] = updated

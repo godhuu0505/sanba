@@ -2094,12 +2094,19 @@ def finalize_session_requirements(
     )
     if meta is None:
         raise HTTPException(status_code=404, detail="session not found")
-    # 確定時集合を成果物として保全する: approved で expireAt が外れ 30 日 TTL の対象外になる
-    # （Codex P1）。approved_by は確定操作の主体（join 済みトークンの sub）。
+    # 確定時集合を成果物として保全する: 通常は approved で expireAt が外れ 30 日 TTL の
+    # 対象外になる（Codex P1）。ゲストセッション（owner_email == ""）は例外: セッション文書
+    # 自体が 30 日 TTL で消えるため要件 TTL を外すと orphan になる（ADR-0032 / FR-2.7）。
+    # approved_by は確定操作の主体（join 済みトークンの sub）。
+    is_guest_session = existing.owner_email == ""
     for rid in confirmed_ids:
         try:
             _repo.set_requirement_status(
-                session_id, rid, RequirementStatus.APPROVED, approved_by=access.sub
+                session_id,
+                rid,
+                RequirementStatus.APPROVED,
+                approved_by=access.sub,
+                keep_expiry=is_guest_session,
             )
         except RequirementNotFound:
             # 確定直前に TTL 失効等で消えた要件はスキップする（finalize 自体は成立させる）。
