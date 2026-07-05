@@ -11,6 +11,7 @@
 // a11y: role="status" でスクリーンリーダに未解消の存在を伝える。種別は色のみに依存せず
 // バッジ（ラベル＋アイコン）で示す（ADR-0017 / mapping.ts）。
 
+import { useInterviewMode } from "@/lib/interviewMode";
 import { detectionPresentation } from "@/lib/realtime/mapping";
 import type { DetectionKind } from "@/lib/realtime/types";
 
@@ -22,7 +23,8 @@ export interface DetectionPinProps {
 }
 
 export function DetectionPin({ summary, kind }: DetectionPinProps) {
-  const presentation = detectionPresentation(kind);
+  // end_user モードでは「矛盾/抜け」等の開発語彙を利用者向けに切替える（FR-2.4 / ADR-0032）。
+  const presentation = detectionPresentation(kind, useInterviewMode());
   return (
     <div
       role="status"

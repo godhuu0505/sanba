@@ -98,6 +98,52 @@ def test_create_session_keeps_empty_github_repo_as_explicit_opt_out() -> None:
     assert meta.github_repo == ""
 
 
+# ── セッション準備情報（ADR-0035）───────────────────────────────────────
+def test_create_session_persists_prep_goal() -> None:
+    # 02 準備フォームのゴール・詳細は SessionMeta に保存され、agent が起動時に
+    # 初期 instructions へシードする（join 後の RAG 投入と違い起動に確実に間に合う）。
+    res = client.post(
+        "/api/sessions",
+        json={
+            "roles": ["pm"],
+            "consent_acknowledged": True,
+            "goal": "検索を速くしたい",
+            "goal_detail": "現状は検索が遅い。まず商品検索だけ対象にしたい。",
+        },
+    )
+    assert res.status_code == 200
+    from sanba_api.main import _repo
+
+    meta = _repo.get_session(res.json()["session_id"])
+    assert meta is not None
+    assert meta.goal == "検索を速くしたい"
+    assert meta.goal_detail == "現状は検索が遅い。まず商品検索だけ対象にしたい。"
+
+
+def test_create_session_normalizes_blank_goal_to_none() -> None:
+    # 空白のみは未入力扱い（premise を無駄に付けない）。旧クライアント（未指定）も None。
+    res = client.post(
+        "/api/sessions",
+        json={"roles": ["pm"], "consent_acknowledged": True, "goal": "  ", "goal_detail": "\n"},
+    )
+    assert res.status_code == 200
+    from sanba_api.main import _repo
+
+    meta = _repo.get_session(res.json()["session_id"])
+    assert meta is not None
+    assert meta.goal is None
+    assert meta.goal_detail is None
+
+
+def test_create_session_rejects_oversized_goal() -> None:
+    # premise の肥大を上限で防ぐ（goal 2000 / goal_detail 8000）。
+    res = client.post(
+        "/api/sessions",
+        json={"roles": ["pm"], "consent_acknowledged": True, "goal": "あ" * 2001},
+    )
+    assert res.status_code == 422
+
+
 def test_create_session_omitted_github_repo_stays_none() -> None:
     # 未指定（旧クライアント）は None のまま = 環境変数フォールバックの従来挙動。
     res = client.post("/api/sessions", json={"roles": ["pm"], "consent_acknowledged": True})

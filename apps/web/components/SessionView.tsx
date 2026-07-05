@@ -45,9 +45,16 @@ function formatElapsed(ms: number): string {
 export function SessionView({
   sessionId,
   sessionToken,
+  readOnly = false,
 }: {
   sessionId: string;
   sessionToken: string | null;
+  /**
+   * ゲスト入場（ADR-0032 決定4）: session_token が読取専用で、素材投入/削除・finalize・
+   * export はサーバが 403 で拒む。403 を踏ませないよう、書き込み系 UI を出さない。
+   * realtime の client event（user.selection / user.text）と telemetry は許可されている。
+   */
+  readOnly?: boolean;
 }) {
   const { state, metrics, sendSelection, sendText, sendAnswer } = useRealtimeSession({
     sessionId,
@@ -107,7 +114,9 @@ export function SessionView({
   const [uploadAliases, setUploadAliases] = useState<ReadonlyMap<string, string>>(() => new Map());
 
   // 接続/再接続時に投入済み素材のメタを取り戻す（契約 §4 / #184）。失敗してもライブ差分で前進する。
+  // 読取専用（ゲスト）は素材 UI 自体を出さないため取得しない（無駄な読取を避ける）。
   useEffect(() => {
+    if (readOnly) return;
     let alive = true;
     fetchContextFiles(sessionId, sessionToken)
       .then((snap) => {
@@ -128,7 +137,7 @@ export function SessionView({
     return () => {
       alive = false;
     };
-  }, [sessionId, sessionToken]);
+  }, [sessionId, sessionToken, readOnly]);
 
   async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -324,14 +333,18 @@ export function SessionView({
   return (
     <>
       <RoomAudioRenderer muted={muted} />
-      <input
-        ref={fileInput}
-        type="file"
-        accept={`${ACCEPTED_IMAGE},${ACCEPTED_VIDEO}`}
-        onChange={handleFile}
-        className="hidden"
-      />
+      {/* 読取専用（ゲスト）はアップロード経路そのものを持たない（403 を踏ませない）。 */}
+      {!readOnly && (
+        <input
+          ref={fileInput}
+          type="file"
+          accept={`${ACCEPTED_IMAGE},${ACCEPTED_VIDEO}`}
+          onChange={handleFile}
+          className="hidden"
+        />
+      )}
       <ConversationSessionView
+        readOnly={readOnly}
         state={state}
         sendSelection={sendSelection}
         sendAnswer={sendAnswer}
@@ -375,7 +388,7 @@ export function SessionView({
         加えて「どの手段が選ばれたか」の比率を運用で追えるよう、選択イベントを onSelectSource →
         sendTelemetry（POST /telemetry）で OTLP カウンタへ集約する（CLAUDE.md 原則3）。console は使わない。
       */}
-      {sourceSheetOpen && (
+      {sourceSheetOpen && !readOnly && (
         <MaterialSourceSheet
           onClose={() => setSourceSheetOpen(false)}
           onUpload={() => {
