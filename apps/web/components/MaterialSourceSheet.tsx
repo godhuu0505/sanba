@@ -51,6 +51,12 @@ export interface MaterialSourceSheetProps {
   onSelectSource?: (source: MaterialSource) => void;
   /** カメラ/画面共有の開始失敗（権限拒否・ピッカーキャンセル）を示す（親が制御）。 */
   error?: string | null;
+  /**
+   * 配置。既定は会話中のボトムシート（"bottom"）。02 準備では画面中央に出す（"center" / #222）。
+   * ルーム外の準備画面はキーボード近接の必要が薄く、フォームの中で完結するダイアログとして
+   * 中央に据える方が収まりが良い。
+   */
+  placement?: "bottom" | "center";
 }
 
 export function MaterialSourceSheet({
@@ -63,7 +69,9 @@ export function MaterialSourceSheet({
   onDrive,
   onSelectSource,
   error,
+  placement = "bottom",
 }: MaterialSourceSheetProps) {
+  const centered = placement === "center";
   const sheetRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   // Drive 未承認（ADR-0007）の案内を押下時に開く。
@@ -110,7 +118,11 @@ export function MaterialSourceSheet({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center">
+    <div
+      className={`fixed inset-0 z-50 flex justify-center ${
+        centered ? "items-center px-4" : "items-end"
+      }`}
+    >
       {/* 暗幕（ChoicePin/AccountMenu 踏襲）。クリックで閉じる。 */}
       <button
         type="button"
@@ -124,7 +136,9 @@ export function MaterialSourceSheet({
         role="dialog"
         aria-modal="true"
         aria-label="資料の追加方法"
-        className="relative z-10 flex w-full max-w-[420px] flex-col gap-2 rounded-t-[18px] border-t-2 border-sanba-frame bg-sanba-surface px-4 pb-[18px] pt-[14px]"
+        className={`relative z-10 flex w-full max-w-[420px] flex-col gap-2 border-sanba-frame bg-sanba-surface px-4 pb-[18px] pt-[14px] ${
+          centered ? "rounded-[18px] border-2" : "rounded-t-[18px] border-t-2"
+        }`}
       >
         <div className="flex items-center gap-2">
           <span className="text-[15px] font-bold text-sanba-gold-text">

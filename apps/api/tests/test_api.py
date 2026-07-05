@@ -108,6 +108,123 @@ def test_create_session_omitted_github_repo_stays_none() -> None:
     assert meta.github_repo is None
 
 
+# ── 対象プロダクトへの従属（ADR-0031）─────────────────────────────────────
+def _seed_owned_product(**kwargs: object) -> str:
+    """`_fake_user`（owner-123456789）が所有する product をメモリ repo に用意する。"""
+    from datetime import UTC, datetime
+
+    from sanba_shared.models import Product
+
+    from sanba_api.main import _repo
+
+    _repo._mem_products.clear()
+    pid = "prod-owned"
+    _repo.create_product(
+        Product(
+            id=pid,
+            name="検索アプリ",
+            owner_sub="owner-123456789",
+            created_at=datetime(2024, 6, 20, tzinfo=UTC),
+            **kwargs,  # type: ignore[arg-type]
+        )
+    )
+    return pid
+
+
+def test_create_session_links_product_and_inherits_repo() -> None:
+    # product に紐づけると SessionMeta.product_id が入り、索引済み repo を継承する。
+    pid = _seed_owned_product(
+        github_repo="acme/search",
+        github_branch="main",
+        github_index_status="ready",
+    )
+    res = client.post(
+        "/api/sessions",
+        json={"roles": ["customer"], "consent_acknowledged": True, "product_id": pid},
+    )
+    assert res.status_code == 200, res.text
+    from sanba_api.main import _repo
+
+    meta = _repo.get_session(res.json()["session_id"])
+    assert meta is not None
+    assert meta.product_id == pid
+    # repo 未指定なので product の索引済み repo を継承（resolution: セッション明示 > product）。
+    assert meta.github_repo == "acme/search"
+    assert meta.github_branch == "main"
+    assert meta.github_index_status == "ready"
+
+
+def test_create_session_explicit_repo_wins_over_product() -> None:
+    # セッションで明示 repo を送ったら product 継承より優先する（resolution order）。
+    pid = _seed_owned_product(github_repo="acme/search", github_index_status="ready")
+    res = client.post(
+        "/api/sessions",
+        json={
+            "roles": ["customer"],
+            "consent_acknowledged": True,
+            "product_id": pid,
+            "github_repo": "acme/other",
+        },
+    )
+    assert res.status_code == 200, res.text
+    from sanba_api.main import _repo
+
+    meta = _repo.get_session(res.json()["session_id"])
+    assert meta is not None
+    assert meta.product_id == pid
+    assert meta.github_repo == "acme/other"
+
+
+def test_create_session_explicit_opt_out_not_overridden_by_product() -> None:
+    # 空文字（明示的な「連携しない」）は product repo で上書きしない（PR#314 P1）。
+    pid = _seed_owned_product(github_repo="acme/search", github_index_status="ready")
+    res = client.post(
+        "/api/sessions",
+        json={
+            "roles": ["customer"],
+            "consent_acknowledged": True,
+            "product_id": pid,
+            "github_repo": "",
+        },
+    )
+    assert res.status_code == 200, res.text
+    from sanba_api.main import _repo
+
+    meta = _repo.get_session(res.json()["session_id"])
+    assert meta is not None
+    assert meta.product_id == pid
+    assert meta.github_repo == ""
+
+
+def test_create_session_rejects_unauthorized_product_as_404() -> None:
+    # 他人所有・不存在の product は 404 に平す（存在秘匿 / _require_product_access）。
+    from datetime import UTC, datetime
+
+    from sanba_shared.models import Product
+
+    from sanba_api.main import _repo
+
+    _repo._mem_products.clear()
+    _repo.create_product(
+        Product(
+            id="prod-foreign",
+            name="他人アプリ",
+            owner_sub="someone-else",
+            created_at=datetime(2024, 6, 20, tzinfo=UTC),
+        )
+    )
+    foreign = client.post(
+        "/api/sessions",
+        json={"roles": ["pm"], "consent_acknowledged": True, "product_id": "prod-foreign"},
+    )
+    assert foreign.status_code == 404
+    missing = client.post(
+        "/api/sessions",
+        json={"roles": ["pm"], "consent_acknowledged": True, "product_id": "prod-nope"},
+    )
+    assert missing.status_code == 404
+
+
 def test_create_session_rejects_repo_outside_allowlist(monkeypatch: pytest.MonkeyPatch) -> None:
     # 許可リスト設定時は一覧に出ないリポを直接 POST で保存する抜け道も塞ぐ（Codex P1）。
     from sanba_api.config import settings
