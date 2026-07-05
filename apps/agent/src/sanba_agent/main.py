@@ -63,7 +63,7 @@ from .prompts.interview import (
     build_prep_premise,
     build_repo_premise,
 )
-from .retrieval import GroundingStore
+from .retrieval import GroundingStore, Passage
 from .tools.analysis import analyze_transcript, make_requirement_id
 
 log = structlog.get_logger(__name__)
@@ -128,8 +128,9 @@ def build_agent_instructions(repo: SessionRepository, session_id: str) -> AgentS
 
     developer: 従来どおり grill-me ペルソナ + repo 前提（ADR-0028）。
     end_user: 利用者向けペルソナ + glossary シード。repo 前提は**シードしない**:
-    grounding の出力遮断（決定8）が PR8 で入るまでの暫定フェイルクローズで、
-    private repo 由来の情報が利用者の会話に露出する面を作らない（#321）。
+    grounding の出力遮断（決定8 / search_grounding の allowlist）に加えて、
+    private repo 由来の情報が利用者の会話に露出する面を初期 instructions にも
+    作らない（#321 / 多層防御として PR8 以降も維持）。
 
     developer では準備フォームのゴール・詳細（ADR-0035）も前提としてシードし、
     analyze 用の事前情報ノート（prep_note）を併せて返す。repo 由来のシード可否は
@@ -163,7 +164,10 @@ def build_agent_instructions(repo: SessionRepository, session_id: str) -> AgentS
         instructions = (
             VOICE_AGENT_INSTRUCTIONS + prep_premise + (_repo_premise(meta) if confirmed else "")
         )
-        allow_repo_grounding = confirmed
+        # meta is None（セッション未作成/削除済み）は confirmed であってもモード不明と同義。
+        # repo grounding を許可すると end_user セッションが None で作られた場合にフェイルオープン
+        # するため、「読めた + meta が実在する」を両方満たすときだけ True にする。
+        allow_repo_grounding = confirmed and meta is not None
     # モード分岐の観測性（CLAUDE.md 原則3）: どのモードでどれだけシードしたかを追える形に。
     log.info(
         "agent_instructions_built",
@@ -199,6 +203,37 @@ def _is_stale_repo_passage(source: str, current_sha: str) -> bool:
     if not source.startswith("github:") or "@" not in source:
         return False
     return f"@{current_sha}:" not in source
+
+
+# ADR-0032 決定8（FR-2.5 / NFR-2）: repo 由来素材を許さないセッション（end_user・モード
+# 未確認）で search_grounding の返り値に残してよい kind の allowlist。利用者の発話と
+# 確定要件（過去セッション由来を含む / ADR-0003）のみ。repo 由来（kind=context の
+# github: 索引・README/Issue シード / ADR-0028）と開発語彙の knowledge（MoSCoW 等 /
+# FR-2.4）は本文・source ともモデルへ渡さない。denylist の source 文字列判定に頼らない
+# ため、大文字小文字・前後空白・形式変更などの表記揺れによるすり抜けが構造的に起きない。
+_USER_DERIVED_KINDS = frozenset({"utterance", "requirement"})
+
+
+def _partition_passages_for_output(
+    passages: list[Passage],
+) -> tuple[list[Passage], int, int]:
+    """出力制御の allowlist で passage を分け、(返す, repo由来の遮断数, その他の遮断数) を返す。
+
+    repo 由来の判別は kind（allowlist 外）に加えて source の `github:` 接頭辞でも数える
+    （観測性と background シグナル用の分類。遮断そのものは kind の allowlist が決めるので、
+    source の表記揺れで遮断がすり抜けることはない）。
+    """
+    kept: list[Passage] = []
+    dropped_repo = 0
+    dropped_other = 0
+    for p in passages:
+        if p.kind in _USER_DERIVED_KINDS:
+            kept.append(p)
+        elif p.source.strip().lower().startswith("github:"):
+            dropped_repo += 1
+        else:
+            dropped_other += 1
+    return kept, dropped_repo, dropped_other
 
 
 class SANBAAgent(Agent):
@@ -665,6 +700,8 @@ class SANBAAgent(Agent):
 
         質問の妥当性を裏付けたいとき、または「過去に似た議論がなかったか」を
         確認したいときに使う。返り値の sources を会話で言及して根拠を示すこと。
+        返り値に `background`（引用できない内部資料の関連ヒット件数のみ）が付くことがある。
+        その場合は内容・出所に一切触れず、話題の関連が深い合図としてだけ扱うこと。
         """
         # session_id を渡してセッション固有素材（context: ゴール/資料/紐づけ repo）を本セッション
         # に限定する（他者の private リポジトリ断片の越境ヒットを防ぐ / ADR-0028）。
@@ -676,21 +713,72 @@ class SANBAAgent(Agent):
         # access control / ADR-0028・Codex P2）。共有索引は消さない方針なので、ここで弾く。
         want = 4
         current_sha, revoked = self._repo_access()
-        fetch_k = want * 4 if (current_sha is not None or revoked) else want
+        # 出力制御（ADR-0032 決定8）の判定は build_agent_instructions の単一読みで確定した
+        # _allow_repo_grounding に揃える（ここで再読すると読み失敗時にフェイルオープンし得る）。
+        output_filtered = not self._allow_repo_grounding
+        fetch_k = want * 4 if (current_sha is not None or revoked or output_filtered) else want
         passages = self._grounding.search(query, k=fetch_k, session_id=self._session_id)
-        if revoked:
-            # 連携が無効: あらゆる repo 索引 chunk（github:）を落とす。
-            passages = [p for p in passages if not p.source.startswith("github:")]
-        elif current_sha is not None:
-            passages = [p for p in passages if not _is_stale_repo_passage(p.source, current_sha)]
-        passages = passages[:want]
-        log.info("grounding_search", session=self._session_id, query=query, hits=len(passages))
-        return {
+        dropped_repo = dropped_other = 0
+        if output_filtered:
+            # end_user（およびモード未確認）: 利用者由来 kind の allowlist だけ返し、repo 由来
+            # （context）・開発語彙（knowledge）は本文・source ともモデルへ渡さない（FR-2.5）。
+            # 音声応答は事後フィルタできないため、「渡すが引用禁止」には倒さない（NFR-2）。
+            #
+            # ACL（revoked/stale）を先に適用してアクセス不能 chunk を除いた上で背景シグナルを
+            # 数える（revoked/stale chunk を related_internal_hits に混ぜない）。
+            if revoked:
+                passages = [p for p in passages if not p.source.startswith("github:")]
+            elif current_sha is not None:
+                passages = [
+                    p for p in passages if not _is_stale_repo_passage(p.source, current_sha)
+                ]
+            _, dropped_repo, dropped_other = _partition_passages_for_output(passages)
+            # 出力用は allowlist kind 専用で別検索して取りこぼしを防ぐ。repo/knowledge が
+            # 多い索引でも utterance/requirement が上位 want 件に入れなくなる問題を避ける。
+            passages = self._grounding.search(
+                query,
+                k=want,
+                kinds=list(_USER_DERIVED_KINDS),
+                session_id=self._session_id,
+            )
+        else:
+            if revoked:
+                # 連携が無効: あらゆる repo 索引 chunk（github:）を落とす。
+                passages = [p for p in passages if not p.source.startswith("github:")]
+            elif current_sha is not None:
+                passages = [
+                    p for p in passages if not _is_stale_repo_passage(p.source, current_sha)
+                ]
+            passages = passages[:want]
+        log.info(
+            "grounding_search",
+            session=self._session_id,
+            query=query,
+            hits=len(passages),
+            interview_mode=self._interview_mode.value,
+            output_filtered=output_filtered,
+        )
+        if dropped_repo or dropped_other:
+            # モード別フィルタの発動を構造化ログへ（CLAUDE.md 原則3 / NFR-3）。
+            log.info(
+                "grounding_output_filtered",
+                session=self._session_id,
+                interview_mode=self._interview_mode.value,
+                dropped_repo=dropped_repo,
+                dropped_other=dropped_other,
+                returned=len(passages),
+            )
+        result: dict[str, Any] = {
             "passages": [
                 {"text": p.text, "source": p.source, "kind": p.kind, "score": p.score}
                 for p in passages
             ]
         }
+        if dropped_repo:
+            # 決定8 の「次に聞くことの判断材料」: repo 由来ヒットは件数のみの機械可読シグナル。
+            # 内容・出所を含めない。speech-to-speech でモデルが読み上げられる文を渡さない（NFR-2）。
+            result["background"] = {"related_internal_hits": dropped_repo}
+        return result
 
     def _repo_access(self) -> tuple[str | None, bool]:
         """(現在の commit sha, 連携無効か) を返す（repo chunk の峻別・遮断に使う）。
@@ -866,9 +954,10 @@ async def entrypoint(ctx: JobContext) -> None:
     )
     agent = SANBAAgent(session_id=session_id, repo=repo, grounding=grounding, publisher=publisher)
     # repo 由来素材（GitHub seed）はモード判定と同じ 1 回の読み（build_agent_instructions）に
-    # 従う: end_user とモード不明では**シードしない**（ADR-0032 決定8 の出力遮断が PR8 で
-    # 入るまでの暫定フェイルクローズ / #321。README/Issue 断片が search_grounding 経由で
-    # 利用者の会話に露出する面を作らない）。確認済み developer のみ従来どおり。
+    # 従う: end_user とモード不明では**シードしない**（#321 / ADR-0032 決定8）。
+    # search_grounding の出力 allowlist が第一防衛線だが、シード自体も止めたままにする
+    # （多層防御: フィルタが万一退行しても索引に露出面が増えない・ゲスト起点のセッション
+    # 乱造で GitHub API を消費しない）。確認済み developer のみ従来どおり。
     if agent.allow_repo_grounding:
         seed_github_context(grounding, session_id, repo, _resolve_github_repo(repo, session_id))
     else:
