@@ -20,7 +20,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from .retrieval import _tokenize
+from .retrieval import tokenize
 
 # 鮮度（ADR-0037 決定2）: ユーザー確定発話 2 ターンまたは 60 秒の短い方で失効。
 DEFAULT_TTL_SECONDS = 60.0
@@ -35,6 +35,8 @@ REASON_EMPTY = "empty"
 REASON_EXPIRED_TIME = "expired_time"
 REASON_EXPIRED_TURNS = "expired_turns"
 REASON_QUERY_MISMATCH = "query_mismatch"
+# キャッシュ自体は有効だが、repo 由来 chunk の ACL 再検証（呼び出し側）で無効化された。
+REASON_ACL_RECHECK = "repo_acl_recheck"
 
 
 @dataclass
@@ -52,7 +54,7 @@ class PrefetchEntry:
 
 def query_overlap(a: str, b: str) -> float:
     """2 つの検索語の語彙重なり（containment 係数 = 共通語 / 小さい方の語彙数）。"""
-    ta, tb = _tokenize(a), _tokenize(b)
+    ta, tb = tokenize(a), tokenize(b)
     if not ta or not tb:
         return 0.0
     return len(ta & tb) / min(len(ta), len(tb))

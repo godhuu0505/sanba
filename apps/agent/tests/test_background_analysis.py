@@ -170,6 +170,58 @@ async def test_tool_falls_back_to_sync_when_stale(
 
 
 @pytest.mark.asyncio
+async def test_background_analysis_timeout_is_fail_soft(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # 分析タイムアウト（fail-soft）: 背景実行は黙って諦め、ツールの同期経路が最新化する。
+    import asyncio
+
+    calls: list[str] = []
+
+    async def _hang(transcript: str) -> AnalysisResult:
+        calls.append(transcript)
+        if len(calls) == 1:
+            await asyncio.sleep(60)
+        return AnalysisResult(summary="s", next_question="q?", suggested_answer="a")
+
+    monkeypatch.setattr("sanba_agent.main.analyze_transcript", _hang)
+    monkeypatch.setattr("sanba_agent.main.ANALYSIS_TIMEOUT_SECONDS", 0.05)
+    agent = _agent()
+    agent.record_utterance("participant", "請求管理のアプリを作りたい")
+    agent.record_utterance("participant", "対象は経理担当者です")
+    task = agent._analysis_task
+    assert task is not None
+    await task  # タイムアウトしても例外は漏れない（fail-soft）
+    assert agent._last_analysis is None
+
+    tool = type(agent).analyze_requirements.__wrapped__
+    result = await tool(agent, None)
+    assert result["next_question"] == "q?", "同期フォールバックが最新化を保証する"
+    assert len(calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_drain_tasks_cancels_overdue() -> None:
+    # ドレン: 猶予内に終わるタスクは送り切り、超過分はキャンセルする（ADR-0037）。
+    import asyncio
+
+    from sanba_agent.main import _drain_tasks
+
+    async def _hang() -> None:
+        await asyncio.sleep(60)
+
+    async def _quick() -> None:
+        return None
+
+    hang_task = asyncio.create_task(_hang())
+    quick_task = asyncio.create_task(_quick())
+    completed, cancelled = await _drain_tasks({hang_task, quick_task}, grace_seconds=0.05)
+    assert completed == 1
+    assert cancelled == 1
+    assert hang_task.cancelled()
+
+
+@pytest.mark.asyncio
 async def test_tool_rides_on_inflight_background_run(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

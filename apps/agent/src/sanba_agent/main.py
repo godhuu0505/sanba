@@ -55,7 +55,7 @@ from .events import (
     decode_user_text,
 )
 from .observability import setup_observability
-from .prefetch import REASON_EMPTY, PrefetchCache
+from .prefetch import REASON_ACL_RECHECK, REASON_EMPTY, PrefetchCache
 from .prompts.interview import (
     DEVELOPER_OPENING_INSTRUCTIONS,
     DEVELOPER_OPENING_WITH_PREP_INSTRUCTIONS,
@@ -222,6 +222,9 @@ _USER_DERIVED_KINDS = frozenset({"utterance", "requirement"})
 PREFETCH_TIMEOUT_SECONDS = 5.0
 ANALYSIS_TIMEOUT_SECONDS = 30.0
 DRAIN_GRACE_SECONDS = 2.0
+# ヒット時 ACL 再検証（Firestore 最大2読み）の上限。超過は「判定不能=無効」に倒して
+# 同期検索へフォールバックする（fail-closed / sanba-reviewer P1）。
+ACL_RECHECK_TIMEOUT_SECONDS = 2.0
 
 
 async def _drain_tasks(tasks: set[asyncio.Task[Any]], grace_seconds: float) -> tuple[int, int]:
@@ -499,11 +502,13 @@ class SANBAAgent(Agent):
                 turn=self._user_turn,
             )
             return last.model_dump(mode="json")
-        # 同期フォールバック（従来経路）。scheduler にも実行として計上し、直後の背景発火を防ぐ。
-        if self._publisher is not None:
-            await self._publisher.status("deliberating")
+        # 同期フォールバック（従来経路）。scheduler への計上は最初の await より前に行い、
+        # await 中に届いた発話が背景実行を並走起動する窓を閉じる（機内1件の維持 /
+        # sanba-reviewer P2）。
         self._analysis_scheduler.start()
         try:
+            if self._publisher is not None:
+                await self._publisher.status("deliberating")
             result = await self._run_analysis(trigger="tool")
         finally:
             # 追い掛け判定は使わない（いま最新化したばかり。次の発話が再評価する）。
@@ -863,10 +868,10 @@ class SANBAAgent(Agent):
         # 沈黙を削る。キャッシュはフィルタ後のみなので、ヒットをそのまま返しても
         # 出力制御（ADR-0032 決定8）は不変。ミスは従来どおりの同期検索（劣化なし）。
         entry, reason = self._prefetch.get(query, turn=self._user_turn)
-        if entry is not None and self._cached_repo_sources_invalid(entry.result):
+        if entry is not None and await self._cached_repo_sources_invalid(entry.result):
             # 先読み後に owner が連携解除/repo 差し替えをした稀な窓（≤TTL）。古い ACL で
             # 通した chunk を返さず、最新の ACL を適用する同期検索へ倒す（多層防御）。
-            entry, reason = None, "repo_acl_recheck"
+            entry, reason = None, REASON_ACL_RECHECK
         if entry is not None:
             log.info(
                 "prefetch_hit",
@@ -934,14 +939,30 @@ class SANBAAgent(Agent):
             duration_ms=int(duration * 1000),
         )
 
-    def _cached_repo_sources_invalid(self, result: dict[str, Any]) -> bool:
+    async def _cached_repo_sources_invalid(self, result: dict[str, Any]) -> bool:
         """先読み結果に repo 由来 passage が含まれる場合、ACL（revoked/sha）を再検証する。
 
-        Firestore 2 読みのコストは同期検索（embedding + ES）より十分小さい。repo 由来を
-        含まない結果（end_user モードの allowlist 出力を含む）は再検証不要で False。
+        Firestore 読み（同期クライアント・最大2回）は to_thread + タイムアウトで包み、
+        音声パイプラインのイベントループを塞がない（sanba-reviewer P1）。判定できない
+        とき（タイムアウト・障害）は安全側に True を返し、最新 ACL を適用する同期検索へ
+        倒す（fail-closed）。repo 由来を含まない結果（end_user モードの allowlist 出力を
+        含む）は再検証不要で False。
         """
         if not any(p["source"].startswith("github:") for p in result["passages"]):
             return False
+        try:
+            return await asyncio.wait_for(
+                asyncio.to_thread(self._repo_sources_acl_invalid, result),
+                ACL_RECHECK_TIMEOUT_SECONDS,
+            )
+        except TimeoutError:
+            log.warning("prefetch_acl_recheck_timeout", session=self._session_id)
+            return True
+        except Exception as exc:  # noqa: BLE001 - 判定不能は安全側（同期検索へ）
+            log.warning("prefetch_acl_recheck_failed", session=self._session_id, error=str(exc))
+            return True
+
+    def _repo_sources_acl_invalid(self, result: dict[str, Any]) -> bool:
         current_sha, revoked = self._repo_access()
         if revoked:
             return True
@@ -1359,7 +1380,9 @@ async def entrypoint(ctx: JobContext) -> None:
     # When the room closes, score the interview (LLM-as-a-judge) and log to Langfuse.
     async def _on_close() -> None:
         # ADR-0037: 背景タスク（web イベント処理・先読み・背景分析・publish）を猶予付きで
-        # ドレンしてから評価する（検知 publish の取りこぼしを減らす）。
+        # ドレンしてから評価する（検知 publish の取りこぼしを減らす）。2 段構えなのは
+        # 意図的: web イベント処理（_bg_tasks）が完走時に publish タスクを新規に積むため、
+        # 先に前段を送り切ってから agent 側を送る。猶予は各段 2 秒＝合計最大 4 秒。
         await _drain_tasks(set(_bg_tasks), DRAIN_GRACE_SECONDS)
         await agent.drain_background_tasks()
         from .evaluation import score_session

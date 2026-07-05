@@ -215,6 +215,62 @@ async def test_prefetch_acl_recheck_falls_back_when_link_revoked() -> None:
 
 
 @pytest.mark.asyncio
+async def test_prefetch_timeout_is_fail_soft(monkeypatch: pytest.MonkeyPatch) -> None:
+    # 検索タイムアウト（fail-soft）: 例外は漏れず、キャッシュは空のまま（次のツール
+    # 呼び出しは同期検索＝従来どおり）。
+    import time as _time
+
+    repo = _developer_repo()
+    agent = SANBAAgent("s1", repo, _grounding())
+
+    def _slow(query: str) -> dict:
+        _time.sleep(0.3)
+        return {"passages": []}
+
+    agent._grounded_search = _slow  # type: ignore[method-assign]
+    monkeypatch.setattr("sanba_agent.main.PREFETCH_TIMEOUT_SECONDS", 0.05)
+    agent.record_utterance("participant", "請求書の画面で保存に困った")
+    task = agent._prefetch_task
+    assert task is not None
+    await task  # TimeoutError はタスク内で処理される
+    assert agent._prefetch._entry is None
+
+
+@pytest.mark.asyncio
+async def test_prefetch_acl_recheck_timeout_falls_back(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # ACL 再検証がタイムアウト/障害で判定不能なときは fail-closed: ヒットを捨てて
+    # 最新 ACL を適用する同期検索へ倒す（sanba-reviewer P1 の回帰テスト）。
+    repo = _developer_repo()
+    agent = SANBAAgent("s1", repo, _grounding())
+    agent.record_utterance("participant", "請求書の画面で保存に困った")
+    await _await_prefetch(agent)
+    assert agent._prefetch._entry is not None
+
+    def _hang_access(sub: str) -> GitHubLink:
+        import time as _time
+
+        _time.sleep(0.3)
+        return GitHubLink(sub="owner", installation_id=1, github_login="octo")
+
+    repo.get_github_link = _hang_access  # type: ignore[method-assign]
+    monkeypatch.setattr("sanba_agent.main.ACL_RECHECK_TIMEOUT_SECONDS", 0.05)
+    sync_calls = 0
+    original = agent._grounded_search
+
+    def _counting(query: str) -> dict:
+        nonlocal sync_calls
+        sync_calls += 1
+        return original(query)
+
+    agent._grounded_search = _counting  # type: ignore[method-assign]
+    tool = type(agent).search_grounding.__wrapped__
+    await tool(agent, None, "請求書の画面 保存")
+    assert sync_calls == 1, "判定不能ならヒットを使わず同期検索へフォールバック"
+
+
+@pytest.mark.asyncio
 async def test_prefetch_latest_wins_cancels_inflight_task(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
