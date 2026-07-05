@@ -567,6 +567,11 @@ export interface Product {
   github_commit_sha: string | null;
   // none | pending | indexing | ready | partial | failed
   github_index_status: string;
+  /**
+   * 呼び出しユーザーから見た役割（ADR-0036。admin は owner に平される）。
+   * web は管理 UI（編集・招待・削除）の出し分けにのみ使う。認可の源泉は常に API 側。
+   */
+  role: "owner" | "member";
 }
 
 /** 深掘りリンク 1 件（ProductInviteResponse）。token から /join/{token} URL を組む。 */
@@ -692,6 +697,153 @@ export function revokeProductInvite(
     `/api/products/${encodeURIComponent(productId)}/invites/${encodeURIComponent(inviteId)}/revoke`,
     idToken,
     { method: "POST" },
+  );
+}
+
+// ===== Product members: メンバー管理・招待 (ADR-0036) =========================
+// メンバー = その product で要件サンバができる人。招待はメールアドレス宛の 1 回限りで、
+// メール URL（/member-invites/{token}）とアプリ内通知（fetchMyMemberInvites）の
+// どちらからでも承諾/辞退できる。認可の源泉は API 側（_require_product_access）。
+
+/** GET /api/products/{id}/members の 1 件。owner はここに含まれない（owner_sub が正）。 */
+export interface ProductMember {
+  sub: string;
+  email: string;
+  display_name: string;
+  created_at: string;
+}
+
+/** メンバー招待 1 件（管理 UI 用）。token から /member-invites/{token} の URL を組める。 */
+export interface ProductMemberInvite {
+  id: string;
+  email: string;
+  // pending | accepted | declined | revoked | expired（expired は期限からの導出）
+  status: string;
+  created_at: string;
+  expires_at: string | null;
+  invited_by_email: string;
+  token: string;
+}
+
+/** GET /api/member-invites/mine の 1 件（アプリ内通知）。 */
+export interface MyMemberInvite {
+  id: string;
+  product_id: string;
+  product_name: string;
+  invited_by_email: string;
+  created_at: string;
+  expires_at: string | null;
+}
+
+/** POST /api/member-invites/resolve の応答（招待 URL の承諾前確認）。 */
+export interface MemberInviteResolution {
+  id: string;
+  product_name: string;
+  invited_by_email: string;
+  /** 宛先の伏せ字（本人確認前のため完全な宛先は返らない）。 */
+  masked_email: string;
+  status: string;
+  /** ログイン中のアカウントが宛先本人か（承諾ボタンの活性判定）。 */
+  email_match: boolean;
+}
+
+export function fetchProductMembers(
+  productId: string,
+  idToken: string | null,
+): Promise<ProductMember[]> {
+  return productFetch<ProductMember[]>(
+    `/api/products/${encodeURIComponent(productId)}/members`,
+    idToken,
+  );
+}
+
+export function removeProductMember(
+  productId: string,
+  memberSub: string,
+  idToken: string | null,
+): Promise<{ removed: boolean }> {
+  return productFetch<{ removed: boolean }>(
+    `/api/products/${encodeURIComponent(productId)}/members/${encodeURIComponent(memberSub)}`,
+    idToken,
+    { method: "DELETE" },
+  );
+}
+
+export function createMemberInvite(
+  productId: string,
+  email: string,
+  idToken: string | null,
+): Promise<ProductMemberInvite> {
+  return productFetch<ProductMemberInvite>(
+    `/api/products/${encodeURIComponent(productId)}/member-invites`,
+    idToken,
+    { method: "POST", body: JSON.stringify({ email }) },
+  );
+}
+
+export function listMemberInvites(
+  productId: string,
+  idToken: string | null,
+): Promise<ProductMemberInvite[]> {
+  return productFetch<ProductMemberInvite[]>(
+    `/api/products/${encodeURIComponent(productId)}/member-invites`,
+    idToken,
+  );
+}
+
+export function revokeMemberInvite(
+  productId: string,
+  inviteId: string,
+  idToken: string | null,
+): Promise<ProductMemberInvite> {
+  return productFetch<ProductMemberInvite>(
+    `/api/products/${encodeURIComponent(productId)}/member-invites/${encodeURIComponent(inviteId)}/revoke`,
+    idToken,
+    { method: "POST" },
+  );
+}
+
+export function fetchMyMemberInvites(idToken: string | null): Promise<MyMemberInvite[]> {
+  return productFetch<MyMemberInvite[]>("/api/member-invites/mine", idToken);
+}
+
+/** アプリ内通知からの承諾/辞退（招待 id 経由）。 */
+export function respondMemberInvite(
+  inviteId: string,
+  action: "accept" | "decline",
+  idToken: string | null,
+): Promise<{ status: string; product_id: string }> {
+  return productFetch<{ status: string; product_id: string }>(
+    `/api/member-invites/${encodeURIComponent(inviteId)}/respond`,
+    idToken,
+    { method: "POST", body: JSON.stringify({ action }) },
+  );
+}
+
+/**
+ * 招待 URL のトークンを検証して確認画面用の情報を得る。トークンは URL パスに現れるが
+ * API へは body で渡す（アクセスログに残さない / products/join と同方針）。
+ */
+export function resolveMemberInvite(
+  token: string,
+  idToken: string | null,
+): Promise<MemberInviteResolution> {
+  return productFetch<MemberInviteResolution>("/api/member-invites/resolve", idToken, {
+    method: "POST",
+    body: JSON.stringify({ token }),
+  });
+}
+
+/** 招待メール URL からの承諾/辞退（トークン経由。宛先 email と一致しないと 403）。 */
+export function respondMemberInviteByToken(
+  token: string,
+  action: "accept" | "decline",
+  idToken: string | null,
+): Promise<{ status: string; product_id: string }> {
+  return productFetch<{ status: string; product_id: string }>(
+    "/api/member-invites/respond-by-token",
+    idToken,
+    { method: "POST", body: JSON.stringify({ token, action }) },
   );
 }
 

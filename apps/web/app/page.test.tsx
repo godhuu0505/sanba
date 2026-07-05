@@ -51,6 +51,7 @@ const DEFAULT_PRODUCT = {
   github_branch: null as string | null,
   github_commit_sha: null as string | null,
   github_index_status: "none",
+    role: "owner" as const,
 };
 const fetchMyProducts = vi.fn(async (..._a: unknown[]) => [DEFAULT_PRODUCT] as unknown[]);
 // 連携リポジトリ候補（ADR-0027）。既定はコネクタ無効 = フィールド非表示（既存テストを変えない）。
@@ -74,6 +75,9 @@ const selectSessionRepo = vi.fn(async (..._a: unknown[]) => ({
   status: "none",
 }));
 vi.mock("../lib/api", () => ({
+  // ホームの招待通知（MemberInviteNotices / ADR-0036）。既定は招待なし＝何も描画しない。
+  fetchMyMemberInvites: () => Promise.resolve([]),
+  respondMemberInvite: () => Promise.resolve({ status: "accepted", product_id: "prod-1" }),
   createSession: (...a: unknown[]) => createSession(...a),
   joinSession: (...a: unknown[]) => joinSession(...a),
   addSessionContext: (...a: unknown[]) => addSessionContext(...a),
@@ -829,6 +833,7 @@ describe("入口フロー（#140）", () => {
         github_branch: null,
         github_commit_sha: null,
         github_index_status: "none",
+    role: "owner" as const,
       },
       {
         id: "p2",
@@ -840,6 +845,7 @@ describe("入口フロー（#140）", () => {
         github_branch: null,
         github_commit_sha: null,
         github_index_status: "none",
+    role: "owner" as const,
       },
     ]);
     render(<Home />);

@@ -135,6 +135,43 @@ def record_product_event(event: str) -> None:
         pass
 
 
+# product メンバー管理イベント（ADR-0036）のカウンタ。招待の発行〜応答のファネルと
+# メンバーの増減を観測する（CLAUDE.md 原則3）。event は列挙値のみ・PII 非送信。
+_member_counter = metrics.get_meter("sanba_api.products").create_counter(
+    "sanba_product_member_events_total",
+    description=(
+        "product メンバー管理イベント数 "
+        "(event=invite_created/invite_accepted/invite_declined/invite_revoked/member_removed"
+        " / ADR-0036)"
+    ),
+)
+
+
+def record_member_event(event: str) -> None:
+    """メンバー管理イベントを計上する
+    （event=invite_created/invite_accepted/invite_declined/invite_revoked/member_removed）。"""
+    try:
+        _member_counter.add(1, {"event": event})
+    except Exception:  # pragma: no cover - メトリクスは本処理を止めない
+        pass
+
+
+# メンバー招待メール（ADR-0036 決定3）の送信結果カウンタ。skipped（SMTP 未設定）が
+# 本番で増えるのは設定漏れのシグナル。result は列挙値のみ・宛先等の PII は送らない。
+_member_invite_email_counter = metrics.get_meter("sanba_api.products").create_counter(
+    "sanba_member_invite_emails_total",
+    description="メンバー招待メールの送信数 (result=sent/failed/skipped / ADR-0036)",
+)
+
+
+def record_member_invite_email(result: str) -> None:
+    """メンバー招待メールの送信結果を計上する（result=sent/failed/skipped）。"""
+    try:
+        _member_invite_email_counter.add(1, {"result": result})
+    except Exception:  # pragma: no cover - メトリクスは本処理を止めない
+        pass
+
+
 # ゲスト入場（ADR-0032 / FR-2.1）のカウンタ。匿名入口の成功と拒否理由を分計し、
 # abuse 兆候（flag off への試行・scope 不一致・レート超過の急増）を本番で追える形にする。
 _guest_join_counter = metrics.get_meter("sanba_api.guest").create_counter(

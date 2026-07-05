@@ -53,6 +53,25 @@ class Settings(BaseSettings):
     # invite 文書カウンタで整合する（in-memory fallback あり）。超過は 429。
     invite_join_rate_per_minute: int = 10
 
+    # ---- メンバー招待 (ADR-0036) ----
+    # メンバー招待の有効期限（秒）。深掘りリンクと違い永続権限の付与なので必ず期限を切る。
+    member_invite_ttl_seconds: int = 14 * 24 * 3600
+    # product あたりの保留中招待の上限。任意メール宛の送信エンドポイントを bulk メール送信に
+    # 乱用されないための総量ガード（超過は 429）。1 チームのメンバー数として十分大きい値。
+    member_invite_max_pending_per_product: int = 50
+    # 招待メール・招待 URL に載せる web のベース URL（例: https://sanba.example.com）。
+    web_base_url: str = "http://localhost:3000"
+    # 招待メールの SMTP 送信設定。smtp_host 未設定なら送信をスキップする（フェイルオープン:
+    # アプリ内通知が常に届くため招待自体は成立する。skipped はメトリクスで観測できる）。
+    # 認証情報は Secret Manager 経由で注入する（生のまま env に置かない）。
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_from: str = "SANBA <no-reply@sanba.local>"
+    # STARTTLS で暗号化する（既定 on。平文 SMTP はローカルの mailpit 等の検証用途のみ）。
+    smtp_starttls: bool = True
+
     # ---- Identity: Google ログイン (ADR-0012) ----
     # OAuth 2.0 Web クライアント ID。ID トークン検証の `aud` に使う (秘匿物ではない)。
     # 未設定かつ auth_dev_bypass=false の本番構成では認証経路をフェイルクローズする。

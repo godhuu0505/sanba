@@ -56,6 +56,7 @@ function product(overrides: Partial<Product> = {}): Product {
     github_branch: null,
     github_commit_sha: null,
     github_index_status: "none",
+    role: "owner" as const,
     ...overrides,
   };
 }
