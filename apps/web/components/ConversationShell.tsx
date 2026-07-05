@@ -4,6 +4,8 @@
 // 仕様: docs/design/conversation-experience.md §2。
 // 固定UI（ヘッダ・ミニ状況・タブ・問いピン・2行ボトムバー）は常時表示し、本文だけタブで切替える。
 // 音声会話はタブに依らず継続するため、問いピン/ボトムバーはどのタブでも描画し続ける。
+// セッション終了後（08 結果からの閲覧）は review モードで、会話専用 UI（REC・終了・問いピン・
+// ボトムバー）を出さない読み取り専用のシェルになる。
 
 import { Diamond, Paperclip, Square, TriangleAlert } from "lucide-react";
 import { useState, type ReactNode } from "react";
@@ -44,12 +46,20 @@ export interface ConversationShellProps {
    * タブ「参考資料」とミニ状況の「資料」を隠す。既定 false（従来表示）。
    */
   hideMaterials?: boolean;
+  /**
+   * セッション終了後の閲覧モード（08 結果 → 「この絵巻を画面で確認する」）。
+   * 会話中しか意味を持たない UI（REC・終了⏹・問いピン・ボトムバー）を出さず、
+   * 代わりに結果（08）へ戻る導線を出す。既定 false（会話中）。
+   */
+  review?: boolean;
+  /** 閲覧モードで結果（08）へ戻る。 */
+  onBackToResult?: () => void;
   /** タブ本文（active のみ描画）。 */
   tabs: Record<ShellTab, ReactNode>;
-  /** 常時ピンの「問い＋選択肢」。 */
+  /** 常時ピンの「問い＋選択肢」。閲覧モードでは描画しない。 */
   choicePin?: ReactNode;
-  /** 常時2行ボトムバー。 */
-  bottomBar: ReactNode;
+  /** 常時2行ボトムバー。閲覧モードでは描画しない。 */
+  bottomBar?: ReactNode;
 }
 
 export function ConversationShell({
@@ -62,6 +72,8 @@ export function ConversationShell({
   onTabChange,
   onUnresolvedJump,
   hideMaterials = false,
+  review = false,
+  onBackToResult,
   tabs,
   choicePin,
   bottomBar,
@@ -78,7 +90,9 @@ export function ConversationShell({
   };
 
   return (
-    <div className="flex h-full flex-col">
+    // 親（会話画面の main）が flex 列のときは残り高さいっぱいに伸び（flex-1 min-h-0）、
+    // タブ本文だけが内部スクロールする＝問いピン/ボトムバーは常に画面最下部に固定される。
+    <div className="flex h-full min-h-0 flex-1 flex-col">
       {/* ── 固定ヘッダ ───────────────────────── */}
       <header className="flex items-center gap-2 px-4 pb-2 pt-2">
         <span
@@ -89,16 +103,30 @@ export function ConversationShell({
         </span>
         <h1 className="text-[15px] font-bold text-sanba-cream">問答</h1>
         <span className="flex-1" />
-        {recording && <RecPill>{elapsed}</RecPill>}
-        <button
-          type="button"
-          aria-label="会話を終了"
-          onClick={onEnd}
-          disabled={!onEnd}
-          className="flex size-7 items-center justify-center rounded-full border border-sanba-border bg-sanba-surface text-[13px] text-sanba-muted disabled:opacity-40"
-        >
-          <Square size={13} aria-hidden />
-        </button>
+        {review ? (
+          // 閲覧モード: 録音・終了は意味を持たないので出さず、結果（08）へ戻る導線に差し替える。
+          <button
+            type="button"
+            aria-label="結果に戻る"
+            onClick={onBackToResult}
+            className="rounded-full border border-sanba-border bg-sanba-surface px-3 py-[5px] text-[12px] font-bold text-sanba-gold-text"
+          >
+            ‹ 結果へ戻る
+          </button>
+        ) : (
+          <>
+            {recording && <RecPill>{elapsed}</RecPill>}
+            <button
+              type="button"
+              aria-label="会話を終了"
+              onClick={onEnd}
+              disabled={!onEnd}
+              className="flex size-7 items-center justify-center rounded-full border border-sanba-border bg-sanba-surface text-[13px] text-sanba-muted disabled:opacity-40"
+            >
+              <Square size={13} aria-hidden />
+            </button>
+          </>
+        )}
       </header>
 
       {/* ── 固定ミニ状況 ─────────────────────── */}
@@ -175,9 +203,9 @@ export function ConversationShell({
         {tabs[tab]}
       </main>
 
-      {/* ── 常時：問いピン＋2行ボトムバー ──────── */}
-      {choicePin}
-      {bottomBar}
+      {/* ── 常時：問いピン＋2行ボトムバー（会話中のみ。閲覧モードでは出さない）──── */}
+      {!review && choicePin}
+      {!review && bottomBar}
     </div>
   );
 }

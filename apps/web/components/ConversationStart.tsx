@@ -139,9 +139,14 @@ function RoomGate({
   const reconnecting =
     state === ConnectionState.Reconnecting || state === ConnectionState.SignalReconnecting;
   return (
-    <Screen className="px-4 py-3">
+    // 会話の常時 UI（問いピン・ボトムバー）を画面最下部に固定するため、ビューポート高（h-dvh）で
+    // 画面を固定し、スクロールはシェル内のタブ本文（overflow-y-auto）だけに閉じる。下パディングは
+    // 持たせず（pt-3 のみ）、ボトムバーを画面の底辺に密着させる（判定/結果は各自 pb を持つ）。
+    // main の overflow-y-auto は判定/結果（h-full 子）が画面高を超えたときの逃げ道で、
+    // 会話シェル（flex-1 / min-h-0）は main にぴったり収まるため二重スクロールにはならない。
+    <Screen className="h-dvh px-4 pt-3">
       <AppHeader brand right={<StartAudio label="音声を有効に" />} />
-      <main className="mx-auto w-full max-w-[640px] flex-1">
+      <main className="mx-auto flex min-h-0 w-full max-w-[640px] flex-1 flex-col overflow-y-auto">
         <p className="mb-2 text-[12px] text-sanba-muted">
           セッション: <code>{conn.session_id}</code>
         </p>
