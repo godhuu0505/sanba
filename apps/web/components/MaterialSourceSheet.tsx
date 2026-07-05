@@ -16,7 +16,7 @@
 // Google ドライブは ADR-0007 で未承認（保留）。実 OAuth スコープ追加は別チケットのため、ここでは
 // 導線（最小ピッカ）のみを出し、押下時に「準備中」を案内する（onDrive 注入で実導線に差し替え可能）。
 
-import { Camera, Cloud, Monitor, Upload, X } from "lucide-react";
+import { Camera, ChevronRight, Cloud, Monitor, Upload, X } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 
 /** 投入手段の種別（計測キー）。 */
@@ -258,7 +258,7 @@ function SourceRow({
         <span className="text-[11.5px] text-sanba-muted">{sub}</span>
       </span>
       <span aria-hidden="true" className="text-sanba-muted">
-        ›
+        <ChevronRight size={16} />
       </span>
     </button>
   );

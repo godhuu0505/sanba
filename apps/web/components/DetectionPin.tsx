@@ -33,10 +33,10 @@ export function DetectionPin({ summary, kind }: DetectionPinProps) {
     >
       <span
         aria-label={presentation.ariaLabel}
-        className="shrink-0 rounded-full px-2 py-[2px] text-[10.5px] font-bold text-white"
+        className="inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-[2px] text-[10.5px] font-bold text-white"
         style={{ backgroundColor: presentation.color }}
       >
-        {presentation.icon} {presentation.label}
+        <presentation.Icon size={11} aria-hidden /> {presentation.label}
       </span>
       <span className="text-[12px] font-bold text-sanba-gold-text">{summary}</span>
     </div>

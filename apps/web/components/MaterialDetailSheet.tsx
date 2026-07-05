@@ -13,7 +13,7 @@
 //   見た目（古語）に依らない現代語ラベル（MaterialSourceSheet を踏襲）。
 
 import { useEffect, useRef } from "react";
-import { Check, Image as ImageIcon, X } from "lucide-react";
+import { Check, ChevronRight, Image as ImageIcon, X } from "lucide-react";
 
 import { detectionPresentation } from "../lib/realtime/mapping";
 import type { MaterialDetail } from "../lib/realtime/selectors";
@@ -189,7 +189,7 @@ export function MaterialDetailSheet({
                   className="inline-flex w-fit items-center gap-1 rounded-[999px] px-[7px] py-[2px] text-[10px] font-bold text-white"
                   style={{ background: CONFLICT.color }}
                 >
-                  <span aria-hidden="true">{CONFLICT.icon}</span>
+                  <CONFLICT.Icon size={11} aria-hidden />
                   <span>言葉×画の矛盾</span>
                 </span>
                 <span className="text-[12.5px] text-sanba-cream">{c.summary}</span>
@@ -197,9 +197,9 @@ export function MaterialDetailSheet({
                   <button
                     type="button"
                     onClick={onConfirmInConversation}
-                    className="w-fit text-[11px] font-bold text-sanba-gold-text"
+                    className="inline-flex w-fit items-center gap-[2px] text-[11px] font-bold text-sanba-gold-text"
                   >
-                    会話で確認 ›
+                    会話で確認 <ChevronRight size={11} aria-hidden />
                   </button>
                 )}
               </div>

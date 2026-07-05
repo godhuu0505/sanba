@@ -18,7 +18,7 @@ describe("detectionPresentation（モード別語彙）", () => {
     expect(eu.label).toBe("食い違い");
     expect(eu.ariaLabel).toContain("食い違い");
     expect(eu.color).toBe(dev.color); // 色トークンは共有（色のみ非依存の原則は不変）
-    expect(eu.icon).toBe(dev.icon);
+    expect(eu.Icon).toBe(dev.Icon);
     expect(detectionPresentation("gap", "end_user").label).toBe("確認");
     expect(detectionPresentation("ambiguous", "end_user").label).toBe("あいまい");
   });
