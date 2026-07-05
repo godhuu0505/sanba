@@ -8,9 +8,9 @@
 // 認証は /login へ寄せる（#140）。本ページはログイン状態を「開始ゲート」としてのみ参照し、
 // 未ログインなら理由提示＋/login への導線を出す（インラインのログインパネルは廃止）。
 
-import { FileText, Mic, X } from "lucide-react";
+import { FileText, Film, Mic, X } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   AppHeader,
@@ -34,10 +34,12 @@ import {
   classifyUpload,
   createSession,
   fetchGithubRepos,
+  fetchMyProducts,
   fetchMySessions,
   type GithubRepos,
   joinSession,
   listGithubBranches,
+  type Product,
   selectSessionRepo,
   uploadContextFile,
   type JoinResponse,
@@ -53,14 +55,55 @@ import { authGate } from "../components/RequireAuth";
 import { clearPrep, readPrep, writePrep } from "../lib/prepFormStorage";
 
 // 役割チップ。表示は日本語、value は API（POST /api/sessions の roles）に渡す既存値。
-// 既定は「企画(PdM)」= pm（02-prepare.md / #140）。
+// 並びは 利用者 → 企画者 → 開発者、既定は「利用者」= customer（02-prepare.md / #222）。
 const ROLES = [
-  { value: "pm", label: "企画(PdM)" },
-  { value: "engineer", label: "エンジニア" },
-  { value: "customer", label: "顧客" },
+  { value: "customer", label: "利用者" },
+  { value: "pm", label: "企画者" },
+  { value: "engineer", label: "開発者" },
 ] as const;
 
+const DEFAULT_ROLE = "customer";
+
+// ゴールの記入例（役割ごとに視点を変える / #222）。表示専用（クリック挙動なし）。
+const GOAL_EXAMPLES: Record<string, string[]> = {
+  // 利用者: 使っていて困る「現象」を起点にした言い回し。
+  customer: [
+    "ボタンを押しても動かない状況を改善したい",
+    "情報入力に時間がかかるのをなんとかしたい",
+    "目的の情報にたどり着けないのを解消したい",
+  ],
+  // 企画者: 要件・企画としてまとめたい言い回し。
+  pm: [
+    "検索機能のリニューアル要件を固めたい",
+    "新機能の要件と優先度を整理したい",
+    "既存機能の改善方針を言語化したい",
+  ],
+  // 開発者: 実装・技術の前提を詰めたい言い回し。
+  engineer: [
+    "不具合の再現条件と原因の見立てを整理したい",
+    "曖昧な仕様を洗い出して受け入れ条件を決めたい",
+    "改修の影響範囲と非機能要件を明確にしたい",
+  ],
+};
+
 const RETENTION_DAYS = process.env.NEXT_PUBLIC_RETENTION_DAYS ?? "30";
+
+// 必須/任意の目印。ラベル横に小さく添える。装飾なのでスクリーンリーダーからは隠し
+//（必須は control 側の aria-required で伝える）、視覚的な必須/任意の区別だけを担う。
+function FieldBadge({ required }: { required?: boolean }) {
+  return (
+    <span
+      aria-hidden="true"
+      className={`ml-[6px] rounded-[4px] px-[5px] py-[1px] align-middle text-[10px] font-bold ${
+        required
+          ? "bg-sanba-rec-pale text-sanba-rec-text"
+          : "bg-sanba-surface-strong text-sanba-muted"
+      }`}
+    >
+      {required ? "必須" : "任意"}
+    </span>
+  );
+}
 
 // ISO 8601 の作成時刻を履歴リスト表示用の日付（YYYY/MM/DD）へ整形する（#250）。
 // パースできない値は空文字にし、行は出すが日付欄は空にする（壊れた値で落とさない）。
@@ -77,9 +120,15 @@ type Step = "home" | "prepare";
 
 export default function Home() {
   const [step, setStep] = useState<Step>("home");
-  const [role, setRole] = useState<string>("pm");
+  const [role, setRole] = useState<string>(DEFAULT_ROLE);
   const [goal, setGoal] = useState("");
+  // ゴールの詳細（背景・現状・制約などの自由記述 / #222）。開始時に文脈として投入する。
+  const [goalDetail, setGoalDetail] = useState("");
   const [consent, setConsent] = useState(false);
+  // 対象のプロダクト・アプリ（任意 / ADR-0031）。空文字 = 指定しない。候補は準備画面で取得する。
+  // null = 未取得（取得前・取得中・取得失敗）。補助情報なので開始は塞がない。
+  const [products, setProducts] = useState<Product[] | null>(null);
+  const [productId, setProductId] = useState("");
   const [busy, setBusy] = useState(false);
   const [conn, setConn] = useState<JoinResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -118,6 +167,36 @@ export default function Home() {
       ? (repoChoices.items ?? []).find((i) => i.full_name === githubRepo)
       : undefined;
   const appDefaultBranch = appRepoItem?.default_branch ?? null;
+
+  // 選択中のプロダクト（ADR-0031）。開始時に用語/説明を文脈へ投入し、明示的な repo 選択が
+  // 無ければこのプロダクトの前提 repo をグラウンディングに使う。
+  const selectedProduct = productId
+    ? (products ?? []).find((p) => p.id === productId)
+    : undefined;
+
+  // ステージ済みファイルのサムネイル。画像は object URL でプレビューし、動画はアイコンで表す
+  //（#222）。URL はステージ集合が変わるたびに作り直し、前回分は revoke してリークを防ぐ。
+  // jsdom 等 createObjectURL 非対応の環境では null に落としてアイコン表示に委ねる（テスト安全）。
+  const previews = useMemo(
+    () =>
+      staged.map((file) => {
+        const isImage = file.type.toLowerCase().startsWith("image/");
+        const url =
+          isImage && typeof URL !== "undefined" && typeof URL.createObjectURL === "function"
+            ? URL.createObjectURL(file)
+            : null;
+        return { file, url };
+      }),
+    [staged],
+  );
+  useEffect(
+    () => () => {
+      for (const p of previews) {
+        if (p.url) URL.revokeObjectURL(p.url);
+      }
+    },
+    [previews],
+  );
 
   // 本人のセッション履歴を取得して履歴リストへ供給する（#250）。ログイン済みのときだけ叩き、
   // 失敗時は空状態を維持する（履歴は補助情報なので本流＝壁打ち開始は止めない）。idToken が
@@ -176,6 +255,33 @@ export default function Home() {
     };
   }, [step, auth.loggedIn, auth.credential, repoChoices]);
 
+  // 対象のプロダクト・アプリ候補を取得する（必須 / ADR-0031）。02 準備に入るまで叩かない
+  // （ホーム閲覧だけで /api/products/mine を発火させない）。取得済みなら再取得しない。
+  // 取得失敗は空配列で settle する（開始は塞がるが、無選択で始めさせないための fail-closed）。
+  useEffect(() => {
+    if (step !== "prepare" || !auth.loggedIn || products !== null) return;
+    let cancelled = false;
+    fetchMyProducts(auth.credential)
+      .then((items) => {
+        if (!cancelled) setProducts(items);
+      })
+      .catch(() => {
+        if (!cancelled) setProducts([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [step, auth.loggedIn, auth.credential, products]);
+
+  // 対象アプリは必須（ADR-0031）。候補がちょうど 1 件なら自動選択し、選ぶ手間を省く。
+  // 複数あるときは明示選択を求める（自動で決め打ちしない）。ユーザーが選び直した後は
+  // 上書きしないよう「未選択のときだけ」補う。
+  useEffect(() => {
+    if (products && products.length === 1 && productId === "") {
+      setProductId(products[0].id);
+    }
+  }, [products, productId]);
+
   // App 由来の repo が確定したら branch 一覧を取得する（ADR-0028。既定はデフォルトブランチ）。
   // 一覧が来るまで（または取得失敗時も）デフォルトブランチだけで開始できる（本流を止めない）。
   // repo を素早く切り替えたときの古い応答は cancelled で破棄し、選択を巻き戻さない（Codex P2）。
@@ -223,7 +329,9 @@ export default function Home() {
     // （未サポート role で createSession を呼ばない / チップ未選択の見た目を防ぐ。Codex P2）。
     if (saved.role && ROLES.some((r) => r.value === saved.role)) setRole(saved.role);
     if (typeof saved.goal === "string") setGoal(saved.goal);
+    if (typeof saved.goalDetail === "string") setGoalDetail(saved.goalDetail);
     if (typeof saved.consent === "boolean") setConsent(saved.consent);
+    if (typeof saved.productId === "string") setProductId(saved.productId);
     if (typeof saved.githubRepo === "string") {
       setGithubRepo(saved.githubRepo);
       // 保存値あり = 空文字でも「明示的な連携しない」。既定リポの初期選択で上書きしない。
@@ -238,10 +346,12 @@ export default function Home() {
     writePrep({
       role,
       goal,
+      goalDetail,
       consent,
+      productId,
       ...(githubRepoTouched.current ? { githubRepo } : {}),
     });
-  }, [prepHydrated, role, goal, consent, githubRepo]);
+  }, [prepHydrated, role, goal, goalDetail, consent, productId, githubRepo]);
 
   // ログアウト時（ログイン中→未ログインの遷移）は準備フォームを破棄する（#179 / Codex P2）。
   // 固定キー sessionStorage を同一タブの別ユーザーへ引き継がせない（goal に PII が入り得る）。
@@ -250,9 +360,12 @@ export default function Home() {
   useEffect(() => {
     if (prevLoggedIn.current && !auth.loggedIn) {
       clearPrep();
-      setRole("pm");
+      setRole(DEFAULT_ROLE);
       setGoal("");
+      setGoalDetail("");
       setConsent(false);
+      setProductId("");
+      setProducts(null);
       setGithubRepo("");
       setRepoChoices(null);
       githubRepoTouched.current = false;
@@ -295,6 +408,56 @@ export default function Home() {
       if (goal.trim()) {
         // ゴールは RAG・会話初期文脈へ取り込む（source_name=goal / 02-prepare.md AC）。
         await addSessionContext(joined.session_id, goal, joined.session_token, "goal");
+      }
+      if (goalDetail.trim()) {
+        // ゴールの詳細（背景・現状・制約）も文脈として取り込む（source_name=goal_detail / #222）。
+        await addSessionContext(
+          joined.session_id,
+          goalDetail,
+          joined.session_token,
+          "goal_detail",
+        );
+      }
+      if (selectedProduct) {
+        // 対象プロダクトの説明・利用者向け用語を文脈へシードする（ADR-0031）。補助情報なので
+        // 失敗しても開始は止めず、注記も出さない（本流を止めない）。
+        const productContext = [
+          selectedProduct.name,
+          selectedProduct.description,
+          selectedProduct.glossary.length > 0
+            ? `用語: ${selectedProduct.glossary.join("、")}`
+            : "",
+        ]
+          .filter((s) => s.trim())
+          .join("\n");
+        if (productContext.trim()) {
+          try {
+            await addSessionContext(
+              joined.session_id,
+              productContext,
+              joined.session_token,
+              "product",
+            );
+          } catch (productErr) {
+            console.error("seed product context failed", { error: productErr });
+          }
+        }
+      }
+      // 前提 repo のグラウンディング（ADR-0027/0028）。明示的な連携 repo 選択（appRepoItem）が
+      // 無く、対象プロダクトが repo を持つときは、そのプロダクトの repo をバインドして索引する
+      //（ADR-0031。プロダクト＝アプリの前提コードを問いの背景に使う）。バインド失敗は補助情報の
+      // 欠落なので開始は止めず注記もしない（明示選択の appRepoItem 経路とは扱いを分ける）。
+      if (!appRepoItem && selectedProduct?.github_repo) {
+        try {
+          await selectSessionRepo(
+            joined.session_id,
+            selectedProduct.github_repo,
+            selectedProduct.github_branch || null,
+            joined.session_token,
+          );
+        } catch (productRepoErr) {
+          console.error("bind product repo failed", { error: productRepoErr });
+        }
       }
       if (appRepoItem) {
         // App 連携済みの repo は branch を確定して非同期索引をキックする（ADR-0028）。
@@ -421,15 +584,29 @@ export default function Home() {
     // 候補が settle する（repoChoices が入る）まで開始を待たせる: ユーザーが連携先を
     // 確認する前にセッションが作られるのを防ぐ（Codex P2。effect 実行前の初回描画の
     // 窓も null で塞がる）。取得は失敗でも番兵で settle するので詰まらない。
-    const canStart = consent && auth.loggedIn && !busy && repoChoices !== null;
+    const canStart =
+      consent &&
+      goal.trim() !== "" &&
+      productId !== "" &&
+      auth.loggedIn &&
+      !busy &&
+      repoChoices !== null;
     return (
       <Screen className="px-4 py-3">
         <AppHeader title="セッション準備" onBack={() => setStep("home")} />
         <main className="mx-auto flex w-full max-w-[480px] flex-1 flex-col gap-[18px] pt-2">
           {/* フィールド順は Figma 正本に合わせて 役割 → ゴール（02-prepare）。 */}
           <div className="flex flex-col gap-[8px]">
-            <span className="text-[13px] font-bold text-sanba-muted">あなたの役割</span>
-            <div role="radiogroup" aria-label="あなたの役割" className="flex flex-wrap gap-[8px]">
+            <span className="text-[13px] font-bold text-sanba-muted">
+              あなたの役割
+              <FieldBadge required />
+            </span>
+            <div
+              role="radiogroup"
+              aria-label="あなたの役割"
+              aria-required="true"
+              className="flex flex-wrap gap-[8px]"
+            >
               {ROLES.map((r) => {
                 const selected = role === r.value;
                 return (
@@ -449,13 +626,65 @@ export default function Home() {
             </div>
           </div>
 
-          <Field label="ゴール" htmlFor="goal" hint="例: 検索機能のリニューアル要件を固めたい">
+          {/* 対象のプロダクト・アプリ（任意 / ADR-0031）。常に表示する。登録済みアプリが
+              無い/未取得のときは「指定しない」のみ選べる（選ぶと開始時に用語・前提 repo を投入）。 */}
+          <Field
+            label="対象のプロダクト・アプリ"
+            marker={<FieldBadge required />}
+            htmlFor="product"
+            hint={
+              (products?.length ?? 0) > 0
+                ? "対象のアプリを選ぶと、その用語や前提コードを問いの背景に取り込みます。"
+                : "登録済みのアプリがありません。アプリ管理から登録すると選べます。"
+            }
+          >
+            <Select
+              id="product"
+              value={productId}
+              onChange={(e) => setProductId(e.target.value)}
+              aria-required="true"
+              disabled={(products?.length ?? 0) === 0}
+            >
+              <option value="">選択してください</option>
+              {(products ?? []).map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </Select>
+          </Field>
+
+          <Field label="ゴール" marker={<FieldBadge required />} htmlFor="goal">
             <Textarea
               id="goal"
               value={goal}
               onChange={(e) => setGoal(e.target.value)}
               rows={3}
-              placeholder="タップしてテーマを入力…"
+              aria-required="true"
+              placeholder="ゴールを入力・・・"
+              className="resize-y"
+            />
+            {/* 記入例（役割で内容が変わる）。表示専用でクリック挙動は持たない（#222）。 */}
+            <div className="flex flex-col gap-[3px] text-[12px] leading-relaxed text-sanba-muted/80">
+              {(GOAL_EXAMPLES[role] ?? GOAL_EXAMPLES[DEFAULT_ROLE]).map((example) => (
+                <span key={example}>例：{example}</span>
+              ))}
+            </div>
+          </Field>
+
+          <Field
+            label="ゴールの詳細"
+            marker={<FieldBadge />}
+            htmlFor="goal-detail"
+            hint="例: いまは検索が遅く目的の項目に辿り着けない。まずは対象範囲と優先度を整理したい。"
+          >
+            <Textarea
+              id="goal-detail"
+              value={goalDetail}
+              onChange={(e) => setGoalDetail(e.target.value)}
+              rows={4}
+              placeholder="背景・現状・制約・期待する成果などを自由に入力・・・"
+              className="resize-y"
             />
           </Field>
 
@@ -537,30 +766,9 @@ export default function Home() {
               参考資料（任意）
             </span>
             <p className="text-[12px] leading-relaxed text-sanba-muted">
-              モック・スクショ・写真（PNG/JPG）や録画（MP4/MOV）を、会話の前に渡しておけます。
+              写真・スクリーンショット（PNG/JPG）や録画（MP4/MOV）を、事前に渡しておけます。
             </p>
 
-            {staged.length > 0 && (
-              <ul aria-label="添付した参考資料" className="flex flex-wrap gap-[8px]">
-                {staged.map((file, i) => (
-                  <li key={`${file.name}:${file.size}`}>
-                    <Chip tone="gold" size="md">
-                      <FileText size={13} aria-hidden className="mr-1 inline-block align-[-2px]" />
-                      <span className="max-w-[180px] truncate align-middle">{file.name}</span>
-                      <button
-                        type="button"
-                        onClick={() => removeStaged(i)}
-                        disabled={busy}
-                        aria-label={`${file.name} を取り外す`}
-                        className="ml-[6px] align-middle text-sanba-muted disabled:opacity-50"
-                      >
-                        <X size={12} aria-hidden className="inline-block align-[-2px]" />
-                      </button>
-                    </Chip>
-                  </li>
-                ))}
-              </ul>
-            )}
 
             {/* 開始処理中（busy）は追加/削除を止める。クリック時点の staged のみが投入されるため、
                 遅れて足した資料が「添付済み」に見えて実際は未送信、という齟齬を防ぐ（Codex P2）。 */}
@@ -576,6 +784,42 @@ export default function Home() {
             >
               ＋ ファイルを追加
             </button>
+
+            {/* 追加した資料は「ファイルを追加」の直下に、サムネイル＋ファイル名で並べる（#222）。
+                画像は object URL のプレビュー、動画はフィルムアイコンで表す。 */}
+            {staged.length > 0 && (
+              <ul aria-label="添付した参考資料" className="flex flex-col gap-[8px]">
+                {previews.map(({ file, url }, i) => (
+                  <li
+                    key={`${file.name}:${file.size}`}
+                    className="flex items-center gap-[10px] rounded-[12px] border border-sanba-border bg-sanba-surface px-[10px] py-[8px]"
+                  >
+                    <span className="flex size-[40px] shrink-0 items-center justify-center overflow-hidden rounded-[8px] border border-sanba-border bg-sanba-surface-strong text-sanba-muted">
+                      {url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={url} alt="" className="size-full object-cover" />
+                      ) : file.type.toLowerCase().startsWith("video/") ? (
+                        <Film size={18} aria-hidden />
+                      ) : (
+                        <FileText size={18} aria-hidden />
+                      )}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-[13px] text-sanba-cream">
+                      {file.name}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => removeStaged(i)}
+                      disabled={busy}
+                      aria-label={`${file.name} を取り外す`}
+                      className="flex size-[26px] shrink-0 items-center justify-center rounded-full text-sanba-muted disabled:opacity-50"
+                    >
+                      <X size={14} aria-hidden />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
 
             {attachError && (
               <p role="alert" className="text-[12px] text-sanba-rec-text">
@@ -594,16 +838,18 @@ export default function Home() {
             className="hidden"
           />
 
-          {/* 同意ゲート（issue #10）。保持日数・PII マスク文言を併記。 */}
+          {/* 同意ゲート（issue #10）。保持日数を併記。開始の必須条件。 */}
           <label className="flex items-start gap-[10px] text-[13px] leading-relaxed text-sanba-cream">
             <input
               type="checkbox"
               checked={consent}
               onChange={(e) => setConsent(e.target.checked)}
+              aria-required="true"
               className="mt-[3px] size-[16px] accent-sanba-gold"
             />
             <span>
-              録音と AI 処理に同意します（最大 {RETENTION_DAYS} 日保持・保存前に個人情報をマスク）。
+              録音と AI 処理に同意します（最大 {RETENTION_DAYS} 日保持）。
+              <FieldBadge required />
             </span>
           </label>
 
@@ -614,13 +860,13 @@ export default function Home() {
               block
               onClick={handleStart}
               disabled={!canStart}
-              aria-label="インタビューを始める"
+              aria-label="要件サンバを始める"
             >
               {busy ? (
                 "準備しています…"
               ) : (
                 <span className="inline-flex items-center justify-center gap-1.5">
-                  <Mic size={16} aria-hidden /> インタビューを始める
+                  <Mic size={16} aria-hidden /> 要件サンバを始める
                 </span>
               )}
             </Button>
@@ -631,6 +877,14 @@ export default function Home() {
                   ログインへ
                 </Link>
               </p>
+            )}
+            {auth.loggedIn && productId === "" && (
+              <p className="text-[12px] text-sanba-muted">
+                対象のプロダクト・アプリの選択が必要です。
+              </p>
+            )}
+            {auth.loggedIn && goal.trim() === "" && (
+              <p className="text-[12px] text-sanba-muted">ゴールの入力が必要です。</p>
             )}
             {auth.loggedIn && !consent && (
               <p className="text-[12px] text-sanba-muted">
@@ -646,6 +900,7 @@ export default function Home() {
             シート側が「準備中」を案内する。投入種別は onSelectSource で計測可能にする（#232 へ配線）。 */}
         {sheetOpen && (
           <MaterialSourceSheet
+            placement="center"
             onClose={() => setSheetOpen(false)}
             onUpload={() => {
               setSheetOpen(false);

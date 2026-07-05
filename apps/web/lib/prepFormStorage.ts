@@ -7,9 +7,13 @@ const KEY = "sanba.prep.v1";
 export interface PrepForm {
   role?: string;
   goal?: string;
+  /** ゴールの詳細（背景・現状・制約などの自由記述 / #222）。開始時に文脈として投入する。 */
+  goalDetail?: string;
   consent?: boolean;
   /** 連携リポジトリ "owner/name"（任意 / ADR-0027）。空文字は「連携しない」。 */
   githubRepo?: string;
+  /** 対象のプロダクト・アプリ（任意 / ADR-0031）。空文字は「指定しない」。 */
+  productId?: string;
 }
 
 /** 保存済みの準備フォームを読み出す。未保存/壊れた値/利用不可なら空を返す（本流を止めない）。 */
@@ -25,8 +29,10 @@ export function readPrep(): PrepForm {
     // 型が一致するフィールドのみ復元する（壊れた値で UI を壊さない）。
     if (typeof o.role === "string") out.role = o.role;
     if (typeof o.goal === "string") out.goal = o.goal;
+    if (typeof o.goalDetail === "string") out.goalDetail = o.goalDetail;
     if (typeof o.consent === "boolean") out.consent = o.consent;
     if (typeof o.githubRepo === "string") out.githubRepo = o.githubRepo;
+    if (typeof o.productId === "string") out.productId = o.productId;
     return out;
   } catch {
     return {};
