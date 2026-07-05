@@ -11,6 +11,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { AccountMenu } from "@/components/AccountMenu";
 import { ProductInvitesCard } from "@/components/ProductInvitesCard";
+import { ProductMembersCard } from "@/components/ProductMembersCard";
 import { ProductRepoCard } from "@/components/ProductRepoCard";
 import { authGate } from "@/components/RequireAuth";
 import {
@@ -170,6 +171,27 @@ export default function ProductDetailPage() {
           <Card>
             <p className="text-[12px] text-sanba-muted">読み込み中…</p>
           </Card>
+        ) : product.role === "member" ? (
+          // メンバー閲覧（ADR-0036）: 管理操作（編集・repo・リンク・削除）は出さず、
+          // 概要とメンバー一覧のみ。要件サンバの開始はホームの準備画面から行う。
+          <>
+            <Card>
+              <CardTitle>{product.name}</CardTitle>
+              {product.description && (
+                <p className="text-[13px] leading-relaxed text-sanba-cream">
+                  {product.description}
+                </p>
+              )}
+              <p className="text-[12px] leading-relaxed text-sanba-muted">
+                あなたはこのアプリのメンバーです。ホームの「壁打ちを始める」から
+                対象にこのアプリを選ぶと、要件サンバを始められます。
+              </p>
+              <Button variant="gold" block onClick={() => router.push("/prepare")}>
+                要件サンバを始める
+              </Button>
+            </Card>
+            <ProductMembersCard productId={productId} canManage={false} />
+          </>
         ) : (
           <>
             <Card>
@@ -241,6 +263,7 @@ export default function ProductDetailPage() {
             </Card>
 
             <ProductRepoCard product={product} onChanged={load} />
+            <ProductMembersCard productId={productId} canManage />
             <ProductInvitesCard productId={productId} />
 
             {error && (

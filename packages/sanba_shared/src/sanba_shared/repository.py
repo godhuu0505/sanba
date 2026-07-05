@@ -18,8 +18,11 @@ import structlog
 from .models import (
     GitHubIndexStatus,
     GitHubLink,
+    MemberInviteStatus,
     Product,
     ProductInvite,
+    ProductMember,
+    ProductMemberInvite,
     Requirement,
     RequirementStatus,
     SessionMeta,
@@ -65,6 +68,22 @@ class InviteRateLimited(Exception):
     ウィンドウが明ければ再び使える。`use_count` は消費しない。"""
 
 
+class MemberInviteNotFound(Exception):
+    """対象のメンバー招待が存在しないときに送出 (ADR-0036)。"""
+
+
+class MemberInviteNotPending(Exception):
+    """メンバー招待が応答できない状態のときに送出 (ADR-0036 決定2)。
+
+    `reason` は "accepted" / "declined" / "revoked" / "expired"。api 層が
+    エラー表示の出し分けに使う。どの理由でも状態は変更しない。
+    """
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+        self.reason = reason
+
+
 class SessionRepository:
     """Persistence boundary. Swap the backend without touching agent/api logic."""
 
@@ -99,6 +118,13 @@ class SessionRepository:
         # in-memory での invite 消費をアトミックにするためのロック（Firestore 経路は
         # トランザクションが担う。consume_invite の read-check-increment を直列化する）。
         self._mem_invite_lock = threading.Lock()
+        # product メンバーとメンバー招待 (ADR-0036)。キーは Firestore の doc id と同じ
+        # `{product_id}__{sub}` / invite_id（トップレベルコレクションを模す）。
+        self._mem_members: dict[str, ProductMember] = {}
+        self._mem_member_invites: dict[str, ProductMemberInvite] = {}
+        # in-memory での招待応答（pending → accepted/declined + メンバー作成）を
+        # アトミックにするためのロック。Firestore 経路はトランザクションが担う。
+        self._mem_member_lock = threading.Lock()
 
     @staticmethod
     def _init_client():  # type: ignore[no-untyped-def]
@@ -415,23 +441,41 @@ class SessionRepository:
         return updated
 
     def delete_product(self, product_id: str) -> bool:
-        """product と配下の深掘りリンクを削除する。実体を消したら True (冪等)。
+        """product と配下のリンク・メンバー・メンバー招待を削除する。実体を消したら True (冪等)。
 
         Firestore はサブコレクションをカスケード削除しないため、invites を明示的に
         消してから product 文書を消す（リンクだけ残ると join 検証が親なしで通り得る）。
+        メンバー・メンバー招待（トップレベルコレクション / ADR-0036）も同様に消す:
+        残ると承諾で親なし product のメンバーが生まれ、一覧に幽霊が残る。
         """
         if self._client is not None:
+            from google.cloud.firestore_v1.base_query import FieldFilter
+
             ref = self._client.collection("products").document(product_id)
             if not ref.get().exists:
                 return False
             for inv in ref.collection("invites").stream():
                 inv.reference.delete()
+            for coll in ("product_members", "member_invites"):
+                docs = (
+                    self._client.collection(coll)
+                    .where(filter=FieldFilter("product_id", "==", product_id))
+                    .stream()
+                )
+                for doc in docs:
+                    doc.reference.delete()
             ref.delete()
             return True
         if product_id not in self._mem_products:
             return False
         del self._mem_products[product_id]
         self._mem_invites.pop(product_id, None)
+        self._mem_members = {
+            k: m for k, m in self._mem_members.items() if m.product_id != product_id
+        }
+        self._mem_member_invites = {
+            k: i for k, i in self._mem_member_invites.items() if i.product_id != product_id
+        }
         return True
 
     # ---- Product invites (深掘りリンク / ADR-0031) ---------------------------
@@ -588,6 +632,324 @@ class SessionRepository:
             .collection("invites")
             .document(invite_id)
         )
+
+    # ---- Product members (ADR-0036) -----------------------------------------
+    @staticmethod
+    def _member_key(product_id: str, sub: str) -> str:
+        """`product_members` の doc id。(product, sub) で一意（1 人 1 メンバーシップ）。"""
+        return f"{product_id}__{sub}"
+
+    def add_product_member(self, member: ProductMember) -> None:
+        """メンバーを upsert する。親 product が無ければ ProductNotFound。
+
+        product は運用資産なので TTL は付けない（create_product と同じ）。
+        再招待・再承諾で既存メンバーを壊さないよう upsert（冪等）にする。
+        """
+        if self.get_product(member.product_id) is None:
+            raise ProductNotFound(member.product_id)
+        if self._client is not None:
+            self._client.collection("product_members").document(
+                self._member_key(member.product_id, member.sub)
+            ).set(member.model_dump(mode="json"))
+            return
+        self._mem_members[self._member_key(member.product_id, member.sub)] = member
+
+    def get_product_member(self, product_id: str, sub: str) -> ProductMember | None:
+        if self._client is not None:
+            snap = (
+                self._client.collection("product_members")
+                .document(self._member_key(product_id, sub))
+                .get()
+            )
+            return ProductMember.model_validate(snap.to_dict()) if snap.exists else None
+        return self._mem_members.get(self._member_key(product_id, sub))
+
+    def list_product_members(self, product_id: str) -> list[ProductMember]:
+        """product のメンバー一覧を参加が古い順で返す（管理 UI 用）。"""
+        if self._client is not None:
+            from google.cloud.firestore_v1.base_query import FieldFilter
+
+            docs = (
+                self._client.collection("product_members")
+                .where(filter=FieldFilter("product_id", "==", product_id))
+                .stream()
+            )
+            members = [ProductMember.model_validate(d.to_dict()) for d in docs]
+        else:
+            members = [m for m in self._mem_members.values() if m.product_id == product_id]
+        return sorted(members, key=lambda m: m.created_at)
+
+    def remove_product_member(self, product_id: str, sub: str) -> bool:
+        """メンバーを外す。実体を消したら True（冪等: 無くても安全に False）。"""
+        if self._client is not None:
+            ref = self._client.collection("product_members").document(
+                self._member_key(product_id, sub)
+            )
+            if not ref.get().exists:
+                return False
+            ref.delete()
+            return True
+        return self._mem_members.pop(self._member_key(product_id, sub), None) is not None
+
+    def list_products_by_member(self, sub: str) -> list[Product]:
+        """メンバーとして参加している product を新しい順で返す（ADR-0036）。
+
+        `list_products_by_owner` と合流して「自分のアプリ一覧」を作る。メンバーシップが
+        指す product が消えている（delete_product との競合）行はスキップする。
+        """
+        if self._client is not None:
+            from google.cloud.firestore_v1.base_query import FieldFilter
+
+            docs = (
+                self._client.collection("product_members")
+                .where(filter=FieldFilter("sub", "==", sub))
+                .stream()
+            )
+            memberships = [ProductMember.model_validate(d.to_dict()) for d in docs]
+        else:
+            memberships = [m for m in self._mem_members.values() if m.sub == sub]
+        products = [self.get_product(m.product_id) for m in memberships]
+        found = [p for p in products if p is not None]
+        return sorted(found, key=lambda p: p.created_at, reverse=True)
+
+    # ---- Member invites (メンバー招待 / ADR-0036) -----------------------------
+    def create_member_invite(self, invite: ProductMemberInvite) -> None:
+        """メンバー招待を作成する。親 product が無ければ ProductNotFound。"""
+        if self.get_product(invite.product_id) is None:
+            raise ProductNotFound(invite.product_id)
+        if self._client is not None:
+            self._client.collection("member_invites").document(invite.id).set(
+                invite.model_dump(mode="json")
+            )
+            return
+        self._mem_member_invites[invite.id] = invite
+
+    def get_member_invite(self, invite_id: str) -> ProductMemberInvite | None:
+        if self._client is not None:
+            snap = self._client.collection("member_invites").document(invite_id).get()
+            return ProductMemberInvite.model_validate(snap.to_dict()) if snap.exists else None
+        return self._mem_member_invites.get(invite_id)
+
+    def list_member_invites(self, product_id: str) -> list[ProductMemberInvite]:
+        """product のメンバー招待一覧を新しい順で返す（発行・取り消しの管理 UI 用）。"""
+        if self._client is not None:
+            from google.cloud.firestore_v1.base_query import FieldFilter
+
+            docs = (
+                self._client.collection("member_invites")
+                .where(filter=FieldFilter("product_id", "==", product_id))
+                .stream()
+            )
+            invites = [ProductMemberInvite.model_validate(d.to_dict()) for d in docs]
+        else:
+            invites = [i for i in self._mem_member_invites.values() if i.product_id == product_id]
+        return sorted(invites, key=lambda i: i.created_at, reverse=True)
+
+    def list_member_invites_by_email(self, email: str) -> list[ProductMemberInvite]:
+        """宛先 email のメンバー招待を新しい順で返す（アプリ内通知 / ADR-0036 決定3）。
+
+        email は小文字正規化済み前提（作成側・照合側の両方で正規化する）。
+        pending 以外や期限切れの除外は呼び出し側（api 層）が行う: Firestore の
+        複合インデックスを増やさないため等価クエリ 1 本に留める。
+        """
+        if self._client is not None:
+            from google.cloud.firestore_v1.base_query import FieldFilter
+
+            docs = (
+                self._client.collection("member_invites")
+                .where(filter=FieldFilter("email", "==", email))
+                .stream()
+            )
+            invites = [ProductMemberInvite.model_validate(d.to_dict()) for d in docs]
+        else:
+            invites = [i for i in self._mem_member_invites.values() if i.email == email]
+        return sorted(invites, key=lambda i: i.created_at, reverse=True)
+
+    def revoke_member_invite(self, invite_id: str) -> ProductMemberInvite:
+        """メンバー招待を取り消す（pending → revoked / ADR-0036 決定2）。
+
+        冪等: 既に revoked なら現状を返す。accepted / declined は取り消せない
+        （MemberInviteNotPending。応答済みの事実を上書きしない）。無ければ
+        MemberInviteNotFound。応答（respond）との競合は CAS（トランザクション/ロック）で
+        直列化する。
+        """
+        if self._client is not None:
+            return self._revoke_member_invite_txn(invite_id)
+        with self._mem_member_lock:
+            invite = self._mem_member_invites.get(invite_id)
+            if invite is None:
+                raise MemberInviteNotFound(invite_id)
+            checked = self._revocable_or_raise(invite)
+            if checked is not None:
+                return checked
+            updated = invite.model_copy(
+                update={"status": MemberInviteStatus.REVOKED, "responded_at": datetime.now(UTC)}
+            )
+            self._mem_member_invites[invite_id] = updated
+            return updated
+
+    def _revoke_member_invite_txn(self, invite_id: str) -> ProductMemberInvite:
+        from google.cloud import firestore
+
+        doc_ref = self._client.collection("member_invites").document(invite_id)
+
+        @firestore.transactional  # type: ignore[misc]
+        def _txn(transaction: Any) -> ProductMemberInvite:
+            snap = doc_ref.get(transaction=transaction)
+            if not snap.exists:
+                raise MemberInviteNotFound(invite_id)
+            invite = ProductMemberInvite.model_validate(snap.to_dict())
+            checked = self._revocable_or_raise(invite)
+            if checked is not None:
+                return checked
+            updated = invite.model_copy(
+                update={"status": MemberInviteStatus.REVOKED, "responded_at": datetime.now(UTC)}
+            )
+            transaction.set(
+                doc_ref,
+                {"status": updated.status.value, "responded_at": updated.responded_at},
+                merge=True,
+            )
+            return updated
+
+        revoked: ProductMemberInvite = _txn(self._client.transaction())
+        return revoked
+
+    @staticmethod
+    def _revocable_or_raise(invite: ProductMemberInvite) -> ProductMemberInvite | None:
+        """取り消し可否を検証する。冪等ケース（既 revoked）はその invite を返す。
+
+        pending は None を返し呼び出し側が遷移を書き込む。応答済みは
+        MemberInviteNotPending（上書きしない）。
+        """
+        if invite.status is MemberInviteStatus.REVOKED:
+            return invite
+        if invite.status is not MemberInviteStatus.PENDING:
+            raise MemberInviteNotPending(invite.status.value)
+        return None
+
+    def respond_member_invite(
+        self,
+        invite_id: str,
+        *,
+        accept: bool,
+        sub: str,
+        email: str,
+        display_name: str = "",
+    ) -> tuple[ProductMemberInvite, ProductMember | None]:
+        """招待に応答する（pending → accepted/declined / ADR-0036 決定2）。
+
+        検証（pending か・期限内か）と状態遷移・メンバー作成を原子的に行う:
+        Firestore はトランザクション、in-memory はロックで直列化する。二重承諾や
+        取り消しとの競合で権限が二重付与されない。応答できない状態は
+        MemberInviteNotPending(reason)（期限切れは "expired"）、無ければ
+        MemberInviteNotFound。宛先 email との照合は api 層が行う（認可の一点集約は
+        api、状態遷移の原子性はここ、の分担）。
+        戻り値は (更新後 invite, 承諾なら作成した ProductMember / 辞退なら None)。
+        """
+        if self._client is not None:
+            return self._respond_member_invite_txn(
+                invite_id, accept=accept, sub=sub, email=email, display_name=display_name
+            )
+        with self._mem_member_lock:
+            invite = self._mem_member_invites.get(invite_id)
+            if invite is None:
+                raise MemberInviteNotFound(invite_id)
+            self._check_invite_pending(invite)
+            if self._mem_products.get(invite.product_id) is None:
+                raise ProductNotFound(invite.product_id)
+            updated, member = self._responded_copy(
+                invite, accept=accept, sub=sub, email=email, display_name=display_name
+            )
+            self._mem_member_invites[invite_id] = updated
+            if member is not None:
+                self._mem_members[self._member_key(member.product_id, member.sub)] = member
+            return updated, member
+
+    def _respond_member_invite_txn(
+        self, invite_id: str, *, accept: bool, sub: str, email: str, display_name: str
+    ) -> tuple[ProductMemberInvite, ProductMember | None]:
+        from google.cloud import firestore
+
+        doc_ref = self._client.collection("member_invites").document(invite_id)
+
+        @firestore.transactional  # type: ignore[misc]
+        def _txn(transaction: Any) -> tuple[ProductMemberInvite, ProductMember | None]:
+            snap = doc_ref.get(transaction=transaction)
+            if not snap.exists:
+                raise MemberInviteNotFound(invite_id)
+            invite = ProductMemberInvite.model_validate(snap.to_dict())
+            self._check_invite_pending(invite)
+            # delete_product との競合で親なしメンバーを作らない（consume_invite と同方針）。
+            product_snap = (
+                self._client.collection("products")
+                .document(invite.product_id)
+                .get(transaction=transaction)
+            )
+            if not product_snap.exists:
+                raise ProductNotFound(invite.product_id)
+            updated, member = self._responded_copy(
+                invite, accept=accept, sub=sub, email=email, display_name=display_name
+            )
+            transaction.set(
+                doc_ref,
+                {
+                    "status": updated.status.value,
+                    "responded_at": updated.responded_at,
+                    "accepted_sub": updated.accepted_sub,
+                },
+                merge=True,
+            )
+            if member is not None:
+                member_ref = self._client.collection("product_members").document(
+                    self._member_key(member.product_id, member.sub)
+                )
+                transaction.set(member_ref, member.model_dump(mode="json"))
+            return updated, member
+
+        result: tuple[ProductMemberInvite, ProductMember | None] = _txn(self._client.transaction())
+        return result
+
+    @staticmethod
+    def _check_invite_pending(invite: ProductMemberInvite) -> None:
+        """応答可否を検証する。応答できない理由を MemberInviteNotPending(reason) で送出。"""
+        if invite.status is not MemberInviteStatus.PENDING:
+            raise MemberInviteNotPending(invite.status.value)
+        if invite.expires_at is not None and invite.expires_at <= datetime.now(UTC):
+            raise MemberInviteNotPending("expired")
+
+    @staticmethod
+    def _responded_copy(
+        invite: ProductMemberInvite, *, accept: bool, sub: str, email: str, display_name: str
+    ) -> tuple[ProductMemberInvite, ProductMember | None]:
+        """応答後の invite と（承諾なら）メンバーを組み立てる。
+
+        呼び出し側（トランザクション/ロック）が原子性を担う。メンバーの email は
+        招待の宛先ではなく検証済み identity の email を保存する（表示・照合の正は
+        実アカウント側。宛先との一致検証は api 層が済ませている）。
+        """
+        now = datetime.now(UTC)
+        if not accept:
+            updated = invite.model_copy(
+                update={"status": MemberInviteStatus.DECLINED, "responded_at": now}
+            )
+            return updated, None
+        updated = invite.model_copy(
+            update={
+                "status": MemberInviteStatus.ACCEPTED,
+                "responded_at": now,
+                "accepted_sub": sub,
+            }
+        )
+        member = ProductMember(
+            product_id=invite.product_id,
+            sub=sub,
+            email=email,
+            display_name=display_name,
+            invited_by_sub=invite.invited_by_sub,
+            created_at=now,
+        )
+        return updated, member
 
     # ---- Utterances --------------------------------------------------------
     def add_utterance(self, session_id: str, utterance: Utterance) -> None:

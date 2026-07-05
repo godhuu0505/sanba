@@ -32,6 +32,15 @@ def new_invite_id() -> str:
     return f"inv-{secrets.token_urlsafe(16)}"
 
 
+def new_member_invite_id() -> str:
+    """メンバー招待のランダム ID を採番する（ADR-0036）。
+
+    招待 URL の一部になるため深掘りリンクと同じ 16 バイト（128 bit）。
+    推測・列挙への耐性は署名（api 層の HMAC）と二段で持つ（ADR-0031 決定5 と同方針）。
+    """
+    return f"minv-{secrets.token_urlsafe(16)}"
+
+
 class RequirementCategory(StrEnum):
     FUNCTIONAL = "functional"
     NON_FUNCTIONAL = "non_functional"
@@ -177,6 +186,63 @@ class ProductInvite(BaseModel):
     # invite 文書に同居させる（別カウンタ文書を持たず、多インスタンスでも整合）。
     join_window_start: datetime | None = None
     join_window_count: int = Field(default=0, ge=0)
+
+
+class ProductMember(BaseModel):
+    """product のメンバー (`product_members/{product_id}__{sub}`)。ADR-0036 決定1。
+
+    メンバー = その product で要件サンバ（product 従属セッションの作成・product の閲覧）が
+    できる人。owner はこのコレクションに入れない（`Product.owner_sub` が単一の正のまま）。
+    ロール列挙は導入しない（owner / member の 2 値 + 既存 admin。ADR-0031 決定4 の最小方針を
+    維持し、editors 等の細分は需要が出てから別 ADR で扱う）。
+    トップレベルコレクションにするのは「sub → 所属 product 一覧」の横断クエリのため
+    （サブコレクションだと collection group index の運用が要る）。
+    """
+
+    product_id: str
+    sub: str
+    email: str
+    display_name: str = ""
+    invited_by_sub: str = ""
+    created_at: datetime = Field(default_factory=_now)
+
+
+class MemberInviteStatus(StrEnum):
+    """メンバー招待の状態 (ADR-0036 決定2)。
+
+    pending: 応答待ち。accepted: 承諾（メンバー化済み）。declined: 辞退。
+    revoked: 発行者が取り消し。期限切れは `expires_at` からの導出（状態には持たない）。
+    """
+
+    PENDING = "pending"
+    ACCEPTED = "accepted"
+    DECLINED = "declined"
+    REVOKED = "revoked"
+
+
+class ProductMemberInvite(BaseModel):
+    """メンバー招待 (`member_invites/{id}`)。ADR-0036 決定2。
+
+    メールアドレス宛の 1 回限りの招待。深掘りリンク（ProductInvite = 再利用可能な入場券）と
+    違い、承諾するとメンバーシップという永続権限になるため、宛先 email に束縛し
+    承諾時に検証済み identity の email と照合する（URL の転送で第三者が承諾できない）。
+    URL の署名・組み立ては api 層（`auth.py` の HMAC 基盤）が担い、状態の正はこの文書。
+    状態遷移（pending → accepted/declined/revoked）は
+    `SessionRepository.respond_member_invite` / `revoke_member_invite` でアトミックに行う。
+    `email` は小文字正規化して保存する（照合も小文字同士）。
+    """
+
+    id: str
+    product_id: str
+    email: str
+    invited_by_sub: str = ""
+    invited_by_email: str = ""
+    status: MemberInviteStatus = MemberInviteStatus.PENDING
+    created_at: datetime = Field(default_factory=_now)
+    expires_at: datetime | None = None
+    responded_at: datetime | None = None
+    # 承諾したユーザーの sub（監査用。承諾前は None）。
+    accepted_sub: str | None = None
 
 
 class Utterance(BaseModel):

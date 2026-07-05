@@ -53,6 +53,7 @@ import {
 import { useAuth } from "../lib/auth";
 import { AccountMenu } from "./AccountMenu";
 import { ConversationStart } from "./ConversationStart";
+import { MemberInviteNotices } from "./MemberInviteNotices";
 import {
   MaterialSourceSheet,
   type MaterialSource,
@@ -946,7 +947,8 @@ export default function EntryFlow({ initialStep = "home" }: { initialStep?: Step
     <Screen className="px-4 py-3">
       <AppHeader brand right={<AccountMenu profile={auth.profile} />} />
       <main className="mx-auto flex w-full max-w-[480px] flex-1 flex-col gap-[18px] pt-3">
-
+        {/* 自分宛のメンバー招待の通知（ADR-0036 決定3）。無ければ何も出ない。 */}
+        <MemberInviteNotices />
         <Card>
           <div className="flex items-start justify-between gap-[12px]">
             <div className="flex flex-col gap-[8px]">

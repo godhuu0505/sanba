@@ -159,6 +159,76 @@ def verify_product_invite_token(token: str, secret: str) -> ProductInviteClaim:
     return ProductInviteClaim(product_id=product_id, invite_id=invite_id)
 
 
+# ── Member-invite tokens（メンバー招待 / ADR-0036）──────────────────────────────
+# メールで配る招待 URL のトークン。product invite（深掘りリンク）と同じ二段検証:
+# このトークンは「owner が発行した本物の招待である」ことだけを証明し、状態
+# （pending/accepted/declined/revoked・期限）の正は Firestore の member_invites 文書側。
+# 検証側は必ず respond_member_invite（文書照合＋トランザクション遷移）と宛先 email の
+# 照合を併用すること（URL の転送だけでは第三者は承諾できない）。
+
+
+class InvalidMemberInvite(Exception):
+    """Raised when a member-invite token is malformed, tampered, or expired."""
+
+
+@dataclass(frozen=True)
+class MemberInviteClaim:
+    """署名検証済みトークンが指す (product_id, invite_id)。文書照合の鍵。"""
+
+    product_id: str
+    invite_id: str
+
+
+def create_member_invite_token(
+    product_id: str, invite_id: str, secret: str, expires_at_epoch: int | None
+) -> str:
+    """Mint a signed member-invite token for the invite URL.
+
+    `expires_at_epoch` は invite 文書の expires_at（UNIX 秒）。scope で
+    他トークン種（product_invite / session）との取り違えを防ぐ。
+    """
+    payload = {
+        "pid": product_id,
+        "mid": invite_id,
+        "scope": "member_invite",
+        "exp": expires_at_epoch,
+    }
+    payload_b64 = _b64url_encode(json.dumps(payload, separators=(",", ":")).encode())
+    return f"{payload_b64}.{_sign(payload_b64, secret)}"
+
+
+def verify_member_invite_token(token: str, secret: str) -> MemberInviteClaim:
+    """Validate signature + scope (+ expiry when set) and return the claim.
+
+    ここを通っても承諾可否はまだ確定しない: 状態・宛先の正は Firestore の
+    member_invites 文書と検証済み identity の email 照合が持つ（ADR-0036 決定2）。
+    """
+    try:
+        payload_b64, sig = token.split(".", 1)
+    except ValueError as exc:
+        raise InvalidMemberInvite("malformed token") from exc
+
+    expected = _sign(payload_b64, secret)
+    if not hmac.compare_digest(sig, expected):
+        raise InvalidMemberInvite("bad signature")
+
+    try:
+        payload = json.loads(_b64url_decode(payload_b64))
+    except Exception as exc:
+        raise InvalidMemberInvite("malformed payload") from exc
+
+    if payload.get("scope") != "member_invite":
+        raise InvalidMemberInvite("wrong scope")
+    exp = payload.get("exp")
+    if exp is not None and int(exp) < int(time.time()):
+        raise InvalidMemberInvite("expired")
+    product_id = payload.get("pid")
+    invite_id = payload.get("mid")
+    if not isinstance(product_id, str) or not isinstance(invite_id, str):
+        raise InvalidMemberInvite("malformed claim")
+    return MemberInviteClaim(product_id=product_id, invite_id=invite_id)
+
+
 # ── Session-access tokens（契約 §4 / Issue #100）─────────────────────────────
 # ハイドレーション・起票 API は「join 済みトークン」で保護する。join 時に発行し、
 # web は Bearer として GET /requirements 等に付与する。`session_id` をパスに含むだけ
