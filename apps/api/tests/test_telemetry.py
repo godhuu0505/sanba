@@ -84,6 +84,31 @@ def test_telemetry_records_cancel() -> None:
     assert res.json()["recorded"] is True
 
 
+def test_telemetry_records_join_abort() -> None:
+    # PR9（FR-2.1）: リンク入場後の離脱（join.abort）を受理し、素材カウンタではなく
+    # 専用カウンタ（sanba_join_ui_events_total / record_join_ui_event）へ計上する。
+    sid = _new_session()
+    res = client.post(
+        f"/api/sessions/{sid}/telemetry",
+        json={"event": "join.abort", "result": "aborted"},
+        headers=_session_auth(sid),
+    )
+    assert res.status_code == 200
+    assert res.json() == {"recorded": True}
+
+
+def test_telemetry_join_abort_coerces_unknown_result() -> None:
+    # join.abort も列挙値のみ: 未知 result は other へ丸めて受理（PII をラベルに乗せない）。
+    sid = _new_session()
+    res = client.post(
+        f"/api/sessions/{sid}/telemetry",
+        json={"event": "join.abort", "result": "free-text@example.com"},
+        headers=_session_auth(sid),
+    )
+    assert res.status_code == 200
+    assert res.json()["recorded"] is True
+
+
 def test_telemetry_rejects_unknown_event() -> None:
     # 許可リスト外の event は弾く（PII/任意イベントの混入を防ぐ）。
     sid = _new_session()

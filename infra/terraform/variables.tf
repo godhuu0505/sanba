@@ -77,6 +77,19 @@ variable "data_retention_days" {
   default = 30
 }
 
+# ---- ゲスト入場 (ADR-0032) ----
+variable "guest_join_enabled" {
+  type        = bool
+  default     = false
+  description = "scope=end_user リンクをログインなしで受けるか（ADR-0032 / GUEST_JOIN_ENABLED）。段階リリース用フラグ。"
+}
+
+variable "invite_join_rate_per_minute" {
+  type        = number
+  default     = 10
+  description = "深掘りリンク（invite）単位のセッション作成レート制限（毎分 / ADR-0032 / INVITE_JOIN_RATE_PER_MINUTE）。"
+}
+
 # Google ログイン (ADR-0012)。ID トークン検証の aud に使う OAuth Web クライアント ID。
 # 秘匿物ではないので Secret Manager ではなく平文 env で注入する。空のままだと API は
 # 認証経路をフェイルクローズする (AUTH_DEV_BYPASS=false 前提)。client secret は本方式

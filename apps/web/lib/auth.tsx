@@ -87,11 +87,26 @@ export interface GoogleAuth {
   resetButton: () => void;
 }
 
+/**
+ * base64url 文字列を UTF-8 として復号する。JWT payload は base64url でエンコードされ、
+ * 日本語名などは UTF-8 マルチバイト列になっている。`atob` の戻り値は 1 文字 = 1 バイトの
+ * 「バイナリ文字列」（各コードポイントが 0–255 の生バイト）でしかないため、そのまま
+ * `JSON.parse` に渡すとマルチバイト列が Latin-1 の別文字として解釈され文字化けする
+ * （例: `田中 五大` → `ç"°ä¸­ ç"¤§`）。生バイトを `TextDecoder` で UTF-8 復号して直す。
+ * ASCII のみのメール等が化けなかったのは、ASCII 範囲では Latin-1 と UTF-8 が一致するため。
+ */
+function decodeBase64UrlUtf8(value: string): string {
+  const base64 = value.replace(/-/g, "+").replace(/_/g, "/");
+  const binary = atob(base64);
+  const bytes = Uint8Array.from(binary, (ch) => ch.charCodeAt(0));
+  return new TextDecoder().decode(bytes);
+}
+
 /** ID トークン (JWT) の payload を表示用にデコードする。署名検証はしない。 */
-function decodeProfile(token: string): GoogleProfile | null {
+export function decodeProfile(token: string): GoogleProfile | null {
   try {
     const payload = token.split(".")[1];
-    const json = atob(payload.replace(/-/g, "+").replace(/_/g, "/"));
+    const json = decodeBase64UrlUtf8(payload);
     const claims = JSON.parse(json) as Record<string, unknown>;
     return {
       email: String(claims.email ?? ""),

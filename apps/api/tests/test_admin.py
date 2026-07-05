@@ -81,6 +81,26 @@ def test_create_session_persists_and_lists() -> None:
     assert sessions[0]["owner_email"] == "admin@example.com"
 
 
+def test_admin_session_list_excludes_prep_goal() -> None:
+    # goal / goal_detail（準備フォームの自由記述・PII 可）は管理一覧に返さない
+    # （AdminSessionSummary の exclude / Codex comment 3524421531）。
+    _login("admin@example.com")
+    client.post(
+        "/api/sessions",
+        json={
+            "roles": ["pm"],
+            "consent_acknowledged": True,
+            "goal": "社外秘のゴール",
+            "goal_detail": "個人名を含む詳細",
+        },
+    )
+    sessions = client.get("/api/admin/sessions").json()
+    assert sessions, "作成したセッションが一覧に出ること"
+    for s in sessions:
+        assert "goal" not in s or s["goal"] is None
+        assert "goal_detail" not in s or s["goal_detail"] is None
+
+
 def test_requirements_listing_404_for_unknown_session() -> None:
     _login("admin@example.com")
     assert client.get("/api/admin/sessions/nope/requirements").status_code == 404

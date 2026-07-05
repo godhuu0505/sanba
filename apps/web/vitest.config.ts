@@ -7,4 +7,8 @@ export default defineConfig({
   resolve: {
     alias: { "@": resolve(__dirname, ".") },
   },
+  test: {
+    // Playwright の E2E（e2e/*.spec.ts）は vitest では実行しない（npm run e2e が担う）。
+    exclude: ["**/node_modules/**", "e2e/**"],
+  },
 });
