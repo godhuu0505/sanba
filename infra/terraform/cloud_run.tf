@@ -116,7 +116,10 @@ resource "google_cloud_run_v2_service" "agent" {
         # 常駐ワーカー。Gemini Live セッション中に 1Gi を超過し OOM で再起動する事象を実機で
         # 確認したため 2Gi にする（"Memory limit of 1024 MiB exceeded"）。
         limits   = { cpu = "2", memory = "2Gi" }
-        cpu_idle = false # 常駐ワーカーなので常時 CPU 割当
+        # 常駐ワーカーなので常時 CPU 割当。加えて ADR-0037 の背景処理（先読み検索・
+        # バックグラウンド分析）はリクエスト応答外の CPU 消費を前提とするため、
+        # cpu_idle=true へ変更してはならない。
+        cpu_idle = false
       }
       dynamic "env" {
         for_each = local.agent_env
