@@ -94,7 +94,7 @@ export function GitHubLinkCard() {
           GitHub と連携する
         </Button>
       )}
-      {error ? <p className="text-[12px] text-[var(--sanba-danger,#e06)]">{error}</p> : null}
+      {error ? <p className="text-[12px] text-sanba-rec-text">{error}</p> : null}
     </Card>
   );
 }

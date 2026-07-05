@@ -65,6 +65,7 @@
   --sanba-cat-neutral: #6b6e73;       /* 鈍灰 — 制約・要件既定（フォールバック）。白地 5.12:1 */
   --sanba-cat-scope: #177e6f;         /* 青緑 — 境界・スコープ。白地 4.94:1 */
   --sanba-shadow: rgba(34, 30, 26, 0.12); /* ステッカーのベタ塗りオフセット影（ADR-0033・墨ベース） */
+  --sanba-shadow-strong: rgba(34, 30, 26, 0.15); /* ghost ボタンの影（ADR-0033 §4・墨ベース・sticker 影 0.12 より僅かに濃い） */
   --sanba-radius-card: 16px;
   --sanba-radius-control: 12px;
   --sanba-radius-bubble: 14px;
