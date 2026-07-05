@@ -716,7 +716,7 @@ describe("入口フロー（#140）", () => {
     expect(screen.getByText("対象のプロダクト・アプリの選択が必要です。")).toBeTruthy();
   });
 
-  it("登録済みプロダクトを選ぶと、開始時に用語文脈を投入し前提 repo をバインドする（ADR-0031）", async () => {
+  it("登録済みプロダクトを選ぶと product_id を渡し用語文脈を投入する（repo は API 継承 / ADR-0031）", async () => {
     authState.loggedIn = true;
     fetchMyProducts.mockResolvedValueOnce([
       {
@@ -739,11 +739,56 @@ describe("入口フロー（#140）", () => {
     fireEvent.click(screen.getByRole("checkbox"));
     fireEvent.click(screen.getByRole("button", { name: "要件サンバを始める" }));
     await waitFor(() => expect(createSession).toHaveBeenCalledTimes(1));
-    // 前提 repo を join 済みトークンでバインドする（明示 repo 選択が無いため product 由来）。
+    // product_id を createSession に渡す（API 側で SessionMeta に紐づけ、前提 repo を継承する）。
+    // (roles, consent, idToken, title, githubRepo, productId)
+    expect(createSession.mock.calls[0][5]).toBe("p1");
+    // コネクタ無効時は github_repo を明示送信せず undefined（product 継承に委ねる）。
+    expect(createSession.mock.calls[0][4]).toBeUndefined();
+    // 前提 repo のクライアント側バインド（selectSessionRepo）はしない（API 継承 / PR#314 P1）。
+    expect(selectSessionRepo).not.toHaveBeenCalled();
+    // 用語/説明は補助グラウンディングとして product 文脈に投入する。
     await waitFor(() =>
-      expect(selectSessionRepo).toHaveBeenCalledWith("s1", "acme/search", "main", "st"),
+      expect(addSessionContext.mock.calls.some((c) => c[3] === "product")).toBe(true),
     );
-    // 用語/説明を product 文脈として投入する。
-    expect(addSessionContext.mock.calls.some((c) => c[3] === "product")).toBe(true);
+  });
+
+  it("stale な productId（候補に無い保存値）はクリアし、開始を塞ぐ（PR#314 P2）", async () => {
+    // 削除済み product の id が sessionStorage に残っているケース。
+    window.sessionStorage.setItem("sanba.prep.v1", JSON.stringify({ productId: "gone" }));
+    authState.loggedIn = true;
+    fetchMyProducts.mockResolvedValueOnce([
+      {
+        id: "p1",
+        name: "検索アプリ",
+        description: "",
+        glossary: [],
+        created_at: "2024-06-20T03:00:00Z",
+        github_repo: null,
+        github_branch: null,
+        github_commit_sha: null,
+        github_index_status: "none",
+      },
+      {
+        id: "p2",
+        name: "別アプリ",
+        description: "",
+        glossary: [],
+        created_at: "2024-06-20T03:00:00Z",
+        github_repo: null,
+        github_branch: null,
+        github_commit_sha: null,
+        github_index_status: "none",
+      },
+    ]);
+    render(<Home />);
+    fireEvent.click(screen.getByText("＋ 壁打ちを始める"));
+    // 候補は 2 件（自動選択しない）。stale な "gone" はクリアされ未選択に戻る。
+    const select = (await screen.findByLabelText("対象のプロダクト・アプリ")) as HTMLSelectElement;
+    await waitFor(() => expect(select.value).toBe(""));
+    fireEvent.change(screen.getByLabelText("ゴール"), { target: { value: "テストゴール" } });
+    fireEvent.click(screen.getByRole("checkbox"));
+    expect(
+      (screen.getByRole("button", { name: "要件サンバを始める" }) as HTMLButtonElement).disabled,
+    ).toBe(true);
   });
 });

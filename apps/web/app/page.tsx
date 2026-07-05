@@ -181,10 +181,14 @@ export default function Home() {
     () =>
       staged.map((file) => {
         const isImage = file.type.toLowerCase().startsWith("image/");
-        const url =
+        const raw =
           isImage && typeof URL !== "undefined" && typeof URL.createObjectURL === "function"
             ? URL.createObjectURL(file)
             : null;
+        // createObjectURL は常にブラウザ生成の blob: URL を返す（攻撃者が HTML を注入できる値では
+        // ない）。プレビューには blob: スキームのみを通し、それ以外は破棄する（防御的検証。
+        // CodeQL js/xss-through-dom はローカル File → 属性の流入を誤検知するため、その打ち消しも兼ねる）。
+        const url = raw !== null && raw.startsWith("blob:") ? raw : null;
         return { file, url };
       }),
     [staged],
@@ -273,11 +277,17 @@ export default function Home() {
     };
   }, [step, auth.loggedIn, auth.credential, products]);
 
-  // 対象アプリは必須（ADR-0031）。候補がちょうど 1 件なら自動選択し、選ぶ手間を省く。
-  // 複数あるときは明示選択を求める（自動で決め打ちしない）。ユーザーが選び直した後は
-  // 上書きしないよう「未選択のときだけ」補う。
+  // 対象アプリの選択値を取得済み候補と突き合わせる（ADR-0031 / PR#314 P2）。
+  // - 復元した productId が候補に無い（削除済み・権限外・取得失敗）ならクリアして、
+  //   実在しない product で開始できないようにする（開始条件は selectedProduct の実在）。
+  // - 候補がちょうど 1 件なら自動選択して選ぶ手間を省く（複数は明示選択を求める）。
   useEffect(() => {
-    if (products && products.length === 1 && productId === "") {
+    if (!products) return;
+    if (productId !== "" && !products.some((p) => p.id === productId)) {
+      setProductId("");
+      return;
+    }
+    if (products.length === 1 && productId === "") {
       setProductId(products[0].id);
     }
   }, [products, productId]);
@@ -386,18 +396,19 @@ export default function Home() {
       // 同意ゲート後にセッションを作成（issue #10）。createSession → join で
       // 「join 済みトークン」を得てから、ゴール文を文脈として投稿する（契約 §4）。
       // 本人確認は Google ログイン（ADR-0012）。
-      // 連携リポジトリ（任意 / ADR-0027）。フィールドを出した（コネクタ有効）ときは選択値を
-      // そのまま送る: 空文字 = 明示的な「連携しない」（既定リポジトリへもフォールバックさせない
-      // / Codex P2）。フィールドを出せなかったとき（無効・候補取得失敗）も空文字 = 連携しない。
-      // ユーザーが見ても確認してもいない既定リポへ grounding/起票を流さない（fail-closed /
-      // Codex P2）。環境変数フォールバック（未指定 = undefined）は本フォームを持たない
-      // 旧クライアント・API 直叩きの互換のためだけに残る。
+      // 連携リポジトリ（ADR-0027）＋対象プロダクト（ADR-0031）。repo 解決は「セッション明示 >
+      // product > 環境変数」。コネクタ有効（フィールド表示）のときだけユーザーの明示選択を送る:
+      // 空文字 = 明示的な「連携しない」（product repo でも上書きしない / PR#314 P1）、"owner/name"
+      // = このセッション専用の repo。フィールド非表示（無効・取得失敗）は undefined を送り、
+      // 選択 product の索引済み repo を API 側で継承させる（未選択のまま既定 repo へは流さない）。
       const session = await createSession(
         [role],
         consent,
         auth.credential,
         undefined,
-        repoChoices?.enabled ? githubRepo.trim() : "",
+        repoChoices?.enabled ? githubRepo.trim() : undefined,
+        // 取得済み候補に実在する product だけ送る（stale な sessionStorage 値を弾く / PR#314 P2）。
+        selectedProduct?.id,
       );
       const invite = session.invites[role];
       const joined = await joinSession({
@@ -443,22 +454,9 @@ export default function Home() {
           }
         }
       }
-      // 前提 repo のグラウンディング（ADR-0027/0028）。明示的な連携 repo 選択（appRepoItem）が
-      // 無く、対象プロダクトが repo を持つときは、そのプロダクトの repo をバインドして索引する
-      //（ADR-0031。プロダクト＝アプリの前提コードを問いの背景に使う）。バインド失敗は補助情報の
-      // 欠落なので開始は止めず注記もしない（明示選択の appRepoItem 経路とは扱いを分ける）。
-      if (!appRepoItem && selectedProduct?.github_repo) {
-        try {
-          await selectSessionRepo(
-            joined.session_id,
-            selectedProduct.github_repo,
-            selectedProduct.github_branch || null,
-            joined.session_token,
-          );
-        } catch (productRepoErr) {
-          console.error("bind product repo failed", { error: productRepoErr });
-        }
-      }
+      // 対象プロダクトの前提 repo は createSession で product_id を渡した時点で API 側が
+      // 継承する（索引済み要約ごと写す / ADR-0031）。ここでクライアントから selectSessionRepo で
+      // 上書き・再索引はしない（明示的な「連携しない」を尊重するため / PR#314 P1）。
       if (appRepoItem) {
         // App 連携済みの repo は branch を確定して非同期索引をキックする（ADR-0028）。
         // 索引完了は会話開始までに間に合わなくても部分結果で深掘りできるため待たない。ただし
@@ -584,10 +582,12 @@ export default function Home() {
     // 候補が settle する（repoChoices が入る）まで開始を待たせる: ユーザーが連携先を
     // 確認する前にセッションが作られるのを防ぐ（Codex P2。effect 実行前の初回描画の
     // 窓も null で塞がる）。取得は失敗でも番兵で settle するので詰まらない。
+    // 対象アプリは「取得済み候補に実在する product」を選べていることを条件にする（PR#314 P2）:
+    // sessionStorage 由来の stale な productId 文字列だけでは開始させない。
     const canStart =
       consent &&
       goal.trim() !== "" &&
-      productId !== "" &&
+      selectedProduct !== undefined &&
       auth.loggedIn &&
       !busy &&
       repoChoices !== null;
@@ -878,7 +878,7 @@ export default function Home() {
                 </Link>
               </p>
             )}
-            {auth.loggedIn && productId === "" && (
+            {auth.loggedIn && !selectedProduct && (
               <p className="text-[12px] text-sanba-muted">
                 対象のプロダクト・アプリの選択が必要です。
               </p>
