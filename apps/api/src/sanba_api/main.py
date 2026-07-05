@@ -1623,9 +1623,22 @@ def join_product(
 # （GET /api/member-invites/mine をログイン時に表示）。承諾は宛先 email と検証済み
 # identity の email 照合を必須にする（URL の転送だけでは第三者は承諾できない）。
 
-# 招待宛先の形式検証（厳密な RFC 準拠ではなく明らかな入力ミスを弾く。正の検証は
-# 「そのアドレスに届いたメールから承諾できるか」= email 照合が担う）。
-_INVITE_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+def _is_valid_invite_email(email: str) -> bool:
+    """招待宛先の形式検証（厳密な RFC 準拠ではなく明らかな入力ミスを弾く）。
+
+    正の検証は「そのアドレスに届いたメールから承諾できるか」= email 照合が担う。
+    正規表現は使わない（`[^@\\s]+@[^@\\s]+\\.[^@\\s]+` 型は入力次第で多項式時間の
+    バックトラッキングが起きる / CodeQL ReDoS 指摘）。判定は線形: 空白なし・@ が
+    ちょうど 1 つ・local 非空・ドメインに非空の区切り . がある、のみを見る。
+    """
+    if any(c.isspace() for c in email):
+        return False
+    local, sep, domain = email.partition("@")
+    if not sep or not local or "@" in domain:
+        return False
+    host, dot, tld = domain.rpartition(".")
+    return bool(dot and host and tld)
 
 
 class ProductMemberDisplay(BaseModel):
@@ -1811,7 +1824,7 @@ def create_product_member_invite(
     if user.sub != product.owner_sub:
         raise HTTPException(status_code=403, detail="owner only")
     email = req.email.strip().lower()
-    if not _INVITE_EMAIL_RE.match(email):
+    if not _is_valid_invite_email(email):
         raise HTTPException(status_code=400, detail="invalid email address")
     if email == user.email.lower():
         raise HTTPException(status_code=400, detail="cannot invite yourself")
@@ -1821,12 +1834,23 @@ def create_product_member_invite(
     # 許容する（Cloud Run 多インスタンス）。実害は「余分な招待行」に留まる: メンバーの
     # doc id は product__sub の upsert なのでどちらを承諾しても同じメンバーシップになり、
     # 承諾の直列化は respond_member_invite のトランザクションが担う。
-    has_pending = any(
-        i.email == email and _invite_effective_status(i) == "pending"
-        for i in _repo.list_member_invites(product_id)
-    )
-    if has_pending:
+    pending = [
+        i for i in _repo.list_member_invites(product_id) if _invite_effective_status(i) == "pending"
+    ]
+    if any(i.email == email for i in pending):
         raise HTTPException(status_code=409, detail="already invited")
+    # 任意メール宛の送信エンドポイントを bulk 送信に乱用されないための総量ガード。
+    # 上と同じく read-check なので並行時に僅かに超え得るが、上限の趣旨（桁の暴走を止める）
+    # には足りる。取り消し・応答で保留が減れば再び発行できる。
+    if len(pending) >= settings.member_invite_max_pending_per_product:
+        record_rate_limited(limiter="member_invite")
+        log.warning(
+            "member_invite_rate_limited",
+            product=product_id,
+            owner=user.sub,
+            pending=len(pending),
+        )
+        raise HTTPException(status_code=429, detail="too many pending invites")
     invite = ProductMemberInvite(
         id=new_member_invite_id(),
         product_id=product_id,

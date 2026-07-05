@@ -243,6 +243,25 @@ def test_expired_or_responded_invite_allows_reinvite() -> None:
     ).status_code == 200
 
 
+def test_invite_creation_is_capped_by_pending_count(monkeypatch: pytest.MonkeyPatch) -> None:
+    """保留中招待の総量ガード（bulk メール送信の乱用防止）。取り消せば再発行できる。"""
+    _seed_product()
+    monkeypatch.setattr(main.settings, "member_invite_max_pending_per_product", 2)
+    _login(OWNER, OWNER_EMAIL)
+    for i in range(2):
+        res = client.post(
+            "/api/products/prod-1/member-invites", json={"email": f"user{i}@example.com"}
+        )
+        assert res.status_code == 200
+    res = client.post("/api/products/prod-1/member-invites", json={"email": "u3@example.com"})
+    assert res.status_code == 429
+    # 保留が減れば再び発行できる（上限は在庫であってレート窓ではない）。
+    first = main._repo.list_member_invites("prod-1")[-1]
+    client.post(f"/api/products/prod-1/member-invites/{first.id}/revoke")
+    res = client.post("/api/products/prod-1/member-invites", json={"email": "u3@example.com"})
+    assert res.status_code == 200
+
+
 def test_invite_list_is_owner_only_and_marks_expired() -> None:
     _seed_product()
     _seed_invite(expires_at=datetime.now(UTC) - timedelta(seconds=1))

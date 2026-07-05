@@ -56,6 +56,9 @@ class Settings(BaseSettings):
     # ---- メンバー招待 (ADR-0036) ----
     # メンバー招待の有効期限（秒）。深掘りリンクと違い永続権限の付与なので必ず期限を切る。
     member_invite_ttl_seconds: int = 14 * 24 * 3600
+    # product あたりの保留中招待の上限。任意メール宛の送信エンドポイントを bulk メール送信に
+    # 乱用されないための総量ガード（超過は 429）。1 チームのメンバー数として十分大きい値。
+    member_invite_max_pending_per_product: int = 50
     # 招待メール・招待 URL に載せる web のベース URL（例: https://sanba.example.com）。
     web_base_url: str = "http://localhost:3000"
     # 招待メールの SMTP 送信設定。smtp_host 未設定なら送信をスキップする（フェイルオープン:
