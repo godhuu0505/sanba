@@ -181,6 +181,10 @@ def build_prep_premise(
     goal_detail = (goal_detail or "").strip()
     if not goal and not goal_detail:
         return ""
+    # fence タグがユーザー入力に含まれると closing tag を偽装して後続を通常指示に見せられる。
+    # 開閉タグを除去してフェンス構造を壊せないようにする（Codex comment 3524421530 対応）。
+    goal = goal.replace("<prep-context>", "").replace("</prep-context>", "")
+    goal_detail = goal_detail.replace("<prep-context>", "").replace("</prep-context>", "")
     lines = [
         "",
         "## セッション準備情報",
