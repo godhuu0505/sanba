@@ -14,13 +14,10 @@ on:
   pull_request_review:
     types: [submitted]
 
-# Claude がコード修正のコミット・コメント返信・issue 起票を行えるよう権限を付与。
-# id-token はビルトイン Claude GitHub App 認証（OIDC）に必須。
+# 既定は最小権限（read-only）。書き込みが要るのは triage ジョブだけなので、
+# 昇格はジョブ側で行う（Scorecard Token-Permissions / CLAUDE.md セキュリティ規約）。
 permissions:
-  contents: write
-  pull-requests: write
-  issues: write
-  id-token: write
+  contents: read
 
 concurrency:
   group: claude-review-response-${{ github.event.pull_request.number }}
@@ -30,6 +27,13 @@ jobs:
   triage:
     name: Claude triage
     runs-on: ubuntu-latest
+    # Claude がコード修正のコミット・コメント返信・issue 起票を行えるよう昇格。
+    # id-token はビルトイン Claude GitHub App 認証（OIDC）に必須。
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
     # AI レビューのやり取り上限（Codex のレビュー回数で数える）。これを超えたら
     # 自動対応を止め、人間にエスカレーション（needs-human）する。調整可。
     #
