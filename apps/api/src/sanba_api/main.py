@@ -52,6 +52,7 @@ from sanba_shared.models import (
 from sanba_shared.repository import (
     InviteNotFound,
     InviteNotUsable,
+    InviteRateLimited,
     ProductNotFound,
     RequirementNotFound,
     SessionRepository,
@@ -70,7 +71,7 @@ from .auth import (
     verify_product_invite_token,
     verify_session_token,
 )
-from .auth_google import AuthUser, is_admin, require_admin, require_user
+from .auth_google import AuthUser, is_admin, maybe_user, require_admin, require_user
 from .config import settings
 from .github_app import (
     GitHubAppClient,
@@ -82,6 +83,7 @@ from .github_app import (
 from .ingestion import ContextIndexer, chunk_text, extract_text_from_upload
 from .observability import (
     record_asset_upload,
+    record_guest_join,
     record_material_event,
     record_my_requirements_viewed,
     record_my_sessions_listed,
@@ -225,6 +227,29 @@ def require_session_access(
     return access
 
 
+# ゲスト identity の接頭辞（ADR-0032 決定2）。Google の sub は数値文字列でこの形を
+# 取り得ないため、署名済み session_token の sub がこれで始まる = ゲスト、は偽装できない。
+_GUEST_SUB_PREFIX = "guest:"
+
+
+def forbid_guest_writes(access: SessionAccess, operation: str) -> None:
+    """ゲスト session_token の権限最小性を強制する（ADR-0032 決定4 / #320）。
+
+    ゲスト token に許すのは当該セッションの読取（ハイドレーション）と telemetry・
+    realtime の client event のみ。素材投入（grounding 汚染）・確定・起票（owner の
+    repo への Issue 作成）・素材削除は 403 で拒む。ゲストセッションの要件の承認・
+    保全は owner が管理画面で行う（承認時に TTL 解除するかは owner の意思）。
+    """
+    if access.sub.startswith(_GUEST_SUB_PREFIX):
+        log.warning(
+            "guest_write_denied",
+            session=access.session_id,
+            operation=operation,
+            sub=access.sub,
+        )
+        raise HTTPException(status_code=403, detail="guests cannot perform this operation")
+
+
 # "owner/name" 形式（ADR-0027）。GitHub の実際の命名規則より緩いが、パス注入
 # （`/` の追加や空文字）を弾ければ十分（トークン権限外のリポは GitHub 側が 404 を返す）。
 _GITHUB_REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
@@ -291,7 +316,7 @@ class CreateSessionRequest(BaseModel):
     # product の索引済み repo を継承する（repo 解決は「セッション明示 > product > 環境変数」）。
     # None = 従来どおりの単発セッション。本人がアクセスできる product に限る（非所有は 404）。
     product_id: str | None = None
-    # 02 準備フォームのゴールと詳細（ADR-0034）。SessionMeta に保存し、agent が起動時に
+    # 02 準備フォームのゴールと詳細（ADR-0035）。SessionMeta に保存し、agent が起動時に
     # 初期 instructions へシードする（join 後の RAG 投入と違い agent 起動に確実に間に合う）。
     # 上限は準備フォームの自由記述として十分な長さ（prompt の肥大は premise 側で丸めない設計）。
     goal: str | None = Field(default=None, max_length=2000)
@@ -468,7 +493,7 @@ def create_session(
             owner_sub=user.sub,
             owner_email=user.email,
             roles=req.roles,
-            # 準備フォームのゴール（ADR-0034）。空白のみは未入力扱いに正規化する。
+            # 準備フォームのゴール（ADR-0035）。空白のみは未入力扱いに正規化する。
             goal=(req.goal or "").strip() or None,
             goal_detail=(req.goal_detail or "").strip() or None,
             product_id=product.id if product is not None else None,
@@ -1264,18 +1289,23 @@ class ProductJoinRequest(BaseModel):
 
 
 class ProductJoinResponse(BaseModel):
-    """深掘りリンク入場の結果（FR-1.6）。
+    """深掘りリンク入場の結果（FR-1.6 / FR-2.1）。
 
-    LiveKit トークンはここでは発行しない: 返した `invite`（create_session が返すものと
-    同じ署名付き役割 invite）を既存 `POST /api/sessions/join` に渡して交換する。
-    トークン発行・identity 束縛・レート制限のロジックを join 1 箇所に保つための分割。
+    ログイン済み: LiveKit トークンはここでは発行しない。返した `invite`（create_session が
+    返すものと同じ署名付き役割 invite）を既存 `POST /api/sessions/join` に渡して交換する
+    （トークン発行・identity 束縛のロジックを join 側に保つための分割）。
+    ゲスト（ADR-0032 決定1）: sessions/join は require_user のまま変えないため、
+    `join`（LiveKit トークン + session_token）をここで直接返す。`invite` は null。
+    発行ロジック自体は `_mint_join_tokens` で両経路共通。
     """
 
     session_id: str
-    invite: str
+    invite: str | None
     product_id: str
     product_name: str
     interview_mode: str
+    # ゲスト入場のときのみ非 null（ログイン済みは従来どおり invite 経由）。
+    join: JoinResponse | None = None
 
 
 def _invite_response(invite: ProductInvite) -> ProductInviteResponse:
@@ -1369,16 +1399,19 @@ def revoke_product_invite(
 
 @app.post("/api/products/join", response_model=ProductJoinResponse)
 def join_product(
-    req: ProductJoinRequest, user: AuthUser = Depends(require_user)
+    req: ProductJoinRequest, user: AuthUser | None = Depends(maybe_user)
 ) -> ProductJoinResponse:
-    """深掘りリンクからセッションを自動作成する（FR-1.6 / ADR-0031 決定3）。
+    """深掘りリンクからセッションを自動作成する（FR-1.6 / FR-2.1 / ADR-0031 決定3）。
 
-    Stage 1 はログイン必須（ゲスト入場は ADR-0032 の guest_join_enabled 待ち）。
-    検証は二段: 署名（owner が発行した本物のリンクか）→ invite 文書
-    （失効・期限・回数をトランザクションで消費。文書側が正）。02 準備は出さず、
-    ゴール（title）と repo 設定は product から継承する（FR-1.4）。
-    レート制限はミドルウェア `_rate_limit_join` が body 解析前に掛ける。
+    認証は原則ログイン必須。唯一の例外（ADR-0032 決定1）: `guest_join_enabled` かつ
+    invite の `scope=end_user` のとき、未認証（Authorization ヘッダ無し）を受ける。
+    同意ゲート（FR-2.2）はゲストでも省略しない。検証は二段: 署名（owner が発行した
+    本物のリンクか）→ invite 文書（失効・期限・回数・リンク単位レートをトランザクション
+    で消費。文書側が正）。02 準備は出さず、ゴール（title）と repo 設定は product から
+    継承する（FR-1.4）。IP 単位レート制限はミドルウェア `_rate_limit_join` が
+    body 解析前に掛け、リンク単位（FR-2.6）は consume_invite が原子的に判定する。
     """
+    guest = user is None
     if settings.require_consent and not req.consent_acknowledged:
         raise HTTPException(
             status_code=400,
@@ -1389,10 +1422,41 @@ def join_product(
     except InvalidProductInvite as exc:
         log.warning("product_invite_rejected", reason=str(exc))
         raise HTTPException(status_code=403, detail=f"invalid invite link: {exc}") from exc
-    # 消費（use_count++）は最後の関門: consent・署名を先に検証し、失敗する要求で
-    # 使用回数を減らさない。文書照合と消費は原子的（ADR-0031 / consume_invite）。
+    if guest:
+        # フェイルクローズ: フラグ off は即 401（invite を消費しない）。scope の判定は
+        # 文書側が正（署名トークンは scope を持たない）。scope は発行後に変わらないため
+        # 消費前の read で判定してよい（消費と可否検証の原子性は consume_invite が担う）。
+        if not settings.guest_join_enabled:
+            record_guest_join("flag_off")
+            log.warning(
+                "guest_join_rejected",
+                reason="flag_off",
+                product=claim.product_id,
+                invite=claim.invite_id,
+            )
+            raise HTTPException(status_code=401, detail="authentication required")
+        invite_doc = _repo.get_invite(claim.product_id, claim.invite_id)
+        if invite_doc is None:
+            raise HTTPException(status_code=404, detail="invite not found")
+        if invite_doc.scope is not InviteScope.END_USER:
+            record_guest_join("scope_mismatch")
+            log.warning(
+                "guest_join_rejected",
+                reason="scope_mismatch",
+                product=claim.product_id,
+                invite=claim.invite_id,
+                scope=invite_doc.scope.value,
+            )
+            raise HTTPException(status_code=401, detail="authentication required")
+    # 消費（use_count++）は最後の関門: consent・署名・ゲスト可否を先に検証し、失敗する
+    # 要求で使用回数を減らさない。文書照合・リンク単位レート判定（FR-2.6）と消費は
+    # 原子的（ADR-0031 / ADR-0032 決定5 / consume_invite）。
     try:
-        invite = _repo.consume_invite(claim.product_id, claim.invite_id)
+        invite = _repo.consume_invite(
+            claim.product_id,
+            claim.invite_id,
+            rate_limit_per_minute=settings.invite_join_rate_per_minute,
+        )
     except (InviteNotFound, ProductNotFound) as exc:
         # Firestore 経路は join と product 削除の競合で ProductNotFound を投げ得る
         # （トランザクション内の親存在チェック）。invite 不在と同じ 404 に平す。
@@ -1405,18 +1469,37 @@ def join_product(
             reason=exc.reason,
         )
         raise HTTPException(status_code=403, detail=f"invite not usable: {exc.reason}") from exc
+    except InviteRateLimited as exc:
+        if guest:
+            record_guest_join("rate_limited")
+        record_rate_limited(limiter="invite")
+        log.warning(
+            "product_join_rate_limited",
+            product=claim.product_id,
+            invite=claim.invite_id,
+            guest=guest,
+            limit=settings.invite_join_rate_per_minute,
+        )
+        raise HTTPException(status_code=429, detail="rate limit exceeded") from exc
     product = _repo.get_product(claim.product_id)
     if product is None:
         raise HTTPException(status_code=404, detail="product not found")
 
     role = _INVITE_ROLE[invite.scope]
     session_id = f"sess-{uuid.uuid4().hex[:8]}"
+    # ゲスト identity（ADR-0032 決定2）: users/{sub} は作らず、発話・要件の出所メタは
+    # この匿名 identity に束ねる。owner はセッションの管理・履歴閲覧の権限元（決定3）。
+    guest_identity = f"guest:{uuid.uuid4().hex[:12]}" if guest else None
+    owner_sub = product.owner_sub if guest else user.sub  # type: ignore[union-attr]
+    # PII 最小化: ゲストセッションに owner の email は写さない（権限判定は owner_sub が
+    # 単一の正で、email を使う経路が無い。product 文書も email を持たない）。
+    owner_email = "" if guest else user.email  # type: ignore[union-attr]
     _repo.create_session_doc(
         SessionMeta(
             id=session_id,
             title=product.name,
-            owner_sub=user.sub,
-            owner_email=user.email,
+            owner_sub=owner_sub,
+            owner_email=owner_email,
             roles=[role],
             product_id=product.id,
             interview_mode=invite.scope,
@@ -1427,17 +1510,18 @@ def join_product(
             github_commit_sha=product.github_commit_sha,
             github_index_status=product.github_index_status,
             github_summary=product.github_summary,
-        )
-    )
-    session_invite = create_invite(
-        session_id, role, settings.session_signing_secret, settings.invite_ttl_seconds
+        ),
+        # ゲスト作成分はセッション文書にも 30 日 TTL を張る（FR-2.7。同意文言の
+        # 保持期間の約束をメタ文書にも効かせる）。ログイン済みは従来どおり張らない。
+        apply_ttl=guest,
     )
     record_product_event("invite_redeemed")
     log.info(
         "session_created",
         session=session_id,
         roles=[role],
-        owner=user.sub,
+        owner=owner_sub,
+        guest=guest,
         github_repo=product.github_repo or "(none)",
         product_id=product.id,
         interview_mode=invite.scope.value,
@@ -1450,6 +1534,29 @@ def join_product(
         use_count=invite.use_count,
         max_uses=invite.max_uses,
         session=session_id,
+        guest=guest,
+    )
+    if guest:
+        assert guest_identity is not None
+        joined = _mint_join_tokens(session_id, role, guest_identity, "利用者", guest_identity, "")
+        record_guest_join("granted")
+        log.info(
+            "guest_join_granted",
+            session=session_id,
+            identity=guest_identity,
+            product=product.id,
+            invite=invite.id,
+        )
+        return ProductJoinResponse(
+            session_id=session_id,
+            invite=None,
+            product_id=product.id,
+            product_name=product.name,
+            interview_mode=invite.scope.value,
+            join=joined,
+        )
+    session_invite = create_invite(
+        session_id, role, settings.session_signing_secret, settings.invite_ttl_seconds
     )
     return ProductJoinResponse(
         session_id=session_id,
@@ -1521,7 +1628,9 @@ def add_context(
 
     認可（契約 §4）: join 済みセッショントークン必須。これが無いと匿名で任意
     session_id の RAG グラウンディングを汚染できてしまう（参加者以外の書き込み禁止）。
+    ゲスト token（ADR-0032 決定4）は読取専用のため素材投入は不可。
     """
+    forbid_guest_writes(access, "context")
     if len(req.text) > settings.max_context_chars:
         raise HTTPException(status_code=413, detail="context too large")
     chunks = chunk_text(req.text)
@@ -1547,7 +1656,9 @@ async def add_context_file(
     （`analysis_pending=true`、web では「準備中」）。非対応形式は 415 で弾く。
 
     観測性: アップロード〜解析を span/log で追い、素材数を kind/result で計測する（契約 §5）。
+    ゲスト token（ADR-0032 決定4）は読取専用のため素材投入は不可。
     """
+    forbid_guest_writes(access, "context_file")
     filename = file.filename or "upload"
     raw = await file.read()
 
@@ -1710,7 +1821,9 @@ def delete_context_file(
     本 API で (1) 保存 binary、(2) material メタ、(3) 出所 `asset:{asset_id}` の grounding chunk
     をまとめて取り消し、以後の会話・ハイドレーションから外す。冪等: 存在しない asset でも 200 を
     一貫して返す（existed=false）。in-memory/ES/GCS 未接続のフォールバックでも安全に動く。
+    ゲスト token（ADR-0032 決定4）は読取専用のため削除も不可。
     """
+    forbid_guest_writes(access, "context_file_delete")
     tracer = _get_tracer()
     span_cm = (
         tracer.start_as_current_span("context.file.delete") if tracer else contextlib.nullcontext()
@@ -1741,6 +1854,55 @@ def delete_context_file(
     return DeleteContextFileResponse(deleted=True, existed=existed)
 
 
+def _mint_join_tokens(
+    session_id: str, role: str, identity: str, display_name: str, sub: str, email: str
+) -> JoinResponse:
+    """LiveKit トークンと「join 済み」session token を発行する（発行ロジックの単一定義）。
+
+    `join_session`（ログイン済み）とゲスト join（`join_product` / ADR-0032 決定1）が共用し、
+    トークン発行の二重化を防ぐ。metadata の sub は出所メタ（ADR-0008）の正: ログイン済みは
+    検証済み Google sub、ゲストは発番した `guest:{random}`（users/{sub} は作らない / 決定2）。
+    """
+    metadata = json.dumps({"role": role, "sub": sub, "email": email})
+    try:
+        token = (
+            api.AccessToken(settings.livekit_api_key, settings.livekit_api_secret)
+            .with_identity(identity)
+            .with_name(display_name)
+            .with_metadata(metadata)
+            .with_ttl(timedelta(minutes=settings.livekit_token_ttl_minutes))
+            .with_grants(
+                api.VideoGrants(
+                    room_join=True,
+                    room=session_id,  # scoped to exactly this room
+                    can_publish=True,
+                    can_subscribe=True,
+                )
+            )
+            .to_jwt()
+        )
+    except Exception as exc:  # pragma: no cover
+        log.error("token_issue_failed", error=str(exc))
+        raise HTTPException(status_code=500, detail="failed to issue token") from exc
+
+    # ハイドレーション/起票 API を保護する署名トークン（契約 §4）。LiveKit トークンと
+    # 同じ寿命にして、リロード時の GET /requirements が同じ間だけ通るようにする。
+    session_token = create_session_token(
+        session_id,
+        sub,
+        role,
+        settings.session_signing_secret,
+        ttl_seconds=settings.livekit_token_ttl_minutes * 60,
+    )
+    return JoinResponse(
+        token=token,
+        livekit_url=settings.livekit_url,
+        session_id=session_id,
+        identity=identity,
+        session_token=session_token,
+    )
+
+
 @app.post("/api/sessions/join", response_model=JoinResponse)
 def join_session(
     req: JoinRequest,
@@ -1767,46 +1929,9 @@ def join_session(
     # 検証済み identity に束ねる: sub は metadata で追跡し、nonce で衝突を防ぐ。
     identity = f"{role}-{user.sub[:8]}-{uuid.uuid4().hex[:4]}"
     display_name = req.participant_name or user.name
-    metadata = json.dumps({"role": role, "sub": user.sub, "email": user.email})
-    try:
-        token = (
-            api.AccessToken(settings.livekit_api_key, settings.livekit_api_secret)
-            .with_identity(identity)
-            .with_name(display_name)
-            .with_metadata(metadata)
-            .with_ttl(timedelta(minutes=settings.livekit_token_ttl_minutes))
-            .with_grants(
-                api.VideoGrants(
-                    room_join=True,
-                    room=session_id,  # scoped to exactly this room
-                    can_publish=True,
-                    can_subscribe=True,
-                )
-            )
-            .to_jwt()
-        )
-    except Exception as exc:  # pragma: no cover
-        log.error("token_issue_failed", error=str(exc))
-        raise HTTPException(status_code=500, detail="failed to issue token") from exc
-
-    # ハイドレーション/起票 API を保護する署名トークン（契約 §4）。LiveKit トークンと
-    # 同じ寿命にして、リロード時の GET /requirements が同じ間だけ通るようにする。
-    session_token = create_session_token(
-        session_id,
-        user.sub,
-        role,
-        settings.session_signing_secret,
-        ttl_seconds=settings.livekit_token_ttl_minutes * 60,
-    )
-
+    joined = _mint_join_tokens(session_id, role, identity, display_name, user.sub, user.email)
     log.info("session_join", session=session_id, identity=identity, role=role, sub=user.sub)
-    return JoinResponse(
-        token=token,
-        livekit_url=settings.livekit_url,
-        session_id=session_id,
-        identity=identity,
-        session_token=session_token,
-    )
+    return joined
 
 
 # ---- Admin: 運用画面 (ADR-0014) -------------------------------------------
@@ -1987,7 +2112,11 @@ def finalize_session_requirements(
         確定後に遅延 agent が open 検知を保存しても、再送/リロードの再 POST が 409 にならない。
       - 未確定セッションは、未解消検知が 1 件でも残るなら 409 で拒否する（07 判定の
         「未解消 0 件で確定可」をサーバ側でも担保。直接 POST や古いクライアント状態を防ぐ）。
+
+    ゲスト token（ADR-0032 決定4 / #320）は確定不可: ゲストセッションの要件の承認・保全は
+    owner が管理画面で行う（承認 = TTL 解除は owner の意思に限る）。
     """
+    forbid_guest_writes(access, "finalize")
     existing = _repo.get_session(session_id)
     if existing is None:
         raise HTTPException(status_code=404, detail="session not found")
@@ -2006,12 +2135,19 @@ def finalize_session_requirements(
     )
     if meta is None:
         raise HTTPException(status_code=404, detail="session not found")
-    # 確定時集合を成果物として保全する: approved で expireAt が外れ 30 日 TTL の対象外になる
-    # （Codex P1）。approved_by は確定操作の主体（join 済みトークンの sub）。
+    # 確定時集合を成果物として保全する: 通常は approved で expireAt が外れ 30 日 TTL の
+    # 対象外になる（Codex P1）。ゲストセッション（owner_email == ""）は例外: セッション文書
+    # 自体が 30 日 TTL で消えるため要件 TTL を外すと orphan になる（ADR-0032 / FR-2.7）。
+    # approved_by は確定操作の主体（join 済みトークンの sub）。
+    is_guest_session = existing.owner_email == ""
     for rid in confirmed_ids:
         try:
             _repo.set_requirement_status(
-                session_id, rid, RequirementStatus.APPROVED, approved_by=access.sub
+                session_id,
+                rid,
+                RequirementStatus.APPROVED,
+                approved_by=access.sub,
+                keep_expiry=is_guest_session,
             )
         except RequirementNotFound:
             # 確定直前に TTL 失効等で消えた要件はスキップする（finalize 自体は成立させる）。
@@ -2036,7 +2172,11 @@ def export_requirements(
     finalize 時に凍結した要件 ID スナップショット（`finalized_requirement_ids`）の集合だけを
     起票する。凍結の定義（旧データのフォールバック含む）は _finalized_snapshot_requirements
     に一元化し、過去要件閲覧と共有する。
+
+    ゲスト token（ADR-0032 決定4 / #320）は起票不可: 匿名の URL 保持者が owner の
+    リポジトリへ Issue を作れてしまうため（connector 有効時）、コネクタ判定より前に拒む。
     """
+    forbid_guest_writes(access, "export")
     # コネクタ無効/トークン未設定は従来どおりセッション照会前に黙って断る（既定 OFF の不干渉）。
     if not (settings.github_connector_enabled and settings.github_token):
         return ExportResponse(exported=False, reason="github connector disabled")

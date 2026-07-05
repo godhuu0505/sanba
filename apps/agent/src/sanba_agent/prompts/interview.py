@@ -114,7 +114,7 @@ DEVELOPER_OPENING_INSTRUCTIONS = (
     "最初の問いを1つだけ、推奨回答例を添えて投げかけてください。"
 )
 
-# セッション準備情報があるときの開始指示（ADR-0034）。ゼロからの聞き取りを繰り返さず、
+# セッション準備情報があるときの開始指示（ADR-0035）。ゼロからの聞き取りを繰り返さず、
 # 準備情報の認識合わせから深掘りに入る（「何も引き継がれていない」体験を潰す）。
 DEVELOPER_OPENING_WITH_PREP_INSTRUCTIONS = (
     "まず自己紹介し、これから要件を一緒に整理することを伝えてください。"
@@ -170,7 +170,7 @@ CONTRADICTION_AGENT_INSTRUCTIONS = """\
 def build_prep_premise(
     goal: str | None, goal_detail: str | None, roles: list[str] | None = None
 ) -> str:
-    """セッション準備情報（02 準備フォーム）を「前提」として agent に明示する一節（ADR-0034）。
+    """セッション準備情報（02 準備フォーム）を「前提」として agent に明示する一節（ADR-0035）。
 
     準備画面で入力されたゴール・詳細を初期 instructions に**そのまま埋め込み**、agent が
     第一声から参加者の文脈を把握した状態で grill-me 流の深掘りを始められるようにする
@@ -213,7 +213,7 @@ def build_prep_premise(
 
 
 def build_prep_analysis_note(goal: str | None, goal_detail: str | None) -> str:
-    """analyze_requirements へ渡す transcript の先頭に付す事前情報ノート（ADR-0034）。
+    """analyze_requirements へ渡す transcript の先頭に付す事前情報ノート（ADR-0035）。
 
     ADK チーム（統括・矛盾検知）が「準備フォームの記入内容」も突き合わせ対象にできるよう、
     発話ではないことを明示した短い注記にする。無ければ空文字。

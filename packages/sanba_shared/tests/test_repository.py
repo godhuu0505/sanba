@@ -185,3 +185,48 @@ def test_set_session_github_missing_session_returns_none() -> None:
         )
         is None
     )
+
+
+def test_create_session_doc_applies_ttl_only_when_requested() -> None:
+    """ゲスト作成セッションの 30 日 TTL（ADR-0032 / FR-2.7）。
+
+    Firestore 経路（_client あり）で apply_ttl=True のときだけ `expireAt` を書く。
+    ログイン済みセッション（apply_ttl=False）は履歴・finalize 資産のアンカーなので
+    従来どおり張らない。retention 0（無期限運用）なら apply_ttl でも張らない。
+    """
+    from datetime import datetime
+
+    captured: dict[str, dict[str, object]] = {}
+
+    class _Doc:
+        def __init__(self, key: str) -> None:
+            self.key = key
+
+        def set(self, doc: dict[str, object]) -> None:
+            captured[self.key] = doc
+
+    class _Col:
+        def document(self, key: str) -> _Doc:
+            return _Doc(key)
+
+    class _Client:
+        def collection(self, name: str) -> _Col:
+            assert name == "sessions"
+            return _Col()
+
+    repo = SessionRepository(data_retention_days=30)
+    repo._client = _Client()  # type: ignore[assignment]
+
+    def _meta(sid: str) -> SessionMeta:
+        return SessionMeta(id=sid, title="t", owner_sub="owner", owner_email="")
+
+    repo.create_session_doc(_meta("s-guest"), apply_ttl=True)
+    assert isinstance(captured["s-guest"]["expireAt"], datetime)
+
+    repo.create_session_doc(_meta("s-login"))
+    assert "expireAt" not in captured["s-login"]
+
+    keep_forever = SessionRepository(data_retention_days=0)
+    keep_forever._client = _Client()  # type: ignore[assignment]
+    keep_forever.create_session_doc(_meta("s-keep"), apply_ttl=True)
+    assert "expireAt" not in captured["s-keep"]

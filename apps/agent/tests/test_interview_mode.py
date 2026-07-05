@@ -154,7 +154,7 @@ def test_opening_instructions_selected_by_mode() -> None:
     assert opening_instructions(InviteScope.END_USER) == END_USER_OPENING_INSTRUCTIONS
 
 
-# ---- セッション準備情報の前提化（ADR-0034）--------------------------------------
+# ---- セッション準備情報の前提化（ADR-0035）--------------------------------------
 def test_developer_session_seeds_prep_premise_before_repo_premise() -> None:
     repo = _repo()
     _seed_session(

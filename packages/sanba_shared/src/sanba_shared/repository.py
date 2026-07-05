@@ -58,6 +58,13 @@ class InviteNotUsable(Exception):
         self.reason = reason
 
 
+class InviteRateLimited(Exception):
+    """深掘りリンク単位のセッション作成レートが上限に達したときに送出 (ADR-0032 決定5)。
+
+    InviteNotUsable と分ける: リンク自体は有効（403 ではなく 429 を返す）で、
+    ウィンドウが明ければ再び使える。`use_count` は消費しない。"""
+
+
 class SessionRepository:
     """Persistence boundary. Swap the backend without touching agent/api logic."""
 
@@ -113,10 +120,19 @@ class SessionRepository:
         return datetime.now(UTC) + timedelta(days=days) if days > 0 else None
 
     # ---- Sessions (ADR-0014 §4) -------------------------------------------
-    def create_session_doc(self, meta: SessionMeta) -> None:
-        """`sessions/{id}` 文書を作成する。一覧/閲覧/承認の土台になる。"""
+    def create_session_doc(self, meta: SessionMeta, *, apply_ttl: bool = False) -> None:
+        """`sessions/{id}` 文書を作成する。一覧/閲覧/承認の土台になる。
+
+        `apply_ttl=True` はゲスト作成セッション（ADR-0032 / FR-2.7）用: セッション文書
+        そのものに 30 日 TTL（expireAt）を張り、同意文言の保持期間の約束をメタ文書にも
+        効かせる。ログイン済みセッションは従来どおり張らない（「過去の要件を見る」履歴と
+        finalize 済み資産のアンカーであり、消えると承認済み要件が辿れなくなるため）。
+        in-memory fallback は TTL 掃除を持たない（テスト/ローカル用途のため許容）。
+        """
         if self._client is not None:
             doc = meta.model_dump(mode="json")
+            if apply_ttl and (exp := self._expire_at()) is not None:
+                doc["expireAt"] = exp
             self._client.collection("sessions").document(meta.id).set(doc)
             return
         self._mem_sessions[meta.id] = meta
@@ -351,9 +367,7 @@ class SessionRepository:
 
         if self._client is not None:
             # github_* などの並行更新を巻き戻さないよう、編集対象フィールドのみ patch する。
-            self._client.collection("products").document(product_id).set(
-                updates, merge=True
-            )
+            self._client.collection("products").document(product_id).set(updates, merge=True)
         else:
             self._mem_products[product_id] = updated
         return updated
@@ -467,26 +481,39 @@ class SessionRepository:
         self._mem_invites[product_id][invite_id] = invite.model_copy(update={"revoked": True})
         return True
 
-    def consume_invite(self, product_id: str, invite_id: str) -> ProductInvite:
+    def consume_invite(
+        self,
+        product_id: str,
+        invite_id: str,
+        *,
+        rate_limit_per_minute: int | None = None,
+    ) -> ProductInvite:
         """深掘りリンクの使用回数を 1 消費し、消費後の invite を返す (ADR-0031 決定3)。
 
         検証（revoked / expires_at / max_uses）と `use_count` の増分を原子的に行う:
         Firestore はトランザクション、in-memory はロックで read-check-increment を
         直列化する。使えない場合は InviteNotUsable（消費しない）、無ければ InviteNotFound。
         並行 join が上限を跨いでも `use_count` が `max_uses` を超えないことを保証する。
+
+        `rate_limit_per_minute` を渡すと、リンク単位のセッション作成レート制限
+        （固定 60 秒ウィンドウ / ADR-0032 決定5）を同じ原子性で検証・計上する。
+        超過は InviteRateLimited（消費もウィンドウ計上もしない）。カウンタは invite
+        文書の `join_window_*` に同居させ、多インスタンスでも Firestore 側で整合する。
         """
         if self._client is not None:
-            return self._consume_invite_txn(product_id, invite_id)
+            return self._consume_invite_txn(product_id, invite_id, rate_limit_per_minute)
         with self._mem_invite_lock:
             invite = self._mem_invites.get(product_id, {}).get(invite_id)
             if invite is None:
                 raise InviteNotFound(invite_id)
             self._check_invite_usable(invite)
-            updated = invite.model_copy(update={"use_count": invite.use_count + 1})
+            updated = self._consumed_copy(invite, rate_limit_per_minute)
             self._mem_invites[product_id][invite_id] = updated
             return updated
 
-    def _consume_invite_txn(self, product_id: str, invite_id: str) -> ProductInvite:
+    def _consume_invite_txn(
+        self, product_id: str, invite_id: str, rate_limit_per_minute: int | None
+    ) -> ProductInvite:
         from google.cloud import firestore
 
         doc_ref = self._invite_doc(product_id, invite_id)
@@ -507,11 +534,42 @@ class SessionRepository:
             invite = ProductInvite.model_validate(snap.to_dict())
             # 検証と増分を同一トランザクションにし、並行 join でも max_uses を超えない。
             self._check_invite_usable(invite)
-            transaction.set(doc_ref, {"use_count": invite.use_count + 1}, merge=True)
-            return invite.model_copy(update={"use_count": invite.use_count + 1})
+            updated = self._consumed_copy(invite, rate_limit_per_minute)
+            transaction.set(
+                doc_ref,
+                {
+                    "use_count": updated.use_count,
+                    "join_window_start": updated.join_window_start,
+                    "join_window_count": updated.join_window_count,
+                },
+                merge=True,
+            )
+            return updated
 
         consumed: ProductInvite = _txn(self._client.transaction())
         return consumed
+
+    @staticmethod
+    def _consumed_copy(invite: ProductInvite, rate_limit_per_minute: int | None) -> ProductInvite:
+        """消費後の invite を組み立てる（use_count とレートウィンドウの同時更新）。
+
+        呼び出し側（トランザクション/ロック）が原子性を担う。上限到達なら
+        InviteRateLimited を送出し、何も更新しない。
+        """
+        now = datetime.now(UTC)
+        window_start = invite.join_window_start
+        window_count = invite.join_window_count
+        if window_start is None or (now - window_start).total_seconds() >= 60:
+            window_start, window_count = now, 0
+        if rate_limit_per_minute is not None and window_count >= rate_limit_per_minute:
+            raise InviteRateLimited(invite.id)
+        return invite.model_copy(
+            update={
+                "use_count": invite.use_count + 1,
+                "join_window_start": window_start,
+                "join_window_count": window_count + 1,
+            }
+        )
 
     @staticmethod
     def _check_invite_usable(invite: ProductInvite) -> None:
@@ -624,10 +682,13 @@ class SessionRepository:
         rid: str,
         status: RequirementStatus,
         approved_by: str | None = None,
+        keep_expiry: bool = False,
     ) -> Requirement:
         """承認/却下/差し戻しを行う (ADR-0014 §11)。
 
-        approved にしたら `expireAt` を削除して TTL の対象外にする。
+        approved にしたら通常は `expireAt` を削除して TTL の対象外にする。
+        `keep_expiry=True`（ゲストセッション向け）のときは approved でも TTL を維持する:
+        セッション文書自体が 30 日 TTL で消えるため、要件を無期限に残すと orphan になる。
         draft/rejected は `expireAt` を張り直して 30 日自動削除に任せる。
         """
         current = self.get_requirement(session_id, rid)
@@ -648,12 +709,13 @@ class SessionRepository:
             doc = updated.model_dump(mode="json")
             from google.cloud import firestore
 
-            if is_approved:
+            if is_approved and not keep_expiry:
                 # null 代入では「null フィールド」が残り TTL が効き続ける懸念があるため
                 # センチネルで明示削除する (ADR-0014 §17)。
                 doc["expireAt"] = firestore.DELETE_FIELD
-            elif (exp := self._expire_at()) is not None:
+            elif not is_approved and (exp := self._expire_at()) is not None:
                 doc["expireAt"] = exp
+            # is_approved かつ keep_expiry=True: expireAt を触らず既存 TTL を温存する。
             self._req_doc(session_id, rid).set(doc, merge=True)
         else:
             self._mem_requirements.setdefault(session_id, {})[rid] = updated

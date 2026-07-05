@@ -98,7 +98,7 @@ def test_create_session_keeps_empty_github_repo_as_explicit_opt_out() -> None:
     assert meta.github_repo == ""
 
 
-# ── セッション準備情報（ADR-0034）───────────────────────────────────────
+# ── セッション準備情報（ADR-0035）───────────────────────────────────────
 def test_create_session_persists_prep_goal() -> None:
     # 02 準備フォームのゴール・詳細は SessionMeta に保存され、agent が起動時に
     # 初期 instructions へシードする（join 後の RAG 投入と違い起動に確実に間に合う）。

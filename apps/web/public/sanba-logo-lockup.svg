@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 90" width="300" height="90" role="img" aria-label="SANBA">
+  <rect x="0" y="0" width="300" height="90" fill="none"/>
+  <!-- マーク：棒人間サンバさん -->
+  <g fill="none" stroke="#221E1A" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="48" cy="24" r="12" fill="#FFFFFF"/>
+    <line x1="48" y1="36" x2="48" y2="62"/>
+    <line x1="48" y1="47" x2="33" y2="62"/>
+    <line x1="48" y1="47" x2="63" y2="62"/>
+    <line x1="48" y1="62" x2="34" y2="84"/>
+    <line x1="48" y1="62" x2="62" y2="84"/>
+    <circle cx="48" cy="50" r="6.5" fill="#F0A814" stroke-width="3"/>
+  </g>
+  <!-- ワードマーク -->
+  <text x="98" y="60" font-family="'Zen Kaku Gothic New','Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif" font-size="46" font-weight="800" letter-spacing="2" fill="#221E1A">SANBA</text>
+</svg>

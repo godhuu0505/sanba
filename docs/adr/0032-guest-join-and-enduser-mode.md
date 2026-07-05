@@ -1,7 +1,7 @@
 # ADR-0032: ゲスト入場と利用者モード（interview_mode）
 
-- ステータス: **Proposed（提案中）**
-- 日付: 2026-07-05
+- ステータス: **Accepted（受理）**
+- 日付: 2026-07-05（提案・受理）
 - 関連: [ADR-0031](0031-product-entity-and-invite-links.md)（product・深掘りリンク — 本 ADR はその
   `scope=end_user` を解禁する）/ [ADR-0012](0012-google-login.md)（Google ログイン — 本 ADR が例外を定義）/
   [ADR-0024](0024-grill-me-interview-persona.md)（grill-me ペルソナ — developer モードとして位置づけ）/
@@ -26,13 +26,22 @@
 
 1. **`scope=end_user` の深掘りリンクに限り、Google ログインなしで join できる**。
    例外はこの 1 経路のみで、他の API の認可（ADR-0012 / 0014）は変えない。
+   ゲストの LiveKit トークン・session token も `POST /api/products/join` が**直接**返す
+   （既存 `POST /api/sessions/join` へは委譲しない）: sessions/join の役割 invite は
+   `scope` を持たず、通常セッションにも `customer` 役 invite が存在するため、そこに
+   匿名分岐を足すと全ログインフローが通る共有エンドポイントへ例外面が広がる。
+   発行ロジック自体は両エンドポイントで共通のヘルパーに保ち、二重化しない。
 2. ゲストには **`guest:{random}` の participant identity を発番**し、発話・確定要件の
    出所メタ（ADR-0008）に残す。**利用者をユーザー化しない**（`users/{sub}` を作らない）。
 3. ゲストセッションの **`owner_sub` は product owner** とする（管理画面・集約閲覧の権限元。
    「連携主体はセッション owner」という ADR-0028 の前提とも整合し、ゲストが GitHub 連携等の
    owner 権限を持つことはない）。
 4. ゲスト join token の権限は当該セッションの読取（ハイドレーション）と既存 write 系
-   （`user.selection` 等）のみ。**同意ゲート（`consent_acknowledged`）は省略しない**。
+   （`user.selection` 等の realtime client event・UI telemetry）のみ。
+   素材投入/削除（grounding 汚染）・finalize・export（owner の repo への Issue 起票）は
+   ゲスト token では 403 で拒む（sub の `guest:` 接頭辞で判定。Google sub は数値のため
+   衝突しない）。ゲストセッションの要件の承認・保全（TTL 解除）は owner が管理画面で行う。
+   **同意ゲート（`consent_acknowledged`）は省略しない**。
    同意文言は利用者向け（技術用語なし）とし、保持期間（既存 30 日 TTL）を明示する。
 5. **abuse 対策**: リンク単位・IP 単位のセッション作成レート制限（超過 429）、
    `max_uses` のトランザクション消費（ADR-0031）、設定フラグ `guest_join_enabled`

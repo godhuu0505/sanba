@@ -44,7 +44,7 @@ export async function createSession(
   // 対象のプロダクト・アプリ（ADR-0031）。指定するとセッションを product に従属させ、
   // API 側で product の索引済み repo を継承する。空/未指定は従来どおりの単発セッション。
   if (productId) body.product_id = productId;
-  // 準備フォームのゴール・詳細（ADR-0034）。SessionMeta に保存され、agent が起動時に
+  // 準備フォームのゴール・詳細（ADR-0035）。SessionMeta に保存され、agent が起動時に
   // 初期 instructions へシードする（join 後の RAG 投入と違い agent 起動に確実に間に合う）。
   if (goal?.trim()) body.goal = goal;
   if (goalDetail?.trim()) body.goal_detail = goalDetail;

@@ -172,6 +172,11 @@ class ProductInvite(BaseModel):
     use_count: int = Field(default=0, ge=0)
     revoked: bool = False
     created_at: datetime = Field(default_factory=_now)
+    # リンク単位のセッション作成レート制限の固定ウィンドウ (ADR-0032 決定5 / FR-2.6)。
+    # 消費 (consume_invite) と同一トランザクションで read-check-increment するため
+    # invite 文書に同居させる（別カウンタ文書を持たず、多インスタンスでも整合）。
+    join_window_start: datetime | None = None
+    join_window_count: int = Field(default=0, ge=0)
 
 
 class Utterance(BaseModel):
@@ -192,7 +197,7 @@ class SessionMeta(BaseModel):
     owner_sub: str
     owner_email: str
     roles: list[str] = Field(default_factory=list)
-    # ---- セッション準備情報 (02 準備フォーム / ADR-0034) ----
+    # ---- セッション準備情報 (02 準備フォーム / ADR-0035) ----
     # 準備画面で入力されたゴールとその詳細（背景・現状・制約）。agent が起動時に読んで
     # 初期 instructions へ proactive にシードする（ADR-0028 と同じく retrieval 任せにしない）。
     # RAG（kind=context）への投入は join 後で agent 起動と競合し得るため、こちらが正本。
