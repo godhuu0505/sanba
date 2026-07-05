@@ -1,7 +1,7 @@
 # ADR-0032: ゲスト入場と利用者モード（interview_mode）
 
-- ステータス: **Proposed（提案中）**
-- 日付: 2026-07-05
+- ステータス: **Accepted（受理）**
+- 日付: 2026-07-05（提案・受理）
 - 関連: [ADR-0031](0031-product-entity-and-invite-links.md)（product・深掘りリンク — 本 ADR はその
   `scope=end_user` を解禁する）/ [ADR-0012](0012-google-login.md)（Google ログイン — 本 ADR が例外を定義）/
   [ADR-0024](0024-grill-me-interview-persona.md)（grill-me ペルソナ — developer モードとして位置づけ）/
@@ -26,6 +26,11 @@
 
 1. **`scope=end_user` の深掘りリンクに限り、Google ログインなしで join できる**。
    例外はこの 1 経路のみで、他の API の認可（ADR-0012 / 0014）は変えない。
+   ゲストの LiveKit トークン・session token も `POST /api/products/join` が**直接**返す
+   （既存 `POST /api/sessions/join` へは委譲しない）: sessions/join の役割 invite は
+   `scope` を持たず、通常セッションにも `customer` 役 invite が存在するため、そこに
+   匿名分岐を足すと全ログインフローが通る共有エンドポイントへ例外面が広がる。
+   発行ロジック自体は両エンドポイントで共通のヘルパーに保ち、二重化しない。
 2. ゲストには **`guest:{random}` の participant identity を発番**し、発話・確定要件の
    出所メタ（ADR-0008）に残す。**利用者をユーザー化しない**（`users/{sub}` を作らない）。
 3. ゲストセッションの **`owner_sub` は product owner** とする（管理画面・集約閲覧の権限元。

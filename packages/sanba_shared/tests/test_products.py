@@ -23,6 +23,7 @@ from sanba_shared.models import (
 from sanba_shared.repository import (
     InviteNotFound,
     InviteNotUsable,
+    InviteRateLimited,
     ProductNotFound,
     SessionRepository,
 )
@@ -265,3 +266,46 @@ def test_consume_invite_is_atomic_under_concurrency() -> None:
 
     assert sum(results) == 50
     assert repo.get_invite("prod-1", "inv-1").use_count == 50  # type: ignore[union-attr]
+
+
+def test_consume_invite_rate_limit_fixed_window() -> None:
+    """リンク単位のセッション作成レート制限（ADR-0032 決定5 / FR-2.6）。
+
+    固定 60 秒ウィンドウ内で上限に達したら InviteRateLimited（消費しない）。
+    ウィンドウが明ければ（join_window_start が 60 秒より古ければ）リセットして通る。
+    """
+    repo = _repo()
+    repo.create_product(_product())
+    _invite(repo)
+
+    assert repo.consume_invite("prod-1", "inv-1", rate_limit_per_minute=2).use_count == 1
+    assert repo.consume_invite("prod-1", "inv-1", rate_limit_per_minute=2).use_count == 2
+    with pytest.raises(InviteRateLimited):
+        repo.consume_invite("prod-1", "inv-1", rate_limit_per_minute=2)
+    # 429 相当は use_count もウィンドウ計上も消費しない。
+    saved = repo.get_invite("prod-1", "inv-1")
+    assert saved is not None
+    assert saved.use_count == 2
+    assert saved.join_window_count == 2
+
+    # ウィンドウ経過後はリセットされて再び通る。
+    repo._mem_invites["prod-1"]["inv-1"] = saved.model_copy(
+        update={"join_window_start": datetime.now(UTC) - timedelta(seconds=61)}
+    )
+    assert repo.consume_invite("prod-1", "inv-1", rate_limit_per_minute=2).use_count == 3
+    reset = repo.get_invite("prod-1", "inv-1")
+    assert reset is not None
+    assert reset.join_window_count == 1
+
+
+def test_consume_invite_without_rate_limit_keeps_window_bookkeeping() -> None:
+    """rate_limit 未指定（None）は無制限のまま、ウィンドウ記帳だけ進む（後方互換）。"""
+    repo = _repo()
+    repo.create_product(_product())
+    _invite(repo)
+    for _ in range(5):
+        repo.consume_invite("prod-1", "inv-1")
+    saved = repo.get_invite("prod-1", "inv-1")
+    assert saved is not None
+    assert saved.use_count == 5
+    assert saved.join_window_count == 5
