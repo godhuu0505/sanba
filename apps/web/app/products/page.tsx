@@ -9,10 +9,10 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 import { AccountMenu } from "@/components/AccountMenu";
+import { AppShell } from "@/components/AppShell";
 import { MemberInviteNotices } from "@/components/MemberInviteNotices";
 import { authGate } from "@/components/RequireAuth";
 import {
-  AppHeader,
   Button,
   Card,
   CardTitle,
@@ -20,7 +20,6 @@ import {
   Field,
   Input,
   ListRow,
-  Screen,
 } from "@/components/sanba";
 import { ApiError, createProduct, fetchMyProducts, type Product } from "@/lib/api";
 import { cleanSlug } from "@/lib/slug";
@@ -95,13 +94,12 @@ export default function ProductsPage() {
   }
 
   return (
-    <Screen className="px-4 py-3 sanba-scroll">
-      <AppHeader
-        title="アプリ管理"
-        onBack={() => router.push("/")}
-        right={<AccountMenu profile={auth.profile} />}
-      />
-      <main className="mx-auto flex w-full max-w-[480px] flex-1 flex-col gap-[18px] pt-2">
+    <AppShell
+      current="products"
+      title="アプリ管理"
+      headerRight={<AccountMenu profile={auth.profile} />}
+    >
+      <div className="mx-auto flex w-full max-w-[480px] flex-col gap-[18px] px-4 py-4">
         {/* 自分宛のメンバー招待（ADR-0036）。承諾すると一覧を再取得して即反映する。 */}
         <MemberInviteNotices onAccepted={reload} />
         <Card>
@@ -183,7 +181,7 @@ export default function ProductsPage() {
             </ul>
           )}
         </Card>
-      </main>
-    </Screen>
+      </div>
+    </AppShell>
   );
 }
