@@ -5,6 +5,11 @@
 // 別ビューに分離する。タブ式ナビは持たず、戻る ‹ のみの一本道で進む。
 // 準備が整い接続すると 03 以降（SessionView）へ引き渡す（中身は #141 が担当）。
 //
+// 対象アプリの選択は 01 ホームの開始ゲート（ADR-0039）: アプリを選ぶまで
+// 「＋ 壁打ちを始める」は活性化せず、02 準備は選択済みのアプリ名を表示するだけで
+// 選択 UI を持たない。アプリ未確定のまま 02 に居着けないよう、候補 settle 後に
+// 未選択なら 01 へ戻す。
+//
 // URL: ホームは "/"、準備は "/prepare" に対応させる（固有 URL を持たせ、直リンク・共有・
 // リロードで準備画面へ到達できるようにする）。ただし一本道（戻る ‹ のみ）と入力復元は保つため、
 // ステップ遷移はコンポーネントを remount させず、History API でアドレスバーだけを書き換える。
@@ -138,8 +143,8 @@ export default function EntryFlow({ initialStep = "home" }: { initialStep?: Step
   // ゴールの詳細（背景・現状・制約などの自由記述 / #222）。開始時に文脈として投入する。
   const [goalDetail, setGoalDetail] = useState("");
   const [consent, setConsent] = useState(false);
-  // 対象のプロダクト・アプリ（任意 / ADR-0031）。空文字 = 指定しない。候補は準備画面で取得する。
-  // null = 未取得（取得前・取得中・取得失敗）。補助情報なので開始は塞がない。
+  // 対象のプロダクト・アプリ（必須 / ADR-0031・ADR-0039）。選択は 01 ホームの開始ゲート。
+  // null = 未取得（取得前・取得中・取得失敗）。未選択の間は壁打ちを始められない。
   const [products, setProducts] = useState<Product[] | null>(null);
   const [productId, setProductId] = useState("");
   const [busy, setBusy] = useState(false);
@@ -171,6 +176,9 @@ export default function EntryFlow({ initialStep = "home" }: { initialStep?: Step
   // GitHub App 連携時の branch 選択（ADR-0028）。既定はデフォルトブランチ。
   const [githubBranch, setGithubBranch] = useState("");
   const [branchChoices, setBranchChoices] = useState<string[]>([]);
+  // 02 準備フォームの保存値を復元し終えたか（#179）。宣言は productId 突き合わせ effect より
+  // 前に置く（deps で参照するため）。復元・保存の effect 本体は後方の「02 準備フォーム」節。
+  const [prepHydrated, setPrepHydrated] = useState(false);
   const auth = useAuth();
 
   // ステップ遷移と URL 同期（ADR-0017 一本道 / 固有 URL）。remount を避けて入力（goal 等）を保つ
@@ -275,11 +283,11 @@ export default function EntryFlow({ initialStep = "home" }: { initialStep?: Step
     };
   }, [step, auth.loggedIn, auth.credential, repoChoices]);
 
-  // 対象のプロダクト・アプリ候補を取得する（必須 / ADR-0031）。02 準備に入るまで叩かない
-  // （ホーム閲覧だけで /api/products/mine を発火させない）。取得済みなら再取得しない。
-  // 取得失敗は空配列で settle する（開始は塞がるが、無選択で始めさせないための fail-closed）。
+  // 対象のプロダクト・アプリ候補を取得する（必須 / ADR-0031）。アプリ選択は 01 ホームの
+  // 開始ゲートになった（ADR-0039）ため、ログインしていれば step を問わず取得する。
+  // 取得済みなら再取得しない。取得失敗は空配列で settle する（選択できず開始も塞がる fail-closed）。
   useEffect(() => {
-    if (step !== "prepare" || !auth.loggedIn || products !== null) return;
+    if (!auth.loggedIn || products !== null) return;
     let cancelled = false;
     fetchMyProducts(auth.credential)
       .then((items) => {
@@ -291,12 +299,15 @@ export default function EntryFlow({ initialStep = "home" }: { initialStep?: Step
     return () => {
       cancelled = true;
     };
-  }, [step, auth.loggedIn, auth.credential, products]);
+  }, [auth.loggedIn, auth.credential, products]);
 
   // 対象アプリの選択値を取得済み候補と突き合わせる（ADR-0031 / PR#314 P2）。
   // - 復元した productId が候補に無い（削除済み・権限外・取得失敗）ならクリアして、
   //   実在しない product で開始できないようにする（開始条件は selectedProduct の実在）。
   // - 候補がちょうど 1 件なら自動選択して選ぶ手間を省く（複数は明示選択を求める）。
+  // - 02 準備でアプリ未確定（直リンク・stale クリア後）なら 01 ホームへ戻して選び直させる
+  //   （ADR-0039: 選択 UI は 01 にしか無いため、02 に居着くと開始が永久に塞がる）。
+  //   判定は候補 settle 後・保存値の復元後（prepHydrated）に限る。
   useEffect(() => {
     if (!products) return;
     if (productId !== "" && !products.some((p) => p.id === productId)) {
@@ -305,8 +316,12 @@ export default function EntryFlow({ initialStep = "home" }: { initialStep?: Step
     }
     if (products.length === 1 && productId === "") {
       setProductId(products[0].id);
+      return;
     }
-  }, [products, productId]);
+    if (step === "prepare" && prepHydrated && productId === "") {
+      navigateStep("home");
+    }
+  }, [products, productId, step, prepHydrated]);
 
   // App 由来の repo が確定したら branch 一覧を取得する（ADR-0028。既定はデフォルトブランチ）。
   // 一覧が来るまで（または取得失敗時も）デフォルトブランチだけで開始できる（本流を止めない）。
@@ -347,8 +362,7 @@ export default function EntryFlow({ initialStep = "home" }: { initialStep?: Step
   // prepHydrated は *state*（ref ではない）。ref だと同じ初回 effect flush 内で persist が
   // 復元前の既定値を書き戻し、authGate の /login リダイレクトで再描画前にアンマウントされると
   // 入力が既定値で上書きされてしまう（Codex P2）。state にすることで「復元値が反映された
-  // render」以降にのみ初回 write が走る。
-  const [prepHydrated, setPrepHydrated] = useState(false);
+  // render」以降にのみ初回 write が走る。宣言自体は前方（productId 突き合わせ effect の deps）。
   useEffect(() => {
     const saved = readPrep();
     // 復元する role は既知の選択肢に限定する。古い/壊れた値（例: "designer"）は既定 pm に戻す
@@ -616,6 +630,17 @@ export default function EntryFlow({ initialStep = "home" }: { initialStep?: Step
       <Screen className="px-4 py-3">
         <AppHeader title="セッション準備" onBack={() => navigateStep("home")} />
         <main className="mx-auto flex w-full max-w-[480px] flex-1 flex-col gap-[18px] pt-2">
+          {/* どのアプリでセッション準備を進めているかを常に示す（ADR-0039）。選択は 01 ホームで
+              済ませてくる（選択 UI はここに置かない）。候補取得前（直リンク直後）は確認中を出し、
+              settle 後も未確定なら上の effect が 01 へ戻す。 */}
+          <div className="flex items-center gap-[8px] rounded-[12px] border border-sanba-border bg-sanba-surface px-[12px] py-[10px]">
+            <Package size={16} aria-hidden className="shrink-0 text-sanba-gold-text" />
+            <span className="shrink-0 text-[12px] font-bold text-sanba-muted">対象のアプリ</span>
+            <span className="min-w-0 flex-1 truncate text-right text-[13px] font-bold text-sanba-cream">
+              {selectedProduct ? selectedProduct.name : "確認しています…"}
+            </span>
+          </div>
+
           {/* フィールド順は Figma 正本に合わせて 役割 → ゴール（02-prepare）。 */}
           <div className="flex flex-col gap-[8px]">
             <span className="text-[13px] font-bold text-sanba-muted">
@@ -646,34 +671,6 @@ export default function EntryFlow({ initialStep = "home" }: { initialStep?: Step
               })}
             </div>
           </div>
-
-          {/* 対象のプロダクト・アプリ（任意 / ADR-0031）。常に表示する。登録済みアプリが
-              無い/未取得のときは「指定しない」のみ選べる（選ぶと開始時に用語・前提 repo を投入）。 */}
-          <Field
-            label="対象のプロダクト・アプリ"
-            marker={<FieldBadge required />}
-            htmlFor="product"
-            hint={
-              (products?.length ?? 0) > 0
-                ? "対象のアプリを選ぶと、その用語や前提コードを問いの背景に取り込みます。"
-                : "登録済みのアプリがありません。アプリ管理から登録すると選べます。"
-            }
-          >
-            <Select
-              id="product"
-              value={productId}
-              onChange={(e) => setProductId(e.target.value)}
-              aria-required="true"
-              disabled={(products?.length ?? 0) === 0}
-            >
-              <option value="">選択してください</option>
-              {(products ?? []).map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </Select>
-          </Field>
 
           <Field label="ゴール" marker={<FieldBadge required />} htmlFor="goal">
             <Textarea
@@ -903,11 +900,6 @@ export default function EntryFlow({ initialStep = "home" }: { initialStep?: Step
                 </Link>
               </p>
             )}
-            {auth.loggedIn && !selectedProduct && (
-              <p className="text-[12px] text-sanba-muted">
-                対象のプロダクト・アプリの選択が必要です。
-              </p>
-            )}
             {auth.loggedIn && goal.trim() === "" && (
               <p className="text-[12px] text-sanba-muted">ゴールの入力が必要です。</p>
             )}
@@ -943,6 +935,7 @@ export default function EntryFlow({ initialStep = "home" }: { initialStep?: Step
   // 正本 99:3「過去の要件を見る」履歴リスト（stat カードとは別物）を下に置く（#215）。
   // 中身は本人のセッション一覧 API（GET /api/sessions/mine / #250）から供給する。0 件や
   // 未ログイン・取得失敗時は SessionHistoryList が空状態の文言を出す。
+  // 対象アプリの選択はここが正本（ADR-0039）: 選べるまで CTA は活性化しない。
   return (
     <Screen className="px-4 py-3">
       <AppHeader brand right={<AccountMenu profile={auth.profile} />} />
@@ -962,9 +955,50 @@ export default function EntryFlow({ initialStep = "home" }: { initialStep?: Step
             {/* サンバさん（歩行）。ホームの待ち時間に体温を与える（ADR-0025、1 画面 1 体まで）。 */}
             <Figure state="walking" className="mt-[2px] w-[44px] shrink-0" />
           </div>
-          <Button variant="gold" size="lg" block onClick={() => navigateStep("prepare")}>
+          {/* 対象のプロダクト・アプリ（必須 / ADR-0031・ADR-0039）。壁打ちは必ずアプリを
+              選んでから始める。候補 1 件は自動選択（突き合わせ effect）。0 件はセレクトを
+              無効化し、下のアプリ管理から登録してもらう。 */}
+          <Field
+            label="対象のプロダクト・アプリ"
+            marker={<FieldBadge required />}
+            htmlFor="product"
+            hint={
+              products === null
+                ? "登録済みのアプリを確認しています…"
+                : products.length > 0
+                  ? "対象のアプリを選ぶと、その用語や前提コードを問いの背景に取り込みます。"
+                  : "登録済みのアプリがありません。アプリ管理から登録すると選べます。"
+            }
+          >
+            <Select
+              id="product"
+              value={productId}
+              onChange={(e) => setProductId(e.target.value)}
+              aria-required="true"
+              disabled={(products?.length ?? 0) === 0}
+            >
+              <option value="">選択してください</option>
+              {(products ?? []).map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Button
+            variant="gold"
+            size="lg"
+            block
+            onClick={() => navigateStep("prepare")}
+            disabled={!selectedProduct}
+          >
             ＋ 壁打ちを始める
           </Button>
+          {(products?.length ?? 0) > 0 && !selectedProduct && (
+            <p className="text-[12px] text-sanba-muted">
+              対象のアプリを選ぶと壁打ちを始められます。
+            </p>
+          )}
         </Card>
         <SessionHistoryList items={history} />
         {/* アプリ管理（ADR-0031）への導線。深掘りリンクの発行・repo 紐づけの入口。 */}
