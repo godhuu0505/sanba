@@ -12,7 +12,6 @@
 - [ ] `just lint`（ruff + eslint + mypy / tsc。web の lint/typecheck を含む）が通る
 - [ ] `just test`（単体 / 結合）が通る
 - [ ] web を変更した場合 `cd apps/web && npm run build` が通る
-- [ ] 必要なら `just verify` で疎通確認した
 
 ## 観測性 / Observability
 <!-- 新しい処理にトレース / ログ / メトリクスを通したか（CLAUDE.md 原則3） -->
