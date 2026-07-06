@@ -1,6 +1,6 @@
 import { expect, test, type Page, type Request } from "@playwright/test";
 
-// ゲスト入場 E2E（PR9 / FR-2.1 / FR-2.2 / issue #319）。
+// ゲスト入場 E2E（FR-2.1 / FR-2.2）。
 // 未ログイン（シークレットウィンドウ相当）でリンク → 同意 → 会話開始画面まで到達すること、
 // flag off の 401 でログイン誘導へフォールバックすることを実ブラウザで検証する。
 // API は page.route でモックする（use_count 消費・LiveKit 接続はここでは扱わない）。

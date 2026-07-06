@@ -119,7 +119,7 @@ describe("StartFailed（03-3 失敗系）", () => {
     const onRetry = vi.fn();
     render(<StartFailed kind="mic" onRetry={onRetry} onBack={vi.fn()} />);
     expect(screen.getByText("声を捉えられませなんだ")).toBeTruthy();
-    // 設定導線は第一 CTA のボタン（静的ヒント文ではない / #216）。
+    // 設定導線は第一 CTA のボタン（静的ヒント文ではない）。
     expect(screen.getByRole("button", { name: "ブラウザのマイク設定を開く手順を表示" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "もう一度接続を試す" }));
     expect(onRetry).toHaveBeenCalledTimes(1);

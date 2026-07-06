@@ -6,7 +6,7 @@ import { ApiError } from "@/lib/api";
 
 // 深掘りリンク入場（FR-1.6 / FR-2.1 ゲスト入場）:
 // - 表示だけでは POST しない（use_count を消費しない）— 最重要 AC
-// - 未ログインでもログインへ飛ばさず同意ゲートを出す（Stage 2 / issue #319）
+// - 未ログインでもログインへ飛ばさず同意ゲートを出す（Stage 2）
 // - ゲストは joinProduct の join 直返しで接続する（joinSession を呼ばない）
 // - 401 はログイン誘導、403 reason 別の明確なエラー画面、成功時は会話へ
 

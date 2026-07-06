@@ -7,7 +7,7 @@ import { ListRow } from "./ListRow";
 /**
  * 01 ホーム「過去の要件を見る」履歴セクション（Figma 正本 40:2 / 子 99:3・99:5）。
  * 見出し＋履歴リスト（標題＋日付＋末尾 ›）をまとめて描画する領域コンポーネント。
- * データ取得 API は別途（issue #215）。`items` を props で受け、空配列のときは空状態の
+ * データ取得 API は別途。`items` を props で受け、空配列のときは空状態の
  * 文言だけを出す（遷移要素は出さない）。行は既存 ListRow を再利用する。
  */
 export interface SessionHistoryItem {

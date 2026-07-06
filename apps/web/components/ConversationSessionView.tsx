@@ -101,7 +101,7 @@ export interface ConversationSessionViewProps {
   cancelledIds?: ReadonlySet<string>;
   /**
    * tempId→asset_id の一意対応。アップロード成功で行 id が差し替わっても、中断確認が
-   * 表示名ではなく一意 id で対象を追跡するため（同名素材の取り違え防止・Codex P2）。
+   * 表示名ではなく一意 id で対象を追跡するため（同名素材の取り違え防止）。
    */
   materialAliases?: ReadonlyMap<string, string>;
   /** 会話フェーズを離れる（終了→判定）瞬間。親はここでマイク送信を止める。 */
@@ -162,7 +162,7 @@ export function ConversationSessionView({
   // ミニ状況「未確定」タップで要件絵巻の深掘り対象へスクロールさせるワンショット。
   // RequirementsTab が消費後に false へ戻す。要件タップ（タブ移動のみ）では立てない。
   const [focusDeepDive, setFocusDeepDive] = useState(false);
-  // 確定（finalize）失敗時のメッセージ（Codex P2）。失敗なら結果へ進めず判定に留める。
+  // 確定（finalize）失敗時のメッセージ。失敗なら結果へ進めず判定に留める。
   const [finalizeError, setFinalizeError] = useState<string | null>(null);
   // 回答済みの通常質問 ID。検知の resolved 相当のサーバ echo が無いため、
   // 回答後はローカルで問いピンを畳む（次の question.asked が新 ID で前面に出る）。
@@ -191,7 +191,7 @@ export function ConversationSessionView({
   // 統合後の素材をミニ状況の件数・解析中フラグに反映する（ヘッダーの「📎資料 N」と一致させる）。
   // 解析中フラグは破棄反映後の materials のみから導出する。baseMini.analyzing（state.analysis 由来）を
   // OR すると、中断で破棄した analysis 行が pct<100 の間ヘッダーが「資料 0（解析中）」と矛盾するため
-  // 使わない（Codex P2）。materials は realtime 解析中行を含み cancelled を除くので過不足ない。
+  // 使わない。materials は realtime 解析中行を含み cancelled を除くので過不足ない。
   const mini = {
     ...baseMini,
     materials: materials.length,
@@ -273,7 +273,7 @@ export function ConversationSessionView({
             return;
           }
           // 確定スナップショットを finalize API へ書き込む。成功を待ってから結果へ
-          // 遷移し、失敗（409: 未解消残り / 401 等）なら判定画面に留めて理由を出す（Codex P2）。
+          // 遷移し、失敗（409: 未解消残り / 401 等）なら判定画面に留めて理由を出す。
           // finalize 未指定（テスト等）は解決済み扱いでそのまま遷移する。二重確定は ref で防ぐ。
           if (finalizingRef.current) return;
           finalizingRef.current = true;
