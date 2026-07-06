@@ -45,8 +45,13 @@
   画面観察向けに調整: UI 要素・画面名・操作フロー・ドメイン用語・要件候補）で解析する。
 - 観察は `index_context(source="screen:{session_id}:{ts}")` で grounding へ投入し、
   `search_grounding` から引けるようにする。あわせて要件候補は既存の視覚要件経路
-  （`note_visual_requirement` 相当の永続化、`source_speaker="screen-share"`）に流し、
-  `analysis.visual` を publish して web の素材/要件ビューに反映する。
+  （`note_visual_requirement` 相当の永続化、`source_speaker="screen-share"`）に流す。
+- **realtime 契約に screen 専用イベントを追加する**: 既存の `analysis.visual` は `asset_id` が必須
+  （`apps/web/lib/realtime/parse.ts` の `REQUIRED_FIELDS`、契約 §3）で、素材行への対応付けを前提にしている。
+  画面共有の観察には素材（`asset_id`）が存在しないため、`analysis.visual` を流用すると web 側で
+  破棄されるか素材行に迷い込む。`analysis.screen(ts, extracted, …)` を契約
+  （`docs/design/realtime-contract.md` §3）と `parse.ts` に追加し、web は要件/観察ビューへ反映する
+  （疑似 asset_id の捏造はしない — 素材一覧に実体のない行を作らない）。
 - **能動注入**: 解析結果はエージェントの会話コンテキストへ「画面から読み取った観察」として注入し、
   深掘り質問（「いま表示されていた◯◯一覧の絞り込み条件は…」）の材料にする。Live が既に言及した
   内容と重複しうるため、注入時に直近の transcript / 記録済み視覚要件との重複を抑制する。
@@ -65,6 +70,8 @@
 
 ## 影響 / フォローアップ
 
+- **web / 契約**: `analysis.screen` の追加（`realtime-contract.md` §3、`parse.ts` の許可種別と
+  `REQUIRED_FIELDS`、`store.ts` の反映先）。
 - **agent**: トラック購読・フレーム取得・dHash 変化検知・解析タスクのスケジューリング
   （既存 `AnalysisScheduler` / asyncio パターンを踏襲）。設定値（間隔・上限・しきい値・フラグ）を
   `config.py` に追加。

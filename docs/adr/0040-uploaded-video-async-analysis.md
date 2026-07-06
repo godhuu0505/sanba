@@ -29,18 +29,29 @@
 - **GCS バケット**（セッション素材用）: uniform bucket-level access・非公開。オブジェクトの lifecycle 削除は
   Firestore `materials` の TTL（`expireAt`）と揃えた保持期間にする。`AssetStore` は既存実装のまま
   `GCS_BUCKET` を Cloud Run env に配線するだけで GCS 保存へ切り替わる（画像も恩恵を受ける）。
-- **Cloud Tasks キュー** `video-analysis`: HTTP push・OIDC 認証・リトライ上限つき（試行回数を超えたら失敗確定）。
+- **Cloud Tasks キュー** `video-analysis`: HTTP push・OIDC 認証・リトライ上限つき。dispatch deadline は
+  ワーカーの想定処理時間より長く設定する（下記 timeout と揃える）。
 - **専用ワーカーサービス** `apps/worker`（Cloud Run service・非 root・最小ベース）: Cloud Tasks からの
   push を受ける FastAPI。invoker は Cloud Tasks 用 SA のみに限定。SA 権限は最小
-  （バケット read / Firestore / Vertex AI / Elasticsearch 接続）。
+  （バケット read / Firestore / Vertex AI / Elasticsearch 接続）。**request timeout は既定 5 分のままにせず**、
+  10 分動画の解析（Gemini 呼び出し込み）が収まる値（15 分目安）を明示的に設定する。
+- **API SA のバケット権限は書き込みだけでなく list/delete も含める**: 既存の
+  `DELETE /context/file/{asset_id}` が `AssetStore.delete()` で GCS の prefix list + blob delete を
+  実行するため、書き込みのみだと素材破棄が GCS 実体だけ失敗する。
 
 API 同居ではなく専用サービスにするのは、解析（LLM 呼び出しで数十秒〜分オーダー）のレイテンシ・リソース特性が
 API と異なるためと、将来の中尺動画・セグメント分割解析への拡張点を分離しておくため。
 
-### 2. 解析フロー
+### 2. アップロード経路と解析フロー
+
+**動画はブラウザから GCS へ直送する（署名付き resumable URL）。** 現行の `POST /context/file`
+（multipart）経路は使えない: Cloud Run の HTTP/1 request body 上限は 32MiB であり、200MB の動画は
+FastAPI に届く前に弾かれる。画像（≦25MB）は既存の multipart 経路を維持する。
 
 ```
-upload → AssetStore(GCS) → materials(status=analyzing) → Cloud Tasks enqueue
+API: upload-init（署名付き resumable URL 発行 + materials(status=uploading)）
+  → ブラウザ → GCS 直送（x-goog-content-length-range で 200MB を強制）
+  → API: upload-complete（オブジェクト検証 → materials(status=analyzing) → Cloud Tasks enqueue）
   → worker: 実長・サイズ検証 → Gemini 2.5 Flash 動画理解（映像+音声）
   → タイムスタンプ付き観察チャンク → index_context(source="asset:{id}")
   → materials(status=done, extracted=N) → analysis.progress / analysis.visual publish
@@ -51,15 +62,32 @@ upload → AssetStore(GCS) → materials(status=analyzing) → Cloud Tasks enque
   `search_grounding` にそのまま乗せる。
 - **モデル呼び出し**: 本番（`GOOGLE_GENAI_USE_VERTEXAI=true`）は `gs://` URI を直接 `Part.from_uri` で渡す。
   ローカル/GenAI API 経路は Files API（または 20MB 未満は inline bytes）でフォールバック。
-- **上限**: アップロード時にサイズ 200MB（既存 413 経路）、ワーカーで実長 10 分を検証。超過は
-  `status=failed` + 理由付きで UI に返す。フェイクの中間ステージは出さない（ADR-0023 の「実体に正直」を踏襲）。
+- **上限は kind 別に持つ**: 動画 200MB（署名付き URL の `x-goog-content-length-range` + ワーカー検証で強制）、
+  画像は既存 `max_asset_bytes`（25MB）を維持する。単一設定の引き上げで画像側のメモリ/コストガードを
+  壊さない。実長 10 分はワーカーで検証。超過は `status=failed` + 理由付きで UI に返す。
+  フェイクの中間ステージは出さない（ADR-0023 の「実体に正直」を踏襲）。
+- **`asset_id` の導出**: 直送では API がバイト列を経由しないため、既存 `compute_asset_id`（内容ハッシュ）は
+  そのまま使えない。upload-complete 時に GCS オブジェクトのメタデータ（md5/crc32c）から導出して
+  冪等性の性質を保つ。
 
 ### 3. 冪等性・失敗
 
-- `asset_id` は content hash（既存 `compute_asset_id`）。Cloud Tasks の task 名を `asset_id` 由来にして
-  重複 enqueue を排除し、ワーカーは処理前に `materials.status` を確認して二重解析をスキップする。
-- リトライ枯渇時は `status=failed` を永続化し `analysis.progress(stage="failed")` を publish
-  （web の再試行導線と整合）。publish は ADR-0023 どおり fail-open（本処理を止めない）。
+- Cloud Tasks の task 名は **`session_id` + `asset_id` 由来**にして重複 enqueue を排除する。
+  `asset_id` は内容ハッシュのため、同じ動画を別セッションでアップロードすると同一になる —
+  `asset_id` 単独を task 名にすると 2 件目のセッションの解析が重複扱いで抑止され、
+  `analyzing` のまま取り残される。ワーカーは処理前に `materials.status` を確認して二重解析をスキップする。
+- **破棄済み素材を復活させない**: 解析中にユーザーが `DELETE /context/file/{asset_id}` で素材を破棄した場合、
+  ワーカーが Gemini 呼び出し後にそのまま書き込むと削除済みの素材と grounding が復活する。
+  `save_material` / `index_context` の**書き込み直前にも material の存在を再確認**し、
+  消えていれば結果を破棄して正常終了する。
+- **リトライ枯渇時の失敗確定はハンドラ内で行う**: Cloud Tasks は試行上限到達後にハンドラを再呼び出しせず
+  タスクを削除するため、「枯渇したら failed にする」コードの置き場所が無い。ワーカーは失敗を自前で捕捉し、
+  恒久エラー（上限超過・非対応形式等）は即 `status=failed` を永続化して 2xx を返し、一時エラーは
+  `X-CloudTasks-TaskRetryCount` ヘッダで最終試行を判定して**最終試行なら failed 化してから** 2xx、
+  それ以外は 5xx でリトライさせる。取りこぼしの保険として、`analyzing` のまま長時間経過した素材を
+  failed 化するリーパー（ハイドレーション時の reconcile）も置く。
+- 失敗確定時は `analysis.progress(stage="failed")` を publish（web の再試行導線と整合）。
+  publish は ADR-0023 どおり fail-open（本処理を止めない）。
 
 ### 4. エージェントへの能動注入（RAG + プッシュ）
 
