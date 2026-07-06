@@ -46,7 +46,7 @@ export interface ConversationShellProps {
   /** タブ変更通知（ミニ状況/タブ操作・制御/非制御どちらでも発火）。 */
   onTabChange?: (tab: ShellTab) => void;
   /**
-   * ミニ状況「未確定」タップ時の追加通知（#195）。要件絵巻タブへ移ると同時に、未解消（深掘り）
+   * ミニ状況「未確定」タップ時の追加通知。要件絵巻タブへ移ると同時に、未解消（深掘り）
    * 対象へ視線を誘導するために親が使う。タブ移動自体は onTabChange("scroll") で別途発火する。
    */
   onUnresolvedJump?: () => void;
@@ -70,7 +70,7 @@ export interface ConversationShellProps {
   /** 常時2行ボトムバー。閲覧モードでは描画しない。 */
   bottomBar?: ReactNode;
   /**
-   * 音声状態インジケータ（聞き取り中／発話中／消音中 / #248）。可変高の装飾で選択肢フォームを
+   * 音声状態インジケータ（聞き取り中／発話中／消音中）。可変高の装飾で選択肢フォームを
    * 上下させないよう、ボトムバーではなく上部の固定領域（タブとタブ本文の間）に高さ一定で置く。
    * 閲覧モードでは描画しない。
    */
@@ -243,23 +243,20 @@ export function ConversationShell({
         })}
       </div>
 
-      {/* ── 固定：音声状態インジケータ（会話中のみ・高さ一定）──── */}
-      {/* 聞き取り中／発話中／消音中の表示。可変高の装飾（棒人間）は compact で出さないため、
-          聞き取りの ON/OFF でも高さが変わらず、直下の選択肢フォームを上下させない（#248）。 */}
-      {!review && voiceStatus && (
-        <div className="flex justify-center border-b border-sanba-border bg-sanba-surface-strong px-4 py-1.5">
-          {voiceStatus}
-        </div>
-      )}
-
       {/* ── 本文（active タブのみ）────────────── */}
       <main role="tabpanel" className="min-h-0 flex-1 overflow-y-auto">
         {tabs[tab]}
       </main>
 
-      {/* ── 常時：問いピン＋2行ボトムバー（会話中のみ。閲覧モードでは出さない）──── */}
+      {/* ── 常時：問いピン＋音声状態インジケータ＋2行ボトムバー（会話中のみ。閲覧モードでは出さない）──── */}
       {/* 問いピン（選択肢フォーム）はテキストフォーム/消音・ミュートボタンの真上に固定する。 */}
       {!review && choicePin}
+      {/* 聞き取り中／発話中／消音中の表示。問いピンの下・消音/集音中ボタンの真上に固定する（高さ一定）。 */}
+      {!review && voiceStatus && (
+        <div className="flex justify-center border-b border-sanba-border bg-sanba-surface-strong px-4 py-1.5">
+          {voiceStatus}
+        </div>
+      )}
       {!review && bottomBar}
     </div>
   );

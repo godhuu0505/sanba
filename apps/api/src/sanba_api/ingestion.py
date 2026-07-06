@@ -1,11 +1,11 @@
-"""Pre-interview context ingestion -> Elasticsearch grounding (issue #6).
+"""Pre-interview context ingestion -> Elasticsearch grounding.
 
 Lets an owner register existing material (PRD drafts, meeting notes, specs) before
 the interview. Chunks are indexed into the SAME Elasticsearch index the agent reads
 via `search_grounding` (kind="context").
 
-索引投入の本体は `sanba_shared.grounding` へ移設した（worker からも同じロジックを使うため。
-ADR-0040）。ここは api の settings と pii マスカを束ねる薄いアダプタと、api 固有のテキスト抽出
+索引投入の本体は `sanba_shared.grounding` にある（worker からも同じロジックを使うため）。
+ここは api の settings と pii マスカを束ねる薄いアダプタと、api 固有のテキスト抽出
 （pypdf）だけを残す。`ContextIndexer()` の無引数 API と `chunk_text` の import 互換は維持する。
 """
 
@@ -190,7 +190,7 @@ _EXTRACTORS: dict[str, Callable[[bytes], str]] = {
 
 # MIME → 抽出関数。受理判定（storage.py is_text_upload）は拡張子と MIME のどちらでも通すため、
 # 拡張子なし・MIME のみのアップロード（例: ファイル名 "book" + Office MIME）でも正しい抽出器を
-# 選べるようにする（拡張子だけだと ZIP バイト列を UTF-8 デコードして索引してしまう / Codex P2）。
+# 選べるようにする（拡張子だけだと ZIP バイト列を UTF-8 デコードして索引してしまう）。
 _MIME_EXTRACTORS: dict[str, Callable[[bytes], str]] = {
     "application/pdf": _extract_pdf,
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document": _extract_docx,

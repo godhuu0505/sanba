@@ -1,4 +1,4 @@
-"""Tests for PII masking + masked grounding writes (issue #10)."""
+"""Tests for PII masking + masked grounding writes."""
 
 from __future__ import annotations
 

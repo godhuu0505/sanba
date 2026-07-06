@@ -2,7 +2,7 @@
 
 テキスト入力が音声入力と同じ扱いになること——発話記録（transcript.final）→ 未回答
 current のクリア → 読み上げ中断（バージイン同等）→ user ターンとしての応答生成——を、
-LiveKit ランタイム無しの偽セッションで検証する（#185 / #181）。
+LiveKit ランタイム無しの偽セッションで検証する。
 """
 
 from __future__ import annotations
@@ -90,7 +90,7 @@ async def test_user_text_without_current_question_skips_clear() -> None:
 
 
 async def test_user_answered_interrupts_and_advances_with_question_context() -> None:
-    # 回答も読み上げ中断のうえ、問い本文つきの instructions で要件を一歩進める（#181）。
+    # 回答も読み上げ中断のうえ、問い本文つきの instructions で要件を一歩進める。
     agent, repo, transport = _agent()
     repo.save_current_question("s1", {"id": "q1", "prompt": "対象OSは？"}, asked_seq=1)
     agent._current_question_id = "q1"
@@ -104,7 +104,7 @@ async def test_user_answered_interrupts_and_advances_with_question_context() -> 
     _, kwargs = session.calls[-1]
     assert "対象OSは？" in kwargs["instructions"]
     assert "iOS のみ" in kwargs["instructions"]
-    # 回答は「問い本文つき」で発話記録される（Codex P2）。
+    # 回答は「問い本文つき」で発話記録される。
     await _drain_publishes()
     finals = [s["event"] for s in transport.sent if s["event"]["type"] == "transcript.final"]
     assert any("対象OSは？" in ev["text"] and "iOS のみ" in ev["text"] for ev in finals)

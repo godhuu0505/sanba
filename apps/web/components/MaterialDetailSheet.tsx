@@ -4,8 +4,8 @@
 // 仕様: docs/design/conversation-experience.md §6 / docs/design/screens/05-materials.md / Figma 148:2。
 //
 // 設計ポイント:
-// - PR #200 で AnalysisView をマウントから外した結果、analysis.visual の conflicts（言葉×画の矛盾）の
-//   表示先が消えた（#202）。一覧（MaterialsList）の素材行 → 本シートで再び surface する。
+// - analysis.visual の conflicts（言葉×画の矛盾）は一覧（MaterialsList）には表示先が無いため、
+//   素材行 → 本シートで surface する。
 // - conflicts は store 既存形（AnalysisVisualConflict）をそのまま受ける。detection.* の有無に依らず
 //   analysis.visual に保持された矛盾を出すため、「視覚解析のみの矛盾（detection 無し）」も確認できる。
 // - 色/バッジは mapping.ts に倣う（緋=矛盾）。色のみに依存せず必ずラベル＋アイコンを伴う（ADR-0017）。
@@ -78,7 +78,7 @@ export function MaterialDetailSheet({
 
   const done = detail.status === "done";
   // 解析結果（analysis.visual）を保持しているときだけ、空を「無し」と断定してよい。
-  // 未取得（再接続後の done 行・#184 未対応）/解析途中は断定せず「未取得/解析中」を出す。
+  // 未取得（再接続後の done 行）/解析途中は断定せず「未取得/解析中」を出す。
   const ready = detail.analysisReady;
   const waiting = done
     ? "解析結果はこの場では取得できていません。"

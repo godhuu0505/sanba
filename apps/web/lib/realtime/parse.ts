@@ -78,7 +78,7 @@ function hasFields(obj: Record<string, unknown>, fields: readonly string[]): boo
 }
 
 // enum 値の許可集合（types.ts と一致）。受信境界で列挙外の値を弾き、セレクタ
-// （priority/category で索引）や UI が未知値で TypeError/誤表示にならないよう守る（#120）。
+// （priority/category で索引）や UI が未知値で TypeError/誤表示にならないよう守る。
 const PHASES: ReadonlySet<string> = new Set<SessionPhase>([
   "idle",
   "listening",
@@ -104,7 +104,7 @@ function isNumberInRange(v: unknown, min: number, max: number): boolean {
 }
 
 /**
- * 種別ごとの enum / 配列 / 数値範囲の網羅検証（#120）。必須フィールドの存在（hasFields）に加え、
+ * 種別ごとの enum / 配列 / 数値範囲の網羅検証。必須フィールドの存在（hasFields）に加え、
  * 値が契約の許可集合・型・範囲に収まることを確認する。外れたら false（bad-payload で破棄）。
  * presence は呼び出し側で検証済みの前提（REQUIRED_FIELDS / REQUIREMENT_FIELDS）。
  */
@@ -199,7 +199,7 @@ export function decodeServerEvent(payload: Uint8Array | string): DecodeResult {
     }
   }
 
-  // enum / 配列 / 範囲の網羅検証（#120）。presence を満たしても値が契約外なら破棄する。
+  // enum / 配列 / 範囲の網羅検証。presence を満たしても値が契約外なら破棄する。
   if (!validatePayload(type, obj)) {
     return { event: null, reason: "bad-payload" };
   }
@@ -234,7 +234,7 @@ export function encodeUserSelection(
 }
 
 /**
- * web → agent の user.text をエンコードする（契約 §4.5 / #185）。
+ * web → agent の user.text をエンコードする（契約 §4.5）。
  * ボトムバーのテキスト送信を「会話ターン」として agent に渡す（従来のセッション文脈投入の代替）。
  */
 export function encodeUserText(
@@ -255,7 +255,7 @@ export function encodeUserText(
 }
 
 /**
- * web → agent の user.answered をエンコードする（契約 §4.5 / #181）。
+ * web → agent の user.answered をエンコードする（契約 §4.5）。
  * 通常質問（金枠）の選択肢タップ／自由記述回答を agent に返す。
  */
 export function encodeUserAnswered(

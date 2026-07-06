@@ -38,7 +38,7 @@ from livekit.agents.llm import function_tool
 from livekit.plugins import google
 
 try:  # noqa: SIM105 - フェイルソフト（プラグイン未導入・self-host でも会話は成立する）
-    # LiveKit Cloud の Krisp Background Voice Cancellation（BVC / ADR-0039）。
+    # LiveKit Cloud の Krisp Background Voice Cancellation（BVC）。
     # パッケージ未導入や import 失敗時は None にフォールバックし、ノイズ抑制なしで続行する。
     from livekit.plugins import noise_cancellation as _noise_cancellation
 except Exception:  # pragma: no cover - 依存の有無に依存
@@ -140,7 +140,7 @@ class AgentSetup(NamedTuple):
     instructions: str
     mode: InviteScope
     allow_repo_grounding: bool
-    # 準備フォーム由来の事前情報ノート（ADR-0035）。analyze_requirements の transcript
+    # 準備フォーム由来の事前情報ノート。analyze_requirements の transcript
     # 先頭に付し、ADK の統括・矛盾検知が準備情報とも突き合わせられるようにする。無ければ空。
     prep_note: str
 
@@ -175,7 +175,7 @@ def build_agent_instructions(repo: SessionRepository, session_id: str) -> AgentS
     # glossary（end_user）と確認項目（両モード）のシード元。1 回だけ読む。
     product = _session_product(repo, meta)
     # 対象タグでモードに合う項目だけをシードする（end_user: 全員+利用者 / developer:
-    # 全員+企画者+開発者。ADR-0043 決定2。開発者向け項目を利用者の会話に出さない）。
+    # 全員+企画者+開発者。開発者向け項目を利用者の会話に出さない）。
     seeded_check_items = (
         check_items_for_scope(product.check_items, mode) if product is not None else []
     )
@@ -190,7 +190,7 @@ def build_agent_instructions(repo: SessionRepository, session_id: str) -> AgentS
         instructions = END_USER_VOICE_AGENT_INSTRUCTIONS + glossary_seed + check_items_seed
         allow_repo_grounding = False
     else:
-        # 準備フォームのゴール（ADR-0035）を repo 前提より先にシードする（セッションの主題が
+        # 準備フォームのゴールを repo 前提より先にシードする（セッションの主題が
         # 先、repo はその裏付け）。meta が読めないときは repo 前提と同じく付けない。
         prep_premise = ""
         if meta is not None:
@@ -206,7 +206,6 @@ def build_agent_instructions(repo: SessionRepository, session_id: str) -> AgentS
         # repo grounding を許可すると end_user セッションが None で作られた場合にフェイルオープン
         # するため、「読めた + meta が実在する」を両方満たすときだけ True にする。
         allow_repo_grounding = confirmed and meta is not None
-    # 言語固定の会話指示を設定（GEMINI_LANGUAGE）から組み立てて末尾に足す（ADR-0039）。
     # 設定値とプロンプトを一致させ、空文字（自動判定）や ja 以外の言語コードでも矛盾しない。
     instructions += build_language_directive(settings.gemini_language)
     # モード分岐の観測性（CLAUDE.md 原則3）: どのモードでどれだけシードしたかを追える形に。
@@ -247,15 +246,15 @@ def _is_stale_repo_passage(source: str, current_sha: str) -> bool:
     return f"@{current_sha}:" not in source
 
 
-# ADR-0032 決定8（FR-2.5 / NFR-2）: repo 由来素材を許さないセッション（end_user・モード
+# 決定8（FR-2.5 / NFR-2）: repo 由来素材を許さないセッション（end_user・モード
 # 未確認）で search_grounding の返り値に残してよい kind の allowlist。利用者の発話と
-# 確定要件（過去セッション由来を含む / ADR-0003）のみ。repo 由来（kind=context の
-# github: 索引・README/Issue シード / ADR-0028）と開発語彙の knowledge（MoSCoW 等 /
+# 確定要件（過去セッション由来を含む）のみ。repo 由来（kind=context の
+# github: 索引・README/Issue シード）と開発語彙の knowledge（MoSCoW 等 /
 # FR-2.4）は本文・source ともモデルへ渡さない。denylist の source 文字列判定に頼らない
 # ため、大文字小文字・前後空白・形式変更などの表記揺れによるすり抜けが構造的に起きない。
 _USER_DERIVED_KINDS = frozenset({"utterance", "requirement"})
 
-# ADR-0037: 背景タスクの上限時間と終了時ドレンの猶予。背景実行は fail-soft（超過・失敗は
+# 背景タスクの上限時間と終了時ドレンの猶予。背景実行は fail-soft（超過・失敗は
 # 黙って破棄し、ツールの同期経路が最新化を守る）なので短めに倒す。
 PREFETCH_TIMEOUT_SECONDS = 5.0
 ANALYSIS_TIMEOUT_SECONDS = 30.0
@@ -314,20 +313,20 @@ class SANBAAgent(Agent):
         grounding: GroundingStore,
         publisher: EventPublisher | None = None,
     ) -> None:
-        # モード別に初期 instructions を組み立てる（ADR-0032 決定6・7）。developer は
-        # grill-me + 準備情報（ADR-0035）+ repo 前提（ADR-0028）、end_user は
+        # モード別に初期 instructions を組み立てる。developer は
+        # grill-me + 準備情報+ repo 前提、end_user は
         # 利用者ペルソナ + glossary シード。
         setup = build_agent_instructions(repo, session_id)
         super().__init__(instructions=setup.instructions)
         self._interview_mode = setup.mode
         self._allow_repo_grounding = setup.allow_repo_grounding
-        # 準備フォームの事前情報ノート（ADR-0035）。analyze_requirements の transcript に前置する。
+        # 準備フォームの事前情報ノート。analyze_requirements の transcript に前置する。
         self._prep_note = setup.prep_note
         self._session_id = session_id
         self._repo = repo
         self._grounding = grounding
         self._transcript: list[str] = []
-        # data channel publish（#94）。未設定でも会話は成立する（publish は付加価値）。
+        # data channel publish。未設定でも会話は成立する（publish は付加価値）。
         self._publisher = publisher
         self._utterance_seq = 0
         # 認識中（partial）のユーザー発話に割り当てた安定 utterance_id。final まで同じ id を
@@ -341,21 +340,21 @@ class SANBAAgent(Agent):
         # question_id → 問い本文。回答を「何への回答か」分かる形で記録するため保持する
         # （Codex P2。ID は hash+連番で本文を復元できないため）。
         self._questions: dict[str, str] = {}
-        # 現在の未回答質問 id（#212 / ADR-0020 §5-6）。自由記述/音声回答には question_id が
+        # 現在の未回答質問 id。自由記述/音声回答には question_id が
         # 無いため、「発話受信時点の current 質問」をこの値で束ねクリア対象を固定する。回答で None。
         self._current_question_id: str | None = None
         # 既に publish 済みの検知 id（open_topic の重複 gap を抑止）。
         self._published_gaps: set[str] = set()
-        # 既に publish 済みの不明瞭検知 id（曖昧発話の重複 ambiguous を抑止 / #260）。
+        # 既に publish 済みの不明瞭検知 id。
         self._published_ambiguous: set[str] = set()
         # fire-and-forget の publish タスクを保持（GC による途中消滅を防ぐ）。
         self._publish_tasks: set[asyncio.Task[Any]] = set()
-        # ADR-0037 段階A: 確定発話を種にした先読み検索。フィルタ後の結果のみ・メモリのみ・
+        # 段階A: 確定発話を種にした先読み検索。フィルタ後の結果のみ・メモリのみ・
         # latest-wins。参加者の確定発話ターン数（_user_turn）が鮮度判定の単位。
         self._prefetch = PrefetchCache()
         self._prefetch_task: asyncio.Task[None] | None = None
         self._user_turn = 0
-        # ADR-0037 段階B: 背景分析の debounce・結果保持・publish 直列化。
+        # 段階B: 背景分析の debounce・結果保持・publish 直列化。
         # _analysis_lock は背景実行とツール同期実行が並走したとき、解消判定
         # （open_topics 差分）が互いの検知を消し合わないよう publish 区間を直列化する。
         self._analysis_scheduler = AnalysisScheduler()
@@ -406,7 +405,7 @@ class SANBAAgent(Agent):
 
     def record_utterance(self, speaker: str, text: str, *, utterance_id: str | None = None) -> str:
         # 発話 id を先に採番し、本文に前置して LLM に見せる。これにより
-        # save_requirement の citations（根拠発話 id）を LLM が実際に参照できる（#133）。
+        # save_requirement の citations（根拠発話 id）を LLM が実際に参照できる。
         # 認識中（partial）で先に id を割り当て済みなら（utterance_id 指定）それで確定し、
         # partial の吹き出しをそのまま final に差し替える（同一 id で upsert）。
         if utterance_id is None:
@@ -414,7 +413,6 @@ class SANBAAgent(Agent):
             utterance_id = f"u{self._utterance_seq}"
         self._transcript.append(f"[{utterance_id}] {speaker}: {text}")
         self._repo.add_utterance(self._session_id, Utterance(speaker=speaker, text=text))
-        # Index for later past-session retrieval.
         self._grounding.index_passage(
             text=text,
             source=f"{self._session_id}:{speaker}",
@@ -425,7 +423,7 @@ class SANBAAgent(Agent):
         if self._publisher is not None:
             role = "participant"
             self._publish(self._publisher.transcript_final(speaker, role, utterance_id, text))
-        # ADR-0037: 参加者の確定発話だけを背景処理の発火点にする（partial では発火しない）。
+        # 参加者の確定発話だけを背景処理の発火点にする（partial では発火しない）。
         # 発話1件 = 先読み1回（embedding 消費の上限）+ 分析は debounce 判定に委ねる。
         if speaker == "participant":
             self._user_turn += 1
@@ -518,7 +516,7 @@ class SANBAAgent(Agent):
 
         会話が一区切りついたとき、または論点が曖昧なときに呼び出す。
         """
-        # ADR-0037 段階B: 背景分析が走行中なら相乗りして待つ（二重の LLM 往復と
+        # 段階B: 背景分析が走行中なら相乗りして待つ（二重の LLM 往復と
         # publish 競合を避ける）。待ちの沈黙は生じるので deliberating は出す。
         task = self._analysis_task
         if task is not None and not task.done():
@@ -565,7 +563,7 @@ class SANBAAgent(Agent):
         web の整合が崩れるのを避ける）。
         """
         transcript = "\n".join(self._transcript)
-        # 準備フォームの事前情報を先頭に付す（ADR-0035）。ADK の統括・矛盾検知が
+        # 準備フォームの事前情報を先頭に付す。ADK の統括・矛盾検知が
         # 「準備時の記入」対「会話中の回答」の食い違いも検出できるようにする。
         if self._prep_note:
             transcript = f"{self._prep_note}\n{transcript}"
@@ -667,8 +665,8 @@ class SANBAAgent(Agent):
                     await self._publisher.detection_resolved(
                         gap_id, resolution=RESOLUTION_AGENT_RESOLVED
                     )
-            # 不明瞭（曖昧な言い回し）を detection.ambiguous で上げる（#260 / ADR-0022）。
-            # gap と同じく id は内容ハッシュ（#121）、重複は _published_ambiguous で抑止。
+            # 不明瞭（曖昧な言い回し）を detection.ambiguous で上げる。
+            # gap と同じく id は内容ハッシュ、重複は _published_ambiguous で抑止。
             current_ambiguous = {
                 make_requirement_id(f"ambiguous:{t}"): t for t in result.ambiguous_topics
             }
@@ -754,7 +752,7 @@ class SANBAAgent(Agent):
             # question.asked はハイドレーション・スナップショット（GET /requirements,/detections）に
             # 含まれない一過性イベント。ここで last_seq を進めると、後続の再ハイドレーションで
             # 境界以下として正当な差分を取り逃すため、seq 境界は進めない（Codex P2）。
-            # ADR-0020 §5-1: 採番 → 保存（現在質問ポインタ）→ 送信。on_persist で asked_seq つきの
+            # §5-1: 採番 → 保存（現在質問ポインタ）→ 送信。on_persist で asked_seq つきの
             # 現在質問を Firestore に保存してから data-channel publish する（GET /questions/current
             # でリロード/途中参加時に金枠ピンを復元できるよう、送信前に確定させる）。
             def _persist_current(asked_seq: int) -> None:
@@ -902,9 +900,9 @@ class SANBAAgent(Agent):
         返り値に `background`（引用できない内部資料の関連ヒット件数のみ）が付くことがある。
         その場合は内容・出所に一切触れず、話題の関連が深い合図としてだけ扱うこと。
         """
-        # ADR-0037 段階A: 直近の確定発話で先読みした結果が使えるなら即返し、ツール待ちの
+        # 段階A: 直近の確定発話で先読みした結果が使えるなら即返し、ツール待ちの
         # 沈黙を削る。キャッシュはフィルタ後のみなので、ヒットをそのまま返しても
-        # 出力制御（ADR-0032 決定8）は不変。ミスは従来どおりの同期検索（劣化なし）。
+        # 出力制御は不変。ミスは従来どおりの同期検索（劣化なし）。
         entry, reason = self._prefetch.get(query, turn=self._user_turn)
         if entry is not None and await self._cached_repo_sources_invalid(entry.result):
             # 先読み後に owner が連携解除/repo 差し替えをした稀な窓（≤TTL）。古い ACL で
@@ -921,7 +919,7 @@ class SANBAAgent(Agent):
             return entry.result
         if reason != REASON_EMPTY:
             # ミス分類（expired_time / expired_turns / query_mismatch / repo_acl_recheck）を
-            # 残し、ヒット率と staleness 破棄数を計測できるようにする（ADR-0037 決定3）。
+            # 残し、ヒット率と staleness 破棄数を計測できるようにする。
             log.info("prefetch_miss", session=self._session_id, reason=reason)
         # 同期の embedding + ES 検索はスレッドへ逃がし、音声パイプラインのループを塞がない。
         return await asyncio.to_thread(self._grounded_search, query)
@@ -1015,16 +1013,16 @@ class SANBAAgent(Agent):
         （ADR-0032 決定8 / ACL / stale 遮断）通過後の結果しか入らないことを構造的に保証する。
         """
         # session_id を渡してセッション固有素材（context: ゴール/資料/紐づけ repo）を本セッション
-        # に限定する（他者の private リポジトリ断片の越境ヒットを防ぐ / ADR-0028）。
+        # に限定する（他者の private リポジトリ断片の越境ヒットを防ぐ）。
         # 紐づけ repo を素早く選び直すと、旧 commit の chunk が索引中に書き込まれて残り得る。
         # 現在の commit sha を持つ repo chunk 以外は落とし、stale な断片を会話に出さない
         # （Codex P2。source は github:{repo}@{branch}@{sha}:{path} 形式で sha を内包）。
         # stale 除外で上位が削られても現在 repo の有効 chunk が残るよう、多めに取得してから絞る。
         # owner が連携解除/権限剥奪したら、索引済み repo chunk を検索時に遮断する（query-time
-        # access control / ADR-0028・Codex P2）。共有索引は消さない方針なので、ここで弾く。
+        # access control・Codex P2）。共有索引は消さない方針なので、ここで弾く。
         want = 4
         current_sha, revoked = self._repo_access()
-        # 出力制御（ADR-0032 決定8）の判定は build_agent_instructions の単一読みで確定した
+        # 出力制御の判定は build_agent_instructions の単一読みで確定した
         # _allow_repo_grounding に揃える（ここで再読すると読み失敗時にフェイルオープンし得る）。
         output_filtered = not self._allow_repo_grounding
         fetch_k = want * 4 if (current_sha is not None or revoked or output_filtered) else want
@@ -1034,7 +1032,6 @@ class SANBAAgent(Agent):
             # end_user（およびモード未確認）: 利用者由来 kind の allowlist だけ返し、repo 由来
             # （context）・開発語彙（knowledge）は本文・source ともモデルへ渡さない（FR-2.5）。
             # 音声応答は事後フィルタできないため、「渡すが引用禁止」には倒さない（NFR-2）。
-            #
             # ACL（revoked/stale）を先に適用してアクセス不能 chunk を除いた上で背景シグナルを
             # 数える（revoked/stale chunk を related_internal_hits に混ぜない）。
             if revoked:
@@ -1121,7 +1118,7 @@ class SANBAAgent(Agent):
 
         インタビューの締めくくりで、合意した要件を実装チームに引き継ぐときに使う。
         """
-        # 起票先は 02 準備で選んだセッションのリポジトリを最優先する（ADR-0027）。
+        # 起票先は 02 準備で選んだセッションのリポジトリを最優先する。
         gh_repo = _resolve_github_repo(self._repo, self._session_id)
         if not _github_ready(gh_repo):
             return {"exported": False, "reason": "github connector disabled"}
@@ -1136,7 +1133,7 @@ class SANBAAgent(Agent):
         from .connectors import GitHubConnector
 
         # Issue 本文は開発者向け出力フォーマットで整形する（api の /export と同じレンダラに
-        # 一本化 / ADR-0043 決定3。どちらの経路で起票しても同じ体裁になる）。
+        # 一本化。どちらの経路で起票しても同じ体裁になる）。
         requirements = self._repo.list_requirements(self._session_id)
         meta: SessionMeta | None = None
         try:
@@ -1322,8 +1319,6 @@ async def respond_to_user_text(
     クリアした上で、音声のバージインと同様に読み上げ中の応答を中断してから、本文を
     user ターンとして Live セッションの会話文脈へ注入し応答を生成する
     （livekit-agents 既定のテキスト入力コールバックと同じ interrupt + user_input 方式）。
-    旧 instructions 方式は (1) 読み上げ中は再生キュー待ちになり音声のように即時反応しない、
-    (2) 本文が user ターンとして会話文脈に残らない、の2点で音声入力と挙動が揃わなかった。
     """
     agent.record_utterance("participant", text)
     # §5-6: options の有無に依らず、未回答 current への次回答とみなしてクリアする
@@ -1468,11 +1463,11 @@ async def entrypoint(ctx: JobContext) -> None:
     )
     grounding = GroundingStore()
     seed_knowledge_base(grounding)
-    # data channel publish（#94）。音声と同一ルーム接続を再利用して web へ差分を流す。
-    # reliable seq は last_seq と current question の asked_seq/cleared_seq の最大値でシード
-    # （#123・#270）。question.asked/cleared は set_session_seq を呼ばず pub._seq を消費するため、
+    # data channel publish。音声と同一ルーム接続を再利用して web へ差分を流す。
+    # reliable seq は last_seq と current question の asked_seq/cleared_seq の最大値でシード。
+    # question.asked/cleared は set_session_seq を呼ばず pub._seq を消費するため、
     # 再起動後に seq が後退して web の status ガードに弾かれないよう get_startup_seq で揃える。
-    # lossy seq は epoch ブロック基底でシードし大域単調にする（#270）。
+    # lossy seq は epoch ブロック基底でシードし大域単調にする。
     publisher = EventPublisher(
         session_id,
         LiveKitTransport(ctx.room),
@@ -1481,7 +1476,7 @@ async def entrypoint(ctx: JobContext) -> None:
     )
     agent = SANBAAgent(session_id=session_id, repo=repo, grounding=grounding, publisher=publisher)
     # repo 由来素材（GitHub seed）はモード判定と同じ 1 回の読み（build_agent_instructions）に
-    # 従う: end_user とモード不明では**シードしない**（#321 / ADR-0032 決定8）。
+    # 従う: end_user とモード不明では**シードしない**。
     # search_grounding の出力 allowlist が第一防衛線だが、シード自体も止めたままにする
     # （多層防御: フィルタが万一退行しても索引に露出面が増えない・ゲスト起点のセッション
     # 乱造で GitHub API を消費しない）。確認済み developer のみ従来どおり。
@@ -1495,10 +1490,10 @@ async def entrypoint(ctx: JobContext) -> None:
         )
 
     # web → agent の操作イベントを受信する（契約 §4.5）。
-    #   - user.selection（#102）: 検知カードの選択肢タップ → 検知を解消。
-    #   - user.text（#185）: テキスト入力 → 読み上げを中断し user ターンとして応答（音声と同等）。
-    #   - user.answered（#181）: 通常質問への回答 → 発話として記録し次の問いへ進む。
-    # fire-and-forget タスクは set に退避して GC を防ぐ（#128。完了時に除去・例外をログ）。
+    #   - user.selection: 検知カードの選択肢タップ → 検知を解消。
+    #   - user.text: テキスト入力 → 読み上げを中断し user ターンとして応答（音声と同等）。
+    #   - user.answered: 通常質問への回答 → 発話として記録し次の問いへ進む。
+    # fire-and-forget タスクは set に退避して GC を防ぐ。
     _bg_tasks: set[asyncio.Task] = set()
 
     def _on_bg_done(task: asyncio.Task) -> None:
@@ -1511,8 +1506,8 @@ async def entrypoint(ctx: JobContext) -> None:
         _bg_tasks.add(task)
         task.add_done_callback(_on_bg_done)
 
-    # 現在の AgentSession。回復不能エラーで閉じたら _restart_session が作り直して差し替える
-    # （ADR-0038）。_on_data から呼ぶ respond_to_* にはこの変数を渡す（クロージャ経由で
+    # 現在の AgentSession。回復不能エラーで閉じたら _restart_session が作り直して差し替える。
+    # _on_data から呼ぶ respond_to_* にはこの変数を渡す（クロージャ経由で
     # 受信時点の「現在の」セッションが解決される）。
     session: AgentSession
     restart_count = 0
@@ -1522,7 +1517,7 @@ async def entrypoint(ctx: JobContext) -> None:
         if getattr(packet, "topic", None) != WEB_EVENTS_TOPIC:
             return
         data = getattr(packet, "data", b"")
-        # session_id を照合し、同室の別セッション向けイベント混入を弾く（#132）。
+        # session_id を照合し、同室の別セッション向けイベント混入を弾く。
         sel = decode_user_selection(data, expected_session_id=session_id)
         if sel is not None:
             detection_id, selected_value = sel
@@ -1583,8 +1578,7 @@ async def entrypoint(ctx: JobContext) -> None:
                 error=str(getattr(ev.error, "error", ev.error)),
             )
 
-        # 回復不能エラーで AgentSession が閉じると、従来はエージェントがルームに残ったまま
-        # 無反応になっていた（ADR-0038）。ERROR 起因の close だけ拾って作り直す。
+        # ERROR 起因の close だけ拾って作り直す（ADR-0038）。
         # JOB_SHUTDOWN / PARTICIPANT_DISCONNECTED 等の正常系では再起動しない。
         @s.on("close")
         def _on_session_close(ev: CloseEvent) -> None:
@@ -1600,7 +1594,7 @@ async def entrypoint(ctx: JobContext) -> None:
         """
         s: AgentSession = AgentSession(llm=build_realtime_model())
         _wire_session(s)
-        # ADR-0039: 入力音声に Krisp BVC を適用して雑音・別話者の被り由来の誤認識を抑える。
+        # 入力音声に Krisp BVC を適用して雑音・別話者の被り由来の誤認識を抑える。
         # 未導入/OFF では None（抑制なし）で会話は成立する。
         input_options = RoomInputOptions(
             video_enabled=True,
@@ -1692,7 +1686,7 @@ async def entrypoint(ctx: JobContext) -> None:
     ctx.room.on("data_received", _on_data)
     # 接続直後に web の状態表示を「聴いています」に同期する（03/04/05）。
     await publisher.status("listening")
-    # 最初の一問はモード別（ADR-0032 決定6・7）: developer は要件整理＋画面共有の案内、
+    # 最初の一問はモード別: developer は要件整理＋画面共有の案内、
     # end_user は利用体験の困りごとを技術用語なしで聞く。
     await session.generate_reply(
         instructions=opening_instructions(agent.interview_mode, agent.has_prep_context)
@@ -1700,7 +1694,7 @@ async def entrypoint(ctx: JobContext) -> None:
 
     # When the room closes, score the interview (LLM-as-a-judge) and log to Langfuse.
     async def _on_close() -> None:
-        # ADR-0037: 背景タスク（web イベント処理・先読み・背景分析・publish）を猶予付きで
+        # 背景タスク（web イベント処理・先読み・背景分析・publish）を猶予付きで
         # ドレンしてから評価する（検知 publish の取りこぼしを減らす）。2 段構えなのは
         # 意図的: web イベント処理（_bg_tasks）が完走時に publish タスクを新規に積むため、
         # 先に前段を送り切ってから agent 側を送る。猶予は各段 2 秒＝合計最大 4 秒。

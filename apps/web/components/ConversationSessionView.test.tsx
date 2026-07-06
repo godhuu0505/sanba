@@ -204,7 +204,7 @@ describe("ConversationSessionView（会話シェル結線）", () => {
       }),
     });
     // gap が最新 → 要約が常時ピンに前面表示（読み取り専用・抜けバッジ付き）。
-    // 音声状態インジケータ（#248）も role="status" を持つため、要約テキストとバッジで特定する。
+    // 音声状態インジケータも role="status" を持つため、要約テキストとバッジで特定する。
     expect(screen.getByText("『該当なし』の空状態が未定義。")).toBeTruthy();
     expect(screen.getByLabelText("抜け（未定義）を検知")).toBeTruthy();
     // 読み取り専用: 回答ボタンが無く、古い矛盾の選択肢も前面化しない（最新1件のみ）。
@@ -317,7 +317,7 @@ describe("ConversationSessionView（会話シェル結線）", () => {
       cancelledIds: new Set(["a1"]),
     });
     // ミニ状況の「資料 N」は破棄分を含まず、解析中フラグも消える（pct<100 の analysis 行が
-    // 残っていてもヘッダーが「資料 0（解析中）」と矛盾しない・Codex P2）。
+    // 残っていてもヘッダーが「資料 0（解析中）」と矛盾しない）。
     expect(screen.getByRole("button", { name: /資料 0/ })).toBeTruthy();
     expect(screen.queryByRole("button", { name: /解析中/ })).toBeNull();
     fireEvent.click(screen.getByRole("tab", { name: "参考資料" }));

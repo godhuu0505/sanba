@@ -1,4 +1,4 @@
-"""Tests for the material UI telemetry ingest endpoint (#232 / #243).
+"""Tests for the material UI telemetry ingest endpoint.
 
 web UI 由来の投入種別/中断イベントを、第三者クライアント分析 SDK ではなくサーバ側 OTLP
 カウンタへ集約する（observability.record_material_event）。ここでは受領の契約を検証する:
@@ -85,7 +85,7 @@ def test_telemetry_records_cancel() -> None:
 
 
 def test_telemetry_records_join_abort() -> None:
-    # PR9（FR-2.1）: リンク入場後の離脱（join.abort）を受理し、素材カウンタではなく
+    # リンク入場後の離脱（join.abort）を受理し、素材カウンタではなく
     # 専用カウンタ（sanba_join_ui_events_total / record_join_ui_event）へ計上する。
     sid = _new_session()
     res = client.post(

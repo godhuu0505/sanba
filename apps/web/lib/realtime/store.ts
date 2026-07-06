@@ -1,4 +1,4 @@
-// 共有 realtime イベントストア（Epic #93 / Issue #101）。
+// 共有 realtime イベントストア。
 //
 // 3つの P0 画面（05 検知 / 08 解析 / 09 要件絵巻）が共通で必要とする受信状態を
 // 1か所に集約する。各画面で別々に購読層を書くと 3重複・マージ衝突するため、ここで
@@ -58,7 +58,7 @@ export interface SessionState {
   transcript: TranscriptLine[];
   /** 素材 asset_id ごとの解析状態。 */
   analysis: AnalysisState[];
-  /** 直近の通常質問（金枠 / #181）。新しい question.asked で置き換わる。未提示なら null。 */
+  /** 直近の通常質問（金枠）。新しい question.asked で置き換わる。未提示なら null。 */
   question: Question | null;
   completed: SessionCompletion | null;
   /** 適用済みの最大 seq（ハイドレーション境界の判定に使う）。 */
@@ -93,17 +93,17 @@ export class RealtimeStore {
   private completed: SessionCompletion | null = null;
 
   /**
-   * GET スナップショット境界 seq（ドメイン別 / #119）。これ以下のライブ差分は当該ドメインの
+   * GET スナップショット境界 seq（ドメイン別）。これ以下のライブ差分は当該ドメインの
    * スナップショットに含まれるため破棄する。requirements と detections は別 GET なので境界も
    * 分ける。status/transcript/analysis/session.completed/question はどの GET にも含まれない
    * （question は lastQuestionSeq で別途ガード）ため、境界では捨てず種別ガードに委ねる。
    */
   private requirementsHydrationSeq = 0;
   private detectionsHydrationSeq = 0;
-  /** 観測した最大 reliable seq（欠番検知用 / #122）。lossy は前進させない。 */
+  /** 観測した最大 reliable seq（欠番検知用）。lossy は前進させない。 */
   private maxSeq = 0;
   /**
-   * 最後に適用した status の順序キー（#122 / #270）。新 agent は lossy_seq で順序付ける
+   * 最後に適用した status の順序キー。新 agent は lossy_seq で順序付ける
    * （agent 側 epoch ブロックで再起動を跨いで大域単調なので、これ単独で古い status を弾ける）。
    * 旧 agent（lossy_seq 無し）は echo された reliable seq で順序付ける（後方互換）。両系統は同一
    * セッション内で混在しないため、別々のガード変数で持つ。
@@ -171,7 +171,7 @@ export class RealtimeStore {
   }
 
   /**
-   * GET /questions/current の現在質問を取り込む（契約 §4 / #212 / ADR-0020 §5-2/§5-4/§5-11）。
+   * GET /questions/current の現在質問を取り込む（契約 §4 / ADR-0020 §5-2/§5-4/§5-11）。
    *
    * - `question`（非 null）も `null`（回答済み/未提示）も、`seq > lastQuestionSeq` のときだけ
    *   適用する。これにより「古い current を読んだ遅延 GET が、先に適用済みの新しい live
@@ -226,13 +226,12 @@ export class RealtimeStore {
       return;
     }
 
-    // lossy（status/transcript.partial）は reliable seq を消費せず現在値を echo するだけ（#122・
-    // ADR-0021）。echo した seq は境界・欠番判定に使えない（0 や境界以下になり得る）ため、lossy は
+    // lossy（status/transcript.partial）は reliable seq を消費せず現在値を echo するだけ（ADR-0021）。echo した seq は境界・欠番判定に使えない（0 や境界以下になり得る）ため、lossy は
     // ここでの境界/欠番判定の対象外とし、重複排除は reduce() の lossy_seq ガードに委ねる。
     const isLossy = event.reliable === false;
 
     // GET スナップショット境界より古い reliable 差分は破棄（スナップショットに含まれる）。境界は
-    // 種別が属する GET ドメイン別（#119）。status/transcript/analysis/session.completed は
+    // 種別が属する GET ドメイン別。status/transcript/analysis/session.completed は
     // どの GET にも含まれず、question は専用 seq ガード（lastQuestionSeq）を持つため、ここでは
     // 捨てず reduce() の種別ガードに委ねる。これで GET 実行中〜直後に後着した非スナップショット
     // 種別（例: status・transcript.final）を hydrationSeq 境界で取りこぼさない。
@@ -241,7 +240,7 @@ export class RealtimeStore {
       return;
     }
 
-    // 欠番検知・maxSeq 前進は reliable ストリームのみ（#122・ADR-0021）。lossy が欠落しても
+    // 欠番検知・maxSeq 前進は reliable ストリームのみ（ADR-0021）。lossy が欠落しても
     // reliable seq に穴は空かないため、lossy の欠番を gap 扱いして不要な GET 再取得を誘発しない。
     if (!isLossy && this.maxSeq > 0 && event.seq > this.maxSeq + 1) {
       this.metrics.recordGap();
@@ -261,7 +260,7 @@ export class RealtimeStore {
   }
 
   /**
-   * 種別が属する GET ドメインのスナップショット境界 seq（無ければ 0 = 境界なし / #119）。
+   * 種別が属する GET ドメインのスナップショット境界 seq（無ければ 0 = 境界なし）。
    * 境界 0 のときは `event.seq <= 0` が偽になる（seq は 1 始まり）ため実質ノーガードで、
    * 当該種別の重複排除は reduce() 内の専用 seq ガードに委ねられる。
    */
@@ -286,11 +285,11 @@ export class RealtimeStore {
   private reduce(event: ServerEvent): boolean {
     switch (event.type) {
       case "status": {
-        // status は lossy。順序は lossy_seq 単独で持つ（#122 / #270）。lossy_seq は agent 側で
+        // status は lossy。順序は lossy_seq 単独で持つ。lossy_seq は agent 側で
         // epoch ブロックにより**再起動を跨いで大域単調**なので、これだけで古い status を弾ける。
         // echo された reliable seq を主キーにしない: reliable seq は set_session_seq されない
         // reliable イベント（question.* 等）の後に再起動すると後退し得るため、主キーにすると
-        // 再起動直後の status が `seq < lastStatusSeq` で破棄される窓が残る（Codex P2）。
+        // 再起動直後の status が `seq < lastStatusSeq` で破棄される窓が残る。
         // 旧 agent（lossy_seq 無し）は従来どおり echo seq で順序付ける（後方互換）。
         if (event.lossy_seq === undefined) {
           if (event.seq <= this.lastStatusSeq) return false;
@@ -307,8 +306,8 @@ export class RealtimeStore {
       case "transcript.partial":
       case "transcript.final": {
         // final は reliable（version=seq）、partial は lossy（version=lossy_seq、無ければ seq に
-        // フォールバック＝旧 agent 後方互換 / Codex P2）。系統が違うため同系統どうしでのみ版比較し、
-        // 確定（final）を partial で巻き戻さない（#122・ADR-0021）。partial は utterance_id 単位で、
+        // フォールバック＝旧 agent 後方互換）。系統が違うため同系統どうしでのみ版比較し、
+        // 確定（final）を partial で巻き戻さない（ADR-0021）。partial は utterance_id 単位で、
         // 再起動後は別 utterance になるため lossy_seq リセットの影響を実質受けない。
         const isFinal = event.type === "transcript.final";
         const prev = this.transcript.get(event.utterance_id);
@@ -385,7 +384,7 @@ export class RealtimeStore {
       }
 
       case "detection.ambiguous": {
-        // 不明瞭（ambiguous / #182・ADR-0022）。矛盾でも抜けでもない第三の未解消検知。
+        // 不明瞭（ambiguous・ADR-0022）。矛盾でも抜けでもない第三の未解消検知。
         // gap と同様に open として確定ゲート（07）・深掘り（06）の未解消件数へ算入される。
         const existing = this.detections.get(event.id);
         if (existing && existing.seq >= event.seq && existing.value.resolved) {
@@ -443,7 +442,7 @@ export class RealtimeStore {
         );
 
       case "question.asked":
-        // 通常質問（金枠 / #181）。id を持つが「最新1問」を表示するため status/completed と
+        // 通常質問（金枠）。id を持つが「最新1問」を表示するため status/completed と
         // 同じく seq ガードで巻き戻しを防ぐ（新しい問いが古い再配信に負けない）。
         if (event.seq <= this.lastQuestionSeq) return false;
         this.lastQuestionSeq = event.seq;
@@ -455,7 +454,7 @@ export class RealtimeStore {
         return true;
 
       case "question.cleared":
-        // 現在質問のクリア伝播（#212 / ADR-0020 §5-10）。`question.asked` と対称な seq ガード。
+        // 現在質問のクリア伝播（ADR-0020 §5-10）。`question.asked` と対称な seq ガード。
         // 古いクリア（cleared_seq <= lastQuestionSeq）は新しい問いを畳まないよう破棄する
         // （例: q2.ask(seq=7) 適用後に遅延 q1.cleared(seq=6) が来ても 6<=7 で棄却）。
         if (event.seq <= this.lastQuestionSeq) return false;
@@ -487,8 +486,8 @@ export class RealtimeStore {
         const prev = this.analysis.get(event.asset_id)?.value;
         return this.upsert(this.analysis, event.asset_id, event.seq, {
           asset_id: event.asset_id,
-          // visual = 解析完了。抽出要件/突合が確定して届くイベントなので pct を 100 に固定する
-          // （#209 案A）。直前 progress が 40% でも「visual=完了」を保証し、selectMaterials の
+          // visual = 解析完了。抽出要件/突合が確定して届くイベントなので pct を 100 に固定する。
+          // 直前 progress が 40% でも「visual=完了」を保証し、selectMaterials の
           // done 判定（pct>=100）が確実に立つ。契約上 visual 後に 100% progress が来る保証は無い。
           pct: 100,
           stage: prev?.stage ?? "完了",
@@ -546,7 +545,7 @@ export class RealtimeStore {
   }
 
   /**
-   * transcript は版が 2 系統（final=reliable seq / partial=lossy_seq / #122）。生 seq で混在
+   * transcript は版が 2 系統（final=reliable seq / partial=lossy_seq）。生 seq で混在
    * ソートすると系統差で誤順になるため、確定（final）を seq 昇順で前に、未確定（partial＝現在進行
    * の発話）を lossy_seq 昇順で末尾に置く。これで「確定済みの会話＋末尾に進行中の一言」が出る。
    */

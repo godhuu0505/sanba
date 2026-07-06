@@ -1,4 +1,4 @@
-"""ゲスト入場 (ADR-0032 / PR6) のテスト。
+"""ゲスト入場 (ADR-0032) のテスト。
 
 匿名入口は guest_join_enabled × scope=end_user の 1 経路のみ（決定1）。ここでは
 - フェイルクローズ: フラグ off / developer リンクは匿名 401（invite を消費しない）
@@ -219,7 +219,7 @@ def test_invite_rate_limit_applies_to_logged_in_joins_too(
     assert _join(token).status_code == 429
 
 
-# ---- ADR-0032 決定4 / #320: ゲスト token の write 系拒否 -------------------------
+# ---- ADR-0032 決定4: ゲスト token の write 系拒否 ----------------------------
 def test_guest_session_token_is_read_only(guest_enabled: None) -> None:
     """ゲスト token はハイドレーション読取と telemetry のみ。write 系は 403。"""
     token = _issue_token(scope="end_user")
@@ -237,7 +237,7 @@ def test_guest_session_token_is_read_only(guest_enabled: None) -> None:
         json={"event": "material.cancel"},
     )
     assert telemetry.status_code == 200
-    # PR9: ゲストの離脱観測（join.abort）もゲスト token で通る（FR-2.1 の離脱点を追う）。
+    # ゲストの離脱観測（join.abort）もゲスト token で通る（FR-2.1 の離脱点を追う）。
     join_abort = client.post(
         f"/api/sessions/{sid}/telemetry",
         headers=headers,

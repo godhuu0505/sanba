@@ -7,7 +7,7 @@
 //
 // 高さは一定に保つ（可変高の音声状態インジケータはここに置かない）。ボトムバー直上に固定した
 // 選択肢フォーム（問いピン）を、聞き取りアイコンの表示/非表示で上下させないため、音声状態は
-// ヘッダ側の固定領域（ConversationShell）へ移した（#248 / 会話 UI の安定化）。
+// ヘッダ側の固定領域（ConversationShell）へ移した（会話 UI の安定化）。
 
 import { useState } from "react";
 import { Mic, MicOff, SendHorizontal, Volume2, VolumeX } from "lucide-react";

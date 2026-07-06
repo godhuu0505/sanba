@@ -1,4 +1,4 @@
-"""Tests for context ingestion (issue #6)."""
+"""Tests for context ingestion."""
 
 from __future__ import annotations
 
@@ -144,7 +144,7 @@ def test_extract_text_from_pptx_slides_and_notes() -> None:
 
 
 def test_extract_text_selects_extractor_by_mime_when_no_extension() -> None:
-    """拡張子なし・MIME のみのアップロードでも正しい抽出器を選ぶ（Codex P2）。
+    """拡張子なし・MIME のみのアップロードでも正しい抽出器を選ぶ。
 
     受理判定（is_text_upload）は MIME だけでも通すため、抽出も MIME にフォールバック
     しないと ZIP バイト列を UTF-8 デコードして索引してしまう。
@@ -220,7 +220,7 @@ def test_memory_indexer_counts_chunks() -> None:
     assert n == 3
 
 
-# ── grounding 索引の取消（#245 真の破棄）────────────────────────────────────
+# ── grounding 索引の取消（真の破棄）───────────────────────────────────────
 def test_delete_context_removes_only_matching_source() -> None:
     """出所接頭辞 `asset:{id}` の chunk だけを消し、他 source/他セッションは残す。"""
     indexer = ContextIndexer()

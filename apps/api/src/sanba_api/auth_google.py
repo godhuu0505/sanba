@@ -3,7 +3,7 @@
 本人確認 (identity) を司る層。ブラウザ (Next.js) が Google Identity Services で
 取得した OIDC の ID トークンを `Authorization: Bearer <id_token>` で受け取り、
 **サーバ側で** 署名・`aud`(client_id)・`iss`・`exp`・`email_verified` を検証する
-(ADR-0012)。検証済み identity をセッション作成/参加 (LiveKit トークン発行) に束ねる。
+検証済み identity をセッション作成/参加 (LiveKit トークン発行) に束ねる。
 
 設計メモ:
   - クライアント任せにしない。検証は必ずこのサーバで行う (セキュリティ必須事項)。
@@ -160,7 +160,7 @@ CurrentUser = Annotated[AuthUser, Depends(require_user)]
 def maybe_user(
     authorization: Annotated[str | None, Header()] = None,
 ) -> AuthUser | None:
-    """FastAPI 依存性: ゲスト候補を許す本人確認（ADR-0032 決定1 の 1 経路専用）。
+    """FastAPI 依存性: ゲスト候補を許す本人確認（1 経路専用）。
 
     Authorization ヘッダが無ければ None（＝ゲスト候補。許可するかはエンドポイント側が
     `guest_join_enabled` と invite の scope で判定する）。ヘッダが有れば `require_user` と
@@ -178,19 +178,19 @@ def maybe_user(
 
 
 def is_admin(user: AuthUser) -> bool:
-    """ADMIN_EMAILS 許可リストに含まれるか (ADR-0014 §2)。
+    """ADMIN_EMAILS 許可リストに含まれるか。
 
     `require_admin`（依存性・403/503 を返す）と違い、任意箇所での認可判定に使う
-    真偽値ヘルパー（例: product の owner or admin 判定 / ADR-0031）。
+    真偽値ヘルパー（例: product の owner or admin 判定）。
     未設定（空リスト）は False = フェイルクローズ。
     """
     return user.email.lower() in settings.admin_email_set
 
 
 def require_admin(user: Annotated[AuthUser, Depends(require_user)]) -> AuthUser:
-    """FastAPI 依存性: 管理者 (ADMIN_EMAILS 許可リスト) のみ通す。それ以外は 403 (ADR-0014 §2)。
+    """FastAPI 依存性: 管理者 (ADMIN_EMAILS 許可リスト) のみ通す。それ以外は 403。
 
-    `auth_dev_bypass` でも許可リストを照合する (§13): dev identity (dev@sanba.local) を
+    `auth_dev_bypass` でも許可リストを照合する: dev identity (dev@sanba.local) を
     `ADMIN_EMAILS` に入れておけば `just up` で管理画面が開く。本人確認は require_user
     が済ませており、ここは認可 (誰が管理者か) だけを見る。
     """

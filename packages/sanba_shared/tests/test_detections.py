@@ -1,4 +1,4 @@
-"""Tests for detection/seq persistence (Issue #94/#100 — Codex review).
+"""Tests for detection/seq persistence.
 
 Firestore 無しのメモリモードで、検知の保存・解消・seq 永続化を検証する。
 これにより GET /detections?open=1 のハイドレーションとリロード復元が成立する。
@@ -17,7 +17,7 @@ def _mem_repo() -> SessionRepository:
 
 
 def test_add_utterance_masks_pii_before_persist() -> None:
-    """発話は永続化前に PII マスキングされる（issue #10 / mask_pii_before_index）。"""
+    """発話は永続化前に PII マスキングされる。"""
     repo = _mem_repo()
     repo.add_utterance("s1", Utterance(speaker="participant", text="連絡は bob@example.com まで"))
     stored = repo._mem_utterances["s1"][0]
@@ -49,7 +49,7 @@ def test_set_session_seq() -> None:
 
 
 def test_get_session_seq_roundtrip_and_default() -> None:
-    # 未保存セッションは 0（新規）。保存後は読み戻せる（#123 再起動後の seq シード）。
+    # 未保存セッションは 0（新規）。保存後は読み戻せる（再起動後の seq シード）。
     repo = _mem_repo()
     assert repo.get_session_seq("unknown") == 0
     repo.set_session_seq("s1", 12)
@@ -57,7 +57,7 @@ def test_get_session_seq_roundtrip_and_default() -> None:
 
 
 def test_reserve_session_seq_allocates_monotonic_intervals() -> None:
-    # API は同じ seq 空間を共有する（#145・ADR-0023）。予約は単調増加の区間を返す。
+    # API は同じ seq 空間を共有する（ADR-0023）。予約は単調増加の区間を返す。
     repo = _mem_repo()
     assert repo.reserve_session_seq("s1") == 1  # 先頭 1
     assert repo.reserve_session_seq("s1") == 2  # 次は 2
@@ -74,7 +74,7 @@ def test_reserve_session_seq_continues_from_persisted_last_seq() -> None:
 
 
 def test_reserve_lossy_seq_base_increments_per_startup() -> None:
-    # 起動ごとに epoch を +1 し、前回より大きい lossy_seq 開始基底を返す（#270）。
+    # 起動ごとに epoch を +1 し、前回より大きい lossy_seq 開始基底を返す。
     repo = _mem_repo()
     block = repo.LOSSY_EPOCH_BLOCK
     first = repo.reserve_lossy_seq_base("s1")  # epoch 1
@@ -88,7 +88,7 @@ def test_reserve_lossy_seq_base_increments_per_startup() -> None:
 
 
 def test_get_startup_seq_returns_max_of_last_seq_and_question_seq() -> None:
-    # 再起動時シード（#270 補完）: question.asked/cleared は set_session_seq を呼ばないが
+    # 再起動時シード: question.asked/cleared は set_session_seq を呼ばないが
     # asked_seq/cleared_seq は Firestore に保存される。get_startup_seq はこれらの最大値を返し
     # 再起動後の status が web の seq ガードで弾かれる窓を塞ぐ。
     repo = _mem_repo()
@@ -114,7 +114,7 @@ def test_get_startup_seq_returns_max_of_last_seq_and_question_seq() -> None:
 
 
 def test_save_and_list_materials() -> None:
-    # 素材メタを永続化し、GET /context/files の復元に使える（#184・Codex P1）。
+    # 素材メタを永続化し、GET /context/files の復元に使える。
     repo = _mem_repo()
     repo.save_material("s1", {"id": "a1", "name": "mock.png", "kind": "image", "status": "done"})
     repo.save_material(
@@ -136,7 +136,7 @@ def test_save_material_upserts_by_id() -> None:
     assert items[0]["status"] == "done"
 
 
-# ── 現在質問の保存/クリア（#212 / ADR-0020）──────────────────────────────────
+# ── 現在質問の保存/クリア（ADR-0020）──────────────────────────────────────────
 def test_save_current_question_stores_pointer_with_asked_seq() -> None:
     repo = _mem_repo()
     repo.save_current_question(

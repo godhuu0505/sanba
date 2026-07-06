@@ -43,7 +43,7 @@ export default function AdminPage() {
   const [access, setAccess] = useState<Access>("loading");
   const [sessions, setSessions] = useState<AdminSession[]>([]);
   // 91 一覧 ⇆ 92 作成の画面遷移（Figma 73:8/73:9）。実装は 91 内アコーディオンだったが、
-  // Figma 正本に合わせ「＋ セッションを興す」CTA → 専用画面 92 へ分離する（#220）。
+  // Figma 正本に合わせ「＋ セッションを興す」CTA → 専用画面 92 へ分離する。
   const [view, setView] = useState<"home" | "create">("home");
 
   const loadSessions = useCallback(async () => {
@@ -165,7 +165,7 @@ export default function AdminPage() {
                   key={s.id}
                   title={s.title}
                   meta={`${s.owner_email} ・ ${formatDate(s.created_at)}`}
-                  // 押せない行に既定の「検める ›」ピルを残さない（Codex P2）。
+                  // 押せない行に既定の「検める ›」ピルを残さない。
                   action={null}
                 />
               ))}
@@ -221,7 +221,7 @@ function CreateSessionCard({
   onCreated: () => void;
 }) {
   const [title, setTitle] = useState("要件インタビュー");
-  // 既定は Figma 92（76:46）に合わせ「企画(PdM)」単一選択（実装は従来 3 役割すべてが既定だった / #220・監査 B-3 #16）。
+  // 既定は Figma 92（76:46）に合わせ「企画(PdM)」単一選択（実装は従来 3 役割すべてが既定だった）。
   // 複数選択は維持し、roles.length===0 で送信無効化のバリデーションも不変。
   const [roles, setRoles] = useState<string[]>([ROLES[0].value]);
   const [busy, setBusy] = useState(false);
@@ -238,7 +238,7 @@ function CreateSessionCard({
     try {
       setBusy(true);
       setError(null);
-      // owner 作成も consent 必須 (issue #10)。管理者が作るので明示同意済みとして渡す。
+      // owner 作成も consent 必須。管理者が作るので明示同意済みとして渡す。
       // role は ROLES の並びに揃えて発行する（表示と招待の符の順を一致させる）。
       const ordered = ROLES.map((r) => r.value).filter((v) => roles.includes(v));
       const res = await createSession(ordered, true, idToken, title);

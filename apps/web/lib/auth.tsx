@@ -278,7 +278,7 @@ export function useGoogleAuth(): GoogleAuth {
       // - "auto"（リロード時の静かな復元）はユーザー操作が無くポップアップがブロックされる
       //   ため出さない（Drive 取り込みの操作時に requestDriveAccess が改めて同意を求める）。
       // - Drive 連携が未構成（Picker API キー未設定）の環境では導線ごと使えないため、
-      //   不要な権限ポップアップを出さない（最小権限・未設定環境の退化を崩さない / Codex P2）。
+      //   不要な権限ポップアップを出さない（最小権限・未設定環境の退化を崩さない）。
       // 拒否されても driveGranted=false になるだけでログイン自体は成立する。
       if (isDriveConfigured() && res.select_by && res.select_by !== "auto") {
         void requestDriveAccessRef.current();
@@ -336,7 +336,7 @@ export function useGoogleAuth(): GoogleAuth {
       // One Tap を表示して自動再取得を試みる (未ログイン時のみ意味を持つ)。
       // 表示されない/スキップ/閉じられた = auto_select で credential 復元できない確定なので
       // そこで解決済みとする。credential が届く場合は onCredential が先に loggedIn を立てるため、
-      // ready かつ未ログインで誤リダイレクトする窓を作らない（Codex 指摘）。
+      // ready かつ未ログインで誤リダイレクトする窓を作らない。
       id.prompt((notification) => {
         if (
           notification.isNotDisplayed() ||

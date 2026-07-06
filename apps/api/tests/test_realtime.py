@@ -1,4 +1,4 @@
-"""アップロード解析の realtime publish（#145 / ADR-0023）の単体テスト。
+"""アップロード解析の realtime publish（ADR-0023）の単体テスト。
 
 LiveKit から切り離し、記録用 sender + in-memory repo でエンベロープ・seq・ステージ・
 no-op フォールバックを検証する（agent の EventPublisher テストと同じ方針）。api は
