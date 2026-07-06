@@ -20,6 +20,7 @@ from sanba_api.storage import (
     AssetStore,
     asset_kind,
     compute_asset_id,
+    is_binary_document,
     is_text_upload,
     resolve_content_type,
 )
@@ -78,6 +79,32 @@ def test_is_text_upload_detects_text_family() -> None:
     assert is_text_upload("notes.txt", "text/plain") is True
     assert is_text_upload("doc.pdf", "application/pdf") is True
     assert is_text_upload("mock.png", "image/png") is False
+
+
+def test_is_text_upload_detects_extended_document_types() -> None:
+    # 追加した資料形式（html/csv/json/docx/xlsx/pptx）。拡張子・MIME どちらでも受理する。
+    assert is_text_upload("spec.html", None) is True
+    assert is_text_upload("page.htm", "text/html") is True
+    assert is_text_upload("data.csv", "text/csv") is True
+    assert is_text_upload("config.json", "application/json") is True
+    assert is_text_upload("doc.docx", None) is True
+    assert (
+        is_text_upload(
+            "noext",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        is True
+    )
+    assert is_text_upload("deck.pptx", None) is True
+    assert is_text_upload("archive.zip", "application/zip") is False
+
+
+def test_is_binary_document_splits_size_guard() -> None:
+    # バイナリ文書は max_asset_bytes、プレーンテキストは文字数上限×4 で守る（境界の判定）。
+    assert is_binary_document("doc.pdf", None) is True
+    assert is_binary_document("doc.docx", None) is True
+    assert is_binary_document("spec.md", "text/markdown") is False
+    assert is_binary_document("spec.html", None) is False
 
 
 # ── 安定 ID / 保存 ────────────────────────────────────────────────────────
@@ -259,7 +286,8 @@ def test_delete_context_file_is_idempotent() -> None:
     assert second.json() == {"deleted": True, "existed": False}
 
 
-def test_upload_text_still_indexes() -> None:
+def test_upload_text_indexes_and_returns_doc_asset() -> None:
+    """資料も画像/動画と同じく安定 asset_id 付きの素材になる（素材一覧・破棄に対応）。"""
     sid = _new_session()
     res = client.post(
         f"/api/sessions/{sid}/context/file",
@@ -269,4 +297,103 @@ def test_upload_text_still_indexes() -> None:
     assert res.status_code == 200
     body = res.json()
     assert body["indexed_chunks"] >= 1
-    assert body["asset_id"] is None
+    assert body["asset_id"].startswith("asset-")
+    assert body["asset_kind"] == "doc"
+    assert body["analysis_pending"] is False
+
+    # 素材一覧（GET context/files）に載り、リロード後も実ファイル名・件数を復元できる。
+    files = client.get(f"/api/sessions/{sid}/context/files", headers=_session_auth(sid)).json()
+    by_name = {it["name"]: it for it in files["items"]}
+    assert by_name["prd.md"]["kind"] == "doc"
+    assert by_name["prd.md"]["status"] == "done"
+    assert by_name["prd.md"]["extracted"] >= 1
+
+
+def test_upload_doc_reupload_is_idempotent_in_grounding() -> None:
+    """同一資料の再投入は同じ asset_id になり、grounding の chunk を重複させない。"""
+    from sanba_api.main import _indexer
+
+    sid = _new_session()
+    payload = "検索を高速化する。\n\n対象は社内ユーザー。".encode()
+    first = client.post(
+        f"/api/sessions/{sid}/context/file",
+        files={"file": ("spec.md", payload, "text/markdown")},
+        headers=_session_auth(sid),
+    ).json()
+    second = client.post(
+        f"/api/sessions/{sid}/context/file",
+        files={"file": ("spec.md", payload, "text/markdown")},
+        headers=_session_auth(sid),
+    ).json()
+    assert first["asset_id"] == second["asset_id"]
+    chunks = [
+        d
+        for d in _indexer._mem
+        if d.get("session_id") == sid
+        and str(d.get("source", "")).startswith(f"asset:{first['asset_id']}")
+    ]
+    assert len(chunks) == second["indexed_chunks"]
+
+
+def test_upload_html_indexes_visible_text() -> None:
+    sid = _new_session()
+    html = "<html><body><h1>検索機能</h1><script>alert(1)</script></body></html>"
+    res = client.post(
+        f"/api/sessions/{sid}/context/file",
+        files={"file": ("spec.html", html.encode(), "text/html")},
+        headers=_session_auth(sid),
+    )
+    assert res.status_code == 200
+    assert res.json()["indexed_chunks"] >= 1
+
+
+def test_upload_docx_indexes_extracted_text() -> None:
+    import io
+
+    from docx import Document
+
+    document = Document()
+    document.add_paragraph("要約機能が必要。")
+    buf = io.BytesIO()
+    document.save(buf)
+
+    sid = _new_session()
+    res = client.post(
+        f"/api/sessions/{sid}/context/file",
+        files={
+            "file": (
+                "spec.docx",
+                buf.getvalue(),
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+        },
+        headers=_session_auth(sid),
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["indexed_chunks"] >= 1
+    assert body["asset_kind"] == "doc"
+
+
+def test_delete_context_file_discards_doc_material() -> None:
+    """資料も DELETE で素材メタ・grounding 索引をまとめて破棄できる（#245 と同じ契約）。"""
+    from sanba_api.main import _indexer
+
+    sid = _new_session()
+    up = client.post(
+        f"/api/sessions/{sid}/context/file",
+        files={"file": ("prd.md", "要約機能が必要。".encode(), "text/markdown")},
+        headers=_session_auth(sid),
+    ).json()
+    asset_id = up["asset_id"]
+
+    res = client.delete(f"/api/sessions/{sid}/context/file/{asset_id}", headers=_session_auth(sid))
+    assert res.status_code == 200
+    assert res.json() == {"deleted": True, "existed": True}
+    files = client.get(f"/api/sessions/{sid}/context/files", headers=_session_auth(sid)).json()
+    assert all(it["id"] != asset_id for it in files["items"])
+    assert not any(
+        str(d.get("source", "")).startswith(f"asset:{asset_id}")
+        for d in _indexer._mem
+        if d.get("session_id") == sid
+    )

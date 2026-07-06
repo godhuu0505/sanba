@@ -45,7 +45,7 @@ from ..deps import (
     forbid_guest_writes,
     require_session_access,
 )
-from ..ingestion import chunk_text, extract_text_from_upload
+from ..ingestion import DocumentExtractionError, chunk_text, extract_text_from_upload
 from ..observability import (
     record_asset_upload,
     record_join_ui_event,
@@ -63,7 +63,14 @@ from ..realtime import (
     NullSender,
     build_sender,
 )
-from ..storage import asset_kind, is_text_upload, material_record, resolve_content_type
+from ..storage import (
+    asset_kind,
+    compute_asset_id,
+    is_binary_document,
+    is_text_upload,
+    material_record,
+    resolve_content_type,
+)
 from ..vision import analyze_image
 
 log = structlog.get_logger(__name__)
@@ -109,7 +116,7 @@ class ContextResponse(BaseModel):
     # 画像/動画アップロード時のみ付与（issue #103 / 契約 §3）。web は asset_id で
     # analysis.progress / analysis.visual をファイル行へ対応付ける。
     asset_id: str | None = None
-    asset_kind: str | None = None  # "image" | "video"
+    asset_kind: str | None = None  # "image" | "video" | "doc"
     # 解析が未実装（例: 動画）で保存のみ済んだ場合 true（web は「準備中」を表示）。
     analysis_pending: bool = False
 
@@ -457,10 +464,11 @@ async def add_context_file(
     認可（契約 §4）: join 済みセッショントークン必須（text 版と同じく参加者限定）。これが
     無いと匿名で任意 session_id の grounding を汚染できてしまう。
 
-    txt/md/pdf はテキストとして grounding 索引に入れる（既存）。画像/動画は Cloud Storage に
-    保存し、安定 `asset_id` を返す（issue #103 / ADR-0004）。画像は Gemini で観察を抽出して
-    grounding に流し、agent が問いの根拠にできるようにする。動画解析は未実装のため保存のみ
-    （`analysis_pending=true`、web では「準備中」）。非対応形式は 415 で弾く。
+    資料（txt/md/html/csv/json/pdf/docx/xlsx/pptx）はテキスト抽出して grounding 索引へ入れ、
+    画像/動画と同じく安定 `asset_id`（content hash）と素材メタを残す（リロード後の素材一覧・
+    DELETE での破棄に対応 / ADR-0044）。画像/動画は Cloud Storage に保存し、安定 `asset_id` を
+    返す（issue #103 / ADR-0004）。画像は Gemini で観察を抽出して grounding に流し、agent が
+    問いの根拠にできるようにする。非対応形式は 415 で弾く。
 
     観測性: アップロード〜解析を span/log で追い、素材数を kind/result で計測する（契約 §5）。
     ゲスト token（ADR-0032 決定4）は読取専用のため素材投入は不可。
@@ -469,21 +477,73 @@ async def add_context_file(
     filename = file.filename or "upload"
     raw = await file.read()
 
-    # 既存のテキスト経路（txt/md/pdf）。
+    # 資料（テキスト/文書）経路。プレーンテキストは「文字数上限の UTF-8 最悪 4 倍」で、
+    # バイナリ文書（pdf/docx 等）はバイト数≠文字数のため画像/動画と同じ max_asset_bytes で守る。
     if is_text_upload(filename, file.content_type):
-        if len(raw) > settings.max_context_chars * 4:  # bytes guard (~utf-8 worst case)
+        byte_limit = (
+            settings.max_asset_bytes
+            if is_binary_document(filename, file.content_type)
+            else settings.max_context_chars * 4
+        )
+        if len(raw) > byte_limit:
+            record_asset_upload("doc", "rejected")
             raise HTTPException(status_code=413, detail="file too large")
-        text = extract_text_from_upload(filename, raw)
-        chunks = chunk_text(text)
-        n = _indexer.index_context(session_id, chunks, filename)
-        return ContextResponse(indexed_chunks=n)
+        # 観測性（CLAUDE.md 原則3）: Office/PDF の抽出は重くなり得るため、画像/動画経路と
+        # 同様に span でレイテンシを追えるようにする。
+        tracer = _get_tracer()
+        span_cm = (
+            tracer.start_as_current_span("context.file.doc") if tracer else contextlib.nullcontext()
+        )
+        with span_cm as span:
+            if span is not None:
+                span.set_attribute("sanba.asset.kind", "doc")
+                span.set_attribute("sanba.asset.size", len(raw))
+            # 壊れたファイル・zip bomb は 500 にせず「抽出 0 件」へ平す（best-effort）が、
+            # メトリクスでは成功（indexed）と区別して計上する（ダッシュボードで異常を追える）。
+            extract_failed = False
+            try:
+                text = extract_text_from_upload(filename, raw, file.content_type)
+            except DocumentExtractionError:
+                text = ""
+                extract_failed = True
+            if len(text) > settings.max_context_chars:
+                record_asset_upload("doc", "rejected")
+                raise HTTPException(status_code=413, detail="extracted text too large")
+            chunks = chunk_text(text)
+            # 画像/動画と同じ安定 ID（content hash）で素材として扱う: 同一資料の再投入は
+            # 同じ asset_id になるため、古い chunk を出所ごと消してから索引し直す（冪等化）。
+            doc_asset_id = compute_asset_id(raw)
+            if span is not None:
+                span.set_attribute("sanba.asset.id", doc_asset_id)
+            _indexer.delete_context(session_id, f"asset:{doc_asset_id}")
+            n = _indexer.index_context(session_id, chunks, f"asset:{doc_asset_id}")
+            record_asset_upload("doc", "extract_failed" if extract_failed else "indexed")
+            # 素材一覧（GET context/files / #184）へ永続化。リロード後も一覧に残り、DELETE
+            # /context/file/{asset_id} で索引ごと破棄できる（binary は無く meta+索引のみ）。
+            _repo.save_material(
+                session_id,
+                material_record(doc_asset_id, filename, "doc", status="done", extracted=n),
+            )
+            log.info(
+                "doc_indexed",
+                session=session_id,
+                asset_id=doc_asset_id,
+                chunks=n,
+                extract_failed=extract_failed,
+                sub=access.sub,
+            )
+            return ContextResponse(indexed_chunks=n, asset_id=doc_asset_id, asset_kind="doc")
 
     kind = asset_kind(filename, file.content_type)
     if kind is None:
         # 非対応拡張子（web ピッカでも弾くが、API でもフェイルクローズ）。
         record_asset_upload("unknown", "rejected")
         raise HTTPException(
-            status_code=415, detail="unsupported file type (allowed: png/jpg/mp4/mov, txt/md/pdf)"
+            status_code=415,
+            detail=(
+                "unsupported file type (allowed: png/jpg/mp4/mov, "
+                "txt/md/html/csv/json/pdf/docx/xlsx/pptx)"
+            ),
         )
     if len(raw) > settings.max_asset_bytes:
         record_asset_upload(kind, "rejected")
