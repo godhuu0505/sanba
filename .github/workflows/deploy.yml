@@ -187,6 +187,7 @@ jobs:
             ${{ vars.NEXT_PUBLIC_API_URL != '' && format('NEXT_PUBLIC_API_URL={0}', vars.NEXT_PUBLIC_API_URL) || '' }}
             ${{ vars.NEXT_PUBLIC_LIVEKIT_URL != '' && format('NEXT_PUBLIC_LIVEKIT_URL={0}', vars.NEXT_PUBLIC_LIVEKIT_URL) || '' }}
             ${{ vars.NEXT_PUBLIC_GOOGLE_CLIENT_ID != '' && format('NEXT_PUBLIC_GOOGLE_CLIENT_ID={0}', vars.NEXT_PUBLIC_GOOGLE_CLIENT_ID) || '' }}
+            ${{ vars.NEXT_PUBLIC_GOOGLE_API_KEY != '' && format('NEXT_PUBLIC_GOOGLE_API_KEY={0}', vars.NEXT_PUBLIC_GOOGLE_API_KEY) || '' }}
 
       - name: Deploy to Cloud Run (image only; env/secret は Terraform 管理)
         run: |

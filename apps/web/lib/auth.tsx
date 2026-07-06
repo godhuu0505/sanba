@@ -10,6 +10,8 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
+import { isDriveConfigured } from "./googleDrive";
+
 const CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? "";
 // ボタン言語を日本語に固定する。Google 公式ガイド（display-button#button_language）は、
 // 手動固定時に script URL の `?hl=` と JS の `locale` を**併用**する手順を示す。`locale:"ja"`
@@ -57,6 +59,12 @@ function writeAuthHint(present: boolean): void {
   }
 }
 
+// Google ドライブ取り込み（ADR-0044）で求める最小スコープ。drive.file は「ユーザーが
+// Google Picker で選んだファイルだけ」読めるスコープで、Drive 全体は見えない（最小権限・
+// Google の追加審査も不要）。アクセストークンは ID トークンと同じくメモリのみ保持
+// （ADR-0014 §7: 永続化しない）。
+export const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file";
+
 export interface GoogleProfile {
   email: string;
   name: string;
@@ -65,6 +73,12 @@ export interface GoogleProfile {
 
 interface CredentialResponse {
   credential?: string;
+  /**
+   * 取得経路（GIS 仕様）。"auto" = リロード時の静かな復元（One Tap auto_select）、
+   * それ以外（btn/user 等）= ユーザーの明示的なログイン操作。Drive 同意ポップアップを
+   * 出してよいか（ユーザー操作起点か）の判定に使う。
+   */
+  select_by?: string;
 }
 
 // One Tap の表示結果通知（本フックが使う最小サブセット）。
@@ -86,9 +100,31 @@ interface GoogleIdentity {
   disableAutoSelect(): void;
 }
 
+// GIS OAuth2 トークンクライアント（Drive 取り込み用）の最小サブセット。
+interface TokenResponse {
+  access_token?: string;
+  expires_in?: number;
+  /** 実際に許可されたスコープ（空白区切り）。同意画面でチェックを外されることがある。 */
+  scope?: string;
+  error?: string;
+}
+
+interface TokenClient {
+  requestAccessToken(overrideConfig?: { prompt?: string }): void;
+}
+
+interface GoogleOAuth2 {
+  initTokenClient(config: {
+    client_id: string;
+    scope: string;
+    callback: (res: TokenResponse) => void;
+    error_callback?: (err: { type?: string; message?: string }) => void;
+  }): TokenClient;
+}
+
 declare global {
   interface Window {
-    google?: { accounts: { id: GoogleIdentity } };
+    google?: { accounts: { id: GoogleIdentity; oauth2?: GoogleOAuth2 } };
   }
 }
 
@@ -118,6 +154,19 @@ export interface GoogleAuth {
   signOut: (opts?: { broadcast?: boolean }) => void;
   /** ログアウト→再ログイン導線で GIS ボタンを再描画させる。state 14 → 11 への遷移時に呼ぶ。 */
   resetButton: () => void;
+  /**
+   * Google ドライブ（drive.file）の同意状態。null = 未確定（未要求・トークン失効後）、
+   * true = 許可済み（有効なアクセストークンあり）、false = 拒否/取得失敗。
+   * false のとき Drive 取り込みは動かない（UI は再同意導線を出す）。
+   */
+  driveGranted: boolean | null;
+  /**
+   * Drive アクセストークンを（再）取得する。有効なトークンが手元にあればポップアップを
+   * 出さず使い回し、無ければ GIS の同意ポップアップで再度権限を求める（要件: 権限が
+   * もらえていない状態でアップロードしようとしたら再度権限を求める）。取得できなければ
+   * null（拒否・ポップアップブロック・dev モード）。トークンはメモリのみ保持。
+   */
+  requestDriveAccess: () => Promise<string | null>;
 }
 
 /**
@@ -165,11 +214,75 @@ export function useGoogleAuth(): GoogleAuth {
   const credentialRef = useRef<string | null>(null);
   credentialRef.current = credential;
 
+  // ── Google ドライブ（drive.file）の同意・アクセストークン ─────────────────
+  // ADR-0014 §7 の方針どおりメモリのみ（localStorage に置かない）。expiry を控え、
+  // 失効後の取り込みでは requestDriveAccess が静かに再取得（同意済みなら即時）する。
+  const [driveGranted, setDriveGranted] = useState<boolean | null>(null);
+  const driveTokenRef = useRef<string | null>(null);
+  const driveExpiryRef = useRef(0);
+
+  const requestDriveAccess = useCallback((): Promise<string | null> => {
+    // dev モード（client_id 未設定）は実 Drive を呼べないため常に不可（UI 側が案内する）。
+    if (devMode) return Promise.resolve(null);
+    // 失効 1 分前までのトークンは使い回す（取り込み連打で同意ポップアップを乱発しない）。
+    if (driveTokenRef.current && Date.now() < driveExpiryRef.current - 60_000) {
+      return Promise.resolve(driveTokenRef.current);
+    }
+    const oauth2 = window.google?.accounts.oauth2;
+    if (!oauth2) return Promise.resolve(null);
+    return new Promise((resolve) => {
+      const settle = (token: string | null) => {
+        setDriveGranted(token !== null);
+        resolve(token);
+      };
+      try {
+        const client = oauth2.initTokenClient({
+          client_id: CLIENT_ID,
+          scope: DRIVE_SCOPE,
+          callback: (res) => {
+            // 同意画面でスコープのチェックを外して許可されることがあるため、トークンの有無
+            // だけでなく drive.file が実際に許可されたかも確認する（fail-closed）。
+            if (res.access_token && (res.scope ?? "").includes(DRIVE_SCOPE)) {
+              driveTokenRef.current = res.access_token;
+              driveExpiryRef.current = Date.now() + (res.expires_in ?? 3600) * 1000;
+              settle(res.access_token);
+            } else {
+              settle(null);
+            }
+          },
+          // 拒否（access_denied）・ポップアップブロックはここに届く。false に確定し、
+          // 次の取り込み操作で再度同意を求める（UI は導線を出す）。
+          error_callback: (err) => {
+            console.info("[auth] drive consent unavailable", { type: err?.type });
+            settle(null);
+          },
+        });
+        client.requestAccessToken();
+      } catch (e) {
+        console.info("[auth] drive token client failed", e);
+        settle(null);
+      }
+    });
+  }, [devMode]);
+
+  // onCredential（ログイン確定）から最新の requestDriveAccess を呼ぶためのミラー。
+  const requestDriveAccessRef = useRef(requestDriveAccess);
+  requestDriveAccessRef.current = requestDriveAccess;
+
   const onCredential = useCallback((res: CredentialResponse) => {
     if (res.credential) {
       setCredential(res.credential);
       // 次回のフルロードで「復元を待つ価値がある」ことを残す（トークンは含めない）。
       writeAuthHint(true);
+      // 要件: Google ログインのタイミングで Drive 権限も求める。ただし
+      // - "auto"（リロード時の静かな復元）はユーザー操作が無くポップアップがブロックされる
+      //   ため出さない（Drive 取り込みの操作時に requestDriveAccess が改めて同意を求める）。
+      // - Drive 連携が未構成（Picker API キー未設定）の環境では導線ごと使えないため、
+      //   不要な権限ポップアップを出さない（最小権限・未設定環境の退化を崩さない / Codex P2）。
+      // 拒否されても driveGranted=false になるだけでログイン自体は成立する。
+      if (isDriveConfigured() && res.select_by && res.select_by !== "auto") {
+        void requestDriveAccessRef.current();
+      }
     }
   }, []);
 
@@ -264,6 +377,10 @@ export function useGoogleAuth(): GoogleAuth {
   const resetLocalAuth = useCallback(() => {
     setCredential(null);
     setDevLoggedIn(false);
+    // Drive アクセストークンも道連れにする（ログアウト後に前ユーザーの Drive を読めない）。
+    driveTokenRef.current = null;
+    driveExpiryRef.current = 0;
+    setDriveGranted(null);
     // ログアウト後のフルロードで復元待ち（長い settle）に入らないようヒントも消す。
     writeAuthHint(false);
     if (!devMode) window.google?.accounts.id.disableAutoSelect();
@@ -316,6 +433,8 @@ export function useGoogleAuth(): GoogleAuth {
     devSignIn,
     signOut,
     resetButton,
+    driveGranted,
+    requestDriveAccess,
   };
 }
 

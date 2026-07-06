@@ -17,6 +17,14 @@ vi.mock("@livekit/components-react", () => ({
 }));
 vi.mock("livekit-client", () => ({ Track: { Source: { Microphone: "microphone" } } }));
 
+// Drive 同意（ADR-0044）は本テストの対象外。未許可の素の状態を返す。
+vi.mock("@/lib/auth", () => ({
+  useAuth: () => ({
+    driveGranted: null,
+    requestDriveAccess: () => Promise.resolve(null),
+  }),
+}));
+
 // realtime 購読は本テストの対象外。最小の state を返す。
 vi.mock("@/lib/realtime/useRealtimeSession", () => ({
   useRealtimeSession: () => ({
@@ -35,6 +43,7 @@ const deleteContextFile = vi.fn();
 vi.mock("@/lib/api", () => ({
   ACCEPTED_IMAGE: ".png",
   ACCEPTED_VIDEO: ".mp4",
+  ACCEPTED_DOC: ".md",
   uploadContextFile: (...args: unknown[]) => uploadContextFile(...args),
   fetchContextFiles: () => Promise.resolve({ items: [] }),
   exportRequirements: vi.fn(),

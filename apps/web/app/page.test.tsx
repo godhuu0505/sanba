@@ -16,6 +16,9 @@ const authState = {
   devSignIn: vi.fn(),
   signOut: vi.fn(),
   resetButton: vi.fn(),
+  // Drive 同意（ADR-0044）。既定は未確定・未許可（取り込みテストで個別に上書きする）。
+  driveGranted: null as boolean | null,
+  requestDriveAccess: vi.fn(async () => null as string | null),
 };
 vi.mock("../lib/auth", () => ({ useAuth: () => authState }));
 
@@ -87,15 +90,35 @@ vi.mock("../lib/api", () => ({
   fetchGithubRepos: (...a: unknown[]) => fetchGithubRepos(...a),
   listGithubBranches: (...a: unknown[]) => listGithubBranches(...a),
   selectSessionRepo: (...a: unknown[]) => selectSessionRepo(...a),
-  // 実装と同じ受理範囲・判定（PNG/JPG・MP4/MOV）。テストではロジックをそのまま使う。
+  // 実装と同じ受理範囲・判定（画像/動画 + 資料）。テストではロジックをそのまま使う。
   ACCEPTED_IMAGE: ".png,.jpg,.jpeg,image/png,image/jpeg",
   ACCEPTED_VIDEO: ".mp4,.mov,video/mp4,video/quicktime",
-  classifyUpload: (filename: string) => {
-    const name = filename.toLowerCase();
+  ACCEPTED_DOC: ".txt,.md,.pdf,.html,.csv,.json,.docx,.xlsx,.pptx",
+  ACCEPTED_SUMMARY: "画像 PNG/JPG・動画 MP4/MOV・資料 PDF/Word/Excel/PowerPoint/Markdown/HTML/CSV 等",
+  classifyFileUpload: (file: { name: string; type: string }) => {
+    const name = file.name.toLowerCase();
     if ([".png", ".jpg", ".jpeg"].some((e) => name.endsWith(e))) return "image";
     if ([".mp4", ".mov"].some((e) => name.endsWith(e))) return "video";
+    if ([".txt", ".md", ".pdf", ".html", ".csv", ".json", ".docx", ".xlsx", ".pptx"].some((e) => name.endsWith(e)))
+      return "doc";
+    // 拡張子が無くても MIME が受理範囲なら通す（実装と同じ / Codex P2）。
+    const type = file.type.toLowerCase();
+    if (type === "image/png" || type === "image/jpeg") return "image";
+    if (type === "video/mp4" || type === "video/quicktime") return "video";
+    if (type === "text/plain" || type === "text/markdown") return "doc";
     return null;
   },
+}));
+
+// Google ドライブ連携（ADR-0044）。既定は未構成（＝この環境では利用できない案内）。
+// 取り込みフローのテストは driveConfigured / 各 fn を上書きして使う。
+let driveConfigured = false;
+const openDrivePicker = vi.fn(async (..._a: unknown[]) => [] as unknown[]);
+const importDriveFile = vi.fn(async (..._a: unknown[]) => new File(["x"], "drive.md"));
+vi.mock("../lib/googleDrive", () => ({
+  isDriveConfigured: () => driveConfigured,
+  openDrivePicker: (...a: unknown[]) => openDrivePicker(...a),
+  importDriveFile: (...a: unknown[]) => importDriveFile(...a),
 }));
 
 // 接続後ブランチに入っても落ちないよう、LiveKit / SessionView は素通しにする。
@@ -142,6 +165,14 @@ describe("入口フロー（#140）", () => {
       commit_sha: null,
       status: "none",
     }));
+    driveConfigured = false;
+    authState.driveGranted = null;
+    authState.requestDriveAccess.mockClear();
+    authState.requestDriveAccess.mockImplementation(async () => null);
+    openDrivePicker.mockClear();
+    openDrivePicker.mockImplementation(async () => []);
+    importDriveFile.mockClear();
+    importDriveFile.mockImplementation(async () => new File(["x"], "drive.md"));
   });
   afterEach(() => {
     cleanup();
@@ -603,11 +634,28 @@ describe("入口フロー（#140）", () => {
   });
 
   it("非対応形式は弾いて理由を出し、ステージしない", async () => {
+    // .txt/.md/.pdf 等の資料は受理対象になった（ADR-0044）ため、非対応例は実行ファイル。
     const { container } = await gotoPrepare();
-    const bad = new File(["x"], "secret.txt", { type: "text/plain" });
+    const bad = new File(["x"], "malware.exe", { type: "application/octet-stream" });
     pickFiles(container, [bad]);
     expect(screen.getByRole("alert").textContent).toContain("対応していない形式");
     expect(screen.queryByRole("list", { name: "添付した参考資料" })).toBeNull();
+  });
+
+  it("資料（Markdown/PDF/Office）もステージできる（ADR-0044）", async () => {
+    const { container } = await gotoPrepare();
+    pickFiles(container, [
+      new File(["# spec"], "spec.md", { type: "text/markdown" }),
+      new File(["%PDF"], "prd.pdf", { type: "application/pdf" }),
+      new File(["PK"], "req.xlsx", {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      }),
+    ]);
+    const list = screen.getByRole("list", { name: "添付した参考資料" }).textContent;
+    expect(list).toContain("spec.md");
+    expect(list).toContain("prd.pdf");
+    expect(list).toContain("req.xlsx");
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("開始時にステージ済みファイルが join 後に投入され、03-0 サマリに件数/名が反映される", async () => {
@@ -670,6 +718,59 @@ describe("入口フロー（#140）", () => {
     ).toBe(true);
     await act(async () => {
       release({ session_id: "s1", invites: { pm: "inv-pm" } });
+    });
+  });
+
+  it("Drive 取り込み中は開始・追加を無効化し、完了後にステージへ載る（ADR-0044 / Codex P2）", async () => {
+    driveConfigured = true;
+    authState.requestDriveAccess.mockImplementation(async () => "drive-tok");
+    openDrivePicker.mockImplementation(async () => [
+      { id: "d1", name: "要件メモ", mimeType: "application/vnd.google-apps.document" },
+    ]);
+    let releaseImport: (f: File) => void = () => {};
+    importDriveFile.mockReturnValue(new Promise<File>((r) => { releaseImport = r; }));
+    await gotoPrepare();
+    fireEvent.click(screen.getByRole("checkbox")); // 同意 ON = 開始可能のベースライン。
+    fireEvent.click(screen.getByRole("button", { name: "ファイルを追加" })); // 手段選択シート。
+    fireEvent.click(screen.getByRole("button", { name: /Google ドライブから選ぶ/ }));
+    await waitFor(() => expect(importDriveFile).toHaveBeenCalled());
+    // 取り込み中: クリック時点の staged だけが投入されるため、開始も追加も止める。
+    expect(
+      (screen.getByRole("button", { name: "要件サンバを始める" }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+    expect(
+      (screen.getByRole("button", { name: "ファイルを追加" }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+    // 取り込み完了で解除され、資料がステージへ載る（Docs は Markdown へ export された名前）。
+    await act(async () => {
+      releaseImport(new File(["# memo"], "要件メモ.md", { type: "text/markdown" }));
+    });
+    await waitFor(() =>
+      expect(
+        screen.getByRole("list", { name: "添付した参考資料" }).textContent,
+      ).toContain("要件メモ.md"),
+    );
+    expect(
+      (screen.getByRole("button", { name: "要件サンバを始める" }) as HTMLButtonElement).disabled,
+    ).toBe(false);
+  });
+
+  it("Drive 権限が未許可なら取り込まず、シート内で再同意を促す文言を出す（ADR-0044）", async () => {
+    driveConfigured = true;
+    authState.requestDriveAccess.mockImplementation(async () => null); // 拒否/ブロック。
+    await gotoPrepare();
+    fireEvent.click(screen.getByRole("button", { name: "ファイルを追加" }));
+    fireEvent.click(screen.getByRole("button", { name: /Google ドライブから選ぶ/ }));
+    await waitFor(() => expect(authState.requestDriveAccess).toHaveBeenCalled());
+    // Picker は開かず（取り込み不可）、再試行で再同意を求める案内が出る
+    // （シートは開いたままなので、シート内とフォーム側の両方に alert が出る）。
+    expect(openDrivePicker).not.toHaveBeenCalled();
+    await waitFor(() => {
+      const alerts = screen.getAllByRole("alert");
+      expect(alerts.length).toBeGreaterThan(0);
+      for (const alert of alerts) {
+        expect(alert.textContent).toContain("アクセスが許可されていません");
+      }
     });
   });
 
