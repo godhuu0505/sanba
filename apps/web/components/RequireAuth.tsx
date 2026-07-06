@@ -2,11 +2,15 @@
 
 // 認証ゲート（ADR-0012 / docs/design/conversation-experience.md §3 横断）。
 // 未ログインで保護ルート（会話フェーズ等）に来たら /login?next= へリダイレクトする。
-// 認証解決前（ready=false）は何も描画せずリダイレクトもしない（解決待ち）。
-// ログイン後は next で元の遷移先へ復帰する想定（/login 側が next を読む）。
+// 認証解決前（ready=false）はリダイレクトせず「確認中」を表示して解決を待つ
+// （ログイン痕跡があるブラウザでは auth 側が復元を長めに待つため、空白ではなく状態を見せる）。
+// 復元できればそのまま保護コンテンツを描画する＝ログイン済みなら /login を経由せず
+// アクセスした URL に直接入れる。ログイン後は next で元の遷移先へ復帰する想定（/login 側が next を読む）。
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
+
+import { Screen } from "@/components/sanba";
 
 export interface RequireAuthProps {
   /** 認証状態が解決済みか（GIS の再取得待ちなどが終わったか）。false の間はリダイレクトしない。 */
@@ -46,7 +50,23 @@ export function RequireAuth({ ready, loggedIn, next, children }: RequireAuthProp
     }
   }, [ready, loggedIn, next, router]);
 
-  // 解決前・未ログイン確定（リダイレクト中）は保護コンテンツを出さない。
-  if (!ready || !loggedIn) return null;
+  // 解決前は保護コンテンツを出さず「確認中」を見せる（/login の確認中表示と同じ意匠）。
+  // 復元が済めばこのままアクセス先の画面を描画し、/login への往復を挟まない。
+  if (!ready) {
+    return (
+      <Screen className="items-center justify-center gap-4 text-center">
+        <div
+          role="status"
+          aria-label="ログイン状態を確認中"
+          className="size-16 animate-spin rounded-full border-4 border-sanba-border border-t-sanba-gold"
+        />
+        <p className="text-[13px] leading-relaxed text-sanba-muted">
+          ログイン状態を確認しています…
+        </p>
+      </Screen>
+    );
+  }
+  // 未ログイン確定（リダイレクト中）は何も出さない。
+  if (!loggedIn) return null;
   return <>{children}</>;
 }

@@ -24,6 +24,39 @@ const GSI_SRC = "https://accounts.google.com/gsi/client?hl=ja";
 // ユニーク値細工も不要になる（比較は ADR-0030）。
 export const LOGOUT_CHANNEL = "sanba.auth.logout.v1";
 
+// 「このブラウザで SANBA にログインしたことがある」ことだけを示す非機微なヒント（ADR-0014 §7 更新）。
+// トークンや PII は一切含まない真偽値で、静かな再取得（auto_select）の解決をどれだけ待つかの
+// 判断にだけ使う。ヒントがあるのに固定 2.5s で「未ログイン確定」にすると、GIS スクリプトの
+// ロード＋One Tap 再取得がそれより遅い環境で、ログイン済みユーザーが保護ページ→/login→復元→
+// 元ページ、と毎回ログイン画面を経由してしまう（issue: ログイン判定バグ）。
+// ID トークン本体を localStorage に置かない方針（ADR-0014 §7 / XSS 回避）は不変。
+export const AUTH_HINT_KEY = "sanba.auth.hint.v1";
+
+// 静かな再取得（auto_select）の解決を待つフォールバック上限。GIS からの通知も credential も
+// 来ない場合にこの時間で「未ログイン」として解決する。ログイン痕跡（AUTH_HINT_KEY）がある
+// ブラウザでは復元成功の見込みが高いため、スクリプトロード込みでも間に合うよう延長する。
+const SETTLE_NO_HINT_MS = 2500;
+const SETTLE_WITH_HINT_MS = 8000;
+
+/** ログイン痕跡ヒントを読む。localStorage 不可の環境（プライベートモード等）は false 扱い。 */
+function readAuthHint(): boolean {
+  try {
+    return window.localStorage.getItem(AUTH_HINT_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+/** ログイン痕跡ヒントを書く/消す。書けない環境では黙って諦める（挙動は従来どおりに退化）。 */
+function writeAuthHint(present: boolean): void {
+  try {
+    if (present) window.localStorage.setItem(AUTH_HINT_KEY, "1");
+    else window.localStorage.removeItem(AUTH_HINT_KEY);
+  } catch {
+    // no-op
+  }
+}
+
 export interface GoogleProfile {
   email: string;
   name: string;
@@ -127,9 +160,17 @@ export function useGoogleAuth(): GoogleAuth {
   const buttonRef = useRef<HTMLDivElement | null>(null);
   // 他タブへのログアウト伝播チャネル（ADR-0030）。購読 effect が生成し、signOut が送信に使う。
   const logoutChannelRef = useRef<BroadcastChannel | null>(null);
+  // settle タイマーのコールバックから「その時点の」ログイン状態を読むためのミラー
+  // （effect のクロージャは生成時の state しか見えないため）。
+  const credentialRef = useRef<string | null>(null);
+  credentialRef.current = credential;
 
   const onCredential = useCallback((res: CredentialResponse) => {
-    if (res.credential) setCredential(res.credential);
+    if (res.credential) {
+      setCredential(res.credential);
+      // 次回のフルロードで「復元を待つ価値がある」ことを残す（トークンは含めない）。
+      writeAuthHint(true);
+    }
   }, []);
 
   useEffect(() => {
@@ -137,11 +178,22 @@ export function useGoogleAuth(): GoogleAuth {
 
     let cancelled = false;
     // フォールバック: スクリプトのロード失敗や通知の取りこぼしで解決できないと ready が永久に
-    // false のまま保護ページが空白になるため、一定時間で必ず解決済みにする（auto_select の
-    // credential はこれより速く届く想定の猶予）。
+    // false のまま保護ページが解決待ちで止まるため、一定時間で必ず解決済みにする。
+    // ログイン痕跡（AUTH_HINT_KEY）があるブラウザでは auto_select の復元成功が見込めるため
+    // 長めに待つ（固定 2.5s だとスクリプトロード＋再取得に間に合わず、ログイン済みなのに
+    // /login へ誤送→復元後に元ページへ戻る、という不要な往復が毎回起きる）。
+    // ヒントが無ければ復元は起き得ないので従来どおり短く解決する。
+    const hadSession = readAuthHint();
     const settleTimer = window.setTimeout(() => {
-      if (!cancelled) setGisSettled(true);
-    }, 2500);
+      if (cancelled) return;
+      if (hadSession && credentialRef.current === null) {
+        // 待っても復元できなかった＝Google セッション切れ等。ヒントを消し、次回ロードが
+        // 長待ちしないようにする（調査用の痕跡。PII なし / CLAUDE.md 原則3）。
+        console.info("[auth] silent restore timed out; clearing auth hint");
+        writeAuthHint(false);
+      }
+      setGisSettled(true);
+    }, hadSession ? SETTLE_WITH_HINT_MS : SETTLE_NO_HINT_MS);
     const cleanup = () => {
       cancelled = true;
       window.clearTimeout(settleTimer);
@@ -212,6 +264,8 @@ export function useGoogleAuth(): GoogleAuth {
   const resetLocalAuth = useCallback(() => {
     setCredential(null);
     setDevLoggedIn(false);
+    // ログアウト後のフルロードで復元待ち（長い settle）に入らないようヒントも消す。
+    writeAuthHint(false);
     if (!devMode) window.google?.accounts.id.disableAutoSelect();
   }, [devMode]);
 
