@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import os
+import time
 from typing import Any, NamedTuple
 
 import structlog
@@ -34,6 +35,7 @@ from livekit.agents import (
 from livekit.agents.llm import function_tool
 from livekit.plugins import google
 from sanba_shared.models import (
+    AnalysisResult,
     GitHubIndexStatus,
     InviteScope,
     Priority,
@@ -44,6 +46,7 @@ from sanba_shared.models import (
 )
 from sanba_shared.repository import SessionRepository
 
+from .background import DEFAULT_MIN_NEW_UTTERANCES, AnalysisScheduler
 from .config import settings
 from .events import (
     DETECTOR_AMBIGUITY,
@@ -59,6 +62,7 @@ from .events import (
     decode_user_text,
 )
 from .observability import setup_observability
+from .prefetch import REASON_ACL_RECHECK, REASON_EMPTY, PrefetchCache
 from .prompts.interview import (
     DEVELOPER_OPENING_INSTRUCTIONS,
     DEVELOPER_OPENING_WITH_PREP_INSTRUCTIONS,
@@ -220,6 +224,32 @@ def _is_stale_repo_passage(source: str, current_sha: str) -> bool:
 # ため、大文字小文字・前後空白・形式変更などの表記揺れによるすり抜けが構造的に起きない。
 _USER_DERIVED_KINDS = frozenset({"utterance", "requirement"})
 
+# ADR-0037: 背景タスクの上限時間と終了時ドレンの猶予。背景実行は fail-soft（超過・失敗は
+# 黙って破棄し、ツールの同期経路が最新化を守る）なので短めに倒す。
+PREFETCH_TIMEOUT_SECONDS = 5.0
+ANALYSIS_TIMEOUT_SECONDS = 30.0
+DRAIN_GRACE_SECONDS = 2.0
+# ヒット時 ACL 再検証（Firestore 最大2読み）の上限。超過は「判定不能=無効」に倒して
+# 同期検索へフォールバックする（fail-closed / sanba-reviewer P1）。
+ACL_RECHECK_TIMEOUT_SECONDS = 2.0
+
+
+async def _drain_tasks(tasks: set[asyncio.Task[Any]], grace_seconds: float) -> tuple[int, int]:
+    """走行中タスクを猶予付きで待ち、残りをキャンセルする。(完了数, キャンセル数) を返す。
+
+    セッション終了時のドレン用（ADR-0037）。publish の取りこぼしを減らしつつ、
+    シャットダウンを長くブロックしない。
+    """
+    live = {t for t in tasks if not t.done()}
+    if not live:
+        return 0, 0
+    done, pending = await asyncio.wait(live, timeout=grace_seconds)
+    for t in pending:
+        t.cancel()
+    if pending:
+        await asyncio.gather(*pending, return_exceptions=True)
+    return len(done), len(pending)
+
 
 def _partition_passages_for_output(
     passages: list[Passage],
@@ -289,6 +319,19 @@ class SANBAAgent(Agent):
         self._published_ambiguous: set[str] = set()
         # fire-and-forget の publish タスクを保持（GC による途中消滅を防ぐ）。
         self._publish_tasks: set[asyncio.Task[Any]] = set()
+        # ADR-0037 段階A: 確定発話を種にした先読み検索。フィルタ後の結果のみ・メモリのみ・
+        # latest-wins。参加者の確定発話ターン数（_user_turn）が鮮度判定の単位。
+        self._prefetch = PrefetchCache()
+        self._prefetch_task: asyncio.Task[None] | None = None
+        self._user_turn = 0
+        # ADR-0037 段階B: 背景分析の debounce・結果保持・publish 直列化。
+        # _analysis_lock は背景実行とツール同期実行が並走したとき、解消判定
+        # （open_topics 差分）が互いの検知を消し合わないよう publish 区間を直列化する。
+        self._analysis_scheduler = AnalysisScheduler()
+        self._analysis_task: asyncio.Task[None] | None = None
+        self._analysis_lock = asyncio.Lock()
+        self._last_analysis: AnalysisResult | None = None
+        self._analysis_covered_turn = -1
 
     @property
     def transcript(self) -> list[str]:
@@ -351,6 +394,13 @@ class SANBAAgent(Agent):
         if self._publisher is not None:
             role = "participant"
             self._publish(self._publisher.transcript_final(speaker, role, utterance_id, text))
+        # ADR-0037: 参加者の確定発話だけを背景処理の発火点にする（partial では発火しない）。
+        # 発話1件 = 先読み1回（embedding 消費の上限）+ 分析は debounce 判定に委ねる。
+        if speaker == "participant":
+            self._user_turn += 1
+            self._start_prefetch(text)
+            if self._analysis_scheduler.note_utterance():
+                self._start_background_analysis()
         return utterance_id
 
     def publish_user_partial(self, text: str) -> None:
@@ -437,20 +487,114 @@ class SANBAAgent(Agent):
 
         会話が一区切りついたとき、または論点が曖昧なときに呼び出す。
         """
+        # ADR-0037 段階B: 背景分析が走行中なら相乗りして待つ（二重の LLM 往復と
+        # publish 競合を避ける）。待ちの沈黙は生じるので deliberating は出す。
+        task = self._analysis_task
+        if task is not None and not task.done():
+            if self._publisher is not None:
+                await self._publisher.status("deliberating")
+            await asyncio.wait({task})  # 背景側の失敗は下の同期フォールバックが拾う
+            if self._publisher is not None:
+                await self._publisher.status("listening")
+        # 直近の背景結果が十分新しければ即返す（検知 publish は背景実行が済ませている）。
+        last = self._last_analysis
+        if (
+            last is not None
+            and self._user_turn - self._analysis_covered_turn < DEFAULT_MIN_NEW_UTTERANCES
+        ):
+            log.info(
+                "analysis_cache_hit",
+                session=self._session_id,
+                covered_turn=self._analysis_covered_turn,
+                turn=self._user_turn,
+            )
+            return last.model_dump(mode="json")
+        # 同期フォールバック（従来経路）。scheduler への計上は最初の await より前に行い、
+        # await 中に届いた発話が背景実行を並走起動する窓を閉じる（機内1件の維持 /
+        # sanba-reviewer P2）。
+        self._analysis_scheduler.start()
+        try:
+            if self._publisher is not None:
+                await self._publisher.status("deliberating")
+            result = await self._run_analysis(trigger="tool")
+        finally:
+            # 追い掛け判定は使わない（いま最新化したばかり。次の発話が再評価する）。
+            self._analysis_scheduler.finish()
+        if self._publisher is not None:
+            await self._publisher.status("listening")
+        return result.model_dump(mode="json")
+
+    async def _run_analysis(
+        self, *, trigger: str, timeout_seconds: float | None = None
+    ) -> AnalysisResult:
+        """transcript を分析し、検知（gap/ambiguous）の publish まで行う共通経路。
+
+        ツールの同期フォールバックと背景実行（ADR-0037 段階B）の両方が通る。timeout は
+        LLM 分析部分にだけ適用し、publish は中断しない（部分 publish で _published_gaps と
+        web の整合が崩れるのを避ける）。
+        """
         transcript = "\n".join(self._transcript)
         # 準備フォームの事前情報を先頭に付す（ADR-0035）。ADK の統括・矛盾検知が
         # 「準備時の記入」対「会話中の回答」の食い違いも検出できるようにする。
         if self._prep_note:
             transcript = f"{self._prep_note}\n{transcript}"
-        if self._publisher is not None:
-            await self._publisher.status("deliberating")
-        result = await analyze_transcript(transcript)
+        covered_turn = self._user_turn
+        if timeout_seconds is not None:
+            result = await asyncio.wait_for(analyze_transcript(transcript), timeout_seconds)
+        else:
+            result = await analyze_transcript(transcript)
         log.info(
             "analysis",
             session=self._session_id,
+            trigger=trigger,
             open_topics=result.open_topics,
             next_question=result.next_question,
         )
+        # publish 区間は直列化する（背景実行とツール同期実行が並走したとき、解消判定の
+        # open_topics 差分が互いの検知を消し合わないようにする）。
+        async with self._analysis_lock:
+            await self._publish_analysis_detections(result)
+        self._last_analysis = result
+        self._analysis_covered_turn = covered_turn
+        return result
+
+    def _start_background_analysis(self) -> None:
+        """debounce 判定を通った背景分析タスクを起動する（ADR-0037 段階B）。
+
+        イベントループが無い環境（同期ユニットテスト等）では黙ってスキップする。
+        背景分析は付加価値で、ツールの同期経路が常に最新化を保証する。
+        """
+        if self._analysis_task is not None and not self._analysis_task.done():
+            return  # scheduler.running が防ぐので通常は来ない（防御的）
+        self._analysis_scheduler.start()
+        try:
+            task = asyncio.create_task(self._background_analyze())
+        except RuntimeError:
+            self._analysis_scheduler.finish()
+            return
+        self._analysis_task = task
+
+    async def _background_analyze(self) -> None:
+        try:
+            await self._run_analysis(trigger="background", timeout_seconds=ANALYSIS_TIMEOUT_SECONDS)
+        except TimeoutError:
+            log.warning("background_analysis_timeout", session=self._session_id)
+        except Exception as exc:  # noqa: BLE001 - 背景分析は fail-soft（ツール経路が守る）
+            log.warning("background_analysis_failed", session=self._session_id, error=str(exc))
+        finally:
+            # 追い掛け（実行中に差分が溜まり間隔も満ちた場合のみ）。ガードが自タスクを
+            # 走行中と誤認しないよう、先に参照を手放す。
+            self._analysis_task = None
+            if self._analysis_scheduler.finish():
+                log.info("background_analysis_followup", session=self._session_id)
+                self._start_background_analysis()
+
+    async def _publish_analysis_detections(self, result: AnalysisResult) -> None:
+        """分析結果から検知（gap/ambiguous）を永続化し web へ publish する。
+
+        呼び出し側（_run_analysis）が _analysis_lock で直列化している前提。status は
+        触らない（背景実行は不可視・deliberating/listening はツール経路だけが出す）。
+        """
         # 抜け（未確認の論点）を detection.gap として web に上げる（05/08 の黄土）。
         # TODO: open_topics の種別（機能/非機能）を判定して category/detector を振り分ける。
         #       現状は暫定で一律 non_functional / DETECTOR_NFR を使用しており、
@@ -529,9 +673,26 @@ class SANBAAgent(Agent):
                     await self._publisher.detection_resolved(
                         amb_id, resolution=RESOLUTION_AGENT_RESOLVED
                     )
-            await self._publisher.status("listening")
             self._repo.set_session_seq(self._session_id, self._publisher.seq)
-        return result.model_dump(mode="json")
+
+    async def drain_background_tasks(self, grace_seconds: float = DRAIN_GRACE_SECONDS) -> None:
+        """セッション終了時に背景タスクを猶予付きで送り切り、残りはキャンセルする（ADR-0037）。
+
+        対象は先読み・背景分析・fire-and-forget publish。評価（score_session）より前に呼ぶ。
+        """
+        tasks: set[asyncio.Task[Any]] = set(self._publish_tasks)
+        if self._prefetch_task is not None:
+            tasks.add(self._prefetch_task)
+        if self._analysis_task is not None:
+            tasks.add(self._analysis_task)
+        completed, cancelled = await _drain_tasks(tasks, grace_seconds)
+        if completed or cancelled:
+            log.info(
+                "background_tasks_drained",
+                session=self._session_id,
+                completed=completed,
+                cancelled=cancelled,
+            )
 
     @function_tool
     async def ask_question(
@@ -709,6 +870,118 @@ class SANBAAgent(Agent):
         確認したいときに使う。返り値の sources を会話で言及して根拠を示すこと。
         返り値に `background`（引用できない内部資料の関連ヒット件数のみ）が付くことがある。
         その場合は内容・出所に一切触れず、話題の関連が深い合図としてだけ扱うこと。
+        """
+        # ADR-0037 段階A: 直近の確定発話で先読みした結果が使えるなら即返し、ツール待ちの
+        # 沈黙を削る。キャッシュはフィルタ後のみなので、ヒットをそのまま返しても
+        # 出力制御（ADR-0032 決定8）は不変。ミスは従来どおりの同期検索（劣化なし）。
+        entry, reason = self._prefetch.get(query, turn=self._user_turn)
+        if entry is not None and await self._cached_repo_sources_invalid(entry.result):
+            # 先読み後に owner が連携解除/repo 差し替えをした稀な窓（≤TTL）。古い ACL で
+            # 通した chunk を返さず、最新の ACL を適用する同期検索へ倒す（多層防御）。
+            entry, reason = None, REASON_ACL_RECHECK
+        if entry is not None:
+            log.info(
+                "prefetch_hit",
+                session=self._session_id,
+                query=query,
+                prefetch_query=entry.query,
+                latency_saved_ms=int(entry.search_seconds * 1000),
+            )
+            return entry.result
+        if reason != REASON_EMPTY:
+            # ミス分類（expired_time / expired_turns / query_mismatch / repo_acl_recheck）を
+            # 残し、ヒット率と staleness 破棄数を計測できるようにする（ADR-0037 決定3）。
+            log.info("prefetch_miss", session=self._session_id, reason=reason)
+        # 同期の embedding + ES 検索はスレッドへ逃がし、音声パイプラインのループを塞がない。
+        return await asyncio.to_thread(self._grounded_search, query)
+
+    def _start_prefetch(self, text: str) -> None:
+        """確定発話を種に grounding 検索を先読みする（ADR-0037 段階A / latest-wins）。
+
+        同期コンテキストから呼ばれるためイベントループが無い環境（同期ユニットテスト等）
+        では黙ってスキップする。先読みは付加価値であり、失敗してもツールの同期経路が守る。
+        """
+        query = text.strip()
+        if not query:
+            return
+        # latest-wins: 走行中の先読みは新しい発話で置き換える（旧クエリの結果はもう古い）。
+        if self._prefetch_task is not None and not self._prefetch_task.done():
+            self._prefetch_task.cancel()
+        try:
+            task = asyncio.create_task(self._prefetch_search(query, self._user_turn))
+        except RuntimeError:
+            return
+        self._prefetch_task = task
+        task.add_done_callback(self._on_prefetch_done)
+
+    def _on_prefetch_done(self, task: asyncio.Task[None]) -> None:
+        if task is self._prefetch_task:
+            self._prefetch_task = None
+        if not task.cancelled() and task.exception() is not None:
+            log.warning(
+                "prefetch_task_failed", session=self._session_id, error=str(task.exception())
+            )
+
+    async def _prefetch_search(self, query: str, turn: int) -> None:
+        started = time.monotonic()
+        try:
+            # to_thread でループ（音声パイプライン）を塞がない。キャンセルは待ちを解くだけで
+            # スレッド自体は走り切るが、結果は破棄される（put に到達しない）。
+            result = await asyncio.wait_for(
+                asyncio.to_thread(self._grounded_search, query), PREFETCH_TIMEOUT_SECONDS
+            )
+        except TimeoutError:
+            log.warning("prefetch_timeout", session=self._session_id, query=query)
+            return
+        except Exception as exc:  # noqa: BLE001 - 先読みは fail-soft（同期経路が守る）
+            log.warning("prefetch_failed", session=self._session_id, error=str(exc))
+            return
+        duration = time.monotonic() - started
+        self._prefetch.put(query, result, turn=turn, search_seconds=duration)
+        log.info(
+            "prefetch_ready",
+            session=self._session_id,
+            turn=turn,
+            hits=len(result["passages"]),
+            duration_ms=int(duration * 1000),
+        )
+
+    async def _cached_repo_sources_invalid(self, result: dict[str, Any]) -> bool:
+        """先読み結果に repo 由来 passage が含まれる場合、ACL（revoked/sha）を再検証する。
+
+        Firestore 読み（同期クライアント・最大2回）は to_thread + タイムアウトで包み、
+        音声パイプラインのイベントループを塞がない（sanba-reviewer P1）。判定できない
+        とき（タイムアウト・障害）は安全側に True を返し、最新 ACL を適用する同期検索へ
+        倒す（fail-closed）。repo 由来を含まない結果（end_user モードの allowlist 出力を
+        含む）は再検証不要で False。
+        """
+        if not any(p["source"].startswith("github:") for p in result["passages"]):
+            return False
+        try:
+            return await asyncio.wait_for(
+                asyncio.to_thread(self._repo_sources_acl_invalid, result),
+                ACL_RECHECK_TIMEOUT_SECONDS,
+            )
+        except TimeoutError:
+            log.warning("prefetch_acl_recheck_timeout", session=self._session_id)
+            return True
+        except Exception as exc:  # noqa: BLE001 - 判定不能は安全側（同期検索へ）
+            log.warning("prefetch_acl_recheck_failed", session=self._session_id, error=str(exc))
+            return True
+
+    def _repo_sources_acl_invalid(self, result: dict[str, Any]) -> bool:
+        current_sha, revoked = self._repo_access()
+        if revoked:
+            return True
+        return current_sha is not None and any(
+            _is_stale_repo_passage(p["source"], current_sha) for p in result["passages"]
+        )
+
+    def _grounded_search(self, query: str) -> dict[str, Any]:
+        """検索と出力制御の一体経路（同期）。ツールと先読みの両方が必ずここを通る。
+
+        ADR-0037 決定2: 先読み用の別経路を作らないことで、キャッシュには出力制御
+        （ADR-0032 決定8 / ACL / stale 遮断）通過後の結果しか入らないことを構造的に保証する。
         """
         # session_id を渡してセッション固有素材（context: ゴール/資料/紐づけ repo）を本セッション
         # に限定する（他者の private リポジトリ断片の越境ヒットを防ぐ / ADR-0028）。
@@ -954,7 +1227,7 @@ def build_turn_detection(
     start_sensitivity: str,
     prefix_padding_ms: int,
 ) -> genai_types.RealtimeInputConfig:
-    """Gemini Live の自動 VAD 設定を組み立てる（ADR-0036）。
+    """Gemini Live の自動 VAD 設定を組み立てる（ADR-0038）。
 
     「参加者が話し終える前にエージェントが被せて話し始める」問題への対策で、
     発話終端の判定を保守側（end_sensitivity=low + 無音時間を長め）に倒す。
@@ -978,8 +1251,53 @@ def build_turn_detection(
     )
 
 
+async def respond_to_user_text(
+    agent: SANBAAgent, session: AgentSession, text: str, current_qid: str | None
+) -> None:
+    """テキスト入力（user.text, 契約 §4.5 / #185）を音声発話と同じ会話ターンとして扱う。
+
+    発話を記録（transcript.final で会話履歴へ反映）し、§5-6 に従い未回答 current を
+    クリアした上で、音声のバージインと同様に読み上げ中の応答を中断してから、本文を
+    user ターンとして Live セッションの会話文脈へ注入し応答を生成する
+    （livekit-agents 既定のテキスト入力コールバックと同じ interrupt + user_input 方式）。
+    旧 instructions 方式は (1) 読み上げ中は再生キュー待ちになり音声のように即時反応しない、
+    (2) 本文が user ターンとして会話文脈に残らない、の2点で音声入力と挙動が揃わなかった。
+    """
+    agent.record_utterance("participant", text)
+    # §5-6: options の有無に依らず、未回答 current への次回答とみなしてクリアする
+    # （current_qid は受信時点で束ねた id。CAS が id 一致時のみクリアする）。
+    if current_qid is not None:
+        await agent.clear_current_question(current_qid)
+    # 読み上げ中なら中断（音声のバージインと同じ扱い）。再生中でなければ no-op。
+    await session.interrupt()
+    await session.generate_reply(user_input=text)
+
+
+async def respond_to_answer(
+    agent: SANBAAgent, session: AgentSession, question_id: str, answer: str
+) -> None:
+    """通常質問（金枠, #181）への回答を記録し、要件を一歩進める応答を生成する。
+
+    回答を「問い本文つき」で発話記録し（Codex P2）、何への回答か後続の
+    analyze_requirements が分かるようにする。テキスト/タップ回答も音声回答と同様、
+    読み上げ中なら中断してから応答する（user.text と同じ即時反応）。
+    """
+    prompt = agent.record_answer(question_id, answer)
+    # §5-3: タップ回答は question_id 一致時に CAS でクリア（早期クリア経路）。これで
+    # 回答済みの問いが再ハイドレーション（GET /questions/current）で復活しない。
+    await agent.clear_current_question(question_id)
+    topic = f"問い「{prompt}」" if prompt else "先ほどの問い"
+    await session.interrupt()
+    await session.generate_reply(
+        instructions=(
+            f"{topic}に対し参加者は「{answer}」と答えました。"
+            "これを踏まえて要件を一歩進め、必要なら次の問いを1つだけ投げてください。"
+        )
+    )
+
+
 def build_realtime_model() -> google.beta.realtime.RealtimeModel:
-    """Gemini Live の RealtimeModel を組み立てる（ターン検出＋安定化設定込み / ADR-0036）。
+    """Gemini Live の RealtimeModel を組み立てる（ターン検出＋安定化設定込み / ADR-0038）。
 
     再起動のたびに新しいインスタンスが要るため関数化している（AgentSession が閉じた
     モデルは再利用できない）。context window compression は、長いインタビューが
@@ -1008,7 +1326,7 @@ def build_realtime_model() -> google.beta.realtime.RealtimeModel:
 
 
 def resume_instructions(transcript: list[str], *, tail: int = 10) -> str:
-    """セッション再起動後の再開指示を組み立てる（ADR-0036）。
+    """セッション再起動後の再開指示を組み立てる（ADR-0038）。
 
     新しい Gemini Live セッションは会話履歴を持たないため、Python 側で保持している
     transcript の末尾を文脈として渡し、「復旧して続きから」を一言で伝えさせる。
@@ -1063,7 +1381,7 @@ async def entrypoint(ctx: JobContext) -> None:
 
     # web → agent の操作イベントを受信する（契約 §4.5）。
     #   - user.selection（#102）: 検知カードの選択肢タップ → 検知を解消。
-    #   - user.text（#185）: テキスト入力 → 発話として記録し音声で応答（会話ターン化）。
+    #   - user.text（#185）: テキスト入力 → 読み上げを中断し user ターンとして応答（音声と同等）。
     #   - user.answered（#181）: 通常質問への回答 → 発話として記録し次の問いへ進む。
     # fire-and-forget タスクは set に退避して GC を防ぐ（#128。完了時に除去・例外をログ）。
     _bg_tasks: set[asyncio.Task] = set()
@@ -1079,40 +1397,11 @@ async def entrypoint(ctx: JobContext) -> None:
         task.add_done_callback(_on_bg_done)
 
     # 現在の AgentSession。回復不能エラーで閉じたら _restart_session が作り直して差し替える
-    # （ADR-0036）。以下のレスポンダはクロージャ経由で常に「現在の」セッションを参照する。
+    # （ADR-0038）。_on_data から呼ぶ respond_to_* にはこの変数を渡す（クロージャ経由で
+    # 受信時点の「現在の」セッションが解決される）。
     session: AgentSession
     restart_count = 0
     restart_pending = False
-
-    async def _respond_to_user_text(text: str, current_qid: str | None) -> None:
-        # テキスト入力を会話ターンとして扱う（#185）。発話を記録（transcript.final で会話履歴へ
-        # 反映）し、それを踏まえて音声で応答する。従来のセッション文脈投入（捨て足場）を置換。
-        agent.record_utterance("participant", text)
-        # §5-6: options の有無に依らず、未回答 current への次回答とみなしてクリアする
-        # （current_qid は受信時点で束ねた id。CAS が id 一致時のみクリアする）。
-        if current_qid is not None:
-            await agent.clear_current_question(current_qid)
-        await session.generate_reply(
-            instructions=(
-                f"参加者がテキストで次のように述べました：「{text}」。"
-                "これを会話の発話として受け止め、必要なら一問だけ掘り下げて応答してください。"
-            )
-        )
-
-    async def _respond_to_answer(question_id: str, answer: str) -> None:
-        # 通常質問（金枠）への回答（#181）。回答を「問い本文つき」で発話記録し（Codex P2）、
-        # 何への回答か後続の analyze_requirements が分かるようにしてから要件を一歩進める。
-        prompt = agent.record_answer(question_id, answer)
-        # §5-3: タップ回答は question_id 一致時に CAS でクリア（早期クリア経路）。これで
-        # 回答済みの問いが再ハイドレーション（GET /questions/current）で復活しない。
-        await agent.clear_current_question(question_id)
-        topic = f"問い「{prompt}」" if prompt else "先ほどの問い"
-        await session.generate_reply(
-            instructions=(
-                f"{topic}に対し参加者は「{answer}」と答えました。"
-                "これを踏まえて要件を一歩進め、必要なら次の問いを1つだけ投げてください。"
-            )
-        )
 
     def _on_data(packet) -> None:  # type: ignore[no-untyped-def]
         if getattr(packet, "topic", None) != WEB_EVENTS_TOPIC:
@@ -1128,15 +1417,15 @@ async def entrypoint(ctx: JobContext) -> None:
         if text is not None:
             # §5-6: 受信時点（同期コールバック内）の current 質問 id を束ねて渡す。後続の非同期
             # 処理が遅れる間に current が別の問いへ上書きされても、CAS が id 一致時のみクリアする。
-            _schedule(_respond_to_user_text(text, agent.current_question_id))
+            _schedule(respond_to_user_text(agent, session, text, agent.current_question_id))
             return
         answered = decode_user_answered(data, expected_session_id=session_id)
         if answered is not None:
             question_id, answer = answered
-            _schedule(_respond_to_answer(question_id, answer))
+            _schedule(respond_to_answer(agent, session, question_id, answer))
 
     def _wire_session(s: AgentSession) -> None:
-        """AgentSession ごとのイベントハンドラを張る（再起動で作り直すたびに呼ぶ / ADR-0036）。"""
+        """AgentSession ごとのイベントハンドラを張る（再起動で作り直すたびに呼ぶ / ADR-0038）。"""
 
         # Persist user turns so the ADK team always has the full transcript.
         @s.on("user_input_transcribed")
@@ -1180,7 +1469,7 @@ async def entrypoint(ctx: JobContext) -> None:
             )
 
         # 回復不能エラーで AgentSession が閉じると、従来はエージェントがルームに残ったまま
-        # 無反応になっていた（ADR-0036）。ERROR 起因の close だけ拾って作り直す。
+        # 無反応になっていた（ADR-0038）。ERROR 起因の close だけ拾って作り直す。
         # JOB_SHUTDOWN / PARTICIPANT_DISCONNECTED 等の正常系では再起動しない。
         @s.on("close")
         def _on_session_close(ev: CloseEvent) -> None:
@@ -1222,7 +1511,7 @@ async def entrypoint(ctx: JobContext) -> None:
         _schedule(_restart_session())
 
     async def _restart_session() -> None:
-        """回復不能エラーで閉じたセッションを作り直す（上限つき・指数バックオフ / ADR-0036）。
+        """回復不能エラーで閉じたセッションを作り直す（上限つき・指数バックオフ / ADR-0038）。
 
         SANBAAgent は close 時に activity が外れるため同一インスタンスを再利用でき、
         transcript・採番・検知の状態は維持される。Gemini 側の会話履歴は新規セッションでは
@@ -1290,6 +1579,12 @@ async def entrypoint(ctx: JobContext) -> None:
 
     # When the room closes, score the interview (LLM-as-a-judge) and log to Langfuse.
     async def _on_close() -> None:
+        # ADR-0037: 背景タスク（web イベント処理・先読み・背景分析・publish）を猶予付きで
+        # ドレンしてから評価する（検知 publish の取りこぼしを減らす）。2 段構えなのは
+        # 意図的: web イベント処理（_bg_tasks）が完走時に publish タスクを新規に積むため、
+        # 先に前段を送り切ってから agent 側を送る。猶予は各段 2 秒＝合計最大 4 秒。
+        await _drain_tasks(set(_bg_tasks), DRAIN_GRACE_SECONDS)
+        await agent.drain_background_tasks()
         from .evaluation import score_session
 
         await score_session(session_id=session_id, transcript="\n".join(agent.transcript))

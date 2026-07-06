@@ -205,7 +205,7 @@ class GroundingStore:
     def _search_mem(
         self, query: str, k: int, kinds: list[str] | None, session_id: str | None = None
     ) -> list[Passage]:
-        tokens = _tokenize(query)
+        tokens = tokenize(query)
         scored: list[Passage] = []
         for doc in self._mem:
             if kinds and doc.kind not in kinds:
@@ -213,7 +213,7 @@ class GroundingStore:
             # context（セッション固有素材）は当該セッションのものだけを返す（ADR-0028 隔離）。
             if session_id is not None and doc.kind == "context" and doc.session_id != session_id:
                 continue
-            overlap = len(tokens & _tokenize(doc.text))
+            overlap = len(tokens & tokenize(doc.text))
             if overlap == 0:
                 continue
             scored.append(Passage(doc.text, doc.source, doc.kind, float(overlap), doc.session_id))
@@ -221,7 +221,7 @@ class GroundingStore:
         return scored[:k]
 
 
-def _tokenize(text: str) -> set[str]:
+def tokenize(text: str) -> set[str]:
     """Cheap CJK-aware tokeniser: words + character bigrams for the memory fallback."""
     import re
 

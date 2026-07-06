@@ -10,10 +10,10 @@
 
 import { LiveKitRoom, StartAudio, useConnectionState } from "@livekit/components-react";
 import { ConnectionState } from "livekit-client";
-import { Check, Circle, LoaderCircle, Mic, TriangleAlert } from "lucide-react";
+import { Check, Circle, Info, LoaderCircle, Lock, Mic, TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 
-import { AppHeader, Button, Card, Screen } from "@/components/sanba";
+import { AppHeader, Button, Card, Figure, Screen } from "@/components/sanba";
 
 import type { JoinResponse } from "../lib/api";
 import { SessionView } from "./SessionView";
@@ -204,12 +204,8 @@ export function StartIntro({
       <AppHeader title="支度、相整いまして" onBack={onBack} />
       <main className="mx-auto flex w-full max-w-[480px] flex-1 flex-col gap-[18px] pt-2">
         <div className="flex flex-col items-center gap-2 pt-4">
-          <div
-            aria-hidden="true"
-            className="sanba-gold-gradient flex size-20 items-center justify-center rounded-full text-[30px]"
-          >
-            産
-          </div>
+          {/* ヒーローはサンバさん（ADR-0025 / 1 画面 1 体）。旧「産」丸章はロゴ系譜の棒人間へ置換。 */}
+          <Figure state="walking" className="w-[64px]" />
           <p className="text-[13px] text-sanba-muted">問答を始める支度が整いました。</p>
         </div>
 
@@ -329,12 +325,8 @@ export function ConnectingOverlay({ state, onCancel }: ConnectingOverlayProps) {
     <Screen className="px-4 py-3">
       <AppHeader title="繋いでおります" />
       <main className="mx-auto flex w-full max-w-[420px] flex-1 flex-col items-center gap-6 pt-12">
-        <div
-          aria-hidden="true"
-          className="sanba-gold-gradient sanba-serif flex size-20 animate-pulse items-center justify-center rounded-full border-2 border-sanba-frame text-[30px] font-bold text-sanba-ink"
-        >
-          産
-        </div>
+        {/* 接続待ちもサンバさん（歩行）で待たせる。旧「産」丸章はロゴ系譜の棒人間へ置換。 */}
+        <Figure state="walking" className="w-[64px]" />
         <p className="text-[14px] font-bold text-sanba-gold-text" aria-live="polite">
           {reconnecting ? "繋ぎ直しております…" : "繋いでおります…"}
         </p>
@@ -434,7 +426,13 @@ export function StartFailed({ kind, onRetry, onBack }: StartFailedProps) {
                   className="rounded-[12px] border border-sanba-border bg-sanba-surface p-[14px] text-left text-[12px] leading-relaxed text-sanba-muted"
                 >
                   <ol className="list-decimal space-y-1 pl-4">
-                    <li>アドレスバーの 🔒 / ⓘ をタップ</li>
+                    <li>
+                      アドレスバーの錠前（
+                      <Lock size={11} aria-hidden className="inline-block align-[-1px]" />
+                      ）または情報（
+                      <Info size={11} aria-hidden className="inline-block align-[-1px]" />
+                      ）をタップ
+                    </li>
                     <li>「サイトの設定（権限）」を開く</li>
                     <li>「マイク」を「許可」に変更</li>
                     <li>このページを再読み込みして、もう一度お試しください</li>

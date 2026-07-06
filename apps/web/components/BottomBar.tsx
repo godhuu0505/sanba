@@ -6,7 +6,7 @@
 // a11y: 見た目が古語でも aria-label は現代語の機能名（ADR-0017）。
 
 import { useState } from "react";
-import { Mic, MicOff, Volume2, VolumeX } from "lucide-react";
+import { Mic, MicOff, SendHorizontal, Volume2, VolumeX } from "lucide-react";
 
 import type { SessionPhase } from "@/lib/realtime/types";
 import { VoiceStatusIndicator } from "./VoiceStatusIndicator";
@@ -123,9 +123,9 @@ export function BottomBar({
           type="button"
           aria-label="送信"
           onClick={send}
-          className="sanba-gold-gradient rounded-full border-2 border-sanba-frame px-4 py-[10px] text-[14px] font-bold text-sanba-ink"
+          className="sanba-gold-gradient flex items-center justify-center rounded-full border-2 border-sanba-frame px-4 py-[10px] font-bold text-sanba-ink"
         >
-          ▶
+          <SendHorizontal size={16} aria-hidden />
         </button>
       </div>
     </div>

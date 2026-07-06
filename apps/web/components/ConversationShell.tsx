@@ -7,10 +7,10 @@
 // セッション終了後（08 結果からの閲覧）は review モードで、会話専用 UI（REC・終了・問いピン・
 // ボトムバー）を出さない読み取り専用のシェルになる。
 
-import { Diamond, Paperclip, Square, TriangleAlert } from "lucide-react";
+import { ChevronLeft, ChevronRight, Diamond, Paperclip, Square, TriangleAlert } from "lucide-react";
 import { useState, type ReactNode } from "react";
 
-import { RecPill } from "@/components/sanba";
+import { Logo, RecPill } from "@/components/sanba";
 import type { MiniStatus } from "@/lib/realtime/selectors";
 
 export type ShellTab = "history" | "files" | "scroll";
@@ -94,13 +94,10 @@ export function ConversationShell({
     // タブ本文だけが内部スクロールする＝問いピン/ボトムバーは常に画面最下部に固定される。
     <div className="flex h-full min-h-0 flex-1 flex-col">
       {/* ── 固定ヘッダ ───────────────────────── */}
+      {/* ブランドは AppHeader と同じ流儀: 小ロゴ（サンバさんマーク）＋縦罫＋画面タイトル。 */}
       <header className="flex items-center gap-2 px-4 pb-2 pt-2">
-        <span
-          aria-hidden
-          className="sanba-gold-gradient sanba-serif flex size-7 items-center justify-center rounded-full border border-sanba-frame text-[13px] font-bold text-sanba-ink"
-        >
-          産
-        </span>
+        <Logo size="sm" wordmark={false} className="shrink-0" />
+        <span aria-hidden className="h-4 w-px shrink-0 bg-sanba-border-strong" />
         <h1 className="text-[15px] font-bold text-sanba-cream">問答</h1>
         <span className="flex-1" />
         {review ? (
@@ -109,9 +106,9 @@ export function ConversationShell({
             type="button"
             aria-label="結果に戻る"
             onClick={onBackToResult}
-            className="rounded-full border border-sanba-border bg-sanba-surface px-3 py-[5px] text-[12px] font-bold text-sanba-gold-text"
+            className="inline-flex items-center gap-[2px] rounded-full border border-sanba-border bg-sanba-surface px-3 py-[5px] text-[12px] font-bold text-sanba-gold-text"
           >
-            ‹ 結果へ戻る
+            <ChevronLeft size={13} aria-hidden /> 結果へ戻る
           </button>
         ) : (
           <>
@@ -168,7 +165,9 @@ export function ConversationShell({
             </>
           )}
           <span className="flex-1" />
-          <span aria-hidden className="text-sanba-gold-text">›</span>
+          <span aria-hidden className="text-sanba-gold-text">
+            <ChevronRight size={13} />
+          </span>
         </div>
       </div>
 

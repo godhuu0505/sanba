@@ -6,6 +6,20 @@
 //
 // 重要: **色のみに依存しない**（DoD / 05・08 の AC）。色覚特性に関わらず判別できるよう、
 // 必ず label と icon を伴わせる。色は補助。
+// アイコンは lucide-react の線画で統一する（絵文字/幾何グリフは使わない・デザイン方針）。
+
+import {
+  CircleDashed,
+  CircleHelp,
+  Cog,
+  Diamond,
+  Gauge,
+  Lock,
+  type LucideIcon,
+  SquareDashed,
+  TriangleAlert,
+  Waves,
+} from "lucide-react";
 
 import type { InterviewMode } from "../interviewMode";
 import type { DetectionKind } from "./types";
@@ -15,8 +29,8 @@ export interface KindPresentation {
   color: string;
   /** 機能的な日本語ラベル（主たる識別子）。 */
   label: string;
-  /** 色覚非依存のための記号（主たる識別子）。 */
-  icon: string;
+  /** 色覚非依存のための lucide アイコン（主たる識別子）。`<p.Icon size={…} aria-hidden />` で描く。 */
+  Icon: LucideIcon;
   /** スクリーンリーダ向けの説明。 */
   ariaLabel: string;
 }
@@ -28,20 +42,21 @@ const DETECTION_PRESENTATION: Record<DetectionKind, KindPresentation> = {
     color: "var(--sanba-rec-text)", // 朱の文字用（= --sanba-rec-text・白地 5.3:1）
     // バッジ表記は Figma 正本に合わせて短く「矛盾」。説明は ariaLabel で補う。
     label: "矛盾",
-    icon: "⚠",
+    Icon: TriangleAlert,
     ariaLabel: "矛盾を検知",
   },
   gap: {
     color: "var(--sanba-caution)", // 黄土（白地向けの暗色）
     label: "抜け",
-    icon: "◇",
+    // 破線の円＝「未定義（欠けている）」。要件の Diamond・未解決の CircleHelp と判別できる形にする。
+    Icon: CircleDashed,
     ariaLabel: "抜け（未定義）を検知",
   },
   ambiguous: {
     color: "var(--sanba-cat-ambiguous)", // 鈍色（朱/黄土/橄欖/金 と判別できるくすんだ藍鼠 / #182・ADR-0022）
     label: "不明瞭",
-    // 「〜」で曖昧さを表す。要件カテゴリ open_question の「?」と記号が衝突しないようにする。
-    icon: "〜",
+    // 波形（旧グリフ「〜」の意匠）で曖昧さを表す。open_question の CircleHelp と衝突しないようにする。
+    Icon: Waves,
     ariaLabel: "不明瞭な論点を検知",
   },
 };
@@ -66,20 +81,23 @@ export function detectionPresentation(
 
 // 要件カテゴリの表示（08/09 のチップ・セクション用）。色は補助、ラベル＋アイコンが主。
 const CATEGORY_PRESENTATION: Record<string, KindPresentation> = {
-  // 機能は瑠璃（= --sanba-select）で選択系の青と統一（ADR-0025）。
-  functional: { color: "var(--sanba-select)", label: "機能", icon: "⚙", ariaLabel: "機能要件" },
+  // 機能は瑠璃（= --sanba-select）で選択系の青と統一（ADR-0025）。歯車＝機能。
+  functional: { color: "var(--sanba-select)", label: "機能", Icon: Cog, ariaLabel: "機能要件" },
   non_functional: {
     color: "var(--sanba-cat-nonfunctional)",
     label: "非機能",
-    icon: "◎",
+    // 計器＝性能・品質特性（非機能）。
+    Icon: Gauge,
     ariaLabel: "非機能要件",
   },
-  constraint: { color: "var(--sanba-cat-neutral)", label: "制約", icon: "▣", ariaLabel: "制約" },
-  scope: { color: "var(--sanba-cat-scope)", label: "境界", icon: "▢", ariaLabel: "スコープ・境界" },
+  // 錠前＝動かせない前提（制約）。
+  constraint: { color: "var(--sanba-cat-neutral)", label: "制約", Icon: Lock, ariaLabel: "制約" },
+  // 破線の四角＝対象範囲の枠（境界）。
+  scope: { color: "var(--sanba-cat-scope)", label: "境界", Icon: SquareDashed, ariaLabel: "スコープ・境界" },
   open_question: {
     color: "var(--sanba-caution)",
     label: "未解決",
-    icon: "?",
+    Icon: CircleHelp,
     ariaLabel: "未解決の問い",
   },
 };
@@ -87,7 +105,8 @@ const CATEGORY_PRESENTATION: Record<string, KindPresentation> = {
 const UNKNOWN_CATEGORY: KindPresentation = {
   color: "var(--sanba-cat-neutral)",
   label: "要件",
-  icon: "•",
+  // 菱形＝要件そのもの（会話シェルのミニ状況「要件」と同じ意匠）。
+  Icon: Diamond,
   ariaLabel: "要件",
 };
 

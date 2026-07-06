@@ -7,6 +7,7 @@
 // 検知（矛盾/抜け）はバッジ＋枠色で示す（色のみ依存しない・ADR-0017）。
 // 詳細/比較のオーバーレイは別部品（ChoiceDetailSheet など）が担当する。
 
+import { ChevronRight, Maximize2, Minimize2 } from "lucide-react";
 import { useEffect, useRef } from "react";
 
 import { useInterviewMode } from "@/lib/interviewMode";
@@ -84,10 +85,10 @@ export function ChoiceStrip({
         {presentation && (
           <span
             aria-label={presentation.ariaLabel}
-            className="rounded-full px-2 py-[2px] text-[10.5px] font-bold text-white"
+            className="inline-flex items-center gap-1 rounded-full px-2 py-[2px] text-[10.5px] font-bold text-white"
             style={{ backgroundColor: presentation.color }}
           >
-            {presentation.icon} {presentation.label}
+            <presentation.Icon size={11} aria-hidden /> {presentation.label}
           </span>
         )}
         <span className="text-[12px] font-bold text-sanba-gold-text">{question}</span>
@@ -95,9 +96,17 @@ export function ChoiceStrip({
         <button
           type="button"
           onClick={mode === "min" ? onExpand : onCollapse}
-          className="rounded-full border border-sanba-frame bg-sanba-surface px-[9px] py-1 text-[10.5px] font-bold text-sanba-gold-text"
+          className="inline-flex items-center gap-1 rounded-full border border-sanba-frame bg-sanba-surface px-[9px] py-1 text-[10.5px] font-bold text-sanba-gold-text"
         >
-          {mode === "min" ? "⤢ 広げる" : "⤡ 閉じる"}
+          {mode === "min" ? (
+            <>
+              <Maximize2 size={11} aria-hidden /> 広げる
+            </>
+          ) : (
+            <>
+              <Minimize2 size={11} aria-hidden /> 閉じる
+            </>
+          )}
         </button>
       </div>
 
@@ -152,9 +161,9 @@ export function ChoiceStrip({
                 <button
                   type="button"
                   onClick={() => onOpenDetail(i)}
-                  className="shrink-0 rounded-full border border-sanba-frame px-[9px] py-[5px] text-[10.5px] font-bold text-sanba-gold-text"
+                  className="inline-flex shrink-0 items-center gap-[2px] rounded-full border border-sanba-frame px-[9px] py-[5px] text-[10.5px] font-bold text-sanba-gold-text"
                 >
-                  詳細 ›
+                  詳細 <ChevronRight size={11} aria-hidden />
                 </button>
               )}
             </div>

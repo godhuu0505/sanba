@@ -6,7 +6,7 @@
 
 // 素材ビューモデルは共有セレクタ層（selectMaterials）に寄せ、ここでは再エクスポートのみ。
 import { useEffect, useState } from "react";
-import { Check, X } from "lucide-react";
+import { Check, Plus, X } from "lucide-react";
 
 import type { MaterialItem, MaterialStatus } from "@/lib/realtime/selectors";
 
@@ -83,9 +83,9 @@ export function MaterialsList({
         <button
           type="button"
           onClick={onAdd}
-          className="rounded-[12px] border border-dashed border-sanba-gold-deep bg-sanba-surface px-3 py-[13px] text-[12.5px] font-bold text-sanba-gold-text"
+          className="inline-flex items-center justify-center gap-1.5 rounded-[12px] border border-dashed border-sanba-gold-deep bg-sanba-surface px-3 py-[13px] text-[12.5px] font-bold text-sanba-gold-text"
         >
-          ＋ 素材を追加（カメラ・アップロード・画面共有）
+          <Plus size={14} aria-hidden /> 素材を追加（カメラ・アップロード・画面共有）
         </button>
       )}
 

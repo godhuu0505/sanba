@@ -14,7 +14,7 @@
 // 認証は /login へ寄せる（#140）。本ページはログイン状態を「開始ゲート」としてのみ参照し、
 // 未ログインなら理由提示＋/login への導線を出す（インラインのログインパネルは廃止）。
 
-import { FileText, Film, Image as ImageIcon, Mic, X } from "lucide-react";
+import { Check, FileText, Film, Image as ImageIcon, Mic, Package, Plus, X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
@@ -53,6 +53,7 @@ import {
 import { useAuth } from "../lib/auth";
 import { AccountMenu } from "./AccountMenu";
 import { ConversationStart } from "./ConversationStart";
+import { MemberInviteNotices } from "./MemberInviteNotices";
 import {
   MaterialSourceSheet,
   type MaterialSource,
@@ -637,7 +638,7 @@ export default function EntryFlow({ initialStep = "home" }: { initialStep?: Step
                       aria-checked={selected}
                       onClick={() => setRole(r.value)}
                     >
-                      {selected && <span aria-hidden="true">● </span>}
+                      {selected && <Check size={13} aria-hidden className="mr-1 inline-block align-[-2px]" />}
                       {r.label}
                     </button>
                   </Chip>
@@ -804,9 +805,9 @@ export default function EntryFlow({ initialStep = "home" }: { initialStep?: Step
               }}
               disabled={busy}
               aria-haspopup="dialog"
-              className="rounded-[12px] border border-dashed border-sanba-gold-deep bg-sanba-surface px-3 py-[13px] text-left text-[12.5px] font-bold text-sanba-gold-text disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 rounded-[12px] border border-dashed border-sanba-gold-deep bg-sanba-surface px-3 py-[13px] text-left text-[12.5px] font-bold text-sanba-gold-text disabled:opacity-50"
             >
-              ＋ ファイルを追加
+              <Plus size={14} aria-hidden /> ファイルを追加
             </button>
 
             {/* 追加した資料は「ファイルを追加」の直下に、サムネイル＋ファイル名で並べる（#222）。
@@ -946,7 +947,8 @@ export default function EntryFlow({ initialStep = "home" }: { initialStep?: Step
     <Screen className="px-4 py-3">
       <AppHeader brand right={<AccountMenu profile={auth.profile} />} />
       <main className="mx-auto flex w-full max-w-[480px] flex-1 flex-col gap-[18px] pt-3">
-
+        {/* 自分宛のメンバー招待の通知（ADR-0036 決定3）。無ければ何も出ない。 */}
+        <MemberInviteNotices />
         <Card>
           <div className="flex items-start justify-between gap-[12px]">
             <div className="flex flex-col gap-[8px]">
@@ -968,7 +970,7 @@ export default function EntryFlow({ initialStep = "home" }: { initialStep?: Step
         {/* アプリ管理（ADR-0031）への導線。深掘りリンクの発行・repo 紐づけの入口。 */}
         <ListRow
           asChild
-          icon="📦"
+          icon={<Package size={17} aria-hidden />}
           title="アプリ管理"
           subtitle="深掘りリンクの発行・リポジトリの紐づけ"
         >
