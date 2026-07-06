@@ -22,7 +22,7 @@ import {
   ListRow,
   Screen,
 } from "@/components/sanba";
-import { createProduct, fetchMyProducts, type Product } from "@/lib/api";
+import { ApiError, createProduct, fetchMyProducts, type Product } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 
 export default function ProductsPage() {
@@ -31,6 +31,8 @@ export default function ProductsPage() {
 
   const [products, setProducts] = useState<Product[] | null>(null);
   const [name, setName] = useState("");
+  // URL キーワード（必須・グローバル一意 / ADR-0040）。/{slug}/prepare 等の URL になる。
+  const [slug, setSlug] = useState("");
   const [description, setDescription] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -63,14 +65,30 @@ export default function ProductsPage() {
       setError("アプリ名を入力してください");
       return;
     }
+    // slug は API と同じ規則へ正規化してから送る（小文字英数とハイフン・2〜40 文字 /
+    // ADR-0040）。形式違反はサーバへ投げる前にその場で指摘する。
+    const cleanedSlug = slug.trim().toLowerCase();
+    if (!/^[a-z0-9][a-z0-9-]{0,38}[a-z0-9]$/.test(cleanedSlug)) {
+      setError(
+        "URL キーワードは小文字英数とハイフンで 2〜40 文字にしてください（先頭・末尾のハイフン不可）",
+      );
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
-      const created = await createProduct(trimmed, description.trim(), credential);
+      const created = await createProduct(trimmed, cleanedSlug, description.trim(), credential);
       // 登録後は詳細へ。repo 紐づけ・深掘りリンク発行は詳細画面で続ける。
       router.push(`/products/${encodeURIComponent(created.id)}`);
-    } catch {
-      setError("登録に失敗しました。時間をおいて再度お試しください");
+    } catch (e) {
+      // 409 = slug 使用済み（グローバル一意）、400 = 形式・予約語（サーバ側の最終判定）。
+      if (e instanceof ApiError && e.status === 409) {
+        setError("この URL キーワードは既に使われています。別のキーワードにしてください");
+      } else if (e instanceof ApiError && e.status === 400) {
+        setError("URL キーワードが使えない形式か、予約されたキーワードです");
+      } else {
+        setError("登録に失敗しました。時間をおいて再度お試しください");
+      }
       setBusy(false);
     }
   }
@@ -98,6 +116,19 @@ export default function ProductsPage() {
               maxLength={200}
               onChange={(e) => setName(e.target.value)}
               placeholder="例: 経費精算アプリ"
+            />
+          </Field>
+          <Field
+            label="URL キーワード（必須）"
+            htmlFor="product-slug"
+            hint="壁打ちの URL（/キーワード/prepare）になります。小文字英数とハイフン・2〜40 文字・全体で重複不可。"
+          >
+            <Input
+              id="product-slug"
+              value={slug}
+              maxLength={60}
+              onChange={(e) => setSlug(e.target.value)}
+              placeholder="例: expense-app"
             />
           </Field>
           <Field label="説明（任意）" htmlFor="product-description">

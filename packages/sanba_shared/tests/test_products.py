@@ -25,6 +25,7 @@ from sanba_shared.repository import (
     InviteNotUsable,
     InviteRateLimited,
     ProductNotFound,
+    ProductSlugTaken,
     SessionRepository,
 )
 
@@ -169,6 +170,83 @@ def test_set_product_github_preserves_other_fields() -> None:
         )
         is None
     )
+
+
+# ---- slug（ADR-0040）--------------------------------------------------------
+
+
+def test_create_product_enforces_slug_uniqueness() -> None:
+    repo = _repo()
+    repo.create_product(Product(id="prod-1", name="A", owner_sub="alice", slug="billing"))
+    with pytest.raises(ProductSlugTaken):
+        repo.create_product(Product(id="prod-2", name="B", owner_sub="bob", slug="billing"))
+    # 衝突した作成は保存されない。
+    assert repo.get_product("prod-2") is None
+    # 未設定（None）同士は衝突しない（slug 導入前の既存アプリ相当）。
+    repo.create_product(Product(id="prod-3", name="C", owner_sub="carol"))
+    repo.create_product(Product(id="prod-4", name="D", owner_sub="dave"))
+
+
+def test_get_product_by_slug_resolves_and_misses() -> None:
+    repo = _repo()
+    product = Product(id="prod-1", name="A", owner_sub="alice", slug="billing")
+    repo.create_product(product)
+    assert repo.get_product_by_slug("billing") == product
+    assert repo.get_product_by_slug("unknown") is None
+    assert repo.get_product_by_slug("") is None
+
+
+def test_update_product_changes_slug_and_frees_old_one() -> None:
+    repo = _repo()
+    repo.create_product(Product(id="prod-1", name="A", owner_sub="alice", slug="old"))
+    repo.create_product(Product(id="prod-2", name="B", owner_sub="bob", slug="taken"))
+
+    # 他 product が使用中の slug へは変更できない（値も変わらない）。
+    with pytest.raises(ProductSlugTaken):
+        repo.update_product("prod-1", slug="taken")
+    assert repo.get_product("prod-1").slug == "old"  # type: ignore[union-attr]
+
+    # 空いている slug へは変更でき、旧 slug は解放される。
+    updated = repo.update_product("prod-1", slug="new")
+    assert updated.slug == "new"
+    assert repo.get_product_by_slug("new").id == "prod-1"  # type: ignore[union-attr]
+    assert repo.get_product_by_slug("old") is None
+
+    # 同値への変更は no-op（自分自身とは衝突しない）。
+    assert repo.update_product("prod-1", slug="new").slug == "new"
+
+    # slug 変更と他フィールドの更新は同時にできる。
+    both = repo.update_product("prod-1", name="改名", slug="renamed")
+    assert both.name == "改名" and both.slug == "renamed"
+
+
+def test_create_product_slug_uniqueness_under_concurrency() -> None:
+    """並行登録が同じ slug を要求しても 1 件しか通らない（グローバル一意）。"""
+    repo = _repo()
+
+    def _try_create(i: int) -> bool:
+        try:
+            repo.create_product(
+                Product(id=f"prod-{i}", name="A", owner_sub=f"sub-{i}", slug="same")
+            )
+            return True
+        except ProductSlugTaken:
+            return False
+
+    with ThreadPoolExecutor(max_workers=16) as pool:
+        results = list(pool.map(_try_create, range(50)))
+
+    assert sum(results) == 1
+
+
+def test_delete_product_frees_slug() -> None:
+    repo = _repo()
+    repo.create_product(Product(id="prod-1", name="A", owner_sub="alice", slug="billing"))
+    assert repo.delete_product("prod-1") is True
+    assert repo.get_product_by_slug("billing") is None
+    # 解放後は別 product が同じ slug を取れる。
+    repo.create_product(Product(id="prod-2", name="B", owner_sub="bob", slug="billing"))
+    assert repo.get_product_by_slug("billing").id == "prod-2"  # type: ignore[union-attr]
 
 
 def test_delete_product_removes_invites_too() -> None:

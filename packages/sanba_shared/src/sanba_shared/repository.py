@@ -45,6 +45,17 @@ class ProductNotFound(Exception):
     """対象の product が存在しないときに送出 (ADR-0031)。"""
 
 
+class ProductSlugTaken(Exception):
+    """slug が別の product に使用済みのときに送出 (ADR-0040)。
+
+    slug はグローバル一意（/{slug}/prepare 等の URL 識別子）。api 層は 409 に写像する。
+    """
+
+    def __init__(self, slug: str) -> None:
+        super().__init__(slug)
+        self.slug = slug
+
+
 class InviteNotFound(Exception):
     """対象の深掘りリンクが存在しないときに送出 (ADR-0031)。"""
 
@@ -125,6 +136,9 @@ class SessionRepository:
         # in-memory での招待応答（pending → accepted/declined + メンバー作成）を
         # アトミックにするためのロック。Firestore 経路はトランザクションが担う。
         self._mem_member_lock = threading.Lock()
+        # product slug のグローバル一意性を in-memory で担保するロック（ADR-0040）。
+        # Firestore 経路は product_slugs/{slug} レジストリ + トランザクションが担う。
+        self._mem_product_lock = threading.Lock()
 
     @staticmethod
     def _init_client():  # type: ignore[no-untyped-def]
@@ -328,19 +342,60 @@ class SessionRepository:
 
         product は owner が明示的に削除するまで残す運用資産なので、発話や draft 要件と
         違い TTL（expireAt）は付けない（ADR-0031 影響節）。
+        slug 付きならグローバル一意を担保する（ADR-0040）: Firestore は
+        `product_slugs/{slug}` レジストリの存在チェックと作成を同一トランザクションで
+        行い、in-memory はロックで走査を直列化する。使用済みなら ProductSlugTaken。
         """
         if self._client is not None:
+            if product.slug:
+                self._create_product_with_slug_txn(product)
+                return
             self._client.collection("products").document(product.id).set(
                 product.model_dump(mode="json")
             )
             return
-        self._mem_products[product.id] = product
+        with self._mem_product_lock:
+            if product.slug and any(p.slug == product.slug for p in self._mem_products.values()):
+                raise ProductSlugTaken(product.slug)
+            self._mem_products[product.id] = product
+
+    def _create_product_with_slug_txn(self, product: Product) -> None:
+        from google.cloud import firestore
+
+        slug_ref = self._client.collection("product_slugs").document(product.slug)
+        product_ref = self._client.collection("products").document(product.id)
+
+        @firestore.transactional  # type: ignore[misc]
+        def _txn(transaction: Any) -> None:
+            snap = slug_ref.get(transaction=transaction)
+            if snap.exists:
+                raise ProductSlugTaken(product.slug or "")
+            transaction.set(slug_ref, {"product_id": product.id})
+            transaction.set(product_ref, product.model_dump(mode="json"))
+
+        _txn(self._client.transaction())
 
     def get_product(self, product_id: str) -> Product | None:
         if self._client is not None:
             snap = self._client.collection("products").document(product_id).get()
             return Product.model_validate(snap.to_dict()) if snap.exists else None
         return self._mem_products.get(product_id)
+
+    def get_product_by_slug(self, slug: str) -> Product | None:
+        """slug から product を引く（ADR-0040）。未使用 slug は None。
+
+        Firestore はレジストリ（product_slugs/{slug}）経由で引く。レジストリと
+        product 文書の不整合（削除との競合）は None に平す（呼び出し側は 404 扱い）。
+        """
+        if not slug:
+            return None
+        if self._client is not None:
+            snap = self._client.collection("product_slugs").document(slug).get()
+            if not snap.exists:
+                return None
+            product_id = (snap.to_dict() or {}).get("product_id")
+            return self.get_product(product_id) if product_id else None
+        return next((p for p in self._mem_products.values() if p.slug == slug), None)
 
     def list_products_by_owner(self, owner_sub: str) -> list[Product]:
         """呼び出しユーザー本人 (owner_sub) の product を新しい順で返す。
@@ -368,11 +423,16 @@ class SessionRepository:
         name: str | None = None,
         description: str | None = None,
         glossary: list[str] | None = None,
+        slug: str | None = None,
     ) -> Product:
-        """name / description / glossary のみ上書きする。
+        """name / description / glossary / slug のみ上書きする。
 
         所有と出所 (owner_sub / created_at) は不変。repo 紐づけは `set_product_github` が
         担う（`update_requirement` と同じ「編集可能フィールドを閉じる」パターン）。
+        slug の変更はグローバル一意を保つ（ADR-0040）: Firestore は新 slug の空き確認・
+        旧 slug の解放・product の patch を同一トランザクションで行う。None = 変更しない
+        （slug を「未設定に戻す」経路は持たない: URL の識別子は消さない）。使用済みなら
+        ProductSlugTaken。
         """
         current = self.get_product(product_id)
         if current is None:
@@ -384,6 +444,9 @@ class SessionRepository:
             updates["description"] = description
         if glossary is not None:
             updates["glossary"] = list(glossary)
+        slug_changed = slug is not None and slug != current.slug
+        if slug_changed:
+            updates["slug"] = slug
         if not updates:
             return current
         # dict に適用してから検証する（name 空などの不正値検出を一度で行う）。
@@ -392,11 +455,45 @@ class SessionRepository:
         updated = Product.model_validate(data)
 
         if self._client is not None:
-            # github_* などの並行更新を巻き戻さないよう、編集対象フィールドのみ patch する。
-            self._client.collection("products").document(product_id).set(updates, merge=True)
+            if slug_changed and slug is not None:
+                self._update_product_slug_txn(product_id, current.slug, slug, updates)
+            else:
+                # github_* などの並行更新を巻き戻さないよう、編集対象フィールドのみ patch する。
+                self._client.collection("products").document(product_id).set(updates, merge=True)
         else:
-            self._mem_products[product_id] = updated
+            with self._mem_product_lock:
+                if slug_changed and any(
+                    p.slug == slug for pid, p in self._mem_products.items() if pid != product_id
+                ):
+                    raise ProductSlugTaken(slug or "")
+                self._mem_products[product_id] = updated
         return updated
+
+    def _update_product_slug_txn(
+        self, product_id: str, old_slug: str | None, new_slug: str, updates: dict[str, object]
+    ) -> None:
+        """slug 変更を含む product 更新（ADR-0040）。
+
+        新 slug レジストリの空き確認・旧 slug の解放・product 文書の patch を同一
+        トランザクションで行い、並行する登録・変更と競合しても一意性を破らない。
+        """
+        from google.cloud import firestore
+
+        new_ref = self._client.collection("product_slugs").document(new_slug)
+        old_ref = self._client.collection("product_slugs").document(old_slug) if old_slug else None
+        product_ref = self._client.collection("products").document(product_id)
+
+        @firestore.transactional  # type: ignore[misc]
+        def _txn(transaction: Any) -> None:
+            snap = new_ref.get(transaction=transaction)
+            if snap.exists and (snap.to_dict() or {}).get("product_id") != product_id:
+                raise ProductSlugTaken(new_slug)
+            if old_ref is not None:
+                transaction.delete(old_ref)
+            transaction.set(new_ref, {"product_id": product_id})
+            transaction.set(product_ref, updates, merge=True)
+
+        _txn(self._client.transaction())
 
     def set_product_github(
         self,
@@ -447,12 +544,15 @@ class SessionRepository:
         消してから product 文書を消す（リンクだけ残ると join 検証が親なしで通り得る）。
         メンバー・メンバー招待（トップレベルコレクション / ADR-0036）も同様に消す:
         残ると承諾で親なし product のメンバーが生まれ、一覧に幽霊が残る。
+        slug レジストリ（product_slugs / ADR-0040）も解放する: 残ると slug が永久に
+        取れなくなり、get_product_by_slug が親なしを指す。
         """
         if self._client is not None:
             from google.cloud.firestore_v1.base_query import FieldFilter
 
             ref = self._client.collection("products").document(product_id)
-            if not ref.get().exists:
+            snap = ref.get()
+            if not snap.exists:
                 return False
             for inv in ref.collection("invites").stream():
                 inv.reference.delete()
@@ -464,6 +564,9 @@ class SessionRepository:
                 )
                 for doc in docs:
                     doc.reference.delete()
+            slug = (snap.to_dict() or {}).get("slug")
+            if slug:
+                self._client.collection("product_slugs").document(slug).delete()
             ref.delete()
             return True
         if product_id not in self._mem_products:

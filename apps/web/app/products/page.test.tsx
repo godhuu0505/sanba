@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { Product } from "@/lib/api";
+import { ApiError, type Product } from "@/lib/api";
 
 // アプリ管理（一覧・登録 / FR-1.1）: 認証ゲート・一覧表示・登録 → 詳細遷移・空名の 400 相当を検証。
 
@@ -42,6 +42,7 @@ function product(overrides: Partial<Product> = {}): Product {
   return {
     id: "prod-1",
     name: "請求アプリ",
+    slug: "billing-app",
     description: "経費精算",
     glossary: [],
     created_at: "2026-07-01T00:00:00+00:00",
@@ -83,15 +84,18 @@ describe("アプリ管理画面（ADR-0031 / FR-1.1）", () => {
     expect(screen.getByText(/説明なし ・ octo\/demo/)).toBeTruthy();
   });
 
-  it("登録すると詳細（/products/{id}）へ遷移する。前後空白は落として送る", async () => {
+  it("登録すると詳細（/products/{id}）へ遷移する。前後空白は落とし slug は小文字へ正規化する", async () => {
     authState.loggedIn = true;
     render(<ProductsPage />);
     fireEvent.change(screen.getByLabelText("アプリ名（必須）"), {
       target: { value: "  新アプリ  " },
     });
+    fireEvent.change(screen.getByLabelText("URL キーワード（必須）"), {
+      target: { value: "  New-App  " },
+    });
     fireEvent.click(screen.getByRole("button", { name: /登録する/ }));
     await waitFor(() => expect(push).toHaveBeenCalledWith("/products/prod-1"));
-    expect(createProduct).toHaveBeenCalledWith("新アプリ", "", null);
+    expect(createProduct).toHaveBeenCalledWith("新アプリ", "new-app", "", null);
   });
 
   it("アプリ名が空（空白のみ）なら API を呼ばずエラーを出す", async () => {
@@ -101,5 +105,30 @@ describe("アプリ管理画面（ADR-0031 / FR-1.1）", () => {
     fireEvent.click(screen.getByRole("button", { name: /登録する/ }));
     expect(await screen.findByRole("alert")).toBeTruthy();
     expect(createProduct).not.toHaveBeenCalled();
+  });
+
+  it("URL キーワードが形式違反なら API を呼ばずエラーを出す（ADR-0040）", async () => {
+    authState.loggedIn = true;
+    render(<ProductsPage />);
+    fireEvent.change(screen.getByLabelText("アプリ名（必須）"), { target: { value: "新アプリ" } });
+    fireEvent.change(screen.getByLabelText("URL キーワード（必須）"), {
+      target: { value: "bad slug!" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /登録する/ }));
+    expect((await screen.findByRole("alert")).textContent).toContain("URL キーワード");
+    expect(createProduct).not.toHaveBeenCalled();
+  });
+
+  it("slug 重複（409）は使用済みの旨をエラー表示する（ADR-0040）", async () => {
+    authState.loggedIn = true;
+    createProduct.mockRejectedValueOnce(new ApiError(409, "POST /api/products failed: 409"));
+    render(<ProductsPage />);
+    fireEvent.change(screen.getByLabelText("アプリ名（必須）"), { target: { value: "新アプリ" } });
+    fireEvent.change(screen.getByLabelText("URL キーワード（必須）"), {
+      target: { value: "dup-app" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /登録する/ }));
+    expect((await screen.findByRole("alert")).textContent).toContain("既に使われています");
+    expect(push).not.toHaveBeenCalled();
   });
 });

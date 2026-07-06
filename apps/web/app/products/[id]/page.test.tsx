@@ -49,6 +49,7 @@ function product(overrides: Partial<Product> = {}): Product {
   return {
     id: "prod-1",
     name: "請求アプリ",
+    slug: "billing-app",
     description: "経費精算",
     glossary: ["請求書一覧"],
     created_at: "2026-07-01T00:00:00+00:00",
@@ -78,7 +79,7 @@ describe("アプリ詳細画面（ADR-0031 / FR-1.2）", () => {
     expect(screen.queryByText("基本情報")).toBeNull();
   });
 
-  it("基本情報の保存は PATCH（name/description）を呼ぶ", async () => {
+  it("基本情報の保存は PATCH（name/slug/description）を呼ぶ", async () => {
     render(<ProductDetailPage />);
     const nameInput = await screen.findByLabelText("アプリ名（必須）");
     fireEvent.change(nameInput, { target: { value: "改名" } });
@@ -86,10 +87,31 @@ describe("アプリ詳細画面（ADR-0031 / FR-1.2）", () => {
     await waitFor(() =>
       expect(updateProduct).toHaveBeenCalledWith(
         "prod-1",
-        { name: "改名", description: "経費精算" },
+        { name: "改名", slug: "billing-app", description: "経費精算" },
         "id-token",
       ),
     );
+  });
+
+  it("URL キーワードを変更して保存でき、形式違反は API を呼ばず弾く（ADR-0040）", async () => {
+    render(<ProductDetailPage />);
+    const slugInput = await screen.findByLabelText("URL キーワード（必須）");
+    // 大文字は小文字へ正規化して送る。
+    fireEvent.change(slugInput, { target: { value: "Renamed-App" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存する" }));
+    await waitFor(() =>
+      expect(updateProduct).toHaveBeenCalledWith(
+        "prod-1",
+        { name: "請求アプリ", slug: "renamed-app", description: "経費精算" },
+        "id-token",
+      ),
+    );
+    // 形式違反はその場で指摘し API を呼ばない。
+    updateProduct.mockClear();
+    fireEvent.change(slugInput, { target: { value: "bad slug!" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存する" }));
+    expect((await screen.findByRole("alert")).textContent).toContain("URL キーワード");
+    expect(updateProduct).not.toHaveBeenCalled();
   });
 
   it("語彙の追加は即時 PATCH（glossary）を呼ぶ", async () => {

@@ -59,6 +59,7 @@ from sanba_shared.repository import (
     MemberInviteNotFound,
     MemberInviteNotPending,
     ProductNotFound,
+    ProductSlugTaken,
     RequirementNotFound,
     SessionRepository,
 )
@@ -955,9 +956,14 @@ def get_session_repo(
 
 # ---- Products (ADR-0031) ----------------------------------------------------
 class CreateProductRequest(BaseModel):
-    """`POST /api/products`（FR-1.1）。name はハンドラ側で strip + 空を 400 にする。"""
+    """`POST /api/products`（FR-1.1）。name はハンドラ側で strip + 空を 400 にする。
+
+    slug は必須（ADR-0040）: /{slug}/prepare 等のアプリ従属 URL の識別子。
+    形式・予約語は `_clean_slug`、一意性はリポジトリ層が検証する。
+    """
 
     name: str = Field(max_length=200)
+    slug: str = Field(max_length=60)
     description: str = Field(default="", max_length=2000)
     # 利用者向け語彙（ADR-0032 でプロンプトにシード）。件数はここで、各語の長さは
     # `_clean_glossary` で制限する（Firestore 文書とプロンプトの肥大防止）。
@@ -968,6 +974,7 @@ class UpdateProductRequest(BaseModel):
     """`PATCH /api/products/{id}`（FR-1.2）。None = 変更しない（部分更新）。"""
 
     name: str | None = Field(default=None, max_length=200)
+    slug: str | None = Field(default=None, max_length=60)
     description: str | None = Field(default=None, max_length=2000)
     glossary: list[str] | None = Field(default=None, max_length=100)
 
@@ -981,6 +988,9 @@ class ProductResponse(BaseModel):
 
     id: str
     name: str
+    # URL キーワード（ADR-0040）。None = 未設定（slug 導入前の既存アプリ）。web は
+    # 未設定アプリの壁打ち開始を塞ぎ、アプリ管理での設定を促す。
+    slug: str | None = None
     description: str
     glossary: list[str]
     created_at: datetime
@@ -999,6 +1009,7 @@ def _product_response(product: Product, *, role: str = "owner") -> ProductRespon
     return ProductResponse(
         id=product.id,
         name=product.name,
+        slug=product.slug,
         description=product.description,
         glossary=product.glossary,
         created_at=product.created_at,
@@ -1017,6 +1028,50 @@ def _clean_glossary(glossary: list[str]) -> list[str]:
     if any(len(g) > 100 for g in cleaned):
         raise HTTPException(status_code=400, detail="glossary term too long (max 100 chars)")
     return cleaned
+
+
+# slug の形式（ADR-0040）: 小文字英数とハイフン、先頭末尾は英数、2〜40 文字。
+# URL のパス片になるため大文字・記号・空白は受けず、入力は小文字へ正規化してから検証する。
+_SLUG_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]{0,38}[a-z0-9]$")
+
+# web の既存ルート・予約パスと衝突する slug は取らせない（/{slug}/... が Next.js の
+# 静的ルートに負けて永久に到達不能な URL になる）。ルートを増やしたらここも更新する。
+_RESERVED_SLUGS = frozenset(
+    {
+        "admin",
+        "api",
+        "assets",
+        "design",
+        "join",
+        "login",
+        "member-invites",
+        "prepare",
+        "products",
+        "results",
+        "session",
+        "sessions",
+        "settings",
+        "static",
+    }
+)
+
+
+def _clean_slug(raw: str) -> str:
+    """slug を正規化・検証する（ADR-0040）。不正な形式・予約語は 400。
+
+    一意性（使用済み）はここでは見ない: リポジトリ層が原子的に検証し、
+    ハンドラが ProductSlugTaken を 409 に写像する。
+    """
+    slug = raw.strip().lower()
+    if not _SLUG_PATTERN.fullmatch(slug):
+        raise HTTPException(
+            status_code=400,
+            detail="slug must be 2-40 chars of lowercase letters, digits, hyphens"
+            " (no leading/trailing hyphen)",
+        )
+    if slug in _RESERVED_SLUGS or slug.startswith("_"):
+        raise HTTPException(status_code=400, detail="slug is reserved")
+    return slug
 
 
 def _require_product_access(product_id: str, user: AuthUser, *, manage: bool = False) -> Product:
@@ -1057,20 +1112,28 @@ def _viewer_role(product: Product, user: AuthUser) -> str:
 def create_product(
     req: CreateProductRequest, user: AuthUser = Depends(require_user)
 ) -> ProductResponse:
-    """アプリを登録する（FR-1.1 / ADR-0031）。owner は呼び出しユーザー。"""
+    """アプリを登録する（FR-1.1 / ADR-0031）。owner は呼び出しユーザー。
+
+    slug は必須（ADR-0040）。形式・予約語は 400、使用済みは 409。
+    """
     name = req.name.strip()
     if not name:
         raise HTTPException(status_code=400, detail="name must not be empty")
+    slug = _clean_slug(req.slug)
     product = Product(
         id=new_product_id(),
         name=name,
+        slug=slug,
         description=req.description.strip(),
         owner_sub=user.sub,
         glossary=_clean_glossary(req.glossary),
     )
-    _repo.create_product(product)
+    try:
+        _repo.create_product(product)
+    except ProductSlugTaken as exc:
+        raise HTTPException(status_code=409, detail="slug already taken") from exc
     record_product_event("created")
-    log.info("product_created", product=product.id, owner=user.sub)
+    log.info("product_created", product=product.id, owner=user.sub, slug=slug)
     return _product_response(product)
 
 
@@ -1104,20 +1167,24 @@ def get_product(product_id: str, user: AuthUser = Depends(require_user)) -> Prod
 def update_product(
     product_id: str, req: UpdateProductRequest, user: AuthUser = Depends(require_user)
 ) -> ProductResponse:
-    """name / description / glossary のみ更新する（FR-1.2）。所有・出所は不変。
+    """name / slug / description / glossary のみ更新する（FR-1.2）。所有・出所は不変。
 
     管理操作なので owner / admin のみ（メンバーは 403 / ADR-0036）。
+    slug の形式・予約語は 400、使用済みは 409（ADR-0040）。
     """
     _require_product_access(product_id, user, manage=True)
     name = req.name.strip() if req.name is not None else None
     if name == "":
         raise HTTPException(status_code=400, detail="name must not be empty")
+    slug = _clean_slug(req.slug) if req.slug is not None else None
     glossary = _clean_glossary(req.glossary) if req.glossary is not None else None
     description = req.description.strip() if req.description is not None else None
     try:
         updated = _repo.update_product(
-            product_id, name=name, description=description, glossary=glossary
+            product_id, name=name, description=description, glossary=glossary, slug=slug
         )
+    except ProductSlugTaken as exc:
+        raise HTTPException(status_code=409, detail="slug already taken") from exc
     except ProductNotFound as exc:
         # 認可チェック後に消えた競合。存在秘匿の方針に合わせ 404 のまま返す。
         raise HTTPException(status_code=404, detail="product not found") from exc

@@ -10,11 +10,14 @@
 // 選択 UI を持たない。アプリ未確定のまま 02 に居着けないよう、候補 settle 後に
 // 未選択なら 01 へ戻す。
 //
-// URL: ホームは "/"、準備は "/prepare" に対応させる（固有 URL を持たせ、直リンク・共有・
-// リロードで準備画面へ到達できるようにする）。ただし一本道（戻る ‹ のみ）と入力復元は保つため、
-// ステップ遷移はコンポーネントを remount させず、History API でアドレスバーだけを書き換える。
-// "/prepare" への直アクセスは app/prepare/page.tsx が initialStep="prepare" で本コンポーネント
-// を初期化する。ブラウザの戻る/進む（popstate）にも追随する。
+// URL: ホームは "/"、準備は "/{slug}/prepare"、会話中は "/{slug}/sessions/{id}"（ADR-0040。
+// slug = 対象アプリの URL キーワード）。固有 URL を持たせ、直リンク・共有・リロードで到達
+// できるようにする。ただし一本道（戻る ‹ のみ）と入力復元は保つため、ステップ遷移は
+// コンポーネントを remount させず、History API でアドレスバーだけを書き換える。
+// "/{slug}/prepare" への直アクセスは app/[slug]/prepare/page.tsx が initialSlug 付きで
+// 本コンポーネントを初期化し、slug が本人のアプリ一覧に解決できない（不存在・権限なし）
+// ときは複合エラー画面（AccessErrorScreen）に落とす。ブラウザの戻る/進む（popstate）にも
+// 追随する。
 //
 // 認証は /login へ寄せる（#140）。本ページはログイン状態を「開始ゲート」としてのみ参照し、
 // 未ログインなら理由提示＋/login への導線を出す（インラインのログインパネルは廃止）。
@@ -64,6 +67,7 @@ import {
   type MaterialSource,
 } from "./MaterialSourceSheet";
 import { authGate } from "./RequireAuth";
+import { AccessErrorScreen } from "./AccessErrorScreen";
 import { clearPrep, readPrep, writePrep } from "../lib/prepFormStorage";
 
 // 役割チップ。表示は日本語、value は API（POST /api/sessions の roles）に渡す既存値。
@@ -76,10 +80,19 @@ const ROLES = [
 
 const DEFAULT_ROLE = "customer";
 
-// 入口フローの URL（ADR-0017 一本道）。ホーム = "/"、準備 = "/prepare"。
-// 準備画面に固有 URL を与え、直リンク・共有・リロードで到達できるようにする。
+// 入口フローの URL（ADR-0017 一本道 / ADR-0040 アプリ従属 URL）。ホーム = "/"、
+// 準備 = "/{slug}/prepare"、会話中 = "/{slug}/sessions/{id}"。
 const HOME_PATH = "/";
-const PREPARE_PATH = "/prepare";
+const PREPARE_PATH_RE = /^\/([^/]+)\/prepare\/?$/;
+const SESSION_PATH_RE = /^\/([^/]+)\/sessions\/[^/]+\/?$/;
+
+function preparePath(slug: string): string {
+  return `/${encodeURIComponent(slug)}/prepare`;
+}
+
+function sessionPath(slug: string, sessionId: string): string {
+  return `/${encodeURIComponent(slug)}/sessions/${encodeURIComponent(sessionId)}`;
+}
 
 // ゴールの記入例（役割ごとに視点を変える / #222）。表示専用（クリック挙動なし）。
 const GOAL_EXAMPLES: Record<string, string[]> = {
@@ -135,9 +148,20 @@ function formatSessionDate(iso: string): string {
 
 type Step = "home" | "prepare";
 
-// 入口フロー本体。初期ステップはマウント元のルートが決める（"/" = home / "/prepare" = prepare）。
-export default function EntryFlow({ initialStep = "home" }: { initialStep?: Step }) {
+// 入口フロー本体。初期ステップはマウント元のルートが決める（"/" = home /
+// "/{slug}/prepare" = prepare + initialSlug / ADR-0040）。
+export default function EntryFlow({
+  initialStep = "home",
+  initialSlug,
+}: {
+  initialStep?: Step;
+  initialSlug?: string;
+}) {
   const [step, setStep] = useState<Step>(initialStep);
+  // アドレスバー上のアプリ slug（ADR-0040）。直アクセスはルートの initialSlug、内部遷移は
+  // navigateStep / popstate が更新する。null = ホーム（アプリ非従属 URL）。
+  // 準備画面の対象アプリは常にこの slug に従属し、解決できなければ複合エラー画面に落とす。
+  const [urlSlug, setUrlSlug] = useState<string | null>(initialSlug ?? null);
   const [role, setRole] = useState<string>(DEFAULT_ROLE);
   const [goal, setGoal] = useState("");
   // ゴールの詳細（背景・現状・制約などの自由記述 / #222）。開始時に文脈として投入する。
@@ -181,14 +205,19 @@ export default function EntryFlow({ initialStep = "home" }: { initialStep?: Step
   const [prepHydrated, setPrepHydrated] = useState(false);
   const auth = useAuth();
 
-  // ステップ遷移と URL 同期（ADR-0017 一本道 / 固有 URL）。remount を避けて入力（goal 等）を保つ
-  // ため router 遷移ではなく History API でアドレスバーだけを書き換える。ホーム→準備は pushState
-  // で /prepare を積み、戻る ‹（準備→ホーム）は replaceState で /prepare を置き換える。
-  // replaceState にすることで「/prepare を積み残さない」= ブラウザバックで準備画面が復活しない。
+  // ステップ遷移と URL 同期（ADR-0017 一本道 / 固有 URL / ADR-0040 アプリ従属 URL）。
+  // remount を避けて入力（goal 等）を保つため router 遷移ではなく History API でアドレスバー
+  // だけを書き換える。ホーム→準備は pushState で /{slug}/prepare を積み、戻る ‹（準備→ホーム）
+  // は replaceState で置き換える（ブラウザバックで準備画面が復活しない）。
+  // 準備の URL は選択中アプリの slug から組む。slug が無ければ遷移しない（fail-closed:
+  // CTA 側で塞いでいるが、URL を組めないまま準備へ入らせない）。
   function navigateStep(next: Step) {
+    const slugForUrl = next === "prepare" ? (selectedProduct?.slug ?? urlSlug) : null;
+    if (next === "prepare" && !slugForUrl) return;
     setStep(next);
+    setUrlSlug(slugForUrl);
     if (typeof window === "undefined") return;
-    const path = next === "prepare" ? PREPARE_PATH : HOME_PATH;
+    const path = next === "prepare" && slugForUrl ? preparePath(slugForUrl) : HOME_PATH;
     if (window.location.pathname !== path) {
       if (next === "prepare") {
         window.history.pushState({ sanbaStep: next }, "", path);
@@ -198,15 +227,25 @@ export default function EntryFlow({ initialStep = "home" }: { initialStep?: Step
     }
   }
 
-  // ブラウザの戻る/進む（popstate）に追随して step をアドレスに一致させる。pushState で積んだ
-  // /prepare からハードウェア/ブラウザバックしたときも一本道の見た目を保つ。
-  // ホームへ戻る popstate では conn もクリアする（URL と画面の食い違いを防ぐ）。
+  // ブラウザの戻る/進む（popstate）に追随して step と urlSlug をアドレスに一致させる。
+  // pushState で積んだ /{slug}/prepare・/{slug}/sessions/{id} からハードウェア/ブラウザ
+  // バックしたときも一本道の見た目を保つ。会話 URL を離れる popstate では conn もクリアする
+  // （URL と画面の食い違いを防ぐ）。
   useEffect(() => {
     function onPopState() {
       if (typeof window === "undefined") return;
-      const goingHome = window.location.pathname !== PREPARE_PATH;
-      setStep(goingHome ? "home" : "prepare");
-      if (goingHome) setConn(null);
+      const path = window.location.pathname;
+      const prepareMatch = PREPARE_PATH_RE.exec(path);
+      const sessionMatch = SESSION_PATH_RE.exec(path);
+      setStep(prepareMatch || sessionMatch ? "prepare" : "home");
+      setUrlSlug(
+        prepareMatch
+          ? decodeURIComponent(prepareMatch[1])
+          : sessionMatch
+            ? decodeURIComponent(sessionMatch[1])
+            : null,
+      );
+      if (!sessionMatch) setConn(null);
     }
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
@@ -301,15 +340,22 @@ export default function EntryFlow({ initialStep = "home" }: { initialStep?: Step
     };
   }, [auth.loggedIn, auth.credential, products]);
 
-  // 対象アプリの選択値を取得済み候補と突き合わせる（ADR-0031 / PR#314 P2）。
+  // 対象アプリの選択値を取得済み候補と突き合わせる（ADR-0031 / PR#314 P2 / ADR-0040)。
+  // - アドレスバーに slug がある（/{slug}/prepare 直アクセス・popstate）なら、URL を正として
+  //   productId を slug のアプリに確定する。解決できない slug は render 側で複合エラー画面。
   // - 復元した productId が候補に無い（削除済み・権限外・取得失敗）ならクリアして、
   //   実在しない product で開始できないようにする（開始条件は selectedProduct の実在）。
   // - 候補がちょうど 1 件なら自動選択して選ぶ手間を省く（複数は明示選択を求める）。
-  // - 02 準備でアプリ未確定（直リンク・stale クリア後）なら 01 ホームへ戻して選び直させる
+  // - 02 準備でアプリ未確定・slug 未設定のアプリなら 01 ホームへ戻して選び直させる
   //   （ADR-0039: 選択 UI は 01 にしか無いため、02 に居着くと開始が永久に塞がる）。
   //   判定は候補 settle 後・保存値の復元後（prepHydrated）に限る。
   useEffect(() => {
     if (!products) return;
+    if (urlSlug) {
+      const bySlug = products.find((p) => p.slug === urlSlug);
+      if (bySlug && bySlug.id !== productId) setProductId(bySlug.id);
+      return;
+    }
     if (productId !== "" && !products.some((p) => p.id === productId)) {
       setProductId("");
       return;
@@ -318,13 +364,17 @@ export default function EntryFlow({ initialStep = "home" }: { initialStep?: Step
       setProductId(products[0].id);
       return;
     }
-    if (step === "prepare" && prepHydrated && productId === "") {
+    const selected = products.find((p) => p.id === productId);
+    if (step === "prepare" && prepHydrated && (!selected || !selected.slug)) {
       // 運用でこのフォールバック（直リンク・並行削除等）の頻度を追えるよう構造化ログを残す
       // （CLAUDE.md 原則3。収集先の OTLP/メトリクス配線は #232）。PII は含めない。
       console.info("[entry-flow] fallback to home", { reason: "product-unselected" });
       navigateStep("home");
     }
-  }, [products, productId, step, prepHydrated]);
+    // navigateStep は毎 render 再生成される関数で、deps に含めると本 effect が毎 render 走る。
+    // 参照する状態（selectedProduct/urlSlug）はここの deps・分岐条件と重なっており安全。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [products, productId, step, prepHydrated, urlSlug]);
 
   // App 由来の repo が確定したら branch 一覧を取得する（ADR-0028。既定はデフォルトブランチ）。
   // 一覧が来るまで（または取得失敗時も）デフォルトブランチだけで開始できる（本流を止めない）。
@@ -418,9 +468,21 @@ export default function EntryFlow({ initialStep = "home" }: { initialStep?: Step
 
   // 厳密な認証ゲート（全画面保護 / docs/design/figma-implementation-audit.md A節）。
   // 未ログインは /login?next= へ戻す。next は現在のステップに対応する URL にし、ログイン後に
-  // 元の画面（準備なら /prepare）へ戻す。判定は authGate に集約（解決前・dev の扱いも含む）。
-  const gate = authGate(auth, step === "prepare" ? PREPARE_PATH : HOME_PATH);
+  // 元の画面（準備なら /{slug}/prepare）へ戻す。判定は authGate に集約（解決前・dev の扱いも含む）。
+  const gate = authGate(auth, step === "prepare" && urlSlug ? preparePath(urlSlug) : HOME_PATH);
   if (gate) return gate;
+
+  // アドレスバーの slug が本人のアプリ一覧に解決できない = URL が不存在か権限なし
+  // （ADR-0040）。API の存在秘匿（404 に平す / ADR-0036）と同じく両者を区別しない
+  // 複合エラー画面に落とす。判定は候補 settle 後（取得中は通常の準備画面で「確認しています…」）。
+  if (
+    step === "prepare" &&
+    urlSlug !== null &&
+    products !== null &&
+    !products.some((p) => p.slug === urlSlug)
+  ) {
+    return <AccessErrorScreen />;
+  }
 
   async function handleStart() {
     if (busy) return; // 二重送信防止（#140 AC）。
@@ -535,6 +597,16 @@ export default function EntryFlow({ initialStep = "home" }: { initialStep?: Step
       setUploadedNames(uploaded);
       setUploadFailedCount(failed);
       setConn(joined);
+      // 会話中の固有 URL /{slug}/sessions/{id} をアドレスバーへ積む（ADR-0040）。
+      // remount させず History API のみ（ADR-0017 一本道の維持）。リロード・直アクセスは
+      // app/[slug]/sessions/[id] ルートが受け、権限確認のうえ /results/{id} へ送る。
+      if (typeof window !== "undefined" && selectedProduct?.slug) {
+        window.history.pushState(
+          { sanbaStep: "session" },
+          "",
+          sessionPath(selectedProduct.slug, joined.session_id),
+        );
+      }
       // 壁打ち開始に成功したら準備フォームの一時保存は破棄する（次回へ持ち越さない / #179）。
       clearPrep();
     } catch (e) {
@@ -610,7 +682,14 @@ export default function EntryFlow({ initialStep = "home" }: { initialStep?: Step
         materialNames={uploadedNames}
         materialFailedCount={uploadFailedCount}
         // 中断したら会話を畳んで準備（02）へ戻す（マイク送信は SessionView 側で停止済み）。
-        onCancel={() => setConn(null)}
+        // 会話 URL（/{slug}/sessions/{id}）を積んでいたら履歴を戻し、popstate が step と
+        // urlSlug をアドレス（/{slug}/prepare）に揃える（ADR-0040）。
+        onCancel={() => {
+          setConn(null);
+          if (typeof window !== "undefined" && SESSION_PATH_RE.test(window.location.pathname)) {
+            window.history.back();
+          }
+        }}
       />
     );
   }
@@ -622,10 +701,13 @@ export default function EntryFlow({ initialStep = "home" }: { initialStep?: Step
     // 窓も null で塞がる）。取得は失敗でも番兵で settle するので詰まらない。
     // 対象アプリは「取得済み候補に実在する product」を選べていることを条件にする（PR#314 P2）:
     // sessionStorage 由来の stale な productId 文字列だけでは開始させない。
+    // slug 未設定のアプリでは開始させない（会話 URL を組めない / ADR-0040。突き合わせ effect
+    // がホームへ戻すが、戻るまでの窓も塞ぐ fail-closed）。
     const canStart =
       consent &&
       goal.trim() !== "" &&
       selectedProduct !== undefined &&
+      !!selectedProduct.slug &&
       auth.loggedIn &&
       !busy &&
       repoChoices !== null;
@@ -987,7 +1069,8 @@ export default function EntryFlow({ initialStep = "home" }: { initialStep?: Step
               <option value="">選択してください</option>
               {(products ?? []).map((p) => (
                 <option key={p.id} value={p.id}>
-                  {p.name}
+                  {/* slug 未設定（既存アプリ）は選べるが開始できないことを候補名で予告する。 */}
+                  {p.slug ? p.name : `${p.name}（URL キーワード未設定）`}
                 </option>
               ))}
             </Select>
@@ -997,13 +1080,26 @@ export default function EntryFlow({ initialStep = "home" }: { initialStep?: Step
             size="lg"
             block
             onClick={() => navigateStep("prepare")}
-            disabled={!selectedProduct}
+            disabled={!selectedProduct?.slug}
           >
             ＋ 壁打ちを始める
           </Button>
           {(products?.length ?? 0) > 0 && !selectedProduct && (
             <p className="text-[12px] text-sanba-muted">
               対象のアプリを選ぶと壁打ちを始められます。
+            </p>
+          )}
+          {/* slug 未設定のアプリは URL（/{slug}/prepare）を組めないため開始できない
+              （ADR-0040）。アプリ管理での設定へ誘導する。 */}
+          {selectedProduct && !selectedProduct.slug && (
+            <p className="text-[12px] text-sanba-muted">
+              このアプリは URL キーワードが未設定のため、壁打ちを始められません。
+              <Link
+                href={`/products/${encodeURIComponent(selectedProduct.id)}`}
+                className="ml-1 text-sanba-gold-text underline"
+              >
+                アプリ管理で設定する
+              </Link>
             </p>
           )}
         </Card>

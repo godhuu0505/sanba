@@ -20,7 +20,7 @@ export interface SessionHistoryItem {
 
 export interface SessionHistoryListProps extends React.HTMLAttributes<HTMLElement> {
   items: SessionHistoryItem[];
-  /** 行の遷移先。既定は過去要件の絵巻閲覧画面 /sessions/{id}。 */
+  /** 行の遷移先。既定は過去要件の絵巻閲覧画面 /results/{id}（ADR-0040）。 */
   hrefFor?: (id: string) => string;
   /** 空状態の文言。 */
   emptyText?: string;
@@ -33,7 +33,7 @@ export const SessionHistoryList = React.forwardRef<HTMLElement, SessionHistoryLi
     {
       className,
       items,
-      hrefFor = (id) => `/sessions/${encodeURIComponent(id)}`,
+      hrefFor = (id) => `/results/${encodeURIComponent(id)}`,
       emptyText = "過去の要件はまだございません。壁打ちを始めると、ここに残ります。",
       ...props
     },

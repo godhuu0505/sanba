@@ -558,6 +558,11 @@ export async function listGithubBranches(
 export interface Product {
   id: string;
   name: string;
+  /**
+   * URL キーワード（グローバル一意 / ADR-0040）。/{slug}/prepare 等のアプリ従属 URL の
+   * 識別子。null = 未設定（slug 導入前の既存アプリ）。未設定の間は壁打ちを開始できない。
+   */
+  slug: string | null;
   description: string;
   /** 利用者向け語彙（画面名・機能の呼び名）。end_user モードのプロンプトにシードされる。 */
   glossary: string[];
@@ -604,12 +609,13 @@ async function productFetch<T>(
 
 export function createProduct(
   name: string,
+  slug: string,
   description: string,
   idToken: string | null,
 ): Promise<Product> {
   return productFetch<Product>("/api/products", idToken, {
     method: "POST",
-    body: JSON.stringify({ name, description }),
+    body: JSON.stringify({ name, slug, description }),
   });
 }
 
@@ -623,7 +629,7 @@ export function fetchProduct(productId: string, idToken: string | null): Promise
 
 export function updateProduct(
   productId: string,
-  patch: { name?: string; description?: string; glossary?: string[] },
+  patch: { name?: string; slug?: string; description?: string; glossary?: string[] },
   idToken: string | null,
 ): Promise<Product> {
   return productFetch<Product>(`/api/products/${encodeURIComponent(productId)}`, idToken, {

@@ -44,6 +44,8 @@ const fetchMySessions = vi.fn(async (..._a: unknown[]) => [] as unknown[]);
 const DEFAULT_PRODUCT = {
   id: "p0",
   name: "既定アプリ",
+  // URL キーワード（ADR-0040）。準備 URL は /default-app/prepare になる。
+  slug: "default-app" as string | null,
   description: "",
   glossary: [] as string[],
   created_at: "2024-06-20T03:00:00Z",
@@ -256,9 +258,9 @@ describe("入口フロー（#140）", () => {
     expect(await screen.findByText("新機能要件定義")).toBeTruthy();
     // 日付は YYYY/MM/DD へ整形して表示する（タイムゾーン差を避け書式のみ検証）。
     expect(screen.getByText(/^\d{4}\/\d{2}\/\d{2}$/)).toBeTruthy();
-    // 行は過去要件の絵巻閲覧画面（/sessions/{id}）への遷移リンクになる。
+    // 行は過去要件の絵巻閲覧画面（/results/{id} / ADR-0040）への遷移リンクになる。
     expect(screen.getByRole("link", { name: /新機能要件定義/ }).getAttribute("href")).toBe(
-      "/sessions/sess-1",
+      "/results/sess-1",
     );
     // 空状態の文言は出ない。
     expect(screen.queryByText(/過去の要件はまだございません/)).toBeNull();
@@ -306,54 +308,70 @@ describe("入口フロー（#140）", () => {
     expect(screen.getByText("既定アプリ")).toBeTruthy();
   });
 
-  // ── 02 準備画面の固有 URL（/prepare / ADR-0017 一本道）───────────────────────
-  it("CTA で 02 準備へ進むと URL が /prepare に更新され、戻る ‹ で / に戻る", async () => {
+  // ── 02 準備画面の固有 URL（/{slug}/prepare / ADR-0017 一本道・ADR-0040）───────
+  it("CTA で 02 準備へ進むと URL が /{slug}/prepare に更新され、戻る ‹ で / に戻る", async () => {
     authState.loggedIn = true;
     window.history.replaceState(null, "", "/");
     render(<Home />);
-    // ホームは "/"。CTA で準備へ進むとアドレスバーが /prepare になる（remount せず入力を保つ）。
+    // ホームは "/"。CTA で準備へ進むとアドレスバーが選択アプリの slug URL になる
+    // （remount せず入力を保つ / ADR-0040）。
     await clickStartCta();
     expect(screen.getByText("セッション準備")).toBeTruthy();
-    expect(window.location.pathname).toBe("/prepare");
+    expect(window.location.pathname).toBe("/default-app/prepare");
     // 戻る ‹ でホーム（/）へ戻る（一本道）。
     fireEvent.click(screen.getByRole("button", { name: "戻る" }));
     expect(screen.getByText("会議の前に、五分の問答を")).toBeTruthy();
     expect(window.location.pathname).toBe("/");
   });
 
-  it("/prepare 直リンク（PreparePage）は準備画面を直接描画する", async () => {
-    // 保存済みの選択（アプリ確定済み）で直リンクした場合は準備画面に留まる（ADR-0039）。
-    window.sessionStorage.setItem("sanba.prep.v1", JSON.stringify({ productId: "p0" }));
+  it("/{slug}/prepare 直リンクは slug のアプリで準備画面を直接描画する（ADR-0040）", async () => {
     authState.loggedIn = true;
-    window.history.replaceState(null, "", "/prepare");
-    render(<PreparePage />);
+    window.history.replaceState(null, "", "/default-app/prepare");
+    render(<EntryFlow initialStep="prepare" initialSlug="default-app" />);
     expect(screen.getByText("セッション準備")).toBeTruthy();
     // ホームのヒーローは出さない（準備画面へ直接入る）。
     expect(screen.queryByText("会議の前に、五分の問答を")).toBeNull();
-    // 候補 settle 後もアプリ確定済みなので留まり、アプリ名を表示する。
+    // 候補 settle 後、URL の slug から対象アプリが確定して名前が出る。
     await act(async () => {});
     expect(screen.getByText("セッション準備")).toBeTruthy();
     expect(screen.getByText("既定アプリ")).toBeTruthy();
   });
 
-  it("/prepare 直リンクでアプリ未確定なら、候補 settle 後に 01 ホームへ戻す（ADR-0039）", async () => {
+  it("解決できない slug（不存在・権限なし）は複合エラー画面に落とす（ADR-0040）", async () => {
+    authState.loggedIn = true;
+    window.history.replaceState(null, "", "/unknown-app/prepare");
+    render(<EntryFlow initialStep="prepare" initialSlug="unknown-app" />);
+    await act(async () => {});
+    // 不存在と権限なしを区別しない複合メッセージ（存在秘匿 / ADR-0036 と整合）。
+    expect(
+      screen.getByText("指定された URL が存在しないか、アクセスする権限がありません。"),
+    ).toBeTruthy();
+    expect(screen.queryByText("セッション準備")).toBeNull();
+  });
+
+  it("slug なしで 02 に入りアプリ未確定なら、候補 settle 後に 01 ホームへ戻す（ADR-0039 防衛線）", async () => {
     authState.loggedIn = true;
     // 2 件（自動選択なし）＋保存値なし = アプリ未確定。02 の選択 UI は無いのでホームへ戻す。
     fetchMyProducts.mockResolvedValueOnce([
       { ...DEFAULT_PRODUCT, id: "p1", name: "検索アプリ" },
       { ...DEFAULT_PRODUCT, id: "p2", name: "別アプリ" },
     ]);
-    window.history.replaceState(null, "", "/prepare");
-    render(<PreparePage />);
+    render(<EntryFlow initialStep="prepare" />);
     expect(screen.getByText("セッション準備")).toBeTruthy();
     await act(async () => {});
     expect(screen.getByText("会議の前に、五分の問答を")).toBeTruthy();
     expect(window.location.pathname).toBe("/");
   });
 
-  it("ブラウザの戻る/進む（popstate）で step がアドレスに追随する", () => {
+  it("旧 /prepare 直リンク（PreparePage）はホームへリダイレクトする（ADR-0040 互換）", () => {
     window.history.replaceState(null, "", "/prepare");
-    render(<EntryFlow initialStep="prepare" />);
+    render(<PreparePage />);
+    expect(replace).toHaveBeenCalledWith("/");
+  });
+
+  it("ブラウザの戻る/進む（popstate）で step がアドレスに追随する", () => {
+    window.history.replaceState(null, "", "/default-app/prepare");
+    render(<EntryFlow initialStep="prepare" initialSlug="default-app" />);
     expect(screen.getByText("セッション準備")).toBeTruthy();
     // 履歴を / に戻して popstate を発火 → ホームへ。
     act(() => {
@@ -363,13 +381,15 @@ describe("入口フロー（#140）", () => {
     expect(screen.getByText("会議の前に、五分の問答を")).toBeTruthy();
   });
 
-  it("未ログインで /prepare 直リンクは /login?next=/prepare へ戻す", () => {
+  it("未ログインで /{slug}/prepare 直リンクは /login?next=/{slug}/prepare へ戻す", () => {
     authState.devMode = false;
     authState.ready = true;
     authState.loggedIn = false;
-    window.history.replaceState(null, "", "/prepare");
-    render(<EntryFlow initialStep="prepare" />);
-    expect(replace).toHaveBeenCalledWith(`/login?next=${encodeURIComponent("/prepare")}`);
+    window.history.replaceState(null, "", "/default-app/prepare");
+    render(<EntryFlow initialStep="prepare" initialSlug="default-app" />);
+    expect(replace).toHaveBeenCalledWith(
+      `/login?next=${encodeURIComponent("/default-app/prepare")}`,
+    );
     expect(screen.queryByText("セッション準備")).toBeNull();
   });
 
@@ -391,9 +411,10 @@ describe("入口フロー（#140）", () => {
 
   it("未ログインでは開始が無効でログイン導線を示す", () => {
     // 未ログイン（devMode）はホームの CTA 自体が塞がる（アプリ候補を取得できない）ため、
-    // /prepare 直リンクで準備画面に入ったケースを検証する。
-    window.history.replaceState(null, "", "/prepare");
-    render(<PreparePage />);
+    // /{slug}/prepare 直リンクで準備画面に入ったケースを検証する。候補は未取得のまま
+    // （ログインが要る）なので複合エラーにはならず、準備画面でログインを促す。
+    window.history.replaceState(null, "", "/default-app/prepare");
+    render(<EntryFlow initialStep="prepare" initialSlug="default-app" />);
     const cta = screen.getByRole("button", { name: "要件サンバを始める" });
     expect((cta as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByText("ログインへ").getAttribute("href")).toBe("/login");
@@ -423,6 +444,23 @@ describe("入口フロー（#140）", () => {
     expect(createSession.mock.calls[0][1]).toBe(true);
     // 開始後は 03 会話開始（開始前サマリ）へ。接続/許可はここから先（ConversationStart）。
     await waitFor(() => expect(screen.getByText("支度、相整いまして")).toBeTruthy());
+    // 会話中はアプリ従属の固有 URL /{slug}/sessions/{id} になる（ADR-0040）。
+    expect(window.location.pathname).toBe("/default-app/sessions/s1");
+  });
+
+  it("slug 未設定のアプリを選ぶと CTA は無効のまま、アプリ管理への設定導線を出す（ADR-0040）", async () => {
+    authState.loggedIn = true;
+    fetchMyProducts.mockResolvedValueOnce([{ ...DEFAULT_PRODUCT, slug: null }]);
+    render(<Home />);
+    await act(async () => {});
+    // 1 件なので自動選択されるが、slug が無いため開始できない。
+    expect(
+      (screen.getByRole("button", { name: "＋ 壁打ちを始める" }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+    expect(screen.getByText(/URL キーワードが未設定のため/)).toBeTruthy();
+    expect(screen.getByRole("link", { name: "アプリ管理で設定する" }).getAttribute("href")).toBe(
+      "/products/p0",
+    );
   });
 
   // ── 02 連携リポジトリ（ADR-0027）─────────────────────────────────────────
@@ -858,6 +896,7 @@ describe("入口フロー（#140）", () => {
       {
         id: "p1",
         name: "検索アプリ",
+        slug: "search-app",
         description: "社内ドキュメント検索",
         glossary: ["絞り込み", "サジェスト"],
         created_at: "2024-06-20T03:00:00Z",
@@ -896,6 +935,7 @@ describe("入口フロー（#140）", () => {
       {
         id: "p1",
         name: "検索アプリ",
+        slug: "search-app",
         description: "",
         glossary: [],
         created_at: "2024-06-20T03:00:00Z",
@@ -908,6 +948,7 @@ describe("入口フロー（#140）", () => {
       {
         id: "p2",
         name: "別アプリ",
+        slug: "other-app",
         description: "",
         glossary: [],
         created_at: "2024-06-20T03:00:00Z",

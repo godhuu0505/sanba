@@ -1,16 +1,19 @@
-// 02 セッション準備（固有 URL）。入口フローの実体は EntryFlow が持ち、ここは "/prepare"
-// ルートの薄い入口。直リンク・共有・リロードで準備画面へ到達できるようにする（ADR-0017 一本道。
-// ホーム→準備は EntryFlow が History API でアドレスバーを同期し、直アクセスはこのルートが
-// initialStep="prepare" で初期化する）。未ログインは EntryFlow の authGate が /login?next=/prepare へ戻す。
-import type { Metadata } from "next";
+"use client";
 
-import EntryFlow from "@/components/EntryFlow";
+// 旧 URL /prepare の互換リダイレクト（ADR-0040）。セッション準備はアプリ従属 URL
+// /{slug}/prepare へ移した（対象アプリの選択は 01 ホームの開始ゲート / ADR-0039）。
+// 選択済みアプリは sessionStorage（prepFormStorage）で保たれるため、ホームへ戻しても
+// ワンクリックで準備へ進める。ブックマーク・共有済みリンクを 404 にしない。
 
-export const metadata: Metadata = {
-  title: "セッション準備 — SANBA",
-  description: "役割・ゴール・対象アプリを整えて、要件サンバの壁打ちを始める。",
-};
+import { useRouter } from "next/navigation";
+import { useEffect } from "react";
 
-export default function PreparePage() {
-  return <EntryFlow initialStep="prepare" />;
+export default function LegacyPrepareRedirect() {
+  const router = useRouter();
+
+  useEffect(() => {
+    router.replace("/");
+  }, [router]);
+
+  return null;
 }
