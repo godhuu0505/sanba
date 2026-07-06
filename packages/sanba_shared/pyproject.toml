@@ -7,6 +7,10 @@ dependencies = [
     "pydantic>=2.7",
     "google-cloud-firestore>=2.16.0",
     "structlog>=24.1",
+    # grounding 索引（Elasticsearch）とマルチモーダル解析（Gemini）を api/worker で共有する
+    # （grounding.py / media.py。ADR-0040）。api/agent は既にこれらに依存している。
+    "elasticsearch>=8.14,<10",
+    "google-genai>=1.0.0",
 ]
 
 [dependency-groups]
