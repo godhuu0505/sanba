@@ -1,7 +1,8 @@
 # CLAUDE.md — SANBA 開発ガイド (AIコーディング規約)
 
-このリポジトリで AI コーディングエージェント（Claude Code / Gemini CLI 等）が守るべきルール。
-人間レビュアーも同じ基準で運用する。
+このリポジトリで AI コーディングエージェント（Claude Code / Codex / Gemini CLI 等）が守るべきルール。
+人間レビュアーも同じ基準で運用する。`AGENTS.md` はこのファイルへの symlink（同一実体）で、
+クロスツール標準として複数のエージェントが同じ規約を読む（配置方針は `docs/adr/0050-documentation-placement-and-lifecycle.md`）。
 
 ## プロダクト
 - **SANBA**: 音声(speech-to-speech)で対話し、要件を解像度高く生み出すマルチエージェント。名前の由来は「産婆術（Socratic maieutics）」＝相手の中にある答えを問いで引き出す技法。
@@ -49,8 +50,18 @@
   - ワークフロー内で `curl | sh` 等で入れるツールは**バージョン固定＋チェックサム照合**にする（例: `terraform.yml` の SHA256SUMS 照合）。
   - 各ワークフローは top-level `permissions:` を既定 `contents: read` にし、書き込みが要るジョブだけ昇格する（既定 `GITHUB_TOKEN` を read-only 運用するための前提）。
   - リポジトリ設定面のハードニング（fork PR の Actions 承認・Secret scanning / push protection・branch protection 等）は `docs/reference/security.md §8` を参照。
+- 上記は要点。アクセス制御・PII マスキング・保持期間・データフロー等の設計と一次情報は
+  `docs/reference/security.md` を正とする（ここには写経せず参照する）。
 
 ## やってはいけないこと
 - 単発の Gemini API 呼び出しを「エージェント」と称する薄い実装。
 - CI を空にする / テストを消して通す。
 - 観測性・IaC を後回しにして手作業デプロイする。
+
+## レビュー指針（自動レビュー・人間レビュー共通）
+自動レビュー（Codex GitHub 連携など）と人間レビューはこの節を指針にする。
+- レビューコメント・要約・指摘の説明はすべて **日本語**で書く（Always write review comments in Japanese）。
+- 各指摘に重大度（P0/P1/P2）を添える。**ロジックの誤り・境界条件・並行性・リソースリーク**を最優先で指摘する。
+- 上の「原則」「コーディング規約」「セキュリティ」に反する追加を指摘する
+  （観測されない処理・ローカル専用実装/ハードコード・シークレット混入・テスト/型/lint 崩れ・薄いエージェント実装）。
+- 指摘が無ければ「指摘なし（LGTM）」。

@@ -408,15 +408,12 @@ terraform state mv \
 
 ## 7. public 化に伴う GitHub 設定ハードニング（#68）
 
-リポジトリを public にする**前後**に、GUI で以下を有効化する（コード化されない運用手順）。
+リポジトリを public にする**前後**に、GUI で **コード化されないリポジトリ設定**を有効化する
+（fork PR の承認制・`GITHUB_TOKEN` read-only・Secret scanning / Push protection・`main` の
+branch protection・特権ワークフローの確認）。
 
-1. **Settings → Actions → General → Fork pull request workflows**: 「Require approval for **all outside collaborators**」（未信頼コードの CI を承認制に）。
-2. **同 → Workflow permissions**: 「Read repository contents and packages permissions」（read-only 既定）＋「Allow GitHub Actions to create and approve pull requests」を**オフ**。
-3. **Settings → Code security**: Secret scanning と Push protection を **Enable**（public は無料、CI の gitleaks と多層化）。
-4. **Settings → Branches**: `main` に branch protection（#62）— PR 必須・人間 1 承認・必須チェック `quality-gate`・「最新 push の再承認要求」・bot は approve/merge 不可。
-5. **特権ワークフローの確認**: `claude-review-response.yml` の author_association ガード＋fork ガード（**PR #74 をマージ**）が入っていること（#67）。
-
-> 実施したら設定スクショを #68 にコメントで残す（実施者・日時も）。
+**手順・望ましい状態・実施台帳は [`../reference/security.md §8.1`](../reference/security.md) を正とする**
+（本 runbook では再掲しない）。実施したら設定スクショを #68 にコメントで残す（実施者・日時も）。
 
 ---
 

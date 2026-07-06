@@ -225,7 +225,7 @@ infra/
 docs/             設計・DevOps・ロードマップ・ADR・ハッカソン戦略（docs/README.md が入口）
 .github/          CI/CD ワークフロー・Issue/PR テンプレート・CODEOWNERS
 CONTRIBUTING.md   貢献ガイド / CODE_OF_CONDUCT.md / SECURITY.md
-CLAUDE.md         AI コーディング規約（AGENTS.md が別名で同内容を指す）
+CLAUDE.md         AI コーディング規約（AGENTS.md は CLAUDE.md への symlink＝同一実体）
 ```
 
 各アプリの詳細はサブ README を参照：
