@@ -241,16 +241,18 @@ export default function LoginPage() {
             開発用ログイン（bypass）
           </Button>
         ) : (
-          // 金彩フレーム（ADR-0019）。GIS 純正ボタンを金グラデの枠で“囲む”ことで SANBA の
-          // 金彩世界観を出す。枠はボタン本体に重ねない（地色・ロゴ・文言は GIS のまま）。
-          // 外側 = 金グラデの薄い縁取り、内側 = 白面に純正ボタンを中央配置。
+          // 金彩フレーム（ADR-0019）。GIS 純正ボタンを金彩の枠で“囲む”ことで SANBA の世界観を出す。
+          // 枠はボタン本体に重ねない（地色・ロゴ・文言は GIS のまま）。アプリ全体で使う「ステッカー
+          // 様式」（墨枠＋オフセット影＋手描きの揺らぎ角丸／Card.tsx と同一トークン）に揃え、
+          // 単なる金の薄縁ではなく他のカード・ボタンと同じ質感にする。外側 = 山吹淡の面、
+          // 内側 = 白面に純正ボタンを中央配置。
           <div
             className={cn(
-              "sanba-gold-gradient w-full max-w-90 rounded-[14px] p-[1.5px] transition-shadow",
+              "sanba-sticker-card sanba-wobble w-full max-w-90 bg-sanba-gold-pale p-3 transition-shadow",
               signupPulse && "ring-4 ring-sanba-gold-light",
             )}
           >
-            <div className="flex justify-center rounded-[12.5px] bg-sanba-surface p-3">
+            <div className="flex justify-center rounded-[10px] bg-sanba-surface p-3">
               {/* GIS がこの div に純正のサインインボタンを描画する。 */}
               <div ref={buttonRef} className="flex justify-center" />
             </div>
