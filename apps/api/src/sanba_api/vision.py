@@ -59,12 +59,15 @@ def analyze_image(raw: bytes, content_type: str) -> list[str]:
         from google.genai import types
 
         client = genai.Client(api_key=settings.google_api_key or None)
+        # Part と str の混在リストは list[object] に推論され SDK の型と合わないため、
+        # SDK が期待する要素型（PartUnionDict）で明示する（mypy / CI quality-gate）。
+        contents: list[types.PartUnionDict] = [
+            types.Part.from_bytes(data=raw, mime_type=content_type),
+            _PROMPT,
+        ]
         resp = client.models.generate_content(
             model=settings.gemini_vision_model,
-            contents=[
-                types.Part.from_bytes(data=raw, mime_type=content_type),
-                _PROMPT,
-            ],
+            contents=contents,
         )
         return parse_observations(resp.text or "")
     except Exception as exc:  # pragma: no cover
