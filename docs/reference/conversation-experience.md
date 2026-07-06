@@ -12,7 +12,7 @@
 - **関連**: [ADR-0017](../adr/0017-figma-canonical-onepath-archaic-copy.md)（一本道・古語・a11y現代語）/
   [ADR-0018](../adr/0018-conversation-experience.md)（本設計の決定記録）/
   [realtime-contract.md](realtime-contract.md) / [ubiquitous-language.md](ubiquitous-language.md) /
-  旧 [screens/](../design/screens)（現行実装の票）
+  旧 [screens/](../reference/screens)（現行実装の票）
 
 > ⚠️ **ADR-0017 との関係**: ADR-0017 は「`SessionView` のタブ切替を廃止し一本道に」とした。
 > 本設計は**会話フェーズ内に 3 タブ（会話履歴 / 参考資料 / 要件絵巻）を再導入**する。
@@ -216,7 +216,7 @@
 ## 10. 旧 screens/ との関係・移行
 
 - 旧 03〜10 票（live-idle / live-speaking / detection / material / uploading / analysis / scroll / complete）は
-  **現行実装（タブ廃止・一本道）**の票で、現行票（[screens/](../design/screens)）へ統合済み（git 履歴に残置）。
+  **現行実装（タブ廃止・一本道）**の票で、現行票（[screens/](../reference/screens)）へ統合済み（git 履歴に残置）。
 - 現行設計は**会話フェーズを 3 タブのシェルに再構成**するため、05〜10 の IA を更新済み（screens/ は 新設計へ改訂・ADR-0018 Accepted）。
 - 旧 Figma フレーム（旧 05〜12）は Figma ページ「🗄 旧フロー archive (v1)」へ退避済み（メインキャンバスから分離）。
   ※ 旧 05〜11 は本セッション中に消失しており、退避時点で実在したのは「12 完了」のみ。**必要なら Figma 版履歴（File ▸ Show version history）で復元可**。

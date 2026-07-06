@@ -140,6 +140,16 @@ fmt:
     cd apps/agent && uv run ruff format .
     cd apps/api && uv run ruff format .
 
+# ADR 索引 (docs/adr/README.md) を再生成する。ADR を追加・改訂したら実行して commit する
+[group('verify')]
+docs-index:
+    python3 scripts/gen-docs-index.py
+
+# ADR 索引が最新か検証する (CI 向け / 更新漏れがあれば非ゼロ終了)
+[group('verify')]
+docs-check:
+    python3 scripts/gen-docs-index.py --check
+
 # ───────────────────────────── 運用・IaC (ops) ─────────────────────────────
 
 # Four Keys メトリクスを一度だけ表示 (DORA 自己計測)
