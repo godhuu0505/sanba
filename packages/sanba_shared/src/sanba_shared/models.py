@@ -186,6 +186,11 @@ class Product(BaseModel):
     name: str = Field(min_length=1)
     description: str = ""
     owner_sub: str
+    # URL キーワード（グローバル一意 / ADR-0045）。/{slug}/prepare 等のアプリ従属 URL の
+    # 識別子。None = 未設定（slug 導入前の既存アプリ）。未設定の間は slug URL を持てず、
+    # web は壁打ち開始を塞ぐ。形式検証は API 層（`_clean_slug`）、一意性の担保は
+    # `SessionRepository`（Firestore は product_slugs/{slug} レジストリ）が行う。
+    slug: str | None = None
     created_at: datetime = Field(default_factory=_now)
     # 利用者向け語彙（画面名・機能の呼び名）。end_user モードのプロンプトへ機械的に
     # シードする（ADR-0032 決定7）。Stage 1 では保持のみで未使用。

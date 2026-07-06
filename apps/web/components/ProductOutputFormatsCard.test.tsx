@@ -25,6 +25,7 @@ function product(overrides: Partial<Product> = {}): Product {
   return {
     id: "prod-1",
     name: "請求アプリ",
+    slug: "billing-app",
     description: "",
     glossary: [],
     created_at: "2026-07-01T00:00:00+00:00",

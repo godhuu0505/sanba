@@ -47,6 +47,8 @@ const fetchMySessions = vi.fn(async (..._a: unknown[]) => [] as unknown[]);
 const DEFAULT_PRODUCT = {
   id: "p0",
   name: "既定アプリ",
+  // URL キーワード（ADR-0045）。準備 URL は /default-app/prepare になる。
+  slug: "default-app" as string | null,
   description: "",
   glossary: [] as string[],
   created_at: "2024-06-20T03:00:00Z",
@@ -181,9 +183,17 @@ describe("入口フロー（#140）", () => {
     window.history.replaceState(null, "", "/");
   });
 
-  // 対象アプリは開始の必須条件（ADR-0031）。候補 settle 後に既定アプリを選ぶ共通操作。
+  // 対象アプリは開始の必須条件で、選択は 01 ホームで行う（ADR-0031・ADR-0044）。
+  // 候補 settle 後に既定アプリを選ぶ共通操作。
   function selectProduct(id = "p0") {
     fireEvent.change(screen.getByLabelText("対象のプロダクト・アプリ"), { target: { value: id } });
+  }
+
+  // 01 ホームからアプリ確定済みで 02 準備へ入る共通操作（ADR-0044）。既定モック
+  // （DEFAULT_PRODUCT 1 件）は自動選択されるため、settle を待って CTA を押すだけでよい。
+  async function clickStartCta() {
+    await act(async () => {}); // 候補取得の settle（未選択の間 CTA は無効）
+    fireEvent.click(screen.getByRole("button", { name: "＋ 壁打ちを始める" }));
   }
 
   it("real モードで未ログインなら /login?next=/ へリダイレクトしホームを描画しない", () => {
@@ -209,6 +219,47 @@ describe("入口フロー（#140）", () => {
     expect(screen.getByText("会議の前に、五分の問答を")).toBeTruthy();
     expect(screen.getByText("＋ 壁打ちを始める")).toBeTruthy();
     expect(screen.queryByText(/取り上げた抜け・矛盾/)).toBeNull();
+  });
+
+  // ── 01 ホームのアプリ選択ゲート（ADR-0044）────────────────────────────────
+  it("アプリ未選択の間は CTA が無効で、選択すると活性化する（ADR-0044）", async () => {
+    authState.loggedIn = true;
+    // 2 件なら自動選択されない = 明示選択が必要。
+    fetchMyProducts.mockResolvedValueOnce([
+      { ...DEFAULT_PRODUCT, id: "p1", name: "検索アプリ" },
+      { ...DEFAULT_PRODUCT, id: "p2", name: "別アプリ" },
+    ]);
+    render(<Home />);
+    await act(async () => {});
+    const cta = screen.getByText("＋ 壁打ちを始める") as HTMLButtonElement;
+    expect(cta.disabled).toBe(true);
+    expect(screen.getByText("対象のアプリを選ぶと壁打ちを始められます。")).toBeTruthy();
+    selectProduct("p1");
+    expect(cta.disabled).toBe(false);
+    // 選択済みになったので促し文言は消える。
+    expect(screen.queryByText("対象のアプリを選ぶと壁打ちを始められます。")).toBeNull();
+  });
+
+  it("候補が 1 件なら自動選択され、そのまま CTA が活性化する（ADR-0044）", async () => {
+    authState.loggedIn = true;
+    render(<Home />);
+    await act(async () => {});
+    const select = screen.getByLabelText("対象のプロダクト・アプリ") as HTMLSelectElement;
+    expect(select.value).toBe("p0");
+    expect((screen.getByText("＋ 壁打ちを始める") as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("登録済みアプリが 0 件ならセレクトを無効化し、CTA も塞いで登録導線を案内する（ADR-0044）", async () => {
+    authState.loggedIn = true;
+    fetchMyProducts.mockResolvedValueOnce([]);
+    render(<Home />);
+    await act(async () => {});
+    const select = screen.getByLabelText("対象のプロダクト・アプリ") as HTMLSelectElement;
+    expect(select.disabled).toBe(true);
+    expect((screen.getByText("＋ 壁打ちを始める") as HTMLButtonElement).disabled).toBe(true);
+    expect(
+      screen.getByText("登録済みのアプリがありません。アプリ管理から登録すると選べます。"),
+    ).toBeTruthy();
   });
 
   it("01 ホームはヒーロー下に「過去の要件を見る」見出しと空状態の文言を出す（#215）", () => {
@@ -238,9 +289,9 @@ describe("入口フロー（#140）", () => {
     expect(await screen.findByText("新機能要件定義")).toBeTruthy();
     // 日付は YYYY/MM/DD へ整形して表示する（タイムゾーン差を避け書式のみ検証）。
     expect(screen.getByText(/^\d{4}\/\d{2}\/\d{2}$/)).toBeTruthy();
-    // 行は過去要件の絵巻閲覧画面（/sessions/{id}）への遷移リンクになる。
+    // 行は過去要件の絵巻閲覧画面（/results/{id} / ADR-0045）への遷移リンクになる。
     expect(screen.getByRole("link", { name: /新機能要件定義/ }).getAttribute("href")).toBe(
-      "/sessions/sess-1",
+      "/results/sess-1",
     );
     // 空状態の文言は出ない。
     expect(screen.queryByText(/過去の要件はまだございません/)).toBeNull();
@@ -266,9 +317,10 @@ describe("入口フロー（#140）", () => {
     expect(screen.getByText("＋ 壁打ちを始める")).toBeTruthy();
   });
 
-  it("CTA で 02 準備へ遷移し、役割の既定が利用者", () => {
+  it("CTA で 02 準備へ遷移し、役割の既定が利用者", async () => {
+    authState.loggedIn = true;
     render(<Home />);
-    fireEvent.click(screen.getByText("＋ 壁打ちを始める"));
+    await clickStartCta();
     expect(screen.getByText("セッション準備")).toBeTruthy();
     expect(screen.getByRole("radio", { name: /利用者/ }).getAttribute("aria-checked")).toBe("true");
     expect(screen.getByRole("radio", { name: "開発者" }).getAttribute("aria-checked")).toBe(
@@ -276,31 +328,81 @@ describe("入口フロー（#140）", () => {
     );
   });
 
-  // ── 02 準備画面の固有 URL（/prepare / ADR-0017 一本道）───────────────────────
-  it("CTA で 02 準備へ進むと URL が /prepare に更新され、戻る ‹ で / に戻る", () => {
+  it("02 準備はアプリ選択 UI を持たず、選択済みのアプリ名を表示する（ADR-0044）", async () => {
+    authState.loggedIn = true;
+    render(<Home />);
+    await clickStartCta();
+    expect(screen.getByText("セッション準備")).toBeTruthy();
+    // 選択フィールド（combobox）は 02 に無い。どのアプリで準備中かは名前表示で示す。
+    expect(screen.queryByLabelText("対象のプロダクト・アプリ")).toBeNull();
+    expect(screen.getByText("対象のアプリ")).toBeTruthy();
+    expect(screen.getByText("既定アプリ")).toBeTruthy();
+  });
+
+  // ── 02 準備画面の固有 URL（/{slug}/prepare / ADR-0017 一本道・ADR-0045）───────
+  it("CTA で 02 準備へ進むと URL が /{slug}/prepare に更新され、戻る ‹ で / に戻る", async () => {
+    authState.loggedIn = true;
     window.history.replaceState(null, "", "/");
     render(<Home />);
-    // ホームは "/"。CTA で準備へ進むとアドレスバーが /prepare になる（remount せず入力を保つ）。
-    fireEvent.click(screen.getByText("＋ 壁打ちを始める"));
+    // ホームは "/"。CTA で準備へ進むとアドレスバーが選択アプリの slug URL になる
+    // （remount せず入力を保つ / ADR-0045）。
+    await clickStartCta();
     expect(screen.getByText("セッション準備")).toBeTruthy();
-    expect(window.location.pathname).toBe("/prepare");
+    expect(window.location.pathname).toBe("/default-app/prepare");
     // 戻る ‹ でホーム（/）へ戻る（一本道）。
     fireEvent.click(screen.getByRole("button", { name: "戻る" }));
     expect(screen.getByText("会議の前に、五分の問答を")).toBeTruthy();
     expect(window.location.pathname).toBe("/");
   });
 
-  it("/prepare 直リンク（PreparePage）は準備画面を直接描画する", () => {
-    window.history.replaceState(null, "", "/prepare");
-    render(<PreparePage />);
+  it("/{slug}/prepare 直リンクは slug のアプリで準備画面を直接描画する（ADR-0045）", async () => {
+    authState.loggedIn = true;
+    window.history.replaceState(null, "", "/default-app/prepare");
+    render(<EntryFlow initialStep="prepare" initialSlug="default-app" />);
     expect(screen.getByText("セッション準備")).toBeTruthy();
     // ホームのヒーローは出さない（準備画面へ直接入る）。
     expect(screen.queryByText("会議の前に、五分の問答を")).toBeNull();
+    // 候補 settle 後、URL の slug から対象アプリが確定して名前が出る。
+    await act(async () => {});
+    expect(screen.getByText("セッション準備")).toBeTruthy();
+    expect(screen.getByText("既定アプリ")).toBeTruthy();
+  });
+
+  it("解決できない slug（不存在・権限なし）は複合エラー画面に落とす（ADR-0045）", async () => {
+    authState.loggedIn = true;
+    window.history.replaceState(null, "", "/unknown-app/prepare");
+    render(<EntryFlow initialStep="prepare" initialSlug="unknown-app" />);
+    await act(async () => {});
+    // 不存在と権限なしを区別しない複合メッセージ（存在秘匿 / ADR-0036 と整合）。
+    expect(
+      screen.getByText("指定された URL が存在しないか、アクセスする権限がありません。"),
+    ).toBeTruthy();
+    expect(screen.queryByText("セッション準備")).toBeNull();
+  });
+
+  it("slug なしで 02 に入りアプリ未確定なら、候補 settle 後に 01 ホームへ戻す（ADR-0044 防衛線）", async () => {
+    authState.loggedIn = true;
+    // 2 件（自動選択なし）＋保存値なし = アプリ未確定。02 の選択 UI は無いのでホームへ戻す。
+    fetchMyProducts.mockResolvedValueOnce([
+      { ...DEFAULT_PRODUCT, id: "p1", name: "検索アプリ" },
+      { ...DEFAULT_PRODUCT, id: "p2", name: "別アプリ" },
+    ]);
+    render(<EntryFlow initialStep="prepare" />);
+    expect(screen.getByText("セッション準備")).toBeTruthy();
+    await act(async () => {});
+    expect(screen.getByText("会議の前に、五分の問答を")).toBeTruthy();
+    expect(window.location.pathname).toBe("/");
+  });
+
+  it("旧 /prepare 直リンク（PreparePage）はホームへリダイレクトする（ADR-0045 互換）", () => {
+    window.history.replaceState(null, "", "/prepare");
+    render(<PreparePage />);
+    expect(replace).toHaveBeenCalledWith("/");
   });
 
   it("ブラウザの戻る/進む（popstate）で step がアドレスに追随する", () => {
-    window.history.replaceState(null, "", "/prepare");
-    render(<EntryFlow initialStep="prepare" />);
+    window.history.replaceState(null, "", "/default-app/prepare");
+    render(<EntryFlow initialStep="prepare" initialSlug="default-app" />);
     expect(screen.getByText("セッション準備")).toBeTruthy();
     // 履歴を / に戻して popstate を発火 → ホームへ。
     act(() => {
@@ -310,24 +412,27 @@ describe("入口フロー（#140）", () => {
     expect(screen.getByText("会議の前に、五分の問答を")).toBeTruthy();
   });
 
-  it("未ログインで /prepare 直リンクは /login?next=/prepare へ戻す", () => {
+  it("未ログインで /{slug}/prepare 直リンクは /login?next=/{slug}/prepare へ戻す", () => {
     authState.devMode = false;
     authState.ready = true;
     authState.loggedIn = false;
-    window.history.replaceState(null, "", "/prepare");
-    render(<EntryFlow initialStep="prepare" />);
-    expect(replace).toHaveBeenCalledWith(`/login?next=${encodeURIComponent("/prepare")}`);
+    window.history.replaceState(null, "", "/default-app/prepare");
+    render(<EntryFlow initialStep="prepare" initialSlug="default-app" />);
+    expect(replace).toHaveBeenCalledWith(
+      `/login?next=${encodeURIComponent("/default-app/prepare")}`,
+    );
     expect(screen.queryByText("セッション準備")).toBeNull();
   });
 
-  it("保存済み準備フォーム（goal/consent）を復元し、未知の role は既定 pm に戻す (#179 / Codex P2)", () => {
+  it("保存済み準備フォーム（goal/consent）を復元し、未知の role は既定 pm に戻す (#179 / Codex P2)", async () => {
     // 古い/壊れた保存値（role:"designer"）＋ goal/consent を seed。
     window.sessionStorage.setItem(
       "sanba.prep.v1",
       JSON.stringify({ role: "designer", goal: "復元ゴール", consent: true }),
     );
+    authState.loggedIn = true;
     render(<Home />);
-    fireEvent.click(screen.getByText("＋ 壁打ちを始める"));
+    await clickStartCta();
     // goal/consent は復元される。
     expect(screen.getByDisplayValue("復元ゴール")).toBeTruthy();
     expect((screen.getByRole("checkbox") as HTMLInputElement).checked).toBe(true);
@@ -336,17 +441,20 @@ describe("入口フロー（#140）", () => {
   });
 
   it("未ログインでは開始が無効でログイン導線を示す", () => {
-    render(<Home />);
-    fireEvent.click(screen.getByText("＋ 壁打ちを始める"));
+    // 未ログイン（devMode）はホームの CTA 自体が塞がる（アプリ候補を取得できない）ため、
+    // /{slug}/prepare 直リンクで準備画面に入ったケースを検証する。候補は未取得のまま
+    // （ログインが要る）なので複合エラーにはならず、準備画面でログインを促す。
+    window.history.replaceState(null, "", "/default-app/prepare");
+    render(<EntryFlow initialStep="prepare" initialSlug="default-app" />);
     const cta = screen.getByRole("button", { name: "要件サンバを始める" });
     expect((cta as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByText("ログインへ").getAttribute("href")).toBe("/login");
   });
 
-  it("ログイン済みでも同意 OFF の間は開始が無効で理由を示す", () => {
+  it("ログイン済みでも同意 OFF の間は開始が無効で理由を示す", async () => {
     authState.loggedIn = true;
     render(<Home />);
-    fireEvent.click(screen.getByText("＋ 壁打ちを始める"));
+    await clickStartCta();
     const cta = screen.getByRole("button", { name: "要件サンバを始める" });
     expect((cta as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByText("録音と AI 処理への同意が必要です。")).toBeTruthy();
@@ -355,7 +463,7 @@ describe("入口フロー（#140）", () => {
   it("同意 ON で開始でき、選択役割と同意が createSession に渡る", async () => {
     authState.loggedIn = true;
     render(<Home />);
-    fireEvent.click(screen.getByText("＋ 壁打ちを始める"));
+    await clickStartCta();
     // 候補取得の settle を待つ（取得中は開始が無効 / Codex P2）。
     await act(async () => {});
     fireEvent.click(screen.getByRole("radio", { name: "開発者" }));
@@ -367,6 +475,23 @@ describe("入口フロー（#140）", () => {
     expect(createSession.mock.calls[0][1]).toBe(true);
     // 開始後は 03 会話開始（開始前サマリ）へ。接続/許可はここから先（ConversationStart）。
     await waitFor(() => expect(screen.getByText("支度、相整いまして")).toBeTruthy());
+    // 会話中はアプリ従属の固有 URL /{slug}/sessions/{id} になる（ADR-0045）。
+    expect(window.location.pathname).toBe("/default-app/sessions/s1");
+  });
+
+  it("slug 未設定のアプリを選ぶと CTA は無効のまま、アプリ管理への設定導線を出す（ADR-0045）", async () => {
+    authState.loggedIn = true;
+    fetchMyProducts.mockResolvedValueOnce([{ ...DEFAULT_PRODUCT, slug: null }]);
+    render(<Home />);
+    await act(async () => {});
+    // 1 件なので自動選択されるが、slug が無いため開始できない。
+    expect(
+      (screen.getByRole("button", { name: "＋ 壁打ちを始める" }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+    expect(screen.getByText(/URL キーワードが未設定のため/)).toBeTruthy();
+    expect(screen.getByRole("link", { name: "アプリ管理で設定する" }).getAttribute("href")).toBe(
+      "/products/p0",
+    );
   });
 
   // ── 02 連携リポジトリ（ADR-0027）─────────────────────────────────────────
@@ -376,14 +501,14 @@ describe("入口フロー（#140）", () => {
     // ホーム（01）では叩かない = /user/repos 全ページ取得を無駄に発火させない。
     await waitFor(() => expect(fetchMySessions).toHaveBeenCalled());
     expect(fetchGithubRepos).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByText("＋ 壁打ちを始める"));
+    await clickStartCta();
     await waitFor(() => expect(fetchGithubRepos).toHaveBeenCalledTimes(1));
   });
 
   it("コネクタ無効（既定）では連携リポジトリのフィールドを出さない", async () => {
     authState.loggedIn = true;
     render(<Home />);
-    fireEvent.click(screen.getByText("＋ 壁打ちを始める"));
+    await clickStartCta();
     await waitFor(() => expect(fetchGithubRepos).toHaveBeenCalled());
     expect(screen.queryByLabelText("連携リポジトリ（任意）")).toBeNull();
   });
@@ -396,7 +521,7 @@ describe("入口フロー（#140）", () => {
       default: null,
     });
     render(<Home />);
-    fireEvent.click(screen.getByText("＋ 壁打ちを始める"));
+    await clickStartCta();
     const select = await screen.findByLabelText("連携リポジトリ（任意）");
     fireEvent.change(select, { target: { value: "acme/product-a" } });
     fireEvent.change(screen.getByLabelText("ゴール"), { target: { value: "テストゴール" } });
@@ -415,7 +540,7 @@ describe("入口フロー（#140）", () => {
       default: null,
     });
     render(<Home />);
-    fireEvent.click(screen.getByText("＋ 壁打ちを始める"));
+    await clickStartCta();
     await screen.findByLabelText("連携リポジトリ（任意）");
     fireEvent.change(screen.getByLabelText("ゴール"), { target: { value: "テストゴール" } });
     fireEvent.click(screen.getByRole("checkbox"));
@@ -433,7 +558,7 @@ describe("入口フロー（#140）", () => {
       default: "o/r",
     });
     render(<Home />);
-    fireEvent.click(screen.getByText("＋ 壁打ちを始める"));
+    await clickStartCta();
     const select = (await screen.findByLabelText(
       "連携リポジトリ（任意）",
     )) as HTMLSelectElement;
@@ -456,7 +581,7 @@ describe("入口フロー（#140）", () => {
       default: "o/r",
     });
     render(<Home />);
-    fireEvent.click(screen.getByText("＋ 壁打ちを始める"));
+    await clickStartCta();
     const select = (await screen.findByLabelText("連携リポジトリ（任意）")) as HTMLSelectElement;
     await act(async () => {});
     // 既定 "o/r" で上書きされず「連携しない」のまま。
@@ -475,7 +600,7 @@ describe("入口フロー（#140）", () => {
       () => new Promise((resolve) => (resolveFetch = resolve)),
     );
     render(<Home />);
-    fireEvent.click(screen.getByText("＋ 壁打ちを始める"));
+    await clickStartCta();
     fireEvent.change(screen.getByLabelText("ゴール"), { target: { value: "テストゴール" } });
     fireEvent.click(screen.getByRole("checkbox"));
     const cta = screen.getByRole("button", { name: "要件サンバを始める" }) as HTMLButtonElement;
@@ -491,7 +616,7 @@ describe("入口フロー（#140）", () => {
     authState.loggedIn = true;
     fetchGithubRepos.mockResolvedValueOnce({ enabled: true, repos: [], default: null });
     render(<Home />);
-    fireEvent.click(screen.getByText("＋ 壁打ちを始める"));
+    await clickStartCta();
     const input = await screen.findByLabelText("連携リポジトリ（任意）");
     fireEvent.change(input, { target: { value: "acme/manual" } });
     fireEvent.change(screen.getByLabelText("ゴール"), { target: { value: "テストゴール" } });
@@ -509,7 +634,7 @@ describe("入口フロー（#140）", () => {
       default: null,
     });
     render(<Home />);
-    fireEvent.click(screen.getByText("＋ 壁打ちを始める"));
+    await clickStartCta();
     const select = await screen.findByLabelText("連携リポジトリ（任意）");
     fireEvent.change(select, { target: { value: "acme/product-a" } });
     expect(screen.queryByLabelText("ブランチ")).toBeNull();
@@ -539,7 +664,7 @@ describe("入口フロー（#140）", () => {
     authState.loggedIn = true;
     mockLinkedRepos();
     render(<Home />);
-    fireEvent.click(screen.getByText("＋ 壁打ちを始める"));
+    await clickStartCta();
     const select = await screen.findByLabelText("連携リポジトリ（任意）");
     fireEvent.change(select, { target: { value: "octo/demo" } });
     const branchSelect = await screen.findByLabelText("ブランチ");
@@ -555,7 +680,7 @@ describe("入口フロー（#140）", () => {
     authState.loggedIn = true;
     mockLinkedRepos();
     render(<Home />);
-    fireEvent.click(screen.getByText("＋ 壁打ちを始める"));
+    await clickStartCta();
     const select = await screen.findByLabelText("連携リポジトリ（任意）");
     fireEvent.change(select, { target: { value: "octo/demo" } });
     await screen.findByLabelText("ブランチ");
@@ -580,7 +705,7 @@ describe("入口フロー（#140）", () => {
     mockLinkedRepos();
     selectSessionRepo.mockRejectedValueOnce(new Error("bind failed: 502"));
     render(<Home />);
-    fireEvent.click(screen.getByText("＋ 壁打ちを始める"));
+    await clickStartCta();
     const select = await screen.findByLabelText("連携リポジトリ（任意）");
     fireEvent.change(select, { target: { value: "octo/demo" } });
     await screen.findByLabelText("ブランチ");
@@ -599,11 +724,11 @@ describe("入口フロー（#140）", () => {
   async function gotoPrepare() {
     authState.loggedIn = true;
     const view = render(<Home />);
-    fireEvent.click(screen.getByText("＋ 壁打ちを始める"));
+    // 対象アプリは 01 ホームで確定する（ADR-0044）。既定モックは 1 件なので自動選択される。
+    await clickStartCta();
     await act(async () => {});
-    // ゴール・対象アプリは開始の必須条件（#222 / ADR-0031）。既定で埋め、開始系テストの前提を揃える。
+    // ゴールは開始の必須条件（#222）。既定で埋め、開始系テストの前提を揃える。
     fireEvent.change(screen.getByLabelText("ゴール"), { target: { value: "テストゴール" } });
-    selectProduct();
     return view;
   }
 
@@ -704,7 +829,7 @@ describe("入口フロー（#140）", () => {
     let release: (v: Awaited<ReturnType<typeof createSession>>) => void = () => {};
     createSession.mockImplementationOnce(() => new Promise((r) => { release = r; }));
     const { container } = render(<Home />);
-    fireEvent.click(screen.getByText("＋ 壁打ちを始める"));
+    await clickStartCta();
     await act(async () => {}); // 候補取得の settle（取得中は開始が無効 / Codex P2）
     fireEvent.change(screen.getByLabelText("ゴール"), { target: { value: "テストゴール" } });
     fireEvent.click(screen.getByRole("checkbox"));
@@ -781,7 +906,7 @@ describe("入口フロー（#140）", () => {
       () => new Promise((r) => { release = r; }),
     );
     render(<Home />);
-    fireEvent.click(screen.getByText("＋ 壁打ちを始める"));
+    await clickStartCta();
     await act(async () => {}); // 候補取得の settle（取得中は開始が無効 / Codex P2）
     fireEvent.change(screen.getByLabelText("ゴール"), { target: { value: "テストゴール" } });
     fireEvent.click(screen.getByRole("checkbox"));
@@ -815,7 +940,7 @@ describe("入口フロー（#140）", () => {
   it("ゴール未入力の間は開始できず理由を示す（必須 / #222）", async () => {
     authState.loggedIn = true;
     render(<Home />);
-    fireEvent.click(screen.getByText("＋ 壁打ちを始める"));
+    await clickStartCta();
     await act(async () => {});
     fireEvent.click(screen.getByRole("checkbox"));
     // 同意済み・候補 settle 済みでも、ゴールが空なら開始は無効。
@@ -866,29 +991,13 @@ describe("入口フロー（#140）", () => {
     expect(screen.getByRole("button", { name: "要件サンバを始める" })).toBeTruthy();
   });
 
-  it("プロダクト候補が 0 件でもセレクトは常に表示し、無効化して開始も塞ぐ（ADR-0031）", async () => {
-    authState.loggedIn = true;
-    fetchMyProducts.mockResolvedValueOnce([]);
-    render(<Home />);
-    fireEvent.click(screen.getByText("＋ 壁打ちを始める"));
-    await act(async () => {});
-    const select = screen.getByLabelText("対象のプロダクト・アプリ") as HTMLSelectElement;
-    expect(select.disabled).toBe(true);
-    // 未選択なので、ゴール・同意を満たしても開始は無効（fail-closed）。
-    fireEvent.change(screen.getByLabelText("ゴール"), { target: { value: "テストゴール" } });
-    fireEvent.click(screen.getByRole("checkbox"));
-    expect(
-      (screen.getByRole("button", { name: "要件サンバを始める" }) as HTMLButtonElement).disabled,
-    ).toBe(true);
-    expect(screen.getByText("対象のプロダクト・アプリの選択が必要です。")).toBeTruthy();
-  });
-
   it("登録済みプロダクトを選ぶと product_id を渡し用語文脈を投入する（repo は API 継承 / ADR-0031）", async () => {
     authState.loggedIn = true;
     fetchMyProducts.mockResolvedValueOnce([
       {
         id: "p1",
         name: "検索アプリ",
+        slug: "search-app",
         description: "社内ドキュメント検索",
         glossary: ["絞り込み", "サジェスト"],
         created_at: "2024-06-20T03:00:00Z",
@@ -899,9 +1008,9 @@ describe("入口フロー（#140）", () => {
       },
     ]);
     render(<Home />);
-    fireEvent.click(screen.getByText("＋ 壁打ちを始める"));
-    const select = await screen.findByLabelText("対象のプロダクト・アプリ");
-    fireEvent.change(select, { target: { value: "p1" } });
+    // 1 件のみなので 01 ホームで自動選択され、そのまま 02 準備へ（ADR-0044）。
+    await clickStartCta();
+    expect(screen.getByText("検索アプリ")).toBeTruthy();
     fireEvent.change(screen.getByLabelText("ゴール"), { target: { value: "テストゴール" } });
     fireEvent.click(screen.getByRole("checkbox"));
     fireEvent.click(screen.getByRole("button", { name: "要件サンバを始める" }));
@@ -927,6 +1036,7 @@ describe("入口フロー（#140）", () => {
       {
         id: "p1",
         name: "検索アプリ",
+        slug: "search-app",
         description: "",
         glossary: [],
         created_at: "2024-06-20T03:00:00Z",
@@ -939,6 +1049,7 @@ describe("入口フロー（#140）", () => {
       {
         id: "p2",
         name: "別アプリ",
+        slug: "other-app",
         description: "",
         glossary: [],
         created_at: "2024-06-20T03:00:00Z",
@@ -950,14 +1061,16 @@ describe("入口フロー（#140）", () => {
       },
     ]);
     render(<Home />);
-    fireEvent.click(screen.getByText("＋ 壁打ちを始める"));
-    // 候補は 2 件（自動選択しない）。stale な "gone" はクリアされ未選択に戻る。
+    // 候補は 2 件（自動選択しない）。stale な "gone" はクリアされ未選択に戻り、CTA は塞がる。
     const select = (await screen.findByLabelText("対象のプロダクト・アプリ")) as HTMLSelectElement;
     await waitFor(() => expect(select.value).toBe(""));
-    fireEvent.change(screen.getByLabelText("ゴール"), { target: { value: "テストゴール" } });
-    fireEvent.click(screen.getByRole("checkbox"));
     expect(
-      (screen.getByRole("button", { name: "要件サンバを始める" }) as HTMLButtonElement).disabled,
+      (screen.getByRole("button", { name: "＋ 壁打ちを始める" }) as HTMLButtonElement).disabled,
     ).toBe(true);
+    // 実在する候補を選び直せば活性化する。
+    selectProduct("p2");
+    expect(
+      (screen.getByRole("button", { name: "＋ 壁打ちを始める" }) as HTMLButtonElement).disabled,
+    ).toBe(false);
   });
 });

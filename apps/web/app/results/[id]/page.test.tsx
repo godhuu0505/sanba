@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-// 過去要件の絵巻閲覧画面（/sessions/[id]）。ホーム履歴からの遷移先で、要件絵巻だけを閲覧する。
+// 過去要件の絵巻閲覧画面（/results/[id]）。ホーム履歴からの遷移先で、要件絵巻だけを閲覧する。
 // 認証ゲート・本人限定 404・絵巻本体（MoSCoW 区分）・空状態を検証する。
 
 const authState = {
@@ -69,7 +69,7 @@ const SCROLL: MySessionRequirements = {
   ],
 };
 
-describe("過去要件の絵巻閲覧画面（/sessions/[id]）", () => {
+describe("過去要件の絵巻閲覧画面（/results/[id]）", () => {
   beforeEach(() => {
     authState.loggedIn = true;
     authState.ready = true;
@@ -81,10 +81,10 @@ describe("過去要件の絵巻閲覧画面（/sessions/[id]）", () => {
   });
   afterEach(() => cleanup());
 
-  it("real モードで未ログインなら /login?next=/sessions/{id} へリダイレクトし本文を描画しない", () => {
+  it("real モードで未ログインなら /login?next=/results/{id} へリダイレクトし本文を描画しない", () => {
     authState.loggedIn = false;
     render(<PastRequirementsPage />);
-    expect(replace).toHaveBeenCalledWith(`/login?next=${encodeURIComponent("/sessions/sess-1")}`);
+    expect(replace).toHaveBeenCalledWith(`/login?next=${encodeURIComponent("/results/sess-1")}`);
     expect(screen.queryByText("要件絵巻")).toBeNull();
   });
 
