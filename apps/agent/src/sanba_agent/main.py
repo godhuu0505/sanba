@@ -73,7 +73,7 @@ from .events import (
     decode_user_selection,
     decode_user_text,
 )
-from .observability import setup_observability
+from .observability import get_tracer, setup_observability
 from .prefetch import REASON_ACL_RECHECK, REASON_EMPTY, PrefetchCache
 from .prompts.interview import (
     DEVELOPER_OPENING_INSTRUCTIONS,
@@ -616,14 +616,29 @@ class SANBAAgent(Agent):
         if self._prep_note:
             transcript = f"{self._prep_note}\n{transcript}"
         covered_turn = self._user_turn
-        if timeout_seconds is not None:
-            result = await asyncio.wait_for(analyze_transcript(transcript), timeout_seconds)
-        else:
-            result = await analyze_transcript(transcript)
+        # 分析（ADK 多段チェーン）は最も高価な LLM 往復。span + duration_ms でレイテンシを
+        # 一級シグナルにする（sess-2d51da04 では 30 秒でタイムアウトしたが、当時は duration が
+        # ログに無くタイムスタンプから推測するしかなかった。観測性の穴を塞ぐ / CLAUDE.md 原則3）。
+        tracer = get_tracer("sanba.voice")
+        span_cm = (
+            tracer.start_as_current_span("sanba.voice.analysis")
+            if tracer is not None
+            else contextlib.nullcontext()
+        )
+        started = time.monotonic()
+        with span_cm as span:
+            if span is not None:
+                span.set_attribute("sanba.analysis.trigger", trigger)
+            if timeout_seconds is not None:
+                result = await asyncio.wait_for(analyze_transcript(transcript), timeout_seconds)
+            else:
+                result = await analyze_transcript(transcript)
+        duration_ms = int((time.monotonic() - started) * 1000)
         log.info(
             "analysis",
             session=self._session_id,
             trigger=trigger,
+            duration_ms=duration_ms,
             open_topics=result.open_topics,
             next_question=result.next_question,
         )
@@ -1365,6 +1380,36 @@ def build_turn_detection(
     )
 
 
+async def guarded_generate_reply(
+    session: AgentSession, *, session_id: str, kind: str, **kwargs: Any
+) -> bool:
+    """generate_reply を span + 失敗ログ付きで実行する（観測性 / CLAUDE.md 原則3）。
+
+    失敗（Gemini Live の generation_created タイムアウト等を含む）はセッション紐付きの
+    ``voice_reply_failed`` として構造化ログに残す。sess-2d51da04 では冒頭の generate_reply が
+    タイムアウトしたが、当時は livekit ライブラリ側のログにしか出ず session_id で追えなかった。
+    例外は呼び出し側へ伝播させない: 一言が出せなくてもセッションは生きており、次の発話から
+    会話は前進できる（無反応で居座らせない・ADR-0038 と同じ思想）。成否を bool で返す。
+    """
+    tracer = get_tracer("sanba.voice")
+    span_cm = (
+        tracer.start_as_current_span("sanba.voice.reply")
+        if tracer is not None
+        else contextlib.nullcontext()
+    )
+    with span_cm as span:
+        if span is not None:
+            span.set_attribute("sanba.voice.reply_kind", kind)
+        try:
+            await session.generate_reply(**kwargs)
+            return True
+        except Exception as exc:  # noqa: BLE001 - 一言の失敗は握り、会話は続行する
+            if span is not None:
+                span.set_attribute("sanba.voice.reply_failed", True)
+            log.warning("voice_reply_failed", session=session_id, kind=kind, error=str(exc))
+            return False
+
+
 async def respond_to_user_text(
     agent: SANBAAgent, session: AgentSession, text: str, current_qid: str | None
 ) -> None:
@@ -1745,9 +1790,14 @@ async def entrypoint(ctx: JobContext) -> None:
     # 接続直後に web の状態表示を「聴いています」に同期する（03/04/05）。
     await publisher.status("listening")
     # 最初の一問はモード別（ADR-0032 決定6・7）: developer は要件整理＋画面共有の案内、
-    # end_user は利用体験の困りごとを技術用語なしで聞く。
-    await session.generate_reply(
-        instructions=opening_instructions(agent.interview_mode, agent.has_prep_context)
+    # end_user は利用体験の困りごとを技術用語なしで聞く。失敗（Live の generation_created
+    # タイムアウト等）は voice_reply_failed としてセッション紐付きで残し、例外で entrypoint を
+    # 落とさない（無反応で居座らせない・sess-2d51da04 の冒頭タイムアウトを可視化する）。
+    await guarded_generate_reply(
+        session,
+        session_id=session_id,
+        kind="opening",
+        instructions=opening_instructions(agent.interview_mode, agent.has_prep_context),
     )
 
     # When the room closes, score the interview (LLM-as-a-judge) and log to Langfuse.

@@ -189,3 +189,38 @@ class TestNoiseCancellation:
         monkeypatch.setattr(settings, "noise_cancellation_enabled", True)
         monkeypatch.setattr(settings, "livekit_url", "ws://localhost:7880")
         assert build_noise_cancellation() is None
+
+
+class _FakeSession:
+    """generate_reply だけを持つ最小の AgentSession スタブ（観測性ヘルパのテスト用）。"""
+
+    def __init__(self, *, raises: BaseException | None = None) -> None:
+        self.calls: list[dict[str, object]] = []
+        self._raises = raises
+
+    async def generate_reply(self, **kwargs: object) -> None:
+        self.calls.append(kwargs)
+        if self._raises is not None:
+            raise self._raises
+
+
+class TestGuardedGenerateReply:
+    @pytest.mark.asyncio
+    async def test_success_returns_true_and_forwards_kwargs(self) -> None:
+        from sanba_agent.main import guarded_generate_reply
+
+        session = _FakeSession()
+        ok = await guarded_generate_reply(
+            session, session_id="s1", kind="opening", instructions="はじめまして"
+        )
+        assert ok is True
+        assert session.calls == [{"instructions": "はじめまして"}]
+
+    @pytest.mark.asyncio
+    async def test_failure_is_swallowed_and_returns_false(self) -> None:
+        # Live の generation_created タイムアウト等でも例外を伝播させず、会話は続行できる。
+        from sanba_agent.main import guarded_generate_reply
+
+        session = _FakeSession(raises=TimeoutError("generation_created timed out"))
+        ok = await guarded_generate_reply(session, session_id="s1", kind="opening")
+        assert ok is False

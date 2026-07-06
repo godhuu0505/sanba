@@ -5,12 +5,29 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import structlog
 
 from .config import settings
 
 log = structlog.get_logger(__name__)
 _initialised = False
+
+
+def get_tracer(name: str) -> Any:
+    """名前付き OTel トレーサを返す（OTel 未導入・未初期化なら None）。
+
+    SDK プロバイダ未設定時（otel_disabled）でも trace.get_tracer は no-op トレーサを返し、
+    span 生成は非記録で安価。呼び出し側は `if tracer` で nullcontext にフォールバックする
+    （events.py と同じ方式）。エンドポイント設定時にだけ実スパンがエクスポートされる。
+    """
+    try:
+        from opentelemetry import trace
+
+        return trace.get_tracer(name)
+    except Exception:  # pragma: no cover - otel optional
+        return None
 
 
 def setup_observability() -> None:
