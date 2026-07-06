@@ -25,11 +25,11 @@ describe("BottomBar（常時2行：消音/マイク・テキスト/送信）", (
     expect(cb.onToggleMute).toHaveBeenCalledTimes(1);
   });
 
-  it("マイク・ミュートは micOn=true で未ミュート（aria-pressed=false / マイク オン）", () => {
+  it("マイク・ミュートは micOn=true で未ミュート（aria-pressed=false / 集音中）", () => {
     const cb = setup({ micOn: true });
     const mic = screen.getByRole("button", { name: "マイクをミュート" });
     expect(mic.getAttribute("aria-pressed")).toBe("false");
-    expect(mic.textContent).toContain("マイク オン");
+    expect(mic.textContent).toContain("集音中");
     fireEvent.click(mic);
     expect(cb.onToggleMic).toHaveBeenCalledTimes(1);
   });
@@ -73,15 +73,10 @@ describe("BottomBar（常時2行：消音/マイク・テキスト/送信）", (
     expect(input.value).toBe("かいぎ"); // 変換途中なので消えない
   });
 
-  // 音声状態インジケータの結線（#248）。状態解決は VoiceStatusIndicator 側で検証済みなので、
-  // ここでは BottomBar が props を渡して常時表示していることだけ確かめる。
-  it("音声状態インジケータを常時表示し、エージェント発話中を反映する", () => {
-    setup({ phase: "listening", micOn: true, muted: false, agentSpeaking: true });
-    expect(screen.getByRole("status").getAttribute("data-status")).toBe("agent-speaking");
-  });
-
-  it("消音中は音声状態インジケータが「消音中」になる", () => {
-    setup({ phase: "listening", micOn: true, muted: true });
-    expect(screen.getByRole("status").getAttribute("data-status")).toBe("muted");
+  // 音声状態インジケータ（#248）はボトムバーから上部の固定領域（ConversationShell）へ移した。
+  // 可変高の装飾で選択肢フォームを上下させないため、ここ（高さ一定のボトムバー）には出さない。
+  it("音声状態インジケータはボトムバーに出さない（上部固定領域へ移設）", () => {
+    setup({ micOn: true, muted: false });
+    expect(screen.queryByRole("status")).toBeNull();
   });
 });
