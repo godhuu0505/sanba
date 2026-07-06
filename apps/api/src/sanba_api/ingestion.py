@@ -11,7 +11,10 @@ right long-term home (tracked as a follow-up); kept compact here on purpose.
 
 from __future__ import annotations
 
+import io
 import re
+from collections.abc import Callable
+from html.parser import HTMLParser
 
 import structlog
 
@@ -240,19 +243,130 @@ def _embed(text: str) -> list[float] | None:
         return None
 
 
+class _HTMLTextExtractor(HTMLParser):
+    """HTML から可視テキストだけを取り出す（script/style 等は捨てる）。
+
+    grounding に流すのは「人が読む本文」であって、マークアップや JS ではない。
+    依存を増やさず stdlib の HTMLParser で足りる範囲に留める（壊れた HTML でも
+    エラーにせず、読めた分だけ返す best-effort）。
+    """
+
+    _SKIP_TAGS = frozenset({"script", "style", "noscript", "template"})
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self._parts: list[str] = []
+        self._skip_depth = 0
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag in self._SKIP_TAGS:
+            self._skip_depth += 1
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in self._SKIP_TAGS and self._skip_depth > 0:
+            self._skip_depth -= 1
+
+    def handle_data(self, data: str) -> None:
+        if self._skip_depth == 0 and data.strip():
+            self._parts.append(data.strip())
+
+    def text(self) -> str:
+        return "\n".join(self._parts)
+
+
+def _extract_pdf(raw: bytes) -> str:
+    from pypdf import PdfReader
+
+    reader = PdfReader(io.BytesIO(raw))
+    return "\n".join(page.extract_text() or "" for page in reader.pages)
+
+
+def _extract_docx(raw: bytes) -> str:
+    """Word（.docx）の段落と表をテキスト化する。"""
+    from docx import Document
+
+    document = Document(io.BytesIO(raw))
+    parts: list[str] = [p.text for p in document.paragraphs if p.text.strip()]
+    for table in document.tables:
+        for row in table.rows:
+            cells = [cell.text.strip() for cell in row.cells]
+            if any(cells):
+                parts.append("\t".join(cells))
+    return "\n".join(parts)
+
+
+def _extract_xlsx(raw: bytes) -> str:
+    """Excel（.xlsx）を全シート TSV 風のテキストにする（数式は計算済み値）。"""
+    from openpyxl import load_workbook  # type: ignore[import-untyped]
+
+    workbook = load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
+    try:
+        parts: list[str] = []
+        for sheet in workbook.worksheets:
+            rows: list[str] = []
+            for row in sheet.iter_rows(values_only=True):
+                cells = ["" if v is None else str(v) for v in row]
+                if any(c.strip() for c in cells):
+                    rows.append("\t".join(cells).rstrip())
+            if rows:
+                parts.append(f"# {sheet.title}")
+                parts.extend(rows)
+        return "\n".join(parts)
+    finally:
+        workbook.close()
+
+
+def _extract_pptx(raw: bytes) -> str:
+    """PowerPoint（.pptx）のスライド本文とスピーカーノートをテキスト化する。"""
+    from pptx import Presentation  # type: ignore[import-untyped]
+
+    presentation = Presentation(io.BytesIO(raw))
+    parts: list[str] = []
+    for i, slide in enumerate(presentation.slides, start=1):
+        texts = [
+            shape.text.strip()
+            for shape in slide.shapes
+            if getattr(shape, "has_text_frame", False) and shape.text.strip()
+        ]
+        if slide.has_notes_slide and slide.notes_slide.notes_text_frame is not None:
+            note = slide.notes_slide.notes_text_frame.text.strip()
+            if note:
+                texts.append(note)
+        if texts:
+            parts.append(f"# スライド{i}")
+            parts.extend(texts)
+    return "\n".join(parts)
+
+
+def _extract_html(raw: bytes) -> str:
+    extractor = _HTMLTextExtractor()
+    extractor.feed(raw.decode("utf-8", errors="replace"))
+    return extractor.text()
+
+
+# 拡張子 → 抽出関数。storage.py の TEXT_EXT / DOC_BINARY_EXT（受理判定）とペアで保守する。
+_EXTRACTORS: dict[str, Callable[[bytes], str]] = {
+    ".pdf": _extract_pdf,
+    ".docx": _extract_docx,
+    ".xlsx": _extract_xlsx,
+    ".pptx": _extract_pptx,
+    ".html": _extract_html,
+    ".htm": _extract_html,
+}
+
+
 def extract_text_from_upload(filename: str, raw: bytes) -> str:
-    """Best-effort text extraction for txt/md/pdf uploads."""
+    """Best-effort text extraction (txt/md/html/csv/json/pdf/docx/xlsx/pptx uploads)."""
     name = filename.lower()
-    if name.endswith(".pdf"):
-        try:  # pragma: no cover - optional dependency
-            import io
-
-            from pypdf import PdfReader
-
-            reader = PdfReader(io.BytesIO(raw))
-            return "\n".join(page.extract_text() or "" for page in reader.pages)
-        except Exception as exc:  # pragma: no cover
-            log.warning("pdf_extract_failed", error=str(exc))
+    ext = name[name.rfind(".") :] if "." in name else ""
+    extractor = _EXTRACTORS.get(ext)
+    if extractor is not None:
+        try:
+            return extractor(raw)
+        except Exception as exc:
+            # 壊れたファイル・想定外の中身は空文字で返し、アップロード全体は 500 にしない
+            # （indexed_chunks=0 が呼び出し側へ伝わる）。
+            log.warning("document_extract_failed", ext=ext, error=str(exc))
             return ""
-    # txt / md / anything decodable as utf-8
+    # txt / md / csv / json / anything decodable as utf-8
     return raw.decode("utf-8", errors="replace")

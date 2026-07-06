@@ -16,6 +16,9 @@ const authState = {
   devSignIn: vi.fn(),
   signOut: vi.fn(),
   resetButton: vi.fn(),
+  // Drive 同意（ADR-0040）。既定は未確定・未許可（取り込みテストで個別に上書きする）。
+  driveGranted: null as boolean | null,
+  requestDriveAccess: vi.fn(async () => null as string | null),
 };
 vi.mock("../lib/auth", () => ({ useAuth: () => authState }));
 
@@ -87,15 +90,31 @@ vi.mock("../lib/api", () => ({
   fetchGithubRepos: (...a: unknown[]) => fetchGithubRepos(...a),
   listGithubBranches: (...a: unknown[]) => listGithubBranches(...a),
   selectSessionRepo: (...a: unknown[]) => selectSessionRepo(...a),
-  // 実装と同じ受理範囲・判定（PNG/JPG・MP4/MOV）。テストではロジックをそのまま使う。
+  // 実装と同じ受理範囲・判定（画像/動画 + 資料）。テストではロジックをそのまま使う。
   ACCEPTED_IMAGE: ".png,.jpg,.jpeg,image/png,image/jpeg",
   ACCEPTED_VIDEO: ".mp4,.mov,video/mp4,video/quicktime",
-  classifyUpload: (filename: string) => {
-    const name = filename.toLowerCase();
+  ACCEPTED_DOC: ".txt,.md,.pdf,.html,.csv,.json,.docx,.xlsx,.pptx",
+  ACCEPTED_SUMMARY: "画像 PNG/JPG・動画 MP4/MOV・資料 PDF/Word/Excel/PowerPoint/Markdown/HTML/CSV 等",
+  classifyFileUpload: (file: { name: string; type: string }) => {
+    const name = file.name.toLowerCase();
     if ([".png", ".jpg", ".jpeg"].some((e) => name.endsWith(e))) return "image";
     if ([".mp4", ".mov"].some((e) => name.endsWith(e))) return "video";
+    if ([".txt", ".md", ".pdf", ".html", ".csv", ".json", ".docx", ".xlsx", ".pptx"].some((e) => name.endsWith(e)))
+      return "doc";
+    // 拡張子が無くても MIME が受理範囲なら通す（実装と同じ / Codex P2）。
+    const type = file.type.toLowerCase();
+    if (type === "image/png" || type === "image/jpeg") return "image";
+    if (type === "video/mp4" || type === "video/quicktime") return "video";
+    if (type === "text/plain" || type === "text/markdown") return "doc";
     return null;
   },
+}));
+
+// Google ドライブ連携（ADR-0040）。既定は未構成（＝この環境では利用できない案内）。
+vi.mock("../lib/googleDrive", () => ({
+  isDriveConfigured: () => false,
+  openDrivePicker: vi.fn(async () => []),
+  importDriveFile: vi.fn(),
 }));
 
 // 接続後ブランチに入っても落ちないよう、LiveKit / SessionView は素通しにする。
@@ -603,11 +622,28 @@ describe("入口フロー（#140）", () => {
   });
 
   it("非対応形式は弾いて理由を出し、ステージしない", async () => {
+    // .txt/.md/.pdf 等の資料は受理対象になった（ADR-0040）ため、非対応例は実行ファイル。
     const { container } = await gotoPrepare();
-    const bad = new File(["x"], "secret.txt", { type: "text/plain" });
+    const bad = new File(["x"], "malware.exe", { type: "application/octet-stream" });
     pickFiles(container, [bad]);
     expect(screen.getByRole("alert").textContent).toContain("対応していない形式");
     expect(screen.queryByRole("list", { name: "添付した参考資料" })).toBeNull();
+  });
+
+  it("資料（Markdown/PDF/Office）もステージできる（ADR-0040）", async () => {
+    const { container } = await gotoPrepare();
+    pickFiles(container, [
+      new File(["# spec"], "spec.md", { type: "text/markdown" }),
+      new File(["%PDF"], "prd.pdf", { type: "application/pdf" }),
+      new File(["PK"], "req.xlsx", {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      }),
+    ]);
+    const list = screen.getByRole("list", { name: "添付した参考資料" }).textContent;
+    expect(list).toContain("spec.md");
+    expect(list).toContain("prd.pdf");
+    expect(list).toContain("req.xlsx");
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("開始時にステージ済みファイルが join 後に投入され、03-0 サマリに件数/名が反映される", async () => {

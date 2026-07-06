@@ -54,6 +54,97 @@ def test_extract_text_from_txt_upload() -> None:
     assert extract_text_from_upload("notes.md", "# 見出し\n本文".encode()) == "# 見出し\n本文"
 
 
+# ── 拡張形式のテキスト抽出（html/csv/json/docx/xlsx/pptx）───────────────────
+def test_extract_text_from_html_strips_markup_and_scripts() -> None:
+    html = (
+        "<html><head><title>仕様</title><style>body{color:red}</style>"
+        "<script>alert('x')</script></head>"
+        "<body><h1>検索機能</h1><p>一覧を&amp;高速化する。</p></body></html>"
+    )
+    text = extract_text_from_upload("spec.html", html.encode())
+    assert "検索機能" in text
+    assert "一覧を&高速化する。" in text
+    # マークアップ・script/style は本文に混ぜない。
+    assert "alert" not in text
+    assert "color:red" not in text
+    assert "<h1>" not in text
+
+
+def test_extract_text_from_csv_and_json_decodes_as_text() -> None:
+    assert "画面,要件" in extract_text_from_upload("req.csv", "画面,要件\n検索,高速化".encode())
+    assert '"goal"' in extract_text_from_upload("req.json", b'{"goal": "search"}')
+
+
+def test_extract_text_from_docx_paragraphs_and_tables() -> None:
+    import io
+
+    from docx import Document
+
+    document = Document()
+    document.add_paragraph("要約機能が必要。")
+    table = document.add_table(rows=1, cols=2)
+    table.rows[0].cells[0].text = "画面"
+    table.rows[0].cells[1].text = "検索"
+    buf = io.BytesIO()
+    document.save(buf)
+
+    text = extract_text_from_upload("spec.docx", buf.getvalue())
+    assert "要約機能が必要。" in text
+    assert "画面\t検索" in text
+
+
+def test_extract_text_from_xlsx_all_sheets() -> None:
+    import io
+
+    from openpyxl import Workbook
+
+    workbook = Workbook()
+    first = workbook.active
+    first.title = "要件"
+    first.append(["画面", "要件"])
+    first.append(["検索", "高速化"])
+    second = workbook.create_sheet("課題")
+    second.append(["優先度", "高"])
+    buf = io.BytesIO()
+    workbook.save(buf)
+
+    text = extract_text_from_upload("req.xlsx", buf.getvalue())
+    assert "# 要件" in text
+    assert "検索\t高速化" in text
+    # 先頭シートだけでなく全シートを読む。
+    assert "# 課題" in text
+    assert "優先度\t高" in text
+
+
+def test_extract_text_from_pptx_slides_and_notes() -> None:
+    import io
+
+    from pptx import Presentation
+    from pptx.util import Inches
+
+    presentation = Presentation()
+    slide = presentation.slides.add_slide(presentation.slide_layouts[5])
+    slide.shapes.title.text = "検索リニューアル"
+    box = slide.shapes.add_textbox(Inches(1), Inches(2), Inches(4), Inches(1))
+    box.text_frame.text = "対象は社内ユーザー"
+    slide.notes_slide.notes_text_frame.text = "補足: 移行は段階的に"
+    buf = io.BytesIO()
+    presentation.save(buf)
+
+    text = extract_text_from_upload("deck.pptx", buf.getvalue())
+    assert "# スライド1" in text
+    assert "検索リニューアル" in text
+    assert "対象は社内ユーザー" in text
+    assert "補足: 移行は段階的に" in text
+
+
+def test_extract_text_from_broken_document_returns_empty() -> None:
+    # 壊れたバイナリ文書は 500 にせず空文字（indexed_chunks=0 に平す / best-effort）。
+    assert extract_text_from_upload("broken.docx", b"not-a-zip") == ""
+    assert extract_text_from_upload("broken.xlsx", b"not-a-zip") == ""
+    assert extract_text_from_upload("broken.pptx", b"not-a-zip") == ""
+
+
 def test_memory_indexer_counts_chunks() -> None:
     indexer = ContextIndexer()
     assert indexer.is_memory is True

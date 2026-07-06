@@ -15,6 +15,7 @@ import { Track } from "livekit-client";
 import { useEffect, useRef, useState } from "react";
 
 import {
+  ACCEPTED_DOC,
   ACCEPTED_IMAGE,
   ACCEPTED_VIDEO,
   deleteContextFile,
@@ -26,6 +27,8 @@ import {
   type ExportResult,
   type FinalizeResult,
 } from "../lib/api";
+import { useAuth } from "../lib/auth";
+import { importDriveFile, isDriveConfigured, openDrivePicker } from "../lib/googleDrive";
 import type { MaterialItem } from "../lib/realtime/selectors";
 import { useRealtimeSession } from "../lib/realtime/useRealtimeSession";
 import { ConversationSessionView } from "./ConversationSessionView";
@@ -61,6 +64,8 @@ export function SessionView({
     sessionToken,
     hydrateDetections: true,
   });
+  // Google ドライブ取り込みの同意/トークン（drive.file / ADR-0040）。トークンはメモリのみ。
+  const auth = useAuth();
 
   // マイク入力（自分の声を拾うか）= LiveKit local track の ON/OFF。
   const mic = useTrackToggle({ source: Track.Source.Microphone });
@@ -143,6 +148,11 @@ export function SessionView({
     const file = e.target.files?.[0];
     e.target.value = ""; // 同じファイルの再選択でも change を発火させる。
     if (!file) return;
+    await startUpload(file);
+  }
+
+  // ファイル 1 件を投入する（ローカルピッカと Google ドライブ取り込みが共用する本流）。
+  async function startUpload(file: File) {
     const tempId = `local:${tempSeq.current++}`;
     // 中断（#219）で送信中の fetch を止められるよう AbortController を紐づける。
     const aborter = new AbortController();
@@ -285,6 +295,56 @@ export function SessionView({
     setSourceSheetOpen(true);
   }
 
+  // Google ドライブから選んで投入する（ADR-0040）。権限は Google ログイン時に求めるが、
+  // 未許可（拒否・ブロック・失効）ならここで再度同意ポップアップを出す（要件: 権限が無い状態で
+  // アップロードしようとしたタイミングで再度権限をもらう）。許可されなければ投入しない。
+  async function handleDriveImport() {
+    setSourceError(null);
+    if (!isDriveConfigured()) {
+      setSourceError(
+        "Google ドライブ連携はこの環境では利用できません（Google API キーが未設定です）。",
+      );
+      return;
+    }
+    const token = await auth.requestDriveAccess();
+    if (!token) {
+      setSourceError(
+        "Google ドライブへのアクセスが許可されていません。もう一度お試しいただくと、再度許可を求めます。",
+      );
+      return;
+    }
+    // 同意が取れたらシートを畳んで Picker（Google 公式の選択 UI）を重ならないように出す。
+    setSourceSheetOpen(false);
+    let picked: Awaited<ReturnType<typeof openDrivePicker>>;
+    try {
+      picked = await openDrivePicker(token);
+    } catch (e) {
+      console.error("drive picker failed", e);
+      openSourceSheet();
+      setSourceError("Google ドライブを開けませんでした。時間をおいて再度お試しください。");
+      return;
+    }
+    // 取得（export/download）→ 既存のアップロード本流（startUpload）へ 1 件ずつ合流させる。
+    // 取得に失敗したファイルは failed 行として一覧に出し、再試行導線につなげる。
+    for (const doc of picked) {
+      try {
+        const file = await importDriveFile(token, doc);
+        await startUpload(file);
+      } catch (e) {
+        console.error("drive import failed", e);
+        setPending((p) => [
+          ...p,
+          {
+            id: `local:${tempSeq.current++}`,
+            name: `${doc.name}（Google ドライブから取得できませんでした）`,
+            pct: 0,
+            status: "failed",
+          },
+        ]);
+      }
+    }
+  }
+
   function handleRetryMaterial(id: string) {
     // 失敗行を片付けて手段選択をやり直す（05-2 シートを開く）。
     setPending((p) => p.filter((m) => m.id !== id));
@@ -338,7 +398,7 @@ export function SessionView({
         <input
           ref={fileInput}
           type="file"
-          accept={`${ACCEPTED_IMAGE},${ACCEPTED_VIDEO}`}
+          accept={`${ACCEPTED_IMAGE},${ACCEPTED_VIDEO},${ACCEPTED_DOC}`}
           onChange={handleFile}
           className="hidden"
         />
@@ -400,6 +460,7 @@ export function SessionView({
           cameraActive={camera.enabled}
           onToggleScreenShare={toggleScreenShareTrack}
           screenShareActive={screenShare.enabled}
+          onDrive={() => void handleDriveImport()}
           onSelectSource={(source) =>
             sendTelemetry(sessionId, "material.source_selected", { source }, sessionToken)
           }

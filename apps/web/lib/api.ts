@@ -81,22 +81,77 @@ export async function addSessionContext(
 /** 受理する拡張子 → MIME（要件票 06: 画像 PNG/JPG・動画 MP4/MOV）。 */
 export const ACCEPTED_IMAGE = ".png,.jpg,.jpeg,image/png,image/jpeg";
 export const ACCEPTED_VIDEO = ".mp4,.mov,video/mp4,video/quicktime";
+/** 資料（テキスト/文書）。API 側の許可リスト（storage.py TEXT_EXT/DOC_BINARY_EXT）と揃える。 */
+export const ACCEPTED_DOC =
+  ".txt,.md,.markdown,.pdf,.html,.htm,.csv,.json,.docx,.xlsx,.pptx," +
+  "text/plain,text/markdown,text/html,text/csv,application/json,application/pdf," +
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document," +
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet," +
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+
+/** 受理形式の利用者向け説明（エラー文言・シートの副題で共有する）。 */
+export const ACCEPTED_SUMMARY =
+  "画像 PNG/JPG・動画 MP4/MOV・資料 PDF/Word/Excel/PowerPoint/Markdown/HTML/CSV 等";
 
 const IMAGE_EXT = [".png", ".jpg", ".jpeg"];
 const VIDEO_EXT = [".mp4", ".mov"];
+const DOC_EXT = [
+  ".txt",
+  ".md",
+  ".markdown",
+  ".pdf",
+  ".html",
+  ".htm",
+  ".csv",
+  ".json",
+  ".docx",
+  ".xlsx",
+  ".pptx",
+];
+const IMAGE_MIME = ["image/png", "image/jpeg"];
+const VIDEO_MIME = ["video/mp4", "video/quicktime"];
+const DOC_MIME = [
+  "text/plain",
+  "text/markdown",
+  "text/html",
+  "text/csv",
+  "application/json",
+  "application/pdf",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+];
+
+/** アップロード種別（API の asset_kind と同語彙）。doc = テキスト抽出する資料。 */
+export type UploadKind = "image" | "video" | "doc";
 
 /** 拡張子からアップロード種別を判定（非対応は null）。ピッカ前段の早期弾き用。 */
-export function classifyUpload(filename: string): "image" | "video" | null {
+export function classifyUpload(filename: string): UploadKind | null {
   const name = filename.toLowerCase();
   if (IMAGE_EXT.some((e) => name.endsWith(e))) return "image";
   if (VIDEO_EXT.some((e) => name.endsWith(e))) return "video";
+  if (DOC_EXT.some((e) => name.endsWith(e))) return "doc";
+  return null;
+}
+
+/**
+ * 受理判定は API（content-type）と揃える。拡張子（classifyUpload）に加えて MIME も見る
+ * ことで、.jfif や拡張子なしでも MIME が正しければ受理する（Codex P2）。
+ */
+export function classifyFileUpload(file: { name: string; type: string }): UploadKind | null {
+  const byName = classifyUpload(file.name);
+  if (byName) return byName;
+  const type = file.type.toLowerCase();
+  if (IMAGE_MIME.includes(type)) return "image";
+  if (VIDEO_MIME.includes(type)) return "video";
+  if (DOC_MIME.includes(type)) return "doc";
   return null;
 }
 
 export interface UploadResult {
   indexed_chunks: number;
   asset_id?: string;
-  asset_kind?: "image" | "video";
+  asset_kind?: UploadKind;
   analysis_pending?: boolean;
 }
 
@@ -125,7 +180,7 @@ export async function uploadContextFile(
     body: form,
     signal,
   });
-  if (res.status === 415) throw new Error("対応していない形式です（PNG/JPG・MP4/MOV）");
+  if (res.status === 415) throw new Error(`対応していない形式です（${ACCEPTED_SUMMARY}）`);
   if (res.status === 413) throw new Error("ファイルが大きすぎます");
   if (!res.ok) throw new Error(`upload failed: ${res.status}`);
   return res.json();
@@ -233,7 +288,7 @@ export interface CurrentQuestionSnapshot {
 export interface ContextFileItem {
   id: string;
   name: string;
-  kind: "image" | "video";
+  kind: UploadKind;
   status: "uploading" | "analyzing" | "done" | "failed";
   extracted?: number;
 }
