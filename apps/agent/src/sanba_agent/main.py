@@ -34,6 +34,13 @@ from livekit.agents import (
 )
 from livekit.agents.llm import function_tool
 from livekit.plugins import google
+
+try:  # noqa: SIM105 - フェイルソフト（プラグイン未導入・self-host でも会話は成立する）
+    # LiveKit Cloud の Krisp Background Voice Cancellation（BVC / ADR-0039）。
+    # パッケージ未導入や import 失敗時は None にフォールバックし、ノイズ抑制なしで続行する。
+    from livekit.plugins import noise_cancellation as _noise_cancellation
+except Exception:  # pragma: no cover - 依存の有無に依存
+    _noise_cancellation = None  # type: ignore[assignment]
 from sanba_shared.models import (
     AnalysisResult,
     GitHubIndexStatus,
@@ -1296,12 +1303,44 @@ async def respond_to_answer(
     )
 
 
+def build_noise_cancellation() -> Any | None:
+    """入力音声のノイズ抑制（Krisp BVC）を組み立てる（ADR-0039）。
+
+    設定 ON かつプラグイン導入済みなら BVC を返し、RoomInputOptions.noise_cancellation に渡す。
+    設定 OFF・プラグイン未導入（self-host / 依存欠落）では None を返し、抑制なしで会話を続ける
+    （フェイルソフト）。BVC は LiveKit Cloud でのみ実効。設定 ON なのに使えない構成のときは
+    観測性のため一度警告する（CLAUDE.md 原則3）。
+    """
+    if not settings.noise_cancellation_enabled:
+        return None
+    if _noise_cancellation is None:
+        log.warning("noise_cancellation_unavailable", reason="plugin_not_installed")
+        return None
+    return _noise_cancellation.BVC()
+
+
+def build_input_transcription() -> genai_types.AudioTranscriptionConfig:
+    """入力音声の文字起こし設定を組み立てる（ADR-0039）。
+
+    `language_codes` に設定言語（既定 ja-JP）を与えると、Gemini Live は「入力音声はこの
+    言語」というヒントとして使い、短い発話・雑音・曖昧な音で韓国語/中国語へ誤認識
+    ドリフトするのを抑える。空文字なら language_codes を付けずモデルの自動判定に委ねる
+    （従来挙動）。ネイティブ音声モデルでも入力文字起こしのヒントは有効。
+    """
+    lang = settings.gemini_language.strip()
+    return genai_types.AudioTranscriptionConfig(language_codes=[lang] if lang else None)
+
+
 def build_realtime_model() -> google.beta.realtime.RealtimeModel:
-    """Gemini Live の RealtimeModel を組み立てる（ターン検出＋安定化設定込み / ADR-0038）。
+    """Gemini Live の RealtimeModel を組み立てる（ターン検出・安定化・言語固定 / ADR-0038・0039）。
 
     再起動のたびに新しいインスタンスが要るため関数化している（AgentSession が閉じた
     モデルは再利用できない）。context window compression は、長いインタビューが
     コンテキスト上限でセッションごと打ち切られて無反応になるのを防ぐ。
+    ADR-0039: 言語を固定して認識ドリフト（韓国語/中国語化）を抑える。`language`（BCP-47）は
+    出力音声の language_code、`input_audio_transcription.language_codes` は入力認識の言語ヒント。
+    ネイティブ音声は出力言語を自動選択する面があるため、プロンプト側（VOICE_AGENT_INSTRUCTIONS）
+    でも日本語固定を明示し多層で担保する。
     """
     compression: genai_types.ContextWindowCompressionConfig | NotGiven = NOT_GIVEN
     if settings.gemini_context_window_compression:
@@ -1311,10 +1350,13 @@ def build_realtime_model() -> google.beta.realtime.RealtimeModel:
                 target_tokens=settings.gemini_context_sliding_window_tokens
             ),
         )
+    language: str | NotGiven = settings.gemini_language.strip() or NOT_GIVEN
     return google.beta.realtime.RealtimeModel(
         model=settings.gemini_live_model,
         voice="Puck",
+        language=language,
         temperature=0.7,
+        input_audio_transcription=build_input_transcription(),
         realtime_input_config=build_turn_detection(
             silence_duration_ms=settings.turn_silence_duration_ms,
             end_sensitivity=settings.turn_end_sensitivity,
@@ -1485,11 +1527,17 @@ async def entrypoint(ctx: JobContext) -> None:
         """
         s: AgentSession = AgentSession(llm=build_realtime_model())
         _wire_session(s)
+        # ADR-0039: 入力音声に Krisp BVC を適用して雑音・別話者の被り由来の誤認識を抑える。
+        # 未導入/OFF では None（抑制なし）で会話は成立する。
+        input_options = RoomInputOptions(
+            video_enabled=True,
+            noise_cancellation=build_noise_cancellation(),
+        )
         try:
             await s.start(
                 agent=agent,
                 room=ctx.room,
-                room_input_options=RoomInputOptions(video_enabled=True),
+                room_input_options=input_options,
             )
         except BaseException:
             with contextlib.suppress(Exception):
