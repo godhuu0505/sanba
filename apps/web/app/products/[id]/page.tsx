@@ -10,7 +10,9 @@ import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 import { AccountMenu } from "@/components/AccountMenu";
+import { ProductCheckItemsCard } from "@/components/ProductCheckItemsCard";
 import { ProductInvitesCard } from "@/components/ProductInvitesCard";
+import { ProductOutputFormatsCard } from "@/components/ProductOutputFormatsCard";
 import { ProductMembersCard } from "@/components/ProductMembersCard";
 import { ProductRepoCard } from "@/components/ProductRepoCard";
 import { authGate } from "@/components/RequireAuth";
@@ -261,6 +263,9 @@ export default function ProductDetailPage() {
                 </Button>
               </div>
             </Card>
+
+            <ProductOutputFormatsCard product={product} onSaved={setProduct} />
+            <ProductCheckItemsCard product={product} onSaved={setProduct} />
 
             <ProductRepoCard product={product} onChanged={load} />
             <ProductMembersCard productId={productId} canManage />

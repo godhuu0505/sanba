@@ -14,6 +14,7 @@ import asyncio
 import contextlib
 import os
 import time
+from datetime import UTC, datetime
 from typing import Any, NamedTuple
 from urllib.parse import urlparse
 
@@ -47,10 +48,12 @@ from sanba_shared.models import (
     GitHubIndexStatus,
     InviteScope,
     Priority,
+    Product,
     Requirement,
     RequirementCategory,
     SessionMeta,
     Utterance,
+    check_items_for_scope,
 )
 from sanba_shared.repository import SessionRepository
 
@@ -77,6 +80,7 @@ from .prompts.interview import (
     END_USER_OPENING_INSTRUCTIONS,
     END_USER_VOICE_AGENT_INSTRUCTIONS,
     VOICE_AGENT_INSTRUCTIONS,
+    build_check_items_seed,
     build_glossary_seed,
     build_language_directive,
     build_prep_analysis_note,
@@ -111,25 +115,23 @@ def _repo_premise(meta: SessionMeta | None) -> str:
     return build_repo_premise(meta.github_repo, meta.github_branch, ready, meta.github_summary)
 
 
-def _glossary_seed(repo: SessionRepository, meta: SessionMeta) -> str:
-    """product の利用者向け語彙シードを組み立てる（ADR-0032 決定7 / FR-2.4）。
+def _session_product(repo: SessionRepository, meta: SessionMeta | None) -> Product | None:
+    """セッションが従属する product を読む（プロンプトシード用 / ADR-0032 決定7）。
 
-    product_id → product の順に辿り、読める範囲で機械的に組み立てる（LLM 追加呼び出し
-    なし・ADR-0028 の repo 要約シードと同型）。product_id なし（単発セッション）・
-    product 削除済み・Firestore 不通では空文字 = シードなしで会話は成立させる
-    （シードは付加価値）。glossary 空でもアプリ名はシードする。
+    glossary（end_user）と確認項目（両モード）のシードが同じ product を見るため、
+    ここで 1 回だけ読む。product_id なし（単発セッション）・product 削除済み・
+    Firestore 不通では None = シードなしで会話は成立させる（シードは付加価値）。
     """
-    if not meta.product_id:
-        return ""
+    if meta is None or not meta.product_id:
+        return None
     try:
         product = repo.get_product(meta.product_id)
     except Exception as exc:  # pragma: no cover - depends on backend
-        log.warning("glossary_seed_read_failed", session=meta.id, error=str(exc))
-        return ""
+        log.warning("product_seed_read_failed", session=meta.id, error=str(exc))
+        return None
     if product is None:
-        log.warning("glossary_seed_product_missing", session=meta.id)
-        return ""
-    return build_glossary_seed(product.name, product.glossary)
+        log.warning("product_seed_missing", session=meta.id)
+    return product
 
 
 class AgentSetup(NamedTuple):
@@ -170,9 +172,22 @@ def build_agent_instructions(repo: SessionRepository, session_id: str) -> AgentS
         log.warning("session_meta_read_failed", session=session_id, error=str(exc))
     mode = meta.interview_mode if meta is not None else InviteScope.DEVELOPER
     prep_note = ""
+    # glossary（end_user）と確認項目（両モード）のシード元。1 回だけ読む。
+    product = _session_product(repo, meta)
+    # 対象タグでモードに合う項目だけをシードする（end_user: 全員+利用者 / developer:
+    # 全員+企画者+開発者。ADR-0043 決定2。開発者向け項目を利用者の会話に出さない）。
+    seeded_check_items = (
+        check_items_for_scope(product.check_items, mode) if product is not None else []
+    )
+    check_items_seed = build_check_items_seed(
+        seeded_check_items, end_user=mode is InviteScope.END_USER
+    )
     if mode is InviteScope.END_USER:
         assert meta is not None  # END_USER は meta が読めたときにしか選ばれない
-        instructions = END_USER_VOICE_AGENT_INSTRUCTIONS + _glossary_seed(repo, meta)
+        glossary_seed = (
+            build_glossary_seed(product.name, product.glossary) if product is not None else ""
+        )
+        instructions = END_USER_VOICE_AGENT_INSTRUCTIONS + glossary_seed + check_items_seed
         allow_repo_grounding = False
     else:
         # 準備フォームのゴール（ADR-0035）を repo 前提より先にシードする（セッションの主題が
@@ -182,7 +197,10 @@ def build_agent_instructions(repo: SessionRepository, session_id: str) -> AgentS
             prep_premise = build_prep_premise(meta.goal, meta.goal_detail, meta.roles)
             prep_note = build_prep_analysis_note(meta.goal, meta.goal_detail)
         instructions = (
-            VOICE_AGENT_INSTRUCTIONS + prep_premise + (_repo_premise(meta) if confirmed else "")
+            VOICE_AGENT_INSTRUCTIONS
+            + prep_premise
+            + (_repo_premise(meta) if confirmed else "")
+            + check_items_seed
         )
         # meta is None（セッション未作成/削除済み）は confirmed であってもモード不明と同義。
         # repo grounding を許可すると end_user セッションが None で作られた場合にフェイルオープン
@@ -199,6 +217,7 @@ def build_agent_instructions(repo: SessionRepository, session_id: str) -> AgentS
         mode_confirmed=confirmed,
         allow_repo_grounding=allow_repo_grounding,
         has_prep_context=bool(prep_note),
+        check_items_count=len(seeded_check_items),
         chars=len(instructions),
     )
     return AgentSetup(instructions, mode, allow_repo_grounding, prep_note)
@@ -1106,11 +1125,42 @@ class SANBAAgent(Agent):
         gh_repo = _resolve_github_repo(self._repo, self._session_id)
         if not _github_ready(gh_repo):
             return {"exported": False, "reason": "github connector disabled"}
-        from .connectors import GitHubConnector, requirements_to_issue_body
+        from sanba_shared.models import Audience, check_items_for_audience
+        from sanba_shared.output_formats import resolve_output_format
+        from sanba_shared.result_document import (
+            issue_title,
+            render_result_document,
+            requirements_to_render_dicts,
+        )
 
+        from .connectors import GitHubConnector
+
+        # Issue 本文は開発者向け出力フォーマットで整形する（api の /export と同じレンダラに
+        # 一本化 / ADR-0043 決定3。どちらの経路で起票しても同じ体裁になる）。
         requirements = self._repo.list_requirements(self._session_id)
-        title, body = requirements_to_issue_body(requirements, self._session_id)
-        url = GitHubConnector(settings.github_token, gh_repo).create_issue(title, body)
+        meta: SessionMeta | None = None
+        try:
+            meta = self._repo.get_session(self._session_id)
+        except Exception:  # pragma: no cover - depends on backend
+            pass
+        product = _session_product(self._repo, meta)
+        template, _ = resolve_output_format(product, Audience.DEVELOPER)
+        body = render_result_document(
+            template,
+            session_title=meta.title if meta is not None else self._session_id,
+            app_name=product.name if product is not None else None,
+            goal=meta.goal if meta is not None else None,
+            date=datetime.now(UTC).strftime("%Y-%m-%d"),
+            requirements=requirements_to_render_dicts(requirements),
+            check_items=(
+                check_items_for_audience(product.check_items, Audience.DEVELOPER)
+                if product is not None
+                else []
+            ),
+        )
+        url = GitHubConnector(settings.github_token, gh_repo).create_issue(
+            issue_title(self._session_id), body
+        )
         log.info("requirements_exported", session=self._session_id, repo=gh_repo, url=url)
         if self._publisher is not None and url is not None:
             # ループの締め（09→10）。スタッツは publish 済みの実測から組み立てる

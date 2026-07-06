@@ -50,9 +50,11 @@ import {
   uploadContextFile,
   type JoinResponse,
 } from "../lib/api";
+import { AUDIENCE_LABELS } from "../lib/audience";
 import { useAuth } from "../lib/auth";
 import { AccountMenu } from "./AccountMenu";
 import { ConversationStart } from "./ConversationStart";
+import { SideMenu } from "./SideMenu";
 import { MemberInviteNotices } from "./MemberInviteNotices";
 import {
   MaterialSourceSheet,
@@ -63,10 +65,12 @@ import { clearPrep, readPrep, writePrep } from "../lib/prepFormStorage";
 
 // 役割チップ。表示は日本語、value は API（POST /api/sessions の roles）に渡す既存値。
 // 並びは 利用者 → 企画者 → 開発者、既定は「利用者」= customer（02-prepare.md / #222）。
+// ラベルは Audience（利用者/企画者/開発者 / lib/audience.ts）と同じ 3 人の登場人物を指す。
+// 対応: customer=end_user / pm=planner / engineer=developer（表記の正を一本化 / ADR-0043）。
 const ROLES = [
-  { value: "customer", label: "利用者" },
-  { value: "pm", label: "企画者" },
-  { value: "engineer", label: "開発者" },
+  { value: "customer", label: AUDIENCE_LABELS.end_user },
+  { value: "pm", label: AUDIENCE_LABELS.planner },
+  { value: "engineer", label: AUDIENCE_LABELS.developer },
 ] as const;
 
 const DEFAULT_ROLE = "customer";
@@ -614,7 +618,11 @@ export default function EntryFlow({ initialStep = "home" }: { initialStep?: Step
       repoChoices !== null;
     return (
       <Screen className="px-4 py-3">
-        <AppHeader title="セッション準備" onBack={() => navigateStep("home")} />
+        <AppHeader
+          title="セッション準備"
+          onBack={() => navigateStep("home")}
+          right={<SideMenu current="prepare" />}
+        />
         <main className="mx-auto flex w-full max-w-[480px] flex-1 flex-col gap-[18px] pt-2">
           {/* フィールド順は Figma 正本に合わせて 役割 → ゴール（02-prepare）。 */}
           <div className="flex flex-col gap-[8px]">
@@ -945,7 +953,15 @@ export default function EntryFlow({ initialStep = "home" }: { initialStep?: Step
   // 未ログイン・取得失敗時は SessionHistoryList が空状態の文言を出す。
   return (
     <Screen className="px-4 py-3">
-      <AppHeader brand right={<AccountMenu profile={auth.profile} />} />
+      <AppHeader
+        brand
+        right={
+          <div className="flex items-center gap-[2px]">
+            <SideMenu current="home" />
+            <AccountMenu profile={auth.profile} />
+          </div>
+        }
+      />
       <main className="mx-auto flex w-full max-w-[480px] flex-1 flex-col gap-[18px] pt-3">
         {/* 自分宛のメンバー招待の通知（ADR-0036 決定3）。無ければ何も出ない。 */}
         <MemberInviteNotices />

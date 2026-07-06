@@ -16,6 +16,7 @@ from sanba_api.auth import SessionAccess
 from sanba_api.auth_google import AuthUser, require_user
 from sanba_api.github_app import IndexFile, create_link_state
 from sanba_api.main import app, require_session_access
+from sanba_api.routers import github_link
 
 client = TestClient(app)
 OWNER = "owner-123456789"
@@ -70,7 +71,7 @@ class FakeClient:
 @pytest.fixture(autouse=True)
 def _setup(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     app.dependency_overrides[require_user] = _fake_user
-    monkeypatch.setattr(main, "_github_app_client", lambda: FakeClient())
+    monkeypatch.setattr(github_link, "_github_app_client", lambda: FakeClient())
     monkeypatch.setattr(main.settings, "github_app_enabled", True)
     monkeypatch.setattr(main.settings, "github_app_slug", "sanba-app")
     # OAuth 未構成（FakeClient.oauth_configured=False）でも検証を省けるよう dev bypass にする
@@ -127,14 +128,14 @@ class _OAuthClient(FakeClient):
 
 
 def test_callback_requires_code_when_oauth_configured(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(main, "_github_app_client", lambda: _OAuthClient(owns=True))
+    monkeypatch.setattr(github_link, "_github_app_client", lambda: _OAuthClient(owns=True))
     state = create_link_state(OWNER, main.settings.session_signing_secret)
     res = client.get("/api/github/link/callback", params={"installation_id": 99, "state": state})
     assert res.status_code == 403  # code 無し → 拒否
 
 
 def test_callback_rejects_unowned_installation(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(main, "_github_app_client", lambda: _OAuthClient(owns=False))
+    monkeypatch.setattr(github_link, "_github_app_client", lambda: _OAuthClient(owns=False))
     state = create_link_state(OWNER, main.settings.session_signing_secret)
     res = client.get(
         "/api/github/link/callback",
@@ -156,7 +157,7 @@ def test_callback_failclosed_when_oauth_unconfigured_and_no_dev_bypass(
 
 
 def test_callback_links_when_ownership_verified(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(main, "_github_app_client", lambda: _OAuthClient(owns=True))
+    monkeypatch.setattr(github_link, "_github_app_client", lambda: _OAuthClient(owns=True))
     state = create_link_state(OWNER, main.settings.session_signing_secret)
     res = client.get(
         "/api/github/link/callback",
@@ -315,7 +316,7 @@ def test_stale_index_job_is_skipped() -> None:
         commit_sha="shaB",
         index_status=GitHubIndexStatus.INDEXING,
     )
-    main._index_repo_task(
+    github_link._index_repo_task(
         session_id=sid,
         installation_id=1,
         repo="octo/repoA",

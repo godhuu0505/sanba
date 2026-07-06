@@ -8,6 +8,7 @@ import { Check, ChevronRight, CircleDot, Cloud, FileText, type LucideIcon } from
 
 import { Button, Figure } from "@/components/sanba";
 import { useInterviewMode } from "../lib/interviewMode";
+import { SideMenu } from "./SideMenu";
 import { categoryPresentation, priorityLabel } from "../lib/realtime/mapping";
 import type { Priority, Requirement } from "../lib/realtime/types";
 
@@ -99,6 +100,13 @@ export function ResultView({
 
   return (
     <div className="flex h-full flex-col items-center px-4 pb-4 pt-5">
+      {/* サイドメニュー（結果画面からホーム/準備/アプリ管理へ横断遷移）。end_user は
+          開発者向け導線（アプリ管理）を見せない（ADR-0032 の語彙方針と同じ倒し方）。 */}
+      {!endUser && (
+        <div className="flex w-full justify-start">
+          <SideMenu />
+        </div>
+      )}
       {/* 結果の主役はサンバさん（ADR-0033 §6）。確定＝両手を挙げるひらめき、暫定＝書き留める姿。
           産章は胸のバッジに宿り、静止した金章から「動く産婆さん」へ。意味は下の見出しが読み上げる
           ので figure は装飾（label 無し＝aria-hidden・reduced-motion 静止）。 */}

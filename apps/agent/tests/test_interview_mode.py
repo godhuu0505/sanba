@@ -126,6 +126,93 @@ def test_end_user_session_survives_missing_product() -> None:
     assert instructions2 == END_USER_VOICE_AGENT_INSTRUCTIONS + _LANG
 
 
+def test_check_items_seeded_for_developer_session() -> None:
+    """product 登録の確認項目は developer セッションの初期 instructions にシードされる。"""
+    repo = _repo()
+    repo.create_product(
+        Product(
+            id="prod-1",
+            name="請求アプリ",
+            owner_sub="owner",
+            check_items=["ログイン方式を確認する", "課金の有無を確認する"],
+        )
+    )
+    _seed_session(repo, mode=InviteScope.DEVELOPER, product_id="prod-1")
+    instructions, _, _, _ = build_agent_instructions(repo, "s1")
+    assert "このセッションで必ず確認する項目" in instructions
+    assert "- ログイン方式を確認する" in instructions
+    assert "- 課金の有無を確認する" in instructions
+
+
+def test_check_items_seeded_for_end_user_session_with_translation_rule() -> None:
+    """end_user でも確認項目はシードされ、利用者の言葉への言い換え指示が付く。"""
+    repo = _repo()
+    repo.create_product(
+        Product(
+            id="prod-1",
+            name="請求アプリ",
+            owner_sub="owner",
+            glossary=["請求書一覧"],
+            check_items=["検索機能の使い勝手"],
+        )
+    )
+    _seed_session(repo, mode=InviteScope.END_USER, product_id="prod-1")
+    instructions, _, _, _ = build_agent_instructions(repo, "s1")
+    assert "- 検索機能の使い勝手" in instructions
+    assert "言い換えて確認する" in instructions
+
+
+def test_check_items_target_filters_by_interview_mode() -> None:
+    """対象タグでモードに合う項目だけがシードされる（ADR-0043 決定2）。
+
+    end_user セッションに開発者向け項目を出さない（内部論点の露出防止）。
+    developer セッションには企画者向けも合流する（企画者モード未導入の暫定）。
+    """
+    from sanba_shared.models import Audience, CheckItem
+
+    def _seed_repo() -> SessionRepository:
+        repo = _repo()
+        repo.create_product(
+            Product(
+                id="prod-1",
+                name="請求アプリ",
+                owner_sub="owner",
+                check_items=[
+                    CheckItem(text="全員向け項目"),
+                    CheckItem(text="利用者向け項目", target=Audience.END_USER),
+                    CheckItem(text="企画者向け項目", target=Audience.PLANNER),
+                    CheckItem(text="開発者向け項目", target=Audience.DEVELOPER),
+                ],
+            )
+        )
+        return repo
+
+    repo = _seed_repo()
+    _seed_session(repo, mode=InviteScope.END_USER, product_id="prod-1")
+    instructions, _, _, _ = build_agent_instructions(repo, "s1")
+    assert "全員向け項目" in instructions
+    assert "利用者向け項目" in instructions
+    assert "企画者向け項目" not in instructions
+    assert "開発者向け項目" not in instructions
+
+    repo2 = _seed_repo()
+    _seed_session(repo2, mode=InviteScope.DEVELOPER, product_id="prod-1")
+    instructions2, _, _, _ = build_agent_instructions(repo2, "s1")
+    assert "全員向け項目" in instructions2
+    assert "企画者向け項目" in instructions2
+    assert "開発者向け項目" in instructions2
+    assert "利用者向け項目" not in instructions2
+
+
+def test_no_check_items_leaves_instructions_unchanged() -> None:
+    """確認項目が未登録なら instructions にセクション自体を足さない。"""
+    repo = _repo()
+    repo.create_product(Product(id="prod-1", name="請求アプリ", owner_sub="owner"))
+    _seed_session(repo, mode=InviteScope.DEVELOPER, product_id="prod-1")
+    instructions, _, _, _ = build_agent_instructions(repo, "s1")
+    assert "必ず確認する項目" not in instructions
+
+
 def test_missing_session_falls_back_to_developer() -> None:
     """セッション文書が読めないときは既定 developer（既存挙動の安全側）。"""
     repo = _repo()

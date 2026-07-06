@@ -1,0 +1,907 @@
+"""セッション系ルート（main.py から分割 / 挙動不変）。
+
+作成・本人一覧・join・素材投入（context / context file / telemetry / 削除）・
+ハイドレーション GET・finalize・export・過去要件閲覧（mine/{id}）を持つ。
+"""
+
+from __future__ import annotations
+
+import contextlib
+import uuid
+from datetime import UTC, datetime
+from typing import Any
+
+import structlog
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from pydantic import BaseModel, Field
+from sanba_shared.models import (
+    Audience,
+    Product,
+    RequirementStatus,
+    SessionMeta,
+    check_items_for_audience,
+)
+from sanba_shared.output_formats import resolve_output_format
+from sanba_shared.repository import RequirementNotFound
+from sanba_shared.result_document import issue_title, render_result_document
+
+from .. import github_export
+from ..auth import InvalidInvite, SessionAccess, create_invite, verify_invite
+from ..auth_google import AuthUser, require_user
+from ..config import settings
+from ..deps import (
+    _GITHUB_REPO_RE,
+    JoinResponse,
+    _asset_store,
+    _confirmed_requirements,
+    _finalized_snapshot_requirements,
+    _get_tracer,
+    _github_repo_allowed,
+    _indexer,
+    _mint_join_tokens,
+    _read_repo,
+    _repo,
+    _require_product_access,
+    forbid_guest_writes,
+    require_session_access,
+)
+from ..ingestion import chunk_text, extract_text_from_upload
+from ..observability import (
+    record_asset_upload,
+    record_join_ui_event,
+    record_material_event,
+    record_my_requirements_viewed,
+    record_my_sessions_listed,
+    record_question_hydration,
+    record_result_document_rendered,
+)
+from ..realtime import (
+    STAGE_ANALYZING,
+    STAGE_FAILED,
+    STAGE_RECEIVED,
+    AnalysisPublisher,
+    NullSender,
+    build_sender,
+)
+from ..storage import asset_kind, is_text_upload, material_record, resolve_content_type
+from ..vision import analyze_image
+
+log = structlog.get_logger(__name__)
+
+router = APIRouter()
+
+
+# ---- Schemas ---------------------------------------------------------------
+class CreateSessionRequest(BaseModel):
+    title: str = "要件インタビュー"
+    # Roles to mint invites for (owner shares these links with participants).
+    roles: list[str] = ["pm", "engineer", "customer"]
+    # Explicit consent to recording + AI processing (issue #10).
+    consent_acknowledged: bool = False
+    # セッション単位の連携リポジトリ（任意 / ADR-0027）。
+    #  - 未指定（None）: 従来挙動 = 環境変数 GITHUB_REPO へフォールバック。
+    #  - 空文字: 明示的な「連携しない」（既定リポジトリにも送らない / Codex P2）。
+    #  - "owner/name": このセッションの起票・grounding 先。
+    github_repo: str | None = None
+    # 対象のプロダクト・アプリ（ADR-0031）。指定するとセッションを product に従属させ、
+    # product の索引済み repo を継承する（repo 解決は「セッション明示 > product > 環境変数」）。
+    # None = 従来どおりの単発セッション。本人がアクセスできる product に限る（非所有は 404）。
+    product_id: str | None = None
+    # 02 準備フォームのゴールと詳細（ADR-0035）。SessionMeta に保存し、agent が起動時に
+    # 初期 instructions へシードする（join 後の RAG 投入と違い agent 起動に確実に間に合う）。
+    # 上限は準備フォームの自由記述として十分な長さ（prompt の肥大は premise 側で丸めない設計）。
+    goal: str | None = Field(default=None, max_length=2000)
+    goal_detail: str | None = Field(default=None, max_length=8000)
+
+
+class CreateSessionResponse(BaseModel):
+    session_id: str
+    invites: dict[str, str]  # role -> invite token
+
+
+class ContextRequest(BaseModel):
+    text: str
+    source_name: str = "uploaded"
+
+
+class ContextResponse(BaseModel):
+    indexed_chunks: int
+    # 画像/動画アップロード時のみ付与（issue #103 / 契約 §3）。web は asset_id で
+    # analysis.progress / analysis.visual をファイル行へ対応付ける。
+    asset_id: str | None = None
+    asset_kind: str | None = None  # "image" | "video"
+    # 解析が未実装（例: 動画）で保存のみ済んだ場合 true（web は「準備中」を表示）。
+    analysis_pending: bool = False
+
+
+class JoinRequest(BaseModel):
+    invite: str
+    participant_name: str
+
+
+class RequirementsResponse(BaseModel):
+    items: list[dict[str, Any]]
+    # 適用済み連番の境界。API は publish seq を持たないため 0 を返し、web 側の
+    # (type,id) 冪等 upsert に合流を委ねる（重複・空白は出ない）。
+    seq: int = 0
+
+
+class DetectionsResponse(BaseModel):
+    items: list[dict[str, Any]]
+
+
+class CurrentQuestionResponse(BaseModel):
+    # 現在の未回答質問（金枠 / 契約 §4 #212）。未提示・回答済みなら question=null。
+    # question=null でも seq（=cleared_seq）を返し、web は遅延 null が新しい問いを消すのを防ぐ。
+    question: dict[str, Any] | None = None
+    seq: int = 0
+
+
+class ContextFilesResponse(BaseModel):
+    # 投入済み素材のメタ一覧（契約 §4 #184）。web は asset_id で realtime の analysis 行と
+    # 突き合わせ、リロード/再接続時に実ファイル名・状態（解析中/完了）を復元する。
+    items: list[dict[str, Any]]
+
+
+class ExportResponse(BaseModel):
+    exported: bool
+    issue_url: str | None = None
+    count: int | None = None
+    doc_url: str | None = None
+    reason: str | None = None
+
+
+class FinalizeResponse(BaseModel):
+    # 07 判定の「確定」結果（#186）。確定スナップショットの件数を返す。
+    finalized: bool
+    confirmed_count: int = 0
+
+
+# web UI 由来テレメトリの許可リスト（#232/#243）。第三者分析 SDK を使わず既存 OTLP 基盤に
+# 集約する（observability.py）。PII/自由記述は受けず、列挙値のみを受ける。未知 event は 422、
+# 未知の属性値は other へ丸めて高カーディナリティ/PII 流入を防ぐ（観測は UX を止めない）。
+# material.discard は含めない: 破棄結果はサーバ（DELETE エンドポイント）が直接 record_material_event
+# で計上する内部イベントで、クライアントからの受領は想定しない（送ってきても 422 で弾く）。
+# join.abort（PR9 / FR-2.1）: リンク入場でセッション作成後に会話開始へ至らず離脱した事象。
+# ゲスト経路の join 成立（sanba_guest_join_total）と会話成立の間の離脱点を埋める。
+_TELEMETRY_EVENTS = {"material.source_selected", "material.cancel", "join.abort"}
+_TELEMETRY_SOURCES = {"camera", "screen", "upload", "drive"}
+_TELEMETRY_STATUSES = {"uploading", "analyzing"}
+_TELEMETRY_RESULTS = {"aborted", "discarded", "error"}
+
+
+class TelemetryRequest(BaseModel):
+    # 列挙属性のみ（PII/自由記述は受けない）。明示フィールドに固定し、任意キーを排除する。
+    event: str
+    source: str | None = None
+    status: str | None = None
+    result: str | None = None
+
+
+class TelemetryResponse(BaseModel):
+    recorded: bool
+
+
+class DeleteContextFileResponse(BaseModel):
+    # 真の破棄（#245）。deleted は常に True（冪等）、existed は実体を消したかを示す。
+    deleted: bool
+    existed: bool
+
+
+def _enum_or_other(value: str | None, allowed: set[str]) -> str:
+    """列挙値の検証。未指定は none、許可外は other へ丸める（PII/高カーディナリティ防止）。"""
+    if value is None:
+        return "none"
+    return value if value in allowed else "other"
+
+
+@router.post("/api/sessions", response_model=CreateSessionResponse)
+def create_session(
+    req: CreateSessionRequest, user: AuthUser = Depends(require_user)
+) -> CreateSessionResponse:
+    """Create an interview room and mint a signed invite per role.
+
+    Requires a verified Google identity (ADR-0012): only a logged-in owner can
+    open a room. The invite still scopes which room/role a guest may join.
+    """
+    if settings.require_consent and not req.consent_acknowledged:
+        raise HTTPException(
+            status_code=400,
+            detail="consent required: recording and AI processing must be acknowledged",
+        )
+    # 連携リポジトリ（任意 / ADR-0027）。未指定（None）はフォールバック、空文字は明示的な
+    # 「連携しない」としてそのまま保存する（Codex P2: 既定リポとオプトアウトを区別）。
+    # 形式不正・許可リスト外は黙って落とさず 400 で返す（起票時の失敗より早く気づける）。
+    github_repo: str | None = None
+    if req.github_repo is not None:
+        github_repo = req.github_repo.strip()
+        if github_repo and not _GITHUB_REPO_RE.match(github_repo):
+            raise HTTPException(
+                status_code=400, detail="github_repo must be in 'owner/name' format"
+            )
+        if github_repo and not _github_repo_allowed(github_repo):
+            raise HTTPException(status_code=400, detail="github_repo is not allowed")
+    # 対象プロダクト（ADR-0031）。本人がアクセスできる product に限る（非所有・不存在は 404）。
+    product: Product | None = None
+    if req.product_id is not None:
+        product = _require_product_access(req.product_id, user)
+    # repo 解決は「セッション明示 > product > 環境変数」（ADR-0027/0031 FR-1.4）。セッションで
+    # 明示（"owner/name" or 空文字=連携しない）があれば尊重し、未指定かつ product があれば
+    # product の索引済み repo を継承する（join 経路と同じく索引済み要約ごと写す）。
+    repo_fields: dict[str, Any] = {"github_repo": github_repo}
+    if req.github_repo is None and product is not None:
+        repo_fields = {
+            "github_repo": product.github_repo,
+            "github_branch": product.github_branch,
+            "github_commit_sha": product.github_commit_sha,
+            "github_index_status": product.github_index_status,
+            "github_summary": product.github_summary,
+        }
+    session_id = f"sess-{uuid.uuid4().hex[:8]}"
+    invites = {
+        role: create_invite(
+            session_id, role, settings.session_signing_secret, settings.invite_ttl_seconds
+        )
+        for role in req.roles
+    }
+    # セッションメタを永続化する (ADR-0014 §4)。管理画面の一覧/閲覧/承認の土台になる。
+    _repo.create_session_doc(
+        SessionMeta(
+            id=session_id,
+            title=req.title,
+            owner_sub=user.sub,
+            owner_email=user.email,
+            roles=req.roles,
+            # 準備フォームのゴール（ADR-0035）。空白のみは未入力扱いに正規化する。
+            goal=(req.goal or "").strip() or None,
+            goal_detail=(req.goal_detail or "").strip() or None,
+            product_id=product.id if product is not None else None,
+            **repo_fields,
+        )
+    )
+    log.info(
+        "session_created",
+        session=session_id,
+        roles=req.roles,
+        owner=user.sub,
+        github_repo=repo_fields.get("github_repo") or "(none)",
+        product_id=product.id if product is not None else None,
+    )
+    return CreateSessionResponse(session_id=session_id, invites=invites)
+
+
+class MySession(BaseModel):
+    """`GET /api/sessions/mine` の 1 行 (#250)。本人の履歴一覧 UI (#215) に供給する。
+
+    PII (owner_email/owner_sub) は載せない: 本人だけが見る一覧でも不要な PII は返さない
+    (最小権限 / CLAUDE.md セキュリティ)。一覧に要る最小項目 (標題・作成時刻・確定状態) だけ。
+    詳細ルートは別 issue のため id 以上の内訳は持たせない。
+    """
+
+    id: str
+    title: str
+    created_at: datetime
+    status: str
+    # 07 判定で確定済みか (#186)。一覧でバッジ等に使えるよう真偽で平す。
+    finalized: bool
+
+
+@router.get("/api/sessions/mine", response_model=list[MySession])
+def list_my_sessions(user: AuthUser = Depends(require_user)) -> list[MySession]:
+    """ログインユーザー本人 (owner_sub) のセッション一覧を新しい順で返す (#250)。
+
+    `require_user` (idToken をサーバ検証 / ADR-0012) で本人確認し、owner_sub が一致する
+    ものだけを返す。他人のセッションは一切返さない (認可は本人限定)。ホームの
+    「過去の要件を見る」履歴リスト (#215) のデータ源。
+    """
+    sessions = _repo.list_sessions_by_owner(user.sub)
+    record_my_sessions_listed(len(sessions))
+    log.info("list_my_sessions", owner=user.sub, count=len(sessions))
+    return [
+        MySession(
+            id=s.id,
+            title=s.title,
+            created_at=s.created_at,
+            status=s.status,
+            finalized=s.status == "finalized",
+        )
+        for s in sessions
+    ]
+
+
+class MySessionRequirementsResponse(BaseModel):
+    """`GET /api/sessions/mine/{id}/requirements` の応答。
+
+    過去セッションの要件絵巻閲覧画面 (web /sessions/{id}) に、見出し用の最小メタ
+    (標題・作成時刻・確定状態) と要件スナップショットをまとめて供給する。
+    items は契約 §3 の requirement 形 (get_requirements と同じ contract 形) で、
+    PII (owner_email/owner_sub) は MySession と同じく載せない (最小権限)。
+    """
+
+    id: str
+    title: str
+    created_at: datetime
+    finalized: bool
+    items: list[dict[str, Any]]
+
+
+@router.get(
+    "/api/sessions/mine/{session_id}/requirements",
+    response_model=MySessionRequirementsResponse,
+)
+def get_my_session_requirements(
+    session_id: str, user: AuthUser = Depends(require_user)
+) -> MySessionRequirementsResponse:
+    """本人 (owner_sub) の過去セッションの要件絵巻を返す。
+
+    ホーム「過去の要件を見る」(#215/#250) からの詳細閲覧。join 済みトークンは会話終了後には
+    残らないため、`require_session_access` ではなく idToken (ADR-0012) で本人確認し、
+    owner_sub 一致で認可する。非所有・不存在はどちらも 404 に平す (他人のセッション ID の
+    存在を応答差で漏らさない)。
+    """
+    session = _repo.get_session(session_id)
+    if session is None or session.owner_sub != user.sub:
+        raise HTTPException(status_code=404, detail="session not found")
+    # 確定済みは finalize 時の凍結スナップショットだけを見せる（Codex P1）。確定後に遅延 agent
+    # が追加した要件や管理画面 API での却下を混ぜず、export と同じ成果物を表示する。
+    # 未確定（進行中）は現在の全要件を出す（会話中の絵巻タブと同じ見え方）。
+    if session.status == "finalized":
+        items = _finalized_snapshot_requirements(session)
+    else:
+        items = _read_repo.list_requirements(session_id)
+    record_my_requirements_viewed(len(items))
+    log.info("my_requirements_viewed", session=session_id, owner=user.sub, count=len(items))
+    return MySessionRequirementsResponse(
+        id=session.id,
+        title=session.title,
+        created_at=session.created_at,
+        finalized=session.status == "finalized",
+        items=items,
+    )
+
+
+class ResultDocumentResponse(BaseModel):
+    """`GET /api/sessions/mine/{id}/result-document` の応答。
+
+    audience（利用者/企画者/開発者）別の出力フォーマットで整形した要件結果ドキュメント。
+    `is_custom_format` はアプリ管理画面で登録されたフォーマットが使われたか（false =
+    既定テンプレートへフォールバック）。web が「既定フォーマット」表示に使う。
+    """
+
+    audience: str
+    is_custom_format: bool
+    markdown: str
+
+
+@router.get(
+    "/api/sessions/mine/{session_id}/result-document",
+    response_model=ResultDocumentResponse,
+)
+def get_my_session_result_document(
+    session_id: str, audience: Audience, user: AuthUser = Depends(require_user)
+) -> ResultDocumentResponse:
+    """本人 (owner_sub) のセッションの要件結果を audience 別フォーマットで整形して返す。
+
+    要件の選択は `get_my_session_requirements` と同じ（確定済みは finalize 時の凍結
+    スナップショット、進行中は現在の全要件）で、閲覧とドキュメントの内容がずれない。
+    フォーマットはセッションが従属する product の登録値 →（未登録・単発セッションは）
+    既定テンプレートの順で解決する（`resolve_output_format`）。認可も同エンドポイントと
+    同じ owner_sub 一致・非所有/不存在は 404 に平す。
+    """
+    session = _repo.get_session(session_id)
+    if session is None or session.owner_sub != user.sub:
+        raise HTTPException(status_code=404, detail="session not found")
+    if session.status == "finalized":
+        items = _finalized_snapshot_requirements(session)
+    else:
+        items = _read_repo.list_requirements(session_id)
+    product: Product | None = None
+    if session.product_id:
+        product = _repo.get_product(session.product_id)
+    template, is_custom = resolve_output_format(product, audience)
+    markdown = render_result_document(
+        template,
+        session_title=session.title,
+        app_name=product.name if product is not None else None,
+        goal=session.goal,
+        date=datetime.now(UTC).strftime("%Y-%m-%d"),
+        requirements=items,
+        # 確認項目は読み手に合わせて絞る（全員 + 対象一致 / ADR-0043）。
+        check_items=(
+            check_items_for_audience(product.check_items, audience) if product is not None else []
+        ),
+    )
+    record_result_document_rendered(audience.value, is_custom)
+    log.info(
+        "result_document_rendered",
+        session=session_id,
+        owner=user.sub,
+        audience=audience.value,
+        is_custom_format=is_custom,
+        requirement_count=len(items),
+    )
+    return ResultDocumentResponse(
+        audience=audience.value, is_custom_format=is_custom, markdown=markdown
+    )
+
+
+@router.post("/api/sessions/{session_id}/context", response_model=ContextResponse)
+def add_context(
+    session_id: str,
+    req: ContextRequest,
+    access: SessionAccess = Depends(require_session_access),
+) -> ContextResponse:
+    """Register reference text for a session; chunks go to RAG grounding.
+
+    認可（契約 §4）: join 済みセッショントークン必須。これが無いと匿名で任意
+    session_id の RAG グラウンディングを汚染できてしまう（参加者以外の書き込み禁止）。
+    ゲスト token（ADR-0032 決定4）は読取専用のため素材投入は不可。
+    """
+    forbid_guest_writes(access, "context")
+    if len(req.text) > settings.max_context_chars:
+        raise HTTPException(status_code=413, detail="context too large")
+    chunks = chunk_text(req.text)
+    n = _indexer.index_context(session_id, chunks, req.source_name)
+    log.info("context_indexed", session=session_id, chunks=n, sub=access.sub)
+    return ContextResponse(indexed_chunks=n)
+
+
+@router.post("/api/sessions/{session_id}/context/file", response_model=ContextResponse)
+async def add_context_file(
+    session_id: str,
+    file: UploadFile = File(...),
+    access: SessionAccess = Depends(require_session_access),
+) -> ContextResponse:
+    """Register an uploaded file as session context.
+
+    認可（契約 §4）: join 済みセッショントークン必須（text 版と同じく参加者限定）。これが
+    無いと匿名で任意 session_id の grounding を汚染できてしまう。
+
+    txt/md/pdf はテキストとして grounding 索引に入れる（既存）。画像/動画は Cloud Storage に
+    保存し、安定 `asset_id` を返す（issue #103 / ADR-0004）。画像は Gemini で観察を抽出して
+    grounding に流し、agent が問いの根拠にできるようにする。動画解析は未実装のため保存のみ
+    （`analysis_pending=true`、web では「準備中」）。非対応形式は 415 で弾く。
+
+    観測性: アップロード〜解析を span/log で追い、素材数を kind/result で計測する（契約 §5）。
+    ゲスト token（ADR-0032 決定4）は読取専用のため素材投入は不可。
+    """
+    forbid_guest_writes(access, "context_file")
+    filename = file.filename or "upload"
+    raw = await file.read()
+
+    # 既存のテキスト経路（txt/md/pdf）。
+    if is_text_upload(filename, file.content_type):
+        if len(raw) > settings.max_context_chars * 4:  # bytes guard (~utf-8 worst case)
+            raise HTTPException(status_code=413, detail="file too large")
+        text = extract_text_from_upload(filename, raw)
+        chunks = chunk_text(text)
+        n = _indexer.index_context(session_id, chunks, filename)
+        return ContextResponse(indexed_chunks=n)
+
+    kind = asset_kind(filename, file.content_type)
+    if kind is None:
+        # 非対応拡張子（web ピッカでも弾くが、API でもフェイルクローズ）。
+        record_asset_upload("unknown", "rejected")
+        raise HTTPException(
+            status_code=415, detail="unsupported file type (allowed: png/jpg/mp4/mov, txt/md/pdf)"
+        )
+    if len(raw) > settings.max_asset_bytes:
+        record_asset_upload(kind, "rejected")
+        raise HTTPException(status_code=413, detail="file too large")
+
+    tracer = _get_tracer()
+    span_cm = (
+        tracer.start_as_current_span("context.file.asset") if tracer else contextlib.nullcontext()
+    )
+    with span_cm as span:
+        if span is not None:
+            span.set_attribute("sanba.asset.kind", kind)
+            span.set_attribute("sanba.asset.size", len(raw))
+        content_type = resolve_content_type(filename, file.content_type, kind)
+        asset = _asset_store.store(session_id, kind, content_type, raw)
+        if span is not None:
+            span.set_attribute("sanba.asset.id", asset.asset_id)
+
+        # 解析の境界を web へ live 配信する（#145 / ADR-0023）。publish は付加価値なので
+        # 失敗してもアップロードを止めない（GET context/files でも状態を復元できる）。
+        sender = (
+            build_sender(
+                settings.livekit_publish_url,
+                settings.livekit_api_key,
+                settings.livekit_api_secret,
+                session_id,
+            )
+            if settings.enable_realtime_publish
+            else NullSender()
+        )
+        publisher = AnalysisPublisher(session_id, sender, _repo)
+        with contextlib.suppress(Exception):
+            await publisher.progress(asset.asset_id, STAGE_RECEIVED)
+
+        # 動画解析は未実装: 保存のみ済ませ、web には「準備中」を返す。
+        if kind == "video" and not settings.enable_video_analysis:
+            record_asset_upload("video", "pending")
+            # 素材一覧（GET context/files / #184）へ永続化。動画は解析未実装のため analyzing。
+            _repo.save_material(
+                session_id, material_record(asset.asset_id, filename, kind, status="analyzing")
+            )
+            log.info(
+                "asset_pending",
+                session=session_id,
+                asset_id=asset.asset_id,
+                kind=kind,
+                sub=access.sub,
+            )
+            return ContextResponse(
+                indexed_chunks=0,
+                asset_id=asset.asset_id,
+                asset_kind=kind,
+                analysis_pending=True,
+            )
+
+        # 画像: Gemini で観察を抽出し、grounding 索引へ（asset を出所に紐づける）。
+        with contextlib.suppress(Exception):
+            await publisher.progress(asset.asset_id, STAGE_ANALYZING)
+        try:
+            observations = analyze_image(raw, content_type)
+        except Exception:
+            # 解析失敗を web へ通知し再試行導線を出せるようにする（ADR-0023 §3）。
+            with contextlib.suppress(Exception):
+                await publisher.progress(asset.asset_id, STAGE_FAILED)
+            record_asset_upload(kind, "rejected")
+            raise
+        indexed = 0
+        if observations:
+            indexed = _indexer.index_context(session_id, observations, f"asset:{asset.asset_id}")
+        record_asset_upload(kind, "analyzed")
+        # 素材一覧（GET context/files / #184）へ永続化。画像は同期解析済みなので done。
+        _repo.save_material(
+            session_id,
+            material_record(
+                asset.asset_id, filename, kind, status="done", extracted=len(observations)
+            ),
+        )
+        # 解析完了を web へ（pct=100・抽出要件）。conflicts は突合実装まで空（ADR-0023 §2）。
+        with contextlib.suppress(Exception):
+            await publisher.visual(asset.asset_id, observations)
+        log.info(
+            "asset_analyzed",
+            session=session_id,
+            asset_id=asset.asset_id,
+            kind=kind,
+            observations=len(observations),
+            sub=access.sub,
+        )
+        return ContextResponse(
+            indexed_chunks=indexed,
+            asset_id=asset.asset_id,
+            asset_kind=kind,
+        )
+
+
+@router.post("/api/sessions/{session_id}/telemetry", response_model=TelemetryResponse)
+def post_telemetry(
+    session_id: str,
+    body: TelemetryRequest,
+    access: SessionAccess = Depends(require_session_access),
+) -> TelemetryResponse:
+    """web UI 由来の素材イベント（投入種別 #232 / 中断 #243）を OTLP カウンタへ集約する。
+
+    認可（契約 §4）: join 済みセッショントークン必須（匿名のメトリクス汚染を塞ぐ）。
+    第三者クライアント分析 SDK は導入せず、既存 metrics 基盤（observability.py）に載せる
+    （CLAUDE.md 原則3）。PII/自由記述は受けない: event は許可リスト、属性は列挙値のみ
+    （未知値は other に丸めて高カーディナリティ/PII 流入を防ぐ）。送信側は失敗を握りつぶす
+    （best-effort）ため、ここでの 422 は UX を止めない。
+    """
+    if body.event not in _TELEMETRY_EVENTS:
+        raise HTTPException(status_code=422, detail="unknown telemetry event")
+    source = _enum_or_other(body.source, _TELEMETRY_SOURCES)
+    status = _enum_or_other(body.status, _TELEMETRY_STATUSES)
+    result = _enum_or_other(body.result, _TELEMETRY_RESULTS)
+    if body.event.startswith("join."):
+        # リンク入場の離脱（PR9 / FR-2.1）。素材カウンタと混ぜず専用カウンタへ計上する。
+        record_join_ui_event(body.event, result=result)
+        log.info(
+            "join_ui_event",
+            session=session_id,
+            event_name=body.event,
+            result=result,
+            sub=access.sub,
+        )
+        return TelemetryResponse(recorded=True)
+    record_material_event(body.event, source=source, status=status, result=result)
+    log.info(
+        "material_event",
+        session=session_id,
+        event_name=body.event,
+        source=source,
+        status=status,
+        result=result,
+        sub=access.sub,
+    )
+    return TelemetryResponse(recorded=True)
+
+
+@router.delete(
+    "/api/sessions/{session_id}/context/file/{asset_id}",
+    response_model=DeleteContextFileResponse,
+)
+def delete_context_file(
+    session_id: str,
+    asset_id: str,
+    access: SessionAccess = Depends(require_session_access),
+) -> DeleteContextFileResponse:
+    """投入済み素材の「真の破棄」（#245）。binary・material メタ・grounding 索引をまとめて消す。
+
+    認可（契約 §4）: join 済みセッショントークン必須（参加者以外の削除を塞ぐ）。
+    #219/#241 のクライアント破棄だけでは、画像はレスポンス前に grounding 索引と material(done)
+    まで完了するため素材由来の観察が会話に残り、リロードで GET context/files から復活する。
+    本 API で (1) 保存 binary、(2) material メタ、(3) 出所 `asset:{asset_id}` の grounding chunk
+    をまとめて取り消し、以後の会話・ハイドレーションから外す。冪等: 存在しない asset でも 200 を
+    一貫して返す（existed=false）。in-memory/ES/GCS 未接続のフォールバックでも安全に動く。
+    ゲスト token（ADR-0032 決定4）は読取専用のため削除も不可。
+    """
+    forbid_guest_writes(access, "context_file_delete")
+    tracer = _get_tracer()
+    span_cm = (
+        tracer.start_as_current_span("context.file.delete") if tracer else contextlib.nullcontext()
+    )
+    with span_cm as span:
+        if span is not None:
+            span.set_attribute("sanba.asset.id", asset_id)
+        # 索引→binary→メタの順で取り消す（grounding を最優先で会話から外す）。
+        removed_index = _indexer.delete_context(session_id, f"asset:{asset_id}")
+        removed_blob = _asset_store.delete(session_id, asset_id)
+        removed_meta = _repo.delete_material(session_id, asset_id)
+        existed = removed_blob or removed_meta or removed_index > 0
+        if span is not None:
+            span.set_attribute("sanba.asset.existed", existed)
+            span.set_attribute("sanba.asset.index_removed", removed_index)
+    # 破棄結果を #243 の telemetry 基盤へ計上する（中断率・破棄結果を運用で追う / 原則3）。
+    record_material_event("material.discard", result="deleted" if existed else "not_found")
+    log.info(
+        "asset_discarded",
+        session=session_id,
+        asset_id=asset_id,
+        existed=existed,
+        index_removed=removed_index,
+        blob_removed=removed_blob,
+        meta_removed=removed_meta,
+        sub=access.sub,
+    )
+    return DeleteContextFileResponse(deleted=True, existed=existed)
+
+
+@router.post("/api/sessions/join", response_model=JoinResponse)
+def join_session(
+    req: JoinRequest,
+    user: AuthUser = Depends(require_user),
+) -> JoinResponse:
+    """Exchange a valid invite for a scoped, short-lived LiveKit token.
+
+    Two complementary checks (ADR-0012): the invite proves *which room/role*,
+    the verified Google identity proves *who*. Both must hold. The LiveKit
+    participant identity is derived from the verified `sub` (not a self-reported
+    name) so the provenance metadata on captured requirements is trustworthy.
+    """
+    if settings.auth_dev_bypass and req.invite.startswith("dev:"):
+        # Local-dev only: "dev:<session_id>:<role>" bypasses signing. Never in prod.
+        _, session_id, role = req.invite.split(":", 2)
+    else:
+        try:
+            invite = verify_invite(req.invite, settings.session_signing_secret)
+        except InvalidInvite as exc:
+            log.warning("invite_rejected", reason=str(exc))
+            raise HTTPException(status_code=403, detail=f"invalid invite: {exc}") from exc
+        session_id, role = invite.session_id, invite.role
+
+    # 検証済み identity に束ねる: sub は metadata で追跡し、nonce で衝突を防ぐ。
+    identity = f"{role}-{user.sub[:8]}-{uuid.uuid4().hex[:4]}"
+    display_name = req.participant_name or user.name
+    joined = _mint_join_tokens(session_id, role, identity, display_name, user.sub, user.email)
+    log.info("session_join", session=session_id, identity=identity, role=role, sub=user.sub)
+    return joined
+
+
+# ── ハイドレーション & 起票 API（契約 §4 / Issue #100）─────────────────────────
+
+
+@router.get("/api/sessions/{session_id}/requirements", response_model=RequirementsResponse)
+def get_requirements(
+    session_id: str, access: SessionAccess = Depends(require_session_access)
+) -> RequirementsResponse:
+    """確定/下書き要件のスナップショット（契約 §4 P0）。08/09 のハイドレーション前提。"""
+    items = _read_repo.list_requirements(session_id)
+    seq = _read_repo.get_session_seq(session_id)
+    log.info("requirements_hydrated", session=session_id, count=len(items), seq=seq, sub=access.sub)
+    return RequirementsResponse(items=items, seq=seq)
+
+
+@router.get("/api/sessions/{session_id}/detections", response_model=DetectionsResponse)
+def get_detections(
+    session_id: str,
+    open: int = 1,
+    access: SessionAccess = Depends(require_session_access),
+) -> DetectionsResponse:
+    """未解消の矛盾/抜け（契約 §4 P1）。05/08 の途中参加復元に使う。"""
+    items = _read_repo.list_open_detections(session_id)
+    log.info("detections_hydrated", session=session_id, count=len(items), open=open)
+    return DetectionsResponse(items=items)
+
+
+@router.get(
+    "/api/sessions/{session_id}/questions/current",
+    response_model=CurrentQuestionResponse,
+)
+def get_current_question(
+    session_id: str, access: SessionAccess = Depends(require_session_access)
+) -> CurrentQuestionResponse:
+    """現在の未回答質問（金枠ピン）のスナップショット（契約 §4 / #212 / ADR-0020）。
+
+    リロード/途中参加で未回答の問いピンを復元する。回答済み（tombstone）/未提示なら
+    `question=null` を返すが、その場合も `seq`（クリア時点の `cleared_seq`）を返すことで、
+    web は「遅延 null が新しい live 質問を消す」逆転を防げる（§5-4）。既存 3 GET と完全に同じ
+    認可（`require_session_access`）・形にする。
+    """
+    snap = _read_repo.get_current_question(session_id)
+    has_question = snap["question"] is not None
+    record_question_hydration(has_question)
+    log.info(
+        "question_hydrated",
+        session=session_id,
+        has_question=has_question,
+        seq=snap["seq"],
+        sub=access.sub,
+    )
+    return CurrentQuestionResponse(question=snap["question"], seq=snap["seq"])
+
+
+@router.get("/api/sessions/{session_id}/context/files", response_model=ContextFilesResponse)
+def get_context_files(
+    session_id: str, access: SessionAccess = Depends(require_session_access)
+) -> ContextFilesResponse:
+    """投入済み素材のメタ一覧（契約 §4 #184）。05 参考資料のハイドレーション。
+
+    リロード/再接続でローカル行（uploading/failed）が消えても、サーバ保持の実ファイル名と
+    解析状態を復元する。realtime の analysis.progress/visual はライブ差分で重ねる。
+    """
+    items = _repo.list_materials(session_id)
+    log.info("context_files_hydrated", session=session_id, count=len(items), sub=access.sub)
+    return ContextFilesResponse(items=items)
+
+
+@router.post("/api/sessions/{session_id}/finalize", response_model=FinalizeResponse)
+def finalize_session_requirements(
+    session_id: str, access: SessionAccess = Depends(require_session_access)
+) -> FinalizeResponse:
+    """07 判定の「確定」を永続化する（#186）。
+
+    会話を締めて要件を確定したとき、確定した要件件数のスナップショットを刻み、セッションを
+    finalized にする（不可逆マーカ）。確定後の export（GitHub Issue）はこの件数と一致する。
+
+    確定時集合は approved にして TTL（expireAt）を解除する（Codex P1）: 管理画面の承認 UI
+    廃止に伴い、draft のまま 30 日 TTL で消えると過去要件閲覧（/sessions/{id}）と export が
+    欠落するため、参加者の「確定」を成果物保全の起点にする。TTL 解除は既存の
+    set_requirement_status（approved で expireAt 削除）に集約済みのものを再利用する。
+
+    ガード（Codex P2）:
+      - 既に finalized なら open 検知に関係なく保存済みスナップショット件数を返す（冪等）。
+        確定後に遅延 agent が open 検知を保存しても、再送/リロードの再 POST が 409 にならない。
+      - 未確定セッションは、未解消検知が 1 件でも残るなら 409 で拒否する（07 判定の
+        「未解消 0 件で確定可」をサーバ側でも担保。直接 POST や古いクライアント状態を防ぐ）。
+
+    ゲスト token（ADR-0032 決定4 / #320）は確定不可: ゲストセッションの要件の承認・保全は
+    owner が管理画面で行う（承認 = TTL 解除は owner の意思に限る）。
+    """
+    forbid_guest_writes(access, "finalize")
+    existing = _repo.get_session(session_id)
+    if existing is None:
+        raise HTTPException(status_code=404, detail="session not found")
+    # 冪等: 既に finalized なら未解消チェックより先に保存済みスナップショットを返す。
+    if existing.status == "finalized":
+        return FinalizeResponse(finalized=True, confirmed_count=existing.finalized_count or 0)
+    # 新規確定のみ未解消ガードを適用する。
+    if _read_repo.list_open_detections(session_id):
+        raise HTTPException(status_code=409, detail="unresolved detections remain")
+    confirmed = _confirmed_requirements(session_id)
+    confirmed_ids = [r["id"] for r in confirmed]
+    meta = _repo.finalize_session(
+        session_id,
+        confirmed_count=len(confirmed),
+        finalized_requirement_ids=confirmed_ids,
+    )
+    if meta is None:
+        raise HTTPException(status_code=404, detail="session not found")
+    # 確定時集合を成果物として保全する: 通常は approved で expireAt が外れ 30 日 TTL の
+    # 対象外になる（Codex P1）。ゲストセッション（owner_email == ""）は例外: セッション文書
+    # 自体が 30 日 TTL で消えるため要件 TTL を外すと orphan になる（ADR-0032 / FR-2.7）。
+    # approved_by は確定操作の主体（join 済みトークンの sub）。
+    is_guest_session = existing.owner_email == ""
+    for rid in confirmed_ids:
+        try:
+            _repo.set_requirement_status(
+                session_id,
+                rid,
+                RequirementStatus.APPROVED,
+                approved_by=access.sub,
+                keep_expiry=is_guest_session,
+            )
+        except RequirementNotFound:
+            # 確定直前に TTL 失効等で消えた要件はスキップする（finalize 自体は成立させる）。
+            log.warning("finalize_preserve_missing_requirement", session=session_id, rid=rid)
+    count = meta.finalized_count if meta.finalized_count is not None else len(confirmed)
+    log.info(
+        "session_finalized",
+        session=session_id,
+        confirmed=count,
+        id_count=len(meta.finalized_requirement_ids),
+        sub=access.sub,
+    )
+    return FinalizeResponse(finalized=True, confirmed_count=count)
+
+
+@router.post("/api/sessions/{session_id}/export", response_model=ExportResponse)
+def export_requirements(
+    session_id: str, access: SessionAccess = Depends(require_session_access)
+) -> ExportResponse:
+    """確定要件を GitHub Issue として起票する（契約 §4 P1 / #39 ループ / #213）。
+
+    finalize 時に凍結した要件 ID スナップショット（`finalized_requirement_ids`）の集合だけを
+    起票する。凍結の定義（旧データのフォールバック含む）は _finalized_snapshot_requirements
+    に一元化し、過去要件閲覧と共有する。
+
+    ゲスト token（ADR-0032 決定4 / #320）は起票不可: 匿名の URL 保持者が owner の
+    リポジトリへ Issue を作れてしまうため（connector 有効時）、コネクタ判定より前に拒む。
+    """
+    forbid_guest_writes(access, "export")
+    # コネクタ無効/トークン未設定は従来どおりセッション照会前に黙って断る（既定 OFF の不干渉）。
+    if not (settings.github_connector_enabled and settings.github_token):
+        return ExportResponse(exported=False, reason="github connector disabled")
+    session = _repo.get_session(session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="session not found")
+    # 起票先の解決（ADR-0027）: セッション値が None のときだけ環境変数へフォールバックする。
+    # 空文字は明示的な「連携しない」なのでフォールバックしない（Codex P2）。
+    export_repo = session.github_repo if session.github_repo is not None else settings.github_repo
+    if not export_repo:
+        return ExportResponse(exported=False, reason="github connector disabled")
+    # 解決後の値にも許可リストを掛ける（Codex P2: 一覧・保存で絞っても、フォールバック先の
+    # 既定リポや allowlist 導入前に保存された値が許可外なら起票しない = fail-closed）。
+    if not _github_repo_allowed(export_repo):
+        log.warning("export_repo_not_allowed", session=session_id, repo=export_repo)
+        return ExportResponse(exported=False, reason="github repo not allowed")
+    # 確定時の要件 ID 集合だけを取得して起票する（再計算しない / #213）。
+    confirmed = _finalized_snapshot_requirements(session)
+    # Issue 本文は開発者向け出力フォーマットで整形する（閲覧ドキュメントと同じレンダラに
+    # 一本化 / ADR-0043 決定3。アプリ管理でフォーマットを登録すれば Issue の体裁も変わる）。
+    product = _repo.get_product(session.product_id) if session.product_id else None
+    template, _ = resolve_output_format(product, Audience.DEVELOPER)
+    body = render_result_document(
+        template,
+        session_title=session.title,
+        app_name=product.name if product is not None else None,
+        goal=session.goal,
+        date=datetime.now(UTC).strftime("%Y-%m-%d"),
+        requirements=confirmed,
+        check_items=(
+            check_items_for_audience(product.check_items, Audience.DEVELOPER)
+            if product is not None
+            else []
+        ),
+    )
+    url = github_export.create_issue(
+        settings.github_token, export_repo, issue_title(session_id), body
+    )
+    if url is None:
+        return ExportResponse(exported=False, reason="issue creation failed")
+    log.info(
+        "requirements_exported",
+        session=session_id,
+        count=len(confirmed),
+        id_count=len(session.finalized_requirement_ids),
+        repo=export_repo,
+        session_selected=session.github_repo is not None,
+        url=url,
+        sub=access.sub,
+    )
+    return ExportResponse(exported=True, issue_url=url, count=len(confirmed))

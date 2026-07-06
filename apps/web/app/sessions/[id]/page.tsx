@@ -9,10 +9,19 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 
-import { AppHeader, Button, Screen } from "@/components/sanba";
+import { AppHeader, Button, Chip, Screen } from "@/components/sanba";
 import { RequirementsScrollList } from "@/components/RequirementsScrollList";
 import { authGate } from "@/components/RequireAuth";
-import { ApiError, fetchMySessionRequirements, type MySessionRequirements } from "@/lib/api";
+import { SideMenu } from "@/components/SideMenu";
+import {
+  ApiError,
+  fetchMySessionRequirements,
+  fetchMySessionResultDocument,
+  type Audience,
+  type MySessionRequirements,
+  type ResultDocument,
+} from "@/lib/api";
+import { AUDIENCE_LABELS, AUDIENCES } from "@/lib/audience";
 import { useAuth } from "@/lib/auth";
 
 // ISO 8601 を表示用の日付（YYYY/MM/DD）へ整形する（ホームの履歴リストと同じ表記）。
@@ -33,6 +42,12 @@ type Load =
   | { state: "unauthenticated" }
   | { state: "error" };
 
+type DocLoad =
+  | { state: "idle" }
+  | { state: "loading" }
+  | { state: "ok"; data: ResultDocument }
+  | { state: "error" };
+
 export default function PastRequirementsPage() {
   const auth = useAuth();
   const router = useRouter();
@@ -40,6 +55,25 @@ export default function PastRequirementsPage() {
   const sessionId = params.id;
 
   const [load, setLoad] = useState<Load>({ state: "loading" });
+  // 結果ドキュメントの出力（audience 別フォーマット）。タブを押したときだけ取得する。
+  const [audience, setAudience] = useState<Audience>("developer");
+  const [doc, setDoc] = useState<DocLoad>({ state: "idle" });
+  const [copied, setCopied] = useState(false);
+
+  const fetchDocument = useCallback(
+    async (target: Audience) => {
+      setAudience(target);
+      setCopied(false);
+      setDoc({ state: "loading" });
+      try {
+        const data = await fetchMySessionResultDocument(sessionId, target, auth.credential);
+        setDoc({ state: "ok", data });
+      } catch {
+        setDoc({ state: "error" });
+      }
+    },
+    [sessionId, auth.credential],
+  );
 
   const fetchScroll = useCallback(async () => {
     // dev モードは idToken=null のまま API の AUTH_DEV_BYPASS に委ねる（admin と同じ扱い）。
@@ -68,7 +102,7 @@ export default function PastRequirementsPage() {
 
   return (
     <Screen className="sanba-scroll">
-      <AppHeader back onBack={() => router.push("/")} title="要件絵巻" />
+      <AppHeader back onBack={() => router.push("/")} title="要件絵巻" right={<SideMenu />} />
       <main className="mx-auto flex w-full max-w-md flex-col gap-3 px-4 pb-10 pt-1">
         {load.state === "loading" && (
           <p className="px-1 py-3 text-[13px] text-sanba-muted">読み込み中…</p>
@@ -119,6 +153,66 @@ export default function PastRequirementsPage() {
               requirements={load.data.items}
               emptyText="このセッションの要件はまだ生まれておりませぬ。"
             />
+
+            {/* 結果ドキュメントの出力: 読み手（利用者/企画者/開発者）別のフォーマットで整形。
+                フォーマットはアプリ管理画面で登録でき、未登録はデフォルトが使われる。 */}
+            <div className="flex flex-col gap-[8px] px-1 pt-2">
+              <h3 className="text-[14px] font-bold text-sanba-cream">結果ドキュメントを出力</h3>
+              <p className="text-[12px] leading-relaxed text-sanba-muted">
+                読み手に合わせたフォーマットで要件結果を文書化します。フォーマットは
+                アプリ管理画面で登録でき、未登録の場合はデフォルトが使われます。
+              </p>
+              <div className="flex flex-wrap gap-[8px]" role="tablist" aria-label="出力の対象">
+                {AUDIENCES.map((a) => (
+                  <button
+                    key={a}
+                    type="button"
+                    role="tab"
+                    aria-selected={doc.state !== "idle" && audience === a}
+                    onClick={() => void fetchDocument(a)}
+                  >
+                    <Chip
+                      tone={doc.state !== "idle" && audience === a ? "gold" : "neutral"}
+                      size="md"
+                    >
+                      {AUDIENCE_LABELS[a]}向け
+                    </Chip>
+                  </button>
+                ))}
+              </div>
+              {doc.state === "loading" && (
+                <p className="text-[12px] text-sanba-muted">整形中…</p>
+              )}
+              {doc.state === "error" && (
+                <p role="alert" className="text-[12px] text-sanba-rec-text">
+                  ドキュメントの生成に失敗しました。もう一度お試しください。
+                </p>
+              )}
+              {doc.state === "ok" && (
+                <>
+                  {!doc.data.is_custom_format && (
+                    <p className="text-[11px] text-sanba-muted">
+                      デフォルトのフォーマットで出力しています（アプリ管理画面で登録できます）。
+                    </p>
+                  )}
+                  <pre className="max-h-[360px] overflow-auto whitespace-pre-wrap rounded-[12px] border border-sanba-border bg-sanba-surface p-[12px] text-[12px] leading-relaxed text-sanba-cream">
+                    {doc.data.markdown}
+                  </pre>
+                  <Button
+                    variant="outline"
+                    block
+                    onClick={() => {
+                      void navigator.clipboard
+                        .writeText(doc.data.markdown)
+                        .then(() => setCopied(true))
+                        .catch(() => setCopied(false));
+                    }}
+                  >
+                    {copied ? "コピーしました" : "Markdown をコピー"}
+                  </Button>
+                </>
+              )}
+            </div>
           </>
         )}
       </main>
