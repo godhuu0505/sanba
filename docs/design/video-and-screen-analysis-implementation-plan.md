@@ -86,13 +86,23 @@ PR-S2 が共用するため、注入部分は Stage V を先行させる。
   `analyzing` 長時間滞留の reconcile リーパー、deploy.yml の worker build + service ゲート解除。
 
 ### PR-V3: api/web — 動画の GCS 直送アップロードと enqueue 配線（規模 M）
-- **動画は署名付き resumable URL でブラウザから GCS へ直送**する（ADR-0040 §2。Cloud Run の HTTP/1 request body 上限 32MiB のため、200MB を既存 multipart `POST /context/file` で受けることは不可能）:
-  - `POST …/context/file/upload-init`: 署名付き URL 発行（`x-goog-content-length-range` で 200MB 強制）+ `materials(status=uploading)`。
-  - `POST …/context/file/upload-complete`: GCS オブジェクト検証・`asset_id` 導出（オブジェクトの md5/crc32c から。API はバイト列を経由しない）・`status=analyzing`・Cloud Tasks enqueue。
-  - `apps/web/lib/api.ts` の `uploadContextFile` を動画のみ直送経路へ分岐。画像（≦25MB）は既存 multipart を維持。
-- サイズ上限は **kind 別**: `max_video_asset_bytes`（200MB）を新設し、画像は既存 `max_asset_bytes`（25MB）を維持（単一設定の引き上げで画像側のメモリ/コストガードを壊さない）。web のエラーメッセージに上限値を明記。
-- ローカル開発: compose に **fake-gcs-server** と worker を追加し、ローカルも GCS 経路で統一する（`GCS_BUCKET` 未設定の in-memory 保存では別プロセスの worker が `mem://` の実体を読めない）。動画解析有効かつ `GCS_BUCKET` 未設定は起動時に fail fast。Cloud Tasks は公式エミュレータが無いため `local_direct_dispatch` 設定で API から worker を直接呼ぶ。
-- テスト: upload-init/complete・kind 別上限・フラグ OFF 退行の単体。
+
+> 状態: **実装済み**（api/web/Terraform + テスト）。api 304 テスト（新規 video pipeline 10 含む・退行なし）、
+> ruff/mypy/format、web tsc/eslint/SessionView 15 通過。**本番有効化（フラグ立て + worker service 作成 +
+> deploy）は `deploy.yml` の migrate→build 順による新規サービスのブートストラップ制約と課金開始のため、
+> 意図的な手動 apply として手順化**した（[`docs/runbooks/enable-video-analysis.md`](../runbooks/enable-video-analysis.md)）。
+
+- **動画は署名付き URL でブラウザから GCS へ直送**（ADR-0040 §2。Cloud Run の HTTP/1 request 上限 32MiB のため multipart 不可）:
+  - `POST …/context/file/upload-init`: 署名付き PUT URL 発行（`x-goog-content-length-range` で 200MB 強制）+ `materials(status=uploading)`。api はバイト列を経由しないため `asset_id` は upload 単位の uuid（内容ハッシュではない。ADR-0040 の md5 導出からの簡素化 — 動画の再アップロード冪等性は捨て、task 名 `session+asset` で重複排除は維持）。
+  - `POST …/context/file/upload-complete`: GCS オブジェクト検証（サイズ）→ `status=analyzing` → progress publish → enqueue。
+  - `apps/web/lib/api.ts` の `uploadContextFile` を動画のみ直送に分岐。動画解析が無効（upload-init 409）なら従来 multipart「準備中」へフォールバック。画像は既存 multipart 維持。
+  - multipart 経由の小さめ動画（≤25MB）も、有効時は store + enqueue する。
+- サイズ上限は **kind 別**: `max_video_asset_bytes`（200MB）を新設、画像は `max_asset_bytes`（25MB）維持。
+- enqueue（`tasks.py`）: 本番 = Cloud Tasks（OIDC = worker_invoker_sa）、ローカル = `local_direct_dispatch`、未設定 = no-op（fail-open）。差し込み可能で単体テスト。
+- reconcile: GET context/files で `analyzing` 滞留（`analyzing_since` 超過）を `failed` 化するリーパー。
+- Terraform: 直送署名のため runtime SA に `iam.serviceAccountTokenCreator`（on self）を付与。
+- テスト: enqueue 経路選択・upload-init/complete・kind 別上限・reconcile・フラグ OFF 退行。
+- **PR-V3 に含めなかったもの**（本番有効化の手順へ）: `enable_video_analysis` の自動フラグ立て、worker service ゲート解除、deploy.yml の worker build（ブートストラップ順の制約）。`analysis.visual` の worker publish は PR-V4（agent 注入）に集約。ローカルの fake-gcs-server compose は将来の補強。
 
 ### PR-V4: agent — 解析結果の能動注入（規模 M）
 - `apps/agent/src/sanba_agent/main.py`: room のデータチャネル（topic `sanba.events`）で `analysis.visual`（source=`asset:`）を購読し、要約・要件候補・矛盾候補を会話コンテキストへ注入 → エージェントが動画内容への深掘り質問を生成できるようにする。

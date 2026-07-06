@@ -127,6 +127,14 @@ resource "google_storage_bucket_iam_member" "runtime_materials" {
   member = "serviceAccount:${google_service_account.runtime.email}"
 }
 
+# 動画の直送（ADR-0040 §2）で api が v4 署名付き URL を発行するには、鍵ファイルの無い
+# Cloud Run SA が IAM SignBlob で自分自身に署名できる必要がある（tokenCreator on self）。
+resource "google_service_account_iam_member" "runtime_sign_self" {
+  service_account_id = google_service_account.runtime.name
+  role               = "roles/iam.serviceAccountTokenCreator"
+  member             = "serviceAccount:${google_service_account.runtime.email}"
+}
+
 # api がタスク作成時に OIDC トークンを worker SA として発行するため actAs を付与する。
 resource "google_service_account_iam_member" "api_acts_as_worker" {
   service_account_id = google_service_account.worker.name

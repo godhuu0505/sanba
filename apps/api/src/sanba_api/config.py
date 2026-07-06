@@ -106,12 +106,31 @@ class Settings(BaseSettings):
     # ---- Multimodal assets: 画像/動画アップロード (issue #103 / ADR-0004) ----
     # Cloud Storage バケット名。未設定なら in-memory にフォールバック（ローカル/テスト）。
     gcs_bucket: str = ""
-    # 画像/動画 1 件あたりのバイト上限（メモリ/コスト/帯域のガード）。既定 25MB。
+    # 画像 1 件あたりのバイト上限（メモリ/コスト/帯域のガード）。既定 25MB。
     max_asset_bytes: int = 25_000_000
+    # 動画 1 件あたりのバイト上限（ADR-0040: 短尺前提。既定 200MB）。画像とは別枠にして、
+    # 単一設定の引き上げで画像側のメモリ/コストガードを壊さないようにする。
+    max_video_asset_bytes: int = 200_000_000
     # 画像解析に使う Gemini マルチモーダルモデル。
     gemini_vision_model: str = "gemini-2.5-flash"
-    # 動画解析は未実装（web では「準備中」でグレーアウト）。有効化は別 PR。
+    # 動画解析パイプライン（GCS 直送 → Cloud Tasks → worker）の有効化（ADR-0040）。
+    # 本番は Terraform 変数 enable_video_analysis から ENABLE_VIDEO_ANALYSIS で注入する。
     enable_video_analysis: bool = False
+
+    # ---- 動画解析の非同期パイプライン（ADR-0040） ----
+    # Cloud Tasks キュー名 / ロケーション / worker URL / worker を叩く OIDC identity。
+    # いずれも Terraform（PR-V1）が Cloud Run env に配線する。未設定なら enqueue は no-op。
+    video_tasks_queue: str = ""
+    video_tasks_location: str = ""
+    worker_url: str = ""
+    worker_invoker_sa: str = ""
+    # ローカル開発: Cloud Tasks の公式エミュレータが無いため、api が worker エンドポイントを
+    # 直接 HTTP で叩くバイパス（compose 用）。本番は false のまま（Cloud Tasks 経由）。
+    local_direct_dispatch: bool = False
+    # 署名付きアップロード URL の有効期限（秒）。ブラウザの直送に十分・短めに。
+    signed_url_ttl_seconds: int = 900
+    # analyzing のまま滞留した素材を failed 化する閾値（秒）。GET context/files で reconcile する。
+    analysis_stuck_after_seconds: int = 1800
     # アップロード解析の進捗を LiveKit データチャネルへ live publish するか（#145 / ADR-0023）。
     # 既定 ON（#287 で実ルームへの publish 到達・LiveKit 断時の fail-open をスモークテスト済み）。
     # ローカル/CI では LiveKit へ未接続だと送信が失敗し警告ログになるだけで本処理は止まらない

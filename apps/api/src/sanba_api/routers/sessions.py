@@ -63,7 +63,13 @@ from ..realtime import (
     NullSender,
     build_sender,
 )
-from ..storage import asset_kind, is_text_upload, material_record, resolve_content_type
+from ..storage import (
+    asset_kind,
+    is_text_upload,
+    material_record,
+    resolve_content_type,
+)
+from ..tasks import build_payload, enqueue_video_analysis
 from ..vision import analyze_image
 
 log = structlog.get_logger(__name__)
@@ -518,20 +524,30 @@ async def add_context_file(
         with contextlib.suppress(Exception):
             await publisher.progress(asset.asset_id, STAGE_RECEIVED)
 
-        # 動画解析は未実装: 保存のみ済ませ、web には「準備中」を返す。
-        if kind == "video" and not settings.enable_video_analysis:
-            record_asset_upload("video", "pending")
-            # 素材一覧（GET context/files / #184）へ永続化。動画は解析未実装のため analyzing。
-            _repo.save_material(
-                session_id, material_record(asset.asset_id, filename, kind, status="analyzing")
+        # 動画: 非同期解析パイプライン（ADR-0040）。無効時は従来どおり保存のみ「準備中」。
+        # multipart 経由は max_asset_bytes（25MB）以内の小さめ動画のみ（大きい動画は直送
+        # エンドポイント経由。Cloud Run の HTTP/1 32MiB 制限のため）。
+        if kind == "video":
+            if not settings.enable_video_analysis:
+                record_asset_upload("video", "pending")
+                _repo.save_material(
+                    session_id, material_record(asset.asset_id, filename, kind, status="analyzing")
+                )
+                log.info("asset_pending", session=session_id, asset_id=asset.asset_id, kind=kind)
+                return ContextResponse(
+                    indexed_chunks=0,
+                    asset_id=asset.asset_id,
+                    asset_kind=kind,
+                    analysis_pending=True,
+                )
+            _mark_analyzing(session_id, asset.asset_id, filename)
+            with contextlib.suppress(Exception):
+                await publisher.progress(asset.asset_id, STAGE_ANALYZING)
+            enqueue_video_analysis(
+                build_payload(session_id, asset.asset_id, asset.uri, content_type, filename, None)
             )
-            log.info(
-                "asset_pending",
-                session=session_id,
-                asset_id=asset.asset_id,
-                kind=kind,
-                sub=access.sub,
-            )
+            record_asset_upload("video", "enqueued")
+            log.info("video_enqueued_multipart", session=session_id, asset_id=asset.asset_id)
             return ContextResponse(
                 indexed_chunks=0,
                 asset_id=asset.asset_id,
@@ -577,6 +593,148 @@ async def add_context_file(
             asset_id=asset.asset_id,
             asset_kind=kind,
         )
+
+
+# ---- 動画の直送アップロード（ADR-0040 §2） --------------------------------
+# 200MB の動画は Cloud Run の HTTP/1 request 上限（32MiB）を超えるため multipart で受けられない。
+# ブラウザから GCS へ署名付き URL で直送し、api はバイト列を経由しない。
+class UploadInitRequest(BaseModel):
+    filename: str = Field(min_length=1, max_length=512)
+    content_type: str = ""
+    size: int = Field(ge=1)
+
+
+class UploadInitResponse(BaseModel):
+    asset_id: str
+    upload_url: str
+    method: str = "PUT"
+    # PUT 時にブラウザが付ける必須ヘッダ（署名対象）。web はこれをそのまま送る。
+    headers: dict[str, str]
+
+
+class UploadCompleteRequest(BaseModel):
+    asset_id: str
+    content_type: str = ""
+    filename: str = Field(default="", max_length=512)
+    duration_seconds: float | None = Field(default=None, ge=0)
+
+
+def _analysis_publisher(session_id: str) -> AnalysisPublisher:
+    sender = (
+        build_sender(
+            settings.livekit_publish_url,
+            settings.livekit_api_key,
+            settings.livekit_api_secret,
+            session_id,
+        )
+        if settings.enable_realtime_publish
+        else NullSender()
+    )
+    return AnalysisPublisher(session_id, sender, _repo)
+
+
+def _mark_analyzing(session_id: str, asset_id: str, filename: str) -> None:
+    """素材を analyzing にし、reconcile 用の開始時刻（epoch）を残す（ADR-0040 §3）。"""
+    rec = material_record(asset_id, filename, "video", status="analyzing")
+    rec["analyzing_since"] = datetime.now(UTC).timestamp()
+    _repo.save_material(session_id, rec)
+
+
+@router.post(
+    "/api/sessions/{session_id}/context/file/upload-init", response_model=UploadInitResponse
+)
+def context_file_upload_init(
+    session_id: str,
+    body: UploadInitRequest,
+    access: SessionAccess = Depends(require_session_access),
+) -> UploadInitResponse:
+    """動画の直送用に署名付き PUT URL を発行し、素材を uploading で仮登録する（ADR-0040 §2）。
+
+    認可: join 済みトークン必須（add_context_file と同じ）。ゲストは読取専用のため不可。
+    動画のみ受け付ける（画像は multipart のまま）。上限は max_video_asset_bytes（200MB）。
+    """
+    forbid_guest_writes(access, "context_file")
+    if not settings.enable_video_analysis:
+        raise HTTPException(status_code=409, detail="video analysis is disabled")
+    kind = asset_kind(body.filename, body.content_type)
+    if kind != "video":
+        raise HTTPException(status_code=415, detail="direct upload is for video only")
+    if body.size > settings.max_video_asset_bytes:
+        record_asset_upload("video", "rejected")
+        raise HTTPException(
+            status_code=413,
+            detail=f"video too large (max {settings.max_video_asset_bytes} bytes)",
+        )
+    content_type = resolve_content_type(body.filename, body.content_type, kind)
+    # 直送では api がバイト列を経由しないため content hash を作れない。upload 単位の一意 ID を振る。
+    asset_id = f"asset-{uuid.uuid4().hex[:16]}"
+    upload_url = _asset_store.generate_upload_url(
+        session_id,
+        asset_id,
+        content_type,
+        ttl_seconds=settings.signed_url_ttl_seconds,
+        max_bytes=settings.max_video_asset_bytes,
+    )
+    _repo.save_material(
+        session_id, material_record(asset_id, body.filename, "video", status="uploading")
+    )
+    record_asset_upload("video", "upload_init")
+    log.info("video_upload_init", session=session_id, asset_id=asset_id, size=body.size)
+    return UploadInitResponse(
+        asset_id=asset_id,
+        upload_url=upload_url,
+        headers={
+            "Content-Type": content_type,
+            "x-goog-content-length-range": f"0,{settings.max_video_asset_bytes}",
+        },
+    )
+
+
+@router.post(
+    "/api/sessions/{session_id}/context/file/upload-complete", response_model=ContextResponse
+)
+async def context_file_upload_complete(
+    session_id: str,
+    body: UploadCompleteRequest,
+    access: SessionAccess = Depends(require_session_access),
+) -> ContextResponse:
+    """直送完了を受け、オブジェクトを検証して解析を enqueue する（ADR-0040 §2）。"""
+    forbid_guest_writes(access, "context_file")
+    if not settings.enable_video_analysis:
+        raise HTTPException(status_code=409, detail="video analysis is disabled")
+    content_type = resolve_content_type(body.filename, body.content_type, "video")
+    size = _asset_store.object_size(session_id, body.asset_id, content_type)
+    if size is None:
+        # ブラウザが実際に PUT し終えていない（直送失敗）。素材メタを掃除する。
+        _repo.delete_material(session_id, body.asset_id)
+        raise HTTPException(status_code=409, detail="uploaded object not found")
+    if size > settings.max_video_asset_bytes:
+        _asset_store.delete(session_id, body.asset_id)
+        _repo.delete_material(session_id, body.asset_id)
+        record_asset_upload("video", "rejected")
+        raise HTTPException(status_code=413, detail="uploaded video too large")
+
+    _mark_analyzing(session_id, body.asset_id, body.filename)
+    publisher = _analysis_publisher(session_id)
+    with contextlib.suppress(Exception):
+        await publisher.progress(body.asset_id, STAGE_RECEIVED)
+        await publisher.progress(body.asset_id, STAGE_ANALYZING)
+    gcs_uri = _asset_store.gcs_uri(session_id, body.asset_id, content_type)
+    enqueue_video_analysis(
+        build_payload(
+            session_id,
+            body.asset_id,
+            gcs_uri,
+            content_type,
+            body.filename,
+            body.duration_seconds,
+        )
+    )
+    record_asset_upload("video", "enqueued")
+    log.info("video_upload_complete", session=session_id, asset_id=body.asset_id, size=size)
+    return ContextResponse(
+        indexed_chunks=0, asset_id=body.asset_id, asset_kind="video", analysis_pending=True
+    )
 
 
 @router.post("/api/sessions/{session_id}/telemetry", response_model=TelemetryResponse)
@@ -766,8 +924,37 @@ def get_context_files(
     解析状態を復元する。realtime の analysis.progress/visual はライブ差分で重ねる。
     """
     items = _repo.list_materials(session_id)
+    items = _reconcile_stuck_materials(session_id, items)
     log.info("context_files_hydrated", session=session_id, count=len(items), sub=access.sub)
     return ContextFilesResponse(items=items)
+
+
+def _reconcile_stuck_materials(
+    session_id: str, items: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """analyzing のまま閾値を超えて滞留した動画素材を failed 化する（ADR-0040 §3 の保険）。
+
+    worker のリトライ枯渇時 failed 化が主経路だが、enqueue 自体の取りこぼしや worker 全滅に
+    備えた reaper。`analyzing_since`（upload/enqueue 時に記録）から閾値超過を判定する。
+    タイムスタンプが無い素材（旧 pending 動画など）は対象外（掃除しすぎない）。
+    """
+    threshold = settings.analysis_stuck_after_seconds
+    if threshold <= 0:
+        return items
+    now = datetime.now(UTC).timestamp()
+    reconciled: list[dict[str, Any]] = []
+    for item in items:
+        since = item.get("analyzing_since")
+        if (
+            item.get("status") == "analyzing"
+            and isinstance(since, int | float)
+            and (now - since > threshold)
+        ):
+            _repo.save_material(session_id, {"id": item["id"], "status": "failed"})
+            log.info("material_reconciled_failed", session=session_id, asset_id=item["id"])
+            item = {**item, "status": "failed"}
+        reconciled.append(item)
+    return reconciled
 
 
 @router.post("/api/sessions/{session_id}/finalize", response_model=FinalizeResponse)
