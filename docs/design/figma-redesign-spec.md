@@ -3,14 +3,14 @@
 Figma「📱 iPhone 13 Pro 操作フロー・正本」（fileKey `eI6QvvCEO021zpdMmxr8Iq` / page `31:2`）を、
 **現行アプリ（`apps/web`・ADR-0033）のデザインに合わせて再構成する**ための実装可能スペック。
 
-> 前提: [ADR-0039](../adr/0039-app-is-canonical-figma-follows.md) により**実装が唯一の正本**であり、
+> 前提: [ADR-0042](../adr/0042-app-is-canonical-figma-follows.md) により**実装が唯一の正本**であり、
 > Figma はそれに追従する。意匠の定義は [ADR-0033](../adr/0033-ui-redesign-v2-sticker-paper.md)、
 > トークン実体は `apps/web/app/globals.css` の `:root`、棒人間は `apps/web/components/sanba/Figure.tsx`。
 > 本書はその「Figma への写し取り方」を定める（Figma MCP `use_figma` で反映）。
 
 ## 0. 全体像
 
-- 旧デザイン（現 Figma）: **暗色地（生成りの黒褐）＋金彩グラデ＋明朝主体**。ホーム `40:2` は
+- 旧デザイン（**一次反映前の Figma 初期状態**。現 Figma は §7 の通り 2026-07-06 に一次反映済み）: **暗色地（生成りの黒褐）＋金彩グラデ＋明朝主体**。ホーム `40:2` は
   背景 `#3A2C12`/`#241A0F`、放射グラデ `rgba(62,46,22)→rgba(14,10,5)`、金彩ボタン
   `#8A5A14→#D4AF37→#F6E6AC→#C8951F`、文字 `#D4AF37`/`#EFE6C9`/`#CBB98D`、`Noto Serif JP`。
 - 新デザイン（アプリ・目標）: **生成りの白地＋白いカード＋墨の枠線＋原色は差し色＋動く棒人間**。
@@ -61,7 +61,7 @@ Figma「📱 iPhone 13 Pro 操作フロー・正本」（fileKey `eI6QvvCEO021zp
 5. **主要ボタン（CTA）**: 面 `#C43A20`（朱）＋白文字＋2px 墨枠＋角丸 12px＋影 `3.5px 3.5px 0 #221E1A`。
    例: 「＋ 壁打ちを始める」「＋ セッションを興す」。金彩グラデは全廃。
 6. **副ボタン（ghost）**: 白地＋墨文字＋2px 墨枠＋角丸 12px＋影 `3px 3px 0 rgba(34,30,26,.15)`。
-7. **役割チップ**: 1.5px 墨枠・角丸 99px。選択状態は瑠璃 `#2A5CDB` ベタ＋白文字。
+7. **役割チップ**: 1.5px 墨枠・角丸 99px。選択状態は**山吹グラデ（`sanba-gold-gradient`）＋墨文字**（`Chip tone="gold" solid={selected}`）。瑠璃ベタは役割チップには使わない。
 8. **リスト行**: 白地＋藁色枠 `#EDE8DC`。選択行は山吹地の代わりに**瑠璃淡 `#EAF0FF`＋瑠璃左罫**、
    または白地＋朱/瑠璃の左アクセントバー。chevron は墨。
 9. **テキスト色**: 見出し/本文＝墨 `#221E1A`、補助＝鈍 `#706A5D`。金文字（`#D4AF37`）は全廃。

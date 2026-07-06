@@ -1,4 +1,4 @@
-# ADR-0039: 正本の逆転 — アプリ実装を唯一の正本とし、Figma を追従させる
+# ADR-0042: 正本の逆転 — アプリ実装を唯一の正本とし、Figma を追従させる
 
 - ステータス: **Accepted（受理・2026-07-06）**
 - 日付: 2026-07-06
@@ -43,8 +43,9 @@ Figma 正本は旧・漆黒×金のまま取り残されている。実際、Fig
    置換方針・36 フレームの範囲）は [`docs/design/figma-redesign-spec.md`](../design/figma-redesign-spec.md) に定義する。
    反映は Figma MCP `use_figma`（コード → デザイン）で行い、破壊的変更に備え Figma の版履歴を退避に用いる。
 
-4. **ドキュメントの文言を反転させる。** `screens/README.md`・`figma-implementation-audit.md` の
-   「Figma を唯一の正本とし実装が追従する」旨の記述を、「**実装を正本とし Figma が追従する**」へ改める。
+4. **ドキュメントの文言を反転させる。** `screens/README.md`・`figma-implementation-audit.md`・
+   `conversation-experience.md` の「Figma を唯一の正本とし実装が追従する」旨の記述を、
+   「**実装を正本とし Figma が追従する**」へ改める。
 
 ## 理由 / 検討した代替案
 

@@ -5,7 +5,9 @@
 
 - **ステータス**: **Accepted**（[ADR-0018](../adr/0018-conversation-experience.md) で確定・2026-06-25 / 実装未着手）
 - **対象フェーズ**: 03 会話開始 〜 08 結果（旧 05〜12 を再構成）
-- **正本（UI/UX）**: Figma `eI6QvvCEO021zpdMmxr8Iq` / canvas `31:2`
+- **正本（UI/UX）**: ~~Figma `eI6QvvCEO021zpdMmxr8Iq` / canvas `31:2`~~
+  → **`apps/web` の実装**（ADR-0042。Figma は follower）。意匠は ADR-0033、トークンは `globals.css`。
+  Figma は 2026-07-06 に一次反映済み（残ポリッシュ段階）。旧「Figma が正本」という宣言は Superseded（ADR-0042）。
   - 一本道（`y≈3200`）: 03〜08、状態バリエーション（`y≈4150`）
 - **関連**: [ADR-0017](../adr/0017-figma-canonical-onepath-archaic-copy.md)（一本道・古語・a11y現代語）/
   [ADR-0018](../adr/0018-conversation-experience.md)（本設計の決定記録）/

@@ -1,10 +1,10 @@
 # SANBA — UI/UX 機能拡張デザイン
 
-> **⚠ 正本の逆転・アートディレクション刷新（[ADR-0039](../adr/0039-app-is-canonical-figma-follows.md) /
+> **⚠ 正本の逆転・アートディレクション刷新（[ADR-0042](../adr/0042-app-is-canonical-figma-follows.md) /
 > [ADR-0033](../adr/0033-ui-redesign-v2-sticker-paper.md) / 2026-07-06）**:
 > 本ファイルは当初「**UI/UX 正本は Figma**」「アートディレクション＝産婆術アトリエ（**金彩 / 漆黒×金**）」を
 > 掲げていたが、いずれも**過去のもの**。現在の正は次のとおり:
-> - **正本＝`apps/web` の実装**（Figma は追従する follower。ADR-0039）。
+> - **正本＝`apps/web` の実装**（Figma は追従する follower。ADR-0042）。
 > - **アートディレクション＝「白い紙の上の問答」（明るい白地×原色アクセント×動く棒人間）**（ADR-0033。§0「産婆術アトリエ／金彩」と §4「indigo/金彩トークン」は **Superseded**）。
 > - **トークンの実体＝`apps/web/app/globals.css` `:root`**、棒人間＝`components/sanba/Figure.tsx`、ロゴ＝`components/sanba/Logo.tsx`（棒人間マーク／[ADR-0034](../adr/0034-app-icon-and-stick-figure-logo.md)）。
 >
@@ -20,8 +20,8 @@
 
 > ## ⭐ 正本（Single Source of Truth）【Superseded — 旧・Figma 正本宣言】
 >
-> **Superseded（ADR-0039）**: 下記の「Figma が唯一の正本」「Figma モバイル縦10画面が正本」という宣言は**過去のもの**。
-> 現在の正本は **`apps/web` の実装**（ADR-0039。Figma は追従する follower）。
+> **Superseded（ADR-0042）**: 下記の「Figma が唯一の正本」「Figma モバイル縦10画面が正本」という宣言は**過去のもの**。
+> 現在の正本は **`apps/web` の実装**（ADR-0042。Figma は追従する follower）。
 > 以下は 2026-06-24 の設計判断の歴史的記録として残すが、実装・Figma の意匠を直す際の正には使わない。
 >
 > **このプロダクトの UI/UX 正本は Figma「📱 iPhone 13 Pro 操作フロー・正本」（モバイル縦・全10画面の一本道フロー）。**
@@ -43,15 +43,15 @@
 
 ## 🖼 ビジュアル（まず見る）
 
-UI/UX の**正本は `apps/web` の実装**（ADR-0039。Figma は follower）。画面ごとの実装可能な要件は
+UI/UX の**正本は `apps/web` の実装**（ADR-0042。Figma は follower）。画面ごとの実装可能な要件は
 [`screens/`](screens/) を参照する。意匠（色・書体・様式）は ADR-0033 と `apps/web/app/globals.css` が正。
 
 ### Figma（ADR-0011 のデザインループ / 要 Figma ログイン）
 
 | 種別 | 内容 | リンク |
 |---|---|---|
-| 🎨 Design（**正本**） | 「📱 iPhone 13 Pro 操作フロー・正本」モバイル縦・全10画面の一本道（01ホーム→…→12完了） | [figma.com/design/eI6QvvCEO021zpdMmxr8Iq?node-id=31-2](https://www.figma.com/design/eI6QvvCEO021zpdMmxr8Iq?node-id=31-2) |
-| 🎨 Design（正本ページ・運用UI・**黄金テーマ**・プロトタイプ動線つき） | 正本 iPhone ページ（31-2）に「産婆術アトリエ」黄金テーマで運用 UI を追加。**ログイン／ログアウト（11→12→13→14）** と **管理（91→92→93→94）** の2ユースケースを画面遷移つきで作成。13→01ホーム/91、12は本人確認後に自動遷移、94→11。起点フロー2本を登録 | [11 ログイン](https://www.figma.com/design/eI6QvvCEO021zpdMmxr8Iq?node-id=73-3) ・ [12 確認中](https://www.figma.com/design/eI6QvvCEO021zpdMmxr8Iq?node-id=73-4) ・ [13 導線](https://www.figma.com/design/eI6QvvCEO021zpdMmxr8Iq?node-id=73-5) ・ [14 ログアウト](https://www.figma.com/design/eI6QvvCEO021zpdMmxr8Iq?node-id=73-6) ・ [91 一覧](https://www.figma.com/design/eI6QvvCEO021zpdMmxr8Iq?node-id=73-8) ・ [92 作成](https://www.figma.com/design/eI6QvvCEO021zpdMmxr8Iq?node-id=73-9) ・ [93 レビュー](https://www.figma.com/design/eI6QvvCEO021zpdMmxr8Iq?node-id=73-10) ・ [94 ゲート](https://www.figma.com/design/eI6QvvCEO021zpdMmxr8Iq?node-id=73-11) |
+| 🎨 Design（**follower**・旧正本。ADR-0042 で格下げ） | 「📱 iPhone 13 Pro 操作フロー」モバイル縦・全10画面の一本道（01ホーム→…→12完了）。**2026-07-06 に一次反映済み**（残ポリッシュ段階）。正本は `apps/web` の実装 | [figma.com/design/eI6QvvCEO021zpdMmxr8Iq?node-id=31-2](https://www.figma.com/design/eI6QvvCEO021zpdMmxr8Iq?node-id=31-2) |
+| 🎨 Design（follower・運用UI・~~黄金テーマ~~→現行デザインに追従中・プロトタイプ動線つき） | 上記 iPhone ページ（31-2）に運用 UI を追加。**ログイン／ログアウト（11→12→13→14）** と **管理（91→92→93→94）** の2ユースケースを画面遷移つきで作成。13→01ホーム/91、12は本人確認後に自動遷移、94→11。旧「産婆術アトリエ」黄金テーマは Superseded（ADR-0042） | [11 ログイン](https://www.figma.com/design/eI6QvvCEO021zpdMmxr8Iq?node-id=73-3) ・ [12 確認中](https://www.figma.com/design/eI6QvvCEO021zpdMmxr8Iq?node-id=73-4) ・ [13 導線](https://www.figma.com/design/eI6QvvCEO021zpdMmxr8Iq?node-id=73-5) ・ [14 ログアウト](https://www.figma.com/design/eI6QvvCEO021zpdMmxr8Iq?node-id=73-6) ・ [91 一覧](https://www.figma.com/design/eI6QvvCEO021zpdMmxr8Iq?node-id=73-8) ・ [92 作成](https://www.figma.com/design/eI6QvvCEO021zpdMmxr8Iq?node-id=73-9) ・ [93 レビュー](https://www.figma.com/design/eI6QvvCEO021zpdMmxr8Iq?node-id=73-10) ・ [94 ゲート](https://www.figma.com/design/eI6QvvCEO021zpdMmxr8Iq?node-id=73-11) |
 | 🎨 Design（参考） | 「ライブ対話」の デスクトップ / スマホ / タブレット ＋ 完成イメージ ＋ マルチモーダル入力（→ §2.9 次フェーズ） | [figma.com/design/eI6QvvCEO021zpdMmxr8Iq](https://www.figma.com/design/eI6QvvCEO021zpdMmxr8Iq) |
 | 🎨 Design（運用 UI・デスクトップ・**実装と同期**） | 「🛠 管理画面 / 🔐 ログイン / 🚦 アクセスゲート状態 / 🔀 管理ユーザーフロー」（ADR-0014 を `apps/web` の `/admin`・`/login` 実装と 1:1 で同期） | [🛠 /admin](https://www.figma.com/design/eI6QvvCEO021zpdMmxr8Iq?node-id=53-2) ・ [🔐 /login](https://www.figma.com/design/eI6QvvCEO021zpdMmxr8Iq?node-id=52-2) ・ [🚦 ゲート状態](https://www.figma.com/design/eI6QvvCEO021zpdMmxr8Iq?node-id=56-2) ・ [🔀 フロー](https://www.figma.com/design/eI6QvvCEO021zpdMmxr8Iq?node-id=58-2) |
 | 🎨 Design（運用 UI・**iPhone**・プロトタイプ動線つき） | 上記デスクトップ運用 UI を iPhone 幅（390×844）へリフロー。同じ light shadcn トークンを踏襲。`ログイン(未)→ログイン(済)→管理画面 / インタビュー`、ゲート→ログインの動線を Figma プロトタイプで接続（起点=「運用UI（ログイン→管理）フロー」） | [🔐 ログイン(未)](https://www.figma.com/design/eI6QvvCEO021zpdMmxr8Iq?node-id=64-3) ・ [🔐 ログイン(済)](https://www.figma.com/design/eI6QvvCEO021zpdMmxr8Iq?node-id=64-4) ・ [🛠 管理画面](https://www.figma.com/design/eI6QvvCEO021zpdMmxr8Iq?node-id=64-5) ・ [🚦 ゲート(401/403)](https://www.figma.com/design/eI6QvvCEO021zpdMmxr8Iq?node-id=64-6) |
