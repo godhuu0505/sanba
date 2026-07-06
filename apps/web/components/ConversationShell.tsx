@@ -95,7 +95,8 @@ export function ConversationShell({
     <div className="flex h-full min-h-0 flex-1 flex-col">
       {/* ── 固定ヘッダ ───────────────────────── */}
       {/* ブランドは AppHeader と同じ流儀: 小ロゴ（サンバさんマーク）＋縦罫＋画面タイトル。 */}
-      <header className="flex items-center gap-2 px-4 pb-2 pt-2">
+      {/* AppHeader と同じく淡い紙面＋藁色の下罫で、紙色の下地との境目を出す。 */}
+      <header className="flex items-center gap-2 border-b border-sanba-border-strong bg-sanba-surface-strong px-4 pb-2 pt-2">
         <Logo size="sm" wordmark={false} className="shrink-0" />
         <span aria-hidden className="h-4 w-px shrink-0 bg-sanba-border-strong" />
         <h1 className="text-[15px] font-bold text-sanba-cream">問答</h1>
@@ -127,7 +128,7 @@ export function ConversationShell({
       </header>
 
       {/* ── 固定ミニ状況 ─────────────────────── */}
-      <div className="px-4 pb-[6px]">
+      <div className="px-4 pb-[6px] pt-2">
         <div
           aria-label="状況"
           className="flex items-center gap-2 rounded-[10px] border border-sanba-border bg-sanba-surface px-3 py-2 text-[11.5px]"
