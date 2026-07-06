@@ -344,6 +344,9 @@ class SANBAAgent(Agent):
         # 現在の未回答質問 id。自由記述/音声回答には question_id が
         # 無いため、「発話受信時点の current 質問」をこの値で束ねクリア対象を固定する。回答で None。
         self._current_question_id: str | None = None
+        # 現在の金枠を発行した時点のユーザーターン（_user_turn）。1ターン1問を強制するため、
+        # 同一ターンで 2 度目の ask_question が来たら前の問いを畳んでから出す（-1 = 未発行）。
+        self._question_asked_turn = -1
         # 既に publish 済みの検知 id（open_topic の重複 gap を抑止）。
         self._published_gaps: set[str] = set()
         # 既に publish 済みの不明瞭検知 id。
@@ -819,6 +822,19 @@ class SANBAAgent(Agent):
             options: 選択肢ラベル（2〜4個。例 ["関連度順","新着順"]）。
                 自由に答えてほしい問いでは省略する（音声/テキストで回答）。
         """
+        # 1ターン1問の強制（#374）。プロンプトは「畳みかけない」と指示済みだが、モデルが
+        # 従わず同一ターンで複数問うことがある（実セッションで観測）。前の金枠が未回答のまま
+        # 同じユーザーターンで再度問われたら、前の問いを畳んでから新しい問いを出す。これで
+        # 競合する 2 つの金枠が同時に立たず、常に「最新の1問」だけを提示する（latest-wins）。
+        if self._current_question_id is not None and self._question_asked_turn == self._user_turn:
+            superseded = self._current_question_id
+            log.info(
+                "question_superseded",
+                session=self._session_id,
+                previous=superseded,
+                turn=self._user_turn,
+            )
+            await self.clear_current_question(superseded)
         # 発行ごとに一意な ID にする（Codex P2）。同じ文面を再質問しても web 側の
         # answeredQuestions（回答済み ID）に当たらず、新しい問いとして再表示できる。
         self._question_seq += 1
@@ -828,6 +844,8 @@ class SANBAAgent(Agent):
         opts = [{"label": o, "value": o} for o in (options or [])]
         # §5-6: 自由記述/音声回答（question_id なし）のクリア対象を束ねる現在質問 id。
         self._current_question_id = question_id
+        # 1ターン1問の判定基準（この問いを出した時点のターン）。
+        self._question_asked_turn = self._user_turn
         if self._publisher is not None:
             # question.asked はハイドレーション・スナップショット（GET /requirements,/detections）に
             # 含まれない一過性イベント。ここで last_seq を進めると、後続の再ハイドレーションで
