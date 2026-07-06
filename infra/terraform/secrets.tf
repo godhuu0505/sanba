@@ -38,6 +38,15 @@ locals {
     GOOGLE_API_KEY        = "google-api-key"
     ELASTICSEARCH_API_KEY = "elasticsearch-api-key"
   } : env => key if contains(local.active_secret_ids, key) }
+
+  # worker（動画解析）: grounding 投入に ES、AI Studio 経路なら google-api-key。LiveKit へ
+  # analysis.visual を publish するため livekit key/secret も要る（ADR-0040 §4）。
+  worker_secret_env = { for env, key in {
+    LIVEKIT_API_KEY       = "livekit-api-key"
+    LIVEKIT_API_SECRET    = "livekit-api-secret"
+    GOOGLE_API_KEY        = "google-api-key"
+    ELASTICSEARCH_API_KEY = "elasticsearch-api-key"
+  } : env => key if contains(local.active_secret_ids, key) }
 }
 
 # ---- Secret の箱 (値は terraform 管理外。gcloud で版を投入する) ----

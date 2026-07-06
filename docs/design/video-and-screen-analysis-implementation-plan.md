@@ -39,6 +39,12 @@ PR-S2 が共用するため、注入部分は Stage V を先行させる。
 ## 2. Stage V — アップロード動画解析
 
 ### PR-V1: infra — GCS バケット・Cloud Tasks・worker サービス（規模 M・要 infra レビュー）
+
+> 状態: **実装済み**（`infra/terraform/media.tf`）。`terraform fmt -check -recursive` 通過。
+> `validate`/`plan` は CI（`.github/workflows/terraform.yml`）で確認する。worker Cloud Run service は
+> `enable_video_analysis`（既定 false）で段階導入 — worker image が CI で push 可能になってから true にする。
+> 署名付き URL 署名権限（runtime SA への `iam.serviceAccountTokenCreator`）は直送を実装する PR-V3 で追加する。
+
 - `infra/terraform/`:
   - `google_storage_bucket`（素材用。uniform access・非公開・lifecycle 削除を Firestore `materials` TTL と整合）。
   - `google_cloud_tasks_queue` `video-analysis`（リトライ上限・バックオフ・**dispatch deadline を worker timeout と揃えて明示**）。
