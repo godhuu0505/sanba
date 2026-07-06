@@ -10,7 +10,7 @@ from sanba_shared.grounding import ContextIndexer
 from sanba_shared.media import VideoAnalysis
 from sanba_shared.repository import SessionRepository
 
-from sanba_worker.analysis import TaskResult, VideoTaskPayload, process_video
+from sanba_worker.analysis import VideoTaskPayload, process_video
 from sanba_worker.config import WorkerSettings
 
 
@@ -52,7 +52,8 @@ def test_analyzes_and_marks_done() -> None:
         settings=_settings(),
         analyze=_fake_analyze("[00:01] ログイン画面", "[00:05] 保存ボタン"),
     )
-    assert result == TaskResult("done", extracted=2)
+    assert result.status == "done" and result.extracted == 2
+    assert result.observations == ["[00:01] ログイン画面", "[00:05] 保存ボタン"]
     mat = repo.get_material("s1", "asset-abc")
     assert mat is not None and mat["status"] == "done" and mat["extracted"] == 2
     assert any(d["source"].startswith("asset:asset-abc") for d in indexer._mem)

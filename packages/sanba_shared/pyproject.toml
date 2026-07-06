@@ -11,6 +11,9 @@ dependencies = [
     # （grounding.py / media.py。ADR-0040）。api/agent は既にこれらに依存している。
     "elasticsearch>=8.14,<10",
     "google-genai>=1.0.0",
+    # 解析結果の realtime publish（realtime.py。api/worker 共有）。送信は遅延 import なので
+    # import 時には不要だが、実送信のため依存に含める。
+    "livekit-api>=0.7",
 ]
 
 [dependency-groups]
