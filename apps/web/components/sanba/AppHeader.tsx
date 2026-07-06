@@ -40,7 +40,11 @@ export function AppHeader({
   const hasTitle = title != null && title !== "";
   return (
     <header
-      className={cn("flex w-full items-center gap-2.5 px-4 py-1.5", className)}
+      // 紙色の下地（--sanba-bg）と同化して境目が消えないよう、淡い紙面＋藁色の下罫で帯として区切る。
+      className={cn(
+        "flex w-full items-center gap-2.5 border-b border-sanba-border-strong bg-sanba-surface-strong px-4 py-1.5",
+        className,
+      )}
       {...props}
     >
       {showBack && (

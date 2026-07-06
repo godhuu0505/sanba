@@ -4,12 +4,13 @@
 // 1行目: 消音（音声出力 ON/OFF）/ マイク・ミュート（マイク入力 ON/OFF）の2系統トグル。
 // 2行目: テキスト入力欄 + 送信（音声と併用）。
 // a11y: 見た目が古語でも aria-label は現代語の機能名（ADR-0017）。
+//
+// 高さは一定に保つ（可変高の音声状態インジケータはここに置かない）。ボトムバー直上に固定した
+// 選択肢フォーム（問いピン）を、聞き取りアイコンの表示/非表示で上下させないため、音声状態は
+// ヘッダ側の固定領域（ConversationShell）へ移した（#248 / 会話 UI の安定化）。
 
 import { useState } from "react";
 import { Mic, MicOff, SendHorizontal, Volume2, VolumeX } from "lucide-react";
-
-import type { SessionPhase } from "@/lib/realtime/types";
-import { VoiceStatusIndicator } from "./VoiceStatusIndicator";
 
 export interface BottomBarProps {
   /** 会話＝マイク入力 ON か。 */
@@ -20,21 +21,9 @@ export interface BottomBarProps {
   onToggleMute: () => void;
   /** テキスト送信（本文）。 */
   onSend: (text: string) => void;
-  /** 会話全体フェーズ（音声状態インジケータ用 / #248）。 */
-  phase?: SessionPhase;
-  /** エージェント（LiveKit リモート参加者）が発話／読み上げ中か（#248）。 */
-  agentSpeaking?: boolean;
 }
 
-export function BottomBar({
-  micOn,
-  muted,
-  onToggleMic,
-  onToggleMute,
-  onSend,
-  phase,
-  agentSpeaking,
-}: BottomBarProps) {
+export function BottomBar({ micOn, muted, onToggleMic, onToggleMute, onSend }: BottomBarProps) {
   const [text, setText] = useState("");
 
   const send = () => {
@@ -50,16 +39,6 @@ export function BottomBar({
       aria-label="会話コントロール"
       className="flex flex-col gap-2 border-t-2 border-sanba-frame bg-sanba-surface px-4 pb-[14px] pt-[10px]"
     >
-      {/* 音声状態の常時インジケータ（#248）。聞き取り中／発話中／読み上げ中／消音中を可視化。 */}
-      <div className="flex justify-center">
-        <VoiceStatusIndicator
-          phase={phase}
-          micOn={micOn}
-          muted={muted}
-          agentSpeaking={agentSpeaking}
-        />
-      </div>
-
       {/* 1行目: 消音（音声出力）/ マイク・ミュート（マイク入力） */}
       <div className="flex gap-2">
         <button
@@ -96,7 +75,7 @@ export function BottomBar({
         >
           {micOn ? (
             <>
-              <Mic size={15} aria-hidden /> マイク オン
+              <Mic size={15} aria-hidden /> 集音中
             </>
           ) : (
             <>
