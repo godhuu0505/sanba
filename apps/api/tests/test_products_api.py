@@ -18,6 +18,7 @@ from sanba_shared.models import GitHubLink, Product, ProductInvite
 from sanba_api import auth_google, main
 from sanba_api.auth_google import AuthUser, require_user
 from sanba_api.main import app
+from sanba_api.routers import products
 
 client = TestClient(app)
 OWNER = "owner-sub"
@@ -226,7 +227,7 @@ def _link_github(sub: str = OWNER) -> None:
 
 @pytest.fixture()
 def _github(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(main, "_github_app_client", lambda: FakeClient())
+    monkeypatch.setattr(products, "_github_app_client", lambda: FakeClient())
 
 
 def test_select_repo_requires_owner_even_for_admin(
@@ -270,13 +271,13 @@ def test_select_repo_indexes_and_reuses_same_sha(
     _login(OWNER)
 
     calls: list[str] = []
-    original = main._index_product_repo_task
+    original = products._index_product_repo_task
 
     def _spy(**kwargs: Any) -> None:
         calls.append(kwargs["repo"])
         original(**kwargs)
 
-    monkeypatch.setattr(main, "_index_product_repo_task", _spy)
+    monkeypatch.setattr(products, "_index_product_repo_task", _spy)
 
     res = client.post("/api/products/prod-1/github", json={"repo": "octo/demo"})
     assert res.status_code == 200

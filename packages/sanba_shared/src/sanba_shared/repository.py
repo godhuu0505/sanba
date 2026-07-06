@@ -16,6 +16,7 @@ from typing import Any
 import structlog
 
 from .models import (
+    CheckItem,
     GitHubIndexStatus,
     GitHubLink,
     MemberInviteStatus,
@@ -424,8 +425,10 @@ class SessionRepository:
         description: str | None = None,
         glossary: list[str] | None = None,
         slug: str | None = None,
+        output_formats: dict[str, str] | None = None,
+        check_items: list[CheckItem] | None = None,
     ) -> Product:
-        """name / description / glossary / slug のみ上書きする。
+        """name / description / glossary / slug / output_formats / check_items のみ上書きする。
 
         所有と出所 (owner_sub / created_at) は不変。repo 紐づけは `set_product_github` が
         担う（`update_requirement` と同じ「編集可能フィールドを閉じる」パターン）。
@@ -433,6 +436,8 @@ class SessionRepository:
         旧 slug の解放・product の patch を同一トランザクションで行う。None = 変更しない
         （slug を「未設定に戻す」経路は持たない: URL の識別子は消さない）。使用済みなら
         ProductSlugTaken。
+        output_formats は audience→テンプレートの全量置換（部分 merge にすると「既定へ
+        戻す＝キー削除」が Firestore の merge write で表現できない）。
         """
         current = self.get_product(product_id)
         if current is None:
@@ -447,6 +452,12 @@ class SessionRepository:
         slug_changed = slug is not None and slug != current.slug
         if slug_changed:
             updates["slug"] = slug
+        if output_formats is not None:
+            updates["output_formats"] = dict(output_formats)
+        if check_items is not None:
+            # Firestore へは JSON 形（{text, target}）で保存する（読み戻しは Product の
+            # validator が CheckItem に起こす。旧 str リスト文書も同 validator が平す）。
+            updates["check_items"] = [c.model_dump(mode="json") for c in check_items]
         if not updates:
             return current
         # dict に適用してから検証する（name 空などの不正値検出を一度で行う）。
@@ -459,7 +470,9 @@ class SessionRepository:
                 self._update_product_slug_txn(product_id, current.slug, slug, updates)
             else:
                 # github_* などの並行更新を巻き戻さないよう、編集対象フィールドのみ patch する。
-                self._client.collection("products").document(product_id).set(updates, merge=True)
+                # set(merge=True) だと map（output_formats）が深マージされ「audience キーの削除＝
+                # 既定へ戻す」が永続に反映されないため、フィールド単位で全量置換する update を使う。
+                self._client.collection("products").document(product_id).update(updates)
         else:
             with self._mem_product_lock:
                 if slug_changed and any(
@@ -491,7 +504,9 @@ class SessionRepository:
             if old_ref is not None:
                 transaction.delete(old_ref)
             transaction.set(new_ref, {"product_id": product_id})
-            transaction.set(product_ref, updates, merge=True)
+            # 非トランザクション経路（update_product 本体）と同じく update を使う:
+            # set(merge=True) だと map（output_formats）が深マージされ全量置換にならない。
+            transaction.update(product_ref, updates)
 
         _txn(self._client.transaction())
 

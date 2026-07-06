@@ -423,6 +423,35 @@ export async function fetchMySessionRequirements(
   return res.json();
 }
 
+/** 要件結果ドキュメントの読み手（出力フォーマットの選択キー）。 */
+export type Audience = "end_user" | "planner" | "developer";
+
+/** GET /api/sessions/mine/{id}/result-document の応答。 */
+export interface ResultDocument {
+  audience: Audience;
+  /** アプリ管理画面で登録されたフォーマットが使われたか（false = 既定テンプレート）。 */
+  is_custom_format: boolean;
+  markdown: string;
+}
+
+/**
+ * GET /api/sessions/mine/{id}/result-document。要件結果を audience（利用者/企画者/開発者）別の
+ * 出力フォーマットで整形した Markdown を取得する。認証・404 の意味論は
+ * fetchMySessionRequirements と同じ（本人限定 / 存在秘匿）。
+ */
+export async function fetchMySessionResultDocument(
+  sessionId: string,
+  audience: Audience,
+  idToken: string | null,
+): Promise<ResultDocument> {
+  const res = await fetch(
+    `${API_URL}/api/sessions/mine/${encodeURIComponent(sessionId)}/result-document?audience=${audience}`,
+    { headers: authHeaders(idToken) },
+  );
+  if (!res.ok) throw new ApiError(res.status, `fetch result document failed: ${res.status}`);
+  return res.json();
+}
+
 export async function joinSession(params: {
   invite: string;
   participantName: string;
@@ -577,6 +606,20 @@ export interface Product {
    * web は管理 UI（編集・招待・削除）の出し分けにのみ使う。認可の源泉は常に API 側。
    */
   role: "owner" | "member";
+  /** 要件結果の出力フォーマット（audience → Markdown テンプレート。未登録キーは無い）。 */
+  output_formats: Partial<Record<Audience, string>>;
+  /** 未登録の audience に使われる既定テンプレート（表示用の参照値。正はサーバ側）。 */
+  output_format_defaults: Record<Audience, string>;
+  /** 要件サンバ中に必ず確認する項目（対象タグ付き。上限は check_items_limit）。 */
+  check_items: CheckItem[];
+  /** 確認項目の登録上限（正はサーバ側 MAX_CHECK_ITEMS。web は定数を複製しない）。 */
+  check_items_limit: number;
+}
+
+/** 確認項目 1 件。target は対象ペルソナ（null = 全員）。 */
+export interface CheckItem {
+  text: string;
+  target: Audience | null;
 }
 
 /** 深掘りリンク 1 件（ProductInviteResponse）。token から /join/{token} URL を組む。 */
@@ -629,7 +672,17 @@ export function fetchProduct(productId: string, idToken: string | null): Promise
 
 export function updateProduct(
   productId: string,
-  patch: { name?: string; slug?: string; description?: string; glossary?: string[] },
+  patch: {
+    name?: string;
+    /** URL キーワード（グローバル一意 / ADR-0040）。変更すると /{slug}/... の URL も変わる。 */
+    slug?: string;
+    description?: string;
+    glossary?: string[];
+    /** audience → テンプレートの全量置換。空文字の値は「未登録＝既定へ戻す」。 */
+    output_formats?: Partial<Record<Audience, string>>;
+    /** 確認項目の全量置換（上限は Product.check_items_limit）。 */
+    check_items?: CheckItem[];
+  },
   idToken: string | null,
 ): Promise<Product> {
   return productFetch<Product>(`/api/products/${encodeURIComponent(productId)}`, idToken, {

@@ -251,6 +251,25 @@ def record_my_requirements_viewed(count: int) -> None:
         pass
 
 
+# 要件結果ドキュメント生成 (GET /api/sessions/mine/{id}/result-document) のカウンタ。
+# どの audience 向けが読まれ、登録フォーマットと既定のどちらが使われたかを観測する
+# (CLAUDE.md 原則3。既定ばかりならアプリ管理画面の登録導線に課題がある合図)。
+_result_document_counter = metrics.get_meter("sanba_api.sessions").create_counter(
+    "sanba_result_document_rendered_total",
+    description="要件結果ドキュメントの生成数 (audience / format=custom|default ごと)",
+)
+
+
+def record_result_document_rendered(audience: str, is_custom: bool) -> None:
+    """要件結果ドキュメントの生成を 1 リクエストとして計上する。"""
+    try:
+        _result_document_counter.add(
+            1, {"audience": audience, "format": "custom" if is_custom else "default"}
+        )
+    except Exception:  # pragma: no cover - メトリクスは本処理を止めない
+        pass
+
+
 def setup_observability(app: FastAPI) -> None:
     """Configure OTel tracing + FastAPI instrumentation. Safe to call once."""
     global _initialised
