@@ -25,6 +25,18 @@ google_oauth_client_id = "" # 例: "1234567890-abcdef.apps.googleusercontent.com
 # 秘匿物ではないので平文。例: "alice@example.com,bob@example.com"
 admin_emails = ""
 
+# ---- 素材バケット / 動画解析パイプライン (ADR-0040) ----
+# バケット・Cloud Tasks キュー・worker SA は常に作成される。GCS_BUCKET が api に配線され、
+# 画像アップロードも in-memory から GCS 永続化に切り替わる。
+# 動画解析の worker Cloud Run service は image が要るため段階導入する:
+#   1) 先に worker image を CI で push できるようにする
+#   2) enable_video_analysis = true にして apply → worker が立ち、api が enqueue を始める
+enable_video_analysis = false
+# materials_bucket_name = ""            # 空なら <project_id>-sanba-materials（グローバル一意が必要）
+# video_tasks_queue     = "sanba-video-analysis"
+# worker_request_timeout_seconds = 900  # 10 分動画の解析が 5 分既定を超えるため延ばす
+# max_video_duration_seconds     = 600  # worker が実長 10 分超を failed 化する上限
+
 # ---- 独自ドメイン (Global 外部 HTTPS LB + Google 管理証明書) ----
 # OSS なのでドメインはコードに焼かず、各自ここ (または CI の GitHub Variables) で設定する。
 # domain が空なら LB を作らず Cloud Run 既定の *.run.app で運用。

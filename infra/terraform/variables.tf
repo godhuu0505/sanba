@@ -77,6 +77,41 @@ variable "data_retention_days" {
   default = 30
 }
 
+# ---- Session materials / video analysis (ADR-0040) --------------------------
+# 動画解析パイプライン（GCS 直送 → Cloud Tasks → 専用 worker）の段階導入フラグ。
+# 既定 false: バケット/キュー/worker SA は作るが、worker Cloud Run service は作らない
+# （worker image が Artifact Registry に無い状態で apply が失敗するのを避ける）。
+# worker image を CI が push できるようになってから true にして worker を立てる。
+variable "enable_video_analysis" {
+  type        = bool
+  default     = false
+  description = "Provision the sanba-worker Cloud Run service and wire the API to enqueue video analysis (ADR-0040). Needs a built worker image."
+}
+
+variable "materials_bucket_name" {
+  type        = string
+  default     = ""
+  description = "GCS bucket name for session materials (images/videos). Empty = <project_id>-sanba-materials. Must be globally unique."
+}
+
+variable "video_tasks_queue" {
+  type        = string
+  default     = "sanba-video-analysis"
+  description = "Cloud Tasks queue name for the async video analysis pipeline."
+}
+
+variable "worker_request_timeout_seconds" {
+  type        = number
+  default     = 900
+  description = "Cloud Run request timeout for the worker (must exceed the worst-case video analysis time; default 5min is too short for 10min videos)."
+}
+
+variable "max_video_duration_seconds" {
+  type        = number
+  default     = 600
+  description = "Reject uploaded videos longer than this in the worker (ADR-0040: 10min cap for short screen recordings)."
+}
+
 # ---- ゲスト入場 (ADR-0032) ----
 variable "guest_join_enabled" {
   type        = bool
