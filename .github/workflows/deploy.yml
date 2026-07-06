@@ -24,7 +24,7 @@ on:
         description: "デプロイ対象 (mobile から選択)"
         type: choice
         default: all
-        options: [all, web, api, agent]
+        options: [all, web, api, agent, worker]
       reason:
         description: "デプロイ理由 (任意・監査ログ用)"
         type: string
@@ -62,6 +62,7 @@ jobs:
             agent: ['apps/agent/**', 'packages/sanba_shared/**']
             api: ['apps/api/**', 'packages/sanba_shared/**']
             web: ['apps/web/**']
+            worker: ['apps/worker/**', 'packages/sanba_shared/**']
             infra: ['infra/terraform/**', '.github/workflows/terraform.yml']
       - id: decide
         # 手動トリガー (workflow_dispatch) は差分が無く paths-filter が空を返すため、
@@ -78,9 +79,9 @@ jobs:
             echo "- apps: \`${APPS_INPUT}\` / reason: ${REASON:-<none>} / actor: ${{ github.actor }}" >> "$GITHUB_STEP_SUMMARY"
             # 許可リスト照合 (choice はサーバ側で強制されないため、JSON 生成前に必ず検証する)。
             case "$APPS_INPUT" in
-              all)           echo 'apps=["agent","api","web"]' >> "$GITHUB_OUTPUT" ;;
-              web|api|agent) echo "apps=[\"${APPS_INPUT}\"]" >> "$GITHUB_OUTPUT" ;;
-              *)             echo "::error::invalid apps input: ${APPS_INPUT}" >&2; exit 1 ;;
+              all)                  echo 'apps=["agent","api","web","worker"]' >> "$GITHUB_OUTPUT" ;;
+              web|api|agent|worker) echo "apps=[\"${APPS_INPUT}\"]" >> "$GITHUB_OUTPUT" ;;
+              *)                    echo "::error::invalid apps input: ${APPS_INPUT}" >&2; exit 1 ;;
             esac
             # 手動デプロイはイメージ差し替えのみ。terraform の手動 apply は
             # terraform.yml の workflow_dispatch (action=apply) を使う。
