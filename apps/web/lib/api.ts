@@ -2,11 +2,13 @@ import type { Detection, Question, Requirement } from "./realtime/types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
 
-// ── ログイン nonce（ADR-0046 / ID トークン注入対策）─────────────────────────
-// サーバ発行の nonce エンベロープ。AuthProvider が発行/リフレッシュ/ログアウトのたびに
-// setAuthNonce で差し替える。nonce は「今ログインしているクライアントの ambient な認証
-// 状態」で業務引数ではないため、長い createSession の引数に増やさず authHeaders の単一経路
-// で全 authorized リクエストに載せる（サーバは create/join でのみ照合する / require_user_bound）。
+// ── ログイン nonce（ADR-0046 §2 / ID トークン注入対策）─────────────────────
+// サーバ発行の nonce エンベロープ。AuthProvider が「エンベロープと一致する nonce claim を
+// 持つ credential が到着したとき」だけ setAuthNonce で有効化する（credential とエンベロープは
+// 常に対で動かす。片方だけ差し替えると不一致 401 を自分で作ってしまう）。nonce は「今ログイン
+// しているクライアントの ambient な認証状態」で業務引数ではないため、長い createSession の
+// 引数に増やさず authHeaders の単一経路で全 authorized リクエストに載せる（サーバが照合する
+// のは束縛エンドポイントのみ: create/join・products/join・admin / enforce_login_nonce）。
 let currentAuthNonce: string | null = null;
 
 /** 現在のログイン nonce エンベロープを差し替える（null で消す）。AuthProvider が呼ぶ。 */
@@ -19,6 +21,8 @@ export interface AuthNonce {
   nonce: string;
   /** X-Auth-Nonce に載せる HMAC 署名エンベロープ。 */
   token: string;
+  /** エンベロープの失効時刻（UNIX 秒）。期限切れの nonce で GIS を初期化しないために使う。 */
+  expires_at: number;
 }
 
 /**
@@ -41,7 +45,7 @@ export async function fetchAuthNonce(): Promise<AuthNonce | null> {
 function authHeaders(idToken: string | null): Record<string, string> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (idToken) headers.Authorization = `Bearer ${idToken}`;
-  // ログイン nonce（ADR-0046）。サーバは create/join でのみ照合するが、単一経路で載せる
+  // ログイン nonce（ADR-0046 §2）。照合は束縛エンドポイントのみだが、単一経路で載せる
   // （他エンドポイントは未知ヘッダとして無視する）。
   if (currentAuthNonce) headers["X-Auth-Nonce"] = currentAuthNonce;
   return headers;

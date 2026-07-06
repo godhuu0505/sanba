@@ -10,6 +10,8 @@ GIS の `id.initialize({nonce})` に渡す nonce をサーバが発行し、web 
 
 from __future__ import annotations
 
+import time
+
 from fastapi import APIRouter
 from pydantic import BaseModel
 
@@ -27,6 +29,10 @@ class AuthNonceResponse(BaseModel):
     nonce: str
     # X-Auth-Nonce として create/join に返す HMAC 署名エンベロープ。
     token: str
+    # エンベロープの失効時刻（UNIX 秒）。web はこれを見て、期限切れの nonce で GIS を
+    # 初期化しない・期限切れエンベロープをヘッダに載せない（ADR-0046 §2。/login を
+    # 長時間開いたまま署名した credential が「新規ログインなのに 401」になる事故を防ぐ）。
+    expires_at: int
 
 
 @router.get("/api/auth/nonce", response_model=AuthNonceResponse)
@@ -36,4 +42,8 @@ def issue_auth_nonce() -> AuthNonceResponse:
         settings.session_signing_secret, settings.auth_nonce_ttl_seconds
     )
     record_auth_event("nonce_issued")
-    return AuthNonceResponse(nonce=raw, token=envelope)
+    return AuthNonceResponse(
+        nonce=raw,
+        token=envelope,
+        expires_at=int(time.time()) + settings.auth_nonce_ttl_seconds,
+    )

@@ -8,6 +8,7 @@ import {
   fetchGithubRepos,
   fetchMySessions,
   sendTelemetry,
+  setAuthNonce,
 } from "./api";
 
 // 素材の観測テレメトリ送信（#232/#243）とサーバ破棄（#245）の API シーム。
@@ -15,6 +16,34 @@ import {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  // モジュールレベルの ambient 状態（ADR-0046 §2）をテスト間で持ち越さない。
+  setAuthNonce(null);
+});
+
+describe("setAuthNonce / X-Auth-Nonce（ADR-0046 §2）", () => {
+  it("有効化中は authorized リクエストに X-Auth-Nonce が載る", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve([]) });
+    vi.stubGlobal("fetch", fetchMock);
+
+    setAuthNonce("envelope-1");
+    await fetchMySessions("idtok");
+
+    const [, init] = fetchMock.mock.calls[0];
+    expect(init.headers["X-Auth-Nonce"]).toBe("envelope-1");
+    expect(init.headers.Authorization).toBe("Bearer idtok");
+  });
+
+  it("null で破棄するとヘッダごと消える（ログアウト後に送出し続けない）", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve([]) });
+    vi.stubGlobal("fetch", fetchMock);
+
+    setAuthNonce("envelope-1");
+    setAuthNonce(null);
+    await fetchMySessions("idtok");
+
+    const [, init] = fetchMock.mock.calls[0];
+    expect(init.headers["X-Auth-Nonce"]).toBeUndefined();
+  });
 });
 
 describe("classifyUpload / classifyFileUpload（受理判定・ADR-0044）", () => {
