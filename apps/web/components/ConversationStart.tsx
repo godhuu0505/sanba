@@ -20,14 +20,14 @@ import { SessionView } from "./SessionView";
 
 // マイク取得のブラウザ側前処理を明示する（ADR-0039）。既定でも大半のブラウザは有効だが、
 // エコー除去・ノイズ抑制・自動ゲインを明示することで、雑音・PC 内蔵マイク由来の誤認識
-// （韓国語/中国語化・変な文字）を入口で減らす。voiceIsolation は対応ブラウザで人の声を
-// 前景化する（非対応環境では無視される）。ノイズの主対策はエージェント側の Krisp BVC。
+// （韓国語/中国語化・変な文字）を入口で減らす。ノイズの主対策はエージェント側の Krisp BVC に
+// 集約し、ブラウザ側の voiceIsolation（強いノイズ分離）は重ねない: BVC と二重にかけると
+// 対応ブラウザで音声が過処理され単語落ち・発話検出悪化を招くため（LiveKit 推奨・Codex 指摘）。
 const ROOM_OPTIONS: RoomOptions = {
   audioCaptureDefaults: {
     autoGainControl: true,
     echoCancellation: true,
     noiseSuppression: true,
-    voiceIsolation: true,
   },
 };
 

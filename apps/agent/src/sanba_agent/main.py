@@ -15,6 +15,7 @@ import contextlib
 import os
 import time
 from typing import Any, NamedTuple
+from urllib.parse import urlparse
 
 import structlog
 from google.genai import types as genai_types
@@ -77,6 +78,7 @@ from .prompts.interview import (
     END_USER_VOICE_AGENT_INSTRUCTIONS,
     VOICE_AGENT_INSTRUCTIONS,
     build_glossary_seed,
+    build_language_directive,
     build_prep_analysis_note,
     build_prep_premise,
     build_repo_premise,
@@ -186,6 +188,9 @@ def build_agent_instructions(repo: SessionRepository, session_id: str) -> AgentS
         # repo grounding を許可すると end_user セッションが None で作られた場合にフェイルオープン
         # するため、「読めた + meta が実在する」を両方満たすときだけ True にする。
         allow_repo_grounding = confirmed and meta is not None
+    # 言語固定の会話指示を設定（GEMINI_LANGUAGE）から組み立てて末尾に足す（ADR-0039）。
+    # 設定値とプロンプトを一致させ、空文字（自動判定）や ja 以外の言語コードでも矛盾しない。
+    instructions += build_language_directive(settings.gemini_language)
     # モード分岐の観測性（CLAUDE.md 原則3）: どのモードでどれだけシードしたかを追える形に。
     log.info(
         "agent_instructions_built",
@@ -1303,18 +1308,36 @@ async def respond_to_answer(
     )
 
 
+def _is_livekit_cloud_url(url: str) -> bool:
+    """接続先が LiveKit Cloud か（BVC が実効する transport か）を判定する（ADR-0039）。
+
+    Cloud は `wss://<project>.livekit.cloud`。self-host / local（`ws://localhost:7880` 等）は
+    Krisp BVC の transport 前提を満たさないため False。判定不能な URL も False（安全側）。
+    """
+    host = (urlparse(url).hostname or "").lower()
+    return host == "livekit.cloud" or host.endswith(".livekit.cloud")
+
+
 def build_noise_cancellation() -> Any | None:
     """入力音声のノイズ抑制（Krisp BVC）を組み立てる（ADR-0039）。
 
-    設定 ON かつプラグイン導入済みなら BVC を返し、RoomInputOptions.noise_cancellation に渡す。
-    設定 OFF・プラグイン未導入（self-host / 依存欠落）では None を返し、抑制なしで会話を続ける
-    （フェイルソフト）。BVC は LiveKit Cloud でのみ実効。設定 ON なのに使えない構成のときは
-    観測性のため一度警告する（CLAUDE.md 原則3）。
+    設定 ON・プラグイン導入済み・接続先が LiveKit Cloud の 3 条件が揃うときだけ BVC を返し、
+    RoomInputOptions.noise_cancellation に渡す。いずれか欠けるときは None を返し、抑制なしで
+    会話を続ける（フェイルソフト）。BVC は LiveKit Cloud transport 前提のため、self-host / local
+    では初期化できず二重処理・失敗の元になるので自動で無効化する。設定 ON なのに使えない構成
+    （プラグイン未導入・非 Cloud）のときは観測性のため一度警告する（CLAUDE.md 原則3）。
     """
     if not settings.noise_cancellation_enabled:
         return None
     if _noise_cancellation is None:
         log.warning("noise_cancellation_unavailable", reason="plugin_not_installed")
+        return None
+    if not _is_livekit_cloud_url(settings.livekit_url):
+        log.warning(
+            "noise_cancellation_unavailable",
+            reason="not_livekit_cloud",
+            livekit_url=settings.livekit_url,
+        )
         return None
     return _noise_cancellation.BVC()
 

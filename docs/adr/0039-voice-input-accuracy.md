@@ -32,16 +32,25 @@ SANBA の音声は Gemini Live のネイティブ音声モデル（speech-to-spe
      韓国語/中国語化を抑える中心。
    - 出力音声の `speech_config.language_code`（`RealtimeModel(language=...)`）。ネイティブ音声は
      出力言語を自動選択する面があるため補助的だが、指定できる範囲で日本語へ寄せる。
-   - **プロンプトでも日本語固定を明示**（`VOICE_AGENT_INSTRUCTIONS` / `END_USER_VOICE_AGENT_INSTRUCTIONS`）:
-     「必ず日本語で聞き取り・応答し、聞き取れないときは別言語で推測せず日本語で聞き返す」。
-     ネイティブ音声の出力言語自動選択に対する最も確実なレバーとして併用する（多層防御）。
-   - 空文字（`GEMINI_LANGUAGE=`）にすると language_codes を付けず自動判定に戻せる（従来挙動）。
+   - **プロンプトでも言語固定を明示**。`build_language_directive(GEMINI_LANGUAGE)` が設定値から
+     会話指示を組み立て、初期 instructions の末尾に足す。ネイティブ音声の出力言語自動選択に
+     対する最も確実なレバーとして併用する（多層防御）。設定とプロンプトを一致させるため
+     ハードコードせず設定から生成する: `ja` 系は日本語固定、空文字は言語を縛らない
+     （自動判定＝従来挙動）、その他の BCP-47 は当該言語での会話を促す。
+   - 空文字（`GEMINI_LANGUAGE=`）にすると language_codes もプロンプト固定も外れ、完全に
+     自動判定へ戻せる（従来挙動）。
 2. **入力ノイズを抑える**（雑音・PC 内蔵マイク・別話者の被り対策）。LiveKit Cloud の
    Krisp Background Voice Cancellation（BVC）をエージェント側の音声入力に適用する
    （`RoomInputOptions.noise_cancellation`）。`NOISE_CANCELLATION_ENABLED`（既定 true）で切替。
-   プラグイン未導入・self-host では自動で無効化して会話は継続する（**フェイルソフト**）。
-   併せて Web 側のマイク取得で `echoCancellation` / `noiseSuppression` / `autoGainControl` /
-   `voiceIsolation` を明示し、入口でも雑音を減らす（対応ブラウザのみ voiceIsolation 実効）。
+   BVC は LiveKit Cloud transport 前提のため、`LIVEKIT_URL` が `*.livekit.cloud` のときだけ
+   有効化し、**プラグイン未導入・self-host / local では自動で無効化**して会話は継続する
+   （非 Cloud で BVC を渡すと初期化できず二重処理・失敗の元になる）。設定 ON なのに使えない
+   構成は `noise_cancellation_unavailable`（reason=plugin_not_installed / not_livekit_cloud）で
+   一度警告する（**フェイルソフト**）。
+   併せて Web 側のマイク取得で `echoCancellation` / `noiseSuppression` / `autoGainControl` を
+   明示し、入口でも雑音を減らす。ノイズ抑制はエージェント側 BVC に集約し、ブラウザ側の
+   `voiceIsolation`（強いノイズ分離）は**重ねない**: BVC と二重にかけると対応ブラウザで音声が
+   過処理され単語落ち・発話検出悪化を招くため（LiveKit 推奨）。
 3. **ターン検出を精度側へ再調整**（分断対策）。ADR-0038 の env レバーはそのままに既定値を更新:
    - `TURN_SILENCE_DURATION_MS`: 800 → **1200**（考えながらの沈黙で途中確定しにくくする）。
    - `TURN_PREFIX_PADDING_MS`: 0 → **100**（一瞬の環境音・相槌の漏れで start が誤検出され

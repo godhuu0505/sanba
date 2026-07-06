@@ -13,7 +13,9 @@ from google.genai import types as genai_types
 
 from sanba_agent.config import settings
 from sanba_agent.main import (
+    _is_livekit_cloud_url,
     build_input_transcription,
+    build_noise_cancellation,
     build_realtime_model,
     build_turn_detection,
     resume_instructions,
@@ -167,3 +169,23 @@ class TestResumeInstructions:
         text = resume_instructions([])
         assert "復旧" in text
         assert "まだ発話はありません" in text
+
+
+class TestNoiseCancellation:
+    def test_livekit_cloud_url_detection(self) -> None:
+        assert _is_livekit_cloud_url("wss://my-proj.livekit.cloud")
+        assert _is_livekit_cloud_url("wss://livekit.cloud")
+        # self-host / local は Cloud transport 前提を満たさない。
+        assert not _is_livekit_cloud_url("ws://localhost:7880")
+        assert not _is_livekit_cloud_url("wss://livekit.example.com")
+        assert not _is_livekit_cloud_url("")
+
+    def test_disabled_returns_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(settings, "noise_cancellation_enabled", False)
+        assert build_noise_cancellation() is None
+
+    def test_self_host_disables_bvc(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # ADR-0039 / Codex 指摘: 非 Cloud transport では BVC を渡さない（自動無効化）。
+        monkeypatch.setattr(settings, "noise_cancellation_enabled", True)
+        monkeypatch.setattr(settings, "livekit_url", "ws://localhost:7880")
+        assert build_noise_cancellation() is None
