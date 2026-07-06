@@ -15,6 +15,11 @@ class Settings(BaseSettings):
     google_cloud_location: str = "us-central1"
     gemini_live_model: str = "gemini-live-2.5-flash-native-audio"
     gemini_reasoning_model: str = "gemini-2.5-flash"
+    # 音声認識/合成の言語固定（ADR-0039）。BCP-47 コード。入力文字起こしのヒント
+    # （AudioTranscriptionConfig.language_codes）と出力音声の language_code に使う。
+    # 未設定（""）でモデルの自動言語判定に委ねる（従来挙動）。日本語セッションで
+    # 韓国語/中国語へ誤認識ドリフトするのを抑える主レバー。
+    gemini_language: str = "ja-JP"
 
     # LiveKit
     livekit_url: str = "ws://localhost:7880"
@@ -24,7 +29,9 @@ class Settings(BaseSettings):
     # --- 音声ターン検出（Gemini Live 自動 VAD）の感度 ---
     # 参加者が話し終えたと判定するまでに要求する無音時間 (ms)。大きいほど発話途中の間で
     # エージェントが被せて話し始めにくくなる代わりに、応答開始は遅くなる。
-    turn_silence_duration_ms: int = 800
+    # ADR-0039: 「考えながら長めに沈黙する」要件インタビューで発話が途中確定して吹き出しが
+    # 分断されるのを抑えるため、ADR-0038 の 800 から 1200 に延長。
+    turn_silence_duration_ms: int = 1200
     # 発話終端検出の感度。"low" = 終わったと判定されにくい（待ちが長い）/ "high" /
     # "" = サーバ既定。話し途中の割り込み対策の主レバー。
     turn_end_sensitivity: str = "low"
@@ -32,7 +39,9 @@ class Settings(BaseSettings):
     # なるが、短い返事を取りこぼすリスクがある。既定はサーバ既定（""）。
     turn_start_sensitivity: str = ""
     # start-of-speech 確定に要する発話長 (ms)。0 以下はサーバ既定。
-    turn_prefix_padding_ms: int = 0
+    # ADR-0039: 一瞬の環境音・相槌の漏れ込みで発話が誤って区切られる（短い相槌で切られる）のを
+    # 抑えるため 100ms の連続発話を start 確定の条件にする。BVC と併せて誤検出を減らす。
+    turn_prefix_padding_ms: int = 100
 
     # --- Gemini Live セッションの安定化 ---
     # コンテキスト圧縮（sliding window）。無効だとコンテキスト上限到達でセッションが
@@ -43,6 +52,13 @@ class Settings(BaseSettings):
     # AgentSession が回復不能エラーで閉じたときの自動再起動（1 job あたりの上限と初期待ち）。
     voice_session_max_restarts: int = 3
     voice_session_restart_backoff_s: float = 2.0
+
+    # --- 入力ノイズ抑制（ADR-0039）---
+    # LiveKit Cloud の Krisp Background Voice Cancellation（BVC）をエージェント側の音声入力に
+    # 適用する。雑音・PC 内蔵マイク・別話者の被り由来の誤認識/言語ドリフトを抑える。
+    # プラグイン（livekit-plugins-noise-cancellation）未導入や self-host では自動で無効化して
+    # 会話は継続する（フェイルソフト）。BVC は LiveKit Cloud でのみ有効。
+    noise_cancellation_enabled: bool = True
 
     # Firestore
     firestore_emulator_host: str = ""

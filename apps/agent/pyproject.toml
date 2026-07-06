@@ -5,6 +5,10 @@ description = "SANBA voice interview agent (LiveKit + Gemini Live + ADK)"
 requires-python = ">=3.12"
 dependencies = [
     "livekit-agents[google]>=1.0.0",
+    # LiveKit Cloud の Krisp Background Voice Cancellation（BVC / ADR-0039）。入力音声の
+    # 雑音・別話者の被りを抑え、Gemini Live の誤認識/言語ドリフトを減らす。self-host では
+    # 実効しないが import は成功する（main.py はフェイルソフトに構築する）。
+    "livekit-plugins-noise-cancellation>=0.2",
     "google-adk>=1.0.0",
     "google-genai>=1.0.0",
     "google-cloud-firestore>=2.16.0",

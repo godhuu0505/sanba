@@ -15,6 +15,7 @@ import contextlib
 import os
 import time
 from typing import Any, NamedTuple
+from urllib.parse import urlparse
 
 import structlog
 from google.genai import types as genai_types
@@ -34,6 +35,13 @@ from livekit.agents import (
 )
 from livekit.agents.llm import function_tool
 from livekit.plugins import google
+
+try:  # noqa: SIM105 - フェイルソフト（プラグイン未導入・self-host でも会話は成立する）
+    # LiveKit Cloud の Krisp Background Voice Cancellation（BVC / ADR-0039）。
+    # パッケージ未導入や import 失敗時は None にフォールバックし、ノイズ抑制なしで続行する。
+    from livekit.plugins import noise_cancellation as _noise_cancellation
+except Exception:  # pragma: no cover - 依存の有無に依存
+    _noise_cancellation = None  # type: ignore[assignment]
 from sanba_shared.models import (
     AnalysisResult,
     GitHubIndexStatus,
@@ -70,6 +78,7 @@ from .prompts.interview import (
     END_USER_VOICE_AGENT_INSTRUCTIONS,
     VOICE_AGENT_INSTRUCTIONS,
     build_glossary_seed,
+    build_language_directive,
     build_prep_analysis_note,
     build_prep_premise,
     build_repo_premise,
@@ -179,6 +188,9 @@ def build_agent_instructions(repo: SessionRepository, session_id: str) -> AgentS
         # repo grounding を許可すると end_user セッションが None で作られた場合にフェイルオープン
         # するため、「読めた + meta が実在する」を両方満たすときだけ True にする。
         allow_repo_grounding = confirmed and meta is not None
+    # 言語固定の会話指示を設定（GEMINI_LANGUAGE）から組み立てて末尾に足す（ADR-0039）。
+    # 設定値とプロンプトを一致させ、空文字（自動判定）や ja 以外の言語コードでも矛盾しない。
+    instructions += build_language_directive(settings.gemini_language)
     # モード分岐の観測性（CLAUDE.md 原則3）: どのモードでどれだけシードしたかを追える形に。
     log.info(
         "agent_instructions_built",
@@ -1296,12 +1308,62 @@ async def respond_to_answer(
     )
 
 
+def _is_livekit_cloud_url(url: str) -> bool:
+    """接続先が LiveKit Cloud か（BVC が実効する transport か）を判定する（ADR-0039）。
+
+    Cloud は `wss://<project>.livekit.cloud`。self-host / local（`ws://localhost:7880` 等）は
+    Krisp BVC の transport 前提を満たさないため False。判定不能な URL も False（安全側）。
+    """
+    host = (urlparse(url).hostname or "").lower()
+    return host == "livekit.cloud" or host.endswith(".livekit.cloud")
+
+
+def build_noise_cancellation() -> Any | None:
+    """入力音声のノイズ抑制（Krisp BVC）を組み立てる（ADR-0039）。
+
+    設定 ON・プラグイン導入済み・接続先が LiveKit Cloud の 3 条件が揃うときだけ BVC を返し、
+    RoomInputOptions.noise_cancellation に渡す。いずれか欠けるときは None を返し、抑制なしで
+    会話を続ける（フェイルソフト）。BVC は LiveKit Cloud transport 前提のため、self-host / local
+    では初期化できず二重処理・失敗の元になるので自動で無効化する。設定 ON なのに使えない構成
+    （プラグイン未導入・非 Cloud）のときは観測性のため一度警告する（CLAUDE.md 原則3）。
+    """
+    if not settings.noise_cancellation_enabled:
+        return None
+    if _noise_cancellation is None:
+        log.warning("noise_cancellation_unavailable", reason="plugin_not_installed")
+        return None
+    if not _is_livekit_cloud_url(settings.livekit_url):
+        log.warning(
+            "noise_cancellation_unavailable",
+            reason="not_livekit_cloud",
+            livekit_url=settings.livekit_url,
+        )
+        return None
+    return _noise_cancellation.BVC()
+
+
+def build_input_transcription() -> genai_types.AudioTranscriptionConfig:
+    """入力音声の文字起こし設定を組み立てる（ADR-0039）。
+
+    `language_codes` に設定言語（既定 ja-JP）を与えると、Gemini Live は「入力音声はこの
+    言語」というヒントとして使い、短い発話・雑音・曖昧な音で韓国語/中国語へ誤認識
+    ドリフトするのを抑える。空文字なら language_codes を付けずモデルの自動判定に委ねる
+    （従来挙動）。ネイティブ音声モデルでも入力文字起こしのヒントは有効。
+    """
+    lang = settings.gemini_language.strip()
+    return genai_types.AudioTranscriptionConfig(language_codes=[lang] if lang else None)
+
+
 def build_realtime_model() -> google.beta.realtime.RealtimeModel:
-    """Gemini Live の RealtimeModel を組み立てる（ターン検出＋安定化設定込み / ADR-0038）。
+    """Gemini Live の RealtimeModel を組み立てる（ターン検出・安定化・言語固定 / ADR-0038・0039）。
 
     再起動のたびに新しいインスタンスが要るため関数化している（AgentSession が閉じた
     モデルは再利用できない）。context window compression は、長いインタビューが
     コンテキスト上限でセッションごと打ち切られて無反応になるのを防ぐ。
+    ADR-0039: 言語を固定して認識ドリフト（韓国語/中国語化）を抑える。`language`（BCP-47）は
+    出力音声の language_code、`input_audio_transcription.language_codes` は入力認識の言語ヒント。
+    ネイティブ音声は出力言語を自動選択する面があるため、プロンプト側（VOICE_AGENT_INSTRUCTIONS）
+    でも日本語固定を明示し多層で担保する。
     """
     compression: genai_types.ContextWindowCompressionConfig | NotGiven = NOT_GIVEN
     if settings.gemini_context_window_compression:
@@ -1311,10 +1373,13 @@ def build_realtime_model() -> google.beta.realtime.RealtimeModel:
                 target_tokens=settings.gemini_context_sliding_window_tokens
             ),
         )
+    language: str | NotGiven = settings.gemini_language.strip() or NOT_GIVEN
     return google.beta.realtime.RealtimeModel(
         model=settings.gemini_live_model,
         voice="Puck",
+        language=language,
         temperature=0.7,
+        input_audio_transcription=build_input_transcription(),
         realtime_input_config=build_turn_detection(
             silence_duration_ms=settings.turn_silence_duration_ms,
             end_sensitivity=settings.turn_end_sensitivity,
@@ -1485,11 +1550,17 @@ async def entrypoint(ctx: JobContext) -> None:
         """
         s: AgentSession = AgentSession(llm=build_realtime_model())
         _wire_session(s)
+        # ADR-0039: 入力音声に Krisp BVC を適用して雑音・別話者の被り由来の誤認識を抑える。
+        # 未導入/OFF では None（抑制なし）で会話は成立する。
+        input_options = RoomInputOptions(
+            video_enabled=True,
+            noise_cancellation=build_noise_cancellation(),
+        )
         try:
             await s.start(
                 agent=agent,
                 room=ctx.room,
-                room_input_options=RoomInputOptions(video_enabled=True),
+                room_input_options=input_options,
             )
         except BaseException:
             with contextlib.suppress(Exception):
