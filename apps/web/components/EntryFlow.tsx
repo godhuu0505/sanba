@@ -319,6 +319,9 @@ export default function EntryFlow({ initialStep = "home" }: { initialStep?: Step
       return;
     }
     if (step === "prepare" && prepHydrated && productId === "") {
+      // 運用でこのフォールバック（直リンク・並行削除等）の頻度を追えるよう構造化ログを残す
+      // （CLAUDE.md 原則3。収集先の OTLP/メトリクス配線は #232）。PII は含めない。
+      console.info("[entry-flow] fallback to home", { reason: "product-unselected" });
       navigateStep("home");
     }
   }, [products, productId, step, prepHydrated]);
@@ -636,7 +639,11 @@ export default function EntryFlow({ initialStep = "home" }: { initialStep?: Step
           <div className="flex items-center gap-[8px] rounded-[12px] border border-sanba-border bg-sanba-surface px-[12px] py-[10px]">
             <Package size={16} aria-hidden className="shrink-0 text-sanba-gold-text" />
             <span className="shrink-0 text-[12px] font-bold text-sanba-muted">対象のアプリ</span>
-            <span className="min-w-0 flex-1 truncate text-right text-[13px] font-bold text-sanba-cream">
+            {/* 直リンク直後は「確認しています…」→アプリ名へ変わるため、変化を SR にも伝える。 */}
+            <span
+              aria-live="polite"
+              className="min-w-0 flex-1 truncate text-right text-[13px] font-bold text-sanba-cream"
+            >
               {selectedProduct ? selectedProduct.name : "確認しています…"}
             </span>
           </div>
