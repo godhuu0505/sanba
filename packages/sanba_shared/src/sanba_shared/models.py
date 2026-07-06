@@ -123,6 +123,25 @@ class GitHubLink(BaseModel):
     linked_at: datetime = Field(default_factory=_now)
 
 
+class Audience(StrEnum):
+    """要件結果ドキュメントの読み手（出力フォーマットの選択キー）。
+
+    利用者（end_user）・企画者（planner）・開発者（developer）の 3 値。
+    `InviteScope`（インタビューの相手 2 値）とは軸が別: こちらは**成果物を誰向けの
+    体裁で出すか**であり、1 セッションの結果を 3 通りに切り替えて閲覧できる。
+    """
+
+    END_USER = "end_user"
+    PLANNER = "planner"
+    DEVELOPER = "developer"
+
+
+# 要件サンバ中に必ず確認する項目の登録上限。プロンプトへ機械的にシードするため、
+# Firestore 文書と初期 instructions の肥大を抑える上限をドメイン側で一元定義する
+# （API のバリデーションと agent のシードが同じ値を見る）。
+MAX_CHECK_ITEMS = 10
+
+
 class Product(BaseModel):
     """深掘り対象のアプリ (`products/{id}`)。ADR-0031。
 
@@ -140,6 +159,15 @@ class Product(BaseModel):
     # 利用者向け語彙（画面名・機能の呼び名）。end_user モードのプロンプトへ機械的に
     # シードする（ADR-0032 決定7）。Stage 1 では保持のみで未使用。
     glossary: list[str] = Field(default_factory=list)
+
+    # ---- 要件結果の出力フォーマット / 確認項目 ----
+    # audience（利用者/企画者/開発者）→ Markdown テンプレート。各 audience につき 1 つ。
+    # 未登録の audience は `output_formats.resolve_output_format` が既定テンプレートへ
+    # フォールバックするため、旧文書・新規作成とも空 dict でよい。
+    output_formats: dict[Audience, str] = Field(default_factory=dict)
+    # 要件サンバ中に必ず確認する項目（最大 MAX_CHECK_ITEMS 件。上限は API 層で検証）。
+    # agent が初期 instructions へ機械的にシードする（glossary と同型）。
+    check_items: list[str] = Field(default_factory=list)
 
     # ---- 連携 GitHub リポジトリ (ADR-0027 / ADR-0028 を product に持ち上げ) ----
     # 意味は SessionMeta の同名フィールドと同じ。None = 未指定（環境変数フォールバック）、

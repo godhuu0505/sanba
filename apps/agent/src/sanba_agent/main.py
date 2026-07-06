@@ -39,6 +39,7 @@ from sanba_shared.models import (
     GitHubIndexStatus,
     InviteScope,
     Priority,
+    Product,
     Requirement,
     RequirementCategory,
     SessionMeta,
@@ -69,6 +70,7 @@ from .prompts.interview import (
     END_USER_OPENING_INSTRUCTIONS,
     END_USER_VOICE_AGENT_INSTRUCTIONS,
     VOICE_AGENT_INSTRUCTIONS,
+    build_check_items_seed,
     build_glossary_seed,
     build_prep_analysis_note,
     build_prep_premise,
@@ -102,25 +104,23 @@ def _repo_premise(meta: SessionMeta | None) -> str:
     return build_repo_premise(meta.github_repo, meta.github_branch, ready, meta.github_summary)
 
 
-def _glossary_seed(repo: SessionRepository, meta: SessionMeta) -> str:
-    """product の利用者向け語彙シードを組み立てる（ADR-0032 決定7 / FR-2.4）。
+def _session_product(repo: SessionRepository, meta: SessionMeta | None) -> Product | None:
+    """セッションが従属する product を読む（プロンプトシード用 / ADR-0032 決定7）。
 
-    product_id → product の順に辿り、読める範囲で機械的に組み立てる（LLM 追加呼び出し
-    なし・ADR-0028 の repo 要約シードと同型）。product_id なし（単発セッション）・
-    product 削除済み・Firestore 不通では空文字 = シードなしで会話は成立させる
-    （シードは付加価値）。glossary 空でもアプリ名はシードする。
+    glossary（end_user）と確認項目（両モード）のシードが同じ product を見るため、
+    ここで 1 回だけ読む。product_id なし（単発セッション）・product 削除済み・
+    Firestore 不通では None = シードなしで会話は成立させる（シードは付加価値）。
     """
-    if not meta.product_id:
-        return ""
+    if meta is None or not meta.product_id:
+        return None
     try:
         product = repo.get_product(meta.product_id)
     except Exception as exc:  # pragma: no cover - depends on backend
-        log.warning("glossary_seed_read_failed", session=meta.id, error=str(exc))
-        return ""
+        log.warning("product_seed_read_failed", session=meta.id, error=str(exc))
+        return None
     if product is None:
-        log.warning("glossary_seed_product_missing", session=meta.id)
-        return ""
-    return build_glossary_seed(product.name, product.glossary)
+        log.warning("product_seed_missing", session=meta.id)
+    return product
 
 
 class AgentSetup(NamedTuple):
@@ -161,9 +161,19 @@ def build_agent_instructions(repo: SessionRepository, session_id: str) -> AgentS
         log.warning("session_meta_read_failed", session=session_id, error=str(exc))
     mode = meta.interview_mode if meta is not None else InviteScope.DEVELOPER
     prep_note = ""
+    # glossary（end_user）と確認項目（両モード）のシード元。1 回だけ読む。
+    product = _session_product(repo, meta)
+    check_items_seed = (
+        build_check_items_seed(product.check_items, end_user=mode is InviteScope.END_USER)
+        if product is not None
+        else ""
+    )
     if mode is InviteScope.END_USER:
         assert meta is not None  # END_USER は meta が読めたときにしか選ばれない
-        instructions = END_USER_VOICE_AGENT_INSTRUCTIONS + _glossary_seed(repo, meta)
+        glossary_seed = (
+            build_glossary_seed(product.name, product.glossary) if product is not None else ""
+        )
+        instructions = END_USER_VOICE_AGENT_INSTRUCTIONS + glossary_seed + check_items_seed
         allow_repo_grounding = False
     else:
         # 準備フォームのゴール（ADR-0035）を repo 前提より先にシードする（セッションの主題が
@@ -173,7 +183,10 @@ def build_agent_instructions(repo: SessionRepository, session_id: str) -> AgentS
             prep_premise = build_prep_premise(meta.goal, meta.goal_detail, meta.roles)
             prep_note = build_prep_analysis_note(meta.goal, meta.goal_detail)
         instructions = (
-            VOICE_AGENT_INSTRUCTIONS + prep_premise + (_repo_premise(meta) if confirmed else "")
+            VOICE_AGENT_INSTRUCTIONS
+            + prep_premise
+            + (_repo_premise(meta) if confirmed else "")
+            + check_items_seed
         )
         # meta is None（セッション未作成/削除済み）は confirmed であってもモード不明と同義。
         # repo grounding を許可すると end_user セッションが None で作られた場合にフェイルオープン
@@ -187,6 +200,7 @@ def build_agent_instructions(repo: SessionRepository, session_id: str) -> AgentS
         mode_confirmed=confirmed,
         allow_repo_grounding=allow_repo_grounding,
         has_prep_context=bool(prep_note),
+        check_items_count=len(product.check_items) if product is not None else 0,
         chars=len(instructions),
     )
     return AgentSetup(instructions, mode, allow_repo_grounding, prep_note)

@@ -13,6 +13,7 @@ import pytest
 from pydantic import ValidationError
 
 from sanba_shared.models import (
+    Audience,
     GitHubIndexStatus,
     InviteScope,
     Product,
@@ -142,6 +143,25 @@ def test_update_product_only_touches_editable_fields() -> None:
         repo.update_product("prod-1", name="")
     with pytest.raises(ProductNotFound):
         repo.update_product("prod-none", name="x")
+
+
+def test_update_product_output_formats_and_check_items() -> None:
+    repo = _repo()
+    repo.create_product(_product())
+    updated = repo.update_product(
+        "prod-1",
+        output_formats={"developer": "# 開発者向け\n{{requirements}}"},
+        check_items=["ログイン方式", "課金の有無"],
+    )
+    assert updated.output_formats == {Audience.DEVELOPER: "# 開発者向け\n{{requirements}}"}
+    assert updated.check_items == ["ログイン方式", "課金の有無"]
+    # 他の編集可能フィールドは温存される。
+    assert updated.name == "請求アプリ"
+
+    # 全量置換: audience キーを含まない dict を渡すと登録が消える（既定へ戻す操作）。
+    cleared = repo.update_product("prod-1", output_formats={})
+    assert cleared.output_formats == {}
+    assert cleared.check_items == ["ログイン方式", "課金の有無"]  # 触っていない方は不変
 
 
 def test_set_product_github_preserves_other_fields() -> None:

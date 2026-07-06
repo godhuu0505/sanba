@@ -38,6 +38,8 @@ from fastapi.responses import JSONResponse
 from livekit import api
 from pydantic import BaseModel, Field
 from sanba_shared.models import (
+    MAX_CHECK_ITEMS,
+    Audience,
     GitHubIndexStatus,
     GitHubLink,
     InviteScope,
@@ -52,6 +54,7 @@ from sanba_shared.models import (
     new_member_invite_id,
     new_product_id,
 )
+from sanba_shared.output_formats import DEFAULT_OUTPUT_FORMATS, resolve_output_format
 from sanba_shared.repository import (
     InviteNotFound,
     InviteNotUsable,
@@ -101,6 +104,7 @@ from .observability import (
     record_product_event,
     record_question_hydration,
     record_rate_limited,
+    record_result_document_rendered,
     setup_observability,
 )
 from .pii import mask_pii
@@ -114,6 +118,7 @@ from .realtime import (
 )
 from .repo_indexing import fetch_and_index_repo
 from .repository import ReadRepository
+from .result_document import render_result_document
 from .storage import (
     AssetStore,
     asset_kind,
@@ -965,11 +970,20 @@ class CreateProductRequest(BaseModel):
 
 
 class UpdateProductRequest(BaseModel):
-    """`PATCH /api/products/{id}`（FR-1.2）。None = 変更しない（部分更新）。"""
+    """`PATCH /api/products/{id}`（FR-1.2）。None = 変更しない（部分更新）。
+
+    output_formats / check_items はフィールド単位の全量置換（audience キーの削除＝
+    既定へ戻す、を部分 merge では表現できないため）。件数上限は Pydantic で、
+    各要素の正規化・長さは `_clean_*` で検証する。
+    """
 
     name: str | None = Field(default=None, max_length=200)
     description: str | None = Field(default=None, max_length=2000)
     glossary: list[str] | None = Field(default=None, max_length=100)
+    # audience（end_user/planner/developer）→ 出力フォーマット（Markdown テンプレート）。
+    output_formats: dict[str, str] | None = None
+    # 要件サンバ中に必ず確認する項目（最大 MAX_CHECK_ITEMS 件）。
+    check_items: list[str] | None = Field(default=None, max_length=MAX_CHECK_ITEMS)
 
 
 class ProductResponse(BaseModel):
@@ -989,6 +1003,12 @@ class ProductResponse(BaseModel):
     github_commit_sha: str | None = None
     github_index_status: str = "none"
     role: str = "owner"
+    # 登録済みの出力フォーマット（audience → テンプレート。未登録キーは載せない）と
+    # 既定テンプレート（web が「未登録＝この既定が使われる」を表示するための参照値。
+    # 正はサーバ側 DEFAULT_OUTPUT_FORMATS で、web に定数を複製させない）。
+    output_formats: dict[str, str] = Field(default_factory=dict)
+    output_format_defaults: dict[str, str] = Field(default_factory=dict)
+    check_items: list[str] = Field(default_factory=list)
 
 
 class DeleteProductResponse(BaseModel):
@@ -1007,6 +1027,9 @@ def _product_response(product: Product, *, role: str = "owner") -> ProductRespon
         github_commit_sha=product.github_commit_sha,
         github_index_status=product.github_index_status.value,
         role=role,
+        output_formats={a.value: t for a, t in product.output_formats.items()},
+        output_format_defaults={a.value: t for a, t in DEFAULT_OUTPUT_FORMATS.items()},
+        check_items=product.check_items,
     )
 
 
@@ -1016,6 +1039,59 @@ def _clean_glossary(glossary: list[str]) -> list[str]:
     cleaned = [g for g in cleaned if g]
     if any(len(g) > 100 for g in cleaned):
         raise HTTPException(status_code=400, detail="glossary term too long (max 100 chars)")
+    return cleaned
+
+
+# 出力フォーマット（Markdown テンプレート）1 件の長さ上限。Firestore 文書 1MB と
+# 閲覧ドキュメントとしての実用性から十分に余裕のある値に倒す。
+MAX_OUTPUT_FORMAT_CHARS = 8000
+# 確認項目 1 件の長さ上限（プロンプトへシードするため glossary より長めの一文まで）。
+MAX_CHECK_ITEM_CHARS = 200
+
+
+def _clean_output_formats(output_formats: dict[str, str]) -> dict[str, str]:
+    """出力フォーマットを正規化する: audience キーを検証し、空値は「未登録＝既定へ戻す」
+    としてキーごと落とす。過長は 400。"""
+    cleaned: dict[str, str] = {}
+    for key, template in output_formats.items():
+        try:
+            audience = Audience(key)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=f"unknown audience: {key} (expected end_user/planner/developer)",
+            ) from exc
+        stripped = template.strip()
+        if not stripped:
+            continue
+        if len(stripped) > MAX_OUTPUT_FORMAT_CHARS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"output format too long (max {MAX_OUTPUT_FORMAT_CHARS} chars)",
+            )
+        cleaned[audience.value] = stripped
+    return cleaned
+
+
+def _clean_check_items(check_items: list[str]) -> list[str]:
+    """確認項目を正規化する: 前後空白を除き、空要素を捨て、順序を保って重複を除く。
+
+    過長は 400。件数上限（MAX_CHECK_ITEMS）は Pydantic（UpdateProductRequest）が先に
+    422 で弾くため、ここでは正規化後の再検証のみ行う（重複除去で件数は増えない）。
+    """
+    seen: set[str] = set()
+    cleaned: list[str] = []
+    for item in check_items:
+        stripped = item.strip()
+        if not stripped or stripped in seen:
+            continue
+        if len(stripped) > MAX_CHECK_ITEM_CHARS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"check item too long (max {MAX_CHECK_ITEM_CHARS} chars)",
+            )
+        seen.add(stripped)
+        cleaned.append(stripped)
     return cleaned
 
 
@@ -1104,7 +1180,8 @@ def get_product(product_id: str, user: AuthUser = Depends(require_user)) -> Prod
 def update_product(
     product_id: str, req: UpdateProductRequest, user: AuthUser = Depends(require_user)
 ) -> ProductResponse:
-    """name / description / glossary のみ更新する（FR-1.2）。所有・出所は不変。
+    """name / description / glossary / output_formats / check_items のみ更新する（FR-1.2）。
+    所有・出所は不変。
 
     管理操作なので owner / admin のみ（メンバーは 403 / ADR-0036）。
     """
@@ -1114,9 +1191,18 @@ def update_product(
         raise HTTPException(status_code=400, detail="name must not be empty")
     glossary = _clean_glossary(req.glossary) if req.glossary is not None else None
     description = req.description.strip() if req.description is not None else None
+    output_formats = (
+        _clean_output_formats(req.output_formats) if req.output_formats is not None else None
+    )
+    check_items = _clean_check_items(req.check_items) if req.check_items is not None else None
     try:
         updated = _repo.update_product(
-            product_id, name=name, description=description, glossary=glossary
+            product_id,
+            name=name,
+            description=description,
+            glossary=glossary,
+            output_formats=output_formats,
+            check_items=check_items,
         )
     except ProductNotFound as exc:
         # 認可チェック後に消えた競合。存在秘匿の方針に合わせ 404 のまま返す。
@@ -2104,6 +2190,68 @@ def get_my_session_requirements(
         created_at=session.created_at,
         finalized=session.status == "finalized",
         items=items,
+    )
+
+
+class ResultDocumentResponse(BaseModel):
+    """`GET /api/sessions/mine/{id}/result-document` の応答。
+
+    audience（利用者/企画者/開発者）別の出力フォーマットで整形した要件結果ドキュメント。
+    `is_custom_format` はアプリ管理画面で登録されたフォーマットが使われたか（false =
+    既定テンプレートへフォールバック）。web が「既定フォーマット」表示に使う。
+    """
+
+    audience: str
+    is_custom_format: bool
+    markdown: str
+
+
+@app.get(
+    "/api/sessions/mine/{session_id}/result-document",
+    response_model=ResultDocumentResponse,
+)
+def get_my_session_result_document(
+    session_id: str, audience: Audience, user: AuthUser = Depends(require_user)
+) -> ResultDocumentResponse:
+    """本人 (owner_sub) のセッションの要件結果を audience 別フォーマットで整形して返す。
+
+    要件の選択は `get_my_session_requirements` と同じ（確定済みは finalize 時の凍結
+    スナップショット、進行中は現在の全要件）で、閲覧とドキュメントの内容がずれない。
+    フォーマットはセッションが従属する product の登録値 →（未登録・単発セッションは）
+    既定テンプレートの順で解決する（`resolve_output_format`）。認可も同エンドポイントと
+    同じ owner_sub 一致・非所有/不存在は 404 に平す。
+    """
+    session = _repo.get_session(session_id)
+    if session is None or session.owner_sub != user.sub:
+        raise HTTPException(status_code=404, detail="session not found")
+    if session.status == "finalized":
+        items = _finalized_snapshot_requirements(session)
+    else:
+        items = _read_repo.list_requirements(session_id)
+    product: Product | None = None
+    if session.product_id:
+        product = _repo.get_product(session.product_id)
+    template, is_custom = resolve_output_format(product, audience)
+    markdown = render_result_document(
+        template,
+        session_title=session.title,
+        app_name=product.name if product is not None else None,
+        goal=session.goal,
+        date=datetime.now(UTC).strftime("%Y-%m-%d"),
+        requirements=items,
+        check_items=product.check_items if product is not None else [],
+    )
+    record_result_document_rendered(audience.value, is_custom)
+    log.info(
+        "result_document_rendered",
+        session=session_id,
+        owner=user.sub,
+        audience=audience.value,
+        is_custom_format=is_custom,
+        requirement_count=len(items),
+    )
+    return ResultDocumentResponse(
+        audience=audience.value, is_custom_format=is_custom, markdown=markdown
     )
 
 

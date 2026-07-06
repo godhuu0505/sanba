@@ -368,11 +368,15 @@ class SessionRepository:
         name: str | None = None,
         description: str | None = None,
         glossary: list[str] | None = None,
+        output_formats: dict[str, str] | None = None,
+        check_items: list[str] | None = None,
     ) -> Product:
-        """name / description / glossary のみ上書きする。
+        """name / description / glossary / output_formats / check_items のみ上書きする。
 
         所有と出所 (owner_sub / created_at) は不変。repo 紐づけは `set_product_github` が
         担う（`update_requirement` と同じ「編集可能フィールドを閉じる」パターン）。
+        output_formats は audience→テンプレートの全量置換（部分 merge にすると「既定へ
+        戻す＝キー削除」が Firestore の merge write で表現できない）。
         """
         current = self.get_product(product_id)
         if current is None:
@@ -384,6 +388,10 @@ class SessionRepository:
             updates["description"] = description
         if glossary is not None:
             updates["glossary"] = list(glossary)
+        if output_formats is not None:
+            updates["output_formats"] = dict(output_formats)
+        if check_items is not None:
+            updates["check_items"] = list(check_items)
         if not updates:
             return current
         # dict に適用してから検証する（name 空などの不正値検出を一度で行う）。
@@ -393,7 +401,9 @@ class SessionRepository:
 
         if self._client is not None:
             # github_* などの並行更新を巻き戻さないよう、編集対象フィールドのみ patch する。
-            self._client.collection("products").document(product_id).set(updates, merge=True)
+            # set(merge=True) だと map（output_formats）が深マージされ「audience キーの削除＝
+            # 既定へ戻す」が永続に反映されないため、フィールド単位で全量置換する update を使う。
+            self._client.collection("products").document(product_id).update(updates)
         else:
             self._mem_products[product_id] = updated
         return updated

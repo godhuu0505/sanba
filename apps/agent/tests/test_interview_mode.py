@@ -120,6 +120,51 @@ def test_end_user_session_survives_missing_product() -> None:
     assert instructions2 == END_USER_VOICE_AGENT_INSTRUCTIONS
 
 
+def test_check_items_seeded_for_developer_session() -> None:
+    """product 登録の確認項目は developer セッションの初期 instructions にシードされる。"""
+    repo = _repo()
+    repo.create_product(
+        Product(
+            id="prod-1",
+            name="請求アプリ",
+            owner_sub="owner",
+            check_items=["ログイン方式を確認する", "課金の有無を確認する"],
+        )
+    )
+    _seed_session(repo, mode=InviteScope.DEVELOPER, product_id="prod-1")
+    instructions, _, _, _ = build_agent_instructions(repo, "s1")
+    assert "このセッションで必ず確認する項目" in instructions
+    assert "- ログイン方式を確認する" in instructions
+    assert "- 課金の有無を確認する" in instructions
+
+
+def test_check_items_seeded_for_end_user_session_with_translation_rule() -> None:
+    """end_user でも確認項目はシードされ、利用者の言葉への言い換え指示が付く。"""
+    repo = _repo()
+    repo.create_product(
+        Product(
+            id="prod-1",
+            name="請求アプリ",
+            owner_sub="owner",
+            glossary=["請求書一覧"],
+            check_items=["検索機能の使い勝手"],
+        )
+    )
+    _seed_session(repo, mode=InviteScope.END_USER, product_id="prod-1")
+    instructions, _, _, _ = build_agent_instructions(repo, "s1")
+    assert "- 検索機能の使い勝手" in instructions
+    assert "言い換えて確認する" in instructions
+
+
+def test_no_check_items_leaves_instructions_unchanged() -> None:
+    """確認項目が未登録なら instructions にセクション自体を足さない。"""
+    repo = _repo()
+    repo.create_product(Product(id="prod-1", name="請求アプリ", owner_sub="owner"))
+    _seed_session(repo, mode=InviteScope.DEVELOPER, product_id="prod-1")
+    instructions, _, _, _ = build_agent_instructions(repo, "s1")
+    assert "必ず確認する項目" not in instructions
+
+
 def test_missing_session_falls_back_to_developer() -> None:
     """セッション文書が読めないときは既定 developer（既存挙動の安全側）。"""
     repo = _repo()
