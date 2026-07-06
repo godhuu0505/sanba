@@ -13,8 +13,9 @@
 // - a11y: 暗幕＋ボトムシート（role=dialog/aria-modal）、ESC で閉じる、フォーカストラップ、
 //   見た目に依らないラベル（ADR-0017）。
 //
-// Google ドライブは ADR-0007 で未承認（保留）。実 OAuth スコープ追加は別チケットのため、ここでは
-// 導線（最小ピッカ）のみを出し、押下時に「準備中」を案内する（onDrive 注入で実導線に差し替え可能）。
+// Google ドライブは drive.file + Google Picker で取り込む（ADR-0044 / ADR-0007 の保留を解除）。
+// 実導線は親が onDrive で注入する（EntryFlow / SessionView）。未注入の文脈では従来どおり
+// 「準備中」を案内するフォールバックに退化する。
 
 import { Camera, ChevronRight, Cloud, Monitor, Upload, X } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
@@ -173,7 +174,7 @@ export function MaterialSourceSheet({
         <SourceRow
           icon={<Upload size={20} />}
           title="ファイルをアップロード"
-          sub="モック・スクショ・写真（PNG/JPG）・録画（MP4/MOV）"
+          sub="写真（PNG/JPG）・録画（MP4/MOV）・資料（PDF/Office/Markdown/HTML/CSV 等）"
           onClick={() => pick("upload", onUpload)}
         />
 
@@ -191,7 +192,7 @@ export function MaterialSourceSheet({
         <SourceRow
           icon={<Cloud size={20} />}
           title="Google ドライブから選ぶ"
-          sub="保存済みの資料を渡す"
+          sub="Google ドキュメント・スプレッドシート・スライドも取り込めます"
           onClick={() => pick("drive", onDrive ?? (() => setDriveNotice(true)))}
         />
         {driveNotice && !onDrive && (

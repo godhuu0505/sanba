@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  classifyFileUpload,
+  classifyUpload,
   createSession,
   deleteContextFile,
   fetchGithubRepos,
@@ -13,6 +15,34 @@ import {
 
 afterEach(() => {
   vi.restoreAllMocks();
+});
+
+describe("classifyUpload / classifyFileUpload（受理判定・ADR-0044）", () => {
+  it("画像/動画に加えて資料（md/pdf/html/csv/json/Office）を受理する", () => {
+    expect(classifyUpload("mock.png")).toBe("image");
+    expect(classifyUpload("rec.MOV")).toBe("video");
+    expect(classifyUpload("spec.md")).toBe("doc");
+    expect(classifyUpload("prd.pdf")).toBe("doc");
+    expect(classifyUpload("page.html")).toBe("doc");
+    expect(classifyUpload("data.csv")).toBe("doc");
+    expect(classifyUpload("conf.json")).toBe("doc");
+    expect(classifyUpload("spec.docx")).toBe("doc");
+    expect(classifyUpload("req.xlsx")).toBe("doc");
+    expect(classifyUpload("deck.pptx")).toBe("doc");
+    expect(classifyUpload("malware.exe")).toBeNull();
+  });
+
+  it("拡張子が無くても MIME が受理範囲なら通す（API と整合）", () => {
+    expect(classifyFileUpload({ name: "clipboard-image", type: "image/png" })).toBe("image");
+    expect(classifyFileUpload({ name: "exported", type: "text/markdown" })).toBe("doc");
+    expect(
+      classifyFileUpload({
+        name: "book",
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      }),
+    ).toBe("doc");
+    expect(classifyFileUpload({ name: "archive", type: "application/zip" })).toBeNull();
+  });
 });
 
 describe("sendTelemetry（#232/#243 送信シーム）", () => {

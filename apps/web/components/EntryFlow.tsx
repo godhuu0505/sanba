@@ -42,10 +42,12 @@ import {
   Textarea,
 } from "@/components/sanba";
 import {
+  ACCEPTED_DOC,
   ACCEPTED_IMAGE,
+  ACCEPTED_SUMMARY,
   ACCEPTED_VIDEO,
   addSessionContext,
-  classifyUpload,
+  classifyFileUpload,
   createSession,
   fetchGithubRepos,
   fetchMyProducts,
@@ -60,6 +62,7 @@ import {
 } from "../lib/api";
 import { AUDIENCE_LABELS } from "../lib/audience";
 import { useAuth } from "../lib/auth";
+import { importDriveFile, isDriveConfigured, openDrivePicker } from "../lib/googleDrive";
 import { AccountMenu } from "./AccountMenu";
 import { ConversationStart } from "./ConversationStart";
 import { SideMenu } from "./SideMenu";
@@ -183,6 +186,8 @@ export default function EntryFlow({
   const [staged, setStaged] = useState<File[]>([]);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [attachError, setAttachError] = useState<string | null>(null);
+  // Google ドライブからの取り込み中（export/download 中）の表示（ADR-0044）。
+  const [driveBusy, setDriveBusy] = useState(false);
   // 開始時に「実際に投入できた」名前と失敗件数のスナップショット。03-0 サマリは
   // staged ではなくこれを参照し、未登録ファイルを「添付済み」と誤認させない（Codex P2）。
   const [uploadedNames, setUploadedNames] = useState<string[]>([]);
@@ -489,7 +494,9 @@ export default function EntryFlow({
   }
 
   async function handleStart() {
-    if (busy) return; // 二重送信防止（#140 AC）。
+    // 二重送信防止（#140 AC）。Drive 取り込み中も開始しない: クリック時点の staged だけが
+    // 投入されるため、取り込み完了後にステージされる Drive 資料が漏れる（Codex P2）。
+    if (busy || driveBusy) return;
     try {
       setBusy(true);
       setError(null);
@@ -628,46 +635,91 @@ export default function EntryFlow({
     console.info("[material-source] select", { source, surface: "prepare" });
   }
 
-  // 受理判定は API（content-type）と揃える。拡張子（classifyUpload）に加えて File.type も見る
-  // ことで、.jfif や拡張子なしでも MIME が image/video なら受理する（Codex P2）。
-  function classifyFile(file: File): "image" | "video" | null {
-    const byName = classifyUpload(file.name);
-    if (byName) return byName;
-    const type = file.type.toLowerCase();
-    if (type === "image/png" || type === "image/jpeg") return "image";
-    if (type === "video/mp4" || type === "video/quicktime") return "video";
-    return null;
+  // 受理判定は API（content-type）と揃える。拡張子に加えて File.type も見る共通判定
+  // （lib/api.ts classifyFileUpload）を使う（Codex P2 / 資料形式の追加で単一定義に統合）。
+  const classifyFile = classifyFileUpload;
+
+  // 受理済みファイルをステージへ足す（同名・同サイズの重複は取り違え防止で捨てる）。
+  function stageFiles(accepted: File[]) {
+    if (accepted.length === 0) return;
+    setStaged((prev) => {
+      const key = (f: File) => `${f.name}:${f.size}`;
+      const seen = new Set(prev.map(key));
+      return [...prev, ...accepted.filter((f) => !seen.has(key(f)))];
+    });
   }
 
   // ピッカで選んだファイルをステージする。非対応形式は弾いて理由を出す
-  // （API と同じ受理範囲: PNG/JPG・MP4/MOV / 要件票 06）。
+  // （API と同じ受理範囲: 画像/動画 + 資料 PDF/Office/Markdown 等）。
   function handleAddFiles(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? []);
     e.target.value = ""; // 同じファイルの再選択でも change を発火させる。
-    if (busy || files.length === 0) return; // 開始処理中は投入セットを固定する（Codex P2）。
+    // 開始処理・Drive 取り込み中は投入セットを固定する（Codex P2）。
+    if (busy || driveBusy || files.length === 0) return;
     const accepted: File[] = [];
     const rejected: string[] = [];
     for (const f of files) {
       if (classifyFile(f)) accepted.push(f);
       else rejected.push(f.name);
     }
-    if (accepted.length > 0) {
-      // 同名・同サイズの重複はステージしない（取り違え・二重投入の防止）。
-      setStaged((prev) => {
-        const key = (f: File) => `${f.name}:${f.size}`;
-        const seen = new Set(prev.map(key));
-        return [...prev, ...accepted.filter((f) => !seen.has(key(f)))];
-      });
-    }
+    stageFiles(accepted);
     setAttachError(
       rejected.length > 0
-        ? `対応していない形式です（PNG/JPG・MP4/MOV）: ${rejected.join("、")}`
+        ? `対応していない形式です（${ACCEPTED_SUMMARY}）: ${rejected.join("、")}`
         : null,
     );
   }
 
+  // Google ドライブから選んでステージする（ADR-0044）。権限は Google ログイン時に求めるが、
+  // 未許可（拒否・ブロック・失効）ならここで再度同意ポップアップを出す（要件: 権限が無い状態で
+  // アップロードしようとしたタイミングで再度権限をもらう）。それでも許可されなければ取り込まない。
+  async function handleDriveImport() {
+    if (busy || driveBusy) return; // 開始処理・取り込み中は投入セットを固定する。
+    setAttachError(null);
+    if (!isDriveConfigured()) {
+      setAttachError(
+        "Google ドライブ連携はこの環境では利用できません（Google API キーが未設定です）。",
+      );
+      return;
+    }
+    const token = await auth.requestDriveAccess();
+    if (!token) {
+      setAttachError(
+        "Google ドライブへのアクセスが許可されていません。もう一度お試しいただくと、再度許可を求めます。",
+      );
+      return;
+    }
+    // 同意が取れたらシートを畳んで Picker（Google 公式の選択 UI）を重ならないように出す。
+    setSheetOpen(false);
+    let picked: Awaited<ReturnType<typeof openDrivePicker>>;
+    try {
+      picked = await openDrivePicker(token);
+    } catch (e) {
+      console.error("drive picker failed", e);
+      setAttachError("Google ドライブを開けませんでした。時間をおいて再度お試しください。");
+      return;
+    }
+    if (picked.length === 0) return; // キャンセル。
+    setDriveBusy(true);
+    const imported: File[] = [];
+    const failed: string[] = [];
+    for (const doc of picked) {
+      try {
+        imported.push(await importDriveFile(token, doc));
+      } catch (e) {
+        console.error("drive import failed", e);
+        failed.push(doc.name);
+      }
+    }
+    setDriveBusy(false);
+    stageFiles(imported);
+    if (failed.length > 0) {
+      setAttachError(`Google ドライブから取り込めなかったファイルがあります: ${failed.join("、")}`);
+    }
+  }
+
   function removeStaged(index: number) {
-    if (busy) return; // 開始処理中は投入セットを固定する（Codex P2）。
+    if (busy || driveBusy) return; // 開始処理・Drive 取り込み中は投入セットを固定する（Codex P2）。
     setStaged((prev) => prev.filter((_, i) => i !== index));
     setAttachError(null);
   }
@@ -707,6 +759,8 @@ export default function EntryFlow({
     // sessionStorage 由来の stale な productId 文字列だけでは開始させない。
     // slug 未設定のアプリでは開始させない（会話 URL を組めない / ADR-0045。突き合わせ effect
     // がホームへ戻すが、戻るまでの窓も塞ぐ fail-closed）。
+    // Drive 取り込み中（driveBusy）も開始を止める: handleStart はクリック時点の staged だけを
+    // 投入するため、取り込み完了後の資料が漏れて「添付したのに渡っていない」になる（Codex P2）。
     const canStart =
       consent &&
       goal.trim() !== "" &&
@@ -714,6 +768,7 @@ export default function EntryFlow({
       !!selectedProduct.slug &&
       auth.loggedIn &&
       !busy &&
+      !driveBusy &&
       repoChoices !== null;
     return (
       <Screen className="px-4 py-3">
@@ -885,7 +940,9 @@ export default function EntryFlow({
               参考資料（任意）
             </span>
             <p className="text-[12px] leading-relaxed text-sanba-muted">
-              写真・スクリーンショット（PNG/JPG）や録画（MP4/MOV）を、事前に渡しておけます。
+              写真・スクリーンショット（PNG/JPG）、録画（MP4/MOV）、資料
+              （PDF・Word・Excel・PowerPoint・Markdown・HTML・CSV 等）を、事前に渡しておけます。
+              Google ドライブの Google ドキュメント・スプレッドシート・スライドも取り込めます。
             </p>
 
 
@@ -897,7 +954,7 @@ export default function EntryFlow({
                 setAttachError(null);
                 setSheetOpen(true);
               }}
-              disabled={busy}
+              disabled={busy || driveBusy}
               aria-haspopup="dialog"
               className="inline-flex items-center gap-1.5 rounded-[12px] border border-dashed border-sanba-gold-deep bg-sanba-surface px-3 py-[13px] text-left text-[12.5px] font-bold text-sanba-gold-text disabled:opacity-50"
             >
@@ -928,7 +985,7 @@ export default function EntryFlow({
                       <button
                         type="button"
                         onClick={() => removeStaged(i)}
-                        disabled={busy}
+                        disabled={busy || driveBusy}
                         aria-label={`${file.name} を取り外す`}
                         className="flex size-[26px] shrink-0 items-center justify-center rounded-full text-sanba-muted disabled:opacity-50"
                       >
@@ -940,6 +997,11 @@ export default function EntryFlow({
               </ul>
             )}
 
+            {driveBusy && (
+              <p role="status" className="text-[12px] text-sanba-muted">
+                Google ドライブから取り込んでいます…
+              </p>
+            )}
             {attachError && (
               <p role="alert" className="text-[12px] text-sanba-rec-text">
                 {attachError}
@@ -947,12 +1009,12 @@ export default function EntryFlow({
             )}
           </div>
 
-          {/* 隠しファイルピッカ。受理範囲は API と同一（PNG/JPG・MP4/MOV）。複数選択可。 */}
+          {/* 隠しファイルピッカ。受理範囲は API と同一（画像/動画 + 資料）。複数選択可。 */}
           <input
             ref={fileInput}
             type="file"
             multiple
-            accept={`${ACCEPTED_IMAGE},${ACCEPTED_VIDEO}`}
+            accept={`${ACCEPTED_IMAGE},${ACCEPTED_VIDEO},${ACCEPTED_DOC}`}
             onChange={handleAddFiles}
             className="hidden"
           />
@@ -1010,8 +1072,9 @@ export default function EntryFlow({
         </main>
 
         {/* 資料の追加方法シート（#201 再利用）。準備画面は LiveKit ルーム外のため
-            カメラ/画面共有ハンドラは渡さない＝アップロード/Drive のみ。Drive は ADR-0007 未承認で
-            シート側が「準備中」を案内する。投入種別は onSelectSource で計測可能にする（#232 へ配線）。 */}
+            カメラ/画面共有ハンドラは渡さない＝アップロード/Drive のみ。Drive は drive.file +
+            Google Picker（ADR-0044）。権限未許可の失敗はシート内の error に出し、再タップで
+            再同意を求める。投入種別は onSelectSource で計測可能にする（#232 へ配線）。 */}
         {sheetOpen && (
           <MaterialSourceSheet
             placement="center"
@@ -1020,7 +1083,9 @@ export default function EntryFlow({
               setSheetOpen(false);
               fileInput.current?.click();
             }}
+            onDrive={() => void handleDriveImport()}
             onSelectSource={measureSource}
+            error={attachError}
           />
         )}
       </Screen>
