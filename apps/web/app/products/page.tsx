@@ -23,6 +23,7 @@ import {
   Screen,
 } from "@/components/sanba";
 import { ApiError, createProduct, fetchMyProducts, type Product } from "@/lib/api";
+import { cleanSlug } from "@/lib/slug";
 import { useAuth } from "@/lib/auth";
 
 export default function ProductsPage() {
@@ -65,12 +66,12 @@ export default function ProductsPage() {
       setError("アプリ名を入力してください");
       return;
     }
-    // slug は API と同じ規則へ正規化してから送る（小文字英数とハイフン・2〜40 文字 /
-    // ADR-0040）。形式違反はサーバへ投げる前にその場で指摘する。
-    const cleanedSlug = slug.trim().toLowerCase();
-    if (!/^[a-z0-9][a-z0-9-]{0,38}[a-z0-9]$/.test(cleanedSlug)) {
+    // slug は API と同じ規則へ正規化してから送る（ADR-0040）。形式違反・予約語は
+    // サーバへ投げる前にその場で指摘する（最終判定は API 側）。
+    const cleanedSlug = cleanSlug(slug);
+    if (cleanedSlug === null) {
       setError(
-        "URL キーワードは小文字英数とハイフンで 2〜40 文字にしてください（先頭・末尾のハイフン不可）",
+        "URL キーワードは小文字英数とハイフンで 2〜40 文字にしてください（予約された語・先頭末尾のハイフンは不可）",
       );
       return;
     }

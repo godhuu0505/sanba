@@ -564,10 +564,10 @@ class SessionRepository:
                 )
                 for doc in docs:
                     doc.reference.delete()
-            slug = (snap.to_dict() or {}).get("slug")
-            if slug:
-                self._client.collection("product_slugs").document(slug).delete()
-            ref.delete()
+            # product 文書と slug レジストリは同一トランザクションで消す（ADR-0040）:
+            # 途中クラッシュで「slug は解放済みなのに product 文書が残る」状態を作らない
+            # （解放された slug を別 product が取ると、生きた product と重複して見える）。
+            self._delete_product_with_slug_txn(product_id, (snap.to_dict() or {}).get("slug"))
             return True
         if product_id not in self._mem_products:
             return False
@@ -580,6 +580,27 @@ class SessionRepository:
             k: i for k, i in self._mem_member_invites.items() if i.product_id != product_id
         }
         return True
+
+    def _delete_product_with_slug_txn(self, product_id: str, slug: str | None) -> None:
+        """product 文書と slug レジストリを原子的に削除する（ADR-0040）。
+
+        別々に消すと途中クラッシュで slug が先に解放され、別 product に取られた slug と
+        削除し損ねた product 文書が併存し得る。逆順（product 先）でも slug が永久に
+        取れなくなる。invites / members の掃除は従来どおり非トランザクション（親が
+        消えれば参照経路が閉じるため、残骸は無害）。
+        """
+        from google.cloud import firestore
+
+        product_ref = self._client.collection("products").document(product_id)
+        slug_ref = self._client.collection("product_slugs").document(slug) if slug else None
+
+        @firestore.transactional  # type: ignore[misc]
+        def _txn(transaction: Any) -> None:
+            if slug_ref is not None:
+                transaction.delete(slug_ref)
+            transaction.delete(product_ref)
+
+        _txn(self._client.transaction())
 
     # ---- Product invites (深掘りリンク / ADR-0031) ---------------------------
     def create_invite(self, invite: ProductInvite) -> None:

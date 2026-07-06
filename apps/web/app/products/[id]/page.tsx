@@ -33,6 +33,7 @@ import {
   type Product,
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { cleanSlug } from "@/lib/slug";
 
 export default function ProductDetailPage() {
   const auth = useAuth();
@@ -93,12 +94,12 @@ export default function ProductDetailPage() {
       setError("アプリ名を入力してください");
       return;
     }
-    // slug は必須（ADR-0040）。API と同じ規則へ正規化し、形式違反は送信前に指摘する。
-    // 既存アプリ（未設定）もこの保存で設定してもらう（設定するまで壁打ち開始不可）。
-    const cleanedSlug = slugInput.trim().toLowerCase();
-    if (!/^[a-z0-9][a-z0-9-]{0,38}[a-z0-9]$/.test(cleanedSlug)) {
+    // slug は必須（ADR-0040）。API と同じ規則へ正規化し、形式違反・予約語は送信前に
+    // 指摘する。既存アプリ（未設定）もこの保存で設定してもらう（設定するまで壁打ち開始不可）。
+    const cleanedSlug = cleanSlug(slugInput);
+    if (cleanedSlug === null) {
       setError(
-        "URL キーワードは小文字英数とハイフンで 2〜40 文字にしてください（先頭・末尾のハイフン不可）",
+        "URL キーワードは小文字英数とハイフンで 2〜40 文字にしてください（予約された語・先頭末尾のハイフンは不可）",
       );
       return;
     }

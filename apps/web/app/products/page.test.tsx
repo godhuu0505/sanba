@@ -107,12 +107,18 @@ describe("アプリ管理画面（ADR-0031 / FR-1.1）", () => {
     expect(createProduct).not.toHaveBeenCalled();
   });
 
-  it("URL キーワードが形式違反なら API を呼ばずエラーを出す（ADR-0040）", async () => {
+  it("URL キーワードが形式違反・予約語なら API を呼ばずエラーを出す（ADR-0040）", async () => {
     authState.loggedIn = true;
     render(<ProductsPage />);
     fireEvent.change(screen.getByLabelText("アプリ名（必須）"), { target: { value: "新アプリ" } });
     fireEvent.change(screen.getByLabelText("URL キーワード（必須）"), {
       target: { value: "bad slug!" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /登録する/ }));
+    expect((await screen.findByRole("alert")).textContent).toContain("URL キーワード");
+    // 予約語（web の既存ルート）もサーバー往復なしでその場で弾く。
+    fireEvent.change(screen.getByLabelText("URL キーワード（必須）"), {
+      target: { value: "products" },
     });
     fireEvent.click(screen.getByRole("button", { name: /登録する/ }));
     expect((await screen.findByRole("alert")).textContent).toContain("URL キーワード");

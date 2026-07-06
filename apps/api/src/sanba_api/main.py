@@ -1189,7 +1189,8 @@ def update_product(
         # 認可チェック後に消えた競合。存在秘匿の方針に合わせ 404 のまま返す。
         raise HTTPException(status_code=404, detail="product not found") from exc
     record_product_event("updated")
-    log.info("product_updated", product=product_id, owner=user.sub)
+    # slug は URL の識別子なのでリネームを運用で追える形で残す（ADR-0040 / CLAUDE.md 原則3）。
+    log.info("product_updated", product=product_id, owner=user.sub, slug=updated.slug)
     return _product_response(updated)
 
 
