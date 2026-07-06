@@ -1295,6 +1295,23 @@ class SessionRepository:
             return [d.to_dict() for d in docs]
         return list(self._mem_materials.get(session_id, {}).values())
 
+    def get_material(self, session_id: str, asset_id: str) -> dict[str, Any] | None:
+        """素材メタを 1 件返す（存在しなければ None）。
+
+        非同期動画解析（ADR-0040）の冪等ガードと「破棄済み素材を復活させない」チェックに使う:
+        worker は解析前と書き込み直前に status/存在を確認し、二重解析や削除済み素材の復活を防ぐ。
+        """
+        if self._client is not None:
+            snap = (
+                self._client.collection("sessions")
+                .document(session_id)
+                .collection("materials")
+                .document(asset_id)
+                .get()
+            )
+            return snap.to_dict() if snap.exists else None
+        return self._mem_materials.get(session_id, {}).get(asset_id)
+
     def delete_material(self, session_id: str, asset_id: str) -> bool:
         """投入済み素材メタを削除する (#245 真の破棄)。実体を消したら True (冪等)。
 
