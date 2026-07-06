@@ -406,7 +406,7 @@ def get_my_session_result_document(
         goal=session.goal,
         date=datetime.now(UTC).strftime("%Y-%m-%d"),
         requirements=items,
-        # 確認項目は読み手に合わせて絞る（全員 + 対象一致 / ADR-0040）。
+        # 確認項目は読み手に合わせて絞る（全員 + 対象一致 / ADR-0043）。
         check_items=(
             check_items_for_audience(product.check_items, audience) if product is not None else []
         ),
@@ -873,7 +873,7 @@ def export_requirements(
     # 確定時の要件 ID 集合だけを取得して起票する（再計算しない / #213）。
     confirmed = _finalized_snapshot_requirements(session)
     # Issue 本文は開発者向け出力フォーマットで整形する（閲覧ドキュメントと同じレンダラに
-    # 一本化 / ADR-0040 決定3。アプリ管理でフォーマットを登録すれば Issue の体裁も変わる）。
+    # 一本化 / ADR-0043 決定3。アプリ管理でフォーマットを登録すれば Issue の体裁も変わる）。
     product = _repo.get_product(session.product_id) if session.product_id else None
     template, _ = resolve_output_format(product, Audience.DEVELOPER)
     body = render_result_document(

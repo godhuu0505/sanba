@@ -143,7 +143,7 @@ MAX_CHECK_ITEMS = 10
 
 
 class CheckItem(BaseModel):
-    """要件サンバ中に必ず確認する項目 1 件（ADR-0040）。
+    """要件サンバ中に必ず確認する項目 1 件（ADR-0043）。
 
     `target` は対象ペルソナ（Audience）。None = 全員（どのセッションにもシードし、
     どの読み手の結果ドキュメントにも載せる）。旧文書（str のリスト）は Product の
@@ -155,7 +155,7 @@ class CheckItem(BaseModel):
 
 
 def check_items_for_scope(items: list[CheckItem], scope: InviteScope) -> list[str]:
-    """インタビューモードでシードする確認項目を絞り込む（ADR-0040 決定2）。
+    """インタビューモードでシードする確認項目を絞り込む（ADR-0043 決定2）。
 
     end_user セッション: 全員 + 利用者向け。
     developer セッション: 全員 + 企画者向け + 開発者向け（企画者向けの独立した
@@ -199,7 +199,7 @@ class Product(BaseModel):
     # 要件サンバ中に必ず確認する項目（最大 MAX_CHECK_ITEMS 件。上限は API 層で検証）。
     # agent が初期 instructions へ機械的にシードする（glossary と同型）。対象ペルソナは
     # CheckItem.target（None = 全員）。シード・文書掲載の絞り込みは check_items_for_scope /
-    # check_items_for_audience が正（ADR-0040）。
+    # check_items_for_audience が正（ADR-0043）。
     check_items: list[CheckItem] = Field(default_factory=list)
 
     @field_validator("check_items", mode="before")

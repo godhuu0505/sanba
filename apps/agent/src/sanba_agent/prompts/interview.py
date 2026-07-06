@@ -80,7 +80,7 @@ END_USER_VOICE_AGENT_INSTRUCTIONS = """\
 
 
 def build_untrusted_fence(tag: str, source: str, usage: str, body_lines: list[str]) -> list[str]:
-    """非信頼データをフェンスで囲む共通形（prompt injection 対策の一点集約 / ADR-0040）。
+    """非信頼データをフェンスで囲む共通形（prompt injection 対策の一点集約 / ADR-0043）。
 
     4 つのシード（glossary / 準備情報 / repo 要約 / 確認項目）が同じ構えを共有する:
     - 本文に含まれる開閉タグを除去し、閉じタグ偽装でフェンスを早期クローズさせない
@@ -97,6 +97,33 @@ def build_untrusted_fence(tag: str, source: str, usage: str, body_lines: list[st
         *cleaned,
         close_tag,
     ]
+
+
+def build_language_directive(language: str) -> str:
+    """設定言語（GEMINI_LANGUAGE）に合わせた「言語固定」の会話指示を返す（ADR-0039）。
+
+    音声認識の誤ドリフト（韓国語/中国語化）対策で、初期 instructions に前置言語指示を足す。
+    設定値とプロンプトを一致させ、設定だけ変えても効くようにする（Codex レビュー指摘）:
+    - 空文字（自動判定に委ねる従来挙動）: 言語を縛らず空文字を返す。
+    - `ja` 系: 日本語固定の指示（別言語への推測切り替えを禁止し日本語で聞き返す）。
+    - その他の BCP-47 コード: 当該言語での会話を促す指示（別言語へのドリフトを抑える）。
+    """
+    code = language.strip()
+    if not code:
+        return ""
+    base = code.lower().split("-")[0]
+    if base == "ja":
+        return (
+            "\n\n言語について: 会話は必ず日本語で行う。相手の発話は日本語として聞き取り、"
+            "応答も日本語で返す。聞き取れない・雑音で不明瞭なときに韓国語や中国語など別言語へ"
+            "切り替えて推測しない。聞き取れなければ「いまの部分をもう一度お願いできますか」と"
+            "日本語で聞き返す。固有名詞・専門用語も日本語（必要ならカタカナ）で扱う。"
+        )
+    return (
+        f"\n\n言語について: 会話は必ず設定言語（{code}）で行う。相手の発話はその言語として"
+        "聞き取り、応答も同じ言語で返す。聞き取れないときに別の言語へ切り替えて推測せず、"
+        "同じ言語で聞き返す。"
+    )
 
 
 def build_glossary_seed(product_name: str, glossary: list[str]) -> str:
@@ -130,7 +157,7 @@ def build_glossary_seed(product_name: str, glossary: list[str]) -> str:
 
 
 def build_check_items_seed(check_items: list[str], *, end_user: bool = False) -> str:
-    """登録された「必ず確認する項目」を初期 instructions にシードする一節（ADR-0040）。
+    """登録された「必ず確認する項目」を初期 instructions にシードする一節（ADR-0043）。
 
     glossary シードと同型の「LLM 追加呼び出しなしの機械的組み立て」。項目は owner が
     入力する非信頼データのため、共通フェンス（build_untrusted_fence）で囲む。

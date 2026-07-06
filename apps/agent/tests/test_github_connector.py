@@ -1,7 +1,7 @@
 """Tests for the GitHub connector pure logic (issue #7, no network).
 
 Issue 本文の整形テストは sanba_shared/tests/test_result_document.py に移した
-（開発者向け出力フォーマット + 共有レンダラへ一本化 / ADR-0040 決定3）。
+（開発者向け出力フォーマット + 共有レンダラへ一本化 / ADR-0043 決定3）。
 """
 
 from __future__ import annotations

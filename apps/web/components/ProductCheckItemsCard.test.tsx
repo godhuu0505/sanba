@@ -75,7 +75,7 @@ describe("ProductCheckItemsCard", () => {
     expect(onSaved).toHaveBeenCalled();
   });
 
-  it("対象（利用者/企画者/開発者）を選んで追加できる（ADR-0040）", async () => {
+  it("対象（利用者/企画者/開発者）を選んで追加できる（ADR-0043）", async () => {
     render(<ProductCheckItemsCard product={product()} onSaved={vi.fn()} />);
     fireEvent.change(screen.getByLabelText("確認項目の対象"), {
       target: { value: "developer" },

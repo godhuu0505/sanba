@@ -5,7 +5,7 @@ network. GitHubConnector performs the actual REST calls and is exercised only
 when the connector is explicitly enabled.
 
 Issue 本文の整形はここに持たない: 開発者向け出力フォーマット + 共有レンダラ
-（sanba_shared.result_document）に一本化した（ADR-0040 決定3。api の /export と
+（sanba_shared.result_document）に一本化した（ADR-0043 決定3。api の /export と
 同じ体裁で起票する）。
 """
 

@@ -117,7 +117,7 @@ def test_unknown_placeholders_are_left_as_is() -> None:
 def test_issue_title_is_stable_across_exporters() -> None:
     from sanba_shared.result_document import issue_title
 
-    # api / agent の起票が同じ標題を使う（本文整形の一本化 / ADR-0040）。
+    # api / agent の起票が同じ標題を使う（本文整形の一本化 / ADR-0043）。
     assert issue_title("sess-1") == "要件定義: sess-1"
 
 

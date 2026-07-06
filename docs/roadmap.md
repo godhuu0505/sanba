@@ -35,6 +35,8 @@
 ## 横断機能（基盤に実装済み / 拡張）
 - [x] Elasticsearch による RAG 根拠付け + 過去セッション検索（ADR-0003）
 - [x] マルチモーダル入力：画面共有/モック画像 → 要件化（ADR-0004。Web の共有UIは Phase 2）
+- [ ] アップロード動画の非同期解析：GCS + Cloud Tasks + 専用ワーカーで解析し grounding へ（ADR-0040 提案中・[実装計画](design/video-and-screen-analysis-implementation-plan.md)）
+- [ ] 画面共有のキーフレーム解析：変化検知で永続記録を作り深掘りに使う（ADR-0041 提案中・同計画）
 - [x] LLM-as-a-judge オンライン評価 + CI 回帰ループ（ADR-0005）
 - [ ] 要件 → GitHub Issue/PR 自動生成 → 実装エージェント起動（次の高加点候補）
 - [ ] アクセシビリティ & 英語UI（国際性）

@@ -307,14 +307,14 @@ def test_patch_check_items_rejects_unknown_target_as_400() -> None:
 
 
 def test_get_product_returns_check_items_limit() -> None:
-    # 上限は API 応答で渡し、web に定数を複製させない（ADR-0040）。
+    # 上限は API 応答で渡し、web に定数を複製させない（ADR-0043）。
     _seed_product()
     _login(OWNER)
     assert client.get("/api/products/prod-1").json()["check_items_limit"] == 10
 
 
 def test_result_document_filters_check_items_by_audience() -> None:
-    """確認項目は読み手に合わせて絞る（全員 + 対象一致 / ADR-0040）。"""
+    """確認項目は読み手に合わせて絞る（全員 + 対象一致 / ADR-0043）。"""
     _seed_product()
     _seed_session(product_id="prod-1")
     _login(OWNER)

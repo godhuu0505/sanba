@@ -93,7 +93,7 @@ class UpdateProductRequest(BaseModel):
     glossary: list[str] | None = Field(default=None, max_length=100)
     # audience（end_user/planner/developer）→ 出力フォーマット（Markdown テンプレート）。
     output_formats: dict[str, str] | None = None
-    # 要件サンバ中に必ず確認する項目（最大 MAX_CHECK_ITEMS 件・対象タグ付き / ADR-0040）。
+    # 要件サンバ中に必ず確認する項目（最大 MAX_CHECK_ITEMS 件・対象タグ付き / ADR-0043）。
     check_items: list[CheckItemRequest] | None = Field(default=None, max_length=MAX_CHECK_ITEMS)
 
 

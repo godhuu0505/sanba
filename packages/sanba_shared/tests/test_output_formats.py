@@ -89,7 +89,7 @@ def test_legacy_product_documents_default_to_empty() -> None:
 
 
 def test_legacy_check_items_str_list_is_coerced_to_check_items() -> None:
-    # 対象タグ導入前（ADR-0039 時点）の `list[str]` 文書は target=None（全員）に平す。
+    # 対象タグ導入前（ADR-0042 時点）の `list[str]` 文書は target=None（全員）に平す。
     restored = Product.model_validate(
         {"id": "prod-1", "name": "t", "owner_sub": "o", "check_items": ["ログイン方式"]}
     )
@@ -120,7 +120,7 @@ def test_check_items_for_scope_filters_by_interview_mode() -> None:
         "全員向け",
         "利用者向け",
     ]
-    # developer セッション: 全員 + 企画者 + 開発者（企画者は当面 developer に合流 / ADR-0040）。
+    # developer セッション: 全員 + 企画者 + 開発者（企画者は当面 developer に合流 / ADR-0043）。
     assert check_items_for_scope(_tagged_items(), InviteScope.DEVELOPER) == [
         "全員向け",
         "企画者向け",
