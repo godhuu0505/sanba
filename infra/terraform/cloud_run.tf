@@ -46,6 +46,16 @@ locals {
     # 終わるまで run.app からの API 呼び出しが続くため)。apex/www は web へ 301 されオリジンには
     # ならないため redirect_hosts は含めない。未設定時は Cloud Run 既定の web URL のみ。
     ALLOWED_ORIGINS = local.domain_enabled ? join(",", concat([for h in local.web_hosts : "https://${h}"], [google_cloud_run_v2_service.web.uri])) : google_cloud_run_v2_service.web.uri
+    # 素材の永続化先（ADR-0040）。設定すると AssetStore が in-memory から GCS へ切り替わり、
+    # 画像アップロードも即座に永続化される。動画は直送 + Cloud Tasks で worker が解析する。
+    GCS_BUCKET            = google_storage_bucket.materials.name
+    ENABLE_VIDEO_ANALYSIS = tostring(var.enable_video_analysis)
+    VIDEO_TASKS_QUEUE     = google_cloud_tasks_queue.video_analysis.name
+    VIDEO_TASKS_LOCATION  = var.region
+    # worker サービスは enable_video_analysis のときだけ存在する。splat + join で
+    # count=0（未作成）のとき空文字にする（[0] 参照だと plan が落ちるため）。
+    WORKER_URL        = join("", google_cloud_run_v2_service.worker[*].uri)
+    WORKER_INVOKER_SA = google_service_account.worker.email
   })
 }
 
@@ -115,7 +125,7 @@ resource "google_cloud_run_v2_service" "agent" {
       resources {
         # 常駐ワーカー。Gemini Live セッション中に 1Gi を超過し OOM で再起動する事象を実機で
         # 確認したため 2Gi にする（"Memory limit of 1024 MiB exceeded"）。
-        limits   = { cpu = "2", memory = "2Gi" }
+        limits = { cpu = "2", memory = "2Gi" }
         # 常駐ワーカーなので常時 CPU 割当。加えて ADR-0037 の背景処理（先読み検索・
         # バックグラウンド分析）はリクエスト応答外の CPU 消費を前提とするため、
         # cpu_idle=true へ変更してはならない。

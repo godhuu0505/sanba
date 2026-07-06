@@ -40,6 +40,7 @@ import { MaterialDetailSheet } from "./MaterialDetailSheet";
 import { MaterialsList } from "./MaterialsList";
 import { RequirementsTab } from "./RequirementsTab";
 import { ResultView } from "./ResultView";
+import { VoiceStatusIndicator } from "./VoiceStatusIndicator";
 
 export interface ConversationSessionViewProps {
   state: SessionState;
@@ -388,14 +389,25 @@ export function ConversationSessionView({
         onUnresolvedJump={() => setFocusDeepDive(true)}
         onEnd={ended ? undefined : () => setEndOpen(true)}
         choicePin={choicePin}
+        voiceStatus={
+          // 音声状態（聞き取り中／発話中／消音中）は上部の固定領域に高さ一定（compact）で置く。
+          // ボトムバー直上に固定した選択肢フォームを、聞き取りアイコンの表示/非表示で上下させない。
+          ended ? undefined : (
+            <VoiceStatusIndicator
+              phase={state.phase}
+              micOn={micOn}
+              muted={muted}
+              agentSpeaking={agentSpeaking}
+              compact
+            />
+          )
+        }
         bottomBar={
-          // ボトムバー（消音/マイク・テキスト入力・音声状態）はセッション中のみ。終了後の閲覧では出さない。
+          // ボトムバー（消音/マイク・テキスト入力）はセッション中のみ。終了後の閲覧では出さない。
           ended ? undefined : (
             <BottomBar
               micOn={micOn}
               muted={muted}
-              phase={state.phase}
-              agentSpeaking={agentSpeaking}
               onToggleMic={onToggleMic}
               onToggleMute={onToggleMute}
               onSend={onSendText}

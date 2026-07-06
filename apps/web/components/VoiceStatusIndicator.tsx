@@ -26,6 +26,12 @@ export interface VoiceStatusIndicatorProps {
   muted: boolean;
   /** エージェント（LiveKit リモート参加者）が発話／読み上げ中か。 */
   agentSpeaking?: boolean;
+  /**
+   * 省スペース表示（ヘッダ等の固定領域に置くとき）。棒人間サンバさん（listening 時に出る
+   * 可変高の装飾）を出さず、常に 1 行のステータスピルだけにする。これで聞き取りの ON/OFF で
+   * 高さが変わらず、直下に固定した選択肢フォーム/ボトムバーを画面上で上下させない。
+   */
+  compact?: boolean;
 }
 
 /**
@@ -93,7 +99,8 @@ export function figureStateForVoiceStatus(status: VoiceStatus): FigureState | nu
 export function VoiceStatusIndicator(props: VoiceStatusIndicatorProps) {
   const status = resolveVoiceStatus(props);
   const { icon: Icon, label, tone, pulse } = PRESENTATION[status];
-  const figState = figureStateForVoiceStatus(status);
+  // compact 表示では棒人間（可変高）を出さない＝高さ一定で直下の固定 UI を上下させない。
+  const figState = props.compact ? null : figureStateForVoiceStatus(status);
 
   // role="status" を常に同一のルートノードに固定し live region を安定させる（a11y）。
   // 遷移で Figure の有無が変わっても role="status" ノード自体は差し替わらない。

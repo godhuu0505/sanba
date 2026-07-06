@@ -131,6 +131,38 @@ describe("ConversationShell（共通シェル）", () => {
     expect(onBackToResult).toHaveBeenCalledTimes(1);
   });
 
+  it("音声状態（voiceStatus）は上部の固定領域に表示する", () => {
+    render(
+      <ConversationShell
+        mini={mini}
+        tabs={{ history: <div>h</div>, files: <div>f</div>, scroll: <div>s</div> }}
+        choicePin={<div>問いピン</div>}
+        bottomBar={<div>下部バー</div>}
+        voiceStatus={<div>聞き取り中インジケータ</div>}
+      />,
+    );
+    expect(screen.getByText("聞き取り中インジケータ")).toBeTruthy();
+  });
+
+  it("ヘッダーを最小化するとミニ状況を隠し、開くと戻る（トグル）", () => {
+    render(
+      <ConversationShell
+        mini={mini}
+        tabs={{ history: <div>h</div>, files: <div>f</div>, scroll: <div>s</div> }}
+        bottomBar={<div>bar</div>}
+      />,
+    );
+    // 既定は展開: ミニ状況が見える。
+    expect(screen.getByText(/要件 8/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "ヘッダーを最小化" }));
+    // 最小化でミニ状況（要件/未確定/資料）は隠れ、タブは残る。
+    expect(screen.queryByText(/要件 8/)).toBeNull();
+    expect(screen.getByRole("tab", { name: "会話履歴" })).toBeTruthy();
+    // 復帰トグルで元に戻る。
+    fireEvent.click(screen.getByRole("button", { name: "ヘッダーを開く" }));
+    expect(screen.getByText(/要件 8/)).toBeTruthy();
+  });
+
   it("『要件』タップでは onUnresolvedJump を発火しない（タブ移動のみ） (#195)", () => {
     const onUnresolvedJump = vi.fn();
     render(

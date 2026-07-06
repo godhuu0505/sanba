@@ -7,7 +7,16 @@
 // セッション終了後（08 結果からの閲覧）は review モードで、会話専用 UI（REC・終了・問いピン・
 // ボトムバー）を出さない読み取り専用のシェルになる。
 
-import { ChevronLeft, ChevronRight, Diamond, Paperclip, Square, TriangleAlert } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  ChevronUp,
+  Diamond,
+  Paperclip,
+  Square,
+  TriangleAlert,
+} from "lucide-react";
 import { useState, type ReactNode } from "react";
 
 import { Logo, RecPill } from "@/components/sanba";
@@ -60,6 +69,12 @@ export interface ConversationShellProps {
   choicePin?: ReactNode;
   /** 常時2行ボトムバー。閲覧モードでは描画しない。 */
   bottomBar?: ReactNode;
+  /**
+   * 音声状態インジケータ（聞き取り中／発話中／消音中 / #248）。可変高の装飾で選択肢フォームを
+   * 上下させないよう、ボトムバーではなく上部の固定領域（タブとタブ本文の間）に高さ一定で置く。
+   * 閲覧モードでは描画しない。
+   */
+  voiceStatus?: ReactNode;
 }
 
 export function ConversationShell({
@@ -77,8 +92,12 @@ export function ConversationShell({
   tabs,
   choicePin,
   bottomBar,
+  voiceStatus,
 }: ConversationShellProps) {
   const [internalTab, setInternalTab] = useState<ShellTab>(defaultTab);
+  // ヘッダーナビゲーションの最小化（画面上部の常時 UI を畳んで会話履歴の可視領域を広げる）。
+  // 最小化してもタブ・音声状態・ボトムバーは残し、ブランド帯とミニ状況（要件/未確定/資料）を隠す。
+  const [minimized, setMinimized] = useState(false);
   const tabOrder = hideMaterials ? TAB_ORDER.filter((t) => t !== "files") : TAB_ORDER;
   // 制御/非制御を明確に二分する。制御時（tab 指定）は内部 state を書かず親を単一の真実とし、
   // defaultTab/internalTab との二重管理を避ける。非制御時のみ内部 state を更新する。
@@ -91,15 +110,29 @@ export function ConversationShell({
 
   return (
     // 親（会話画面の main）が flex 列のときは残り高さいっぱいに伸び（flex-1 min-h-0）、
-    // タブ本文だけが内部スクロールする＝問いピン/ボトムバーは常に画面最下部に固定される。
+    // タブ本文だけが内部スクロールする＝ヘッダ/問いピン/ボトムバーは常に画面上下端に固定され、
+    // 会話履歴だけがスクロールする。
     <div className="flex h-full min-h-0 flex-1 flex-col">
-      {/* ── 固定ヘッダ ───────────────────────── */}
+      {/* ── 固定ヘッダ（最小化可能）───────────── */}
       {/* ブランドは AppHeader と同じ流儀: 小ロゴ（サンバさんマーク）＋縦罫＋画面タイトル。 */}
       {/* AppHeader と同じく淡い紙面＋藁色の下罫で、紙色の下地との境目を出す。 */}
-      <header className="flex items-center gap-2 border-b border-sanba-border-strong bg-sanba-surface-strong px-4 pb-2 pt-2">
-        <Logo size="sm" wordmark={false} className="shrink-0" />
-        <span aria-hidden className="h-4 w-px shrink-0 bg-sanba-border-strong" />
-        <h1 className="text-[15px] font-bold text-sanba-cream">問答</h1>
+      {/* 最小化時はブランド帯を細くたたみ、会話履歴の可視領域を広げる（右端の開閉トグルで復帰）。 */}
+      <header
+        className={`flex items-center gap-2 border-b border-sanba-border-strong bg-sanba-surface-strong px-4 ${
+          minimized ? "py-1" : "pb-2 pt-2"
+        }`}
+      >
+        {!minimized && (
+          <>
+            <Logo size="sm" wordmark={false} className="shrink-0" />
+            <span aria-hidden className="h-4 w-px shrink-0 bg-sanba-border-strong" />
+          </>
+        )}
+        <h1
+          className={`font-bold text-sanba-cream ${minimized ? "text-[13px]" : "text-[15px]"}`}
+        >
+          問答
+        </h1>
         <span className="flex-1" />
         {review ? (
           // 閲覧モード: 録音・終了は意味を持たないので出さず、結果（08）へ戻る導線に差し替える。
@@ -125,9 +158,20 @@ export function ConversationShell({
             </button>
           </>
         )}
+        {/* ヘッダーナビの最小化/復帰トグル（会話履歴の可視領域を稼ぐ）。 */}
+        <button
+          type="button"
+          aria-label={minimized ? "ヘッダーを開く" : "ヘッダーを最小化"}
+          aria-expanded={!minimized}
+          onClick={() => setMinimized((m) => !m)}
+          className="flex size-7 items-center justify-center rounded-full border border-sanba-border bg-sanba-surface text-sanba-muted"
+        >
+          {minimized ? <ChevronDown size={14} aria-hidden /> : <ChevronUp size={14} aria-hidden />}
+        </button>
       </header>
 
-      {/* ── 固定ミニ状況 ─────────────────────── */}
+      {/* ── 固定ミニ状況（最小化時は隠す）───────── */}
+      {!minimized && (
       <div className="px-4 pb-[6px] pt-2">
         <div
           aria-label="状況"
@@ -171,6 +215,7 @@ export function ConversationShell({
           </span>
         </div>
       </div>
+      )}
 
       {/* ── 固定タブ ─────────────────────────── */}
       <div
@@ -198,12 +243,22 @@ export function ConversationShell({
         })}
       </div>
 
+      {/* ── 固定：音声状態インジケータ（会話中のみ・高さ一定）──── */}
+      {/* 聞き取り中／発話中／消音中の表示。可変高の装飾（棒人間）は compact で出さないため、
+          聞き取りの ON/OFF でも高さが変わらず、直下の選択肢フォームを上下させない（#248）。 */}
+      {!review && voiceStatus && (
+        <div className="flex justify-center border-b border-sanba-border bg-sanba-surface-strong px-4 py-1.5">
+          {voiceStatus}
+        </div>
+      )}
+
       {/* ── 本文（active タブのみ）────────────── */}
       <main role="tabpanel" className="min-h-0 flex-1 overflow-y-auto">
         {tabs[tab]}
       </main>
 
       {/* ── 常時：問いピン＋2行ボトムバー（会話中のみ。閲覧モードでは出さない）──── */}
+      {/* 問いピン（選択肢フォーム）はテキストフォーム/消音・ミュートボタンの真上に固定する。 */}
       {!review && choicePin}
       {!review && bottomBar}
     </div>
