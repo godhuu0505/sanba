@@ -55,18 +55,35 @@ PR-S2 が共用するため、注入部分は Stage V を先行させる。
 - **注意**: `GCS_BUCKET` を配線した時点で画像アップロードも in-memory から GCS 保存に切り替わる（既存 `AssetStore` の挙動。意図した改善だが動作確認対象に含める）。
 
 ### PR-V2: worker — 解析サービス本体（規模 L）
-- `apps/worker/` 新設（Python 3.12 / `uv` / FastAPI。`apps/api` の構成に倣う）:
+
+> 状態: **実装済み**。共有移設（`sanba_shared.grounding` / `sanba_shared.media`）+ `apps/worker` +
+> `ci.yml` の worker ジョブ + テスト（worker 11 / shared media 4 / api 全 273 退行なし）。
+> ruff / mypy / pytest 通過。**publish（`analysis.progress` / `analysis.visual`）と deploy.yml の
+> worker build・service ゲート解除・`enable_video_analysis` フラグ立ては PR-V3 に集約**した
+> （worker を実際に有効化・enqueue する PR でまとめて配線する方が安全なため）。素材の
+> `analyzing`→`done`/`failed` 遷移はハイドレーション GET で web に反映される（ADR-0023 の二層目）。
+
+**移設（shared へ完全移設・重複ゼロ）**
+- `sanba_shared/grounding.py`: `ContextIndexer`（config 注入・PII masker 注入）・`chunk_text` を
+  `apps/api` から移設。`apps/api/ingestion.py` は settings/pii を束ねる薄いアダプタ + `extract_text_from_upload` のみ残す。
+- `sanba_shared/media.py`: `analyze_image` を移設し `analyze_video`（タイムスタンプ付き観察）を追加。
+  `apps/api/vision.py` は薄いアダプタに。
+- `sanba_shared/repository.py`: `get_material` を追加（冪等・破棄競合チェック用）。
+
+**worker（`apps/worker/`・Python 3.12 / `uv` / FastAPI）**
   - `POST /tasks/analyze-video`（Cloud Tasks OIDC push 受け口）: payload = `session_id` / `asset_id` / `gcs_uri`。
   - 冪等ガード: `materials.status` が `analyzing` 以外なら skip。task 名は **`session_id` + `asset_id`** 由来（`asset_id` は内容ハッシュなので、同一動画を別セッションに上げると衝突して 2 件目が抑止される。ADR-0040 §3）。
   - 破棄との競合: `save_material` / `index_context` の**書き込み直前に material の存在を再確認**し、解析中に破棄された素材を復活させない（ADR-0040 §3）。
   - 失敗確定: 恒久エラーは即 failed + 2xx。一時エラーは `X-CloudTasks-TaskRetryCount` で最終試行を判定し、最終なら failed 化してから 2xx、それ以外は 5xx でリトライ（Cloud Tasks は枯渇後にハンドラを呼ばないため）。保険として `analyzing` 長時間滞留を failed 化する reconcile をハイドレーション時に実施。
   - 実長検証: メタデータから 10 分超を `failed`（理由付き）に。
   - 解析: Gemini 2.5 Flash に映像+音声を渡す（Vertex 経路は `Part.from_uri(gs://…)`、GenAI API 経路は Files API / 20MB 未満 inline）。プロンプトは `analyze_image`（`apps/api/src/sanba_api/vision.py`）の観察抽出を動画向けに拡張: 転写・シーン観察・要件候補・矛盾候補をタイムスタンプ付きで構造化出力。
-  - grounding 投入: `index_context(session_id, chunks, f"asset:{asset_id}")` 相当。**設計点**: `ingestion.py` の indexer は `apps/api` 内にあるため、worker から使う形（`packages/sanba_shared` への移設 or worker 内に同等モジュール）を PR 内で決める。移設が本命（重複実装を作らない）。
-  - 永続化: `save_material(status="done", extracted=N)` / 失敗時 `failed`（`packages/sanba_shared/repository.py` 既存 API）。
-  - publish: ADR-0023 のサーバ identity パターンで `analysis.progress` / `analysis.visual`。API 側ヘルパの共用（shared への移設）を検討。
-- 観測性: span（`sanba.asset.*`）、`sanba_video_analysis_total{result}`・処理時間ヒストグラム、structlog、Langfuse トレース。
-- テスト: 単体（実長検証・冪等 skip・チャンク整形）、結合（モック Gemini + Firestore エミュレータ + ES）。
+  - grounding 投入: `index_context(session_id, observations, f"asset:{asset_id}")`（共有 `ContextIndexer`）。
+  - 永続化: `save_material(status="done", extracted=N)` / 失敗時 `failed`（既存 API に merge 更新）。
+  - 副作用は差し込み可能（`analyze` / `fetch_bytes`）にして GCP 無しで単体テスト。
+- 観測性: `sanba_video_analysis_total{result}` カウンタ・処理時間ヒストグラム（otel 未設定でも no-op）、structlog。
+- テスト: 単体（実長超過 / 冪等 skip / 破棄競合 / ローカル bytes 上限 / リトライ枯渇 semantics / 観察整形）。
+- **PR-V3 へ持ち越し**: `analysis.progress` / `analysis.visual` の publish（サーバ identity。ADR-0023）、
+  `analyzing` 長時間滞留の reconcile リーパー、deploy.yml の worker build + service ゲート解除。
 
 ### PR-V3: api/web — 動画の GCS 直送アップロードと enqueue 配線（規模 M）
 - **動画は署名付き resumable URL でブラウザから GCS へ直送**する（ADR-0040 §2。Cloud Run の HTTP/1 request body 上限 32MiB のため、200MB を既存 multipart `POST /context/file` で受けることは不可能）:
