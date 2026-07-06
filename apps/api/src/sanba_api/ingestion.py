@@ -381,12 +381,30 @@ _EXTRACTORS: dict[str, Callable[[bytes], str]] = {
     ".htm": _extract_html,
 }
 
+# MIME → 抽出関数。拡張子なしでも DOC_BINARY_MIME で受理されたファイルを正しく抽出するための
+# フォールバック。storage.py の DOC_BINARY_MIME とペアで保守する。
+_MIME_EXTRACTORS: dict[str, Callable[[bytes], str]] = {
+    "application/pdf": _extract_pdf,
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": _extract_docx,
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": _extract_xlsx,
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation": _extract_pptx,
+    "text/html": _extract_html,
+}
 
-def extract_text_from_upload(filename: str, raw: bytes) -> str:
+
+def extract_text_from_upload(
+    filename: str, raw: bytes, content_type: str | None = None
+) -> str:
     """Best-effort text extraction (txt/md/html/csv/json/pdf/docx/xlsx/pptx uploads)."""
     name = filename.lower()
     ext = name[name.rfind(".") :] if "." in name else ""
     extractor = _EXTRACTORS.get(ext)
+    # 拡張子なしで MIME だけで受理されたバイナリ文書（例: ファイル名 "book"、MIME が docx）は
+    # 拡張子ルックアップが失敗するため、MIME でフォールバックする。
+    # テキスト系（txt/csv/json）は extractor=None のままで正しく UTF-8 デコードされる。
+    if extractor is None and content_type:
+        ct = content_type.split(";")[0].strip().lower()
+        extractor = _MIME_EXTRACTORS.get(ct)
     if extractor is not None:
         try:
             return extractor(raw)

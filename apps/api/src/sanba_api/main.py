@@ -2185,7 +2185,7 @@ async def add_context_file(
             # メトリクスでは成功（indexed）と区別して計上する（ダッシュボードで異常を追える）。
             extract_failed = False
             try:
-                text = extract_text_from_upload(filename, raw)
+                text = extract_text_from_upload(filename, raw, file.content_type)
             except DocumentExtractionError:
                 text = ""
                 extract_failed = True

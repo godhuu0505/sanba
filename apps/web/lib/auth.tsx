@@ -9,6 +9,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import { isDriveConfigured } from "./googleDrive";
 
 const CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? "";
 // ボタン言語を日本語に固定する。Google 公式ガイド（display-button#button_language）は、
@@ -276,7 +277,7 @@ export function useGoogleAuth(): GoogleAuth {
       // 静かな復元）ではユーザー操作が無くポップアップがブロックされるため出さない
       // （その場合は Drive 取り込みの操作時に requestDriveAccess が改めて同意を求める）。
       // 拒否されても driveGranted=false になるだけでログイン自体は成立する。
-      if (res.select_by && res.select_by !== "auto") {
+      if (res.select_by && res.select_by !== "auto" && isDriveConfigured()) {
         void requestDriveAccessRef.current();
       }
     }

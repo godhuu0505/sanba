@@ -660,6 +660,7 @@ export default function EntryFlow({ initialStep = "home" }: { initialStep?: Step
       selectedProduct !== undefined &&
       auth.loggedIn &&
       !busy &&
+      !driveBusy &&
       repoChoices !== null;
     return (
       <Screen className="px-4 py-3">
