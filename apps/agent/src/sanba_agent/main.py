@@ -91,7 +91,7 @@ from .prompts.interview import (
     build_repo_premise,
 )
 from .retrieval import GroundingStore, Passage
-from .tools.analysis import analyze_transcript, make_requirement_id
+from .tools.analysis import analyze_transcript, heuristic_result, make_requirement_id
 
 log = structlog.get_logger(__name__)
 
@@ -260,7 +260,7 @@ _USER_DERIVED_KINDS = frozenset({"utterance", "requirement"})
 # 背景タスクの上限時間と終了時ドレンの猶予。背景実行は fail-soft（超過・失敗は
 # 黙って破棄し、ツールの同期経路が最新化を守る）なので短めに倒す。
 PREFETCH_TIMEOUT_SECONDS = 5.0
-ANALYSIS_TIMEOUT_SECONDS = 30.0
+ANALYSIS_TIMEOUT_SECONDS = settings.analysis_timeout_seconds
 DRAIN_GRACE_SECONDS = 2.0
 # ヒット時 ACL 再検証（Firestore 最大2読み）の上限。超過は「判定不能=無効」に倒して
 # 同期検索へフォールバックする（fail-closed / sanba-reviewer P1）。
@@ -588,13 +588,28 @@ class SANBAAgent(Agent):
         """
         # 段階B: 背景分析が走行中なら相乗りして待つ（二重の LLM 往復と
         # publish 競合を避ける）。待ちの沈黙は生じるので deliberating は出す。
+        # ADR-0046 段階1: 相乗り待ちは上限付き。背景が上限内に終わらなければ音声ターンを
+        # それ以上塞がず、直近結果（無ければヒューリスティック）を即返す。背景は走り切り、
+        # 結果は次ターンに反映される（競合する同期分析は起動しない＝二重往復と更なる沈黙を防ぐ）。
         task = self._analysis_task
         if task is not None and not task.done():
             if self._publisher is not None:
                 await self._publisher.status("deliberating")
-            await asyncio.wait({task})  # 背景側の失敗は下の同期フォールバックが拾う
+            done, _pending = await asyncio.wait(
+                {task}, timeout=settings.analysis_ride_along_timeout_seconds
+            )
             if self._publisher is not None:
                 await self._publisher.status("listening")
+            if not done:
+                log.info(
+                    "analysis_ride_along_timeout",
+                    session=self._session_id,
+                    turn=self._user_turn,
+                )
+                last = self._last_analysis
+                if last is not None:
+                    return last.model_dump(mode="json")
+                return heuristic_result("\n".join(self._transcript)).model_dump(mode="json")
         # 直近の背景結果が十分新しければ即返す（検知 publish は背景実行が済ませている）。
         last = self._last_analysis
         if (

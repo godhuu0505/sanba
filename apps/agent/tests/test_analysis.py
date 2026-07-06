@@ -58,3 +58,13 @@ async def test_analyze_transcript_falls_back_without_adk() -> None:
     assert result.next_question
     assert result.open_topics
     assert result.ambiguous_topics
+
+
+def test_heuristic_result_builds_from_gaps_and_ambiguity() -> None:
+    # ADR-0046 段階1: ADK 無し/タイムアウト時に LLM 往復なしで即返すフォールバック。
+    from sanba_agent.tools.analysis import heuristic_result
+
+    result = heuristic_result("[u1] participant: 要約機能をいい感じに。")
+    assert result.next_question  # 抜け or 既定文から必ず組み立てる
+    assert result.open_topics  # NFR 未カバーの抜けが挙がる
+    assert any("いい感じ" in t for t in result.ambiguous_topics)

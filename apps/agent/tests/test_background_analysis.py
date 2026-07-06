@@ -249,3 +249,40 @@ async def test_tool_rides_on_inflight_background_run(
     result = await tool_task
     assert len(calls) == 1, "走行中の背景分析に相乗りし、二重の LLM 往復をしない"
     assert result["next_question"] == "q?"
+
+
+@pytest.mark.asyncio
+async def test_tool_ride_along_timeout_returns_without_competing_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # ADR-0046 段階1: 背景分析が相乗り上限内に終わらないとき、ツールは音声ターンを塞がず
+    # 直近結果（無ければヒューリスティック）を即返し、競合する同期分析を起動しない。
+    import asyncio
+
+    from sanba_agent.config import settings
+
+    calls: list[str] = []
+    gate: asyncio.Event = asyncio.Event()
+
+    async def _hang(transcript: str) -> AnalysisResult:
+        calls.append(transcript)
+        await gate.wait()
+        return AnalysisResult(summary="s", next_question="q?", suggested_answer="a")
+
+    monkeypatch.setattr("sanba_agent.main.analyze_transcript", _hang)
+    monkeypatch.setattr(settings, "analysis_ride_along_timeout_seconds", 0.05)
+    agent = _agent()
+    agent.record_utterance("participant", "請求管理のアプリを作りたい")
+    agent.record_utterance("participant", "対象は経理担当者です")
+    task = agent._analysis_task
+    assert task is not None and not task.done()
+
+    tool = type(agent).analyze_requirements.__wrapped__
+    result = await tool(agent, None)
+    # 相乗り上限で切り上げ、ヒューリスティック（直近結果が無い）を即返す。
+    assert result["next_question"]
+    assert len(calls) == 1, "上限超過でも競合する同期分析を起動しない（背景の1回だけ）"
+
+    # 後片付け: 背景を解放してドレンする。
+    gate.set()
+    await agent.drain_background_tasks()
