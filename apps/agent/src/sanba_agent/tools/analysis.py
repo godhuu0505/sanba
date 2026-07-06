@@ -38,7 +38,7 @@ def heuristic_open_topics(transcript: str) -> list[str]:
     return missing
 
 
-# 基準が曖昧な言い回し（#260 / ADR-0022）。「触れられているが具体性を欠く」論点の合図。
+# 基準が曖昧な言い回し。「触れられているが具体性を欠く」論点の合図。
 # 抜け（heuristic_open_topics）が「触れられていない論点」を拾うのとは対象が異なる。
 _AMBIGUITY_MARKERS = (
     "いい感じ",
@@ -65,7 +65,7 @@ def heuristic_ambiguous_topics(transcript: str) -> list[str]:
     """曖昧な言い回しを含む発話を不明瞭な論点として抽出する（gap/矛盾ではない第三類）。
 
     ADK が無い環境でも最低限の不明瞭検知を保証するための、依存ゼロの pre-filter。
-    LLM による精度向上（誤検出抑制・論点の言語化）は #40 / Langfuse 評価に委ねる
+    LLM による精度向上（誤検出抑制・論点の言語化）は Langfuse 評価に委ねる
     （gap 検知が heuristic_open_topics を持つのと同じ構成）。
     """
     found: list[str] = []

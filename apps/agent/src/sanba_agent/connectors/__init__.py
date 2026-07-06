@@ -1,4 +1,4 @@
-"""External source connectors (issue #7).
+"""External source connectors.
 
 Feature-flagged and OFF by default so they never affect the demo-critical path.
 Currently: read-only GitHub context + requirement->issue write-back.

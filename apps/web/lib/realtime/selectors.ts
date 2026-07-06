@@ -1,4 +1,4 @@
-// SessionState から画面が必要とする派生ビューを切り出す純粋セレクタ（Issue #101）。
+// SessionState から画面が必要とする派生ビューを切り出す純粋セレクタ。
 // 3画面が同じ規則で部分集合を取れるよう共通化する。
 
 import { PRIORITY_ORDER } from "./mapping";
@@ -10,7 +10,7 @@ export function selectOpenDetections(state: SessionState): Detection[] {
   return state.detections.filter((d) => !d.resolved && d.summary !== "").reverse();
 }
 
-/** 直近の通常質問（金枠 / #181）。選択肢が無ければ問いピンは出さない（自由記述は音声/テキスト）。 */
+/** 直近の通常質問（金枠）。選択肢が無ければ問いピンは出さない（自由記述は音声/テキスト）。 */
 export function selectActiveQuestion(state: SessionState): SessionState["question"] {
   const q = state.question;
   return q && q.options.length > 0 ? q : null;
@@ -87,7 +87,7 @@ export interface MiniStatus {
 
 /**
  * 素材行の状態（MaterialsList と共有）。
- * cancelled（破棄）は #219 の中断確定で付く終端状態。failed と同じく pending の終端だが、
+ * cancelled（破棄）は中断確定で付く終端状態。failed と同じく pending の終端だが、
  * 表示・件数からは除く（mergeMaterials がフィルタする）。
  */
 export type MaterialStatus = "uploading" | "analyzing" | "done" | "failed" | "cancelled";
@@ -98,7 +98,7 @@ const EMPTY_IDS: ReadonlySet<string> = new Set();
 /** 参考資料タブが描く素材ビューモデル（MaterialsList の props 要素）。 */
 export interface MaterialItem {
   id: string;
-  /** 表示名（無ければ asset_id）。実ファイル名は #184 GET context/files で補完予定。 */
+  /** 表示名（無ければ asset_id）。実ファイル名は GET context/files で補完予定。 */
   name: string;
   /** 進捗 0–100。 */
   pct: number;
@@ -108,7 +108,7 @@ export interface MaterialItem {
 }
 
 /**
- * analysis.progress / analysis.visual の (stage, pct) を素材行ステータスへ写す（#143 / ADR-0023）。
+ * analysis.progress / analysis.visual の (stage, pct) を素材行ステータスへ写す（ADR-0023）。
  *
  * - `stage="failed"`: 解析失敗（行に再試行導線を出す）。API は失敗時 pct=100 で送るため、pct より
  *   stage を優先しないと「完了」と誤判定する。
@@ -116,7 +116,7 @@ export interface MaterialItem {
  * - それ以外（`received`/`analyzing` 等の途中段階）: 解析中（進捗バー）。
  *
  * analysis イベントは解析開始後にしか届かないため uploading はここでは導出しない（投入直後の
- * local 行・#184 の hydrated 行が担い、mergeMaterials で合流する）。
+ * local 行・hydrated 行が担い、mergeMaterials で合流する）。
  */
 export function materialStatusFromAnalysis(stage: string, pct: number): MaterialStatus {
   if (stage === "failed") return "failed";
@@ -126,8 +126,8 @@ export function materialStatusFromAnalysis(stage: string, pct: number): Material
 
 /**
  * 解析状態（analysis.progress / analysis.visual 由来）を素材一覧へ寄せる。
- * ステータスは stage を優先して判定する（failed を「完了」と誤らないため / #143）。
- * 実ファイル名は #184（GET context/files）のハイドレーションで合流させる。
+ * ステータスは stage を優先して判定する（failed を「完了」と誤らないため）。
+ * 実ファイル名は GET context/files のハイドレーションで合流させる。
  */
 export function selectMaterials(s: { analysis: readonly AnalysisState[] }): MaterialItem[] {
   return s.analysis.map((a) => {
@@ -146,7 +146,7 @@ export function selectMaterials(s: { analysis: readonly AnalysisState[] }): Mate
 // ── 参考資料 詳細（05-1）─────────────────────────────────────────────
 // 仕様: docs/design/conversation-experience.md §6（05-1 詳細）/ screens/05-materials.md / Figma 148:2。
 // 一覧（selectMaterials）は件数だけ持つ最小ビューに留め、抽出要件の中身と「言葉×画の矛盾」は
-// 詳細でだけ surface する（PR #200 で AnalysisView を外した結果、conflicts の表示先が消えていた）。
+// 詳細でだけ surface する。
 
 /** 05-1 資料詳細のビューモデル（抽出要件の中身 + 言葉×画の矛盾を含む）。 */
 export interface MaterialDetail {
@@ -160,13 +160,13 @@ export interface MaterialDetail {
   /**
    * 言葉×画の矛盾（視覚解析由来）。store 既存形（AnalysisVisualConflict）のまま渡す。
    * detection.* イベントの有無に依らず analysis.visual に保持された矛盾をそのまま surface するため、
-   * 「視覚解析のみの矛盾（detection 無し）」もここに含まれる（#202 AC）。
+   * 「視覚解析のみの矛盾（detection 無し）」もここに含まれる。
    */
   conflicts: AnalysisVisualConflict[];
   /**
    * 解析結果（analysis.visual）を実際に保持しているか。
    * true = extracted/conflicts は確定値（空なら「無し」と断定してよい）。
-   * false = 解析途中、または再接続後で詳細が未取得（#184 未対応）。この場合 extracted/conflicts の
+   * false = 解析途中、または再接続後で詳細が未取得。この場合 extracted/conflicts の
    * 空を「解析結果なし」と断定せず、未取得として扱う（一覧の件数と矛盾させない）。
    */
   analysisReady: boolean;
@@ -175,7 +175,7 @@ export interface MaterialDetail {
 /**
  * 1素材の詳細（05-1）を導出する。抽出要件の中身と言葉×画の矛盾を含む点が一覧（selectMaterials）と異なる。
  * conflicts は analysis.visual（store の AnalysisState.conflicts）を出所にし、detection.* に依存しない。
- * これにより detection が来ない「視覚解析のみの矛盾」も確認できる（#202 AC）。
+ * これにより detection が来ない「視覚解析のみの矛盾」も確認できる。
  * 対象 asset_id の解析状態がまだ無ければ null（呼び出し側で空状態を出す）。
  */
 export function selectMaterialDetail(
@@ -200,7 +200,7 @@ export function selectMaterialDetail(
 }
 
 /**
- * 複数ソースの素材行を asset_id で統合する（#184 ハイドレーション）。
+ * 複数ソースの素材行を asset_id で統合する。
  *
  * 優先度（後勝ち＝ライブが新しい）: hydrated（GET context/files の復元）< local（投入直後の
  * uploading/failed）< realtime（analysis.progress/visual のライブ状態）。
@@ -208,7 +208,7 @@ export function selectMaterialDetail(
  * 「id と異なる name」を最優先で採用し、realtime 行（name=asset_id）に上書きされないようにする。
  * 出力順は最初に現れた順（hydrated → local → realtime）。
  *
- * cancelledIds（#219 中断で破棄した asset_id）と status==="cancelled" の行は表示・件数から除く。
+ * cancelledIds（中断で破棄した asset_id）と status==="cancelled" の行は表示・件数から除く。
  * これにより破棄後に遅延 analysis.* が届いても id を無視して行を復活させない（ゾンビ行防止）。
  */
 export function mergeMaterials(
@@ -220,7 +220,7 @@ export function mergeMaterials(
   const ordered = [...hydrated, ...local, ...realtime];
   // 破棄 id を先に集約する。cancelledIds（呼び出し側のガード）に加え、いずれかのソースが
   // status==="cancelled" を持つ id も破棄とみなす。これで後勝ちマージ（realtime 最優先）で
-  // cancelled が analyzing/done に上書きされても復活しない（#219 / Codex P2）。
+  // cancelled が analyzing/done に上書きされても復活しない。
   const cancelled = new Set(cancelledIds);
   for (const m of ordered) if (m.status === "cancelled") cancelled.add(m.id);
   const byId = new Map<string, MaterialItem>();

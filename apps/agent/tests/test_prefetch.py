@@ -67,7 +67,7 @@ def test_expired_by_time_drops_entry() -> None:
 
 
 def test_expired_by_turns() -> None:
-    # ユーザー確定発話 2 ターンで失効（会話が進んだら古い先読みは使わない / ADR-0037 決定2）。
+    # ユーザー確定発話 2 ターンで失効（会話が進んだら古い先読みは使わない 決定2）。
     cache = PrefetchCache(clock=FakeClock())
     cache.put("ログイン画面の認証方式", RESULT, turn=1, search_seconds=0.5)
     entry, reason = cache.get("ログイン画面の認証方式", turn=3)
@@ -163,7 +163,7 @@ async def test_prefetch_hit_skips_sync_search() -> None:
 
 @pytest.mark.asyncio
 async def test_prefetch_end_user_cache_holds_only_filtered_output() -> None:
-    # ADR-0037 決定2: キャッシュには出力制御通過後の結果しか入らない。end_user の
+    # キャッシュには出力制御通過後の結果しか入らない。end_user の
     # 先読み結果に repo 由来（github:）が現れないことを、ヒット返答で機械検証する。
     repo = SessionRepository()
     assert repo._client is None
@@ -194,7 +194,7 @@ async def test_prefetch_end_user_cache_holds_only_filtered_output() -> None:
 @pytest.mark.asyncio
 async def test_prefetch_acl_recheck_falls_back_when_link_revoked() -> None:
     # 先読み後に owner が GitHub 連携を解除した窓（≤TTL）: 古い ACL で通した repo chunk を
-    # 返さず、同期検索（revoked 遮断）へフォールバックする（ADR-0037 決定2 の多層防御）。
+    # 返さず、同期検索（revoked 遮断）へフォールバックする。
     repo = _developer_repo()
     agent = SANBAAgent("s1", repo, _grounding())
     agent.record_utterance("participant", "請求書の画面で保存に困った")

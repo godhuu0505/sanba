@@ -15,7 +15,7 @@ import type { Priority, Requirement } from "../lib/realtime/types";
 /**
  * artifact の href として安全な scheme か（http/https のみ許可）。
  * artifacts は LiveKit データチャネル（session.completed）由来で送信者・payload を信頼できないため、
- * `javascript:` / `data:` 等を href に渡すとクリックで実行され得る（Codex P2）。表示前に弾く。
+ * `javascript:` / `data:` 等を href に渡すとクリックで実行され得る。表示前に弾く。
  */
 function isSafeHttpUrl(url: string): boolean {
   try {
@@ -45,7 +45,7 @@ export interface ResultViewProps {
   provisional?: boolean;
   /**
    * session.completed のサーバ集計（届いていれば表示）。確定件数と異なり、会話全体の成果
-   * （矛盾解消・抜け検知・Issue 起票）を agent 側の値で示す。ローカル再集計しない（#144）。
+   * （矛盾解消・抜け検知・Issue 起票）を agent 側の値で示す。ローカル再集計しない。
    */
   summary?: { contradictions_resolved: number; gaps_found: number; issues_created: number } | null;
   /** 生成物リンク（session.completed.artifacts）。PDF/Drive/Issue などの成果物 URL。 */
@@ -78,7 +78,7 @@ export function ResultView({
   // 言葉に差し替える。summary の「矛盾解消/抜け検知/Issue 起票」も開発語彙なので出さない。
   const interviewMode = useInterviewMode();
   const endUser = interviewMode === "end_user";
-  // 信頼できない URL scheme（javascript: 等）は表示しない（Codex P2 / XSS 防止）。
+  // 信頼できない URL scheme（javascript: 等）は表示しない（XSS 防止）。
   const artifactLinks = (artifacts ?? []).filter((a) => isSafeHttpUrl(a.url));
   const outputs: { label: string; icon: LucideIcon; handler?: () => void }[] = [
     { label: "PDF", icon: FileText, handler: onExportPdf },

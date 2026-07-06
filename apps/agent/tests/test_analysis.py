@@ -35,14 +35,12 @@ def test_open_topics_drops_covered_topics() -> None:
 
 
 def test_ambiguous_topics_flags_vague_phrasing() -> None:
-    # 触れられているが基準が曖昧な発話を不明瞭論点として拾う（#260）。
     transcript = "[u1] participant: ソート順はいい感じにしてください。"
     topics = heuristic_ambiguous_topics(transcript)
     assert any("いい感じ" in t for t in topics)
 
 
 def test_ambiguous_topics_ignores_concrete_statements() -> None:
-    # 具体的な基準が示された発話は曖昧扱いしない。
     transcript = "[u1] participant: ソート順は新着順を既定にしてください。"
     assert heuristic_ambiguous_topics(transcript) == []
 
@@ -58,5 +56,5 @@ async def test_analyze_transcript_falls_back_without_adk() -> None:
 
     result = await analyze_transcript("[u1] participant: 要約機能をいい感じに。")
     assert result.next_question
-    assert result.open_topics  # non-functional gaps surfaced
-    assert result.ambiguous_topics  # 曖昧な言い回しも拾う（#260）
+    assert result.open_topics
+    assert result.ambiguous_topics

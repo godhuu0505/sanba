@@ -115,7 +115,7 @@ describe("過去要件の絵巻閲覧画面（/results/[id]）", () => {
     render(<PastRequirementsPage />);
     await waitFor(() => expect(screen.getByText("ログインへ")).toBeTruthy());
     fireEvent.click(screen.getByText("ログインへ"));
-    // 無効トークンでの再試行ループに入らず、authGate 経由で /login?next= へ送る（Codex P2）。
+    // 無効トークンでの再試行ループに入らず、authGate 経由で /login?next= へ送る。
     expect(authState.signOut).toHaveBeenCalledTimes(1);
   });
 

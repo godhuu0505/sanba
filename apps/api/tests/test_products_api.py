@@ -1,4 +1,4 @@
-"""products API (ADR-0031 / PR2) のテスト。
+"""products API (ADR-0031) のテスト。
 
 - 認可の一点集約 (_require_product_access): owner / admin のみ。非所有・不存在は 404 に平す。
 - name 空 400・未ログイン 401・allowlist・同一 (repo,branch,sha) の再索引スキップ。

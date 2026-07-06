@@ -1,4 +1,4 @@
-// 機能名（detector / source_speaker）→ UI 表示への共通マッピング層（Issue #101）。
+// 機能名（detector / source_speaker）→ UI 表示への共通マッピング層。
 //
 // 契約 §3 注記: ペイロードは機能名で届く。緋=矛盾 / 黄土=抜け のような色は web 側の
 // デザイントークンへの写像にすぎない。ここを 1か所に集約し、3画面が同じ規則で
@@ -53,7 +53,7 @@ const DETECTION_PRESENTATION: Record<DetectionKind, KindPresentation> = {
     ariaLabel: "抜け（未定義）を検知",
   },
   ambiguous: {
-    color: "var(--sanba-cat-ambiguous)", // 鈍色（朱/黄土/橄欖/金 と判別できるくすんだ藍鼠 / #182・ADR-0022）
+    color: "var(--sanba-cat-ambiguous)", // 鈍色（朱/黄土/橄欖/金 と判別できるくすんだ藍鼠・ADR-0022）
     label: "不明瞭",
     // 波形（旧グリフ「〜」の意匠）で曖昧さを表す。open_question の CircleHelp と衝突しないようにする。
     Icon: Waves,

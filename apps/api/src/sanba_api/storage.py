@@ -1,4 +1,4 @@
-"""Binary asset storage for multimodal uploads (issue #103 / ADR-0004).
+"""Binary asset storage for multimodal uploads (ADR-0004).
 
 `POST /api/sessions/{id}/context/file` を画像/動画に拡張するための保存層。
 受理した画像/動画を Cloud Storage に保存し、**安定 ID（content hash 由来の `asset_id`）**を
@@ -56,7 +56,7 @@ class Asset:
 def material_record(
     asset_id: str, name: str, kind: str, status: str, extracted: int = 0
 ) -> dict[str, object]:
-    """素材一覧（GET context/files / 契約 §4 #184）の 1 行を組み立てる。
+    """素材一覧（GET context/files / 契約 §4）の 1 行を組み立てる。
 
     web の MaterialItem（id/name/status/extracted）に対応する。バイト列ではなく
     「投入された素材のメタ」で、リロード/再接続時に実ファイル名と状態を復元する。
@@ -176,7 +176,7 @@ class AssetStore:
         )
 
     def delete(self, session_id: str, asset_id: str) -> bool:
-        """保存済み binary を削除する（#245 真の破棄）。実体を消したら True（冪等）。
+        """保存済み binary を削除する（真の破棄）。実体を消したら True（冪等）。
 
         拡張子は content_type 依存で呼び出し側（DELETE エンドポイント）は持たないため、
         `sessions/{sid}/assets/{asset_id}` を接頭辞に持つオブジェクトをまとめて消す。

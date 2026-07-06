@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
-// #192 回帰: real モードで id.prompt() を呼んだ *だけ* では ready を立てない。
+// 回帰テスト: real モードで id.prompt() を呼んだ *だけ* では ready を立てない。
 // 通知コールバック（notDisplayed/skipped/dismissed）・credential 到着・タイムアウトの
 // いずれかで初めて解決する。これにより auto_select でセッションを静かに復元できる
 // ユーザーが、ready=true かつ loggedIn=false の窓で RequireAuth に早期リダイレクト
-// される事象を防ぐ（PR #189 Codex 指摘 3476220229）。
+// される事象を防ぐ。
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 

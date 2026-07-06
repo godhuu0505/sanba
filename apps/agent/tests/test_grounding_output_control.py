@@ -1,4 +1,4 @@
-"""grounding 出力制御（ADR-0032 決定8 / FR-2.5 / NFR-2 / PR8）の結合テスト。
+"""grounding 出力制御（ADR-0032 決定8 / FR-2.5 / NFR-2）の結合テスト。
 
 end_user セッション（およびモード未確認セッション）では `search_grounding` の返り値が
 利用者由来 kind（utterance / requirement）の allowlist に限定され、repo 由来（context の
@@ -70,7 +70,7 @@ def _grounding_with_mixed_passages() -> GroundingStore:
 
 
 async def _search(agent: SANBAAgent) -> dict:
-    tool = type(agent).search_grounding.__wrapped__  # function_tool の素の関数
+    tool = type(agent).search_grounding.__wrapped__
     return await tool(agent, None, QUERY)
 
 
@@ -148,7 +148,7 @@ async def test_unconfirmed_mode_fails_closed() -> None:
 
 @pytest.mark.asyncio
 async def test_missing_session_meta_fails_closed() -> None:
-    # get_session() が None を返す（セッション未作成/削除済みの room）場合も
+    # get_session が None を返す（セッション未作成/削除済みの room）場合も
     # フェイルクローズで allowlist に倒す（confirmed=True でも meta is None ならば
     # repo grounding 不許可）。
     repo = _repo(InviteScope.DEVELOPER)

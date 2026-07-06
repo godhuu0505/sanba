@@ -84,7 +84,7 @@ export interface AnalysisVisualConflict {
   refs: string[];
 }
 
-/** 通常質問（金枠・契約 §3 / #181）。検知（緋/黄土）とは別に、次に聞く1問を提示する。 */
+/** 通常質問（金枠・契約 §3）。検知（緋/黄土）とは別に、次に聞く1問を提示する。 */
 export interface Question {
   id: string;
   prompt: string;
@@ -100,11 +100,11 @@ interface Envelope<T extends string> {
   /**
    * reliable ストリームの単調増加連番（整列・重複排除・欠番検知の基準 / 契約 §2）。
    * lossy イベント（status/transcript.partial）は reliable seq を消費せず**現在値を echo**する
-   * ため、その seq は欠番検知に使わない（#122・ADR-0021）。lossy の順序は `lossy_seq` で持つ。
+   * ため、その seq は欠番検知に使わない。lossy の順序は `lossy_seq` で持つ。
    */
   seq: number;
   /**
-   * reliable イベントか（既定 true。#122・ADR-0021）。false = lossy（status/transcript.partial）。
+   * reliable イベントか（既定 true）。false = lossy（status/transcript.partial）。
    * 欠番検知・maxSeq 前進は reliable のみ対象にする。古い agent（フィールド無し）は true 扱い。
    */
   reliable?: boolean;
@@ -186,7 +186,7 @@ export type QuestionAskedEvent = Envelope<"question.asked"> & {
 };
 
 /**
- * 現在質問のクリアを全参加者へ伝播するライブイベント（契約 §2 / #212 / ADR-0020 §5-5）。
+ * 現在質問のクリアを全参加者へ伝播するライブイベント（契約 §2 / ADR-0020 §5-5）。
  * 回答（タップ / 音声 / テキスト）で current question が tombstone 化されたときに publish される。
  * `cleared_seq` は本イベントの **envelope `seq` そのもの**（二重採番しない）。web は seq ガードで
  * 当該ピンを畳む（`question.asked` と対称に seq 境界は進めない）。
@@ -230,12 +230,12 @@ export type UserSelectionEvent = Envelope<"user.selection"> & {
   selected_value: string;
 };
 
-/** テキスト入力を会話ターンとして agent へ送る（契約 §4.5 / #185）。 */
+/** テキスト入力を会話ターンとして agent へ送る（契約 §4.5）。 */
 export type UserTextEvent = Envelope<"user.text"> & {
   text: string;
 };
 
-/** 通常質問（金枠）への回答を agent へ送る（契約 §4.5 / #181）。 */
+/** 通常質問（金枠）への回答を agent へ送る（契約 §4.5）。 */
 export type UserAnsweredEvent = Envelope<"user.answered"> & {
   question_id: string;
   /** 選択肢タップ時の値（自由記述で答えた場合は text を使う）。 */

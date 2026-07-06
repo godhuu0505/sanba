@@ -77,7 +77,6 @@ def _setup(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     # OAuth 未構成（FakeClient.oauth_configured=False）でも検証を省けるよう dev bypass にする
     # （本番の所有権検証フェイルクローズは別テストで検証する）。
     monkeypatch.setattr(main.settings, "auth_dev_bypass", True)
-    # 各テストで連携状態をクリーンにする。
     main._repo.delete_github_link(OWNER)
     yield
     app.dependency_overrides.pop(require_user, None)
@@ -116,7 +115,7 @@ def test_callback_rejects_bad_state() -> None:
     assert res.status_code == 403
 
 
-# ── 所有権検証（user-to-server OAuth 構成時 / Codex P1）─────────────────────────
+# ── 所有権検証（user-to-server OAuth 構成時）─────────────────────────
 class _OAuthClient(FakeClient):
     oauth_configured = True
 
@@ -148,7 +147,7 @@ def test_callback_rejects_unowned_installation(monkeypatch: pytest.MonkeyPatch) 
 def test_callback_failclosed_when_oauth_unconfigured_and_no_dev_bypass(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # OAuth 未構成 かつ dev bypass 無効（本番相当）→ 所有権検証できないので拒否する（P1）。
+    # OAuth 未構成 かつ dev bypass 無効（本番相当）→ 所有権検証できないので拒否する。
     monkeypatch.setattr(main.settings, "auth_dev_bypass", False)
     state = create_link_state(OWNER, main.settings.session_signing_secret)
     res = client.get("/api/github/link/callback", params={"installation_id": 99, "state": state})
@@ -176,7 +175,7 @@ def test_unlink_removes_link() -> None:
 
 def test_list_repos_unlinked_and_connector_disabled_is_hidden() -> None:
     # 統一エンドポイント（ADR-0027 応答形）: 未連携かつ connector 無効は enabled=False
-    # （フィールドごと隠す。409 にはしない＝#283 の挙動が正）。
+    # （フィールドごと隠す。409 にはしない）。
     res = client.get("/api/github/repos")
     assert res.status_code == 200
     body = res.json()
@@ -215,8 +214,8 @@ def test_list_repos_prefers_app_link_over_connector(monkeypatch: pytest.MonkeyPa
 def test_list_repos_app_candidates_filtered_by_allowlist(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # 許可リスト（GITHUB_REPO_ALLOWLIST）は App 由来の候補一覧にも一貫適用する（Codex P1 と
-    # 同旨）。既定リポジトリも同じ判定を通す（許可外の既定はリポ名の露出になる）。
+    # 許可リスト（GITHUB_REPO_ALLOWLIST）は App 由来の候補一覧にも一貫適用する。
+    # 既定リポジトリも同じ判定を通す（許可外の既定はリポ名の露出になる）。
     _link()
     monkeypatch.setattr(main.settings, "github_repo_allowlist", "acme")
     monkeypatch.setattr(main.settings, "github_repo", "octo/demo")
@@ -288,7 +287,7 @@ def test_select_repo_requires_link() -> None:
 
 def test_select_repo_rejects_repo_outside_allowlist(monkeypatch: pytest.MonkeyPatch) -> None:
     # 候補一覧を許可リストで絞っても、直接 POST で許可外リポを紐づけ・索引する抜け道を塞ぐ
-    # （Codex P1 と同旨 / App 経路の保存にも一貫適用）。
+    # （App 経路の保存にも一貫適用）。
     _link()
     sid = _make_session()
     _override_session_access(sid, OWNER)
@@ -305,7 +304,7 @@ def test_select_repo_rejects_repo_outside_allowlist(monkeypatch: pytest.MonkeyPa
 
 def test_stale_index_job_is_skipped() -> None:
     # repo A のジョブが走る前に B を選んだ状態（SessionMeta=B）にして A のジョブを直接呼ぶと、
-    # 現在選択と一致しないので索引も書き戻しもしない（Codex P2 stale job guard）。
+    # 現在選択と一致しないので索引も書き戻しもしない（stale job guard）。
     from sanba_shared.models import GitHubIndexStatus
 
     sid = _make_session()

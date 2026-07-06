@@ -74,7 +74,7 @@ export async function addSessionContext(
   return res.json();
 }
 
-// ── 画像/動画アップロード（Issue #103 / ADR-0004）───────────────────────
+// ── 画像/動画アップロード（ADR-0004）───────────────────────
 // 画像/動画を context/file へ送り、安定 asset_id を受け取る。web はこの asset_id で
 // analysis.progress / analysis.visual（契約 §3）をファイル行へ対応付ける。
 
@@ -136,7 +136,7 @@ export function classifyUpload(filename: string): UploadKind | null {
 
 /**
  * 受理判定は API（content-type）と揃える。拡張子（classifyUpload）に加えて MIME も見る
- * ことで、.jfif や拡張子なしでも MIME が正しければ受理する（Codex P2）。
+ * ことで、.jfif や拡張子なしでも MIME が正しければ受理する。
  */
 export function classifyFileUpload(file: { name: string; type: string }): UploadKind | null {
   const byName = classifyUpload(file.name);
@@ -158,7 +158,7 @@ export interface UploadResult {
 /**
  * POST /api/sessions/{id}/context/file（画像/動画）。FormData で送る。
  *
- * signal（任意）を渡すと、中断（#219）で AbortController.abort() により送信中の fetch を中止できる。
+ * signal（任意）を渡すと、中断で AbortController.abort() により送信中の fetch を中止できる。
  * 中止時は fetch が AbortError で reject する（呼び出し側で signal.aborted を見て failed と区別する）。
  * 既存呼び出しは signal 省略でそのまま動く（後方互換）。
  */
@@ -186,7 +186,7 @@ export async function uploadContextFile(
   return res.json();
 }
 
-// ── 素材の観測テレメトリ（#232 投入種別 / #243 中断）─────────────────────
+// ── 素材の観測テレメトリ（投入種別 / 中断）─────────────────────
 // 投入種別/中断を console ではなくサーバ側 OTLP カウンタへ集約する。第三者クライアント分析
 // SDK は導入せず、既存 metrics 基盤（apps/api observability.py）に載せる（CLAUDE.md 原則3）。
 // PII/自由記述は送らない: 列挙属性のみ（source/status/result）。
@@ -201,16 +201,16 @@ export type TelemetryEvent = "material.source_selected" | "material.cancel" | "j
 
 /** 列挙属性のみ（PII/自由記述は送らない）。API 側で許可リスト検証される。 */
 export interface TelemetryAttrs {
-  /** #232 投入種別。 */
+  /** 投入種別。 */
   source?: "camera" | "screen" | "upload" | "drive";
-  /** #243 中断対象の状態。 */
+  /** 中断対象の状態。 */
   status?: "uploading" | "analyzing";
-  /** #243 中断結果（abort 有無・破棄失敗）/ join.abort の離脱要因。 */
+  /** 中断結果（abort 有無・破棄失敗）/ join.abort の離脱要因。 */
   result?: "aborted" | "discarded" | "error";
 }
 
 /**
- * POST /api/sessions/{id}/telemetry（#232/#243）。素材 UI イベントをサーバ集計へ送る。
+ * POST /api/sessions/{id}/telemetry。素材 UI イベントをサーバ集計へ送る。
  *
  * 観測は UX を止めない: 送信は best-effort で、失敗（ネットワーク/401/422）は握りつぶす。
  * ページ遷移中でも届くよう keepalive を付ける。返り値は無し（送信の成否で分岐させない）。
@@ -228,7 +228,7 @@ export function sendTelemetry(
       body: JSON.stringify({ event, ...attrs }),
       keepalive: true,
     }).catch(() => {
-      /* 観測は補助。送信失敗で UX を止めない（#243）。 */
+      /* 観測は補助。送信失敗で UX を止めない。 */
     });
   } catch {
     /* fetch が同期 throw（環境差）しても握りつぶす。 */
@@ -243,7 +243,7 @@ export interface DeleteContextFileResult {
 }
 
 /**
- * DELETE /api/sessions/{id}/context/file/{assetId}（#245 真の破棄）。
+ * DELETE /api/sessions/{id}/context/file/{assetId}（真の破棄）。
  *
  * 投入済み素材の binary・material メタ・grounding 索引をサーバでまとめて取り消す。冪等
  * （存在しない asset でも 2xx）。中断確定時に呼び、成功でローカル破棄を確定する。失敗時は
@@ -262,7 +262,7 @@ export async function deleteContextFile(
   return res.json();
 }
 
-// ── ハイドレーション（契約 §4 / Issue #100）─────────────────────────────
+// ── ハイドレーション（契約 §4）─────────────────────────────
 // リロード・途中参加時に現在状態を取得し、データチャネルのライブ差分と合流させる。
 
 export interface RequirementsSnapshot {
@@ -276,7 +276,7 @@ export interface DetectionsSnapshot {
   seq?: number;
 }
 
-/** GET /questions/current のスナップショット（#212 / ADR-0020）。 */
+/** GET /questions/current のスナップショット（ADR-0020）。 */
 export interface CurrentQuestionSnapshot {
   /** 現在の未回答質問。回答済み/未提示なら null。 */
   question: Question | null;
@@ -284,7 +284,7 @@ export interface CurrentQuestionSnapshot {
   seq: number;
 }
 
-/** GET /context/files の 1 行（契約 §4 #184）。realtime の analysis 行と asset_id で突き合わせる。 */
+/** GET /context/files の 1 行（契約 §4）。realtime の analysis 行と asset_id で突き合わせる。 */
 export interface ContextFileItem {
   id: string;
   name: string;
@@ -311,7 +311,7 @@ export async function fetchRequirements(
   return res.json();
 }
 
-/** GET /api/sessions/{id}/context/files（#184）。投入済み素材のメタ（実ファイル名・状態）。 */
+/** GET /api/sessions/{id}/context/files。投入済み素材のメタ（実ファイル名・状態）。 */
 export async function fetchContextFiles(
   sessionId: string,
   sessionToken: string | null,
@@ -323,7 +323,7 @@ export async function fetchContextFiles(
   return res.json();
 }
 
-/** GET /api/sessions/{id}/questions/current（#212）。現在の未回答質問（金枠ピン）の復元。 */
+/** GET /api/sessions/{id}/questions/current。現在の未回答質問（金枠ピン）の復元。 */
 export async function fetchCurrentQuestion(
   sessionId: string,
   sessionToken: string | null,
@@ -361,7 +361,7 @@ export interface FinalizeResult {
   confirmed_count: number;
 }
 
-/** POST /api/sessions/{id}/finalize（#186）。07 判定の「確定」を永続化する。 */
+/** POST /api/sessions/{id}/finalize。07 判定の「確定」を永続化する。 */
 export async function finalizeSession(
   sessionId: string,
   sessionToken: string | null,
@@ -374,7 +374,7 @@ export async function finalizeSession(
   return res.json();
 }
 
-/** POST /api/sessions/{id}/export（P1）。要件を GitHub Issue に書き戻す（#39）。 */
+/** POST /api/sessions/{id}/export（P1）。要件を GitHub Issue に書き戻す。 */
 export async function exportRequirements(
   sessionId: string,
   sessionToken: string | null,
@@ -387,24 +387,24 @@ export async function exportRequirements(
   return res.json();
 }
 
-// ── 本人のセッション履歴（#250 / #215 follow-up）──────────────────────────
+// ── 本人のセッション履歴 ──────────────────────────
 // ホーム「過去の要件を見る」履歴リストに供給する。認証は Google idToken（ADR-0012）で、
 // API 側が owner_sub 一致のものだけを新しい順で返す（認可は本人限定）。PII（owner_email 等）は
 // レスポンスに含めない。
 
-/** GET /api/sessions/mine の 1 行（#250）。本人のセッション（過去の要件）の最小メタ。 */
+/** GET /api/sessions/mine の 1 行。本人のセッション（過去の要件）の最小メタ。 */
 export interface MySession {
   id: string;
   title: string;
   /** ISO 8601 の作成時刻。表示用の整形は呼び出し側で行う。 */
   created_at: string;
   status: string;
-  /** 07 判定で確定済みか（#186）。 */
+  /** 07 判定で確定済みか。 */
   finalized: boolean;
 }
 
 /**
- * GET /api/sessions/mine（#250）。ログインユーザー本人のセッション一覧を新しい順で取得する。
+ * GET /api/sessions/mine。ログインユーザー本人のセッション一覧を新しい順で取得する。
  *
  * 認証は Google idToken（ADR-0012）。owner_sub が一致するもののみ API 側で返る（本人限定）。
  * 失敗時は例外を投げ、呼び出し側（ホーム）が空状態を維持するか判断する。
@@ -453,7 +453,7 @@ export interface MySessionRequirements {
   title: string;
   /** ISO 8601 の作成時刻。表示用の整形は呼び出し側で行う。 */
   created_at: string;
-  /** 07 判定で確定済みか（#186）。 */
+  /** 07 判定で確定済みか。 */
   finalized: boolean;
   /** 契約 §3 の requirement 形（会話中のハイドレーションと同じ）。 */
   items: Requirement[];
@@ -974,8 +974,8 @@ export interface ProductJoinResult {
   interview_mode: "developer" | "end_user";
   /**
    * ゲスト入場（Authorization 無し・guest_join_enabled・scope=end_user）のときのみ非 null。
-   * sessions/join を経由せず、LiveKit トークン + session_token をここで直接受け取る
-   * （issue #319）。ログイン済みは従来どおり null（invite 経由）。
+   * sessions/join を経由せず、LiveKit トークン + session_token をここで直接受け取る。
+   * ログイン済みは従来どおり null（invite 経由）。
    */
   join: JoinResponse | null;
 }

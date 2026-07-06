@@ -3,10 +3,9 @@
 要件の素材（UIモック・スクショ・操作録画）から「観察」をテキストで抽出する。抽出文は
 grounding（共有 Elasticsearch 索引）へ context として書き、agent が問いの根拠にできるようにする。
 
-画像解析は以前 `apps/api/src/sanba_api/vision.py` にあったが、worker の動画解析（ADR-0040）と
-同じ整形ロジック・同じ config 注入形にそろえるため domain 層へ移設した。creds 未設定なら
-静かに空結果を返す（ローカル・テストで落とさない）。実 Gemini 呼び出しは creds/network 依存の
-ため pragma で被覆対象外にし、整形ロジック（parse_observations）を単体テストする。
+creds 未設定なら静かに空結果を返す（ローカル・テストで落とさない）。実 Gemini 呼び出しは
+creds/network 依存のため pragma で被覆対象外にし、整形ロジック（parse_observations）を単体
+テストする。
 """
 
 from __future__ import annotations
@@ -70,7 +69,6 @@ def parse_observations(text: str, *, limit: int = 8) -> list[str]:
         line = raw_line.strip()
         if not line:
             continue
-        # 行頭の箇条書きマーカ・番号を剥がす。
         line = line.lstrip("-*・•").strip()
         while line[:1].isdigit():
             line = line[1:]
@@ -134,7 +132,7 @@ def analyze_video(
         if gcs_uri is not None:
             part = types.Part.from_uri(file_uri=gcs_uri, mime_type=content_type)
         else:
-            assert raw is not None  # 上の分岐で保証（gcs_uri/raw いずれかは必須）
+            assert raw is not None
             part = types.Part.from_bytes(data=raw, mime_type=content_type)
         resp = _client(config).models.generate_content(
             model=config.vision_model,
