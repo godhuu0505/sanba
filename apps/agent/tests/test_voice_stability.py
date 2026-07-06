@@ -13,6 +13,9 @@ from google.genai import types as genai_types
 
 from sanba_agent.config import settings
 from sanba_agent.main import (
+    _is_livekit_cloud_url,
+    build_input_transcription,
+    build_noise_cancellation,
     build_realtime_model,
     build_turn_detection,
     resume_instructions,
@@ -81,8 +84,18 @@ class TestBuildTurnDetection:
 class TestDefaultSettings:
     def test_defaults_wait_for_user_to_finish(self) -> None:
         # 既定値が「待ち長め」に倒れていること（発話途中の被せ発話対策の本丸）。
+        # ADR-0039: 考えながらの沈黙で発話が途中確定して分断されないよう、無音待ちを延長。
         assert settings.turn_end_sensitivity == "low"
-        assert settings.turn_silence_duration_ms >= 500
+        assert settings.turn_silence_duration_ms >= 1000
+
+    def test_defaults_require_sustained_speech_to_start(self) -> None:
+        # ADR-0039: 一瞬の環境音・相槌の漏れで start が誤検出され発話が区切られないよう、
+        # start-of-speech 確定に最低限の発話長を要求する。
+        assert settings.turn_prefix_padding_ms >= 100
+
+    def test_language_pinned_by_default(self) -> None:
+        # ADR-0039: 日本語固定が既定（認識ドリフト＝韓国語/中国語化の主対策）。
+        assert settings.gemini_language == "ja-JP"
 
     def test_context_window_compression_enabled_by_default(self) -> None:
         # 長時間セッションがコンテキスト上限で打ち切られない既定であること。
@@ -94,6 +107,22 @@ class TestDefaultSettings:
     def test_restart_budget_is_positive(self) -> None:
         assert settings.voice_session_max_restarts >= 1
         assert settings.voice_session_restart_backoff_s > 0
+
+
+class TestBuildInputTranscription:
+    def test_uses_configured_language_as_hint(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # ADR-0039: 入力文字起こしに言語ヒントを与え、誤認識ドリフトを抑える。
+        monkeypatch.setattr(settings, "gemini_language", "ja-JP")
+        conf = build_input_transcription()
+        assert conf.language_codes == ["ja-JP"]
+
+    def test_empty_language_falls_back_to_auto_detect(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # 空文字なら language_codes を付けず、モデルの自動判定に委ねる（従来挙動）。
+        monkeypatch.setattr(settings, "gemini_language", "")
+        conf = build_input_transcription()
+        assert conf.language_codes is None
 
 
 class TestBuildRealtimeModel:
@@ -115,6 +144,17 @@ class TestBuildRealtimeModel:
             opts.context_window_compression.trigger_tokens == settings.gemini_context_trigger_tokens
         )
 
+    def test_pins_language_and_input_transcription(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # ADR-0039: 言語固定（出力 language_code）と入力文字起こしヒントが載ること。
+        monkeypatch.setenv("GOOGLE_GENAI_USE_VERTEXAI", "true")
+        monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "test-project")
+        monkeypatch.setenv("GOOGLE_CLOUD_LOCATION", "us-central1")
+        monkeypatch.setattr(settings, "gemini_language", "ja-JP")
+        opts = build_realtime_model()._opts
+        assert str(opts.language) == "ja-JP"
+        assert opts.input_audio_transcription is not None
+        assert opts.input_audio_transcription.language_codes == ["ja-JP"]
+
 
 class TestResumeInstructions:
     def test_includes_transcript_tail_only(self) -> None:
@@ -129,3 +169,23 @@ class TestResumeInstructions:
         text = resume_instructions([])
         assert "復旧" in text
         assert "まだ発話はありません" in text
+
+
+class TestNoiseCancellation:
+    def test_livekit_cloud_url_detection(self) -> None:
+        assert _is_livekit_cloud_url("wss://my-proj.livekit.cloud")
+        assert _is_livekit_cloud_url("wss://livekit.cloud")
+        # self-host / local は Cloud transport 前提を満たさない。
+        assert not _is_livekit_cloud_url("ws://localhost:7880")
+        assert not _is_livekit_cloud_url("wss://livekit.example.com")
+        assert not _is_livekit_cloud_url("")
+
+    def test_disabled_returns_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(settings, "noise_cancellation_enabled", False)
+        assert build_noise_cancellation() is None
+
+    def test_self_host_disables_bvc(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # ADR-0039 / Codex 指摘: 非 Cloud transport では BVC を渡さない（自動無効化）。
+        monkeypatch.setattr(settings, "noise_cancellation_enabled", True)
+        monkeypatch.setattr(settings, "livekit_url", "ws://localhost:7880")
+        assert build_noise_cancellation() is None

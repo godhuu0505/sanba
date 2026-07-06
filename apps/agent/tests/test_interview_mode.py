@@ -16,6 +16,7 @@ from sanba_shared.models import (
 )
 from sanba_shared.repository import SessionRepository
 
+from sanba_agent.config import settings
 from sanba_agent.main import (
     build_agent_instructions,
     opening_instructions,
@@ -26,7 +27,12 @@ from sanba_agent.prompts.interview import (
     END_USER_OPENING_INSTRUCTIONS,
     END_USER_VOICE_AGENT_INSTRUCTIONS,
     VOICE_AGENT_INSTRUCTIONS,
+    build_language_directive,
 )
+
+# 全モードの初期 instructions 末尾に付く言語固定指示（ADR-0039）。既定 GEMINI_LANGUAGE から
+# 決まるため、素の instructions と比較するテストは基準にこの接尾辞を足す。
+_LANG = build_language_directive(settings.gemini_language)
 
 
 def _repo() -> SessionRepository:
@@ -112,12 +118,12 @@ def test_end_user_session_survives_missing_product() -> None:
     _seed_session(repo, mode=InviteScope.END_USER, product_id="prod-gone")
     instructions, mode, allow_repo, _ = build_agent_instructions(repo, "s1")
     assert mode is InviteScope.END_USER
-    assert instructions == END_USER_VOICE_AGENT_INSTRUCTIONS
+    assert instructions == END_USER_VOICE_AGENT_INSTRUCTIONS + _LANG
 
     repo2 = _repo()
     _seed_session(repo2, mode=InviteScope.END_USER, product_id=None)
     instructions2, _, _, _ = build_agent_instructions(repo2, "s1")
-    assert instructions2 == END_USER_VOICE_AGENT_INSTRUCTIONS
+    assert instructions2 == END_USER_VOICE_AGENT_INSTRUCTIONS + _LANG
 
 
 def test_missing_session_falls_back_to_developer() -> None:
@@ -125,7 +131,7 @@ def test_missing_session_falls_back_to_developer() -> None:
     repo = _repo()
     instructions, mode, allow_repo, _ = build_agent_instructions(repo, "s-none")
     assert mode is InviteScope.DEVELOPER
-    assert instructions == VOICE_AGENT_INSTRUCTIONS
+    assert instructions == VOICE_AGENT_INSTRUCTIONS + _LANG
 
 
 def test_unreadable_session_fails_closed_for_repo_grounding() -> None:
@@ -144,7 +150,7 @@ def test_unreadable_session_fails_closed_for_repo_grounding() -> None:
     repo.get_session = _boom  # type: ignore[method-assign]
     instructions, mode, allow_repo, _ = build_agent_instructions(repo, "s1")
     assert mode is InviteScope.DEVELOPER  # 会話は成立させる（既定ペルソナ）
-    assert instructions == VOICE_AGENT_INSTRUCTIONS  # repo 前提は付けない
+    assert instructions == VOICE_AGENT_INSTRUCTIONS + _LANG  # repo 前提は付けない
     assert "octo/secret" not in instructions
     assert allow_repo is False  # GitHub seed も止める
 
@@ -179,7 +185,7 @@ def test_developer_session_without_prep_keeps_existing_shape() -> None:
     repo = _repo()
     _seed_session(repo)
     setup = build_agent_instructions(repo, "s1")
-    assert setup.instructions == VOICE_AGENT_INSTRUCTIONS
+    assert setup.instructions == VOICE_AGENT_INSTRUCTIONS + _LANG
     assert setup.prep_note == ""
 
 
