@@ -21,8 +21,12 @@ vi.mock("@/lib/auth", () => ({ useAuth: () => authState }));
 
 const replace = vi.fn();
 const push = vi.fn();
+// router は毎レンダー同一の参照を返す（Next.js 実物と同じ安定性）。呼び出しごとに新しい
+// オブジェクトを返すと、ページの effect（deps に router）が再レンダーごとに再実行され、
+// mock*Once を使い切った 2 回目の fetchMyProducts が undefined を返して落ちる（CI で顕在化）。
+const routerMock = { replace, push, refresh: vi.fn() };
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ replace, push, refresh: vi.fn() }),
+  useRouter: () => routerMock,
   useParams: () => ({ slug: "default-app", id: "sess-1" }),
 }));
 
@@ -41,7 +45,9 @@ describe("会話中セッション URL の直アクセス（/{slug}/sessions/{id
   beforeEach(() => {
     authState.loggedIn = true;
     replace.mockClear();
-    fetchMyProducts.mockReset();
+    // 既定は空一覧（= 複合エラー側に倒れる fail-closed）。各テストは mock*Once で上書きし、
+    // 想定外の追加呼び出しがあっても promise を返す（undefined.then で落とさない）。
+    fetchMyProducts.mockReset().mockResolvedValue([]);
   });
   afterEach(() => cleanup());
 
