@@ -1,6 +1,6 @@
 # ADR-0029: main マージ→本番デプロイ時のマイグレーション実行設計
 
-- ステータス: Proposed（提案中）
+- ステータス: Proposed
 - 日付: 2026-06-29
 - 関連: #36（Cloud Run 実デプロイ）/ ADR-0016（CI/CD 戦略・public 化）/ ADR-0006（Cloud Run + LiveKit）/
   ADR-0003（Elasticsearch グラウンディング）/

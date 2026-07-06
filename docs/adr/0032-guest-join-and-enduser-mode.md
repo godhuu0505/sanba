@@ -1,6 +1,6 @@
 # ADR-0032: ゲスト入場と利用者モード（interview_mode）
 
-- ステータス: **Accepted（受理）**
+- ステータス: Accepted（受理）
 - 日付: 2026-07-05（提案・受理）
 - 関連: [ADR-0031](0031-product-entity-and-invite-links.md)（product・深掘りリンク — 本 ADR はその
   `scope=end_user` を解禁する）/ [ADR-0012](0012-google-login.md)（Google ログイン — 本 ADR が例外を定義）/

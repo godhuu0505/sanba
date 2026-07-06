@@ -1,6 +1,6 @@
 # ADR-0048: 問い合わせトリアージとサポート知識（利用者の声の切り分け・その場解決）
 
-- ステータス: **Accepted（受理）**
+- ステータス: Accepted（受理）
 - 日付: 2026-07-06（提案・受理）
 - 関連: [ADR-0032](0032-guest-join-and-enduser-mode.md)（利用者モード — 本 ADR は決定8 の
   allowlist を限定改訂する）/ [ADR-0002](0002-multi-agent-topology.md)（トポロジ — 変更しない）/

@@ -1,6 +1,6 @@
 # ADR-0022: 会話 realtime モデルの拡張 — 不明瞭検知（ambiguous）と音声状態の表現
 
-- ステータス: Proposed（提案中）
+- ステータス: Proposed
 - 日付: 2026-06-28
 - 関連: ADR-0018（会話体験・3タブ・確定ゲート）を**補う**。#182（DetectionKind に ambiguous）/
   #183（音声状態 読み上げ/消音/一時停止 の表示契約）/ 契約 `docs/design/realtime-contract.md` §3,§4

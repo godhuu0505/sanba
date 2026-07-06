@@ -1,7 +1,9 @@
 # ADR-0011: Figma MCP による UI/UX デザインループ
 
-- ステータス: Proposed（提案中）
+- ステータス: Accepted
 - 日付: 2026-06-16
+- 改訂: デザインループの方向（当初 design→code 主体）は [ADR-0047](0047-app-is-canonical-figma-follows.md)
+  で反転（`apps/web` 実装を正本とし Figma は追従）。MCP による Figma 連携ツール自体は継続。
 
 ## コンテキスト
 

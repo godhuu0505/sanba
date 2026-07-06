@@ -1,6 +1,6 @@
 # ADR-0030: クロスタブ・ログアウト伝播（BroadcastChannel によるログアウト合図の共有）
 
-- ステータス: Proposed（提案中）
+- ステータス: Proposed
 - 日付: 2026-07-04
 - 関連: ADR-0012（Google ログイン）/ **ADR-0014 §7（クライアントのセッション持続 — トークンは
   in-memory のみ・localStorage に保存しない）— 本 ADR はこの方針を維持したまま拡張する** /

@@ -1,6 +1,6 @@
 # ADR-0021: realtime イベントの reliable-seq 名前空間と seq 永続化
 
-- ステータス: Proposed（提案中）
+- ステータス: Proposed
 - 日付: 2026-06-28
 - 関連: #122（lossy イベント欠番による不要な再ハイドレーション）/ #123（Cloud Run 再起動後の seq 単調性）/
   ADR-0020（question ハイドレーションと Firestore tombstone/current 永続化）/ 契約 `docs/design/realtime-contract.md` §1,§2,§4

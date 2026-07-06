@@ -1,6 +1,6 @@
 # ADR-0031: product エンティティ・所有・深掘りリンク
 
-- ステータス: **Accepted（受理・2026-07-05 確定）**
+- ステータス: Accepted（受理・2026-07-05 確定）
 - 日付: 2026-07-05
 - 関連: [ADR-0008](0008-product-concept.md)（プロダクトコンセプト — 本 ADR が対象ペルソナを拡張）/
   [ADR-0027](0027-per-session-github-repo.md)（セッション単位 repo 選択 — repo 解決を product へ持ち上げ）/

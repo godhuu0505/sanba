@@ -1,13 +1,13 @@
 # ADR-0047: 正本の逆転 — アプリ実装を唯一の正本とし、Figma を追従させる
 
-- ステータス: **Accepted（受理・2026-07-06）**
+- ステータス: Accepted（受理・2026-07-06）
 - 日付: 2026-07-06
 - 関連:
   - **[ADR-0011](0011-figma-mcp-design-loop.md)（Figma MCP デザインループ）＝方向を改訂**。
     「デザイン → コード」を主とする前提を、本 ADR で「**コード（実装）→ デザイン**」主体へ反転する。
   - **[ADR-0033](0033-ui-redesign-v2-sticker-paper.md)（白い紙の上の問答 — ステッカー×原色×動く棒人間）＝視覚言語の正**。
     本 ADR は ADR-0033 の実装を「唯一の正本」と定義するだけで、意匠そのものは ADR-0033 に委ねる。
-  - [ADR-0025](0025-light-paper-redesign.md)（Superseded）／[ADR-0017](0017-figma-canonical-onepath-archaic-copy.md)（一本道 IA・古語文言＝維持）。
+  - [ADR-0025](0025-light-paper-redesign.md)（Superseded）／[ADR-0017](0017-figma-canonical-onepath-archaic-copy.md)（**本 ADR が「Figma 正本」の中核方針を反転**。一本道 IA・古語文言の方針は維持）。
   - 監査記録: [`docs/design/figma-implementation-audit.md`](../design/figma-implementation-audit.md)、
     画面票: [`docs/design/screens/README.md`](../design/screens/README.md)。
 

@@ -1,9 +1,11 @@
 # ADR-0017: Figma 正本を正とするデザイン方針確定（一本道フロー・全面古語・a11y は現代語で担保）
 
-- ステータス: Proposed（提案中）／**navigation は一部改訂あり**（下記）
+- ステータス: Superseded by ADR-0047（「Figma を正本とする」中核方針を反転）
 - 日付: 2026-06-25
-- 改訂: 本 ADR の「`SessionView` タブ切替を廃止し一本道に」は、**会話フェーズについて
-  [ADR-0018](0018-conversation-experience.md)（Accepted・2026-06-25）で 3 タブ再導入に改訂**。
+- 改訂: (1) 本 ADR の中核「Figma を正本とする」は [ADR-0047](0047-app-is-canonical-figma-follows.md)
+  で反転し、`apps/web` の実装を唯一の正本・Figma は追従とした。
+  (2) 「`SessionView` タブ切替を廃止し一本道に」は、会話フェーズについて
+  [ADR-0018](0018-conversation-experience.md)（Accepted・2026-06-25）で 3 タブ再導入に改訂。
   マクロの一本道・全面古語・a11y 現代語の方針は継続（タブは会話を止めず情報面を横断するサブ切替に限定）。
 - 関連: epic #138 / discussion #148 / 影響先 #140 #141 #142 #144 / ドキュメント同期 #147
 - 下敷き: ADR-0011（Figma MCP デザインループ）・ADR-0014（admin/login 画面）
