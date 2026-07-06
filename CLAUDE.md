@@ -14,11 +14,13 @@
 4. **指標をハックしない**: Four Keys 等は本質的なボトルネック改善のために計測する。見栄えのためのPR分割等はしない。
 
 ## ディレクトリ規約
-- `apps/agent` — Python 3.12 / `uv` 管理。LiveKit Agents worker と ADK 定義。
-- `apps/api`   — Python 3.12 / FastAPI。LiveKit トークン発行とオーケストレーション。
-- `apps/web`   — Next.js (App Router) / TypeScript。
-- `infra/`     — Terraform と可観測性スタックの設定。変更は必ずレビュー。
-- `docs/`      — 設計判断は ADR (`docs/adr/NNNN-*.md`) に残す。
+- `apps/agent`   — Python 3.12 / `uv` 管理。LiveKit Agents worker と ADK 定義。
+- `apps/api`     — Python 3.12 / FastAPI。LiveKit トークン発行とオーケストレーション。
+- `apps/web`     — Next.js (App Router) / TypeScript。
+- `apps/worker`  — Python 3.12 / FastAPI。アップロード動画の非同期解析ワーカー（ADR-0040、Cloud Tasks push 受け口）。
+- `packages/sanba_shared` — セッション/要件モデルと永続化を agent・api・worker で共有（ADR-0014）。
+- `infra/`       — Terraform と可観測性スタックの設定。変更は必ずレビュー。
+- `docs/`        — 設計判断は ADR (`docs/adr/NNNN-*.md`) に残す。
 
 ## コーディング規約
 - Python: `ruff`（lint + format）、`pytest`、型ヒント必須。`mypy` を通す。
