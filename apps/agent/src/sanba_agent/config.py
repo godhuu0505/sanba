@@ -53,6 +53,16 @@ class Settings(BaseSettings):
     voice_session_max_restarts: int = 3
     voice_session_restart_backoff_s: float = 2.0
 
+    # --- 要件分析（ADK 多段チェーン）のタイムアウト（ADR-0046 段階1）---
+    # 背景分析 1 回の LLM 往復の上限。健全時は概ね 10 秒未満で完了する。超過は fail-soft で
+    # 破棄し、次の発話が再評価する。音声ターン自体は下の ride-along 上限が守るため、分析が
+    # 完了しきれるだけの余裕を残しつつ 30→20 秒へ短縮する。
+    analysis_timeout_seconds: float = 20.0
+    # analyze_requirements（ツール）が走行中の背景分析へ相乗りして待つ上限。これを超えたら
+    # 音声ターンをそれ以上塞がず、直近結果（無ければヒューリスティック）を即返す。背景は走り
+    # 切り、結果は次ターンに反映される。音声ターンのレイテンシ保護の主レバー（ADR-0046 段階1）。
+    analysis_ride_along_timeout_seconds: float = 8.0
+
     # --- 入力ノイズ抑制 ---
     # LiveKit Cloud の Krisp Background Voice Cancellation（BVC）をエージェント側の音声入力に
     # 適用する。雑音・PC 内蔵マイク・別話者の被り由来の誤認識/言語ドリフトを抑える。

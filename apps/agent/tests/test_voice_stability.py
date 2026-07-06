@@ -106,6 +106,11 @@ class TestDefaultSettings:
         assert settings.voice_session_max_restarts >= 1
         assert settings.voice_session_restart_backoff_s > 0
 
+    def test_analysis_timeouts_protect_the_voice_turn(self) -> None:
+        # ADR-0046 段階1: 相乗り上限は音声ターンを塞がない短さで、背景上限以下に収まる。
+        assert settings.analysis_ride_along_timeout_seconds <= 10
+        assert settings.analysis_ride_along_timeout_seconds <= settings.analysis_timeout_seconds
+
 
 class TestBuildInputTranscription:
     def test_uses_configured_language_as_hint(self, monkeypatch: pytest.MonkeyPatch) -> None:
