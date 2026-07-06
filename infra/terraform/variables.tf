@@ -119,6 +119,20 @@ variable "guest_join_enabled" {
   description = "scope=end_user リンクをログインなしで受けるか（ADR-0032 / GUEST_JOIN_ENABLED）。段階リリース用フラグ。"
 }
 
+# ---- ログイン nonce チャレンジ (ADR-0046) ----
+variable "require_login_nonce" {
+  type        = bool
+  default     = false
+  description = "create/join で ID トークンの nonce claim をサーバ照合するか（ADR-0046 / REQUIRE_LOGIN_NONCE）。ID トークン注入対策。段階リリース用フラグ（web の nonce フロー確認後に true）。"
+}
+
+# ---- ルーム作成の許可リスト (ADR-0012 §3) ----
+variable "room_creator_allowlist" {
+  type        = string
+  default     = ""
+  description = "ルーム作成を許可する email/ドメインのカンマ区切り（ADR-0012 §3 / ROOM_CREATOR_ALLOWLIST）。空=制限なし。admin は常に可。"
+}
+
 variable "invite_join_rate_per_minute" {
   type        = number
   default     = 10

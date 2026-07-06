@@ -77,10 +77,26 @@ class Settings(BaseSettings):
     # 未設定かつ auth_dev_bypass=false の本番構成では認証経路をフェイルクローズする。
     google_oauth_client_id: str = ""
 
+    # ---- ログイン nonce チャレンジ (ADR-0046) ----
+    # ID トークン注入対策。サーバが発行した nonce を GIS に渡させ、ID トークンの `nonce`
+    # claim を create/join でサーバ照合する。段階リリース用フラグ（既定 false）: 実環境で
+    # true にして強制する。false の間は nonce を検証しない（ID トークン自体の署名・aud・
+    # iss・exp・email_verified 検証は常に効くため、これは多層防御の 1 層の on/off）。
+    require_login_nonce: bool = False
+    # nonce エンベロープの有効期限（秒）。ID トークン(約1h)より長くして、リフレッシュ直前
+    # まで同じ nonce で create/join が通るようにする（既定 65 分。ADR-0046）。
+    auth_nonce_ttl_seconds: int = 3900
+
     # ---- 管理者 (ADR-0014 §2) ----
     # 管理画面を使える Google アカウントの email 許可リスト (カンマ区切り)。
     # 検証済み identity の email をサーバ側で照合する。dev bypass でも照合する (§13)。
     admin_emails: str = ""
+
+    # ---- ルーム作成の許可リスト (ADR-0012 §3) ----
+    # セッション(ルーム)を作成できる Google アカウント。email("a@b.com") または
+    # ドメイン("b.com") のカンマ区切り。空 = 制限なし（現行の「ログイン済みなら誰でも」を
+    # 維持 / GITHUB_REPO_ALLOWLIST と同じ「空=無制限」方針）。admin は常に作成可。
+    room_creator_allowlist: str = ""
 
     # ---- Firestore (ADR-0014 §15) ----
     # api はセッション/要件のリーダー兼ライターになった。emulator 利用時は接続先を
@@ -92,6 +108,13 @@ class Settings(BaseSettings):
     def admin_email_set(self) -> frozenset[str]:
         """正規化済みの管理者 email 集合 (小文字・前後空白除去)。"""
         return frozenset(e.strip().lower() for e in self.admin_emails.split(",") if e.strip())
+
+    @property
+    def room_creator_allow_set(self) -> frozenset[str]:
+        """ルーム作成を許可する email/ドメインの集合 (小文字・前後空白除去)。空=無制限。"""
+        return frozenset(
+            e.strip().lower() for e in self.room_creator_allowlist.split(",") if e.strip()
+        )
 
     # ---- Context ingestion -> RAG grounding (issue #6) ----
     # Shared with the agent's grounding store (same Elasticsearch index).

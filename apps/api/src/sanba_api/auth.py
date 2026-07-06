@@ -12,6 +12,7 @@ import base64
 import hashlib
 import hmac
 import json
+import secrets
 import time
 from dataclasses import dataclass
 
@@ -276,3 +277,57 @@ def verify_session_token(token: str, secret: str) -> SessionAccess:
         sub=payload.get("sub", ""),
         role=payload.get("role", "participant"),
     )
+
+
+# ── ログイン nonce チャレンジ（ADR-0046）──────────────────────────────────────
+# ID トークン注入（aud だけ合う、別文脈で得た Google ID トークンの使い回し）を防ぐ。
+# サーバが nonce を発行 → web が GIS の initialize({nonce}) に渡す → Google が ID トークンの
+# `nonce` claim に埋める → create/join でサーバが claim と照合する。invite/session token と
+# 同じステートレス HMAC 方式で、サーバ側に nonce を保存しない（多インスタンスでも整合）。
+# 生 nonce をそのまま header で送り返すだけだと「トークンを盗めば nonce も送れる」ため無力
+# だが、ここでは **サーバ署名エンベロープ** を返させることで、claim と一致する nonce を持つ
+# エンベロープをサーバの署名なしには作れなくしている（照合の正がサーバの HMAC 鍵側にある）。
+
+
+class InvalidAuthNonce(Exception):
+    """Raised when an auth-nonce envelope is malformed, tampered, or expired."""
+
+
+def create_auth_nonce(secret: str, ttl_seconds: int) -> tuple[str, str]:
+    """ログイン nonce を発行する。戻り値は (raw_nonce, envelope)。
+
+    `raw_nonce` は GIS の `id.initialize({nonce})` に渡す生値（ID トークンの `nonce` claim に
+    入る）。`envelope` は「この nonce をサーバが発行した」ことを証す HMAC 署名付き短命トークン
+    で、web は `X-Auth-Nonce` として返す。サーバは envelope から raw_nonce を再導出して
+    claim と照合する（保存不要）。
+    """
+    raw = secrets.token_urlsafe(32)
+    payload = {"nonce": raw, "scope": "auth_nonce", "exp": int(time.time()) + ttl_seconds}
+    payload_b64 = _b64url_encode(json.dumps(payload, separators=(",", ":")).encode())
+    return raw, f"{payload_b64}.{_sign(payload_b64, secret)}"
+
+
+def verify_auth_nonce(envelope: str, secret: str) -> str:
+    """envelope の署名・scope・期限を検証し、埋め込まれた raw nonce を返す。"""
+    try:
+        payload_b64, sig = envelope.split(".", 1)
+    except ValueError as exc:
+        raise InvalidAuthNonce("malformed token") from exc
+
+    expected = _sign(payload_b64, secret)
+    if not hmac.compare_digest(sig, expected):
+        raise InvalidAuthNonce("bad signature")
+
+    try:
+        payload = json.loads(_b64url_decode(payload_b64))
+    except Exception as exc:
+        raise InvalidAuthNonce("malformed payload") from exc
+
+    if payload.get("scope") != "auth_nonce":
+        raise InvalidAuthNonce("wrong scope")
+    if int(payload.get("exp", 0)) < int(time.time()):
+        raise InvalidAuthNonce("expired")
+    nonce = payload.get("nonce")
+    if not isinstance(nonce, str) or not nonce:
+        raise InvalidAuthNonce("malformed claim")
+    return nonce

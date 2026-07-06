@@ -22,6 +22,7 @@ from typing import Annotated
 import structlog
 from fastapi import Depends, Header, HTTPException
 
+from .auth import InvalidAuthNonce, verify_auth_nonce
 from .config import settings
 from .observability import record_auth_event
 
@@ -47,6 +48,9 @@ class AuthUser:
     email_verified: bool
     name: str
     dev: bool = False
+    # ID トークンの `nonce` claim（ADR-0046）。GIS に渡した nonce が入る。未設定のトークンや
+    # dev bypass では None。create/join の nonce 束縛（require_user_bound）でのみ照合する。
+    nonce: str | None = None
 
 
 def _default_verifier(token: str, client_id: str) -> dict[str, object]:
@@ -83,11 +87,13 @@ def _validate_claims(claims: dict[str, object]) -> AuthUser:
     if not email_verified:
         raise GoogleTokenError("email not verified")
 
+    raw_nonce = claims.get("nonce")
     return AuthUser(
         sub=str(sub),
         email=email,
         email_verified=True,
         name=str(claims.get("name", "") or email),
+        nonce=str(raw_nonce) if raw_nonce else None,
     )
 
 
@@ -155,6 +161,69 @@ def require_user(
 
 # create_session / join_session が結線する依存性エイリアス。
 CurrentUser = Annotated[AuthUser, Depends(require_user)]
+
+
+def require_user_bound(
+    user: Annotated[AuthUser, Depends(require_user)],
+    x_auth_nonce: Annotated[str | None, Header()] = None,
+) -> AuthUser:
+    """`require_user` + ログイン nonce の束縛（ADR-0046）。
+
+    identity クリティカルな経路（LiveKit/セッショントークンの発行に直結する create/join）
+    だけに掛ける。ID トークンの `nonce` claim が、サーバが発行した nonce（`X-Auth-Nonce` の
+    署名エンベロープ）と一致することを要求し、別文脈で得た ID トークンの注入を弾く。
+
+    `require_login_nonce=false`（既定 / 段階リリース）と `auth_dev_bypass`（ローカル）では
+    nonce を検証せず素通しする。前者は「実環境で on にするまで挙動を変えない」ため、後者は
+    dev bypass トークンが nonce を持たないため。いずれの場合も ID トークン自体の検証
+    （署名・aud・iss・exp・email_verified）は require_user が済ませている。
+    """
+    if not settings.require_login_nonce or settings.auth_dev_bypass:
+        return user
+
+    if not x_auth_nonce:
+        log.warning("auth_nonce_missing", sub=user.sub)
+        record_auth_event("nonce_missing")
+        raise HTTPException(status_code=401, detail="missing auth nonce")
+
+    try:
+        expected = verify_auth_nonce(x_auth_nonce, settings.session_signing_secret)
+    except InvalidAuthNonce as exc:
+        log.warning("auth_nonce_rejected", reason=str(exc))
+        record_auth_event("nonce_rejected")
+        raise HTTPException(status_code=401, detail="invalid auth nonce") from exc
+
+    if user.nonce != expected:
+        log.warning("auth_nonce_mismatch", sub=user.sub)
+        record_auth_event("nonce_mismatch")
+        raise HTTPException(status_code=401, detail="auth nonce mismatch")
+
+    record_auth_event("nonce_verified")
+    return user
+
+
+# create_session / join_session（identity クリティカル）が結線する nonce 束縛付きエイリアス。
+CurrentUserBound = Annotated[AuthUser, Depends(require_user_bound)]
+
+
+def can_create_room(user: AuthUser) -> bool:
+    """ルーム(セッション)作成を許可されているか（ADR-0012 §3 / ROOM_CREATOR_ALLOWLIST）。
+
+    admin は常に可。allowlist が空なら誰でも可（現行の「ログイン済みなら誰でも」を維持 /
+    GITHUB_REPO_ALLOWLIST と同じ「空=無制限」）。非空なら email 完全一致か、その email の
+    ドメイン一致のときだけ可。`is_admin` と同じく dev bypass でも allowlist を照合する
+    （素通しの特別扱いをしない。空既定なので `just up` は影響を受けない）。
+    """
+    if is_admin(user):
+        return True
+    allow = settings.room_creator_allow_set
+    if not allow:
+        return True
+    email = user.email.lower()
+    if email in allow:
+        return True
+    domain = email.rpartition("@")[2]
+    return bool(domain) and domain in allow
 
 
 def maybe_user(

@@ -10,6 +10,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
+import { fetchAuthNonce, setAuthNonce } from "./api";
 import { isDriveConfigured } from "./googleDrive";
 
 const CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? "";
@@ -39,6 +40,14 @@ export const AUTH_HINT_KEY = "sanba.auth.hint.v1";
 // ブラウザでは復元成功の見込みが高いため、スクリプトロード込みでも間に合うよう延長する。
 const SETTLE_NO_HINT_MS = 2500;
 const SETTLE_WITH_HINT_MS = 8000;
+
+// ID トークン(約1h)の失効を先読みして能動リフレッシュするための猶予（ADR-0046 / P1）。exp の
+// この時間前に静かな再取得を試みる。GIS は既定ではリロード時にしか再取得しないため、これが
+// 無いと長い会話の途中でトークンが切れ、LiveKit 再 join や create/join が 401 で刺さる。
+const REFRESH_SKEW_MS = 5 * 60 * 1000;
+// リフレッシュ間隔の下限。クロックずれや短命トークンで遅延が過小/負になってもタイトループに
+// しないための安全弁。
+const MIN_REFRESH_DELAY_MS = 30 * 1000;
 
 /** ログイン痕跡ヒントを読む。localStorage 不可の環境（プライベートモード等）は false 扱い。 */
 function readAuthHint(): boolean {
@@ -94,6 +103,8 @@ interface GoogleIdentity {
     client_id: string;
     callback: (res: CredentialResponse) => void;
     auto_select?: boolean;
+    // サーバ発行のログイン nonce（ADR-0046）。ID トークンの `nonce` claim に埋め込まれる。
+    nonce?: string;
   }): void;
   renderButton(parent: HTMLElement, options: Record<string, unknown>): void;
   prompt(momentListener?: (notification: PromptMomentNotification) => void): void;
@@ -200,6 +211,17 @@ export function decodeProfile(token: string): GoogleProfile | null {
   }
 }
 
+/** ID トークン (JWT) の `exp`（失効時刻）をミリ秒で返す。取れなければ null（ADR-0046）。 */
+function decodeExpiryMs(token: string): number | null {
+  try {
+    const payload = token.split(".")[1];
+    const claims = JSON.parse(decodeBase64UrlUtf8(payload)) as { exp?: unknown };
+    return typeof claims.exp === "number" ? claims.exp * 1000 : null;
+  } catch {
+    return null;
+  }
+}
+
 export function useGoogleAuth(): GoogleAuth {
   const devMode = CLIENT_ID === "";
   const [credential, setCredential] = useState<string | null>(null);
@@ -213,6 +235,13 @@ export function useGoogleAuth(): GoogleAuth {
   // （effect のクロージャは生成時の state しか見えないため）。
   const credentialRef = useRef<string | null>(null);
   credentialRef.current = credential;
+
+  // ID トークン能動リフレッシュ（ADR-0046 / P1）。タイマーと、循環参照を避けるための
+  // コールバックのミラー（onCredential → scheduleRefresh → refreshCredential → onCredential）。
+  const refreshTimerRef = useRef<number | null>(null);
+  const onCredentialRef = useRef<(res: CredentialResponse) => void>(() => {});
+  const scheduleRefreshRef = useRef<(token: string) => void>(() => {});
+  const refreshCredentialRef = useRef<() => void>(() => {});
 
   // ── Google ドライブ（drive.file）の同意・アクセストークン ─────────────────
   // ADR-0014 §7 の方針どおりメモリのみ（localStorage に置かない）。expiry を控え、
@@ -274,6 +303,8 @@ export function useGoogleAuth(): GoogleAuth {
       setCredential(res.credential);
       // 次回のフルロードで「復元を待つ価値がある」ことを残す（トークンは含めない）。
       writeAuthHint(true);
+      // 失効前の能動リフレッシュを仕掛ける（ADR-0046 / P1）。新トークン到着のたびに貼り直す。
+      scheduleRefreshRef.current(res.credential);
       // 要件: Google ログインのタイミングで Drive 権限も求める。ただし
       // - "auto"（リロード時の静かな復元）はユーザー操作が無くポップアップがブロックされる
       //   ため出さない（Drive 取り込みの操作時に requestDriveAccess が改めて同意を求める）。
@@ -285,6 +316,57 @@ export function useGoogleAuth(): GoogleAuth {
       }
     }
   }, []);
+
+  const clearRefreshTimer = useCallback(() => {
+    if (refreshTimerRef.current !== null) {
+      window.clearTimeout(refreshTimerRef.current);
+      refreshTimerRef.current = null;
+    }
+  }, []);
+
+  // 失効前の静かな再取得（ADR-0046 / P1）。nonce を採り直して initialize し直し、One Tap を
+  // 無表示で促す。Google セッションが生きていれば新トークンが onCredential に届き、そこで
+  // 次のリフレッシュが再スケジュールされる。取れなければ失効後の API 401 → 再サインイン導線に
+  // 委ねる（現行動作。ここで強制ログアウトはしない）。
+  const refreshCredential = useCallback(async () => {
+    const id = window.google?.accounts.id;
+    if (!id) return;
+    try {
+      const n = await fetchAuthNonce();
+      setAuthNonce(n?.token ?? null);
+      id.initialize({
+        client_id: CLIENT_ID,
+        callback: onCredentialRef.current,
+        auto_select: true,
+        nonce: n?.nonce,
+      });
+      id.prompt();
+    } catch (e) {
+      console.info("[auth] silent refresh failed", e);
+    }
+  }, []);
+
+  const scheduleRefresh = useCallback(
+    (token: string) => {
+      clearRefreshTimer();
+      if (devMode) return;
+      const expMs = decodeExpiryMs(token);
+      if (expMs === null) return;
+      const delay = Math.max(MIN_REFRESH_DELAY_MS, expMs - Date.now() - REFRESH_SKEW_MS);
+      refreshTimerRef.current = window.setTimeout(() => {
+        refreshCredentialRef.current();
+      }, delay);
+    },
+    [clearRefreshTimer, devMode],
+  );
+
+  // 循環参照を避けるためコールバックはミラーで参照する（onCredential は deps [] で固定のため）。
+  onCredentialRef.current = onCredential;
+  scheduleRefreshRef.current = scheduleRefresh;
+  refreshCredentialRef.current = refreshCredential;
+
+  // アンマウント時にリフレッシュタイマーを片付ける（AuthProvider は常駐だが衛生的に）。
+  useEffect(() => () => clearRefreshTimer(), [clearRefreshTimer]);
 
   useEffect(() => {
     if (devMode) return; // dev モードでは GIS を読み込まない。
@@ -311,6 +393,20 @@ export function useGoogleAuth(): GoogleAuth {
       cancelled = true;
       window.clearTimeout(settleTimer);
     };
+    // ログイン nonce（ADR-0046）を採って適用する。GIS 初期化はブロックしない（同期パスで
+    // initialize/prompt を先に済ませてログイン UI と復元を最速で動かす）。nonce が採れたら
+    // それを載せて initialize し直し、既に credential を復元済み（reload の auto_select が
+    // nonce 前に走ったケース）なら nonce 付きで採り直す。失敗（オフライン/サーバ古い）時は
+    // nonce 無しのままにし、REQUIRE_LOGIN_NONCE=on サーバでは create/join が 401 になって
+    // 再サインインへ誘導される＝セキュリティ側にフェイルする。
+    async function applyNonce(id: GoogleIdentity) {
+      const n = await fetchAuthNonce();
+      if (cancelled || !n) return;
+      setAuthNonce(n.token);
+      id.initialize({ client_id: CLIENT_ID, callback: onCredential, auto_select: true, nonce: n.nonce });
+      if (credentialRef.current) id.prompt();
+    }
+
     function setup() {
       const id = window.google?.accounts.id;
       if (!id || cancelled) return;
@@ -346,6 +442,8 @@ export function useGoogleAuth(): GoogleAuth {
           if (!cancelled) setGisSettled(true);
         }
       });
+      // nonce はバックグラウンドで採って適用する（同期の initialize/prompt はブロックしない）。
+      void applyNonce(id);
     }
 
     if (window.google?.accounts.id) {
@@ -383,8 +481,12 @@ export function useGoogleAuth(): GoogleAuth {
     setDriveGranted(null);
     // ログアウト後のフルロードで復元待ち（長い settle）に入らないようヒントも消す。
     writeAuthHint(false);
+    // 能動リフレッシュを止め、nonce も破棄する（ADR-0046）: ログアウト後に再取得や nonce
+    // 送出が続かないようにする。
+    clearRefreshTimer();
+    setAuthNonce(null);
     if (!devMode) window.google?.accounts.id.disableAutoSelect();
-  }, [devMode]);
+  }, [devMode, clearRefreshTimer]);
 
   const signOut = useCallback(
     (opts?: { broadcast?: boolean }) => {
