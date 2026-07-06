@@ -11,15 +11,22 @@ Run locally:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
 import time
 from typing import Any, NamedTuple
 
 import structlog
+from google.genai import types as genai_types
 from livekit.agents import (
+    NOT_GIVEN,
     Agent,
     AgentSession,
+    CloseEvent,
+    CloseReason,
+    ErrorEvent,
     JobContext,
+    NotGiven,
     RoomInputOptions,
     RunContext,
     WorkerOptions,
@@ -1202,6 +1209,48 @@ def seed_github_context(
         log.warning("github_seed_failed", error=str(exc))
 
 
+# 感度設定（env）→ Gemini enum の対応。未知の値・空文字はサーバ既定（None）に倒す。
+_START_SENSITIVITY = {
+    "low": genai_types.StartSensitivity.START_SENSITIVITY_LOW,
+    "high": genai_types.StartSensitivity.START_SENSITIVITY_HIGH,
+}
+_END_SENSITIVITY = {
+    "low": genai_types.EndSensitivity.END_SENSITIVITY_LOW,
+    "high": genai_types.EndSensitivity.END_SENSITIVITY_HIGH,
+}
+
+
+def build_turn_detection(
+    *,
+    silence_duration_ms: int,
+    end_sensitivity: str,
+    start_sensitivity: str,
+    prefix_padding_ms: int,
+) -> genai_types.RealtimeInputConfig:
+    """Gemini Live の自動 VAD 設定を組み立てる（ADR-0038）。
+
+    「参加者が話し終える前にエージェントが被せて話し始める」問題への対策で、
+    発話終端の判定を保守側（end_sensitivity=low + 無音時間を長め）に倒す。
+    値は env で調整できる（config.Settings の turn_*）。未知の感度値は警告して
+    サーバ既定に倒し、設定ミスで接続自体が失敗しないようにする。
+    """
+    start = _START_SENSITIVITY.get(start_sensitivity.strip().lower())
+    end = _END_SENSITIVITY.get(end_sensitivity.strip().lower())
+    if start_sensitivity.strip() and start is None:
+        log.warning("unknown_turn_start_sensitivity", value=start_sensitivity)
+    if end_sensitivity.strip() and end is None:
+        log.warning("unknown_turn_end_sensitivity", value=end_sensitivity)
+    return genai_types.RealtimeInputConfig(
+        automatic_activity_detection=genai_types.AutomaticActivityDetection(
+            disabled=False,
+            start_of_speech_sensitivity=start,
+            end_of_speech_sensitivity=end,
+            prefix_padding_ms=prefix_padding_ms if prefix_padding_ms > 0 else None,
+            silence_duration_ms=silence_duration_ms if silence_duration_ms > 0 else None,
+        )
+    )
+
+
 async def respond_to_user_text(
     agent: SANBAAgent, session: AgentSession, text: str, current_qid: str | None
 ) -> None:
@@ -1247,6 +1296,51 @@ async def respond_to_answer(
     )
 
 
+def build_realtime_model() -> google.beta.realtime.RealtimeModel:
+    """Gemini Live の RealtimeModel を組み立てる（ターン検出＋安定化設定込み / ADR-0038）。
+
+    再起動のたびに新しいインスタンスが要るため関数化している（AgentSession が閉じた
+    モデルは再利用できない）。context window compression は、長いインタビューが
+    コンテキスト上限でセッションごと打ち切られて無反応になるのを防ぐ。
+    """
+    compression: genai_types.ContextWindowCompressionConfig | NotGiven = NOT_GIVEN
+    if settings.gemini_context_window_compression:
+        compression = genai_types.ContextWindowCompressionConfig(
+            trigger_tokens=settings.gemini_context_trigger_tokens,
+            sliding_window=genai_types.SlidingWindow(
+                target_tokens=settings.gemini_context_sliding_window_tokens
+            ),
+        )
+    return google.beta.realtime.RealtimeModel(
+        model=settings.gemini_live_model,
+        voice="Puck",
+        temperature=0.7,
+        realtime_input_config=build_turn_detection(
+            silence_duration_ms=settings.turn_silence_duration_ms,
+            end_sensitivity=settings.turn_end_sensitivity,
+            start_sensitivity=settings.turn_start_sensitivity,
+            prefix_padding_ms=settings.turn_prefix_padding_ms,
+        ),
+        context_window_compression=compression,
+    )
+
+
+def resume_instructions(transcript: list[str], *, tail: int = 10) -> str:
+    """セッション再起動後の再開指示を組み立てる（ADR-0038）。
+
+    新しい Gemini Live セッションは会話履歴を持たないため、Python 側で保持している
+    transcript の末尾を文脈として渡し、「復旧して続きから」を一言で伝えさせる。
+    分析用 transcript（要件抽出の入力）は agent 側に残っているので失われない。
+    """
+    recent = "\n".join(transcript[-tail:]) if transcript else "（まだ発話はありません）"
+    return (
+        "通信が一時的に途切れて復旧しました。参加者に一言だけ短くお詫びし、"
+        "以下の直前の会話を踏まえて、途中だった話題の続きから会話を再開してください。"
+        "最初からやり直したり、同じ質問を繰り返したりしないこと。\n"
+        f"直前の会話:\n{recent}"
+    )
+
+
 async def entrypoint(ctx: JobContext) -> None:
     """LiveKit job entrypoint: one invocation per room."""
     setup_observability()
@@ -1285,43 +1379,6 @@ async def entrypoint(ctx: JobContext) -> None:
             interview_mode=agent.interview_mode.value,
         )
 
-    session: AgentSession = AgentSession(
-        llm=google.beta.realtime.RealtimeModel(
-            model=settings.gemini_live_model,
-            voice="Puck",
-            temperature=0.7,
-        ),
-    )
-
-    # Persist user turns so the ADK team always has the full transcript.
-    @session.on("user_input_transcribed")
-    def _on_user_text(ev) -> None:  # type: ignore[no-untyped-def]
-        text = getattr(ev, "transcript", "")
-        if not text:
-            return
-        if getattr(ev, "is_final", False):
-            # §5-6: 受信時点の current 質問 id を束ねてから記録する。未回答の current がある間に
-            # 届いた音声発話は、その問いへの回答とみなして（options の有無に依らず）クリアする。
-            current_qid = agent.current_question_id
-            agent.record_user_final(text)
-            if current_qid is not None:
-                _schedule(agent.clear_current_question(current_qid))
-        else:
-            # 認識中（partial）を会話履歴へ流し、確定前は吹き出しで「文字起こし中」を示す。
-            agent.publish_user_partial(text)
-
-    # SANBA（エージェント）の発話も会話履歴にテキストで出す。conversation_item_added は
-    # user/assistant 双方で発火するため、assistant のみ拾って participant 側と二重計上しない
-    # （user は上の user_input_transcribed が確定発話を記録済み）。
-    @session.on("conversation_item_added")
-    def _on_item_added(ev) -> None:  # type: ignore[no-untyped-def]
-        item = getattr(ev, "item", None)
-        if getattr(item, "role", None) != "assistant":
-            return
-        text = getattr(item, "text_content", None)
-        if text:
-            agent.publish_agent_utterance(text)
-
     # web → agent の操作イベントを受信する（契約 §4.5）。
     #   - user.selection（#102）: 検知カードの選択肢タップ → 検知を解消。
     #   - user.text（#185）: テキスト入力 → 読み上げを中断し user ターンとして応答（音声と同等）。
@@ -1338,6 +1395,13 @@ async def entrypoint(ctx: JobContext) -> None:
         task = asyncio.create_task(coro)
         _bg_tasks.add(task)
         task.add_done_callback(_on_bg_done)
+
+    # 現在の AgentSession。回復不能エラーで閉じたら _restart_session が作り直して差し替える
+    # （ADR-0038）。_on_data から呼ぶ respond_to_* にはこの変数を渡す（クロージャ経由で
+    # 受信時点の「現在の」セッションが解決される）。
+    session: AgentSession
+    restart_count = 0
+    restart_pending = False
 
     def _on_data(packet) -> None:  # type: ignore[no-untyped-def]
         if getattr(packet, "topic", None) != WEB_EVENTS_TOPIC:
@@ -1360,15 +1424,151 @@ async def entrypoint(ctx: JobContext) -> None:
             question_id, answer = answered
             _schedule(respond_to_answer(agent, session, question_id, answer))
 
-    ctx.room.on("data_received", _on_data)
+    def _wire_session(s: AgentSession) -> None:
+        """AgentSession ごとのイベントハンドラを張る（再起動で作り直すたびに呼ぶ / ADR-0038）。"""
 
-    # video_enabled=True forwards screen-share / camera frames to Gemini Live,
-    # so the agent can read mockups and whiteboards (multimodal grounding).
-    await session.start(
-        agent=agent,
-        room=ctx.room,
-        room_input_options=RoomInputOptions(video_enabled=True),
-    )
+        # Persist user turns so the ADK team always has the full transcript.
+        @s.on("user_input_transcribed")
+        def _on_user_text(ev) -> None:  # type: ignore[no-untyped-def]
+            text = getattr(ev, "transcript", "")
+            if not text:
+                return
+            if getattr(ev, "is_final", False):
+                # §5-6: 受信時点の current 質問 id を束ねてから記録する。未回答の current がある間に
+                # 届いた音声発話は、その問いへの回答とみなして（options の有無に依らず）クリアする。
+                current_qid = agent.current_question_id
+                agent.record_user_final(text)
+                if current_qid is not None:
+                    _schedule(agent.clear_current_question(current_qid))
+            else:
+                # 認識中（partial）を会話履歴へ流し、確定前は吹き出しで「文字起こし中」を示す。
+                agent.publish_user_partial(text)
+
+        # SANBA（エージェント）の発話も会話履歴にテキストで出す。conversation_item_added は
+        # user/assistant 双方で発火するため、assistant のみ拾って participant 側と二重計上しない
+        # （user は上の user_input_transcribed が確定発話を記録済み）。
+        @s.on("conversation_item_added")
+        def _on_item_added(ev) -> None:  # type: ignore[no-untyped-def]
+            item = getattr(ev, "item", None)
+            if getattr(item, "role", None) != "assistant":
+                return
+            text = getattr(item, "text_content", None)
+            if text:
+                agent.publish_agent_utterance(text)
+
+        # 観測性（CLAUDE.md 原則3）: Gemini Live 由来のエラーを構造化ログへ。recoverable=True
+        # はプラグインが session resumption handle 付きで自動再接続する。False は直後に
+        # close(reason=ERROR) が来るので、下の _on_session_close が再起動を引き受ける。
+        @s.on("error")
+        def _on_session_error(ev: ErrorEvent) -> None:
+            log.warning(
+                "voice_session_error",
+                session=session_id,
+                recoverable=getattr(ev.error, "recoverable", None),
+                error=str(getattr(ev.error, "error", ev.error)),
+            )
+
+        # 回復不能エラーで AgentSession が閉じると、従来はエージェントがルームに残ったまま
+        # 無反応になっていた（ADR-0038）。ERROR 起因の close だけ拾って作り直す。
+        # JOB_SHUTDOWN / PARTICIPANT_DISCONNECTED 等の正常系では再起動しない。
+        @s.on("close")
+        def _on_session_close(ev: CloseEvent) -> None:
+            if ev.reason == CloseReason.ERROR:
+                _request_restart()
+
+    async def _start_session() -> AgentSession:
+        """AgentSession を組み立てて開始する（初回・再起動共通）。
+
+        video_enabled=True forwards screen-share / camera frames to Gemini Live,
+        so the agent can read mockups and whiteboards (multimodal grounding).
+        開始に失敗した中途半端なセッションは閉じてから raise する（リーク防止）。
+        """
+        s: AgentSession = AgentSession(llm=build_realtime_model())
+        _wire_session(s)
+        try:
+            await s.start(
+                agent=agent,
+                room=ctx.room,
+                room_input_options=RoomInputOptions(video_enabled=True),
+            )
+        except BaseException:
+            with contextlib.suppress(Exception):
+                await s.aclose()
+            raise
+        return s
+
+    def _request_restart() -> None:
+        """再起動を一度だけスケジュールする（close ハンドラと失敗リトライの二重起動防止）。
+
+        開始に失敗したセッションは「_restart_session の except 分岐」と「そのセッション
+        自身の close(ERROR)」の両方が再起動を要求し得る。restart_pending で束ね、
+        並行して 2 つの AgentSession が同じルームに立つ事故を防ぐ。
+        """
+        nonlocal restart_pending
+        if restart_pending:
+            return
+        restart_pending = True
+        _schedule(_restart_session())
+
+    async def _restart_session() -> None:
+        """回復不能エラーで閉じたセッションを作り直す（上限つき・指数バックオフ / ADR-0038）。
+
+        SANBAAgent は close 時に activity が外れるため同一インスタンスを再利用でき、
+        transcript・採番・検知の状態は維持される。Gemini 側の会話履歴は新規セッションでは
+        失われるので、resume_instructions が直前の transcript 末尾を文脈として渡す。
+        """
+        nonlocal session, restart_count, restart_pending
+        if restart_count >= settings.voice_session_max_restarts:
+            # 再起動を使い切ったら黙って居座らず job を終了する。エージェント participant が
+            # ルームから退出することで、web 側は接続断として観測できる（無反応のまま残さない）。
+            log.error(
+                "voice_session_restarts_exhausted",
+                session=session_id,
+                restarts=restart_count,
+            )
+            ctx.shutdown(reason="voice session unrecoverable")
+            return
+        restart_count += 1
+        delay = settings.voice_session_restart_backoff_s * (2 ** (restart_count - 1))
+        log.warning(
+            "voice_session_restarting",
+            session=session_id,
+            attempt=restart_count,
+            max_restarts=settings.voice_session_max_restarts,
+            delay_s=delay,
+        )
+        await asyncio.sleep(delay)
+        try:
+            session = await _start_session()
+        except Exception as exc:  # noqa: BLE001 - 再起動失敗は次の試行（上限あり）へ倒す
+            log.error(
+                "voice_session_restart_failed",
+                session=session_id,
+                attempt=restart_count,
+                error=str(exc),
+            )
+            # restart_pending は立てたまま直接次を積む（close(ERROR) との二重要求は
+            # _request_restart が抑止済み。上限は restart_count が守る）。
+            _schedule(_restart_session())
+            return
+        # 新セッションが立った時点で解除する。以後のエラーは新セッションの close(ERROR)
+        # が改めて _request_restart する（上限カウントは job を通して継続）。
+        restart_pending = False
+        log.info("voice_session_restarted", session=session_id, attempt=restart_count)
+        try:
+            await publisher.status("listening")
+            await session.generate_reply(instructions=resume_instructions(agent.transcript))
+        except Exception as exc:  # noqa: BLE001
+            # 再開の一言が出せなくてもセッション自体は生きている（次の発話から会話は再開
+            # できる）ため、ここではフル再起動に倒さずログに留める。
+            log.warning(
+                "voice_session_resume_reply_failed",
+                session=session_id,
+                error=str(exc),
+            )
+
+    session = await _start_session()
+    ctx.room.on("data_received", _on_data)
     # 接続直後に web の状態表示を「聴いています」に同期する（03/04/05）。
     await publisher.status("listening")
     # 最初の一問はモード別（ADR-0032 決定6・7）: developer は要件整理＋画面共有の案内、

@@ -21,6 +21,29 @@ class Settings(BaseSettings):
     livekit_api_key: str = "devkey"
     livekit_api_secret: str = "secret"
 
+    # --- 音声ターン検出（Gemini Live 自動 VAD）の感度 ---
+    # 参加者が話し終えたと判定するまでに要求する無音時間 (ms)。大きいほど発話途中の間で
+    # エージェントが被せて話し始めにくくなる代わりに、応答開始は遅くなる。
+    turn_silence_duration_ms: int = 800
+    # 発話終端検出の感度。"low" = 終わったと判定されにくい（待ちが長い）/ "high" /
+    # "" = サーバ既定。話し途中の割り込み対策の主レバー。
+    turn_end_sensitivity: str = "low"
+    # 発話開始検出の感度。"low" にすると相槌・環境音でエージェントの発話が中断されにくく
+    # なるが、短い返事を取りこぼすリスクがある。既定はサーバ既定（""）。
+    turn_start_sensitivity: str = ""
+    # start-of-speech 確定に要する発話長 (ms)。0 以下はサーバ既定。
+    turn_prefix_padding_ms: int = 0
+
+    # --- Gemini Live セッションの安定化 ---
+    # コンテキスト圧縮（sliding window）。無効だとコンテキスト上限到達でセッションが
+    # 打ち切られ、長いインタビューの途中でエージェントが無反応になる。
+    gemini_context_window_compression: bool = True
+    gemini_context_trigger_tokens: int = 25600
+    gemini_context_sliding_window_tokens: int = 12800
+    # AgentSession が回復不能エラーで閉じたときの自動再起動（1 job あたりの上限と初期待ち）。
+    voice_session_max_restarts: int = 3
+    voice_session_restart_backoff_s: float = 2.0
+
     # Firestore
     firestore_emulator_host: str = ""
 
