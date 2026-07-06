@@ -10,7 +10,12 @@ from fastapi.testclient import TestClient
 from sanba_api.auth import create_session_token
 from sanba_api.auth_google import AuthUser, require_user
 from sanba_api.config import settings
-from sanba_api.ingestion import ContextIndexer, chunk_text, extract_text_from_upload
+from sanba_api.ingestion import (
+    ContextIndexer,
+    DocumentExtractionError,
+    chunk_text,
+    extract_text_from_upload,
+)
 from sanba_api.main import app
 
 client = TestClient(app)
@@ -138,11 +143,50 @@ def test_extract_text_from_pptx_slides_and_notes() -> None:
     assert "補足: 移行は段階的に" in text
 
 
-def test_extract_text_from_broken_document_returns_empty() -> None:
-    # 壊れたバイナリ文書は 500 にせず空文字（indexed_chunks=0 に平す / best-effort）。
-    assert extract_text_from_upload("broken.docx", b"not-a-zip") == ""
-    assert extract_text_from_upload("broken.xlsx", b"not-a-zip") == ""
-    assert extract_text_from_upload("broken.pptx", b"not-a-zip") == ""
+def test_extract_text_from_broken_document_raises_typed_error() -> None:
+    # 壊れたバイナリ文書は型付き例外で伝える（呼び出し側が 500 にせず「抽出 0 件」へ平しつつ、
+    # メトリクスでは成功と区別して計上する）。
+    for name in ("broken.docx", "broken.xlsx", "broken.pptx"):
+        with pytest.raises(DocumentExtractionError):
+            extract_text_from_upload(name, b"not-a-zip")
+
+
+def test_zip_bomb_is_rejected_before_expansion(monkeypatch: pytest.MonkeyPatch) -> None:
+    """展開後サイズが上限を超える zip コンテナは展開せずに弾く（OOM 防止）。"""
+    import io
+
+    from openpyxl import Workbook
+
+    from sanba_api import ingestion
+
+    workbook = Workbook()
+    sheet = workbook.active
+    for i in range(50):
+        sheet.append([f"データ{i}" * 10])
+    buf = io.BytesIO()
+    workbook.save(buf)
+
+    # 上限を人工的に絞り、正規の xlsx でも「展開後が大きすぎる」ケースを再現する。
+    monkeypatch.setattr(ingestion, "_MAX_ZIP_EXPANSION_BYTES", 10)
+    with pytest.raises(DocumentExtractionError):
+        extract_text_from_upload("bomb.xlsx", buf.getvalue())
+
+
+def test_upload_broken_docx_returns_zero_chunks() -> None:
+    """壊れた文書のアップロードは 500 にせず indexed_chunks=0 で返る（best-effort）。"""
+    created = client.post(
+        "/api/sessions", json={"roles": ["pm"], "consent_acknowledged": True}
+    ).json()
+    sid = created["session_id"]
+    res = client.post(
+        f"/api/sessions/{sid}/context/file",
+        files={"file": ("broken.docx", b"not-a-zip", "application/octet-stream")},
+        headers=_session_auth(sid),
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["indexed_chunks"] == 0
+    assert body["asset_kind"] == "doc"
 
 
 def test_memory_indexer_counts_chunks() -> None:

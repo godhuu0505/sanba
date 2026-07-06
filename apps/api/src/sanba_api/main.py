@@ -88,7 +88,12 @@ from .github_app import (
     redact_secrets,
     verify_link_state,
 )
-from .ingestion import ContextIndexer, chunk_text, extract_text_from_upload
+from .ingestion import (
+    ContextIndexer,
+    DocumentExtractionError,
+    chunk_text,
+    extract_text_from_upload,
+)
 from .mailer import send_member_invite_email
 from .observability import (
     record_asset_upload,
@@ -2166,31 +2171,51 @@ async def add_context_file(
         if len(raw) > byte_limit:
             record_asset_upload("doc", "rejected")
             raise HTTPException(status_code=413, detail="file too large")
-        text = extract_text_from_upload(filename, raw)
-        if len(text) > settings.max_context_chars:
-            record_asset_upload("doc", "rejected")
-            raise HTTPException(status_code=413, detail="extracted text too large")
-        chunks = chunk_text(text)
-        # 画像/動画と同じ安定 ID（content hash）で素材として扱う: 同一資料の再投入は同じ
-        # asset_id になるため、古い chunk を出所ごと消してから索引し直す（重複索引を防ぐ冪等化）。
-        doc_asset_id = compute_asset_id(raw)
-        _indexer.delete_context(session_id, f"asset:{doc_asset_id}")
-        n = _indexer.index_context(session_id, chunks, f"asset:{doc_asset_id}")
-        record_asset_upload("doc", "indexed")
-        # 素材一覧（GET context/files / #184）へ永続化。リロード後も一覧に残り、DELETE
-        # /context/file/{asset_id} で索引ごと破棄できる（binary は保存しないので meta+索引のみ）。
-        _repo.save_material(
-            session_id,
-            material_record(doc_asset_id, filename, "doc", status="done", extracted=n),
+        # 観測性（CLAUDE.md 原則3）: Office/PDF の抽出は重くなり得るため、画像/動画経路と
+        # 同様に span でレイテンシを追えるようにする。
+        tracer = _get_tracer()
+        span_cm = (
+            tracer.start_as_current_span("context.file.doc") if tracer else contextlib.nullcontext()
         )
-        log.info(
-            "doc_indexed",
-            session=session_id,
-            asset_id=doc_asset_id,
-            chunks=n,
-            sub=access.sub,
-        )
-        return ContextResponse(indexed_chunks=n, asset_id=doc_asset_id, asset_kind="doc")
+        with span_cm as span:
+            if span is not None:
+                span.set_attribute("sanba.asset.kind", "doc")
+                span.set_attribute("sanba.asset.size", len(raw))
+            # 壊れたファイル・zip bomb は 500 にせず「抽出 0 件」へ平す（best-effort）が、
+            # メトリクスでは成功（indexed）と区別して計上する（ダッシュボードで異常を追える）。
+            extract_failed = False
+            try:
+                text = extract_text_from_upload(filename, raw)
+            except DocumentExtractionError:
+                text = ""
+                extract_failed = True
+            if len(text) > settings.max_context_chars:
+                record_asset_upload("doc", "rejected")
+                raise HTTPException(status_code=413, detail="extracted text too large")
+            chunks = chunk_text(text)
+            # 画像/動画と同じ安定 ID（content hash）で素材として扱う: 同一資料の再投入は
+            # 同じ asset_id になるため、古い chunk を出所ごと消してから索引し直す（冪等化）。
+            doc_asset_id = compute_asset_id(raw)
+            if span is not None:
+                span.set_attribute("sanba.asset.id", doc_asset_id)
+            _indexer.delete_context(session_id, f"asset:{doc_asset_id}")
+            n = _indexer.index_context(session_id, chunks, f"asset:{doc_asset_id}")
+            record_asset_upload("doc", "extract_failed" if extract_failed else "indexed")
+            # 素材一覧（GET context/files / #184）へ永続化。リロード後も一覧に残り、DELETE
+            # /context/file/{asset_id} で索引ごと破棄できる（binary は無く meta+索引のみ）。
+            _repo.save_material(
+                session_id,
+                material_record(doc_asset_id, filename, "doc", status="done", extracted=n),
+            )
+            log.info(
+                "doc_indexed",
+                session=session_id,
+                asset_id=doc_asset_id,
+                chunks=n,
+                extract_failed=extract_failed,
+                sub=access.sub,
+            )
+            return ContextResponse(indexed_chunks=n, asset_id=doc_asset_id, asset_kind="doc")
 
     kind = asset_kind(filename, file.content_type)
     if kind is None:

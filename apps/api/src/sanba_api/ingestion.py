@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import io
 import re
+import zipfile
 from collections.abc import Callable
 from html.parser import HTMLParser
 
@@ -243,6 +244,29 @@ def _embed(text: str) -> list[float] | None:
         return None
 
 
+class DocumentExtractionError(Exception):
+    """バイナリ文書からのテキスト抽出失敗（壊れた zip・想定外の中身・展開爆発）。
+
+    呼び出し側（context/file エンドポイント）はこれを 500 にせず「抽出 0 件」へ平すが、
+    メトリクス上は成功（indexed）と区別して計上する（運用での異常検知のため）。
+    """
+
+
+# zip コンテナ（docx/xlsx/pptx）の展開後合計サイズ上限。受理サイズ（max_asset_bytes=25MB）は
+# 圧縮後のバイト数なので、極端な圧縮率の zip bomb は展開時にメモリを食い尽くし得る。
+# 展開前に infolist の非圧縮サイズ合計で弾く（Cloud Run 同居リクエストを OOM で巻き込まない）。
+_MAX_ZIP_EXPANSION_BYTES = 100_000_000
+
+
+def _guard_zip_expansion(raw: bytes) -> None:
+    with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+        total = sum(info.file_size for info in archive.infolist())
+    if total > _MAX_ZIP_EXPANSION_BYTES:
+        raise DocumentExtractionError(
+            f"zip expands to {total} bytes (limit {_MAX_ZIP_EXPANSION_BYTES})"
+        )
+
+
 class _HTMLTextExtractor(HTMLParser):
     """HTML から可視テキストだけを取り出す（script/style 等は捨てる）。
 
@@ -285,6 +309,7 @@ def _extract_docx(raw: bytes) -> str:
     """Word（.docx）の段落と表をテキスト化する。"""
     from docx import Document
 
+    _guard_zip_expansion(raw)
     document = Document(io.BytesIO(raw))
     parts: list[str] = [p.text for p in document.paragraphs if p.text.strip()]
     for table in document.tables:
@@ -299,6 +324,7 @@ def _extract_xlsx(raw: bytes) -> str:
     """Excel（.xlsx）を全シート TSV 風のテキストにする（数式は計算済み値）。"""
     from openpyxl import load_workbook  # type: ignore[import-untyped]
 
+    _guard_zip_expansion(raw)
     workbook = load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
     try:
         parts: list[str] = []
@@ -320,6 +346,7 @@ def _extract_pptx(raw: bytes) -> str:
     """PowerPoint（.pptx）のスライド本文とスピーカーノートをテキスト化する。"""
     from pptx import Presentation  # type: ignore[import-untyped]
 
+    _guard_zip_expansion(raw)
     presentation = Presentation(io.BytesIO(raw))
     parts: list[str] = []
     for i, slide in enumerate(presentation.slides, start=1):
@@ -364,9 +391,9 @@ def extract_text_from_upload(filename: str, raw: bytes) -> str:
         try:
             return extractor(raw)
         except Exception as exc:
-            # 壊れたファイル・想定外の中身は空文字で返し、アップロード全体は 500 にしない
-            # （indexed_chunks=0 が呼び出し側へ伝わる）。
+            # 壊れたファイル・想定外の中身・zip bomb。呼び出し側が 500 にせず「抽出 0 件」に
+            # 平しつつ、成功（indexed）と区別してメトリクス計上できるよう型付き例外で伝える。
             log.warning("document_extract_failed", ext=ext, error=str(exc))
-            return ""
+            raise DocumentExtractionError(f"failed to extract {ext}") from exc
     # txt / md / csv / json / anything decodable as utf-8
     return raw.decode("utf-8", errors="replace")
