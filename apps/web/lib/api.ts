@@ -168,6 +168,12 @@ export async function uploadContextFile(
   sessionToken: string | null,
   signal?: AbortSignal,
 ): Promise<UploadResult> {
+  // 動画は GCS へ直送する（ADR-0040。Cloud Run の HTTP/1 32MiB 制限を回避）。動画解析が
+  // サーバで無効なとき（upload-init が 409）は従来の multipart「準備中」へフォールバックする。
+  if (classifyFileUpload(file) === "video") {
+    const direct = await uploadVideoDirect(sessionId, file, sessionToken, signal);
+    if (direct !== "disabled") return direct;
+  }
   const form = new FormData();
   form.append("file", file);
   // context/file は join 済みトークン必須（契約 §4）。multipart の boundary はブラウザに
@@ -184,6 +190,61 @@ export async function uploadContextFile(
   if (res.status === 413) throw new Error("ファイルが大きすぎます");
   if (!res.ok) throw new Error(`upload failed: ${res.status}`);
   return res.json();
+}
+
+interface UploadInitResult {
+  asset_id: string;
+  upload_url: string;
+  method: string;
+  headers: Record<string, string>;
+}
+
+/**
+ * 動画の GCS 直送（ADR-0040 §2）: upload-init（署名付き URL）→ ブラウザから GCS へ PUT →
+ * upload-complete（検証 + 解析 enqueue）。動画解析がサーバで無効なら "disabled" を返し、
+ * 呼び出し側が multipart へフォールバックする。中断は signal で PUT を中止できる。
+ */
+async function uploadVideoDirect(
+  sessionId: string,
+  file: File,
+  sessionToken: string | null,
+  signal?: AbortSignal,
+): Promise<UploadResult | "disabled"> {
+  const contentType = file.type || "video/mp4";
+  const init = await fetch(`${API_URL}/api/sessions/${sessionId}/context/file/upload-init`, {
+    method: "POST",
+    headers: authHeaders(sessionToken),
+    body: JSON.stringify({ filename: file.name, content_type: contentType, size: file.size }),
+    signal,
+  });
+  if (init.status === 409) return "disabled"; // 動画解析が無効 → multipart フォールバック
+  if (init.status === 413) throw new Error("動画が大きすぎます（最大 200MB）");
+  if (init.status === 415) throw new Error("対応していない形式です（MP4/MOV）");
+  if (!init.ok) throw new Error(`upload-init failed: ${init.status}`);
+  const plan: UploadInitResult = await init.json();
+
+  // 署名付き URL へブラウザから直接 PUT（api を経由しない）。署名対象ヘッダをそのまま付ける。
+  const put = await fetch(plan.upload_url, {
+    method: plan.method || "PUT",
+    headers: plan.headers,
+    body: file,
+    signal,
+  });
+  if (!put.ok) throw new Error(`upload failed: ${put.status}`);
+
+  const done = await fetch(`${API_URL}/api/sessions/${sessionId}/context/file/upload-complete`, {
+    method: "POST",
+    headers: authHeaders(sessionToken),
+    body: JSON.stringify({
+      asset_id: plan.asset_id,
+      content_type: contentType,
+      filename: file.name,
+    }),
+    signal,
+  });
+  if (done.status === 413) throw new Error("動画が大きすぎます（最大 200MB）");
+  if (!done.ok) throw new Error(`upload-complete failed: ${done.status}`);
+  return done.json();
 }
 
 // ── 素材の観測テレメトリ（投入種別 / 中断）─────────────────────

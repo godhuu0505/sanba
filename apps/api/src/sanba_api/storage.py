@@ -202,3 +202,64 @@ class AssetStore:
                 backend="gcs" if self._bucket is not None else "memory",
             )
         return removed
+
+    # ---- 動画の直送アップロード（ADR-0040） ---------------------------------
+    # 200MB の動画は Cloud Run の HTTP/1 request 上限（32MiB）を超えるため multipart で受けない。
+    # ブラウザから GCS へ署名付き URL で直送し、api はバイト列を経由しない。
+
+    @staticmethod
+    def blob_name(session_id: str, asset_id: str, content_type: str) -> str:
+        ext = IMAGE_MIME.get(content_type) or VIDEO_MIME.get(content_type) or ""
+        return f"sessions/{session_id}/assets/{asset_id}{ext}"
+
+    def gcs_uri(self, session_id: str, asset_id: str, content_type: str) -> str:
+        name = self.blob_name(session_id, asset_id, content_type)
+        return f"gs://{settings.gcs_bucket}/{name}" if self._bucket is not None else f"mem://{name}"
+
+    def generate_upload_url(
+        self, session_id: str, asset_id: str, content_type: str, *, ttl_seconds: int, max_bytes: int
+    ) -> str:
+        """ブラウザが動画本体を PUT する署名付き URL（v4）を発行する。
+
+        `x-goog-content-length-range` を署名に含め、GCS 側で 0..max_bytes を強制する
+        （クライアントが上限超のサイズを送れないようにする）。GCS 未接続（テスト/ローカル）は
+        `mem://` の擬似 URL を返す（直送は実バケットが要るため単体テストは差し込みで検証する）。
+        """
+        name = self.blob_name(session_id, asset_id, content_type)
+        if self._bucket is None:
+            return f"mem://{name}"
+        return self._sign_put_url(name, content_type, ttl_seconds, max_bytes)  # pragma: no cover
+
+    def _sign_put_url(  # pragma: no cover - needs GCP creds/network
+        self, blob_name: str, content_type: str, ttl_seconds: int, max_bytes: int
+    ) -> str:
+        from datetime import timedelta
+
+        import google.auth
+        from google.auth.transport import requests as ga_requests
+
+        # Cloud Run の SA には鍵ファイルが無いため、IAM SignBlob（tokenCreator on self）で署名する。
+        credentials, _ = google.auth.default()
+        credentials.refresh(ga_requests.Request())
+        blob = self._bucket.blob(blob_name)
+        return blob.generate_signed_url(
+            version="v4",
+            expiration=timedelta(seconds=ttl_seconds),
+            method="PUT",
+            content_type=content_type,
+            headers={"x-goog-content-length-range": f"0,{max_bytes}"},
+            service_account_email=getattr(credentials, "service_account_email", None),
+            access_token=getattr(credentials, "token", None),
+        )
+
+    def object_size(self, session_id: str, asset_id: str, content_type: str) -> int | None:
+        """アップロード済みオブジェクトのサイズ（bytes）。存在しなければ None。
+
+        upload-complete で「ブラウザが実際に PUT し終えたか」を検証するのに使う。
+        """
+        name = self.blob_name(session_id, asset_id, content_type)
+        if self._bucket is not None:  # pragma: no cover - needs live GCS
+            blob = self._bucket.get_blob(name)
+            return int(blob.size) if blob is not None and blob.size is not None else None
+        raw = self._mem.get(name)
+        return len(raw) if raw is not None else None
