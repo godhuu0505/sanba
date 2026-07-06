@@ -221,7 +221,9 @@ products/{productId}/support_entries/{entryId}     # 新設（TTL なし。produ
 5. **ライフサイクル**: ES は `support:{product_id}:{entry_id}` を決定的 doc `_id` にした
    upsert とし、エントリの更新・削除・非承認化では source prefix の delete_by_query
    （素材 revoke の既存パターン）で旧 passage を確実に消す。**取り下げた案内が喋られ続ける**
-   状態を作らない（プリフェッチキャッシュ由来の最大 60 秒の失効遅延は許容範囲とする）。
+   状態を作らない。**プリフェッチキャッシュにヒットした support passage は、モデルへ渡す直前に
+   Firestore の `status` を再検証し、`approved` でなければ除外する**（60 秒の失効遅延は
+   fail-closed の観点から許容しない。active セッションで取り下げた案内がモデルに届かないことを保証する）。
 6. **登録・更新の認可は owner / admin**（FR-1.2 の product 認可ヘルパー経由。member は閲覧のみ）。
    登録 UI には「ここに書いた内容は利用者にそのまま読み上げられます。社内向けの回避手順・
    内部情報を書かないでください」の注意を常設する。
@@ -275,6 +277,8 @@ sessions/{sessionId}/inquiries/{inquiryId}   # 新設
   ├─ outcome: requirement | bug_report | resolved | guided_unverified | recorded
   ├─ requirement_ids: list[str]    # 要件化した場合の参照（A/E → save_requirement 経由）
   ├─ resolution_ref: str | None    # 案内に使った support entry の id（resolved / guided_unverified 時）
+  ├─ resolution_snapshot: {premise: str, steps: list[str]} | None
+  │                          # 案内時点の手順スナップショット（entry 編集・削除後も結果画面で再掲できるよう保持）
   ├─ citations: list[str]          # 根拠発話 id（u{n}。既存の出所メタ流儀）
   ├─ product_id: str | None        # 横断集約用の非正規化
   ├─ created_at / updated_at / expireAt（30 日 TTL）
@@ -350,11 +354,11 @@ flowchart TB
 | `sanba_shared/models.py` | `InquiryClassification` / `InquiryOutcome` StrEnum、`Inquiry`、`SupportEntry`、`AnalysisResult.triage: TriageHypothesis \| None = None`（既定 None で後方互換） | — |
 | `sanba_shared/repository.py` | `save_inquiry` / `list_inquiries`（`save_detection` と同型・expireAt 付き）、support_entries の CRUD（invites サブコレクションの型に準拠） | infra/terraform の TTL ポリシー追加をセットで |
 | `tools/analysis.py` | `heuristic_symptom_topics`（`_AMBIGUITY_MARKERS` と同型: 行単位・話者ラベル除去・40 字切り詰め・dedup。マーカー例:「押せない」「見つからない」「消えた」「エラーが」「どこにある」）。`analyze_transcript(transcript, *, mode, prep_note="")` へシグネチャ変更し、**end_user モードのみ**第四類と `triage_transcript` を実行。prep_note（準備フォーム）は heuristic の対象から外す | 症状語は日本語限定。非 ja（`GEMINI_LANGUAGE`）では heuristic は沈黙し LLM 経路が補う — この制約を構造化ログで可視化する |
-| `main.py` | (a) `_run_analysis` から mode / prep_note を渡し、triage 結果を `save_inquiry` で upsert。(b) **Stage A では `analyze_requirements` の返却から `triage` を exclude**（`model_dump(exclude={"triage"})`）し「発話を変えない」を構造的に保証、Stage B で解禁。(c) `_END_USER_OUTPUT_KINDS` の新設と出力パーティション・allowlist 再検索の差し替え。(d) `build_agent_instructions` で読む meta の `product_id` を保持し `_grounded_search` へ配管。(e) Stage B: `record_inquiry_outcome(outcome, resolution_ref=None)` function tool — `outcome="resolved"` は **`resolution_ref` が直前の search_grounding の support ヒット id に含まれることをツール実装側で検証**し、満たさなければ拒否（誤案内ガードのデータによる固定） | — |
+| `main.py` | (a) `_run_analysis` から mode / prep_note を渡し、triage 結果を `save_inquiry` で upsert。(b) **Stage A では `analyze_requirements` の返却から `triage` を exclude**（`model_dump(exclude={"triage"})`）し「発話を変えない」を構造的に保証、Stage B で解禁。(c) `_END_USER_OUTPUT_KINDS` の新設と出力パーティション・allowlist 再検索の差し替え。(d) `build_agent_instructions` で読む meta の `product_id` を保持し `_grounded_search` へ配管。(e) Stage B: `record_inquiry_outcome(outcome, resolution_ref=None)` function tool — **`outcome="resolved"` および `outcome="guided_unverified"` の両方で `resolution_ref` が直前の search_grounding の support ヒット id に含まれることをツール実装側で検証**し、満たさなければ拒否（KB ヒット無しの案内が `guided_unverified` として記録・表示される経路を閉じる）。検証通過時は `resolution_snapshot`（premise + steps）を同時に保存する（§3.4）。 | — |
 | `prompts/interview.py` | `END_USER_VOICE_AGENT_INSTRUCTIONS` に §3.3 の案内会話原則を追加。`screen_terms` は glossary と同様に初期 instructions へシード（認識バイアスにも効かせる） | — |
 | `retrieval.py` | mapping に `product_id`（keyword）を `put_mapping` で追加、`GroundingStore.search(..., product_id=None)`、`kind=="support"` の product_id 一致必須フィルタ（context/session_id と同型・メモリ fallback も同様） | フィルタは検索層＝キャッシュ書き込み前（§3.2 不変条件 3） |
 | `apps/api` | `POST/GET/PATCH/DELETE /api/products/{id}/support`（product 認可ヘルパー・owner/admin）。保存時に ES へ write-through（`kind="support"`, `source="support:{pid}:{seId}"`）、更新・削除・非承認化は source prefix の delete_by_query。`GET /api/sessions/{id}/inquiries`（既存ハイドレーション GET と同じ認可） | `ContextIndexer` / revoke の既存パターンを流用 |
-| `connectors/github.py` | `requirements_to_issue_body` 拡張: classification=bug の inquiry を再現手順セクション＋bug ラベルで整形（owner の export 操作時のみ） | 自動起票はしない（§3.4） |
+| `apps/api/src/sanba_api/github_export.py` | `requirements_to_issue_body` 拡張: classification=bug の inquiry を再現手順セクション＋bug ラベルで整形（owner の export 操作時のみ。`apps/api/src/sanba_api/main.py` の `/export` エンドポイントから呼ばれる） | 自動起票はしない（§3.4） |
 | realtime 契約 | **detection.\* に新 kind は足さない**（未解消検知の集計は kind 非依存のため、確定ゲートの件数を汚染する）。Stage A は realtime なし（Firestore ＋ API GET のみ）。Stage B で結果画面に必要になったら独立イベント `inquiry.updated`（reliable）を契約 §3 に新設し、未解消集計から除外されることを契約に明記 | — |
 | 観測性 | `inquiry_classified`（session / classification / confidence / trigger）/ `support_guided`（entry_id）/ `guide_verified`（success/fail）を構造化ログ＋トレースへ。LLM 入出力は Langfuse（CLAUDE.md 原則3）。heuristic 無効（非 ja）も構造化ログで可視化 | — |
 
