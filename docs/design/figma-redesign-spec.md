@@ -3,7 +3,7 @@
 Figma「📱 iPhone 13 Pro 操作フロー・正本」（fileKey `eI6QvvCEO021zpdMmxr8Iq` / page `31:2`）を、
 **現行アプリ（`apps/web`・ADR-0033）のデザインに合わせて再構成する**ための実装可能スペック。
 
-> 前提: [ADR-0042](../adr/0042-app-is-canonical-figma-follows.md) により**実装が唯一の正本**であり、
+> 前提: [ADR-0047](../adr/0047-app-is-canonical-figma-follows.md) により**実装が唯一の正本**であり、
 > Figma はそれに追従する。意匠の定義は [ADR-0033](../adr/0033-ui-redesign-v2-sticker-paper.md)、
 > トークン実体は `apps/web/app/globals.css` の `:root`、棒人間は `apps/web/components/sanba/Figure.tsx`。
 > 本書はその「Figma への写し取り方」を定める（Figma MCP `use_figma` で反映）。
