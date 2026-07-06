@@ -14,6 +14,7 @@ import asyncio
 import contextlib
 import os
 import time
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any, NamedTuple
 from urllib.parse import urlparse
@@ -350,6 +351,12 @@ class SANBAAgent(Agent):
         self._published_ambiguous: set[str] = set()
         # fire-and-forget の publish タスクを保持（GC による途中消滅を防ぐ）。
         self._publish_tasks: set[asyncio.Task[Any]] = set()
+        # 書き込み系ブロッキング I/O（Firestore add_utterance・grounding 索引）をイベント
+        # ループから逃がすためのタスク集合とロック。読み取り系（検索・先読み）を to_thread へ
+        # 逃がしているのと同じ思想を書き込みにも適用し、音声パイプラインを塞がない。
+        # ロックは発話の永続化順を「届いた順」に保つ。
+        self._persist_tasks: set[asyncio.Task[Any]] = set()
+        self._persist_lock = asyncio.Lock()
         # ADR-0037 段階A: 確定発話を種にした先読み検索。フィルタ後の結果のみ・メモリのみ・
         # latest-wins。参加者の確定発話ターン数（_user_turn）が鮮度判定の単位。
         self._prefetch = PrefetchCache()
@@ -404,6 +411,35 @@ class SANBAAgent(Agent):
         if not task.cancelled() and task.exception() is not None:
             log.warning("publish_task_failed", error=str(task.exception()))
 
+    def _persist(self, fn: Callable[[], None]) -> None:
+        """ブロッキングな永続化（Firestore・grounding 索引）をイベントループ外へ逃がす。
+
+        実行中のイベントループが無い環境（同期ユニットテスト）ではその場で実行し、従来どおり
+        即時に永続化する。ループがあるとき（音声 worker）はスレッドへ逃がして音声パイプライン
+        のループを塞がない。順序は _persist_lock で発話の到着順に直列化する（保存順の逆転防止）。
+        失敗は fail-soft: ログに残すが会話は止めない（分析入力の transcript は同期で保持済み）。
+        """
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            fn()
+            return
+
+        async def _run() -> None:
+            async with self._persist_lock:
+                await asyncio.to_thread(fn)
+
+        task = loop.create_task(_run())
+        self._persist_tasks.add(task)
+        task.add_done_callback(self._on_persist_done)
+
+    def _on_persist_done(self, task: asyncio.Task[Any]) -> None:
+        self._persist_tasks.discard(task)
+        if not task.cancelled() and task.exception() is not None:
+            log.warning(
+                "persist_task_failed", session=self._session_id, error=str(task.exception())
+            )
+
     def record_utterance(self, speaker: str, text: str, *, utterance_id: str | None = None) -> str:
         # 発話 id を先に採番し、本文に前置して LLM に見せる。これにより
         # save_requirement の citations（根拠発話 id）を LLM が実際に参照できる（#133）。
@@ -413,14 +449,24 @@ class SANBAAgent(Agent):
             self._utterance_seq += 1
             utterance_id = f"u{self._utterance_seq}"
         self._transcript.append(f"[{utterance_id}] {speaker}: {text}")
-        self._repo.add_utterance(self._session_id, Utterance(speaker=speaker, text=text))
-        # Index for later past-session retrieval.
-        self._grounding.index_passage(
-            text=text,
-            source=f"{self._session_id}:{speaker}",
-            kind="utterance",
-            session_id=self._session_id,
-        )
+        # Firestore への発話保存と grounding 索引はブロッキング I/O。音声パイプラインの
+        # イベントループを塞がないよう別スレッドへ逃がす（順序は _persist が直列化）。分析入力の
+        # transcript・採番・publish は同期のまま即時性を保つ。
+        session_id = self._session_id
+        repo = self._repo
+        grounding = self._grounding
+
+        def _write() -> None:
+            repo.add_utterance(session_id, Utterance(speaker=speaker, text=text))
+            # Index for later past-session retrieval.
+            grounding.index_passage(
+                text=text,
+                source=f"{session_id}:{speaker}",
+                kind="utterance",
+                session_id=session_id,
+            )
+
+        self._persist(_write)
         # 確定発話を web へ（04/05 のトランスクリプト・detection.refs の ID 空間）。
         if self._publisher is not None:
             role = "participant"
@@ -597,13 +643,14 @@ class SANBAAgent(Agent):
         """
         if self._analysis_task is not None and not self._analysis_task.done():
             return  # scheduler.running が防ぐので通常は来ない（防御的）
-        self._analysis_scheduler.start()
         try:
-            task = asyncio.create_task(self._background_analyze())
+            loop = asyncio.get_running_loop()
         except RuntimeError:
-            self._analysis_scheduler.finish()
+            # ループが無い環境（同期ユニットテスト等）ではスキップ。コルーチンを生成せずに
+            # 抜けて "coroutine was never awaited" を出さない（ツール同期経路が最新化を守る）。
             return
-        self._analysis_task = task
+        self._analysis_scheduler.start()
+        self._analysis_task = loop.create_task(self._background_analyze())
 
     async def _background_analyze(self) -> None:
         try:
@@ -709,9 +756,11 @@ class SANBAAgent(Agent):
     async def drain_background_tasks(self, grace_seconds: float = DRAIN_GRACE_SECONDS) -> None:
         """セッション終了時に背景タスクを猶予付きで送り切り、残りはキャンセルする（ADR-0037）。
 
-        対象は先読み・背景分析・fire-and-forget publish。評価（score_session）より前に呼ぶ。
+        対象は先読み・背景分析・fire-and-forget publish・書き込み永続化。
+        評価（score_session）より前に呼ぶ。
         """
         tasks: set[asyncio.Task[Any]] = set(self._publish_tasks)
+        tasks |= set(self._persist_tasks)
         if self._prefetch_task is not None:
             tasks.add(self._prefetch_task)
         if self._analysis_task is not None:
@@ -935,13 +984,16 @@ class SANBAAgent(Agent):
         query = text.strip()
         if not query:
             return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            # ループが無い環境（同期ユニットテスト等）ではスキップ。コルーチンを生成せずに
+            # 抜けることで "coroutine was never awaited" を出さない。
+            return
         # latest-wins: 走行中の先読みは新しい発話で置き換える（旧クエリの結果はもう古い）。
         if self._prefetch_task is not None and not self._prefetch_task.done():
             self._prefetch_task.cancel()
-        try:
-            task = asyncio.create_task(self._prefetch_search(query, self._user_turn))
-        except RuntimeError:
-            return
+        task = loop.create_task(self._prefetch_search(query, self._user_turn))
         self._prefetch_task = task
         task.add_done_callback(self._on_prefetch_done)
 
