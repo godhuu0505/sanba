@@ -16,6 +16,7 @@ from typing import Any
 import structlog
 
 from .models import (
+    CheckItem,
     GitHubIndexStatus,
     GitHubLink,
     MemberInviteStatus,
@@ -369,7 +370,7 @@ class SessionRepository:
         description: str | None = None,
         glossary: list[str] | None = None,
         output_formats: dict[str, str] | None = None,
-        check_items: list[str] | None = None,
+        check_items: list[CheckItem] | None = None,
     ) -> Product:
         """name / description / glossary / output_formats / check_items のみ上書きする。
 
@@ -391,7 +392,9 @@ class SessionRepository:
         if output_formats is not None:
             updates["output_formats"] = dict(output_formats)
         if check_items is not None:
-            updates["check_items"] = list(check_items)
+            # Firestore へは JSON 形（{text, target}）で保存する（読み戻しは Product の
+            # validator が CheckItem に起こす。旧 str リスト文書も同 validator が平す）。
+            updates["check_items"] = [c.model_dump(mode="json") for c in check_items]
         if not updates:
             return current
         # dict に適用してから検証する（name 空などの不正値検出を一度で行う）。

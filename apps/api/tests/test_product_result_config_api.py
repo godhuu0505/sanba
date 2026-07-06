@@ -130,18 +130,28 @@ def test_patch_check_items_normalizes_and_saves() -> None:
     _login(OWNER)
     res = client.patch(
         "/api/products/prod-1",
-        json={"check_items": [" ログイン方式 ", "", "課金の有無", "ログイン方式"]},
+        json={
+            "check_items": [
+                {"text": " ログイン方式 "},
+                {"text": ""},
+                {"text": "課金の有無", "target": "developer"},
+                {"text": "ログイン方式"},
+            ]
+        },
     )
     assert res.status_code == 200, res.text
-    # strip・空要素除去・順序を保った重複除去。
-    assert res.json()["check_items"] == ["ログイン方式", "課金の有無"]
+    # strip・空要素除去・順序を保った (text, target) の重複除去。
+    assert res.json()["check_items"] == [
+        {"text": "ログイン方式", "target": None},
+        {"text": "課金の有無", "target": "developer"},
+    ]
 
 
 def test_patch_check_items_rejects_more_than_ten_as_422() -> None:
     _seed_product()
     _login(OWNER)
     res = client.patch(
-        "/api/products/prod-1", json={"check_items": [f"項目{i}" for i in range(11)]}
+        "/api/products/prod-1", json={"check_items": [{"text": f"項目{i}"} for i in range(11)]}
     )
     assert res.status_code == 422  # Pydantic の max_length（要求仕様: 最大 10 個）
 
@@ -149,17 +159,18 @@ def test_patch_check_items_rejects_more_than_ten_as_422() -> None:
 def test_patch_check_items_accepts_exactly_ten() -> None:
     _seed_product()
     _login(OWNER)
-    items = [f"項目{i}" for i in range(10)]
+    items = [{"text": f"項目{i}"} for i in range(10)]
     res = client.patch("/api/products/prod-1", json={"check_items": items})
     assert res.status_code == 200
-    assert res.json()["check_items"] == items
+    assert res.json()["check_items"] == [{"text": f"項目{i}", "target": None} for i in range(10)]
 
 
 def test_patch_check_items_rejects_too_long_item_as_400() -> None:
     _seed_product()
     _login(OWNER)
     res = client.patch(
-        "/api/products/prod-1", json={"check_items": ["x" * (MAX_CHECK_ITEM_CHARS + 1)]}
+        "/api/products/prod-1",
+        json={"check_items": [{"text": "x" * (MAX_CHECK_ITEM_CHARS + 1)}]},
     )
     assert res.status_code == 400
 
@@ -168,7 +179,7 @@ def test_patch_result_config_is_owner_only() -> None:
     """メンバー・非関係者は更新できない（管理操作 / ADR-0036 の manage=True と同じ倒し方）。"""
     _seed_product()
     _login("intruder")
-    res = client.patch("/api/products/prod-1", json={"check_items": ["x"]})
+    res = client.patch("/api/products/prod-1", json={"check_items": [{"text": "x"}]})
     assert res.status_code == 404  # 非関係者は存在秘匿の 404
 
 
@@ -213,7 +224,7 @@ def test_result_document_uses_registered_format_per_audience() -> None:
         "/api/products/prod-1",
         json={
             "output_formats": {"planner": "# 企画レビュー用\n{{requirements}}"},
-            "check_items": ["課金の有無"],
+            "check_items": [{"text": "課金の有無"}],
         },
     )
 
@@ -282,3 +293,43 @@ def test_result_document_default_templates_match_shared_constants() -> None:
     body = client.get("/api/products/prod-1").json()
     for audience, template in DEFAULT_OUTPUT_FORMATS.items():
         assert body["output_format_defaults"][audience.value] == template
+
+
+def test_patch_check_items_rejects_unknown_target_as_400() -> None:
+    _seed_product()
+    _login(OWNER)
+    res = client.patch(
+        "/api/products/prod-1",
+        json={"check_items": [{"text": "x", "target": "manager"}]},
+    )
+    assert res.status_code == 400
+    assert "unknown check item target" in res.json()["detail"]
+
+
+def test_get_product_returns_check_items_limit() -> None:
+    # 上限は API 応答で渡し、web に定数を複製させない（ADR-0040）。
+    _seed_product()
+    _login(OWNER)
+    assert client.get("/api/products/prod-1").json()["check_items_limit"] == 10
+
+
+def test_result_document_filters_check_items_by_audience() -> None:
+    """確認項目は読み手に合わせて絞る（全員 + 対象一致 / ADR-0040）。"""
+    _seed_product()
+    _seed_session(product_id="prod-1")
+    _login(OWNER)
+    client.patch(
+        "/api/products/prod-1",
+        json={
+            "check_items": [
+                {"text": "全員向け項目"},
+                {"text": "企画者向け項目", "target": "planner"},
+                {"text": "開発者向け項目", "target": "developer"},
+            ]
+        },
+    )
+
+    planner = _get_document("sess-1", "planner").json()["markdown"]
+    assert "全員向け項目" in planner
+    assert "企画者向け項目" in planner
+    assert "開発者向け項目" not in planner

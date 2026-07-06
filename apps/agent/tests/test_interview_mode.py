@@ -156,6 +156,48 @@ def test_check_items_seeded_for_end_user_session_with_translation_rule() -> None
     assert "言い換えて確認する" in instructions
 
 
+def test_check_items_target_filters_by_interview_mode() -> None:
+    """対象タグでモードに合う項目だけがシードされる（ADR-0040 決定2）。
+
+    end_user セッションに開発者向け項目を出さない（内部論点の露出防止）。
+    developer セッションには企画者向けも合流する（企画者モード未導入の暫定）。
+    """
+    from sanba_shared.models import Audience, CheckItem
+
+    def _seed_repo() -> SessionRepository:
+        repo = _repo()
+        repo.create_product(
+            Product(
+                id="prod-1",
+                name="請求アプリ",
+                owner_sub="owner",
+                check_items=[
+                    CheckItem(text="全員向け項目"),
+                    CheckItem(text="利用者向け項目", target=Audience.END_USER),
+                    CheckItem(text="企画者向け項目", target=Audience.PLANNER),
+                    CheckItem(text="開発者向け項目", target=Audience.DEVELOPER),
+                ],
+            )
+        )
+        return repo
+
+    repo = _seed_repo()
+    _seed_session(repo, mode=InviteScope.END_USER, product_id="prod-1")
+    instructions, _, _, _ = build_agent_instructions(repo, "s1")
+    assert "全員向け項目" in instructions
+    assert "利用者向け項目" in instructions
+    assert "企画者向け項目" not in instructions
+    assert "開発者向け項目" not in instructions
+
+    repo2 = _seed_repo()
+    _seed_session(repo2, mode=InviteScope.DEVELOPER, product_id="prod-1")
+    instructions2, _, _, _ = build_agent_instructions(repo2, "s1")
+    assert "全員向け項目" in instructions2
+    assert "企画者向け項目" in instructions2
+    assert "開発者向け項目" in instructions2
+    assert "利用者向け項目" not in instructions2
+
+
 def test_no_check_items_leaves_instructions_unchanged() -> None:
     """確認項目が未登録なら instructions にセクション自体を足さない。"""
     repo = _repo()

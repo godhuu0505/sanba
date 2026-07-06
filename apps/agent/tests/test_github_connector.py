@@ -1,10 +1,12 @@
-"""Tests for the GitHub connector pure logic (issue #7, no network)."""
+"""Tests for the GitHub connector pure logic (issue #7, no network).
+
+Issue 本文の整形テストは sanba_shared/tests/test_result_document.py に移した
+（開発者向け出力フォーマット + 共有レンダラへ一本化 / ADR-0040 決定3）。
+"""
 
 from __future__ import annotations
 
-from sanba_shared.models import Priority, Requirement, RequirementCategory
-
-from sanba_agent.connectors import issues_to_passages, requirements_to_issue_body
+from sanba_agent.connectors import issues_to_passages
 
 
 def test_issues_to_passages_skips_pull_requests() -> None:
@@ -18,36 +20,6 @@ def test_issues_to_passages_skips_pull_requests() -> None:
     text, source = passages[0]
     assert "要約が欲しい" in text
     assert source == "github:owner/repo#1"
-
-
-def test_requirements_to_issue_body_groups_by_priority() -> None:
-    reqs = [
-        Requirement(
-            id="r1",
-            statement="同時5人接続",
-            category=RequirementCategory.NON_FUNCTIONAL,
-            priority=Priority.MUST,
-        ),
-        Requirement(
-            id="r2",
-            statement="ダークモード",
-            category=RequirementCategory.FUNCTIONAL,
-            priority=Priority.COULD,
-        ),
-    ]
-    title, body = requirements_to_issue_body(reqs, "sess-1")
-    assert "sess-1" in title
-    assert "## Must" in body
-    assert "## Could" in body
-    assert "同時5人接続" in body
-    # Must should appear before Could in the body.
-    assert body.index("## Must") < body.index("## Could")
-
-
-def test_requirements_to_issue_body_handles_empty() -> None:
-    title, body = requirements_to_issue_body([], "sess-2")
-    assert "sess-2" in title
-    assert "確定した要件はありません" in body
 
 
 def test_seed_github_context_skips_when_repo_indexed(monkeypatch) -> None:

@@ -40,6 +40,7 @@ from pydantic import BaseModel, Field
 from sanba_shared.models import (
     MAX_CHECK_ITEMS,
     Audience,
+    CheckItem,
     GitHubIndexStatus,
     GitHubLink,
     InviteScope,
@@ -50,6 +51,7 @@ from sanba_shared.models import (
     Requirement,
     RequirementStatus,
     SessionMeta,
+    check_items_for_audience,
     new_invite_id,
     new_member_invite_id,
     new_product_id,
@@ -65,6 +67,7 @@ from sanba_shared.repository import (
     RequirementNotFound,
     SessionRepository,
 )
+from sanba_shared.result_document import issue_title, render_result_document
 
 from . import github_export
 from .auth import (
@@ -118,7 +121,6 @@ from .realtime import (
 )
 from .repo_indexing import fetch_and_index_repo
 from .repository import ReadRepository
-from .result_document import render_result_document
 from .storage import (
     AssetStore,
     asset_kind,
@@ -969,6 +971,17 @@ class CreateProductRequest(BaseModel):
     glossary: list[str] = Field(default_factory=list, max_length=100)
 
 
+class CheckItemRequest(BaseModel):
+    """確認項目 1 件の入力形。target は対象ペルソナ（省略 = 全員）。
+
+    target の値検証（Audience か）は `_clean_check_items` が 400 で行う（output_formats の
+    audience キー検証と同じ倒し方。Pydantic の enum 422 より理由が伝わるエラーにする）。
+    """
+
+    text: str = Field(max_length=500)
+    target: str | None = None
+
+
 class UpdateProductRequest(BaseModel):
     """`PATCH /api/products/{id}`（FR-1.2）。None = 変更しない（部分更新）。
 
@@ -982,8 +995,15 @@ class UpdateProductRequest(BaseModel):
     glossary: list[str] | None = Field(default=None, max_length=100)
     # audience（end_user/planner/developer）→ 出力フォーマット（Markdown テンプレート）。
     output_formats: dict[str, str] | None = None
-    # 要件サンバ中に必ず確認する項目（最大 MAX_CHECK_ITEMS 件）。
-    check_items: list[str] | None = Field(default=None, max_length=MAX_CHECK_ITEMS)
+    # 要件サンバ中に必ず確認する項目（最大 MAX_CHECK_ITEMS 件・対象タグ付き / ADR-0040）。
+    check_items: list[CheckItemRequest] | None = Field(default=None, max_length=MAX_CHECK_ITEMS)
+
+
+class CheckItemResponse(BaseModel):
+    """確認項目 1 件の応答形（CheckItem の API 表現。target は Audience 値 or None）。"""
+
+    text: str
+    target: str | None = None
 
 
 class ProductResponse(BaseModel):
@@ -1008,7 +1028,9 @@ class ProductResponse(BaseModel):
     # 正はサーバ側 DEFAULT_OUTPUT_FORMATS で、web に定数を複製させない）。
     output_formats: dict[str, str] = Field(default_factory=dict)
     output_format_defaults: dict[str, str] = Field(default_factory=dict)
-    check_items: list[str] = Field(default_factory=list)
+    # 確認項目（{text, target}）と登録上限。上限も応答で渡し web に定数を複製させない。
+    check_items: list[CheckItemResponse] = Field(default_factory=list)
+    check_items_limit: int = MAX_CHECK_ITEMS
 
 
 class DeleteProductResponse(BaseModel):
@@ -1029,7 +1051,10 @@ def _product_response(product: Product, *, role: str = "owner") -> ProductRespon
         role=role,
         output_formats={a.value: t for a, t in product.output_formats.items()},
         output_format_defaults={a.value: t for a, t in DEFAULT_OUTPUT_FORMATS.items()},
-        check_items=product.check_items,
+        check_items=[
+            CheckItemResponse(text=c.text, target=c.target.value if c.target else None)
+            for c in product.check_items
+        ],
     )
 
 
@@ -1073,25 +1098,42 @@ def _clean_output_formats(output_formats: dict[str, str]) -> dict[str, str]:
     return cleaned
 
 
-def _clean_check_items(check_items: list[str]) -> list[str]:
+def _clean_check_items(check_items: list[CheckItemRequest]) -> list[CheckItem]:
     """確認項目を正規化する: 前後空白を除き、空要素を捨て、順序を保って重複を除く。
 
-    過長は 400。件数上限（MAX_CHECK_ITEMS）は Pydantic（UpdateProductRequest）が先に
-    422 で弾くため、ここでは正規化後の再検証のみ行う（重複除去で件数は増えない）。
+    重複は (text, target) の組で判定する（同じ文言でも対象が違えば別項目）。target の
+    不正値・text の過長は 400。件数上限（MAX_CHECK_ITEMS）は Pydantic
+    （UpdateProductRequest）が先に 422 で弾くため、ここでは正規化のみ行う
+    （重複除去で件数は増えない）。
     """
-    seen: set[str] = set()
-    cleaned: list[str] = []
+    seen: set[tuple[str, str | None]] = set()
+    cleaned: list[CheckItem] = []
     for item in check_items:
-        stripped = item.strip()
-        if not stripped or stripped in seen:
+        stripped = item.text.strip()
+        if not stripped:
             continue
         if len(stripped) > MAX_CHECK_ITEM_CHARS:
             raise HTTPException(
                 status_code=400,
                 detail=f"check item too long (max {MAX_CHECK_ITEM_CHARS} chars)",
             )
-        seen.add(stripped)
-        cleaned.append(stripped)
+        target: Audience | None = None
+        if item.target is not None and item.target != "":
+            try:
+                target = Audience(item.target)
+            except ValueError as exc:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"unknown check item target: {item.target} "
+                        "(expected end_user/planner/developer or null)"
+                    ),
+                ) from exc
+        key = (stripped, target.value if target else None)
+        if key in seen:
+            continue
+        seen.add(key)
+        cleaned.append(CheckItem(text=stripped, target=target))
     return cleaned
 
 
@@ -2239,7 +2281,10 @@ def get_my_session_result_document(
         goal=session.goal,
         date=datetime.now(UTC).strftime("%Y-%m-%d"),
         requirements=items,
-        check_items=product.check_items if product is not None else [],
+        # 確認項目は読み手に合わせて絞る（全員 + 対象一致 / ADR-0040）。
+        check_items=(
+            check_items_for_audience(product.check_items, audience) if product is not None else []
+        ),
     )
     record_result_document_rendered(audience.value, is_custom)
     log.info(
@@ -2856,8 +2901,26 @@ def export_requirements(
         return ExportResponse(exported=False, reason="github repo not allowed")
     # 確定時の要件 ID 集合だけを取得して起票する（再計算しない / #213）。
     confirmed = _finalized_snapshot_requirements(session)
-    title, body = github_export.requirements_to_issue_body(confirmed, session_id)
-    url = github_export.create_issue(settings.github_token, export_repo, title, body)
+    # Issue 本文は開発者向け出力フォーマットで整形する（閲覧ドキュメントと同じレンダラに
+    # 一本化 / ADR-0040 決定3。アプリ管理でフォーマットを登録すれば Issue の体裁も変わる）。
+    product = _repo.get_product(session.product_id) if session.product_id else None
+    template, _ = resolve_output_format(product, Audience.DEVELOPER)
+    body = render_result_document(
+        template,
+        session_title=session.title,
+        app_name=product.name if product is not None else None,
+        goal=session.goal,
+        date=datetime.now(UTC).strftime("%Y-%m-%d"),
+        requirements=confirmed,
+        check_items=(
+            check_items_for_audience(product.check_items, Audience.DEVELOPER)
+            if product is not None
+            else []
+        ),
+    )
+    url = github_export.create_issue(
+        settings.github_token, export_repo, issue_title(session_id), body
+    )
     if url is None:
         return ExportResponse(exported=False, reason="issue creation failed")
     log.info(

@@ -11,7 +11,7 @@ import secrets
 from datetime import UTC, datetime
 from enum import StrEnum
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 def _now() -> datetime:
@@ -138,8 +138,39 @@ class Audience(StrEnum):
 
 # 要件サンバ中に必ず確認する項目の登録上限。プロンプトへ機械的にシードするため、
 # Firestore 文書と初期 instructions の肥大を抑える上限をドメイン側で一元定義する
-# （API のバリデーションと agent のシードが同じ値を見る）。
+# （API のバリデーションと agent のシードが同じ値を見る。web へは API 応答で渡す）。
 MAX_CHECK_ITEMS = 10
+
+
+class CheckItem(BaseModel):
+    """要件サンバ中に必ず確認する項目 1 件（ADR-0040）。
+
+    `target` は対象ペルソナ（Audience）。None = 全員（どのセッションにもシードし、
+    どの読み手の結果ドキュメントにも載せる）。旧文書（str のリスト）は Product の
+    validator が `{text, target=None}` に平す（ADR-0014 §10 と同じ互換方針）。
+    """
+
+    text: str
+    target: Audience | None = None
+
+
+def check_items_for_scope(items: list[CheckItem], scope: InviteScope) -> list[str]:
+    """インタビューモードでシードする確認項目を絞り込む（ADR-0040 決定2）。
+
+    end_user セッション: 全員 + 利用者向け。
+    developer セッション: 全員 + 企画者向け + 開発者向け（企画者向けの独立した
+    インタビューモードは未導入のため、当面 developer モードに合流する）。
+    """
+    if scope is InviteScope.END_USER:
+        allowed = {None, Audience.END_USER}
+    else:
+        allowed = {None, Audience.PLANNER, Audience.DEVELOPER}
+    return [c.text for c in items if c.target in allowed]
+
+
+def check_items_for_audience(items: list[CheckItem], audience: Audience) -> list[str]:
+    """結果ドキュメント（読み手 = audience）に載せる確認項目を絞り込む（全員 + 対象一致）。"""
+    return [c.text for c in items if c.target is None or c.target is audience]
 
 
 class Product(BaseModel):
@@ -166,8 +197,18 @@ class Product(BaseModel):
     # フォールバックするため、旧文書・新規作成とも空 dict でよい。
     output_formats: dict[Audience, str] = Field(default_factory=dict)
     # 要件サンバ中に必ず確認する項目（最大 MAX_CHECK_ITEMS 件。上限は API 層で検証）。
-    # agent が初期 instructions へ機械的にシードする（glossary と同型）。
-    check_items: list[str] = Field(default_factory=list)
+    # agent が初期 instructions へ機械的にシードする（glossary と同型）。対象ペルソナは
+    # CheckItem.target（None = 全員）。シード・文書掲載の絞り込みは check_items_for_scope /
+    # check_items_for_audience が正（ADR-0040）。
+    check_items: list[CheckItem] = Field(default_factory=list)
+
+    @field_validator("check_items", mode="before")
+    @classmethod
+    def _coerce_legacy_check_items(cls, value: object) -> object:
+        """旧文書の `list[str]`（対象タグ導入前）を `{text, target=None}` に平す。"""
+        if isinstance(value, list):
+            return [{"text": item} if isinstance(item, str) else item for item in value]
+        return value
 
     # ---- 連携 GitHub リポジトリ (ADR-0027 / ADR-0028 を product に持ち上げ) ----
     # 意味は SessionMeta の同名フィールドと同じ。None = 未指定（環境変数フォールバック）、

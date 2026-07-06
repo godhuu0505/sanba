@@ -64,6 +64,7 @@ function product(overrides: Partial<Product> = {}): Product {
       developer: "# 開発者向けデフォルト",
     },
     check_items: [],
+    check_items_limit: 10,
     ...overrides,
   };
 }

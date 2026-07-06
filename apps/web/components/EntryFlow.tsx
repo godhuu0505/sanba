@@ -50,6 +50,7 @@ import {
   uploadContextFile,
   type JoinResponse,
 } from "../lib/api";
+import { AUDIENCE_LABELS } from "../lib/audience";
 import { useAuth } from "../lib/auth";
 import { AccountMenu } from "./AccountMenu";
 import { ConversationStart } from "./ConversationStart";
@@ -64,10 +65,12 @@ import { clearPrep, readPrep, writePrep } from "../lib/prepFormStorage";
 
 // 役割チップ。表示は日本語、value は API（POST /api/sessions の roles）に渡す既存値。
 // 並びは 利用者 → 企画者 → 開発者、既定は「利用者」= customer（02-prepare.md / #222）。
+// ラベルは Audience（利用者/企画者/開発者 / lib/audience.ts）と同じ 3 人の登場人物を指す。
+// 対応: customer=end_user / pm=planner / engineer=developer（表記の正を一本化 / ADR-0040）。
 const ROLES = [
-  { value: "customer", label: "利用者" },
-  { value: "pm", label: "企画者" },
-  { value: "engineer", label: "開発者" },
+  { value: "customer", label: AUDIENCE_LABELS.end_user },
+  { value: "pm", label: AUDIENCE_LABELS.planner },
+  { value: "engineer", label: AUDIENCE_LABELS.developer },
 ] as const;
 
 const DEFAULT_ROLE = "customer";

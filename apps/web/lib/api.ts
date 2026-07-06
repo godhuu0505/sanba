@@ -605,8 +605,16 @@ export interface Product {
   output_formats: Partial<Record<Audience, string>>;
   /** 未登録の audience に使われる既定テンプレート（表示用の参照値。正はサーバ側）。 */
   output_format_defaults: Record<Audience, string>;
-  /** 要件サンバ中に必ず確認する項目（最大 10 件。上限の検証は API 側）。 */
-  check_items: string[];
+  /** 要件サンバ中に必ず確認する項目（対象タグ付き。上限は check_items_limit）。 */
+  check_items: CheckItem[];
+  /** 確認項目の登録上限（正はサーバ側 MAX_CHECK_ITEMS。web は定数を複製しない）。 */
+  check_items_limit: number;
+}
+
+/** 確認項目 1 件。target は対象ペルソナ（null = 全員）。 */
+export interface CheckItem {
+  text: string;
+  target: Audience | null;
 }
 
 /** 深掘りリンク 1 件（ProductInviteResponse）。token から /join/{token} URL を組む。 */
@@ -664,8 +672,8 @@ export function updateProduct(
     glossary?: string[];
     /** audience → テンプレートの全量置換。空文字の値は「未登録＝既定へ戻す」。 */
     output_formats?: Partial<Record<Audience, string>>;
-    /** 確認項目の全量置換（最大 10 件）。 */
-    check_items?: string[];
+    /** 確認項目の全量置換（上限は Product.check_items_limit）。 */
+    check_items?: CheckItem[];
   },
   idToken: string | null,
 ): Promise<Product> {

@@ -14,6 +14,7 @@ import asyncio
 import contextlib
 import os
 import time
+from datetime import UTC, datetime
 from typing import Any, NamedTuple
 
 import structlog
@@ -44,6 +45,7 @@ from sanba_shared.models import (
     RequirementCategory,
     SessionMeta,
     Utterance,
+    check_items_for_scope,
 )
 from sanba_shared.repository import SessionRepository
 
@@ -163,10 +165,13 @@ def build_agent_instructions(repo: SessionRepository, session_id: str) -> AgentS
     prep_note = ""
     # glossary（end_user）と確認項目（両モード）のシード元。1 回だけ読む。
     product = _session_product(repo, meta)
-    check_items_seed = (
-        build_check_items_seed(product.check_items, end_user=mode is InviteScope.END_USER)
-        if product is not None
-        else ""
+    # 対象タグでモードに合う項目だけをシードする（end_user: 全員+利用者 / developer:
+    # 全員+企画者+開発者。ADR-0040 決定2。開発者向け項目を利用者の会話に出さない）。
+    seeded_check_items = (
+        check_items_for_scope(product.check_items, mode) if product is not None else []
+    )
+    check_items_seed = build_check_items_seed(
+        seeded_check_items, end_user=mode is InviteScope.END_USER
     )
     if mode is InviteScope.END_USER:
         assert meta is not None  # END_USER は meta が読めたときにしか選ばれない
@@ -200,7 +205,7 @@ def build_agent_instructions(repo: SessionRepository, session_id: str) -> AgentS
         mode_confirmed=confirmed,
         allow_repo_grounding=allow_repo_grounding,
         has_prep_context=bool(prep_note),
-        check_items_count=len(product.check_items) if product is not None else 0,
+        check_items_count=len(seeded_check_items),
         chars=len(instructions),
     )
     return AgentSetup(instructions, mode, allow_repo_grounding, prep_note)
@@ -1108,11 +1113,42 @@ class SANBAAgent(Agent):
         gh_repo = _resolve_github_repo(self._repo, self._session_id)
         if not _github_ready(gh_repo):
             return {"exported": False, "reason": "github connector disabled"}
-        from .connectors import GitHubConnector, requirements_to_issue_body
+        from sanba_shared.models import Audience, check_items_for_audience
+        from sanba_shared.output_formats import resolve_output_format
+        from sanba_shared.result_document import (
+            issue_title,
+            render_result_document,
+            requirements_to_render_dicts,
+        )
 
+        from .connectors import GitHubConnector
+
+        # Issue 本文は開発者向け出力フォーマットで整形する（api の /export と同じレンダラに
+        # 一本化 / ADR-0040 決定3。どちらの経路で起票しても同じ体裁になる）。
         requirements = self._repo.list_requirements(self._session_id)
-        title, body = requirements_to_issue_body(requirements, self._session_id)
-        url = GitHubConnector(settings.github_token, gh_repo).create_issue(title, body)
+        meta: SessionMeta | None = None
+        try:
+            meta = self._repo.get_session(self._session_id)
+        except Exception:  # pragma: no cover - depends on backend
+            pass
+        product = _session_product(self._repo, meta)
+        template, _ = resolve_output_format(product, Audience.DEVELOPER)
+        body = render_result_document(
+            template,
+            session_title=meta.title if meta is not None else self._session_id,
+            app_name=product.name if product is not None else None,
+            goal=meta.goal if meta is not None else None,
+            date=datetime.now(UTC).strftime("%Y-%m-%d"),
+            requirements=requirements_to_render_dicts(requirements),
+            check_items=(
+                check_items_for_audience(product.check_items, Audience.DEVELOPER)
+                if product is not None
+                else []
+            ),
+        )
+        url = GitHubConnector(settings.github_token, gh_repo).create_issue(
+            issue_title(self._session_id), body
+        )
         log.info("requirements_exported", session=self._session_id, repo=gh_repo, url=url)
         if self._publisher is not None and url is not None:
             # ループの締め（09→10）。スタッツは publish 済みの実測から組み立てる
