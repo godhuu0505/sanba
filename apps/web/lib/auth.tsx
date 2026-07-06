@@ -9,6 +9,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
+
 import { isDriveConfigured } from "./googleDrive";
 
 const CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? "";
@@ -273,11 +274,13 @@ export function useGoogleAuth(): GoogleAuth {
       setCredential(res.credential);
       // 次回のフルロードで「復元を待つ価値がある」ことを残す（トークンは含めない）。
       writeAuthHint(true);
-      // 要件: Google ログインのタイミングで Drive 権限も求める。ただし "auto"（リロード時の
-      // 静かな復元）ではユーザー操作が無くポップアップがブロックされるため出さない
-      // （その場合は Drive 取り込みの操作時に requestDriveAccess が改めて同意を求める）。
+      // 要件: Google ログインのタイミングで Drive 権限も求める。ただし
+      // - "auto"（リロード時の静かな復元）はユーザー操作が無くポップアップがブロックされる
+      //   ため出さない（Drive 取り込みの操作時に requestDriveAccess が改めて同意を求める）。
+      // - Drive 連携が未構成（Picker API キー未設定）の環境では導線ごと使えないため、
+      //   不要な権限ポップアップを出さない（最小権限・未設定環境の退化を崩さない / Codex P2）。
       // 拒否されても driveGranted=false になるだけでログイン自体は成立する。
-      if (res.select_by && res.select_by !== "auto" && isDriveConfigured()) {
+      if (isDriveConfigured() && res.select_by && res.select_by !== "auto") {
         void requestDriveAccessRef.current();
       }
     }

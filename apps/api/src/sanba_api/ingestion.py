@@ -381,8 +381,9 @@ _EXTRACTORS: dict[str, Callable[[bytes], str]] = {
     ".htm": _extract_html,
 }
 
-# MIME → 抽出関数。拡張子なしでも DOC_BINARY_MIME で受理されたファイルを正しく抽出するための
-# フォールバック。storage.py の DOC_BINARY_MIME とペアで保守する。
+# MIME → 抽出関数。受理判定（storage.py is_text_upload）は拡張子と MIME のどちらでも通すため、
+# 拡張子なし・MIME のみのアップロード（例: ファイル名 "book" + Office MIME）でも正しい抽出器を
+# 選べるようにする（拡張子だけだと ZIP バイト列を UTF-8 デコードして索引してしまう / Codex P2）。
 _MIME_EXTRACTORS: dict[str, Callable[[bytes], str]] = {
     "application/pdf": _extract_pdf,
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document": _extract_docx,
@@ -392,26 +393,22 @@ _MIME_EXTRACTORS: dict[str, Callable[[bytes], str]] = {
 }
 
 
-def extract_text_from_upload(
-    filename: str, raw: bytes, content_type: str | None = None
-) -> str:
-    """Best-effort text extraction (txt/md/html/csv/json/pdf/docx/xlsx/pptx uploads)."""
+def extract_text_from_upload(filename: str, raw: bytes, content_type: str | None = None) -> str:
+    """Best-effort text extraction (txt/md/html/csv/json/pdf/docx/xlsx/pptx uploads).
+
+    抽出器は拡張子を優先し、無ければ content-type から選ぶ（受理判定と同じ二段構え）。
+    """
     name = filename.lower()
     ext = name[name.rfind(".") :] if "." in name else ""
-    extractor = _EXTRACTORS.get(ext)
-    # 拡張子なしで MIME だけで受理されたバイナリ文書（例: ファイル名 "book"、MIME が docx）は
-    # 拡張子ルックアップが失敗するため、MIME でフォールバックする。
-    # テキスト系（txt/csv/json）は extractor=None のままで正しく UTF-8 デコードされる。
-    if extractor is None and content_type:
-        ct = content_type.split(";")[0].strip().lower()
-        extractor = _MIME_EXTRACTORS.get(ct)
+    ct = (content_type or "").split(";")[0].strip().lower()
+    extractor = _EXTRACTORS.get(ext) or _MIME_EXTRACTORS.get(ct)
     if extractor is not None:
         try:
             return extractor(raw)
         except Exception as exc:
             # 壊れたファイル・想定外の中身・zip bomb。呼び出し側が 500 にせず「抽出 0 件」に
             # 平しつつ、成功（indexed）と区別してメトリクス計上できるよう型付き例外で伝える。
-            log.warning("document_extract_failed", ext=ext, error=str(exc))
-            raise DocumentExtractionError(f"failed to extract {ext}") from exc
+            log.warning("document_extract_failed", ext=ext, content_type=ct, error=str(exc))
+            raise DocumentExtractionError(f"failed to extract {ext or ct}") from exc
     # txt / md / csv / json / anything decodable as utf-8
     return raw.decode("utf-8", errors="replace")

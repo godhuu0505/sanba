@@ -111,10 +111,14 @@ vi.mock("../lib/api", () => ({
 }));
 
 // Google ドライブ連携（ADR-0040）。既定は未構成（＝この環境では利用できない案内）。
+// 取り込みフローのテストは driveConfigured / 各 fn を上書きして使う。
+let driveConfigured = false;
+const openDrivePicker = vi.fn(async (..._a: unknown[]) => [] as unknown[]);
+const importDriveFile = vi.fn(async (..._a: unknown[]) => new File(["x"], "drive.md"));
 vi.mock("../lib/googleDrive", () => ({
-  isDriveConfigured: () => false,
-  openDrivePicker: vi.fn(async () => []),
-  importDriveFile: vi.fn(),
+  isDriveConfigured: () => driveConfigured,
+  openDrivePicker: (...a: unknown[]) => openDrivePicker(...a),
+  importDriveFile: (...a: unknown[]) => importDriveFile(...a),
 }));
 
 // 接続後ブランチに入っても落ちないよう、LiveKit / SessionView は素通しにする。
@@ -161,6 +165,14 @@ describe("入口フロー（#140）", () => {
       commit_sha: null,
       status: "none",
     }));
+    driveConfigured = false;
+    authState.driveGranted = null;
+    authState.requestDriveAccess.mockClear();
+    authState.requestDriveAccess.mockImplementation(async () => null);
+    openDrivePicker.mockClear();
+    openDrivePicker.mockImplementation(async () => []);
+    importDriveFile.mockClear();
+    importDriveFile.mockImplementation(async () => new File(["x"], "drive.md"));
   });
   afterEach(() => {
     cleanup();
@@ -706,6 +718,59 @@ describe("入口フロー（#140）", () => {
     ).toBe(true);
     await act(async () => {
       release({ session_id: "s1", invites: { pm: "inv-pm" } });
+    });
+  });
+
+  it("Drive 取り込み中は開始・追加を無効化し、完了後にステージへ載る（ADR-0040 / Codex P2）", async () => {
+    driveConfigured = true;
+    authState.requestDriveAccess.mockImplementation(async () => "drive-tok");
+    openDrivePicker.mockImplementation(async () => [
+      { id: "d1", name: "要件メモ", mimeType: "application/vnd.google-apps.document" },
+    ]);
+    let releaseImport: (f: File) => void = () => {};
+    importDriveFile.mockReturnValue(new Promise<File>((r) => { releaseImport = r; }));
+    await gotoPrepare();
+    fireEvent.click(screen.getByRole("checkbox")); // 同意 ON = 開始可能のベースライン。
+    fireEvent.click(screen.getByRole("button", { name: "ファイルを追加" })); // 手段選択シート。
+    fireEvent.click(screen.getByRole("button", { name: /Google ドライブから選ぶ/ }));
+    await waitFor(() => expect(importDriveFile).toHaveBeenCalled());
+    // 取り込み中: クリック時点の staged だけが投入されるため、開始も追加も止める。
+    expect(
+      (screen.getByRole("button", { name: "要件サンバを始める" }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+    expect(
+      (screen.getByRole("button", { name: "ファイルを追加" }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+    // 取り込み完了で解除され、資料がステージへ載る（Docs は Markdown へ export された名前）。
+    await act(async () => {
+      releaseImport(new File(["# memo"], "要件メモ.md", { type: "text/markdown" }));
+    });
+    await waitFor(() =>
+      expect(
+        screen.getByRole("list", { name: "添付した参考資料" }).textContent,
+      ).toContain("要件メモ.md"),
+    );
+    expect(
+      (screen.getByRole("button", { name: "要件サンバを始める" }) as HTMLButtonElement).disabled,
+    ).toBe(false);
+  });
+
+  it("Drive 権限が未許可なら取り込まず、シート内で再同意を促す文言を出す（ADR-0040）", async () => {
+    driveConfigured = true;
+    authState.requestDriveAccess.mockImplementation(async () => null); // 拒否/ブロック。
+    await gotoPrepare();
+    fireEvent.click(screen.getByRole("button", { name: "ファイルを追加" }));
+    fireEvent.click(screen.getByRole("button", { name: /Google ドライブから選ぶ/ }));
+    await waitFor(() => expect(authState.requestDriveAccess).toHaveBeenCalled());
+    // Picker は開かず（取り込み不可）、再試行で再同意を求める案内が出る
+    // （シートは開いたままなので、シート内とフォーム側の両方に alert が出る）。
+    expect(openDrivePicker).not.toHaveBeenCalled();
+    await waitFor(() => {
+      const alerts = screen.getAllByRole("alert");
+      expect(alerts.length).toBeGreaterThan(0);
+      for (const alert of alerts) {
+        expect(alert.textContent).toContain("アクセスが許可されていません");
+      }
     });
   });
 

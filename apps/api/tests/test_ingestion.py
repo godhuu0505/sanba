@@ -143,6 +143,30 @@ def test_extract_text_from_pptx_slides_and_notes() -> None:
     assert "補足: 移行は段階的に" in text
 
 
+def test_extract_text_selects_extractor_by_mime_when_no_extension() -> None:
+    """拡張子なし・MIME のみのアップロードでも正しい抽出器を選ぶ（Codex P2）。
+
+    受理判定（is_text_upload）は MIME だけでも通すため、抽出も MIME にフォールバック
+    しないと ZIP バイト列を UTF-8 デコードして索引してしまう。
+    """
+    import io
+
+    from docx import Document
+
+    document = Document()
+    document.add_paragraph("要約機能が必要。")
+    buf = io.BytesIO()
+    document.save(buf)
+
+    text = extract_text_from_upload(
+        "book",  # 拡張子なし
+        buf.getvalue(),
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    )
+    assert "要約機能が必要。" in text
+    assert "PK" not in text  # ZIP バイト列をそのまま返していない。
+
+
 def test_extract_text_from_broken_document_raises_typed_error() -> None:
     # 壊れたバイナリ文書は型付き例外で伝える（呼び出し側が 500 にせず「抽出 0 件」へ平しつつ、
     # メトリクスでは成功と区別して計上する）。

@@ -411,7 +411,9 @@ export default function EntryFlow({ initialStep = "home" }: { initialStep?: Step
   if (gate) return gate;
 
   async function handleStart() {
-    if (busy) return; // 二重送信防止（#140 AC）。
+    // 二重送信防止（#140 AC）。Drive 取り込み中も開始しない: クリック時点の staged だけが
+    // 投入されるため、取り込み完了後にステージされる Drive 資料が漏れる（Codex P2）。
+    if (busy || driveBusy) return;
     try {
       setBusy(true);
       setError(null);
@@ -559,7 +561,8 @@ export default function EntryFlow({ initialStep = "home" }: { initialStep?: Step
   function handleAddFiles(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? []);
     e.target.value = ""; // 同じファイルの再選択でも change を発火させる。
-    if (busy || files.length === 0) return; // 開始処理中は投入セットを固定する（Codex P2）。
+    // 開始処理・Drive 取り込み中は投入セットを固定する（Codex P2）。
+    if (busy || driveBusy || files.length === 0) return;
     const accepted: File[] = [];
     const rejected: string[] = [];
     for (const f of files) {
@@ -623,7 +626,7 @@ export default function EntryFlow({ initialStep = "home" }: { initialStep?: Step
   }
 
   function removeStaged(index: number) {
-    if (busy) return; // 開始処理中は投入セットを固定する（Codex P2）。
+    if (busy || driveBusy) return; // 開始処理・Drive 取り込み中は投入セットを固定する（Codex P2）。
     setStaged((prev) => prev.filter((_, i) => i !== index));
     setAttachError(null);
   }
@@ -654,6 +657,8 @@ export default function EntryFlow({ initialStep = "home" }: { initialStep?: Step
     // 窓も null で塞がる）。取得は失敗でも番兵で settle するので詰まらない。
     // 対象アプリは「取得済み候補に実在する product」を選べていることを条件にする（PR#314 P2）:
     // sessionStorage 由来の stale な productId 文字列だけでは開始させない。
+    // Drive 取り込み中（driveBusy）も開始を止める: handleStart はクリック時点の staged だけを
+    // 投入するため、取り込み完了後の資料が漏れて「添付したのに渡っていない」になる（Codex P2）。
     const canStart =
       consent &&
       goal.trim() !== "" &&
@@ -855,7 +860,7 @@ export default function EntryFlow({ initialStep = "home" }: { initialStep?: Step
                 setAttachError(null);
                 setSheetOpen(true);
               }}
-              disabled={busy}
+              disabled={busy || driveBusy}
               aria-haspopup="dialog"
               className="inline-flex items-center gap-1.5 rounded-[12px] border border-dashed border-sanba-gold-deep bg-sanba-surface px-3 py-[13px] text-left text-[12.5px] font-bold text-sanba-gold-text disabled:opacity-50"
             >
@@ -886,7 +891,7 @@ export default function EntryFlow({ initialStep = "home" }: { initialStep?: Step
                       <button
                         type="button"
                         onClick={() => removeStaged(i)}
-                        disabled={busy}
+                        disabled={busy || driveBusy}
                         aria-label={`${file.name} を取り外す`}
                         className="flex size-[26px] shrink-0 items-center justify-center rounded-full text-sanba-muted disabled:opacity-50"
                       >
