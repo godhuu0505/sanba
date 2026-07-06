@@ -59,7 +59,7 @@ function writeAuthHint(present: boolean): void {
   }
 }
 
-// Google ドライブ取り込み（ADR-0040）で求める最小スコープ。drive.file は「ユーザーが
+// Google ドライブ取り込み（ADR-0044）で求める最小スコープ。drive.file は「ユーザーが
 // Google Picker で選んだファイルだけ」読めるスコープで、Drive 全体は見えない（最小権限・
 // Google の追加審査も不要）。アクセストークンは ID トークンと同じくメモリのみ保持
 // （ADR-0014 §7: 永続化しない）。

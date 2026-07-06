@@ -1,6 +1,6 @@
 "use client";
 
-// Google ドライブ取り込み（ADR-0040）。drive.file スコープ + Google Picker の最小権限構成:
+// Google ドライブ取り込み（ADR-0044）。drive.file スコープ + Google Picker の最小権限構成:
 // ユーザーが Picker で選んだファイルだけにアクセス権が付き、Drive 全体は見えない。
 //
 // - Picker: 公式の選択 UI（https://apis.google.com/js/api.js → gapi.load("picker")）。

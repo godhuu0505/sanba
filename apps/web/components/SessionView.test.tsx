@@ -17,7 +17,7 @@ vi.mock("@livekit/components-react", () => ({
 }));
 vi.mock("livekit-client", () => ({ Track: { Source: { Microphone: "microphone" } } }));
 
-// Drive 同意（ADR-0040）は本テストの対象外。未許可の素の状態を返す。
+// Drive 同意（ADR-0044）は本テストの対象外。未許可の素の状態を返す。
 vi.mock("@/lib/auth", () => ({
   useAuth: () => ({
     driveGranted: null,

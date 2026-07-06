@@ -13,7 +13,7 @@
 // - a11y: 暗幕＋ボトムシート（role=dialog/aria-modal）、ESC で閉じる、フォーカストラップ、
 //   見た目に依らないラベル（ADR-0017）。
 //
-// Google ドライブは drive.file + Google Picker で取り込む（ADR-0040 / ADR-0007 の保留を解除）。
+// Google ドライブは drive.file + Google Picker で取り込む（ADR-0044 / ADR-0007 の保留を解除）。
 // 実導線は親が onDrive で注入する（EntryFlow / SessionView）。未注入の文脈では従来どおり
 // 「準備中」を案内するフォールバックに退化する。
 

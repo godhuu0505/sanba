@@ -17,7 +17,7 @@ ARG NEXT_PUBLIC_LIVEKIT_URL=ws://localhost:7880
 ARG NEXT_PUBLIC_RETENTION_DAYS=30
 # Google ログイン (ADR-0012)。空ビルドは dev モード (ログインボタンを出さない)。
 ARG NEXT_PUBLIC_GOOGLE_CLIENT_ID=
-# Google ドライブ取り込みの Picker 用ブラウザ API キー (ADR-0040 / 任意)。
+# Google ドライブ取り込みの Picker 用ブラウザ API キー (ADR-0044 / 任意)。
 # 空ビルドは Drive 導線が「利用できない」案内になる (ローカルアップロードは影響なし)。
 ARG NEXT_PUBLIC_GOOGLE_API_KEY=
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL \

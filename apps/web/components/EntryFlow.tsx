@@ -52,10 +52,12 @@ import {
   uploadContextFile,
   type JoinResponse,
 } from "../lib/api";
+import { AUDIENCE_LABELS } from "../lib/audience";
 import { useAuth } from "../lib/auth";
 import { importDriveFile, isDriveConfigured, openDrivePicker } from "../lib/googleDrive";
 import { AccountMenu } from "./AccountMenu";
 import { ConversationStart } from "./ConversationStart";
+import { SideMenu } from "./SideMenu";
 import { MemberInviteNotices } from "./MemberInviteNotices";
 import {
   MaterialSourceSheet,
@@ -66,10 +68,12 @@ import { clearPrep, readPrep, writePrep } from "../lib/prepFormStorage";
 
 // 役割チップ。表示は日本語、value は API（POST /api/sessions の roles）に渡す既存値。
 // 並びは 利用者 → 企画者 → 開発者、既定は「利用者」= customer（02-prepare.md / #222）。
+// ラベルは Audience（利用者/企画者/開発者 / lib/audience.ts）と同じ 3 人の登場人物を指す。
+// 対応: customer=end_user / pm=planner / engineer=developer（表記の正を一本化 / ADR-0043）。
 const ROLES = [
-  { value: "customer", label: "利用者" },
-  { value: "pm", label: "企画者" },
-  { value: "engineer", label: "開発者" },
+  { value: "customer", label: AUDIENCE_LABELS.end_user },
+  { value: "pm", label: AUDIENCE_LABELS.planner },
+  { value: "engineer", label: AUDIENCE_LABELS.developer },
 ] as const;
 
 const DEFAULT_ROLE = "customer";
@@ -153,7 +157,7 @@ export default function EntryFlow({ initialStep = "home" }: { initialStep?: Step
   const [staged, setStaged] = useState<File[]>([]);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [attachError, setAttachError] = useState<string | null>(null);
-  // Google ドライブからの取り込み中（export/download 中）の表示（ADR-0040）。
+  // Google ドライブからの取り込み中（export/download 中）の表示（ADR-0044）。
   const [driveBusy, setDriveBusy] = useState(false);
   // 開始時に「実際に投入できた」名前と失敗件数のスナップショット。03-0 サマリは
   // staged ではなくこれを参照し、未登録ファイルを「添付済み」と誤認させない（Codex P2）。
@@ -577,7 +581,7 @@ export default function EntryFlow({ initialStep = "home" }: { initialStep?: Step
     );
   }
 
-  // Google ドライブから選んでステージする（ADR-0040）。権限は Google ログイン時に求めるが、
+  // Google ドライブから選んでステージする（ADR-0044）。権限は Google ログイン時に求めるが、
   // 未許可（拒否・ブロック・失効）ならここで再度同意ポップアップを出す（要件: 権限が無い状態で
   // アップロードしようとしたタイミングで再度権限をもらう）。それでも許可されなければ取り込まない。
   async function handleDriveImport() {
@@ -669,7 +673,11 @@ export default function EntryFlow({ initialStep = "home" }: { initialStep?: Step
       repoChoices !== null;
     return (
       <Screen className="px-4 py-3">
-        <AppHeader title="セッション準備" onBack={() => navigateStep("home")} />
+        <AppHeader
+          title="セッション準備"
+          onBack={() => navigateStep("home")}
+          right={<SideMenu current="prepare" />}
+        />
         <main className="mx-auto flex w-full max-w-[480px] flex-1 flex-col gap-[18px] pt-2">
           {/* フィールド順は Figma 正本に合わせて 役割 → ゴール（02-prepare）。 */}
           <div className="flex flex-col gap-[8px]">
@@ -984,7 +992,7 @@ export default function EntryFlow({ initialStep = "home" }: { initialStep?: Step
 
         {/* 資料の追加方法シート（#201 再利用）。準備画面は LiveKit ルーム外のため
             カメラ/画面共有ハンドラは渡さない＝アップロード/Drive のみ。Drive は drive.file +
-            Google Picker（ADR-0040）。権限未許可の失敗はシート内の error に出し、再タップで
+            Google Picker（ADR-0044）。権限未許可の失敗はシート内の error に出し、再タップで
             再同意を求める。投入種別は onSelectSource で計測可能にする（#232 へ配線）。 */}
         {sheetOpen && (
           <MaterialSourceSheet
@@ -1010,7 +1018,15 @@ export default function EntryFlow({ initialStep = "home" }: { initialStep?: Step
   // 未ログイン・取得失敗時は SessionHistoryList が空状態の文言を出す。
   return (
     <Screen className="px-4 py-3">
-      <AppHeader brand right={<AccountMenu profile={auth.profile} />} />
+      <AppHeader
+        brand
+        right={
+          <div className="flex items-center gap-[2px]">
+            <SideMenu current="home" />
+            <AccountMenu profile={auth.profile} />
+          </div>
+        }
+      />
       <main className="mx-auto flex w-full max-w-[480px] flex-1 flex-col gap-[18px] pt-3">
         {/* 自分宛のメンバー招待の通知（ADR-0036 決定3）。無ければ何も出ない。 */}
         <MemberInviteNotices />

@@ -1,0 +1,25 @@
+# syntax=docker/dockerfile:1
+# build context = リポジトリ直下 (ADR-0014 §9)。共有パッケージ packages/sanba_shared を
+# 同梱するため、相対 path 依存 (../../packages/sanba_shared) を保ったまま COPY する。
+FROM python:3.13-slim@sha256:eb43ff125d8d58d7449dcba7d336c23bcac412f526d861db493b9994d8010280
+
+ENV PYTHONUNBUFFERED=1 \
+    UV_LINK_MODE=copy
+WORKDIR /app
+
+COPY --from=ghcr.io/astral-sh/uv:latest@sha256:3d868e555f8f1dbc324afa005066cd11e1053fc4743b9808ca8025283e65efa5 /uv /usr/local/bin/uv
+
+# 共有パッケージ + アプリ。構造を保つことで pyproject の [tool.uv.sources] が解決できる。
+COPY packages/sanba_shared ./packages/sanba_shared
+COPY apps/worker/pyproject.toml ./apps/worker/pyproject.toml
+COPY apps/worker/src ./apps/worker/src
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install --system ./apps/worker
+
+# Run as an unprivileged user (defense in depth).
+RUN useradd --create-home --uid 10001 appuser
+USER appuser
+
+EXPOSE 8080
+# Cloud Run provides $PORT; default to 8080 locally.
+CMD ["sh", "-c", "uvicorn sanba_worker.main:app --host 0.0.0.0 --port ${PORT:-8080}"]

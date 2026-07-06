@@ -17,7 +17,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("classifyUpload / classifyFileUpload（受理判定・ADR-0040）", () => {
+describe("classifyUpload / classifyFileUpload（受理判定・ADR-0044）", () => {
   it("画像/動画に加えて資料（md/pdf/html/csv/json/Office）を受理する", () => {
     expect(classifyUpload("mock.png")).toBe("image");
     expect(classifyUpload("rec.MOV")).toBe("video");

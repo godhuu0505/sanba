@@ -16,6 +16,7 @@ from typing import Any
 import structlog
 
 from .models import (
+    CheckItem,
     GitHubIndexStatus,
     GitHubLink,
     MemberInviteStatus,
@@ -368,11 +369,15 @@ class SessionRepository:
         name: str | None = None,
         description: str | None = None,
         glossary: list[str] | None = None,
+        output_formats: dict[str, str] | None = None,
+        check_items: list[CheckItem] | None = None,
     ) -> Product:
-        """name / description / glossary のみ上書きする。
+        """name / description / glossary / output_formats / check_items のみ上書きする。
 
         所有と出所 (owner_sub / created_at) は不変。repo 紐づけは `set_product_github` が
         担う（`update_requirement` と同じ「編集可能フィールドを閉じる」パターン）。
+        output_formats は audience→テンプレートの全量置換（部分 merge にすると「既定へ
+        戻す＝キー削除」が Firestore の merge write で表現できない）。
         """
         current = self.get_product(product_id)
         if current is None:
@@ -384,6 +389,12 @@ class SessionRepository:
             updates["description"] = description
         if glossary is not None:
             updates["glossary"] = list(glossary)
+        if output_formats is not None:
+            updates["output_formats"] = dict(output_formats)
+        if check_items is not None:
+            # Firestore へは JSON 形（{text, target}）で保存する（読み戻しは Product の
+            # validator が CheckItem に起こす。旧 str リスト文書も同 validator が平す）。
+            updates["check_items"] = [c.model_dump(mode="json") for c in check_items]
         if not updates:
             return current
         # dict に適用してから検証する（name 空などの不正値検出を一度で行う）。
@@ -393,7 +404,9 @@ class SessionRepository:
 
         if self._client is not None:
             # github_* などの並行更新を巻き戻さないよう、編集対象フィールドのみ patch する。
-            self._client.collection("products").document(product_id).set(updates, merge=True)
+            # set(merge=True) だと map（output_formats）が深マージされ「audience キーの削除＝
+            # 既定へ戻す」が永続に反映されないため、フィールド単位で全量置換する update を使う。
+            self._client.collection("products").document(product_id).update(updates)
         else:
             self._mem_products[product_id] = updated
         return updated
@@ -1155,6 +1168,23 @@ class SessionRepository:
             )
             return [d.to_dict() for d in docs]
         return list(self._mem_materials.get(session_id, {}).values())
+
+    def get_material(self, session_id: str, asset_id: str) -> dict[str, Any] | None:
+        """素材メタを 1 件返す（存在しなければ None）。
+
+        非同期動画解析（ADR-0040）の冪等ガードと「破棄済み素材を復活させない」チェックに使う:
+        worker は解析前と書き込み直前に status/存在を確認し、二重解析や削除済み素材の復活を防ぐ。
+        """
+        if self._client is not None:
+            snap = (
+                self._client.collection("sessions")
+                .document(session_id)
+                .collection("materials")
+                .document(asset_id)
+                .get()
+            )
+            return snap.to_dict() if snap.exists else None
+        return self._mem_materials.get(session_id, {}).get(asset_id)
 
     def delete_material(self, session_id: str, asset_id: str) -> bool:
         """投入済み素材メタを削除する (#245 真の破棄)。実体を消したら True (冪等)。

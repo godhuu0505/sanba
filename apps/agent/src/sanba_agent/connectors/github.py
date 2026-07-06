@@ -1,14 +1,17 @@
 """Read-only GitHub context + requirement write-back (issue #7).
 
-The pure mapping functions (issues_to_passages / requirements_to_issue_body) are
-unit-tested without any network. GitHubConnector performs the actual REST calls
-and is exercised only when the connector is explicitly enabled.
+The pure mapping function (issues_to_passages) is unit-tested without any
+network. GitHubConnector performs the actual REST calls and is exercised only
+when the connector is explicitly enabled.
+
+Issue 本文の整形はここに持たない: 開発者向け出力フォーマット + 共有レンダラ
+（sanba_shared.result_document）に一本化した（ADR-0043 決定3。api の /export と
+同じ体裁で起票する）。
 """
 
 from __future__ import annotations
 
 import structlog
-from sanba_shared.models import Priority, Requirement
 
 log = structlog.get_logger(__name__)
 
@@ -32,35 +35,6 @@ def issues_to_passages(issues: list[dict], repo: str) -> list[tuple[str, str]]:
         text = f"[Issue #{number}] {title}\n{body}".strip()
         passages.append((text, f"github:{repo}#{number}"))
     return passages
-
-
-def requirements_to_issue_body(requirements: list[Requirement], session_id: str) -> tuple[str, str]:
-    """Render confirmed requirements into a GitHub issue (title, body)."""
-    title = f"要件定義: {session_id}"
-    if not requirements:
-        return title, "（確定した要件はありません）"
-
-    order = [Priority.MUST, Priority.SHOULD, Priority.COULD, Priority.WONT]
-    labels = {
-        Priority.MUST: "Must",
-        Priority.SHOULD: "Should",
-        Priority.COULD: "Could",
-        Priority.WONT: "Won't",
-    }
-    lines = [
-        f"SANBA の音声インタビューで確定した要件です（session `{session_id}`）。",
-        "",
-    ]
-    for pr in order:
-        group = [r for r in requirements if r.priority == pr]
-        if not group:
-            continue
-        lines.append(f"## {labels[pr]}")
-        for r in group:
-            src = f" _(出所: {r.source_speaker})_" if r.source_speaker else ""
-            lines.append(f"- [{r.category.value}] {r.statement}{src}")
-        lines.append("")
-    return title, "\n".join(lines).strip()
 
 
 class GitHubConnector:

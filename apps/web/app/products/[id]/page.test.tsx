@@ -57,6 +57,14 @@ function product(overrides: Partial<Product> = {}): Product {
     github_commit_sha: null,
     github_index_status: "none",
     role: "owner" as const,
+    output_formats: {},
+    output_format_defaults: {
+      end_user: "# 利用者向けデフォルト",
+      planner: "# 企画者向けデフォルト",
+      developer: "# 開発者向けデフォルト",
+    },
+    check_items: [],
+    check_items_limit: 10,
     ...overrides,
   };
 }
