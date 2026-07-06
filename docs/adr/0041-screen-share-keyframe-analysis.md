@@ -4,7 +4,7 @@
 - 日付: 2026-07-06
 - 関連: ADR-0004（マルチモーダル入力）/ ADR-0023（解析進捗の発行設計）/ ADR-0003（Elasticsearch grounding）/
   ADR-0040（アップロード動画の非同期解析）
-- 実装計画: [`docs/design/video-and-screen-analysis-implementation-plan.md`](../design/video-and-screen-analysis-implementation-plan.md)
+- 実装計画: [`docs/notes/video-and-screen-analysis-implementation-plan.md`](../notes/video-and-screen-analysis-implementation-plan.md)
 
 ## コンテキスト
 
@@ -50,7 +50,7 @@
   （`apps/web/lib/realtime/parse.ts` の `REQUIRED_FIELDS`、契約 §3）で、素材行への対応付けを前提にしている。
   画面共有の観察には素材（`asset_id`）が存在しないため、`analysis.visual` を流用すると web 側で
   破棄されるか素材行に迷い込む。`analysis.screen(ts, extracted, …)` を契約
-  （`docs/design/realtime-contract.md` §3）と `parse.ts` に追加し、web は要件/観察ビューへ反映する
+  （`docs/reference/realtime-contract.md` §3）と `parse.ts` に追加し、web は要件/観察ビューへ反映する
   （疑似 asset_id の捏造はしない — 素材一覧に実体のない行を作らない）。
 - **能動注入**: 解析結果はエージェントの会話コンテキストへ「画面から読み取った観察」として注入し、
   深掘り質問（「いま表示されていた◯◯一覧の絞り込み条件は…」）の材料にする。Live が既に言及した

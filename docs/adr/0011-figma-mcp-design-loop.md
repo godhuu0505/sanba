@@ -49,5 +49,5 @@ SANBA の開発は Claude Code on the web / クラウド実行環境でも回す
   社内/機密の Figma ファイルを AI に渡す範囲は人間が判断する（成果物責任は人間）。
 - テスト: デザイン取得自体は外部 I/O のため CI 単体テストの対象外。コード化した UI は既存の
   `apps/web` の lint / `tsc --noEmit` / E2E（Playwright）で担保する。
-- ドキュメント: 使い方は `docs/figma-mcp.md` に記載。
+- ドキュメント: 使い方は `docs/how-to/figma-mcp.md` に記載。
 - このリポジトリの Claude Code カスタム設定（`.claude/`）とは独立。`.mcp.json` は CLI / web 双方が読む。

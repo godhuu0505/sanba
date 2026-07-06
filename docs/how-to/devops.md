@@ -40,7 +40,7 @@ flowchart LR
 
 > **AS-IS / TO-BE**: 「OpenTelemetry 一本化」は方針（TO-BE）で、現状アプリが OTLP で実送信しているのは
 > **トレースのみ**。メトリクス・ログの OTLP 配線は今後の課題（Collector・IAM 側の受け皿は先行整備済み）。
-> 信号ごとの実配線は [architecture-analysis.md §10](architecture-analysis.md) の表が一次情報。
+> 信号ごとの実配線は [architecture-analysis.md §10](../reference/architecture-analysis.md) の表が一次情報。
 
 - **トレース**（✅ 実配線）: OpenTelemetry で API・Agent・ADK ツール呼び出しを分散トレース。ローカルは Tempo、本番は Cloud Trace。
 - **メトリクス**（⚠️ 計画）: カウンタは OTel API で定義済みだが MeterProvider 未設定のため現状 no-op。MeterProvider/Reader を足せば Prometheus（ローカル）/ Cloud Monitoring（本番）へ流れる。観測対象は音声往復レイテンシ・トークン消費・エラー率。

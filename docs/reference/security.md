@@ -69,7 +69,7 @@
   対する plan（WIF 認証 → data source 経由で既存インフラを読む）を起動段階で止める。WIF の
   `attribute-condition` は `pull_request` の OIDC token では `repository` が base になり fork を
   判別できないため、この一次防御をワークフロー側に置く（多層防御。詳細は
-  `docs/runbooks/deploy-gcp.md §3`）。plan コメントは `terraform show` の出力をそのまま貼るが、
+  `docs/how-to/deploy-gcp.md §3`）。plan コメントは `terraform show` の出力をそのまま貼るが、
   秘匿リソース属性（`random_password.result` / `secret_data` 等）は provider が `sensitive` 扱いで
   `(sensitive value)` に伏せるため、同一リポジトリ PR でも値は露出しない。
 ## 8.1 リポジトリ設定ハードニング（GUI 運用手順・#68）
@@ -88,7 +88,7 @@ GUI 運用手順のため、実施したら issue #68 に**実施者・日時と
 > 手順4の branch protection は #62（人間1承認＋`quality-gate` 必須＋bot は approve/merge 不可＋
 > stale approval 失効）を前提に整合させる。#62 は棚卸しで close 済みのため、最新 push の再承認要求は
 > 本 issue で単独実施する。WIF の attribute condition（`repository`＋`ref=main` 限定）の確認は
-> `infra/terraform` 側で別途行う（`docs/runbooks/deploy-gcp.md §3`）。
+> `infra/terraform` 側で別途行う（`docs/how-to/deploy-gcp.md §3`）。
 
 **実施記録**（GUI 設定は IaC 化されないため、実施の都度ここに追記する）:
 

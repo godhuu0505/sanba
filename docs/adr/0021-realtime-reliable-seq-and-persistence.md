@@ -3,7 +3,7 @@
 - ステータス: Proposed
 - 日付: 2026-06-28
 - 関連: #122（lossy イベント欠番による不要な再ハイドレーション）/ #123（Cloud Run 再起動後の seq 単調性）/
-  ADR-0020（question ハイドレーションと Firestore tombstone/current 永続化）/ 契約 `docs/design/realtime-contract.md` §1,§2,§4
+  ADR-0020（question ハイドレーションと Firestore tombstone/current 永続化）/ 契約 `docs/reference/realtime-contract.md` §1,§2,§4
 
 ## コンテキスト
 
@@ -60,7 +60,7 @@ seq だけが永続化から漏れている。
   （現実の status/partial 件数を大きく上回る）。`reserve_lossy_seq_base`（`repository`）が採番する。
 
 ### 3. 契約・観測性の更新
-- `docs/design/realtime-contract.md` §1/§2/§4 を更新し、reliable/lossy の **seq 系統の分離**と、
+- `docs/reference/realtime-contract.md` §1/§2/§4 を更新し、reliable/lossy の **seq 系統の分離**と、
   ギャップ検知が reliable のみ対象である旨を明文化する。
 - ギャップ・ドロップのメトリクス（`metrics.recordGap` / `recordDropped`）は **reliable ストリーム基準**となり、
   「真に取りこぼした reliable イベント数」を表す意味のある指標になる（CLAUDE.md 原則3）。

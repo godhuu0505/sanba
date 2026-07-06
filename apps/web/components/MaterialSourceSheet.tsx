@@ -1,7 +1,7 @@
 "use client";
 
 // 05-2 素材の手段選択シート（カメラ撮影 / ファイルアップロード / 画面共有 / Google ドライブ）。
-// 仕様: docs/design/conversation-experience.md §6 / docs/design/screens/05-materials.md（Figma 148:95）
+// 仕様: docs/reference/conversation-experience.md §6 / docs/reference/screens/05-materials.md（Figma 148:95）
 //      / ADR-0004（マルチモーダル入力）/ ADR-0018。
 //
 // 設計ポイント:

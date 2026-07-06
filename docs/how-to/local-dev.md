@@ -100,7 +100,7 @@ identity (dev@sanba.local) になり、`/admin` がそのまま開ける (ADR-00
   根拠付け/過去検索は `ELASTICSEARCH_URL`（既定で起動）、埋め込みは `GEMINI_EMBED_MODEL`。
   永続化は `FIRESTORE_EMULATOR_HOST`（既定で起動）。
 - **経路**: 発話の文字起こし → ADK で要件・論点・次の問いを抽出 → Firestore/Elasticsearch へ保存 →
-  LiveKit データチャネル `sanba.events` で web にリアルタイム配信（[realtime-contract](design/realtime-contract.md)）。
+  LiveKit データチャネル `sanba.events` で web にリアルタイム配信（[realtime-contract](../reference/realtime-contract.md)）。
   確定要件は `POST /api/sessions/{id}/export` で GitHub Issue に起票できる
   （`GITHUB_CONNECTOR_ENABLED=true` + `GITHUB_TOKEN` + `GITHUB_REPO`）。
 - **未設定時**: creds 無しでは ADK 分析はヒューリスティック近似、ES は語の重なり近似、Firestore は in-memory。

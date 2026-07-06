@@ -2,7 +2,7 @@
 
 > 本書はリポジトリ実装（`apps/` / `infra/terraform/` / `docker-compose*.yml` / `.github/workflows/`）を
 > 静的に解析し、**どのコンポーネントが・どの Google Cloud / 外部サービスを・どのタイミングでどう使うか**を
-> 複数の図で示す。既存の [`docs/architecture.md`](architecture.md) が「設計判断（なぜ）」を記すのに対し、
+> 複数の図で示す。既存の [`docs/reference/architecture.md`](architecture.md) が「設計判断（なぜ）」を記すのに対し、
 > 本書は「実態（何が・どこで・いつ）」の写像に徹する。
 
 - 解析対象リビジョン: `apps/agent` / `apps/api` / `apps/web` / `packages/sanba_shared` / `infra/terraform` / 補助スタック

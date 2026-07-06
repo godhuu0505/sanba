@@ -1,7 +1,7 @@
 # 実装計画 — アプリ実体・深掘りリンク・利用者モード
 
-> 状態: **Draft**。要件は [product-enduser-requirements.md](product-enduser-requirements.md)（FR/NFR 番号を参照）、
-> 背景は [personas-and-use-cases.md](personas-and-use-cases.md)。
+> 状態: **Draft**。要件は [product-enduser-requirements.md](../reference/product-enduser-requirements.md)（FR/NFR 番号を参照）、
+> 背景は [personas-and-use-cases.md](../explanation/personas-and-use-cases.md)。
 > 各 PR は単独で lint / test / build（`just check` 相当）が通り、デプロイ可能な状態を保つ（CLAUDE.md）。
 
 ## 0. 先行タスク — ADR 起票

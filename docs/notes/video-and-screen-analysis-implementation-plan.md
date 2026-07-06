@@ -90,7 +90,7 @@ PR-S2 が共用するため、注入部分は Stage V を先行させる。
 > 状態: **実装済み**（api/web/Terraform + テスト）。api 304 テスト（新規 video pipeline 10 含む・退行なし）、
 > ruff/mypy/format、web tsc/eslint/SessionView 15 通過。**本番有効化（フラグ立て + worker service 作成 +
 > deploy）は `deploy.yml` の migrate→build 順による新規サービスのブートストラップ制約と課金開始のため、
-> 意図的な手動 apply として手順化**した（[`docs/runbooks/enable-video-analysis.md`](../runbooks/enable-video-analysis.md)）。
+> 意図的な手動 apply として手順化**した（[`docs/how-to/enable-video-analysis.md`](../how-to/enable-video-analysis.md)）。
 
 - **動画は署名付き URL でブラウザから GCS へ直送**（ADR-0040 §2。Cloud Run の HTTP/1 request 上限 32MiB のため multipart 不可）:
   - `POST …/context/file/upload-init`: 署名付き PUT URL 発行（`x-goog-content-length-range` で 200MB 強制）+ `materials(status=uploading)`。api はバイト列を経由しないため `asset_id` は upload 単位の uuid（内容ハッシュではない。ADR-0040 の md5 導出からの簡素化 — 動画の再アップロード冪等性は捨て、task 名 `session+asset` で重複排除は維持）。

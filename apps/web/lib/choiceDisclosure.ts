@@ -1,5 +1,5 @@
 // 選択肢の開示レベル（最小 ⇄ 一覧 ⇄ 詳細 ⇄ 比較）を管理する純レデューサ。
-// 仕様: docs/design/conversation-experience.md §4。
+// 仕様: docs/reference/conversation-experience.md §4。
 //   - min   : 常時ピンの最小構成（横スクロールchip）。chip タップ=回答 / 長押し=詳細 / ⤢=一覧
 //   - list  : 展開カード（行タップ=即選択 / 各行 詳細› / ⤡=最小）
 //   - detail: ボトムシート（1選択肢を深掘り・前後で巡回 / これを選ぶ=確定 / ✕=returnTo）

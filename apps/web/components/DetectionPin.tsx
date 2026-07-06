@@ -1,7 +1,7 @@
 "use client";
 
 // 選択肢なし検知（detection.gap 等）の読み取り専用ピン。
-// 仕様: docs/design/conversation-experience.md §4 / realtime-contract.md §4 detection.gap。
+// 仕様: docs/reference/conversation-experience.md §4 / realtime-contract.md §4 detection.gap。
 //
 // 回答ボタンを持たない未解消検知（抜け＝未定義 等。要約のみ）を、常時ピンの位置に前面表示する。
 // 選択肢あり検知（矛盾/抜けで選択肢つき）は回答付きの ChoicePin が担い、本部品は触れない

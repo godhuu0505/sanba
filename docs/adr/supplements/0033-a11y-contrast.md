@@ -2,9 +2,9 @@
 
 ADR-0033「白い紙の上の問答」の UI 刷新について、**AA コントラスト**・**reduced-motion**・
 **色のみ非依存**・**純黒禁止**の品質ゲートを実測で総点検した記録。正は
-[docs/adr/0033-ui-redesign-v2-sticker-paper.md](adr/0033-ui-redesign-v2-sticker-paper.md)。
+[docs/adr/0033-ui-redesign-v2-sticker-paper.md](../0033-ui-redesign-v2-sticker-paper.md)。
 
-測定は WCAG 2.1 相対輝度式（sRGB）で `fg`×`bg` を算出（[scratchpad の node スクリプトと同式](adr/0033-ui-redesign-v2-sticker-paper.md)）。
+測定は WCAG 2.1 相対輝度式（sRGB）で `fg`×`bg` を算出（[scratchpad の node スクリプトと同式](../0033-ui-redesign-v2-sticker-paper.md)）。
 基準: **本文 4.5:1** / 大型・太字 3:1 / **図形・アイコン（非テキスト）3:1**。
 
 ## 1. AA コントラスト実測

@@ -4,7 +4,7 @@
 #   - terraform は「箱 (secret) + Cloud Run からの参照」だけを管理し、**値 (version) は管理しない**。
 #     これによりアプリの秘匿値が GitHub Secrets にも terraform state にも残らない。
 #   - アプリ秘匿値 (livekit/elasticsearch/google) は `gcloud secrets versions add` で SM に直接投入する
-#     (手順は docs/runbooks/deploy-gcp.md)。値を入れた secret を active_app_secret_ids に足して apply すると
+#     (手順は docs/how-to/deploy-gcp.md)。値を入れた secret を active_app_secret_ids に足して apply すると
 #     Cloud Run に注入される。空の箱を Cloud Run が参照すると起動失敗するため、active なものだけ紐付ける。
 #   - 例外: session-signing-secret はユーザ提供ではなく自動生成のため、ここで生成して version まで作る
 #     (GitHub は経由しない。state には乱数が入るが、暗号化 + アクセス制御された GCS backend が前提)。

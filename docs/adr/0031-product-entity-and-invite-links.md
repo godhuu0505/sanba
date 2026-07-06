@@ -6,8 +6,8 @@
   [ADR-0027](0027-per-session-github-repo.md)（セッション単位 repo 選択 — repo 解決を product へ持ち上げ）/
   [ADR-0028](0028-github-repo-linking.md)（GitHub App・ES 索引 — 索引経路を再利用）/
   [ADR-0014](0014-admin-and-login-screens.md)（admin 認可）
-- 背景文書: [personas-and-use-cases.md](../design/personas-and-use-cases.md) /
-  [要件定義](../design/product-enduser-requirements.md) / [実装計画](../design/product-enduser-implementation-plan.md)
+- 背景文書: [personas-and-use-cases.md](../explanation/personas-and-use-cases.md) /
+  [要件定義](../reference/product-enduser-requirements.md) / [実装計画](../notes/product-enduser-implementation-plan.md)
 
 ## コンテキスト
 

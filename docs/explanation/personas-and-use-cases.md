@@ -5,7 +5,7 @@
 > ADR-0027（セッション単位 repo 選択）/ ADR-0028（GitHub App 連携・ES 索引）/ ADR-0012（Google ログイン）/
 > ADR-0024（grill-me インタビューペルソナ）。
 >
-> 後続文書: [要件定義](product-enduser-requirements.md) / [実装計画](product-enduser-implementation-plan.md) /
+> 後続文書: [要件定義](../reference/product-enduser-requirements.md) / [実装計画](../notes/product-enduser-implementation-plan.md) /
 > [問い合わせトリアージ](inquiry-triage.md)（利用者の声の切り分け・その場解決）。
 
 ## 1. 出発点 — なぜ分けるのか

@@ -54,7 +54,7 @@ sequenceDiagram
 ```
 
 **設計判断**: Live agent は「対話の主」、ADK は「分析の頭脳」。中井悦司氏の言う *subagent*（協調的切替）と佐藤一憲氏の言う *agent-as-a-tool*（道具としての呼び出し）を**両方**使い分ける —
-ADK チーム内部は subagent 協調、Live agent から ADK を呼ぶ箇所は agent-as-a-tool。判断の根拠は [ADR-0002](adr/0002-multi-agent-topology.md)。
+ADK チーム内部は subagent 協調、Live agent から ADK を呼ぶ箇所は agent-as-a-tool。判断の根拠は [ADR-0002](../adr/0002-multi-agent-topology.md)。
 
 ## 4. ADK マルチエージェント・トポロジ
 
@@ -109,4 +109,4 @@ artifacts/{sessionId}           # 生成された要件ドキュメント (Cloud
 - **コスト**: トークン/分課金を Langfuse + Cloud Billing で可視化。
 - **セキュリティ**: 会話に PII が含まれうるため、Secret Manager・最小権限 SA・保存時暗号化。
 
-詳細な DevOps サイクルは [`devops.md`](devops.md)。
+詳細な DevOps サイクルは [`devops.md`](../how-to/devops.md)。

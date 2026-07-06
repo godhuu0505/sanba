@@ -18,23 +18,23 @@
 
 ## 🔧 ハウツー（課題を解く）
 
-- [ローカル開発ガイド](local-dev.md) — 全コンポーネントの起動・疎通確認・トラブルシュート。
-- [DevOps サイクル](devops.md) — CI/CD・可観測性・LLMOps・Four Keys の回し方。
-- [Figma MCP](figma-mcp.md) — UI/UX を Figma で検討・実装・修正するデザインループ（リモート MCP）。
+- [ローカル開発ガイド](how-to/local-dev.md) — 全コンポーネントの起動・疎通確認・トラブルシュート。
+- [DevOps サイクル](how-to/devops.md) — CI/CD・可観測性・LLMOps・Four Keys の回し方。
+- [Figma MCP](how-to/figma-mcp.md) — UI/UX を Figma で検討・実装・修正するデザインループ（リモート MCP）。
 
 ## 📖 リファレンス（確認する）
 
-- [ユビキタス言語](ubiquitous-language.md) — プロダクト・設計・コード・UI で同じ言葉を同じ意味で使う用語集。
-- [アーキテクチャ設計](architecture.md) — コンポーネント / 二層構造 / データモデル / 非機能要件。
-- [アーキテクチャ & インフラ徹底解析](architecture-analysis.md) — 実装から起こした全体像。GCP サービス一覧・外部サービスの配置とタイミング・LB/CI-CD/可観測性を複数の図で図示。
-- [セキュリティ & データガバナンス](security.md) — アクセス制御・PII マスキング・保持期間・CI スキャン。
+- [ユビキタス言語](reference/ubiquitous-language.md) — プロダクト・設計・コード・UI で同じ言葉を同じ意味で使う用語集。
+- [アーキテクチャ設計](reference/architecture.md) — コンポーネント / 二層構造 / データモデル / 非機能要件。
+- [アーキテクチャ & インフラ徹底解析](reference/architecture-analysis.md) — 実装から起こした全体像。GCP サービス一覧・外部サービスの配置とタイミング・LB/CI-CD/可観測性を複数の図で図示。
+- [セキュリティ & データガバナンス](reference/security.md) — アクセス制御・PII マスキング・保持期間・CI スキャン。
 - アプリ別 README — [agent](../apps/agent/README.md) / [api](../apps/api/README.md) / [web](../apps/web/README.md)
 - [Four Keys / DORA 自己計測](../infra/four-keys/README.md)
 
 ## 💡 解説（理解する）
 
-- [ロードマップ](roadmap.md) — 1:1 から多対多への段階的拡張方針。
-- [ADR（設計判断記録）](adr/) — なぜその選択をしたか、捨てた選択肢は何か。下表参照。
+- [ロードマップ](explanation/roadmap.md) — 1:1 から多対多への段階的拡張方針。
+- [ADR（設計判断記録）](adr) — なぜその選択をしたか、捨てた選択肢は何か。下表参照。
 
 ### ADR 一覧
 

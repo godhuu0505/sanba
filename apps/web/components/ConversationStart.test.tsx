@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ConnectingOverlay, MicPermissionModal, StartFailed, StartIntro } from "./ConversationStart";
 
 // 03 会話開始の純プレゼン（LiveKit 非依存）。開始前サマリ・接続中ステップ・失敗系の3導線。
-// 仕様: docs/design/screens/03-conversation-start.md。
+// 仕様: docs/reference/screens/03-conversation-start.md。
 
 describe("StartIntro（03-0 開始前）", () => {
   afterEach(() => cleanup());

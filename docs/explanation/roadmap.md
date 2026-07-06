@@ -30,12 +30,12 @@
 
 ## 拡張 — 利用者ペルソナ（ADR-0031/0032）
 
-「準備する人＝話す人」の単一ペルソナ（ADR-0008）に対し、PdM が発行した深掘りリンクをアプリの**利用者**が開くだけでインタビューが始まる経路を段階導入する。これは PdM が現場の一次情報（利用実態・困りごと）を集約するための**道具としての拡張**であり、開発者向け要件深掘りというコンセプトの置き換えではない。Stage 1（ログイン必須の一気通貫: アプリ登録 → リンク発行 → `/join/{token}` → 会話開始）は実装済み。Stage 2 でゲスト入場（ADR-0032）と利用者モードの対話プロファイルを導入する。詳細は [`docs/design/personas-and-use-cases.md`](design/personas-and-use-cases.md) / [実装計画](design/product-enduser-implementation-plan.md)。
+「準備する人＝話す人」の単一ペルソナ（ADR-0008）に対し、PdM が発行した深掘りリンクをアプリの**利用者**が開くだけでインタビューが始まる経路を段階導入する。これは PdM が現場の一次情報（利用実態・困りごと）を集約するための**道具としての拡張**であり、開発者向け要件深掘りというコンセプトの置き換えではない。Stage 1（ログイン必須の一気通貫: アプリ登録 → リンク発行 → `/join/{token}` → 会話開始）は実装済み。Stage 2 でゲスト入場（ADR-0032）と利用者モードの対話プロファイルを導入する。詳細は [`docs/explanation/personas-and-use-cases.md`](personas-and-use-cases.md) / [実装計画](../notes/product-enduser-implementation-plan.md)。
 
 ## 横断機能（基盤に実装済み / 拡張）
 - [x] Elasticsearch による RAG 根拠付け + 過去セッション検索（ADR-0003）
 - [x] マルチモーダル入力：画面共有/モック画像 → 要件化（ADR-0004。Web の共有UIは Phase 2）
-- [ ] アップロード動画の非同期解析：GCS + Cloud Tasks + 専用ワーカーで解析し grounding へ（ADR-0040 提案中・[実装計画](design/video-and-screen-analysis-implementation-plan.md)）
+- [ ] アップロード動画の非同期解析：GCS + Cloud Tasks + 専用ワーカーで解析し grounding へ（ADR-0040 提案中・[実装計画](../notes/video-and-screen-analysis-implementation-plan.md)）
 - [ ] 画面共有のキーフレーム解析：変化検知で永続記録を作り深掘りに使う（ADR-0041 提案中・同計画）
 - [x] LLM-as-a-judge オンライン評価 + CI 回帰ループ（ADR-0005）
 - [ ] 要件 → GitHub Issue/PR 自動生成 → 実装エージェント起動（次の高加点候補）

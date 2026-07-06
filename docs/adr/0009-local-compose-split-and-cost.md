@@ -60,5 +60,5 @@
   ハッカソン規模では image-only の gcloud デプロイ + ignore_changes で十分。保留。
 
 ## 影響
-- README / docs/devops.md のクイックスタートを `just up` / `just up-full` / `just verify` に更新。
+- README / docs/how-to/devops.md のクイックスタートを `just up` / `just up-full` / `just verify` に更新。
 - `scripts/verify-local.sh` で各コンポーネントの疎通をスモークテストできる。

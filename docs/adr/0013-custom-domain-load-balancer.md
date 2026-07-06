@@ -2,7 +2,7 @@
 
 - ステータス: Accepted
 - 日付: 2026-06-19
-- 関連: ADR-0006 (Cloud Run 継続) / runbook `docs/runbooks/deploy-gcp.md`
+- 関連: ADR-0006 (Cloud Run 継続) / runbook `docs/how-to/deploy-gcp.md`
 
 > **更新 (2026-06-24): ドメインはコードに焼かず設定駆動にし、web をサブドメインへ置く構成を追加。**
 > 本リポジトリは OSS (public) なので、特定ドメインを「本番」として固定しない。`var.domain` と
@@ -73,4 +73,4 @@ Cloud Run へ独自ドメインを当てる方法は 2 つある。
   にも web ホストのみ入れる。忘れると GIS が `origin not allowed` で失敗する。
 - **実装影響**: 配信ロジックは `var.domain` / `var.web_subdomain` 駆動。`ALLOWED_ORIGINS` も
   `local.web_hosts` から自動生成。CI は `PROD_DOMAIN` / `PROD_WEB_SUBDOMAIN` (GitHub Variables) で渡す。
-- **手順**: runbook `docs/runbooks/deploy-gcp.md` §6.5 に A→G の詳細手順を記載。
+- **手順**: runbook `docs/how-to/deploy-gcp.md` §6.5 に A→G の詳細手順を記載。

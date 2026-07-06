@@ -3,7 +3,7 @@
 - ステータス: Proposed
 - 日付: 2026-06-28
 - 関連: ADR-0018（会話体験・3タブ・確定ゲート）を**補う**。#182（DetectionKind に ambiguous）/
-  #183（音声状態 読み上げ/消音/一時停止 の表示契約）/ 契約 `docs/design/realtime-contract.md` §3,§4
+  #183（音声状態 読み上げ/消音/一時停止 の表示契約）/ 契約 `docs/reference/realtime-contract.md` §3,§4
 - 下敷き: ADR-0008（中核＝矛盾・抜け検知）/ ADR-0018 §6 確定ゲート
 
 ## コンテキスト

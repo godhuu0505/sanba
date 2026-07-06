@@ -5,7 +5,7 @@
 
 ## プロダクト
 - **SANBA**: 音声(speech-to-speech)で対話し、要件を解像度高く生み出すマルチエージェント。名前の由来は「産婆術（Socratic maieutics）」＝相手の中にある答えを問いで引き出す技法。
-- 詳細: `README.md` / `docs/architecture.md`。
+- 詳細: `README.md` / `docs/reference/architecture.md`。
 
 ## 原則
 1. **成果物の品質に責任を持つのは人間**。AIは下書き・自動化を担うが、設計判断とレビューは人間が行う。
@@ -48,7 +48,7 @@
   - GitHub 製以外の Action は **commit full SHA でピン**する（`@vX` タグ運用は禁止。バージョンはコメントで併記し、Dependabot が更新する）。
   - ワークフロー内で `curl | sh` 等で入れるツールは**バージョン固定＋チェックサム照合**にする（例: `terraform.yml` の SHA256SUMS 照合）。
   - 各ワークフローは top-level `permissions:` を既定 `contents: read` にし、書き込みが要るジョブだけ昇格する（既定 `GITHUB_TOKEN` を read-only 運用するための前提）。
-  - リポジトリ設定面のハードニング（fork PR の Actions 承認・Secret scanning / push protection・branch protection 等）は `docs/security.md §8` を参照。
+  - リポジトリ設定面のハードニング（fork PR の Actions 承認・Secret scanning / push protection・branch protection 等）は `docs/reference/security.md §8` を参照。
 
 ## やってはいけないこと
 - 単発の Gemini API 呼び出しを「エージェント」と称する薄い実装。

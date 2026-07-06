@@ -6,7 +6,7 @@
 > 会話設計・UX / 実装実現性）で相互レビューし、owner ヒアリング（2026-07-06）で主要判断を確定、
 > ADR-0048 として起票した（[§8](#8-確定事項と-adr) に一覧）。
 > 関連: [personas-and-use-cases.md](personas-and-use-cases.md)（利用者ペルソナ）/
-> [要件定義](product-enduser-requirements.md)（FR-2.x / FR-3.x）/
+> [要件定義](../reference/product-enduser-requirements.md)（FR-2.x / FR-3.x）/
 > ADR-0032（ゲスト入場と利用者モード）/ ADR-0024（grill-me ペルソナ）/
 > ADR-0002（マルチエージェント・トポロジ）/ ADR-0003・0028（grounding / repo 索引）/
 > ADR-0037（背景プリフェッチと注入ポリシー）/ ADR-0038（セッション復旧）/

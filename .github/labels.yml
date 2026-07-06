@@ -11,7 +11,7 @@
 #   （接頭辞なし）メタ / dependabot 管理
 #
 # rename は from-name で行う（既存 issue/PR の付与を保持したまま改名される）。
-# 運用ガイド: docs/automation/labels.md
+# 運用ガイド: docs/how-to/labels.md
 
 # ── type: 種別 ───────────────────────────────────────────────
 - name: "type:bug"

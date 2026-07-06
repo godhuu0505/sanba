@@ -1,7 +1,7 @@
 "use client";
 
 // 要件絵巻タブの本文。MoSCoW 区分の要件を**閲覧のみ**で並べ、未解消の深掘り対象を続ける。
-// 仕様: docs/design/conversation-experience.md §3,§7 / screens/06-requirements-scroll.md。
+// 仕様: docs/reference/conversation-experience.md §3,§7 / screens/06-requirements-scroll.md。
 // 編集はしない（確定操作は 07 判定 → 08 結果）。
 
 import { useEffect, useRef } from "react";

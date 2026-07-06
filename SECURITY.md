@@ -27,4 +27,4 @@ SANBA は音声で要件をヒアリングする性質上、会話に PII が含
 - **アクセス制御**: 署名付き招待トークン、TTL 付き LiveKit トークン、レート制限。
 - **最小権限**: Cloud Run のランタイム SA は最小権限、コンテナは非 root・最小ベース。
 
-設計・データ取り扱いの詳細は [`docs/security.md`](docs/security.md) を参照してください。
+設計・データ取り扱いの詳細は [`docs/reference/security.md`](docs/reference/security.md) を参照してください。

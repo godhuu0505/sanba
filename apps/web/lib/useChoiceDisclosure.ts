@@ -2,7 +2,7 @@
 
 // 選択肢の開示レベル（最小⇄一覧⇄詳細⇄比較）を React に結線するフック。
 // 純レデューサ choiceReducer をラップし、UI から呼ぶアクションを公開する。
-// 仕様: docs/design/conversation-experience.md §4。
+// 仕様: docs/reference/conversation-experience.md §4。
 
 import { useCallback, useReducer } from "react";
 

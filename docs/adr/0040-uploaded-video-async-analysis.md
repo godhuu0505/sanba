@@ -4,8 +4,8 @@
   `.github/workflows/deploy.yml` の CD 配線は未対応 — 手動デプロイが必要。詳細は下記フォローアップ参照）
 - 日付: 2026-07-06
 - 関連: ADR-0004（マルチモーダル入力）/ ADR-0023（解析進捗の発行設計）/ ADR-0003（Elasticsearch grounding）/
-  ADR-0037（背景先読み・注入方針）/ 契約 `docs/design/realtime-contract.md` §3
-- 実装計画: [`docs/design/video-and-screen-analysis-implementation-plan.md`](../design/video-and-screen-analysis-implementation-plan.md)
+  ADR-0037（背景先読み・注入方針）/ 契約 `docs/reference/realtime-contract.md` §3
+- 実装計画: [`docs/notes/video-and-screen-analysis-implementation-plan.md`](../notes/video-and-screen-analysis-implementation-plan.md)
 
 ## コンテキスト
 
@@ -15,7 +15,7 @@
   保存のみで `analysis_pending=True` を返す。`enable_video_analysis` の解析側実装は**無い**（フラグだけが先行）。
 - grounding 索引に何も入らないため、エージェントは動画の内容に一切到達できない。素材 UI は永遠に「解析中」のまま。
 - 本番は `GCS_BUCKET` 未設定のため `AssetStore` が in-memory フォールバックで動いており、**素材そのものがインスタンス再起動で消える**
-  （`docs/architecture.md` にも素材バケット未プロビジョニングと明記）。
+  （`docs/reference/architecture.md` にも素材バケット未プロビジョニングと明記）。
 - Terraform には GCS バケット・Cloud Tasks・Pub/Sub・Cloud Run Job のいずれも無く、非同期処理基盤はゼロ。
 
 画像は `analyze_image` → `index_context(source="asset:{id}")` → `search_grounding` の経路が既に通っており、

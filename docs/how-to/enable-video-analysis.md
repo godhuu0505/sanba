@@ -4,7 +4,7 @@
 live にするための**意図的なオペレーション手順**。コード（api / worker / web / Terraform）は
 実装済みで、ここに書くのは有効化の順序と `gcloud` / GitHub 操作のみ。
 
-> 関連: ADR-0040 / 実装計画 `docs/design/video-and-screen-analysis-implementation-plan.md`
+> 関連: ADR-0040 / 実装計画 `docs/notes/video-and-screen-analysis-implementation-plan.md`
 > 関連リソース: `infra/terraform/media.tf`（バケット・キュー・worker SA・gated worker service）
 
 ## なぜ「1 回のマージで全自動」にしないか

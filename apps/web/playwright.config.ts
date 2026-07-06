@@ -3,7 +3,7 @@ import { defineConfig } from "@playwright/test";
 // E2E（PR9 / FR-2.1）: 未ログイン（シークレットウィンドウ相当）のゲスト入場フローを
 // 実ブラウザで検証する。API はテスト内の page.route でモックする（LiveKit サーバや
 // バックエンド常駐を要求しない・CI でも回せる最小構成）。実バックエンド結合の E2E は
-// docs/design/product-enduser-implementation-plan.md §5 のとおり別レイヤで拡張する。
+// docs/notes/product-enduser-implementation-plan.md §5 のとおり別レイヤで拡張する。
 export default defineConfig({
   testDir: "./e2e",
   timeout: 60_000,

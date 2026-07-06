@@ -8,18 +8,18 @@
   - **[ADR-0033](0033-ui-redesign-v2-sticker-paper.md)（白い紙の上の問答 — ステッカー×原色×動く棒人間）＝視覚言語の正**。
     本 ADR は ADR-0033 の実装を「唯一の正本」と定義するだけで、意匠そのものは ADR-0033 に委ねる。
   - [ADR-0025](0025-light-paper-redesign.md)（Superseded）／[ADR-0017](0017-figma-canonical-onepath-archaic-copy.md)（**本 ADR が「Figma 正本」の中核方針を反転**。一本道 IA・古語文言の方針は維持）。
-  - 監査記録: [`docs/design/figma-implementation-audit.md`](../design/figma-implementation-audit.md)、
-    画面票: [`docs/design/screens/README.md`](../design/screens/README.md)。
+  - 監査記録: [`docs/notes/figma-implementation-audit.md`](../notes/figma-implementation-audit.md)、
+    画面票: [`docs/reference/screens/README.md`](../reference/screens/README.md)。
 
 ## コンテキスト
 
 これまでの設計運用では、Figma「📱 iPhone 13 Pro 操作フロー・正本」（fileKey `eI6QvvCEO021zpdMmxr8Iq`）を
-**唯一の正本**とし、`apps/web` の実装がそれに追従する形をとってきた（`docs/design/screens/README.md`・
+**唯一の正本**とし、`apps/web` の実装がそれに追従する形をとってきた（`docs/reference/screens/README.md`・
 `figma-implementation-audit.md`・ADR-0011）。
 
 しかし ADR-0025 →**ADR-0033** で視覚言語が **「漆黒×金（黄土色を主とする暗色＋金彩グラデ）」から
 「白い紙の上の問答（明るい白地×原色アクセント×動く棒人間）」へ全面刷新**され、その全 Phase の実装・
-品質検証（AA / reduced-motion / 純黒禁止・[検証記録](../a11y-contrast-adr0033.md)）が完了した。
+品質検証（AA / reduced-motion / 純黒禁止・[検証記録](supplements/0033-a11y-contrast.md)）が完了した。
 
 結果として、**現時点で「正しいデザイン」を体現しているのは実装（`apps/web`）側**であり、
 Figma 正本は旧・漆黒×金のまま取り残されている。実際、Figma の各画面（例: `40:2` ホーム）は
@@ -40,7 +40,7 @@ Figma 正本は旧・漆黒×金のまま取り残されている。実際、Fig
    Figma は実装に**追従**して更新する。今後、実装と Figma が食い違った場合は**実装を正**とし、Figma を直す。
 
 3. **Figma を現行アプリのデザインに合わせて再構成する。** 再構成の指針（トークン対応・画面別の
-   置換方針・36 フレームの範囲）は [`docs/design/figma-redesign-spec.md`](../design/figma-redesign-spec.md) に定義する。
+   置換方針・36 フレームの範囲）は [`docs/notes/figma-redesign-spec.md`](../notes/figma-redesign-spec.md) に定義する。
    反映は Figma MCP `use_figma`（コード → デザイン）で行い、破壊的変更に備え Figma の版履歴を退避に用いる。
 
 4. **ドキュメントの文言を反転させる。** `screens/README.md`・`figma-implementation-audit.md`・

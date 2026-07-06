@@ -1,7 +1,7 @@
 # Figma MCP — UI/UX デザインループ
 
 機能実装時に Figma 上で UI/UX を検討・実装・修正するための MCP 連携手順。
-設計判断の背景は [ADR-0011](./adr/0011-figma-mcp-design-loop.md) を参照。
+設計判断の背景は [ADR-0011](../adr/0011-figma-mcp-design-loop.md) を参照。
 
 ## 何ができるか
 

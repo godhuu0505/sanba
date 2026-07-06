@@ -1,7 +1,7 @@
 "use client";
 
 // 選択肢の詳細確認（ボトムシート）。1選択肢を観点ごとに深掘りし、前後で巡回・比較・確定できる。
-// 仕様: docs/design/conversation-experience.md §4。
+// 仕様: docs/reference/conversation-experience.md §4。
 // 観点データ（どう並ぶ/効き目/留意/出所）は contract に無いため任意。与えられたものだけ描く。
 
 import { ChevronLeft, ChevronRight, Mic, X } from "lucide-react";

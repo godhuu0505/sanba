@@ -1,7 +1,7 @@
 # 要件定義 — アプリ実体・深掘りリンク・利用者モード
 
-> 状態: **Draft**。由来: [personas-and-use-cases.md](personas-and-use-cases.md)（ユースケース分解）。
-> 実装の切り方は [product-enduser-implementation-plan.md](product-enduser-implementation-plan.md) を参照。
+> 状態: **Draft**。由来: [personas-and-use-cases.md](../explanation/personas-and-use-cases.md)（ユースケース分解）。
+> 実装の切り方は [product-enduser-implementation-plan.md](../notes/product-enduser-implementation-plan.md) を参照。
 > 本書の FR/NFR 番号を ADR・Issue・PR から参照する。
 
 ## 1. 目的
@@ -13,7 +13,7 @@
 
 ## 2. 決定事項と前提
 
-[personas-and-use-cases.md §7](personas-and-use-cases.md#7-adr-に切り出すべき決定) の論点に対する本要件の前提。
+[personas-and-use-cases.md §7](../explanation/personas-and-use-cases.md#7-adr-に切り出すべき決定) の論点に対する本要件の前提。
 ADR 未起票のものは実装計画の Step 0 で起票する。
 
 | 論点 | 本要件での前提 |

@@ -1,6 +1,6 @@
 """Firestore-backed persistence for sessions, utterances and requirements.
 
-Stateless workers + external state => Cloud Run friendly (see docs/architecture.md §1).
+Stateless workers + external state => Cloud Run friendly (see docs/reference/architecture.md §1).
 Falls back to an in-memory store when Firestore is unavailable (e.g. unit tests).
 
 このパッケージはアプリ config に依存しない: リテンション日数は `SessionRepository` の
@@ -155,7 +155,7 @@ class SessionRepository:
         """Retention deadline for stored data. None = keep indefinitely.
 
         Firestore deletes documents whose `expireAt` field is in the past, once a TTL
-        policy is enabled on that field (see infra/terraform + docs/security.md).
+        policy is enabled on that field (see infra/terraform + docs/reference/security.md).
         """
         days = self._retention_days
         return datetime.now(UTC) + timedelta(days=days) if days > 0 else None
