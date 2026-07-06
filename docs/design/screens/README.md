@@ -3,10 +3,11 @@
 > **⚠ 正本の逆転（[ADR-0039](../../adr/0039-app-is-canonical-figma-follows.md) / 2026-07-06）**:
 > 従来 Figma「📱 iPhone 13 Pro 操作フロー・正本」を唯一の正本としていたが、**ADR-0033 の全面刷新
 > （白い紙×原色×動く棒人間）を実装・検証済みの現在、正本は `apps/web` の実装側に移った**。
-> Figma は旧「漆黒×金」のまま取り残されており、**実装に追従して再構成する対象**（follower）である。
-> 以後、実装と Figma が食い違う場合は**実装を正**とする。Figma 側の再構成方針は
-> [`../figma-redesign-spec.md`](../figma-redesign-spec.md)。本票の「Figma 対応」節は履歴・レイアウト参照として残すが、
-> 意匠（色・書体・意匠様式）の正は ADR-0033＋`apps/web` である。
+> Figma は **2026-07-06 に一次反映済み**（全 36 フレームを新・視覚言語へ再構成。01 ホームは手本として全面再構築、
+> 残りは配色＋書体の一括リマップ済み）で、**ステッカー化・棒人間配置・瑠璃淡状態などの残ポリッシュを人間が仕上げる**
+> 段階にある（実施記録と残作業は [`../figma-redesign-spec.md`](../figma-redesign-spec.md) §7）。以後 Figma は
+> **実装に追従する follower** であり、実装と食い違う場合は**実装を正**とする。本票の「Figma 対応」節は履歴・
+> レイアウト参照として残すが、意匠（色・書体・意匠様式）の正は ADR-0033＋`apps/web` である。
 
 各画面を実装可能な粒度の要件票に落とす。**1ファイル＝1系**（会話フェーズは系内の状態を票に内包）。
 Figma フレーム（fileKey `eI6QvvCEO021zpdMmxr8Iq` / node `31:2`）とは 1:1 で対応するが、色・書体・意匠の正は実装側。
@@ -67,6 +68,8 @@ Figma フレーム（fileKey `eI6QvvCEO021zpdMmxr8Iq` / node `31:2`）とは 1:1
 - **機能名で書く**：矛盾検知（`contradiction_detector`）/ 抜け検知（`scope_specialist`・`nfr_specialist`）/
   インタビュー統括（`interview_lead`）。
 - **表示コピーは全面古語**（デモ演出）。ただし**機能名・契約・コードは機能名**で書き、**a11y ラベルは現代語**
-  （[ADR-0017](../../adr/0017-figma-canonical-onepath-archaic-copy.md)）。色トークン: **矛盾=緋 `#D2564B` / 抜け=黄土 `#E0A93B`**
-  （意味↔色のマッピング・[`../README.md`](../README.md) §4 由来）。**色のみに依存せずラベル＋アイコン併記**。
+  （[ADR-0017](../../adr/0017-figma-canonical-onepath-archaic-copy.md)）。色トークン（**現行 ADR-0033**）:
+  **矛盾=朱 `--sanba-rec` `#E0402A`（文字は `--sanba-rec-text` `#C43A20`）/ 抜け=山吹 `--sanba-caution` `#7D560B`**
+  （旧 `緋 #D2564B / 黄土 #E0A93B` は Superseded。実体は `apps/web/app/globals.css` と `lib/realtime/mapping.ts`）。
+  **色のみに依存せずラベル＋アイコン併記**。
 - アクセシビリティ：親指操作（タップ領域44px以上）、字幕の可読性、状態色は色のみに依存しない（アイコン/ラベル併記）。
