@@ -44,6 +44,8 @@ beforeEach(() => {
   vi.stubEnv("NEXT_PUBLIC_GOOGLE_CLIENT_ID", "test-client-id.apps.googleusercontent.com");
   vi.resetModules();
   vi.useFakeTimers();
+  // credential 到着でヒントが書かれるため、テスト間で持ち越さない。
+  window.localStorage.clear();
   capturedListener = null;
   capturedCallback = null;
   initialize.mockClear();
@@ -100,5 +102,66 @@ describe("useGoogleAuth settle race (#192)", () => {
     act(() => capturedCallback?.({ credential: makeJwt() }));
     expect(result.current.loggedIn).toBe(true);
     expect(result.current.ready).toBe(true);
+  });
+});
+
+// ログイン痕跡ヒント（AUTH_HINT_KEY）: 「ログイン済みでフルロードすると固定 2.5s の settle が
+// One Tap 復元より先に発火し、毎回 /login を経由してから元ページへ戻る」バグの回帰テスト。
+// ヒントがあるブラウザでは復元を長めに待ち、保護ページへ直接入れるようにする。
+describe("useGoogleAuth ログイン痕跡ヒント（復元待ちの延長）", () => {
+  it("credential 到着でヒントが書かれ、signOut で消える", async () => {
+    const { useGoogleAuth, AUTH_HINT_KEY } = await import("./auth");
+    const { result } = renderHook(() => useGoogleAuth());
+
+    act(() => capturedCallback?.({ credential: makeJwt() }));
+    expect(window.localStorage.getItem(AUTH_HINT_KEY)).toBe("1");
+
+    act(() => result.current.signOut());
+    expect(window.localStorage.getItem(AUTH_HINT_KEY)).toBeNull();
+  });
+
+  it("ヒントありでは 2.5s では settle せず、復元（credential 到着）を待てる", async () => {
+    const { useGoogleAuth, AUTH_HINT_KEY } = await import("./auth");
+    window.localStorage.setItem(AUTH_HINT_KEY, "1");
+    const { result } = renderHook(() => useGoogleAuth());
+
+    // 従来の固定値（2.5s）を過ぎても未ログイン確定にしない＝/login への誤送を防ぐ。
+    act(() => {
+      vi.advanceTimersByTime(2500);
+    });
+    expect(result.current.ready).toBe(false);
+
+    // 遅れて届いた復元をそのまま受けてログイン状態で解決する。
+    act(() => capturedCallback?.({ credential: makeJwt() }));
+    expect(result.current.loggedIn).toBe(true);
+    expect(result.current.ready).toBe(true);
+  });
+
+  it("ヒントありでも延長上限で settle し、復元できなければヒントを消す（次回は長待ちしない）", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    const { useGoogleAuth, AUTH_HINT_KEY } = await import("./auth");
+    window.localStorage.setItem(AUTH_HINT_KEY, "1");
+    const { result } = renderHook(() => useGoogleAuth());
+
+    act(() => {
+      vi.advanceTimersByTime(8000);
+    });
+    expect(result.current.ready).toBe(true);
+    expect(result.current.loggedIn).toBe(false);
+    expect(window.localStorage.getItem(AUTH_HINT_KEY)).toBeNull();
+    expect(info).toHaveBeenCalledWith("[auth] silent restore timed out; clearing auth hint");
+    info.mockRestore();
+  });
+
+  it("復元済みならタイマー満了でもヒントを消さない（ログイン継続の痕跡を保つ）", async () => {
+    const { useGoogleAuth, AUTH_HINT_KEY } = await import("./auth");
+    window.localStorage.setItem(AUTH_HINT_KEY, "1");
+    renderHook(() => useGoogleAuth());
+
+    act(() => capturedCallback?.({ credential: makeJwt() }));
+    act(() => {
+      vi.advanceTimersByTime(8000);
+    });
+    expect(window.localStorage.getItem(AUTH_HINT_KEY)).toBe("1");
   });
 });
