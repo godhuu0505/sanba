@@ -1,6 +1,6 @@
 """FastAPI app: create sessions, issue invite-gated LiveKit tokens.
 
-Access model (see issue #8):
+Access model:
   1. POST /api/sessions          -> owner creates a room, gets signed invites per role.
   2. POST /api/sessions/join     -> a guest exchanges a valid invite for a scoped,
                                     short-lived LiveKit token. Joining an arbitrary
@@ -12,7 +12,7 @@ agent worker is dispatched to the same room name automatically.
 本モジュールは薄い組み立て層のみを持つ: app 生成・join レートリミット middleware・
 CORS・observability・ドメイン別ルータ（routers/*）の登録。各エンドポイントは
 routers/{sessions,github_link,products,members,admin}.py、シングルトンと横断ヘルパは
-deps.py に住む（main.py からの純粋なモジュール分割で挙動は不変）。
+deps.py に住む。
 """
 
 from __future__ import annotations
@@ -78,10 +78,10 @@ app = FastAPI(title="SANBA API", version="0.2.0")
 
 @app.middleware("http")
 async def _rate_limit_join(request: Request, call_next: Any) -> Any:
-    """join のレートリミットを body 解析より前（ミドルウェア層）で適用する（#258 / #80）。
+    """join のレートリミットを body 解析より前（ミドルウェア層）で適用する。
 
     FastAPI ルートの依存性（Depends）は request body の読み取り・JSON/Pydantic 解析の後に
-    解決される（routing.py: body→solve_dependencies の順）。そのため依存性版（#80）は、未認証
+    解決される（routing.py: body→solve_dependencies の順）。そのため依存性版は、未認証
     スパムが壊れた/巨大 JSON を送ると解析コストだけを発生させ続けられる穴が残っていた。Starlette
     の HTTP ミドルウェアは body 読み取り前に走るので、POST /api/sessions/join のみ上限判定し、
     超過時は body に触れず 429 を返す。CORS より内側で動くよう CORS の前に登録し、429 応答にも
@@ -95,7 +95,7 @@ async def _rate_limit_join(request: Request, call_next: Any) -> Any:
         client_ip = request.client.host if request.client else "unknown"
         if _over_rate_limit(client_ip):
             # 認証より前に短絡するため auth イベントに現れない。DoS 緩和の発火をログ＋
-            # メトリクスで本番検知できるようにする（#257 Codex / CLAUDE.md 原則3）。
+            # メトリクスで本番検知できるようにする（CLAUDE.md 原則3）。
             log.warning(
                 "join_rate_limited", client_ip=client_ip, limit=settings.join_rate_per_minute
             )

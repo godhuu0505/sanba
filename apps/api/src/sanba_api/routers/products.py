@@ -605,7 +605,7 @@ class ProductInviteResponse(BaseModel):
 
 class ProductJoinRequest(BaseModel):
     token: str
-    # 録音・AI 処理への同意（issue #10）。セッション作成を伴うため create_session と同じゲート。
+    # 録音・AI 処理への同意。セッション作成を伴うため create_session と同じゲート。
     consent_acknowledged: bool = False
 
 

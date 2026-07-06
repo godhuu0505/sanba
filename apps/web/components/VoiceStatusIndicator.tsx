@@ -1,6 +1,6 @@
 "use client";
 
-// 会話の音声状態を常時可視化するインジケータ（#248 / 監査 B-4 #20）。
+// 会話の音声状態を常時可視化するインジケータ（監査 B-4）。
 // Figma 04 会話フェーズの「リスニング中／発話中／読み上げ中」状態表示に対応する。
 // 状態源は 2 系統:
 //   - realtime の status.phase（listening 等 / realtime-contract §3）= ユーザー発話の聞き取り。
@@ -51,7 +51,7 @@ export function resolveVoiceStatus({
   if (agentSpeaking) return "agent-speaking";
   if (phase === "listening" && micOn) return "listening";
   // recognizing（認識中）/deliberating（検討中）/idle/phase 未指定や micOn=false は「待機中」。
-  // これらの細分表示（例: 認識中の partial 連動）は #248 のスコープ外（agentSpeaking で発話は拾える）。
+  // これらの細分表示（例: 認識中の partial 連動）はスコープ外（agentSpeaking で発話は拾える）。
   return "idle";
 }
 

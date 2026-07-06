@@ -1,8 +1,4 @@
-"""Tests for the GitHub connector pure logic (issue #7, no network).
-
-Issue 本文の整形テストは sanba_shared/tests/test_result_document.py に移した
-（開発者向け出力フォーマット + 共有レンダラへ一本化 / ADR-0043 決定3）。
-"""
+"""Tests for the GitHub connector pure logic (no network)."""
 
 from __future__ import annotations
 
@@ -24,8 +20,7 @@ def test_issues_to_passages_skips_pull_requests() -> None:
 
 def test_seed_github_context_skips_when_repo_indexed(monkeypatch) -> None:
     # セッションの repo が GitHub App 経由で ES 索引済み（index_status が none/failed 以外）
-    # なら connector seed を走らせない（repo 本体 chunk と README/Issue seed の二重化を防ぐ /
-    # ADR-0028・Codex P2）。
+    # なら connector seed を走らせない（repo 本体 chunk と README/Issue seed の二重化を防ぐ）。
     from sanba_shared.models import GitHubIndexStatus, SessionMeta
     from sanba_shared.repository import SessionRepository
 
@@ -54,15 +49,15 @@ def test_seed_github_context_skips_when_repo_indexed(monkeypatch) -> None:
     assert grounding.is_memory
 
     resolved = agent_main._resolve_github_repo(repo, "sess-1")
-    assert resolved == "octo/linked"  # 解決はセッション選択が最優先（ADR-0027）
+    assert resolved == "octo/linked"  # 解決はセッション選択が最優先
     agent_main.seed_github_context(grounding, "sess-1", repo, resolved)
     # connector の fetch は呼ばれず、何も索引されない。
     assert grounding._mem == []
 
 
 def test_seed_github_context_seeds_selected_repo_without_app_index(monkeypatch) -> None:
-    # ES 索引が無い（App 未連携の connector 選択 / ADR-0027）場合は、解決された repo を
-    # connector で seed する（#283 の挙動が正であることの担保）。
+    # ES 索引が無い（App 未連携の connector 選択）場合は、解決された repo を
+    # connector で seed する。
     from sanba_shared.models import SessionMeta
     from sanba_shared.repository import SessionRepository
 
@@ -103,7 +98,7 @@ def test_seed_github_context_seeds_selected_repo_without_app_index(monkeypatch) 
 
 
 def test_resolve_github_repo_prefers_session_selection(monkeypatch) -> None:
-    """02 準備で選んだリポジトリが環境変数より優先される（ADR-0027）。"""
+    """02 準備で選んだリポジトリが環境変数より優先される。"""
     from sanba_shared.models import SessionMeta
     from sanba_shared.repository import SessionRepository
 
@@ -147,7 +142,7 @@ def test_resolve_github_repo_falls_back_to_env(monkeypatch) -> None:
 
 def test_resolve_github_repo_missing_session_is_fail_closed(monkeypatch) -> None:
     """セッション文書が無い（未作成/削除済み/誤設定の空ストア）は既定リポへ流さない
-    （Codex P2: 選択値を確認できないときは連携しない扱い = fail-closed）。"""
+    （選択値を確認できないときは連携しない扱い = fail-closed）。"""
     from sanba_shared.repository import SessionRepository
 
     from sanba_agent.config import settings
@@ -159,7 +154,7 @@ def test_resolve_github_repo_missing_session_is_fail_closed(monkeypatch) -> None
 
 
 def test_resolve_github_repo_respects_explicit_opt_out(monkeypatch) -> None:
-    """空文字 = 明示的な「連携しない」。環境変数へフォールバックしない（Codex P2）。"""
+    """空文字 = 明示的な「連携しない」。環境変数へフォールバックしない。"""
     from sanba_shared.models import SessionMeta
     from sanba_shared.repository import SessionRepository
 

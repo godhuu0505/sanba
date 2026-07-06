@@ -80,9 +80,9 @@ class GroundingStore:
     def _ensure_index(self) -> None:  # pragma: no cover - needs live ES
         if self._client.indices.exists(index=INDEX):
             # 既存 index は PR 以前の mapping で作られている可能性がある。session_id が keyword で
-            # 無いと term フィルタ（session スコープ / ADR-0028）がヒットせず context が検索から
+            # 無いと term フィルタ（session スコープ）がヒットせず context が検索から
             # 消えるため、起動時に keyword mapping を明示する（既に keyword なら冪等・型衝突時は
-            # ログのみで会話は止めない / Codex P2）。
+            # ログのみで会話は止めない）。
             try:
                 self._client.indices.put_mapping(
                     index=INDEX, properties={"session_id": {"type": "keyword"}}
@@ -112,7 +112,7 @@ class GroundingStore:
     def index_passage(
         self, text: str, source: str, kind: str, session_id: str | None = None
     ) -> None:
-        # Mask PII before anything is persisted to the grounding store (issue #10).
+        # Mask PII before anything is persisted to the grounding store.
         if settings.mask_pii_before_index:
             text = mask_pii(text)
         if self._client is None:
@@ -223,7 +223,7 @@ class GroundingStore:
         for doc in docs:
             if kinds and doc.kind not in kinds:
                 continue
-            # context（セッション固有素材）は当該セッションのものだけを返す（ADR-0028 隔離）。
+            # context（セッション固有素材）は当該セッションのものだけを返す。
             if session_id is not None and doc.kind == "context" and doc.session_id != session_id:
                 continue
             overlap = len(tokens & tokenize(doc.text))

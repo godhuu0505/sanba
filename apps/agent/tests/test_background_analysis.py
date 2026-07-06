@@ -34,8 +34,8 @@ class FakeClock:
 
 def test_needs_min_new_utterances() -> None:
     s = AnalysisScheduler(clock=FakeClock())
-    assert s.note_utterance() is False  # 1 件目では発火しない
-    assert s.note_utterance() is True  # 2 件目で発火
+    assert s.note_utterance() is False
+    assert s.note_utterance() is True
 
 
 def test_running_blocks_new_start() -> None:
@@ -43,8 +43,8 @@ def test_running_blocks_new_start() -> None:
     s.note_utterance()
     s.note_utterance()
     s.start()
-    assert s.pending == 0  # 実行開始で差分はゼロに戻る
-    assert s.note_utterance() is False  # 実行中は発火しない（機内 1 件）
+    assert s.pending == 0
+    assert s.note_utterance() is False
     assert s.note_utterance() is False
 
 
@@ -56,7 +56,7 @@ def test_min_interval_blocks_until_elapsed() -> None:
     s.start()
     s.finish()
     s.note_utterance()
-    assert s.note_utterance() is False  # 差分 2 件でも 20 秒未満は発火しない
+    assert s.note_utterance() is False
     clock.advance(20.0)
     assert s.note_utterance() is True
 
@@ -75,7 +75,7 @@ def test_finish_requests_followup_only_when_due() -> None:
     s.note_utterance()
     s.note_utterance()
     clock.advance(20.0)
-    assert s.finish() is True  # 間隔も満ちていれば追い掛け実行
+    assert s.finish() is True
 
 
 # ---- SANBAAgent 統合 --------------------------------------------------------
@@ -121,7 +121,7 @@ async def test_background_analysis_publishes_detections(
     assert len(calls) == 1
     types = [t["event"]["type"] for t in transport.sent]
     assert "detection.gap" in types, "背景実行でも検知カードへ publish される"
-    # 背景実行は不可視: deliberating は出さない（ADR-0037 決定1 / ツール経路のみ）。
+    # 背景実行は不可視: deliberating は出さない。
     statuses = [
         t["event"]["payload"]["phase"] for t in transport.sent if t["event"]["type"] == "status"
     ]
@@ -202,7 +202,7 @@ async def test_background_analysis_timeout_is_fail_soft(
 
 @pytest.mark.asyncio
 async def test_drain_tasks_cancels_overdue() -> None:
-    # ドレン: 猶予内に終わるタスクは送り切り、超過分はキャンセルする（ADR-0037）。
+    # ドレン: 猶予内に終わるタスクは送り切り、超過分はキャンセルする。
     import asyncio
 
     from sanba_agent.main import _drain_tasks

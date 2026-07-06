@@ -1,4 +1,4 @@
-"""Read-side persistence for hydration APIs (Issue #100).
+"""Read-side persistence for hydration APIs.
 
 agent（apps/agent）が Firestore に書いた要件・検知を、web のハイドレーション
 （契約 §4）向けに読み出す。レスポンス schema は契約 §2/§3 の `requirement` /
@@ -25,7 +25,7 @@ def requirement_doc_to_contract(doc: dict[str, Any]) -> dict[str, Any]:
     # 会話の確定軸（contract: draft|confirmed）と管理レビュー軸（draft|approved|rejected,
     # ADR-0014）は別物。永続モデル Requirement.status は管理軸（既定 draft）で保存されるため、
     # それを会話軸へそのまま流すと save_requirement 由来の確定要件がすべて draft 扱いになり、
-    # hydration / finalize / export の確定件数が 0 にずれる（Codex P1）。save_requirement で
+    # hydration / finalize / export の確定件数が 0 にずれる。save_requirement で
     # 保存された要件は会話上「確定」なので confirmed とし、管理画面で却下(rejected)された
     # ものだけ draft（非確定＝起票/確定の対象外）に落とす。approved は確定の上位なので confirmed。
     admin_status = doc.get("status")
@@ -65,7 +65,7 @@ class ReadRepository:
         self._mem_requirements: dict[str, list[dict[str, Any]]] = {}
         self._mem_detections: dict[str, list[dict[str, Any]]] = {}
         self._mem_seq: dict[str, int] = {}
-        # 現在質問ポインタ（#212 / ADR-0020）。active or tombstone（cleared）の単一ドキュメント。
+        # 現在質問ポインタ（ADR-0020）。active or tombstone（cleared）の単一ドキュメント。
         self._mem_questions: dict[str, dict[str, Any]] = {}
 
     @staticmethod
@@ -106,7 +106,7 @@ class ReadRepository:
         return [requirement_doc_to_contract(d) for d in raw]
 
     def get_requirements_by_ids(self, session_id: str, ids: list[str]) -> list[dict[str, Any]]:
-        """指定 ID の要件のみを契約形で取得する（#213 export スナップショット）。
+        """指定 ID の要件のみを契約形で取得する（export スナップショット）。
 
         finalize 時に固定した `finalized_requirement_ids` を渡し、確定時集合だけを起票する
         ために使う。現在の status には依存せず ID 集合で取得するため、確定後に却下/追加されても

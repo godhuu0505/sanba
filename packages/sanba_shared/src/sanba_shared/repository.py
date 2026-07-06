@@ -101,7 +101,7 @@ class SessionRepository:
 
     def __init__(self, data_retention_days: int = 30, mask_pii_before_persist: bool = True) -> None:
         self._retention_days = data_retention_days
-        # 発話を永続化する前に PII をマスクするか（issue #10 / mask_pii_before_index）。
+        # 発話を永続化する前に PII をマスクするか。
         # ドメイン層は app config に依存しないので、呼び出し側 (agent/api) が注入する。
         self._mask_pii = mask_pii_before_persist
         self._client = self._init_client()
@@ -109,17 +109,17 @@ class SessionRepository:
         self._mem_sessions: dict[str, SessionMeta] = {}
         self._mem_utterances: dict[str, list[Utterance]] = {}
         self._mem_requirements: dict[str, dict[str, Requirement]] = {}
-        # 検知 (矛盾/抜け) と適用済み最大 seq (#94/#100)。ハイドレーションの土台。
+        # 検知 (矛盾/抜け) と適用済み最大 seq。ハイドレーションの土台。
         self._mem_detections: dict[str, dict[str, dict[str, Any]]] = {}
         self._mem_seq: dict[str, int] = {}
-        # lossy（status/transcript.partial）の epoch（再起動ごとに +1 / #270・ADR-0021）。
+        # lossy（status/transcript.partial）の epoch（再起動ごとに +1 / ADR-0021）。
         # 起動時にここから lossy_seq の開始基底を払い出し、再起動を跨いで lossy_seq を
         # 大域的に単調増加させる（接続維持中の web が再起動後の lossy を黙殺しないように）。
         self._mem_lossy_epoch: dict[str, int] = {}
-        # 投入済み素材のメタ (#184)。GET context/files の復元に使う。プロセス内に閉じず外部
+        # 投入済み素材のメタ。GET context/files の復元に使う。プロセス内に閉じず外部
         # ストアへ永続化することで、多インスタンス/再起動後のリロード/途中参加でも復元できる。
         self._mem_materials: dict[str, dict[str, dict[str, Any]]] = {}
-        # 現在の未回答質問の単一ポインタ (#212 / ADR-0020)。最新1問モデルなのでセッション
+        # 現在の未回答質問の単一ポインタ (ADR-0020)。最新1問モデルなのでセッション
         # ごとに 1 ドキュメント。tombstone（cleared）も含めて保持し GET で cleared_seq を返す。
         self._mem_questions: dict[str, dict[str, Any]] = {}
         # ユーザーの GitHub App 連携 (`users/{sub}` / ADR-0028)。sub -> GitHubLink。
@@ -152,7 +152,7 @@ class SessionRepository:
             return None
 
     def _expire_at(self) -> datetime | None:
-        """Retention deadline for stored data (issue #10). None = keep indefinitely.
+        """Retention deadline for stored data. None = keep indefinitely.
 
         Firestore deletes documents whose `expireAt` field is in the past, once a TTL
         policy is enabled on that field (see infra/terraform + docs/security.md).
@@ -186,9 +186,9 @@ class SessionRepository:
         return list(self._mem_sessions.values())
 
     def list_sessions_by_owner(self, owner_sub: str) -> list[SessionMeta]:
-        """呼び出しユーザー本人 (owner_sub) のセッションだけを新しい順で返す (#250)。
+        """呼び出しユーザー本人 (owner_sub) のセッションだけを新しい順で返す。
 
-        ホームの「過去の要件を見る」履歴リスト (#215) の供給元。認可は本人限定なので、
+        ホームの「過去の要件を見る」履歴リストの供給元。認可は本人限定なので、
         `list_sessions` の全件ではなく owner_sub で必ず絞る。Firestore は owner_sub の
         等価クエリ、in-memory はフィルタで同じ意味にする。並びは created_at 降順 (新しい
         ものを上に)。複合インデックス不要なよう order_by は使わずアプリ側で整列する。
@@ -219,19 +219,19 @@ class SessionRepository:
         confirmed_count: int,
         finalized_requirement_ids: list[str],
     ) -> SessionMeta | None:
-        """07 判定の「確定」を永続化する（#186 / #213）。
+        """07 判定の「確定」を永続化する。
 
         セッションを finalized にし、確定した要件件数・確定時の要件 ID 集合・刻を刻む。
         存在しなければ None。要件そのものの承認（draft→approved / TTL 解除）はここでは
         触れず、呼び出し側（API の finalize エンドポイント）が set_requirement_status で
         行う。確定スナップショットはあくまでセッション単位の不可逆マーカ。
-        `finalized_requirement_ids` は export が固定集合を起票する土台（#213）。
+        `finalized_requirement_ids` は export が固定集合を起票する土台。
         """
         meta = self.get_session(session_id)
         if meta is None:
             return None
         # 不可逆マーカ: 既に finalized なら最初のスナップショット（件数・ID集合・刻）を保持
-        # して返す（Codex P2）。確定後に要件が増減/二重 POST されても初回確定値を変えない。
+        # して返す。確定後に要件が増減/二重 POST されても初回確定値を変えない。
         if meta.status == "finalized":
             return meta
         snapshot_ids = list(finalized_requirement_ids)
@@ -1092,7 +1092,7 @@ class SessionRepository:
 
     # ---- Utterances --------------------------------------------------------
     def add_utterance(self, session_id: str, utterance: Utterance) -> None:
-        # PII を含みうる発話は永続化前にマスクする（issue #10 / #130 / mask_pii_before_index）。
+        # PII を含みうる発話は永続化前にマスクする。
         # grounding 索引は retrieval/ingestion 側でマスク済みだが、Firestore 保存経路でも
         # 同じ方針を適用し、生 PII が at-rest で残らないようにする。
         stored = utterance
@@ -1222,12 +1222,12 @@ class SessionRepository:
             self._mem_requirements.setdefault(session_id, {})[rid] = updated
         return updated
 
-    # ---- Detections (#94/#100) ---------------------------------------------
+    # ---- Detections ---------------------------------------------------------
     def save_detection(self, session_id: str, detection: dict[str, Any]) -> None:
-        """検知 (矛盾/抜け) を Firestore に upsert する (#94/#100)。
+        """検知 (矛盾/抜け) を Firestore に upsert する。
 
         ハイドレーション (GET /detections?open=1) でリロード/途中参加時に未解消検知を
-        復元できるよう、publish だけでなく永続化する (Codex review 対応)。
+        復元できるよう、publish だけでなく永続化する。
         """
         detection_id = detection["id"]
         if self._client is not None:
@@ -1260,9 +1260,9 @@ class SessionRepository:
         if existing is not None:
             existing.update(patch)
 
-    # ---- Materials (#184) --------------------------------------------------
+    # ---- Materials -----------------------------------------------------------
     def save_material(self, session_id: str, material: dict[str, Any]) -> None:
-        """投入済み素材のメタ (id/name/kind/status/extracted) を upsert する (#184)。
+        """投入済み素材のメタ (id/name/kind/status/extracted) を upsert する。
 
         GET /context/files でリロード/途中参加時に実ファイル名・解析状態を復元できるよう、
         プロセス内ではなく外部ストアに永続化する (Cloud Run の多インスタンス/再起動対策)。
@@ -1284,7 +1284,7 @@ class SessionRepository:
         self._mem_materials.setdefault(session_id, {})[material_id] = dict(material)
 
     def list_materials(self, session_id: str) -> list[dict[str, Any]]:
-        """セッションに投入された素材メタの一覧 (#184)。"""
+        """セッションに投入された素材メタの一覧。"""
         if self._client is not None:
             docs = (
                 self._client.collection("sessions")
@@ -1313,7 +1313,7 @@ class SessionRepository:
         return self._mem_materials.get(session_id, {}).get(asset_id)
 
     def delete_material(self, session_id: str, asset_id: str) -> bool:
-        """投入済み素材メタを削除する (#245 真の破棄)。実体を消したら True (冪等)。
+        """投入済み素材メタを削除する（真の破棄）。実体を消したら True (冪等)。
 
         GET /context/files (list_materials) から外し、リロード/再接続での復活を止める。
         中断確定で DELETE /context/file/{asset_id} から呼ばれる。存在しない asset_id でも
@@ -1336,7 +1336,7 @@ class SessionRepository:
             return True
         return False
 
-    # ---- Current question (#212 / ADR-0020) --------------------------------
+    # ---- Current question (ADR-0020) -----------------------------------------
     def save_current_question(
         self, session_id: str, question: dict[str, Any], asked_seq: int
     ) -> None:
@@ -1346,7 +1346,7 @@ class SessionRepository:
         `GET /questions/current` が金枠ピンを復元できるよう、**publish の前に**確定させる
         （順序は §5-1。送信成功〜保存完了の窓で復元失敗が起きないようにする）。
         `expireAt` 付き（発話/draft 要件と同じ 30 日 TTL）。承認のような保全対象ではないため、
-        未回答のまま離脱したら他の一過性データと同じく TTL で消える（§5-8 / issue #10）。
+        未回答のまま離脱したら他の一過性データと同じく TTL で消える（§5-8）。
         `asked_seq` はその問いが publish された envelope seq。GET の順序情報に使う（§3）。
         """
         doc: dict[str, Any] = {
@@ -1433,7 +1433,7 @@ class SessionRepository:
 
         Cloud Run 再起動・再参加後に EventPublisher の seq をここからシードし、seq が 0 へ
         戻らず単調増加を継ぐ。web の seq ガードが再起動後イベントを黙殺しないようにする
-        （#123・ADR-0021）。
+        （ADR-0021）。
         """
         if self._client is not None:
             snap = self._client.collection("sessions").document(session_id).get()
@@ -1444,12 +1444,12 @@ class SessionRepository:
         return self._mem_seq.get(session_id, 0)
 
     def get_startup_seq(self, session_id: str) -> int:
-        """起動時の reliable seq シードを返す（#270 補完・ADR-0021）。
+        """起動時の reliable seq シードを返す（ADR-0021）。
 
         last_seq（set_session_seq で保存）に加え、current question の asked_seq/cleared_seq
         も読み、その最大値を返す。question.asked/cleared は set_session_seq を呼ばないが
         publisher._seq を消費するため（§3 設計制約）、再起動後に seq が後退して web の
-        status ガード（event.seq < lastStatusSeq）に弾かれる窓を塞ぐ（#270）。
+        status ガード（event.seq < lastStatusSeq）に弾かれる窓を塞ぐ。
         """
         base = self.get_session_seq(session_id)
         if self._client is not None:
@@ -1466,7 +1466,7 @@ class SessionRepository:
         return base
 
     def reserve_session_seq(self, session_id: str, count: int = 1) -> int:
-        """次の seq を count 個アトミックに予約し、予約区間の先頭 seq を返す（#145・ADR-0021）。
+        """次の seq を count 個アトミックに予約し、予約区間の先頭 seq を返す（ADR-0021）。
 
         API も agent と同じセッション seq 空間へ realtime を publish する（ADR-0023）。両者が
         並行しても単調増加を崩さないよう、last_seq をトランザクションで進めて区間を確保する。
@@ -1502,11 +1502,11 @@ class SessionRepository:
     LOSSY_EPOCH_BLOCK = 1_000_000_000
 
     def reserve_lossy_seq_base(self, session_id: str) -> int:
-        """この起動の lossy_seq 開始基底を払い出す（#270・ADR-0021）。
+        """この起動の lossy_seq 開始基底を払い出す（ADR-0021）。
 
         lossy（status/transcript.partial）の `lossy_seq` は ephemeral でプロセス再起動時に 0 へ
         戻るが、接続を維持している web は再起動前の `lossy_seq` 高水位を保持しているため、0 から
-        振り直すと再起動後の lossy が黙殺される（#123 が reliable seq で解いた退行の lossy 版）。
+        振り直すと再起動後の lossy が黙殺される（reliable seq と同種の退行）。
         起動ごとに epoch を +1 し、`epoch * BLOCK` を lossy_seq の開始基底として返すことで、
         再起動後の lossy_seq が必ず以前を上回り、大域的に単調増加する。epoch の採番は
         Firestore トランザクションで原子的に行う（複数 worker の同時起動に耐える）。

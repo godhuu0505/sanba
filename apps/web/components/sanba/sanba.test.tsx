@@ -92,7 +92,7 @@ describe("SANBA design system", () => {
     expect(screen.queryByText("検める ›")).toBeNull();
   });
 
-  // #162: 複数子（icon/title/trailing）を持つ行でも asChild がクラッシュせず host 要素に化ける。
+  // 複数子（icon/title/trailing）を持つ行でも asChild がクラッシュせず host 要素に化ける。
   it("ListRow asChild は複数子のままアンカー化し内容を内包する（Slot 複数子クラッシュ回避）", () => {
     render(
       <ListRow asChild icon={<span>📷</span>} title="カメラで撮る" subtitle="写真を解析">

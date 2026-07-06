@@ -1,9 +1,9 @@
 """interview_mode 分岐と glossary シード（ADR-0032 決定6・7 / PR7）のテスト。
 
 `build_agent_instructions` がセッション文書のモードで instructions を切り替えること、
-end_user では glossary をシードし repo 前提を**シードしない**こと（決定8 が PR8 で
-入るまでの暫定フェイルクローズ / #321）、読めないときは developer に安全側で
-フォールバックすることを、LiveKit ランタイム無しのメモリ fallback で検証する。
+end_user では glossary をシードし repo 前提を**シードしない**こと、読めないときは
+developer に安全側でフォールバックすることを、LiveKit ランタイム無しのメモリ fallback
+で検証する。
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ from sanba_agent.prompts.interview import (
     build_language_directive,
 )
 
-# 全モードの初期 instructions 末尾に付く言語固定指示（ADR-0039）。既定 GEMINI_LANGUAGE から
+# 全モードの初期 instructions 末尾に付く言語固定指示。既定 GEMINI_LANGUAGE から
 # 決まるため、素の instructions と比較するテストは基準にこの接尾辞を足す。
 _LANG = build_language_directive(settings.gemini_language)
 
@@ -101,7 +101,7 @@ def test_end_user_session_switches_persona_and_seeds_glossary() -> None:
 
 
 def test_end_user_session_never_seeds_repo_premise() -> None:
-    """#321 暫定フェイルクローズ: repo 紐づけがあっても end_user には前提化しない。"""
+    """repo 紐づけがあっても end_user には前提化しない（フェイルクローズ）。"""
     repo = _repo()
     repo.create_product(Product(id="prod-1", name="請求アプリ", owner_sub="owner"))
     _seed_session(repo, mode=InviteScope.END_USER, product_id="prod-1", github_repo="octo/secret")
@@ -247,7 +247,7 @@ def test_opening_instructions_selected_by_mode() -> None:
     assert opening_instructions(InviteScope.END_USER) == END_USER_OPENING_INSTRUCTIONS
 
 
-# ---- セッション準備情報の前提化（ADR-0035）--------------------------------------
+# ---- セッション準備情報の前提化--------------------------------------
 def test_developer_session_seeds_prep_premise_before_repo_premise() -> None:
     repo = _repo()
     _seed_session(
@@ -308,7 +308,7 @@ def test_seed_github_context_is_importable_for_developer_path() -> None:
     _seed_session(repo, mode=InviteScope.DEVELOPER)
 
     class _Grounding:
-        def index_passage(self, **kwargs: object) -> None:  # pragma: no cover - no-op 期待
+        def index_passage(self, **kwargs: object) -> None:  # pragma: no cover
             raise AssertionError("connector disabled なら index されない")
 
     seed_github_context(_Grounding(), "s1", repo, "")  # type: ignore[arg-type]

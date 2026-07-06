@@ -1,4 +1,4 @@
-"""本人セッション一覧 API (GET /api/sessions/mine) のテスト (#250)。
+"""本人セッション一覧 API (GET /api/sessions/mine) のテスト。
 
 - 認可は本人限定: 呼び出しユーザーの owner_sub と一致するものだけ返る (他人のは出ない)。
 - idToken 必須: require_user をオーバーライドせず、本番相当構成で未ログインなら 401。
@@ -164,9 +164,9 @@ def test_my_requirements_empty_items_when_none_recorded() -> None:
 
 
 def test_my_requirements_finalized_returns_frozen_snapshot_only() -> None:
-    """確定済みは finalize 時の凍結スナップショットだけを見せる（Codex P1）。
+    """確定済みは finalize 時の凍結スナップショットだけを見せる。
 
-    確定後に遅延 agent が追加した要件は、export と同様に過去要件閲覧にも混ぜない（#213）。
+    確定後に遅延 agent が追加した要件は、export と同様に過去要件閲覧にも混ぜない。
     """
     _seed("sess-1", "alice", created=datetime(2024, 6, 20, tzinfo=UTC))
     _seed_requirement("sess-1", "r1")

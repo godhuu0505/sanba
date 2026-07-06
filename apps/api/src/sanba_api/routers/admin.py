@@ -18,14 +18,14 @@ router = APIRouter()
 
 # ---- Admin: 運用画面 (ADR-0014) -------------------------------------------
 # すべて require_admin でガードする。閲覧は requirements のみ。生の発話 (utterances) は
-# プライバシー方針 (issue #10 / ADR-0014 §3) のため一切返さない。
+# プライバシー方針 (ADR-0014 §3) のため一切返さない。
 
 
 class AdminSessionSummary(SessionMeta):
     """管理者セッション一覧用レスポンスモデル。
 
     SessionMeta の射影。goal/goal_detail（準備フォームの自由記述・PII可）は
-    管理一覧に不要なため除外する（Codex comment 3524421531 対応）。
+    管理一覧に不要なため除外する。
     """
 
     goal: str | None = Field(default=None, exclude=True)

@@ -2,8 +2,8 @@
 
 Conversations may contain personal data (emails, phone numbers). We mask the
 obvious identifiers before they hit Firestore so the store never holds raw PII
-at rest (issue #10 / mask_pii_before_index). This is a pragmatic regex pass —
-Cloud DLP can replace it for higher recall.
+at rest. This is a pragmatic regex pass — Cloud DLP can replace it for higher
+recall.
 
 ドメイン層 (sanba_shared) に置くことで、永続化境界 (SessionRepository) が
 アプリ config に依存せずマスキングを掛けられる。agent/api 側の grounding 索引用

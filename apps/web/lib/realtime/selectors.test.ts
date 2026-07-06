@@ -10,7 +10,7 @@ import {
 import type { MaterialItem } from "./selectors";
 import type { AnalysisState, SessionState } from "./store";
 
-// #181: 通常質問（金枠）。選択肢があるときだけ問いピンの対象にする。
+// 通常質問（金枠）。選択肢があるときだけ問いピンの対象にする。
 describe("selectActiveQuestion", () => {
   const state = (question: SessionState["question"]): SessionState =>
     ({ question }) as SessionState;
@@ -29,7 +29,7 @@ describe("selectActiveQuestion", () => {
   });
 });
 
-// #184: 復元（hydrated）/投入直後（local）/ライブ（realtime）の素材行を asset_id で統合する。
+// 復元（hydrated）/投入直後（local）/ライブ（realtime）の素材行を asset_id で統合する。
 describe("mergeMaterials", () => {
   const item = (over: Partial<MaterialItem>): MaterialItem => ({
     id: "a1",
@@ -66,7 +66,7 @@ describe("mergeMaterials", () => {
     expect(merged.map((m) => m.id)).toEqual(["v1", "f1"]);
   });
 
-  // #219: 中断で破棄した素材は表示・件数から除く（ゾンビ行・遅延 analysis.* の復活を防ぐ）。
+  // 中断で破棄した素材は表示・件数から除く（ゾンビ行・遅延 analysis.* の復活を防ぐ）。
   it("cancelledIds の素材は除外する（遅延 realtime が来ても復活しない）", () => {
     const realtime = [
       item({ id: "a1", name: "a1", pct: 80, status: "analyzing" }),
@@ -87,7 +87,7 @@ describe("mergeMaterials", () => {
     expect(merged.map((m) => m.id)).toEqual(["u1"]);
   });
 
-  it("cancelled 行は同 id の realtime 後勝ちでも復活しない（cancelledIds 未指定・Codex P2）", () => {
+  it("cancelled 行は同 id の realtime 後勝ちでも復活しない（cancelledIds 未指定）", () => {
     // 破棄済み local 行（cancelled）と、遅延して届いた同 id の realtime 解析行。
     const local = [item({ id: "a1", name: "破棄.png", status: "cancelled" })];
     const realtime = [item({ id: "a1", name: "a1", pct: 60, status: "analyzing" })];
@@ -98,7 +98,7 @@ describe("mergeMaterials", () => {
 
 // 参考資料タブ（05）の素材ビューモデル。analysis.progress/visual 由来の AnalysisState を
 // MaterialsList が消費する MaterialItem へ寄せる純セレクタ。
-// 仕様: docs/design/conversation-experience.md §3,§6 / Issue #184（GET context/files）で name/失敗状態を補完予定。
+// 仕様: docs/design/conversation-experience.md §3,§6。GET context/files で name/失敗状態を補完予定。
 describe("selectMaterials", () => {
   const analysis = (over: Partial<AnalysisState>): AnalysisState => ({
     asset_id: "a1",
@@ -145,7 +145,7 @@ describe("selectMaterials", () => {
     expect(selectMaterials({ analysis: [] })).toEqual([]);
   });
 
-  // #143 / ADR-0023: API は失敗時 stage="failed" を pct=100 で送る。pct だけ見ると done と
+  // ADR-0023: API は失敗時 stage="failed" を pct=100 で送る。pct だけ見ると done と
   // 誤判定するため stage を優先して failed にし、再試行導線（MaterialsList）へ繋ぐ。
   it("stage='failed' は pct=100 でも failed（done と誤判定しない）", () => {
     expect(
@@ -160,7 +160,7 @@ describe("selectMaterials", () => {
   });
 });
 
-// 05-1 資料詳細（#202）。抽出要件の中身と言葉×画の矛盾を含む詳細ビューモデル。
+// 05-1 資料詳細。抽出要件の中身と言葉×画の矛盾を含む詳細ビューモデル。
 // conflicts は analysis.visual（store 既存形）を出所にし、detection.* に依存しない。
 describe("selectMaterialDetail", () => {
   const analysis = (over: Partial<AnalysisState>): AnalysisState => ({

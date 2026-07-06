@@ -55,7 +55,6 @@ def test_analyzes_and_marks_done() -> None:
     assert result == TaskResult("done", extracted=2)
     mat = repo.get_material("s1", "asset-abc")
     assert mat is not None and mat["status"] == "done" and mat["extracted"] == 2
-    # grounding へ投入されている（in-memory）。
     assert any(d["source"].startswith("asset:asset-abc") for d in indexer._mem)
 
 
@@ -93,7 +92,7 @@ def test_does_not_resurrect_deleted_material() -> None:
     repo = _repo_with_material()
 
     def _delete_then_analyze(_config, **_kw):
-        repo.delete_material("s1", "asset-abc")  # 解析中に破棄
+        repo.delete_material("s1", "asset-abc")
         return VideoAnalysis(observations=["[00:01] x"])
 
     result = process_video(
@@ -104,7 +103,7 @@ def test_does_not_resurrect_deleted_material() -> None:
         analyze=_delete_then_analyze,
     )
     assert result.status == "skipped" and result.reason == "deleted_during_analysis"
-    assert repo.get_material("s1", "asset-abc") is None  # 復活していない
+    assert repo.get_material("s1", "asset-abc") is None
 
 
 def test_local_path_rejects_oversized_bytes() -> None:

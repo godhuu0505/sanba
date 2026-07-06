@@ -1,4 +1,4 @@
-"""Tests for PII masking (issue #10)."""
+"""Tests for PII masking."""
 
 from __future__ import annotations
 

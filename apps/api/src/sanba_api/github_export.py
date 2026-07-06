@@ -1,4 +1,4 @@
-"""Requirement → GitHub Issue write-back for POST /export (Issue #100 / #39).
+"""Requirement → GitHub Issue write-back for POST /export.
 
 契約 §4 の `POST /export` は確定要件を GitHub Issue として起票し `issue_url` と
 確定要件数一致の `count` を返す。agent の `export_requirements_to_github` と整合する
@@ -51,9 +51,9 @@ def list_repos(  # pragma: no cover - network
 ) -> list[str]:
     """Return repo full names ("owner/name") the token can read, newest activity first.
 
-    02 準備「連携リポジトリ」の候補一覧（ADR-0027）。最大 max_pages * per_page 件
+    02 準備「連携リポジトリ」の候補一覧。最大 max_pages * per_page 件
     （既定 1000 件）まで全ページ取得する。**途中ページの失敗は部分結果を返さず空リスト**
-    にする（Codex P2: 部分一覧を成功扱いにすると UI が Select のみを出し、載らなかった
+    にする（部分一覧を成功扱いにすると UI が Select のみを出し、載らなかった
     正当なリポジトリを選べなくなる。空なら UI は手入力へフォールバックし開始を止めない）。
     """
     import httpx

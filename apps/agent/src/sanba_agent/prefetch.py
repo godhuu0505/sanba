@@ -22,7 +22,7 @@ from typing import Any
 
 from .retrieval import tokenize
 
-# 鮮度（ADR-0037 決定2）: ユーザー確定発話 2 ターンまたは 60 秒の短い方で失効。
+# 鮮度: ユーザー確定発話 2 ターンまたは 60 秒の短い方で失効。
 DEFAULT_TTL_SECONDS = 60.0
 DEFAULT_TTL_TURNS = 2
 # ツール query とプリフェッチ種 query の語彙重なり（containment 係数）の下限。
@@ -48,7 +48,7 @@ class PrefetchEntry:
     turn: int
     created_at: float
     # 背景検索の所要時間。ヒット時に「同期実行なら掛かっていた時間」の推定として記録する
-    # （latency_saved_ms メトリクス / ADR-0037 決定3）。
+    # （latency_saved_ms メトリクス）。
     search_seconds: float
 
 

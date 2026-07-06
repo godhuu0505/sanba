@@ -1,4 +1,4 @@
-"""API → web の realtime publish（アップロード素材の解析進捗 / #145・ADR-0023）。
+"""API → web の realtime publish（アップロード素材の解析進捗 / ADR-0023）。
 
 解析の実行主体である API が、解析の境界で ``analysis.progress`` を、完了で
 ``analysis.visual`` を LiveKit データチャネル（topic ``sanba.events``・reliable）へ
@@ -86,7 +86,7 @@ class LiveKitServerSender:
 
 
 class AnalysisPublisher:
-    """1 セッション分のアップロード解析イベントを契約準拠で publish する（#145）。"""
+    """1 セッション分のアップロード解析イベントを契約準拠で publish する。"""
 
     def __init__(
         self,
@@ -143,7 +143,7 @@ class AnalysisPublisher:
     ) -> dict[str, Any]:
         """解析完了を ``analysis.visual``(asset_id, extracted, conflicts) で通知する。
 
-        web は visual 受信で pct を 100 に固定し done と判定する（#209 案A）。``conflicts``
+        web は visual 受信で pct を 100 に固定し done と判定する。``conflicts``
         （言葉×画の矛盾 / ADR-0004）は突合実装までは空配列でよい（ADR-0023 §2）。
         """
         return await self._emit(

@@ -33,7 +33,7 @@ def record_auth_event(result: str) -> None:
         pass
 
 
-# join エンドポイントのレートリミット発火カウンタ（#80 / #257 Codex 指摘）。IP 単位は
+# join エンドポイントのレートリミット発火カウンタ。IP 単位は
 # 認証より前に 429 で短絡するため、auth イベント（sanba_auth_events_total）には現れない。
 # DoS 緩和が本番で実際に発動しているかを計測する（CLAUDE.md 原則3）。
 _rate_limit_counter = metrics.get_meter("sanba_api.ratelimit").create_counter(
@@ -45,7 +45,7 @@ _rate_limit_counter = metrics.get_meter("sanba_api.ratelimit").create_counter(
 def record_rate_limited(limiter: str = "ip") -> None:
     """join レートリミット発火（429 短絡）を計上する。
 
-    limiter=ip: ミドルウェアの IP 単位（#80）。limiter=invite: 深掘りリンク単位
+    limiter=ip: ミドルウェアの IP 単位。limiter=invite: 深掘りリンク単位
     （ADR-0032 決定5 / FR-2.6）。
     """
     try:
@@ -54,7 +54,7 @@ def record_rate_limited(limiter: str = "ip") -> None:
         pass
 
 
-# マルチモーダル素材（画像/動画）アップロードのカウンタ（issue #103）。kind/result で分類し、
+# マルチモーダル素材（画像/動画）アップロードのカウンタ。kind/result で分類し、
 # 「何枚の素材が、解析まで通ったか」を計測する（契約 §5 / CLAUDE.md 原則3）。
 _asset_counter = metrics.get_meter("sanba_api.assets").create_counter(
     "sanba_asset_uploads_total",
@@ -70,7 +70,7 @@ def record_asset_upload(kind: str, result: str) -> None:
         pass
 
 
-# 現在質問ハイドレーション（GET /questions/current）のカウンタ（#212 / ADR-0020 §5）。
+# 現在質問ハイドレーション（GET /questions/current）のカウンタ（ADR-0020 §5）。
 # requirements_hydrated と同様に「未回答の問いが復元できたか」を計測する（契約 §5）。
 _question_hydration_counter = metrics.get_meter("sanba_api.questions").create_counter(
     "sanba_question_hydrations_total",
@@ -86,7 +86,7 @@ def record_question_hydration(has_question: bool) -> None:
         pass
 
 
-# web UI 由来の素材イベント（投入種別選択 #232 / 中断 #243 / サーバ破棄 #245）のカウンタ。
+# web UI 由来の素材イベント（投入種別選択・中断・サーバ破棄）のカウンタ。
 # クライアント観測を第三者分析 SDK ではなくサーバ側 OTLP に集約する（CLAUDE.md 原則3 /
 # 既存 metrics 基盤に一致する最小構成）。PII/自由記述は載せない: event/source/status/result
 # は列挙値のみ（main.py の許可リストで検証し、未知値は other へ丸めて高カーディナリティ/PII
@@ -190,7 +190,7 @@ def record_guest_join(result: str) -> None:
         pass
 
 
-# リンク入場後の離脱（web /join → 会話開始前の中断 / PR9・FR-2.1 の離脱観測）。
+# リンク入場後の離脱（web /join → 会話開始前の中断 / FR-2.1 の離脱観測）。
 # join 成立（sanba_guest_join_total{result=granted}）と会話成立（agent 側ログ）の間の
 # 落ち込みを web からの join.abort telemetry で埋める。result は列挙値のみ
 # （aborted=利用者の中断 / error=接続・マイク失敗）・PII 非送信。
@@ -208,17 +208,17 @@ def record_join_ui_event(event: str, result: str = "none") -> None:
         pass
 
 
-# 本人セッション一覧 (GET /api/sessions/mine) のカウンタ (#250)。ホーム「過去の要件を見る」
-# (#215) に供給する一覧の取得を計測する (契約 §5 / CLAUDE.md 原則3)。リクエストを 1 ずつ計上し
+# 本人セッション一覧 (GET /api/sessions/mine) のカウンタ。ホーム「過去の要件を見る」
+# に供給する一覧の取得を計測する (契約 §5 / CLAUDE.md 原則3)。リクエストを 1 ずつ計上し
 # (record_auth_event と統一)、result=empty/listed で「履歴が空のユーザーの頻度」を観測する。
 _my_sessions_counter = metrics.get_meter("sanba_api.sessions").create_counter(
     "sanba_my_sessions_listed_total",
-    description="本人セッション一覧取得リクエスト数 (result=empty/listed ごと / #250)",
+    description="本人セッション一覧取得リクエスト数 (result=empty/listed ごと)",
 )
 
 
 def record_my_sessions_listed(count: int) -> None:
-    """本人セッション一覧取得を 1 リクエストとして計上する (#250)。
+    """本人セッション一覧取得を 1 リクエストとして計上する。
 
     返した件数ではなくリクエストを 1 ずつ計上する (record_auth_event と統一)。0 件でも確実に
     計上し、result=empty/listed で空履歴ユーザーの頻度を観測できるようにする (件数を加算する
@@ -231,7 +231,7 @@ def record_my_sessions_listed(count: int) -> None:
 
 
 # 本人セッションの要件絵巻閲覧 (GET /api/sessions/mine/{id}/requirements) のカウンタ。
-# ホーム履歴 (#215/#250) からの詳細閲覧ファネルを観測する (CLAUDE.md 原則3)。
+# ホーム履歴からの詳細閲覧ファネルを観測する (CLAUDE.md 原則3)。
 # record_my_sessions_listed と同じく 1 リクエスト 1 計上・result=empty/viewed。
 _my_requirements_counter = metrics.get_meter("sanba_api.sessions").create_counter(
     "sanba_my_requirements_viewed_total",
@@ -300,7 +300,6 @@ def setup_observability(app: FastAPI) -> None:
             )
         )
         trace.set_tracer_provider(provider)
-        # HTTP リクエストを自動でスパン化する (依存は pyproject に宣言済み)。
         FastAPIInstrumentor.instrument_app(app)
         log.info("otel_initialised", endpoint=settings.otel_exporter_otlp_endpoint)
     except Exception as exc:  # pragma: no cover - depends on env

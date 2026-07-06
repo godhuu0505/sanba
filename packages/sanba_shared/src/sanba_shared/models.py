@@ -344,13 +344,13 @@ class SessionMeta(BaseModel):
     # None = 未入力（旧文書の互換）。
     goal: str | None = None
     goal_detail: str | None = None
-    # active → finalized（07 判定で参加者が要件を確定したとき / #186）。
+    # active → finalized（07 判定で参加者が要件を確定したとき）。
     status: str = "active"
     created_at: datetime = Field(default_factory=_now)
-    # 確定スナップショットの刻と件数（#186）。未確定なら None。
+    # 確定スナップショットの刻と件数。未確定なら None。
     finalized_at: datetime | None = None
     finalized_count: int | None = None
-    # 確定時点の要件 ID の不可逆スナップショット（#213）。finalize 後に要件が増減/却下
+    # 確定時点の要件 ID の不可逆スナップショット。finalize 後に要件が増減/却下
     # されても export はこの集合に固定して起票する。旧文書は既定 [] でフォールバック。
     finalized_requirement_ids: list[str] = Field(default_factory=list)
 
@@ -383,7 +383,7 @@ class AnalysisResult(BaseModel):
 
     summary: str
     open_topics: list[str] = Field(default_factory=list)
-    # 触れられているが基準が曖昧な論点（矛盾でも抜けでもない第三類 / #260・ADR-0022）。
+    # 触れられているが基準が曖昧な論点（矛盾でも抜けでもない第三類 / ADR-0022）。
     # open_topics（未確認の抜け）と区別し、detection.ambiguous として発火する。
     ambiguous_topics: list[str] = Field(default_factory=list)
     next_question: str

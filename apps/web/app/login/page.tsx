@@ -11,7 +11,7 @@
 // 右のサインイン枠へスクロールで誘導し、枠を一拍ハイライトして視線を渡す。
 //
 // 状態の一本道は不変: 11 未認証 → 12 サインイン中 →（ログイン後はホーム / へ誘導）。
-// ログアウト完了の挨拶（14）は、ホームのアカウントメニュー（#217）から ?loggedOut=1 で来た時に出す。
+// ログアウト完了の挨拶（14）は、ホームのアカウントメニューから ?loggedOut=1 で来た時に出す。
 //
 // ログイン済みで /login に来た場合はトップ（or ?next）へ即 replace する。認証解決前
 // （ready=false / GIS の静かな再取得中）はサインイン UI を出さず「確認中」を出す（authGate と
@@ -22,7 +22,7 @@
 // 拡張する (CLAUDE.md「スキン」方針)。SANBA デザインシステム（components/sanba/*）を再利用。
 // GIS は「サインイン開始」イベントを出さないため、12 は loggedIn の false→true 立ち上がりを
 // 契機に短時間だけ見せ、自動でホームへ送る。ログイン後の導線は /login 内に持たず、Figma 正本に
-// 倣ってホーム＋アカウントメニューへ集約した（監査 B-1 #1/#5）。
+// 倣ってホーム＋アカウントメニューへ集約した。
 
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
@@ -78,7 +78,7 @@ export default function LoginPage() {
     nextRef.current = safeNextPath(new URLSearchParams(window.location.search).get("next"));
     // ?loggedOut=1（アカウントメニューからのログアウト遷移）はここで実際に signOut する
     // （共有 credential を clear＋auto_select 無効化）。元ページ側で signOut しないことで
-    // authGate の誤リダイレクトと競合しない（Codex P2）。14 ゴールを表示する。
+    // authGate の誤リダイレクトと競合しない。14 ゴールを表示する。
     // 明示ログアウトなので既定どおり他タブへも伝播する（要件⑤ / ADR-0030）。
     if (loggedOutRef.current) {
       setJustLoggedOut(true);
@@ -90,7 +90,7 @@ export default function LoginPage() {
   }, [signOut, resetButton]);
 
   // ログイン後はホーム（or ?next）へ送る。13「ナビハブ」は廃止し、導線はホームのアカウント
-  // メニューへ集約した（監査 B-1 #5）。loggedIn の false→true 立ち上がり時は 12（本人確認中）を
+  // メニューへ集約した。loggedIn の false→true 立ち上がり時は 12（本人確認中）を
   // WELCOME_MS だけ見せてから遷移する。マウント時点で既に loggedIn（auto_select の静かな再取得）
   // なら立ち上がり扱いせず即遷移する。キャンセル/ログアウトで loggedIn が落ちたら cleanup で
   // 保留中のタイマーを破棄する。

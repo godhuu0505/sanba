@@ -68,5 +68,4 @@ async def analyze_video_task(req: Request) -> dict[str, str]:
             record_analysis("failed")
             return {"status": "failed", "reason": "retries_exhausted"}
         record_analysis("error")
-        # 5xx で Cloud Tasks に再試行させる。
         raise HTTPException(status_code=503, detail="transient error, retry") from exc

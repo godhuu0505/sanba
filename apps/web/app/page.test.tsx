@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-// 入口フロー（01 ホーム → 02 準備 → 開始）の状態遷移を検証する（#140 / ADR-0017）。
+// 入口フロー（01 ホーム → 02 準備 → 開始）の状態遷移を検証する（ADR-0017）。
 // 重い依存（LiveKit / SessionView）と auth / api はモックして、ページ固有のロジック
 // （ステップ遷移・役割既定・同意ゲート・二重送信防止・開始呼び出し）に集中する。
 
@@ -103,7 +103,7 @@ vi.mock("../lib/api", () => ({
     if ([".mp4", ".mov"].some((e) => name.endsWith(e))) return "video";
     if ([".txt", ".md", ".pdf", ".html", ".csv", ".json", ".docx", ".xlsx", ".pptx"].some((e) => name.endsWith(e)))
       return "doc";
-    // 拡張子が無くても MIME が受理範囲なら通す（実装と同じ / Codex P2）。
+    // 拡張子が無くても MIME が受理範囲なら通す（実装と同じ）。
     const type = file.type.toLowerCase();
     if (type === "image/png" || type === "image/jpeg") return "image";
     if (type === "video/mp4" || type === "video/quicktime") return "video";
@@ -270,7 +270,7 @@ describe("入口フロー（#140）", () => {
     expect(fetchMySessions).not.toHaveBeenCalled();
   });
 
-  // ── 01 履歴リスト結線（#250 / #215 follow-up）─────────────────────────────
+  // ── 01 履歴リスト結線 ─────────────────────────────
   it("ログイン済みなら本人のセッション履歴を取得し、標題と日付を一覧表示する（#250）", async () => {
     authState.loggedIn = true;
     authState.credential = "idtok";
@@ -464,7 +464,7 @@ describe("入口フロー（#140）", () => {
     authState.loggedIn = true;
     render(<Home />);
     await clickStartCta();
-    // 候補取得の settle を待つ（取得中は開始が無効 / Codex P2）。
+    // 候補取得の settle を待つ（取得中は開始が無効）。
     await act(async () => {});
     fireEvent.click(screen.getByRole("radio", { name: "開発者" }));
     fireEvent.change(screen.getByLabelText("ゴール"), { target: { value: "テストゴール" } });
@@ -546,7 +546,7 @@ describe("入口フロー（#140）", () => {
     fireEvent.click(screen.getByRole("checkbox"));
     fireEvent.click(screen.getByRole("button", { name: "要件サンバを始める" }));
     await waitFor(() => expect(createSession).toHaveBeenCalledTimes(1));
-    // 空文字 = 「既定リポジトリにも送らない」を API に明示する（Codex P2）。
+    // 空文字 = 「既定リポジトリにも送らない」を API に明示する。
     expect(createSession.mock.calls[0][4]).toBe("");
   });
 
@@ -562,7 +562,7 @@ describe("入口フロー（#140）", () => {
     const select = (await screen.findByLabelText(
       "連携リポジトリ（任意）",
     )) as HTMLSelectElement;
-    // 表示と挙動の一致（Codex P2）: フォールバック先が選択状態として見える。
+    // 表示と挙動の一致: フォールバック先が選択状態として見える。
     await waitFor(() => expect(select.value).toBe("o/r"));
     fireEvent.change(screen.getByLabelText("ゴール"), { target: { value: "テストゴール" } });
     fireEvent.click(screen.getByRole("checkbox"));
@@ -572,7 +572,7 @@ describe("入口フロー（#140）", () => {
   });
 
   it("保存済みの「連携しない」（空文字）は既定リポの初期選択で上書きされない", async () => {
-    // 前回明示的に「連携しない」を選んで保存されている状態（Codex P2）。
+    // 前回明示的に「連携しない」を選んで保存されている状態。
     window.sessionStorage.setItem("sanba.prep.v1", JSON.stringify({ githubRepo: "" }));
     authState.loggedIn = true;
     fetchGithubRepos.mockResolvedValueOnce({
@@ -695,7 +695,7 @@ describe("入口フロー（#140）", () => {
     await waitFor(() => expect(selectSessionRepo).toHaveBeenCalledTimes(1));
     // (sessionId, repo, branch, sessionToken)。join 済みトークンで認可する（契約 §4）。
     expect(selectSessionRepo).toHaveBeenCalledWith("s1", "octo/demo", "dev", "st");
-    // createSession にも repo が渡る（起票先・Issue/README 文脈は #283 の経路のまま）。
+    // createSession にも repo が渡る（起票先・Issue/README 文脈は既存の経路のまま）。
     expect(createSession.mock.calls[0][4]).toBe("octo/demo");
     await waitFor(() => expect(screen.getByText("支度、相整いまして")).toBeTruthy());
   });
@@ -718,8 +718,8 @@ describe("入口フロー（#140）", () => {
     expect(screen.queryByText("支度、相整いまして")).toBeNull();
   });
 
-  // ── 02 参考資料（バイナリ添付）#222 ──────────────────────────────────────
-  // 候補取得（fetchGithubRepos）が settle するまで CTA は無効（Codex P2）なので、
+  // ── 02 参考資料（バイナリ添付）──────────────────────────────────────
+  // 候補取得（fetchGithubRepos）が settle するまで CTA は無効なので、
   // 準備画面に入ったらマイクロタスクを流して repoLoading を落としてから操作する。
   async function gotoPrepare() {
     authState.loggedIn = true;
@@ -727,7 +727,7 @@ describe("入口フロー（#140）", () => {
     // 対象アプリは 01 ホームで確定する（ADR-0044）。既定モックは 1 件なので自動選択される。
     await clickStartCta();
     await act(async () => {});
-    // ゴールは開始の必須条件（#222）。既定で埋め、開始系テストの前提を揃える。
+    // ゴールは開始の必須条件。既定で埋め、開始系テストの前提を揃える。
     fireEvent.change(screen.getByLabelText("ゴール"), { target: { value: "テストゴール" } });
     return view;
   }
@@ -743,7 +743,7 @@ describe("入口フロー（#140）", () => {
     expect(screen.getByRole("dialog", { name: "資料の追加方法" })).toBeTruthy();
     expect(screen.getByText("ファイルをアップロード")).toBeTruthy();
     expect(screen.getByText("Google ドライブから選ぶ")).toBeTruthy();
-    // 準備画面は LiveKit ルーム外のためカメラ/画面共有の導線は出さない（#201 再利用条件）。
+    // 準備画面は LiveKit ルーム外のためカメラ/画面共有の導線は出さない（再利用条件）。
     expect(screen.queryByText("カメラで撮影")).toBeNull();
     expect(screen.queryByText("画面を共有")).toBeNull();
   });
@@ -795,7 +795,7 @@ describe("入口フロー（#140）", () => {
     // join 済みトークン（session_token）で投入する（契約 §4）。
     expect(uploadContextFile.mock.calls[0][2]).toBe("st");
     expect((uploadContextFile.mock.calls[0][1] as File).name).toBe("PRD.png");
-    // 03-0 開始前サマリの「参考資料」に名前＋件数が出る（固定文の置換 / 監査 B-2 #11）。
+    // 03-0 開始前サマリの「参考資料」に名前＋件数が出る（固定文の置換）。
     await waitFor(() => expect(screen.getByText("支度、相整いまして")).toBeTruthy());
     expect(screen.getByText(/PRD\.png ・ 他1件/)).toBeTruthy();
     expect(screen.getByText(/（計2件）/)).toBeTruthy();
@@ -830,7 +830,7 @@ describe("入口フロー（#140）", () => {
     createSession.mockImplementationOnce(() => new Promise((r) => { release = r; }));
     const { container } = render(<Home />);
     await clickStartCta();
-    await act(async () => {}); // 候補取得の settle（取得中は開始が無効 / Codex P2）
+    await act(async () => {}); // 候補取得の settle（取得中は開始が無効）
     fireEvent.change(screen.getByLabelText("ゴール"), { target: { value: "テストゴール" } });
     fireEvent.click(screen.getByRole("checkbox"));
     pickFiles(container, [new File(["x"], "a.png", { type: "image/png" })]);
@@ -907,7 +907,7 @@ describe("入口フロー（#140）", () => {
     );
     render(<Home />);
     await clickStartCta();
-    await act(async () => {}); // 候補取得の settle（取得中は開始が無効 / Codex P2）
+    await act(async () => {}); // 候補取得の settle（取得中は開始が無効）
     fireEvent.change(screen.getByLabelText("ゴール"), { target: { value: "テストゴール" } });
     fireEvent.click(screen.getByRole("checkbox"));
     const cta = screen.getByRole("button", { name: "要件サンバを始める" });
@@ -921,7 +921,7 @@ describe("入口フロー（#140）", () => {
     expect(createSession).toHaveBeenCalledTimes(1);
   });
 
-  // ── 02 ゴール（プレースホルダ・役割別の例・詳細）/ 対象プロダクト #222・ADR-0031 ──
+  // ── 02 ゴール（プレースホルダ・役割別の例・詳細）/ 対象プロダクト・ADR-0031 ──
   it("ゴールのプレースホルダが更新され、例は役割で切り替わる表示専用テキスト（#222）", async () => {
     await gotoPrepare();
     const goal = screen.getByLabelText("ゴール") as HTMLTextAreaElement;
@@ -1020,7 +1020,7 @@ describe("入口フロー（#140）", () => {
     expect(createSession.mock.calls[0][5]).toBe("p1");
     // コネクタ無効時は github_repo を明示送信せず undefined（product 継承に委ねる）。
     expect(createSession.mock.calls[0][4]).toBeUndefined();
-    // 前提 repo のクライアント側バインド（selectSessionRepo）はしない（API 継承 / PR#314 P1）。
+    // 前提 repo のクライアント側バインド（selectSessionRepo）はしない（API 継承）。
     expect(selectSessionRepo).not.toHaveBeenCalled();
     // 用語/説明は補助グラウンディングとして product 文脈に投入する。
     await waitFor(() =>

@@ -34,7 +34,7 @@ RUBRIC = [
 # CI で許容する最低スコア(平均)。これを下回ると回帰とみなし fail。
 QUALITY_THRESHOLD = 0.5
 
-# ---- end_user モード（ADR-0032 決定9 / FR-2.8）------------------------------
+# ---- end_user モード ------------------------------
 # 利用者インタビューの品質観点。developer の RUBRIC と独立に採点する。
 END_USER_RUBRIC = [
     ("no_jargon", "技術用語(API/DB/非機能/MoSCoW 等)を利用者への発話に出していないか"),
@@ -237,7 +237,7 @@ DEFAULT_SCENARIOS: list[dict] = [
 ]
 
 
-# end_user モードの回帰データセット（ADR-0032 決定9 / FR-2.8）。
+# end_user モードの回帰データセット。
 # 良例: 技術用語なし・一問一答・glossary の語彙で「いつ・どの画面で・何をしようとして・
 # 何に困ったか」を具体化する。悪例: 開発語彙で畳みかける（developer ペルソナの漏出）。
 END_USER_GLOSSARY = ["請求書一覧", "明細画面", "送信ボタン"]
