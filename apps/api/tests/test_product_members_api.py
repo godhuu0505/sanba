@@ -19,6 +19,7 @@ from sanba_shared.models import MemberInviteStatus, Product, ProductMember, Prod
 from sanba_api import main
 from sanba_api.auth_google import AuthUser, require_user
 from sanba_api.main import app
+from sanba_api.routers import members
 
 client = TestClient(app)
 OWNER = "owner-sub"
@@ -41,7 +42,7 @@ def _reset(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     main._repo._mem_sessions.clear()
     assert main._repo._client is None, "テストは Firestore 非接続のメモリ fallback 前提"
     # 招待メールは既定でスタブ（SMTP 未設定でも send がスキップするが、呼び出し自体を観測する）。
-    monkeypatch.setattr(main, "send_member_invite_email", lambda **kwargs: True)
+    monkeypatch.setattr(members, "send_member_invite_email", lambda **kwargs: True)
     yield
     app.dependency_overrides.pop(require_user, None)
 
@@ -194,7 +195,7 @@ def test_member_can_leave_but_not_remove_others() -> None:
 def test_owner_issues_invite_and_email_task_is_queued(monkeypatch: pytest.MonkeyPatch) -> None:
     _seed_product()
     sent: list[dict[str, Any]] = []
-    monkeypatch.setattr(main, "send_member_invite_email", lambda **kw: sent.append(kw) or True)
+    monkeypatch.setattr(members, "send_member_invite_email", lambda **kw: sent.append(kw) or True)
     body = _invite_via_api(email="  Member@Example.com  ")
     assert body["email"] == MEMBER_EMAIL  # 小文字正規化
     assert body["status"] == "pending"
