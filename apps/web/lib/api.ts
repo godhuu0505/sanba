@@ -588,7 +588,7 @@ export interface Product {
   id: string;
   name: string;
   /**
-   * URL キーワード（グローバル一意 / ADR-0040）。/{slug}/prepare 等のアプリ従属 URL の
+   * URL キーワード（グローバル一意 / ADR-0045）。/{slug}/prepare 等のアプリ従属 URL の
    * 識別子。null = 未設定（slug 導入前の既存アプリ）。未設定の間は壁打ちを開始できない。
    */
   slug: string | null;
@@ -674,7 +674,7 @@ export function updateProduct(
   productId: string,
   patch: {
     name?: string;
-    /** URL キーワード（グローバル一意 / ADR-0040）。変更すると /{slug}/... の URL も変わる。 */
+    /** URL キーワード（グローバル一意 / ADR-0045）。変更すると /{slug}/... の URL も変わる。 */
     slug?: string;
     description?: string;
     glossary?: string[];

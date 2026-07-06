@@ -20,7 +20,7 @@ export interface SessionHistoryItem {
 
 export interface SessionHistoryListProps extends React.HTMLAttributes<HTMLElement> {
   items: SessionHistoryItem[];
-  /** 行の遷移先。既定は過去要件の絵巻閲覧画面 /results/{id}（ADR-0040）。 */
+  /** 行の遷移先。既定は過去要件の絵巻閲覧画面 /results/{id}（ADR-0045）。 */
   hrefFor?: (id: string) => string;
   /** 空状態の文言。 */
   emptyText?: string;

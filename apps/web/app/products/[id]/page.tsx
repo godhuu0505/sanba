@@ -46,7 +46,7 @@ export default function ProductDetailPage() {
   const [product, setProduct] = useState<Product | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [name, setName] = useState("");
-  // URL キーワード（必須・グローバル一意 / ADR-0040）。既存アプリ（slug 未設定）は
+  // URL キーワード（必須・グローバル一意 / ADR-0045）。既存アプリ（slug 未設定）は
   // ここで設定するまで壁打ちを開始できないため、空のまま促す。
   const [slugInput, setSlugInput] = useState("");
   const [description, setDescription] = useState("");
@@ -96,7 +96,7 @@ export default function ProductDetailPage() {
       setError("アプリ名を入力してください");
       return;
     }
-    // slug は必須（ADR-0040）。API と同じ規則へ正規化し、形式違反・予約語は送信前に
+    // slug は必須（ADR-0045）。API と同じ規則へ正規化し、形式違反・予約語は送信前に
     // 指摘する。既存アプリ（未設定）もこの保存で設定してもらう（設定するまで壁打ち開始不可）。
     const cleanedSlug = cleanSlug(slugInput);
     if (cleanedSlug === null) {
@@ -215,7 +215,7 @@ export default function ProductDetailPage() {
                 対象にこのアプリを選ぶと、要件サンバを始められます。
               </p>
               {/* slug 設定済みならこのアプリの準備 URL へ直行。未設定（既存アプリ）は
-                  ホームへ送り、オーナーによる設定を待つ（ADR-0040）。 */}
+                  ホームへ送り、オーナーによる設定を待つ（ADR-0045）。 */}
               <Button
                 variant="gold"
                 block

@@ -44,7 +44,7 @@ def _login(sub: str, email: str = "u@example.com") -> None:
 
 
 def _create(name: str = "請求アプリ", **kwargs: Any) -> dict[str, Any]:
-    # slug は必須（ADR-0040）。指定がなければ既定値で埋める（各テストの関心事を汚さない）。
+    # slug は必須（ADR-0045）。指定がなければ既定値で埋める（各テストの関心事を汚さない）。
     payload: dict[str, Any] = {"name": name, "slug": "test-app"}
     payload.update(kwargs)
     res = client.post("/api/products", json=payload)
@@ -82,7 +82,7 @@ def test_create_product_requires_login(monkeypatch: pytest.MonkeyPatch) -> None:
     assert client.post("/api/products", json={"name": "x", "slug": "x-app"}).status_code == 401
 
 
-# ---- slug（ADR-0040）---------------------------------------------------------
+# ---- slug（ADR-0045）---------------------------------------------------------
 def test_create_product_normalizes_and_validates_slug() -> None:
     _login(OWNER)
     # 前後空白・大文字は正規化して受理する。
@@ -101,7 +101,7 @@ def test_create_product_normalizes_and_validates_slug() -> None:
 def test_create_product_duplicate_slug_is_409() -> None:
     _login(OWNER)
     _create(slug="dup-app")
-    # 別ユーザーでもグローバルに一意（テナント 1 つ / ADR-0040）。
+    # 別ユーザーでもグローバルに一意（テナント 1 つ / ADR-0045）。
     _login("someone-else")
     res = client.post("/api/products", json={"name": "y", "slug": "dup-app"})
     assert res.status_code == 409

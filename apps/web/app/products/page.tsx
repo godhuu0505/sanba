@@ -32,7 +32,7 @@ export default function ProductsPage() {
 
   const [products, setProducts] = useState<Product[] | null>(null);
   const [name, setName] = useState("");
-  // URL キーワード（必須・グローバル一意 / ADR-0040）。/{slug}/prepare 等の URL になる。
+  // URL キーワード（必須・グローバル一意 / ADR-0045）。/{slug}/prepare 等の URL になる。
   const [slug, setSlug] = useState("");
   const [description, setDescription] = useState("");
   const [busy, setBusy] = useState(false);
@@ -66,7 +66,7 @@ export default function ProductsPage() {
       setError("アプリ名を入力してください");
       return;
     }
-    // slug は API と同じ規則へ正規化してから送る（ADR-0040）。形式違反・予約語は
+    // slug は API と同じ規則へ正規化してから送る（ADR-0045）。形式違反・予約語は
     // サーバへ投げる前にその場で指摘する（最終判定は API 側）。
     const cleanedSlug = cleanSlug(slug);
     if (cleanedSlug === null) {

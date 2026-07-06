@@ -101,7 +101,7 @@ describe("アプリ詳細画面（ADR-0031 / FR-1.2）", () => {
     );
   });
 
-  it("URL キーワードを変更して保存でき、形式違反は API を呼ばず弾く（ADR-0040）", async () => {
+  it("URL キーワードを変更して保存でき、形式違反は API を呼ばず弾く（ADR-0045）", async () => {
     render(<ProductDetailPage />);
     const slugInput = await screen.findByLabelText("URL キーワード（必須）");
     // 大文字は小文字へ正規化して送る。

@@ -197,7 +197,7 @@ def test_set_product_github_preserves_other_fields() -> None:
     )
 
 
-# ---- slug（ADR-0040）--------------------------------------------------------
+# ---- slug（ADR-0045）--------------------------------------------------------
 
 
 def test_create_product_enforces_slug_uniqueness() -> None:

@@ -64,7 +64,7 @@ router = APIRouter()
 class CreateProductRequest(BaseModel):
     """`POST /api/products`（FR-1.1）。name はハンドラ側で strip + 空を 400 にする。
 
-    slug は必須（ADR-0040）: /{slug}/prepare 等のアプリ従属 URL の識別子。
+    slug は必須（ADR-0045）: /{slug}/prepare 等のアプリ従属 URL の識別子。
     形式・予約語は `_clean_slug`、一意性はリポジトリ層が検証する。
     """
 
@@ -121,7 +121,7 @@ class ProductResponse(BaseModel):
 
     id: str
     name: str
-    # URL キーワード（ADR-0040）。None = 未設定（slug 導入前の既存アプリ）。web は
+    # URL キーワード（ADR-0045）。None = 未設定（slug 導入前の既存アプリ）。web は
     # 未設定アプリの壁打ち開始を塞ぎ、アプリ管理での設定を促す。
     slug: str | None = None
     description: str
@@ -177,7 +177,7 @@ def _clean_glossary(glossary: list[str]) -> list[str]:
     return cleaned
 
 
-# slug の形式（ADR-0040）: 小文字英数とハイフン、先頭末尾は英数、2〜40 文字。
+# slug の形式（ADR-0045）: 小文字英数とハイフン、先頭末尾は英数、2〜40 文字。
 # URL のパス片になるため大文字・記号・空白は受けず、入力は小文字へ正規化してから検証する。
 _SLUG_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]{0,38}[a-z0-9]$")
 
@@ -205,7 +205,7 @@ _RESERVED_SLUGS = frozenset(
 
 
 def _clean_slug(raw: str) -> str:
-    """slug を正規化・検証する（ADR-0040）。不正な形式・予約語は 400。
+    """slug を正規化・検証する（ADR-0045）。不正な形式・予約語は 400。
 
     一意性（使用済み）はここでは見ない: リポジトリ層が原子的に検証し、
     ハンドラが ProductSlugTaken を 409 に写像する。
@@ -307,7 +307,7 @@ def create_product(
 ) -> ProductResponse:
     """アプリを登録する（FR-1.1 / ADR-0031）。owner は呼び出しユーザー。
 
-    slug は必須（ADR-0040）。形式・予約語は 400、使用済みは 409。
+    slug は必須（ADR-0045）。形式・予約語は 400、使用済みは 409。
     """
     name = req.name.strip()
     if not name:
@@ -364,7 +364,7 @@ def update_product(
     （FR-1.2）。所有・出所は不変。
 
     管理操作なので owner / admin のみ（メンバーは 403 / ADR-0036）。
-    slug の形式・予約語は 400、使用済みは 409（ADR-0040）。
+    slug の形式・予約語は 400、使用済みは 409（ADR-0045）。
     """
     _require_product_access(product_id, user, manage=True)
     name = req.name.strip() if req.name is not None else None
@@ -393,7 +393,7 @@ def update_product(
         # 認可チェック後に消えた競合。存在秘匿の方針に合わせ 404 のまま返す。
         raise HTTPException(status_code=404, detail="product not found") from exc
     record_product_event("updated")
-    # slug は URL の識別子なのでリネームを運用で追える形で残す（ADR-0040 / CLAUDE.md 原則3）。
+    # slug は URL の識別子なのでリネームを運用で追える形で残す（ADR-0045 / CLAUDE.md 原則3）。
     log.info("product_updated", product=product_id, owner=user.sub, slug=updated.slug)
     return _product_response(updated)
 

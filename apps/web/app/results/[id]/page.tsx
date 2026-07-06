@@ -1,6 +1,6 @@
 "use client";
 
-// 過去要件の絵巻閲覧画面（/results/[id] / ADR-0040 で /sessions/[id] から移設。旧 URL は
+// 過去要件の絵巻閲覧画面（/results/[id] / ADR-0045 で /sessions/[id] から移設。旧 URL は
 // リダイレクトで互換維持）。ホーム「過去の要件を見る」（#215/#250）の行をタップした先で、
 // そのセッションの要件絵巻と結果ドキュメント出力（ADR-0042/0043）を閲覧する。
 // データ源は本人限定 API（GET /api/sessions/mine/{id}/requirements）。認証は Google idToken

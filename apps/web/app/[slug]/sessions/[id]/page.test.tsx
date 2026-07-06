@@ -2,7 +2,7 @@
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-// 会話中セッション URL（/{slug}/sessions/{id} / ADR-0040）への直アクセス・リロードの受け皿:
+// 会話中セッション URL（/{slug}/sessions/{id} / ADR-0045）への直アクセス・リロードの受け皿:
 // slug が本人のアプリ一覧に解決できれば /results/{id} へ送り、解決できなければ
 // 複合エラー画面（不存在と権限なしを区別しない）に落とすことを検証する。
 
@@ -41,7 +41,7 @@ vi.mock("@/lib/api", async (importOriginal) => {
 
 import SlugSessionPage from "./page";
 
-describe("会話中セッション URL の直アクセス（/{slug}/sessions/{id} / ADR-0040）", () => {
+describe("会話中セッション URL の直アクセス（/{slug}/sessions/{id} / ADR-0045）", () => {
   beforeEach(() => {
     authState.loggedIn = true;
     replace.mockClear();

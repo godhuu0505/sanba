@@ -186,7 +186,7 @@ class Product(BaseModel):
     name: str = Field(min_length=1)
     description: str = ""
     owner_sub: str
-    # URL キーワード（グローバル一意 / ADR-0040）。/{slug}/prepare 等のアプリ従属 URL の
+    # URL キーワード（グローバル一意 / ADR-0045）。/{slug}/prepare 等のアプリ従属 URL の
     # 識別子。None = 未設定（slug 導入前の既存アプリ）。未設定の間は slug URL を持てず、
     # web は壁打ち開始を塞ぐ。形式検証は API 層（`_clean_slug`）、一意性の担保は
     # `SessionRepository`（Firestore は product_slugs/{slug} レジストリ）が行う。

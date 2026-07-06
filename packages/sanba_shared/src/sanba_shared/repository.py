@@ -47,7 +47,7 @@ class ProductNotFound(Exception):
 
 
 class ProductSlugTaken(Exception):
-    """slug が別の product に使用済みのときに送出 (ADR-0040)。
+    """slug が別の product に使用済みのときに送出 (ADR-0045)。
 
     slug はグローバル一意（/{slug}/prepare 等の URL 識別子）。api 層は 409 に写像する。
     """
@@ -137,7 +137,7 @@ class SessionRepository:
         # in-memory での招待応答（pending → accepted/declined + メンバー作成）を
         # アトミックにするためのロック。Firestore 経路はトランザクションが担う。
         self._mem_member_lock = threading.Lock()
-        # product slug のグローバル一意性を in-memory で担保するロック（ADR-0040）。
+        # product slug のグローバル一意性を in-memory で担保するロック（ADR-0045）。
         # Firestore 経路は product_slugs/{slug} レジストリ + トランザクションが担う。
         self._mem_product_lock = threading.Lock()
 
@@ -343,7 +343,7 @@ class SessionRepository:
 
         product は owner が明示的に削除するまで残す運用資産なので、発話や draft 要件と
         違い TTL（expireAt）は付けない（ADR-0031 影響節）。
-        slug 付きならグローバル一意を担保する（ADR-0040）: Firestore は
+        slug 付きならグローバル一意を担保する（ADR-0045）: Firestore は
         `product_slugs/{slug}` レジストリの存在チェックと作成を同一トランザクションで
         行い、in-memory はロックで走査を直列化する。使用済みなら ProductSlugTaken。
         """
@@ -383,7 +383,7 @@ class SessionRepository:
         return self._mem_products.get(product_id)
 
     def get_product_by_slug(self, slug: str) -> Product | None:
-        """slug から product を引く（ADR-0040）。未使用 slug は None。
+        """slug から product を引く（ADR-0045）。未使用 slug は None。
 
         Firestore はレジストリ（product_slugs/{slug}）経由で引く。レジストリと
         product 文書の不整合（削除との競合）は None に平す（呼び出し側は 404 扱い）。
@@ -432,7 +432,7 @@ class SessionRepository:
 
         所有と出所 (owner_sub / created_at) は不変。repo 紐づけは `set_product_github` が
         担う（`update_requirement` と同じ「編集可能フィールドを閉じる」パターン）。
-        slug の変更はグローバル一意を保つ（ADR-0040）: Firestore は新 slug の空き確認・
+        slug の変更はグローバル一意を保つ（ADR-0045）: Firestore は新 slug の空き確認・
         旧 slug の解放・product の patch を同一トランザクションで行う。None = 変更しない
         （slug を「未設定に戻す」経路は持たない: URL の識別子は消さない）。使用済みなら
         ProductSlugTaken。
@@ -485,7 +485,7 @@ class SessionRepository:
     def _update_product_slug_txn(
         self, product_id: str, old_slug: str | None, new_slug: str, updates: dict[str, object]
     ) -> None:
-        """slug 変更を含む product 更新（ADR-0040）。
+        """slug 変更を含む product 更新（ADR-0045）。
 
         新 slug レジストリの空き確認・旧 slug の解放・product 文書の patch を同一
         トランザクションで行い、並行する登録・変更と競合しても一意性を破らない。
@@ -559,7 +559,7 @@ class SessionRepository:
         消してから product 文書を消す（リンクだけ残ると join 検証が親なしで通り得る）。
         メンバー・メンバー招待（トップレベルコレクション / ADR-0036）も同様に消す:
         残ると承諾で親なし product のメンバーが生まれ、一覧に幽霊が残る。
-        slug レジストリ（product_slugs / ADR-0040）も解放する: 残ると slug が永久に
+        slug レジストリ（product_slugs / ADR-0045）も解放する: 残ると slug が永久に
         取れなくなり、get_product_by_slug が親なしを指す。
         """
         if self._client is not None:
@@ -579,7 +579,7 @@ class SessionRepository:
                 )
                 for doc in docs:
                     doc.reference.delete()
-            # product 文書と slug レジストリは同一トランザクションで消す（ADR-0040）:
+            # product 文書と slug レジストリは同一トランザクションで消す（ADR-0045）:
             # 途中クラッシュで「slug は解放済みなのに product 文書が残る」状態を作らない
             # （解放された slug を別 product が取ると、生きた product と重複して見える）。
             self._delete_product_with_slug_txn(product_id, (snap.to_dict() or {}).get("slug"))
@@ -597,7 +597,7 @@ class SessionRepository:
         return True
 
     def _delete_product_with_slug_txn(self, product_id: str, slug: str | None) -> None:
-        """product 文書と slug レジストリを原子的に削除する（ADR-0040）。
+        """product 文書と slug レジストリを原子的に削除する（ADR-0045）。
 
         別々に消すと途中クラッシュで slug が先に解放され、別 product に取られた slug と
         削除し損ねた product 文書が併存し得る。逆順（product 先）でも slug が永久に
@@ -1298,7 +1298,7 @@ class SessionRepository:
     def get_material(self, session_id: str, asset_id: str) -> dict[str, Any] | None:
         """素材メタを 1 件返す（存在しなければ None）。
 
-        非同期動画解析（ADR-0040）の冪等ガードと「破棄済み素材を復活させない」チェックに使う:
+        非同期動画解析（ADR-0045）の冪等ガードと「破棄済み素材を復活させない」チェックに使う:
         worker は解析前と書き込み直前に status/存在を確認し、二重解析や削除済み素材の復活を防ぐ。
         """
         if self._client is not None:

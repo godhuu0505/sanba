@@ -44,7 +44,7 @@ const fetchMySessions = vi.fn(async (..._a: unknown[]) => [] as unknown[]);
 const DEFAULT_PRODUCT = {
   id: "p0",
   name: "既定アプリ",
-  // URL キーワード（ADR-0040）。準備 URL は /default-app/prepare になる。
+  // URL キーワード（ADR-0045）。準備 URL は /default-app/prepare になる。
   slug: "default-app" as string | null,
   description: "",
   glossary: [] as string[],
@@ -152,13 +152,13 @@ describe("入口フロー（#140）", () => {
     window.history.replaceState(null, "", "/");
   });
 
-  // 対象アプリは開始の必須条件で、選択は 01 ホームで行う（ADR-0031・ADR-0039）。
+  // 対象アプリは開始の必須条件で、選択は 01 ホームで行う（ADR-0031・ADR-0044）。
   // 候補 settle 後に既定アプリを選ぶ共通操作。
   function selectProduct(id = "p0") {
     fireEvent.change(screen.getByLabelText("対象のプロダクト・アプリ"), { target: { value: id } });
   }
 
-  // 01 ホームからアプリ確定済みで 02 準備へ入る共通操作（ADR-0039）。既定モック
+  // 01 ホームからアプリ確定済みで 02 準備へ入る共通操作（ADR-0044）。既定モック
   // （DEFAULT_PRODUCT 1 件）は自動選択されるため、settle を待って CTA を押すだけでよい。
   async function clickStartCta() {
     await act(async () => {}); // 候補取得の settle（未選択の間 CTA は無効）
@@ -190,8 +190,8 @@ describe("入口フロー（#140）", () => {
     expect(screen.queryByText(/取り上げた抜け・矛盾/)).toBeNull();
   });
 
-  // ── 01 ホームのアプリ選択ゲート（ADR-0039）────────────────────────────────
-  it("アプリ未選択の間は CTA が無効で、選択すると活性化する（ADR-0039）", async () => {
+  // ── 01 ホームのアプリ選択ゲート（ADR-0044）────────────────────────────────
+  it("アプリ未選択の間は CTA が無効で、選択すると活性化する（ADR-0044）", async () => {
     authState.loggedIn = true;
     // 2 件なら自動選択されない = 明示選択が必要。
     fetchMyProducts.mockResolvedValueOnce([
@@ -209,7 +209,7 @@ describe("入口フロー（#140）", () => {
     expect(screen.queryByText("対象のアプリを選ぶと壁打ちを始められます。")).toBeNull();
   });
 
-  it("候補が 1 件なら自動選択され、そのまま CTA が活性化する（ADR-0039）", async () => {
+  it("候補が 1 件なら自動選択され、そのまま CTA が活性化する（ADR-0044）", async () => {
     authState.loggedIn = true;
     render(<Home />);
     await act(async () => {});
@@ -218,7 +218,7 @@ describe("入口フロー（#140）", () => {
     expect((screen.getByText("＋ 壁打ちを始める") as HTMLButtonElement).disabled).toBe(false);
   });
 
-  it("登録済みアプリが 0 件ならセレクトを無効化し、CTA も塞いで登録導線を案内する（ADR-0039）", async () => {
+  it("登録済みアプリが 0 件ならセレクトを無効化し、CTA も塞いで登録導線を案内する（ADR-0044）", async () => {
     authState.loggedIn = true;
     fetchMyProducts.mockResolvedValueOnce([]);
     render(<Home />);
@@ -258,7 +258,7 @@ describe("入口フロー（#140）", () => {
     expect(await screen.findByText("新機能要件定義")).toBeTruthy();
     // 日付は YYYY/MM/DD へ整形して表示する（タイムゾーン差を避け書式のみ検証）。
     expect(screen.getByText(/^\d{4}\/\d{2}\/\d{2}$/)).toBeTruthy();
-    // 行は過去要件の絵巻閲覧画面（/results/{id} / ADR-0040）への遷移リンクになる。
+    // 行は過去要件の絵巻閲覧画面（/results/{id} / ADR-0045）への遷移リンクになる。
     expect(screen.getByRole("link", { name: /新機能要件定義/ }).getAttribute("href")).toBe(
       "/results/sess-1",
     );
@@ -297,7 +297,7 @@ describe("入口フロー（#140）", () => {
     );
   });
 
-  it("02 準備はアプリ選択 UI を持たず、選択済みのアプリ名を表示する（ADR-0039）", async () => {
+  it("02 準備はアプリ選択 UI を持たず、選択済みのアプリ名を表示する（ADR-0044）", async () => {
     authState.loggedIn = true;
     render(<Home />);
     await clickStartCta();
@@ -308,13 +308,13 @@ describe("入口フロー（#140）", () => {
     expect(screen.getByText("既定アプリ")).toBeTruthy();
   });
 
-  // ── 02 準備画面の固有 URL（/{slug}/prepare / ADR-0017 一本道・ADR-0040）───────
+  // ── 02 準備画面の固有 URL（/{slug}/prepare / ADR-0017 一本道・ADR-0045）───────
   it("CTA で 02 準備へ進むと URL が /{slug}/prepare に更新され、戻る ‹ で / に戻る", async () => {
     authState.loggedIn = true;
     window.history.replaceState(null, "", "/");
     render(<Home />);
     // ホームは "/"。CTA で準備へ進むとアドレスバーが選択アプリの slug URL になる
-    // （remount せず入力を保つ / ADR-0040）。
+    // （remount せず入力を保つ / ADR-0045）。
     await clickStartCta();
     expect(screen.getByText("セッション準備")).toBeTruthy();
     expect(window.location.pathname).toBe("/default-app/prepare");
@@ -324,7 +324,7 @@ describe("入口フロー（#140）", () => {
     expect(window.location.pathname).toBe("/");
   });
 
-  it("/{slug}/prepare 直リンクは slug のアプリで準備画面を直接描画する（ADR-0040）", async () => {
+  it("/{slug}/prepare 直リンクは slug のアプリで準備画面を直接描画する（ADR-0045）", async () => {
     authState.loggedIn = true;
     window.history.replaceState(null, "", "/default-app/prepare");
     render(<EntryFlow initialStep="prepare" initialSlug="default-app" />);
@@ -337,7 +337,7 @@ describe("入口フロー（#140）", () => {
     expect(screen.getByText("既定アプリ")).toBeTruthy();
   });
 
-  it("解決できない slug（不存在・権限なし）は複合エラー画面に落とす（ADR-0040）", async () => {
+  it("解決できない slug（不存在・権限なし）は複合エラー画面に落とす（ADR-0045）", async () => {
     authState.loggedIn = true;
     window.history.replaceState(null, "", "/unknown-app/prepare");
     render(<EntryFlow initialStep="prepare" initialSlug="unknown-app" />);
@@ -349,7 +349,7 @@ describe("入口フロー（#140）", () => {
     expect(screen.queryByText("セッション準備")).toBeNull();
   });
 
-  it("slug なしで 02 に入りアプリ未確定なら、候補 settle 後に 01 ホームへ戻す（ADR-0039 防衛線）", async () => {
+  it("slug なしで 02 に入りアプリ未確定なら、候補 settle 後に 01 ホームへ戻す（ADR-0044 防衛線）", async () => {
     authState.loggedIn = true;
     // 2 件（自動選択なし）＋保存値なし = アプリ未確定。02 の選択 UI は無いのでホームへ戻す。
     fetchMyProducts.mockResolvedValueOnce([
@@ -363,7 +363,7 @@ describe("入口フロー（#140）", () => {
     expect(window.location.pathname).toBe("/");
   });
 
-  it("旧 /prepare 直リンク（PreparePage）はホームへリダイレクトする（ADR-0040 互換）", () => {
+  it("旧 /prepare 直リンク（PreparePage）はホームへリダイレクトする（ADR-0045 互換）", () => {
     window.history.replaceState(null, "", "/prepare");
     render(<PreparePage />);
     expect(replace).toHaveBeenCalledWith("/");
@@ -444,11 +444,11 @@ describe("入口フロー（#140）", () => {
     expect(createSession.mock.calls[0][1]).toBe(true);
     // 開始後は 03 会話開始（開始前サマリ）へ。接続/許可はここから先（ConversationStart）。
     await waitFor(() => expect(screen.getByText("支度、相整いまして")).toBeTruthy());
-    // 会話中はアプリ従属の固有 URL /{slug}/sessions/{id} になる（ADR-0040）。
+    // 会話中はアプリ従属の固有 URL /{slug}/sessions/{id} になる（ADR-0045）。
     expect(window.location.pathname).toBe("/default-app/sessions/s1");
   });
 
-  it("slug 未設定のアプリを選ぶと CTA は無効のまま、アプリ管理への設定導線を出す（ADR-0040）", async () => {
+  it("slug 未設定のアプリを選ぶと CTA は無効のまま、アプリ管理への設定導線を出す（ADR-0045）", async () => {
     authState.loggedIn = true;
     fetchMyProducts.mockResolvedValueOnce([{ ...DEFAULT_PRODUCT, slug: null }]);
     render(<Home />);
@@ -693,7 +693,7 @@ describe("入口フロー（#140）", () => {
   async function gotoPrepare() {
     authState.loggedIn = true;
     const view = render(<Home />);
-    // 対象アプリは 01 ホームで確定する（ADR-0039）。既定モックは 1 件なので自動選択される。
+    // 対象アプリは 01 ホームで確定する（ADR-0044）。既定モックは 1 件なので自動選択される。
     await clickStartCta();
     await act(async () => {});
     // ゴールは開始の必須条件（#222）。既定で埋め、開始系テストの前提を揃える。
@@ -907,7 +907,7 @@ describe("入口フロー（#140）", () => {
       },
     ]);
     render(<Home />);
-    // 1 件のみなので 01 ホームで自動選択され、そのまま 02 準備へ（ADR-0039）。
+    // 1 件のみなので 01 ホームで自動選択され、そのまま 02 準備へ（ADR-0044）。
     await clickStartCta();
     expect(screen.getByText("検索アプリ")).toBeTruthy();
     fireEvent.change(screen.getByLabelText("ゴール"), { target: { value: "テストゴール" } });

@@ -1,8 +1,8 @@
-# ADR-0040: アプリ slug によるアプリ従属 URL と複合アクセスエラー表示
+# ADR-0045: アプリ slug によるアプリ従属 URL と複合アクセスエラー表示
 
 - ステータス: Accepted
 - 日付: 2026-07-06
-- 関連: [ADR-0039](0039-home-app-selection-gate.md)（ホームのアプリ選択ゲート — 本 ADR が
+- 関連: [ADR-0044](0044-home-app-selection-gate.md)（ホームのアプリ選択ゲート — 本 ADR が
   URL 構造を拡張）/ [ADR-0031](0031-product-entity-and-invite-links.md)（product エンティティ —
   決定5(b)「アプリ名のグローバル一意性や推測可能な URL を避ける」を本 ADR が一部改訂）/
   [ADR-0036](0036-product-members-and-invitations.md)（メンバーシップ・存在秘匿）/
@@ -10,7 +10,7 @@
 
 ## コンテキスト
 
-壁打ち（要件サンバ）は常に「どのアプリの要件か」が起点になった（ADR-0039）が、URL は
+壁打ち（要件サンバ）は常に「どのアプリの要件か」が起点になった（ADR-0044）が、URL は
 `/prepare` のままアプリ非従属で、会話中に至っては固有 URL が無かった。ユーザー要望
 （2026-07）として、
 
@@ -35,7 +35,7 @@
    直列化する。API は形式・予約語違反を 400、使用済みを 409 に写像する。slug は owner /
    admin が変更できる（変更すると URL も変わる。旧 URL の転送は持たない）。
 2. **URL をアプリ従属に再編する。**
-   - 準備: `/{slug}/prepare`（旧 `/prepare` は `/` へリダイレクトし、ADR-0039 の
+   - 準備: `/{slug}/prepare`（旧 `/prepare` は `/` へリダイレクトし、ADR-0044 の
      ホーム選択ゲートに合流）
    - 会話中: `/{slug}/sessions/{session_id}`。開始成功時に History API で積む
      （remount しない一本道 / ADR-0017 の維持）。リロード・直アクセスは会話へ再入場

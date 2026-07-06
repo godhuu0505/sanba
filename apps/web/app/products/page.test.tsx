@@ -115,7 +115,7 @@ describe("アプリ管理画面（ADR-0031 / FR-1.1）", () => {
     expect(createProduct).not.toHaveBeenCalled();
   });
 
-  it("URL キーワードが形式違反・予約語なら API を呼ばずエラーを出す（ADR-0040）", async () => {
+  it("URL キーワードが形式違反・予約語なら API を呼ばずエラーを出す（ADR-0045）", async () => {
     authState.loggedIn = true;
     render(<ProductsPage />);
     fireEvent.change(screen.getByLabelText("アプリ名（必須）"), { target: { value: "新アプリ" } });
@@ -133,7 +133,7 @@ describe("アプリ管理画面（ADR-0031 / FR-1.1）", () => {
     expect(createProduct).not.toHaveBeenCalled();
   });
 
-  it("slug 重複（409）は使用済みの旨をエラー表示する（ADR-0040）", async () => {
+  it("slug 重複（409）は使用済みの旨をエラー表示する（ADR-0045）", async () => {
     authState.loggedIn = true;
     createProduct.mockRejectedValueOnce(new ApiError(409, "POST /api/products failed: 409"));
     render(<ProductsPage />);
