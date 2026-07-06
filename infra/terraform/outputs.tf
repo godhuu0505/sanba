@@ -14,6 +14,27 @@ output "runtime_service_account" {
   value = google_service_account.runtime.email
 }
 
+# ---- Session materials / video analysis (ADR-0040) --------------------------
+output "materials_bucket" {
+  value       = google_storage_bucket.materials.name
+  description = "GCS bucket holding session materials (images/videos). Wired to the API as GCS_BUCKET."
+}
+
+output "video_tasks_queue" {
+  value       = google_cloud_tasks_queue.video_analysis.id
+  description = "Cloud Tasks queue for the async video analysis pipeline."
+}
+
+output "worker_service_account" {
+  value       = google_service_account.worker.email
+  description = "Least-privilege SA the video analysis worker runs as (and Cloud Tasks authenticates with)."
+}
+
+output "worker_url" {
+  value       = join("", google_cloud_run_v2_service.worker[*].uri)
+  description = "Worker Cloud Run URL (empty unless enable_video_analysis = true)."
+}
+
 output "image_repository" {
   value       = "${var.region}-docker.pkg.dev/${var.project_id}/sanba"
   description = "Artifact Registry path. CI pushes images here as <repo>/<app>:<sha>."

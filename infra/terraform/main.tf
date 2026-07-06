@@ -37,6 +37,7 @@ resource "google_project_service" "services" {
     "artifactregistry.googleapis.com",
     "secretmanager.googleapis.com",
     "aiplatform.googleapis.com",
+    "cloudtasks.googleapis.com", # 動画解析パイプラインの非同期キュー (ADR-0040)
     "cloudtrace.googleapis.com",
     "monitoring.googleapis.com",
     "logging.googleapis.com",
