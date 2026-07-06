@@ -3,12 +3,17 @@
 機能実装時に Figma 上で UI/UX を検討・実装・修正するための MCP 連携手順。
 設計判断の背景は [ADR-0011](../adr/0011-figma-mcp-design-loop.md) を参照。
 
+> **正本の向きに注意（[ADR-0047](../adr/0047-app-is-canonical-figma-follows.md)）**: 現在は
+> **`apps/web` の実装が UI/UX の唯一の正本**で、Figma は追従する follower。したがって主用途は
+> 「**コード → デザイン**（実装を Figma に反映）」であり、Figma を正として実装へ写す旧運用は行わない。
+> 意匠の定義は ADR-0033、トークンの実体は `apps/web/app/globals.css`。
+
 ## 何ができるか
 
 AI コーディングエージェント（Claude Code 等）から、インターネット越しに Figma を双方向操作できる。
 
-- **デザイン → コード**: Figma のフレーム/コンポーネントを読み取り、`apps/web`（Next.js）の実装へ落とす。
-- **コード → デザイン**: 実装やコンポーネントを Figma に書き戻し／同期する。
+- **コード → デザイン（主用途）**: 実装やコンポーネントを Figma に書き戻し／同期する（正本＝実装）。
+- **デザイン → コード（参考）**: Figma のフレーム/コンポーネントを読み取り、検討の下敷きにする。
 - ダイアグラム・FigJam の生成、デザインシステム/トークンの参照。
 
 ## 採用構成
@@ -46,9 +51,10 @@ claude mcp add --transport http figma https://mcp.figma.com/mcp
 
 ## 使い方の例
 
-- デザイン → コード: 対象フレームの URL を渡し、「この画面を `apps/web` に実装して」と依頼する。
-  エージェントが `get_design_context` / `get_screenshot` で意匠を取得し、コンポーネント化する。
-- コード → デザイン: 既存実装を指して「この画面を Figma に起こして」と依頼する（`use_figma` 系）。
+- コード → デザイン（主用途）: 既存実装を指して「この画面を Figma に起こして／実装に合わせて Figma を直して」
+  と依頼する（`use_figma` 系）。正本は `apps/web` の実装（ADR-0047）。
+- デザイン → コード（参考）: 対象フレームの URL を渡し、意匠検討の下敷きにする
+  （`get_design_context` / `get_screenshot`）。旧 Figma 正本を実装へ写す運用はしない。
 
 ## 注意
 
