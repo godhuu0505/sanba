@@ -41,7 +41,7 @@ async def test_regression_dataset_passes() -> None:
     assert await run_dataset_eval() == 0
 
 
-# ---- end_user モード（ADR-0032 決定9 / FR-2.8）---------------------------------
+# ---- end_user モード---------------------------------
 @pytest.mark.asyncio
 async def test_end_user_grounded_outscores_jargon_leak() -> None:
     from sanba_agent.evaluation import (

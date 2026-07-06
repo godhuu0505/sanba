@@ -35,6 +35,7 @@ import {
   type Product,
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { cleanSlug } from "@/lib/slug";
 
 export default function ProductDetailPage() {
   const auth = useAuth();
@@ -45,6 +46,9 @@ export default function ProductDetailPage() {
   const [product, setProduct] = useState<Product | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [name, setName] = useState("");
+  // URL キーワード（必須・グローバル一意 / ADR-0045）。既存アプリ（slug 未設定）は
+  // ここで設定するまで壁打ちを開始できないため、空のまま促す。
+  const [slugInput, setSlugInput] = useState("");
   const [description, setDescription] = useState("");
   const [newTerm, setNewTerm] = useState("");
   const [busy, setBusy] = useState(false);
@@ -61,6 +65,7 @@ export default function ProductDetailPage() {
       .then((p) => {
         setProduct(p);
         setName(p.name);
+        setSlugInput(p.slug ?? "");
         setDescription(p.description);
       })
       .catch((e) => {
@@ -91,12 +96,33 @@ export default function ProductDetailPage() {
       setError("アプリ名を入力してください");
       return;
     }
+    // slug は必須（ADR-0045）。API と同じ規則へ正規化し、形式違反・予約語は送信前に
+    // 指摘する。既存アプリ（未設定）もこの保存で設定してもらう（設定するまで壁打ち開始不可）。
+    const cleanedSlug = cleanSlug(slugInput);
+    if (cleanedSlug === null) {
+      setError(
+        "URL キーワードは小文字英数とハイフンで 2〜40 文字にしてください（予約された語・先頭末尾のハイフンは不可）",
+      );
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
-      setProduct(await updateProduct(productId, { name: trimmed, description }, credential));
-    } catch {
-      setError("保存に失敗しました");
+      const updated = await updateProduct(
+        productId,
+        { name: trimmed, slug: cleanedSlug, description },
+        credential,
+      );
+      setProduct(updated);
+      setSlugInput(updated.slug ?? "");
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 409) {
+        setError("この URL キーワードは既に使われています。別のキーワードにしてください");
+      } else if (e instanceof ApiError && e.status === 400) {
+        setError("URL キーワードが使えない形式か、予約されたキーワードです");
+      } else {
+        setError("保存に失敗しました");
+      }
     } finally {
       setBusy(false);
     }
@@ -188,7 +214,13 @@ export default function ProductDetailPage() {
                 あなたはこのアプリのメンバーです。ホームの「壁打ちを始める」から
                 対象にこのアプリを選ぶと、要件サンバを始められます。
               </p>
-              <Button variant="gold" block onClick={() => router.push("/prepare")}>
+              {/* slug 設定済みならこのアプリの準備 URL へ直行。未設定（既存アプリ）は
+                  ホームへ送り、オーナーによる設定を待つ（ADR-0045）。 */}
+              <Button
+                variant="gold"
+                block
+                onClick={() => router.push(product.slug ? `/${product.slug}/prepare` : "/")}
+              >
                 要件サンバを始める
               </Button>
             </Card>
@@ -204,6 +236,23 @@ export default function ProductDetailPage() {
                   value={name}
                   maxLength={200}
                   onChange={(e) => setName(e.target.value)}
+                />
+              </Field>
+              <Field
+                label="URL キーワード（必須）"
+                htmlFor="product-slug"
+                hint={
+                  product.slug
+                    ? `壁打ちの URL は /${product.slug}/prepare です。変更すると URL も変わります。`
+                    : "未設定です。設定するまでこのアプリでは壁打ちを始められません（/キーワード/prepare が壁打ちの URL になります）。"
+                }
+              >
+                <Input
+                  id="product-slug"
+                  value={slugInput}
+                  maxLength={60}
+                  onChange={(e) => setSlugInput(e.target.value)}
+                  placeholder="例: expense-app"
                 />
               </Field>
               <Field label="説明（任意）" htmlFor="product-description">

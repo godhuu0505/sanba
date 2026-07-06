@@ -186,6 +186,11 @@ class Product(BaseModel):
     name: str = Field(min_length=1)
     description: str = ""
     owner_sub: str
+    # URL キーワード（グローバル一意 / ADR-0045）。/{slug}/prepare 等のアプリ従属 URL の
+    # 識別子。None = 未設定（slug 導入前の既存アプリ）。未設定の間は slug URL を持てず、
+    # web は壁打ち開始を塞ぐ。形式検証は API 層（`_clean_slug`）、一意性の担保は
+    # `SessionRepository`（Firestore は product_slugs/{slug} レジストリ）が行う。
+    slug: str | None = None
     created_at: datetime = Field(default_factory=_now)
     # 利用者向け語彙（画面名・機能の呼び名）。end_user モードのプロンプトへ機械的に
     # シードする（ADR-0032 決定7）。Stage 1 では保持のみで未使用。
@@ -339,13 +344,13 @@ class SessionMeta(BaseModel):
     # None = 未入力（旧文書の互換）。
     goal: str | None = None
     goal_detail: str | None = None
-    # active → finalized（07 判定で参加者が要件を確定したとき / #186）。
+    # active → finalized（07 判定で参加者が要件を確定したとき）。
     status: str = "active"
     created_at: datetime = Field(default_factory=_now)
-    # 確定スナップショットの刻と件数（#186）。未確定なら None。
+    # 確定スナップショットの刻と件数。未確定なら None。
     finalized_at: datetime | None = None
     finalized_count: int | None = None
-    # 確定時点の要件 ID の不可逆スナップショット（#213）。finalize 後に要件が増減/却下
+    # 確定時点の要件 ID の不可逆スナップショット。finalize 後に要件が増減/却下
     # されても export はこの集合に固定して起票する。旧文書は既定 [] でフォールバック。
     finalized_requirement_ids: list[str] = Field(default_factory=list)
 
@@ -378,7 +383,7 @@ class AnalysisResult(BaseModel):
 
     summary: str
     open_topics: list[str] = Field(default_factory=list)
-    # 触れられているが基準が曖昧な論点（矛盾でも抜けでもない第三類 / #260・ADR-0022）。
+    # 触れられているが基準が曖昧な論点（矛盾でも抜けでもない第三類 / ADR-0022）。
     # open_topics（未確認の抜け）と区別し、detection.ambiguous として発火する。
     ambiguous_topics: list[str] = Field(default_factory=list)
     next_question: str

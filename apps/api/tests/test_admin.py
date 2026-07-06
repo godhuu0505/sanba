@@ -26,7 +26,6 @@ def _user(email: str) -> AuthUser:
 
 @pytest.fixture(autouse=True)
 def _reset(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
-    # 許可リストに admin@example.com を入れる。各テストで login ユーザーを差し替える。
     monkeypatch.setattr(settings, "admin_emails", "admin@example.com")
     # メモリ fallback を毎回クリーンにする (テスト間の汚染を避ける)。
     _repo._mem_sessions.clear()
@@ -82,8 +81,7 @@ def test_create_session_persists_and_lists() -> None:
 
 
 def test_admin_session_list_excludes_prep_goal() -> None:
-    # goal / goal_detail（準備フォームの自由記述・PII 可）は管理一覧に返さない
-    # （AdminSessionSummary の exclude / Codex comment 3524421531）。
+    # goal / goal_detail（準備フォームの自由記述・PII 可）は管理一覧に返さない。
     _login("admin@example.com")
     client.post(
         "/api/sessions",

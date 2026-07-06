@@ -5,7 +5,7 @@
 // product 従属セッションの会話に入る。02 準備は出さない（ゴール・repo は
 // product から継承済み / PR3）。
 //
-// Stage 2（ゲスト入場 / issue #319）: 未ログインでもログインへ飛ばさず、まず同意ゲートを
+// Stage 2（ゲスト入場）: 未ログインでもログインへ飛ばさず、まず同意ゲートを
 // 出す。同意後に Authorization 無しで joinProduct し、応答の join（LiveKit トークン +
 // session_token）でそのまま接続する（joinSession は呼ばない）。ゲスト可否の判定は常に
 // API が正（guest_join_enabled × scope=end_user）。401 のときだけログインへ誘導する。
@@ -161,7 +161,7 @@ export default function JoinPage() {
       const joined = pendingJoin ?? (await joinProduct(token, consent, auth.credential));
       if (!pendingJoin) setPendingJoin(joined);
       // ゲスト入場（ADR-0032 決定1）: LiveKit トークン + session_token が直接返る。
-      // sessions/join は呼ばない（require_user のまま / issue #319）。
+      // sessions/join は呼ばない（require_user のまま）。
       // ログイン済み: 従来どおり役割 invite を joinSession で交換する。
       let session: JoinResponse;
       if (joined.join) {

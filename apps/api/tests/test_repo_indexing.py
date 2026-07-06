@@ -180,7 +180,7 @@ def test_index_repo_all_fetch_failures_marks_failed() -> None:
 
 
 def test_index_repo_tags_chunks_with_repo_and_path() -> None:
-    # 各 chunk 先頭に [repo path] を付け、{repo} 検索で本文を引けるようにする（Codex P2）。
+    # 各 chunk 先頭に [repo path] を付け、{repo} 検索で本文を引けるようにする。
     fetcher = FakeFetcher({"src/main.py": "def main():\n    return 1\n"})
     indexer = _index()
     fetch_and_index_repo(

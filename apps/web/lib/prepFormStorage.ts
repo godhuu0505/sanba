@@ -1,4 +1,4 @@
-// 02 準備フォーム（ゴール / 役割 / 同意）を /login 往復で失わないための一時保存（#179）。
+// 02 準備フォーム（ゴール / 役割 / 同意）を /login 往復で失わないための一時保存。
 // sessionStorage（タブ内のみ・閉じると消える）に置く。機微情報ではない（goal は要件メモ、
 // role/consent は選択値）。認証情報は対象外（auth.tsx の「credential を永続化しない」方針は不変）。
 
@@ -7,12 +7,12 @@ const KEY = "sanba.prep.v1";
 export interface PrepForm {
   role?: string;
   goal?: string;
-  /** ゴールの詳細（背景・現状・制約などの自由記述 / #222）。開始時に文脈として投入する。 */
+  /** ゴールの詳細（背景・現状・制約などの自由記述）。開始時に文脈として投入する。 */
   goalDetail?: string;
   consent?: boolean;
   /** 連携リポジトリ "owner/name"（任意 / ADR-0027）。空文字は「連携しない」。 */
   githubRepo?: string;
-  /** 対象のプロダクト・アプリ（任意 / ADR-0031）。空文字は「指定しない」。 */
+  /** 対象のプロダクト・アプリ（必須 / ADR-0031・ADR-0044）。01 ホームで選択し、空文字は「未選択」。 */
   productId?: string;
 }
 

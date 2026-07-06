@@ -14,17 +14,23 @@
 4. **指標をハックしない**: Four Keys 等は本質的なボトルネック改善のために計測する。見栄えのためのPR分割等はしない。
 
 ## ディレクトリ規約
-- `apps/agent` — Python 3.12 / `uv` 管理。LiveKit Agents worker と ADK 定義。
-- `apps/api`   — Python 3.12 / FastAPI。LiveKit トークン発行とオーケストレーション。
-- `apps/web`   — Next.js (App Router) / TypeScript。
-- `infra/`     — Terraform と可観測性スタックの設定。変更は必ずレビュー。
-- `docs/`      — 設計判断は ADR (`docs/adr/NNNN-*.md`) に残す。
+- `apps/agent`   — Python 3.12 / `uv` 管理。LiveKit Agents worker と ADK 定義。
+- `apps/api`     — Python 3.12 / FastAPI。LiveKit トークン発行とオーケストレーション。
+- `apps/web`     — Next.js (App Router) / TypeScript。
+- `apps/worker`  — Python 3.12 / FastAPI。アップロード動画の非同期解析ワーカー（ADR-0040、Cloud Tasks push 受け口）。
+- `packages/sanba_shared` — セッション/要件モデルと永続化を agent・api・worker で共有（ADR-0014）。
+- `infra/`       — Terraform と可観測性スタックの設定。変更は必ずレビュー。
+- `docs/`        — 設計判断は ADR (`docs/adr/NNNN-*.md`) に残す。
 
 ## コーディング規約
 - Python: `ruff`（lint + format）、`pytest`、型ヒント必須。`mypy` を通す。
 - TypeScript: `biome` または `eslint` + `prettier`、`tsc --noEmit`。
 - コミットは Conventional Commits（`feat:`, `fix:`, `chore:`, `docs:`, `ci:` ...）。
 - シークレットはコミットしない。`.env`（gitignore 済）と Secret Manager を使う。
+- **コメントは原則書かない**。何をしているか（what）はコードとネーミングで表現し、コメントで説明しない。
+  - 書いてよいのは、コードだけでは分からない **why**（設計判断の理由、既知の制約、一見不要に見えるが実は必要な処理の理由、非自明な仕様の背景）に限る。
+  - 変更の経緯・チケット番号・対応した Issue・「なぜ直したか」はコメントではなく **コミットメッセージ / PR 説明** に書く。コードは将来のリファクタで無関係になっても残り続け、コメントだけが古びて嘘をつくため。
+  - 既存コードを触ったら、そのファイル内の不要な what コメント・経緯コメント・コメントアウトされた死んだコードは合わせて削除する。
 
 ## テスト方針
 - 単体: ツール/プロンプト整形/状態遷移のロジック。

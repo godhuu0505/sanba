@@ -1,7 +1,7 @@
-"""API tests for the invite-gated session flow (issue #8).
+"""API tests for the invite-gated session flow.
 
 These exercise the invite/authorization logic; the Google identity layer
-(ADR-0012) is stubbed via a dependency override so a verified user is assumed.
+is stubbed via a dependency override so a verified user is assumed.
 Authentication enforcement itself is covered in test_auth_integration.py.
 """
 
@@ -60,14 +60,13 @@ def test_create_without_consent_is_rejected() -> None:
     assert res.status_code == 400
 
 
-# ── セッション単位の連携リポジトリ（ADR-0027）─────────────────────────────
+# ── セッション単位の連携リポジトリ ─────────────────────────────
 def test_create_session_accepts_github_repo() -> None:
     res = client.post(
         "/api/sessions",
         json={"roles": ["pm"], "consent_acknowledged": True, "github_repo": "acme/product-a"},
     )
     assert res.status_code == 200
-    # 保存されたメタに反映される（export / agent がここから解決する）。
     from sanba_api.main import _repo
 
     meta = _repo.get_session(res.json()["session_id"])
@@ -85,7 +84,7 @@ def test_create_session_rejects_malformed_github_repo() -> None:
 
 
 def test_create_session_keeps_empty_github_repo_as_explicit_opt_out() -> None:
-    # 空文字は明示的な「連携しない」（Codex P2）。None（未指定=フォールバック）と区別して保存する。
+    # 空文字は明示的な「連携しない」。None（未指定=フォールバック）と区別して保存する。
     res = client.post(
         "/api/sessions",
         json={"roles": ["pm"], "consent_acknowledged": True, "github_repo": "  "},
@@ -98,9 +97,9 @@ def test_create_session_keeps_empty_github_repo_as_explicit_opt_out() -> None:
     assert meta.github_repo == ""
 
 
-# ── セッション準備情報（ADR-0035）───────────────────────────────────────
+# ── セッション準備情報 ───────────────────────────────────────
 def test_create_session_persists_prep_goal() -> None:
-    # 02 準備フォームのゴール・詳細は SessionMeta に保存され、agent が起動時に
+    # 準備フォームのゴール・詳細は SessionMeta に保存され、agent が起動時に
     # 初期 instructions へシードする（join 後の RAG 投入と違い起動に確実に間に合う）。
     res = client.post(
         "/api/sessions",
@@ -121,7 +120,7 @@ def test_create_session_persists_prep_goal() -> None:
 
 
 def test_create_session_normalizes_blank_goal_to_none() -> None:
-    # 空白のみは未入力扱い（premise を無駄に付けない）。旧クライアント（未指定）も None。
+    # 空白のみは未入力扱い（premise を無駄に付けない）。未指定も None。
     res = client.post(
         "/api/sessions",
         json={"roles": ["pm"], "consent_acknowledged": True, "goal": "  ", "goal_detail": "\n"},
@@ -145,7 +144,7 @@ def test_create_session_rejects_oversized_goal() -> None:
 
 
 def test_create_session_omitted_github_repo_stays_none() -> None:
-    # 未指定（旧クライアント）は None のまま = 環境変数フォールバックの従来挙動。
+    # 未指定は None のまま = 環境変数フォールバックの挙動。
     res = client.post("/api/sessions", json={"roles": ["pm"], "consent_acknowledged": True})
     from sanba_api.main import _repo
 
@@ -154,7 +153,7 @@ def test_create_session_omitted_github_repo_stays_none() -> None:
     assert meta.github_repo is None
 
 
-# ── 対象プロダクトへの従属（ADR-0031）─────────────────────────────────────
+# ── 対象プロダクトへの従属 ─────────────────────────────────────
 def _seed_owned_product(**kwargs: object) -> str:
     """`_fake_user`（owner-123456789）が所有する product をメモリ repo に用意する。"""
     from datetime import UTC, datetime
@@ -201,7 +200,7 @@ def test_create_session_links_product_and_inherits_repo() -> None:
 
 
 def test_create_session_explicit_repo_wins_over_product() -> None:
-    # セッションで明示 repo を送ったら product 継承より優先する（resolution order）。
+    # セッションで明示 repo を送ったら product 継承より優先する。
     pid = _seed_owned_product(github_repo="acme/search", github_index_status="ready")
     res = client.post(
         "/api/sessions",
@@ -222,7 +221,7 @@ def test_create_session_explicit_repo_wins_over_product() -> None:
 
 
 def test_create_session_explicit_opt_out_not_overridden_by_product() -> None:
-    # 空文字（明示的な「連携しない」）は product repo で上書きしない（PR#314 P1）。
+    # 空文字（明示的な「連携しない」）は product repo で上書きしない。
     pid = _seed_owned_product(github_repo="acme/search", github_index_status="ready")
     res = client.post(
         "/api/sessions",
@@ -243,7 +242,7 @@ def test_create_session_explicit_opt_out_not_overridden_by_product() -> None:
 
 
 def test_create_session_rejects_unauthorized_product_as_404() -> None:
-    # 他人所有・不存在の product は 404 に平す（存在秘匿 / _require_product_access）。
+    # 他人所有・不存在の product は 404 に平す（存在秘匿）。
     from datetime import UTC, datetime
 
     from sanba_shared.models import Product
@@ -272,7 +271,7 @@ def test_create_session_rejects_unauthorized_product_as_404() -> None:
 
 
 def test_create_session_rejects_repo_outside_allowlist(monkeypatch: pytest.MonkeyPatch) -> None:
-    # 許可リスト設定時は一覧に出ないリポを直接 POST で保存する抜け道も塞ぐ（Codex P1）。
+    # 許可リスト設定時は一覧に出ないリポを直接 POST で保存する抜け道も塞ぐ。
     from sanba_api.config import settings
 
     monkeypatch.setattr(settings, "github_repo_allowlist", "acme, other/repo")
@@ -324,7 +323,7 @@ def test_github_repos_lists_candidates_when_enabled(monkeypatch: pytest.MonkeyPa
 
 
 def test_github_repos_filtered_by_allowlist(monkeypatch: pytest.MonkeyPatch) -> None:
-    # 共有トークンが読める private リポ名を許可リスト外のユーザー環境へ漏らさない（Codex P1）。
+    # 共有トークンが読める private リポ名を許可リスト外のユーザー環境へ漏らさない。
     from sanba_api import github_export, main
     from sanba_api.config import settings
 
@@ -342,7 +341,7 @@ def test_github_repos_filtered_by_allowlist(monkeypatch: pytest.MonkeyPatch) -> 
 
 
 def test_github_repos_default_outside_allowlist_is_hidden(monkeypatch: pytest.MonkeyPatch) -> None:
-    # 既定リポジトリも許可リストを通す（Codex P2: 許可外の既定はリポ名の露出になり、
+    # 既定リポジトリも許可リストを通す（許可外の既定はリポ名の露出になり、
     # UI が候補外の既定値を選択肢として補ってしまう）。
     from sanba_api import github_export, main
     from sanba_api.config import settings

@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { SessionHistoryList, type SessionHistoryItem } from "./SessionHistoryList";
 
-// 01 ホーム「過去の要件を見る」履歴リスト（#215 / Figma 正本 99:3）。
+// 01 ホーム「過去の要件を見る」履歴リスト（Figma 正本 99:3）。
 // 空状態の文言・行の描画・遷移先 href・色のみ非依存の手掛かりを検証する。
 
 const ITEMS: SessionHistoryItem[] = [
@@ -40,11 +40,11 @@ describe("SessionHistoryList（過去の要件を見る）", () => {
     expect(screen.getAllByText("›")).toHaveLength(ITEMS.length);
   });
 
-  it("各行はリンクで、既定の遷移先は過去要件の絵巻閲覧画面 /sessions/{id}", () => {
+  it("各行はリンクで、既定の遷移先は過去要件の絵巻閲覧画面 /results/{id}", () => {
     render(<SessionHistoryList items={ITEMS} />);
     const links = screen.getAllByRole("link");
     expect(links).toHaveLength(ITEMS.length);
-    expect(links[0].getAttribute("href")).toBe("/sessions/s1");
+    expect(links[0].getAttribute("href")).toBe("/results/s1");
   });
 
   it("hrefFor を渡すと遷移先を差し替えられる", () => {

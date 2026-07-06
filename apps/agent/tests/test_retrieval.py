@@ -10,6 +10,26 @@ def test_memory_store_is_used_without_elasticsearch() -> None:
     assert store.is_memory is True
 
 
+def test_memory_mode_does_not_call_embeddings(monkeypatch) -> None:
+    # メモリフォールバック検索（_search_mem）はトークン重なりで採点し、埋め込みを参照しない。
+    # 使われない埋め込み API 呼び出しは (1) Vertex の gemini-embedding クォータを浪費して 429 を
+    # 招き (2) 同期ブロッキングで音声ループを塞ぐため、メモリモードでは embed しないこと。
+    import sanba_agent.retrieval as retrieval
+
+    def _boom(text: str) -> list[float] | None:
+        raise AssertionError("memory mode must not call embed_text")
+
+    monkeypatch.setattr(retrieval, "embed_text", _boom)
+    store = GroundingStore()
+    assert store.is_memory is True
+    store.index_passage("非機能要件はセキュリティと可用性を確認する。", "guide:nfr", "knowledge")
+    # 埋め込み無しでも memory 検索はトークンでヒットする（索引は成立している）。
+    results = store.search("セキュリティ 要件", k=2)
+    assert results and results[0].source == "guide:nfr"
+    # _MemDoc には埋め込みを保持しない（そもそも検索で使わない）。
+    assert store._mem[0].embedding is None
+
+
 def test_index_and_search_returns_relevant_passage() -> None:
     store = GroundingStore()
     store.index_passage("非機能要件はセキュリティと可用性を確認する。", "guide:nfr", "knowledge")
@@ -52,7 +72,7 @@ def test_build_search_params_includes_knn_and_filter_when_available() -> None:
 
 def test_context_passages_are_scoped_to_session() -> None:
     # context（セッション固有素材: ゴール/資料/紐づけ repo コード）は、session_id を渡すと
-    # 当該セッションのものだけが返る（他セッションの private 断片の越境ヒットを防ぐ / ADR-0028）。
+    # 当該セッションのものだけが返る（他セッションの private 断片の越境ヒットを防ぐ）。
     store = GroundingStore()
     src_a = "github:o/r@main:rank.py"
     src_b = "github:o/r2@main:billing.py"
@@ -66,7 +86,7 @@ def test_context_passages_are_scoped_to_session() -> None:
 
 
 def test_non_context_kinds_still_recall_across_sessions() -> None:
-    # 知識/過去要件は ADR-0003 の通り横断的に呼び戻す（session_id 指定でも絞らない）。
+    # 知識/過去要件は横断的に呼び戻す（session_id 指定でも絞らない）。
     store = GroundingStore()
     store.index_passage("非機能要件は可用性99.9%", "req-1", "requirement", "other-session")
     out = store.search("可用性 要件", k=5, session_id="sess-A")
@@ -95,7 +115,7 @@ def test_is_stale_repo_passage_filters_other_sha() -> None:
 
 
 def test_unlinked_owner_blocks_repo_passages(monkeypatch) -> None:
-    # owner が連携解除したら、索引済み repo chunk を検索時に遮断する（query-time ACL / ADR-0028）。
+    # owner が連携解除したら、索引済み repo chunk を検索時に遮断する（query-time ACL）。
     from sanba_shared.models import GitHubIndexStatus, SessionMeta
     from sanba_shared.repository import SessionRepository
 

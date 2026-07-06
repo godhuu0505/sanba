@@ -103,7 +103,7 @@ describe("管理画面の認証ゲート（厳密・全画面保護）", () => {
     expect(screen.queryByText("検める ›")).toBeNull();
   });
 
-  // ── 91/92 の画面分離（#220 / Figma 73:8・73:9）──────────────────
+  // ── 91/92 の画面分離（Figma 73:8・73:9）──────────────────
   it("91 一覧に主 CTA を出し、作成カードは常時展開しない（アコーディオン廃止）", async () => {
     authState.loggedIn = true;
     render(<AdminPage />);

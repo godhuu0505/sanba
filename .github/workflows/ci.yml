@@ -110,10 +110,10 @@ jobs:
   docker:
     name: docker build
     runs-on: ubuntu-latest
-    needs: [shared, agent, api, web]
+    needs: [shared, agent, api, worker, web]
     strategy:
       matrix:
-        # agent/api は共有パッケージを同梱するため context=リポジトリ直下 (ADR-0014 §9)。
+        # agent/api/worker は共有パッケージを同梱するため context=リポジトリ直下 (ADR-0014 §9)。
         # web は共有パッケージ不要なので従来どおり apps/web を context にする。
         include:
           - app: agent
@@ -122,6 +122,9 @@ jobs:
           - app: api
             context: .
             file: apps/api/Dockerfile
+          - app: worker
+            context: .
+            file: apps/worker/Dockerfile
           - app: web
             context: apps/web
             file: apps/web/Dockerfile
@@ -142,7 +145,7 @@ jobs:
   # docker は重いため集約対象外 (web の npm run build で build は担保済み)。
   quality-gate:
     name: quality-gate
-    needs: [shared, agent, api, four-keys, web]
+    needs: [shared, agent, api, worker, four-keys, web]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:
@@ -154,4 +157,4 @@ jobs:
             echo "::error::必須ジョブが失敗/キャンセル/スキップされました"
             exit 1
           fi
-          echo "全必須ジョブ (shared/agent/api/four-keys/web) が成功"
+          echo "全必須ジョブ (shared/agent/api/worker/four-keys/web) が成功"

@@ -1,10 +1,10 @@
 "use client";
 
-// 共有 realtime セッション hook（Issue #101）。
+// 共有 realtime セッション hook。
 //
 // 3画面（05/08/09）はこの hook の公開 API（state / metrics / store）を消費するだけにする。
 // 購読層・整列・冪等・ハイドレーションはここに一本化し、画面側に購読コードを書かせない
-// （衝突回避ルール: apps/web の購読層・イベントストアは #101 に一本化）。
+// （衝突回避ルール: apps/web の購読層・イベントストアはここに一本化）。
 //
 // 動作モード:
 //   - live  : LiveKit データチャネル（topic="sanba.events"）を購読 + GET ハイドレーション
@@ -31,13 +31,13 @@ import {
 import { RealtimeStore, type SessionState } from "./store";
 import { EVENTS_TOPIC, WEB_EVENTS_TOPIC, type ServerEvent } from "./types";
 
-/** 検知カードの選択肢タップを agent へ送る（契約 §4.5 / Issue #102）。 */
+/** 検知カードの選択肢タップを agent へ送る（契約 §4.5）。 */
 export type SendSelection = (detectionId: string, selectedValue: string) => void;
 
-/** テキスト入力を会話ターンとして agent へ送る（契約 §4.5 / #185）。 */
+/** テキスト入力を会話ターンとして agent へ送る（契約 §4.5）。 */
 export type SendText = (text: string) => void;
 
-/** 通常質問（金枠）への回答を agent へ送る（契約 §4.5 / #181）。 */
+/** 通常質問（金枠）への回答を agent へ送る（契約 §4.5）。 */
 export type SendAnswer = (
   questionId: string,
   answer: { selectedValue?: string; text?: string },
@@ -177,14 +177,14 @@ export function useRealtimeSession(opts: LiveOptions): UseRealtimeSessionResult 
         /* P1・任意 */
       }
     }
-    // 現在質問（金枠ピン / #212）を他 GET と同じ順序で結線する。§5-11: question 由来 seq で
+    // 現在質問（金枠ピン）を他 GET と同じ順序で結線する。§5-11: question 由来 seq で
     // global maxSeq を進めてよいのは主スナップショット（/requirements・必要なら /detections）が
     // 全て成功したときだけ。失敗時は lastQuestionSeq だけ進め、gap/retry を残す。
     try {
       const snap = await fetchCurrentQuestion(sessionId, sessionToken);
       store.hydrateQuestion(snap.question, snap.seq, requirementsOk && detectionsOk);
     } catch {
-      /* #212・任意（ハイドレーションは補助。ライブ差分で前進できる）。 */
+      /* 任意（ハイドレーションは補助。ライブ差分で前進できる）。 */
     }
   }, [sessionId, sessionToken, hydrateDetections, store]);
 
@@ -202,7 +202,7 @@ export function useRealtimeSession(opts: LiveOptions): UseRealtimeSessionResult 
     return off;
   }, [sessionId, store, hydrate]);
 
-  // 再接続のたびにスナップショットを取り直す（Codex P2）。SessionView を保持したまま
+  // 再接続のたびにスナップショットを取り直す。SessionView を保持したまま
   // 再接続する設計（03 / ConversationStart）では、切断中に他参加者/agent が更新し、
   // 復帰後に新しい seq イベントが来ないと画面が古いまま残るため、Connected 復帰時に
   // ローカル状態は保持したまま hydrate だけ再実行する（初回接続では二重実行しない）。

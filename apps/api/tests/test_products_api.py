@@ -1,4 +1,4 @@
-"""products API (ADR-0031 / PR2) のテスト。
+"""products API (ADR-0031) のテスト。
 
 - 認可の一点集約 (_require_product_access): owner / admin のみ。非所有・不存在は 404 に平す。
 - name 空 400・未ログイン 401・allowlist・同一 (repo,branch,sha) の再索引スキップ。
@@ -44,7 +44,10 @@ def _login(sub: str, email: str = "u@example.com") -> None:
 
 
 def _create(name: str = "請求アプリ", **kwargs: Any) -> dict[str, Any]:
-    res = client.post("/api/products", json={"name": name, **kwargs})
+    # slug は必須（ADR-0045）。指定がなければ既定値で埋める（各テストの関心事を汚さない）。
+    payload: dict[str, Any] = {"name": name, "slug": "test-app"}
+    payload.update(kwargs)
+    res = client.post("/api/products", json=payload)
     assert res.status_code == 200, res.text
     body: dict[str, Any] = res.json()
     return body
@@ -63,19 +66,66 @@ def test_create_product_returns_random_id_and_no_owner_pii() -> None:
     assert body["description"] == "経費精算"
     assert body["glossary"] == ["請求書"]  # 空要素は捨てる
     assert body["github_index_status"] == "none"
+    assert body["slug"] == "test-app"
     # PII / 内部識別子は返さない (最小権限)。
     assert "owner_sub" not in body
 
 
 def test_create_product_rejects_empty_name_as_400() -> None:
     _login(OWNER)
-    assert client.post("/api/products", json={"name": "   "}).status_code == 400
+    assert client.post("/api/products", json={"name": "   ", "slug": "x-app"}).status_code == 400
 
 
 def test_create_product_requires_login(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(auth_google.settings, "google_oauth_client_id", "cid", raising=True)
     monkeypatch.setattr(auth_google.settings, "auth_dev_bypass", False, raising=True)
-    assert client.post("/api/products", json={"name": "x"}).status_code == 401
+    assert client.post("/api/products", json={"name": "x", "slug": "x-app"}).status_code == 401
+
+
+# ---- slug（ADR-0045）---------------------------------------------------------
+def test_create_product_normalizes_and_validates_slug() -> None:
+    _login(OWNER)
+    # 前後空白・大文字は正規化して受理する。
+    body = _create(slug="  Billing-App  ")
+    assert body["slug"] == "billing-app"
+    # 形式違反（1 文字・先頭/末尾ハイフン・非 ASCII・空白・記号）は 400。
+    for bad in ["a", "-abc", "abc-", "日本語", "has space", "app!"]:
+        res = client.post("/api/products", json={"name": "x", "slug": bad})
+        assert res.status_code == 400, f"slug={bad!r} は 400 のはず"
+    # 予約語（web の既存ルートと衝突する slug）は 400。
+    for reserved in ["products", "prepare", "sessions", "results", "login", "api"]:
+        res = client.post("/api/products", json={"name": "x", "slug": reserved})
+        assert res.status_code == 400, f"slug={reserved!r} は予約語のはず"
+
+
+def test_create_product_duplicate_slug_is_409() -> None:
+    _login(OWNER)
+    _create(slug="dup-app")
+    # 別ユーザーでもグローバルに一意（テナント 1 つ / ADR-0045）。
+    _login("someone-else")
+    res = client.post("/api/products", json={"name": "y", "slug": "dup-app"})
+    assert res.status_code == 409
+
+
+def test_update_product_changes_slug_with_conflict_check() -> None:
+    _login(OWNER)
+    pid = _create(slug="first-app")["id"]
+    _create(name="他", slug="other-app")
+    # 変更は正規化して受理、使用済みは 409、形式違反は 400。
+    res = client.patch(f"/api/products/{pid}", json={"slug": "Renamed-App"})
+    assert res.status_code == 200
+    assert res.json()["slug"] == "renamed-app"
+    assert client.patch(f"/api/products/{pid}", json={"slug": "other-app"}).status_code == 409
+    assert client.patch(f"/api/products/{pid}", json={"slug": "bad slug"}).status_code == 400
+    # 409/400 後も現値は保たれる。
+    assert client.get(f"/api/products/{pid}").json()["slug"] == "renamed-app"
+
+
+def test_legacy_product_without_slug_is_returned_as_none() -> None:
+    """slug 導入前の既存アプリ（未設定）は None のまま返す（web が設定を促す）。"""
+    _seed("prod-legacy", OWNER, created=datetime(2026, 1, 1, tzinfo=UTC))
+    _login(OWNER)
+    assert client.get("/api/products/prod-legacy").json()["slug"] is None
 
 
 def test_mine_returns_only_own_products_sorted_desc() -> None:

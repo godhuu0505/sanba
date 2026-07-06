@@ -188,7 +188,7 @@ describe("RealtimeStore — hydration boundary", () => {
     expect(r?.status).toBe("confirmed");
   });
 
-  // #119: GET スナップショットに含まれない種別（status/transcript/analysis/session.completed）
+  // GET スナップショットに含まれない種別（status/transcript/analysis/session.completed）
   // は requirements 境界で捨てない。GET 実行中〜直後に seq<=境界 で後着しても取りこぼさない。
   it("applies non-snapshot events (status) that arrive at/below the requirements boundary", () => {
     const s = new RealtimeStore();
@@ -269,7 +269,7 @@ describe("RealtimeStore — detection lifecycle", () => {
 });
 
 describe("RealtimeStore — status ordering", () => {
-  // #122: status は lossy。順序キーは (echoSeq, lossy_seq)。echoSeq は echo した reliable seq。
+  // status は lossy。順序キーは (echoSeq, lossy_seq)。echoSeq は echo した reliable seq。
   const status = (echoSeq: number, lossySeq: number, phase: string) => ({
     v: 1,
     type: "status" as const,
@@ -288,10 +288,10 @@ describe("RealtimeStore — status ordering", () => {
     expect(s.getSnapshot().phase).toBe("deliberating");
   });
 
-  it("再起動後も lossy_seq の epoch ブロックで status が復帰する（#270）", () => {
+  it("再起動後も lossy_seq の epoch ブロックで status が復帰する", () => {
     const s = new RealtimeStore();
     s.apply(status(3, 9, "listening")); // 再起動前: lossy_seq=9
-    // 再起動: agent は lossy_seq を epoch ブロック基底（例 1e9+1）から振り出す（#270）。
+    // 再起動: agent は lossy_seq を epoch ブロック基底（例 1e9+1）から振り出す。
     // echo した reliable seq は後退し得る（例 2）が、status は lossy_seq 単独で順序付けるため復帰する。
     s.apply(status(2, 1_000_000_001, "deliberating"));
     expect(s.getSnapshot().phase).toBe("deliberating");

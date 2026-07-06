@@ -37,6 +37,9 @@ describe("SANBA design system", () => {
   it("Button asChild はラッパ要素に化ける（アンカー化）", () => {
     render(
       <Button asChild>
+        {/* asChild の検証用アンカー。実ページへの導線ではない（/[slug] ルート追加で
+            no-html-link-for-pages が誤検知するため抑止）。 */}
+        {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
         <a href="/start">始める</a>
       </Button>,
     );
@@ -89,10 +92,11 @@ describe("SANBA design system", () => {
     expect(screen.queryByText("検める ›")).toBeNull();
   });
 
-  // #162: 複数子（icon/title/trailing）を持つ行でも asChild がクラッシュせず host 要素に化ける。
+  // 複数子（icon/title/trailing）を持つ行でも asChild がクラッシュせず host 要素に化ける。
   it("ListRow asChild は複数子のままアンカー化し内容を内包する（Slot 複数子クラッシュ回避）", () => {
     render(
       <ListRow asChild icon={<span>📷</span>} title="カメラで撮る" subtitle="写真を解析">
+        {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- asChild 検証用 */}
         <a href="/camera" />
       </ListRow>,
     );
@@ -107,6 +111,7 @@ describe("SANBA design system", () => {
   it("SessionRow asChild はカード全体を host 要素に化けさせる（#162）", () => {
     render(
       <SessionRow asChild title="検索機能" meta="pm@example.com">
+        {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- asChild 検証用 */}
         <a href="/sessions/1" />
       </SessionRow>,
     );

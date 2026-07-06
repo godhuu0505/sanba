@@ -5,16 +5,17 @@
 //      / ADR-0004（マルチモーダル入力）/ ADR-0018。
 //
 // 設計ポイント:
-// - SessionView 非依存の独立部品。02 準備（#222）でも再利用できるよう LiveKit には一切触れない。
+// - SessionView 非依存の独立部品。02 準備でも再利用できるよう LiveKit には一切触れない。
 //   カメラ/画面共有のローカルトラック制御は親（SessionView）がハンドラとして注入する
 //   （ハンドラ未指定の文脈ではその導線を出さない）。これで旧 MaterialView の経路をここへ統合し、
-//   二重実装を撤去する（#201 受け入れ基準）。
+//   二重実装を撤去する。
 // - 投入種別（camera/screen/upload/drive）は onSelectSource で計測可能にする（CLAUDE.md 原則3）。
 // - a11y: 暗幕＋ボトムシート（role=dialog/aria-modal）、ESC で閉じる、フォーカストラップ、
 //   見た目に依らないラベル（ADR-0017）。
 //
-// Google ドライブは ADR-0007 で未承認（保留）。実 OAuth スコープ追加は別チケットのため、ここでは
-// 導線（最小ピッカ）のみを出し、押下時に「準備中」を案内する（onDrive 注入で実導線に差し替え可能）。
+// Google ドライブは drive.file + Google Picker で取り込む（ADR-0044 / ADR-0007 の保留を解除）。
+// 実導線は親が onDrive で注入する（EntryFlow / SessionView）。未注入の文脈では従来どおり
+// 「準備中」を案内するフォールバックに退化する。
 
 import { Camera, ChevronRight, Cloud, Monitor, Upload, X } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
@@ -45,14 +46,14 @@ export interface MaterialSourceSheetProps {
    */
   onDrive?: () => void;
   /**
-   * 手段選択の計測フック（CLAUDE.md 原則3 / #201 投入種別の計測）。各導線の押下で発火する。
-   * 運用での収集先（OTLP/メトリクス）への配線は #232。
+   * 手段選択の計測フック（CLAUDE.md 原則3・投入種別の計測）。各導線の押下で発火する。
+   * 運用での収集先（OTLP/メトリクス）への配線は別途行う。
    */
   onSelectSource?: (source: MaterialSource) => void;
   /** カメラ/画面共有の開始失敗（権限拒否・ピッカーキャンセル）を示す（親が制御）。 */
   error?: string | null;
   /**
-   * 配置。既定は会話中のボトムシート（"bottom"）。02 準備では画面中央に出す（"center" / #222）。
+   * 配置。既定は会話中のボトムシート（"bottom"）。02 準備では画面中央に出す（"center"）。
    * ルーム外の準備画面はキーボード近接の必要が薄く、フォームの中で完結するダイアログとして
    * 中央に据える方が収まりが良い。
    */
@@ -173,7 +174,7 @@ export function MaterialSourceSheet({
         <SourceRow
           icon={<Upload size={20} />}
           title="ファイルをアップロード"
-          sub="モック・スクショ・写真（PNG/JPG）・録画（MP4/MOV）"
+          sub="写真（PNG/JPG）・録画（MP4/MOV）・資料（PDF/Office/Markdown/HTML/CSV 等）"
           onClick={() => pick("upload", onUpload)}
         />
 
@@ -191,7 +192,7 @@ export function MaterialSourceSheet({
         <SourceRow
           icon={<Cloud size={20} />}
           title="Google ドライブから選ぶ"
-          sub="保存済みの資料を渡す"
+          sub="Google ドキュメント・スプレッドシート・スライドも取り込めます"
           onClick={() => pick("drive", onDrive ?? (() => setDriveNotice(true)))}
         />
         {driveNotice && !onDrive && (

@@ -46,6 +46,17 @@ class ProductNotFound(Exception):
     """対象の product が存在しないときに送出 (ADR-0031)。"""
 
 
+class ProductSlugTaken(Exception):
+    """slug が別の product に使用済みのときに送出 (ADR-0045)。
+
+    slug はグローバル一意（/{slug}/prepare 等の URL 識別子）。api 層は 409 に写像する。
+    """
+
+    def __init__(self, slug: str) -> None:
+        super().__init__(slug)
+        self.slug = slug
+
+
 class InviteNotFound(Exception):
     """対象の深掘りリンクが存在しないときに送出 (ADR-0031)。"""
 
@@ -90,7 +101,7 @@ class SessionRepository:
 
     def __init__(self, data_retention_days: int = 30, mask_pii_before_persist: bool = True) -> None:
         self._retention_days = data_retention_days
-        # 発話を永続化する前に PII をマスクするか（issue #10 / mask_pii_before_index）。
+        # 発話を永続化する前に PII をマスクするか。
         # ドメイン層は app config に依存しないので、呼び出し側 (agent/api) が注入する。
         self._mask_pii = mask_pii_before_persist
         self._client = self._init_client()
@@ -98,17 +109,17 @@ class SessionRepository:
         self._mem_sessions: dict[str, SessionMeta] = {}
         self._mem_utterances: dict[str, list[Utterance]] = {}
         self._mem_requirements: dict[str, dict[str, Requirement]] = {}
-        # 検知 (矛盾/抜け) と適用済み最大 seq (#94/#100)。ハイドレーションの土台。
+        # 検知 (矛盾/抜け) と適用済み最大 seq。ハイドレーションの土台。
         self._mem_detections: dict[str, dict[str, dict[str, Any]]] = {}
         self._mem_seq: dict[str, int] = {}
-        # lossy（status/transcript.partial）の epoch（再起動ごとに +1 / #270・ADR-0021）。
+        # lossy（status/transcript.partial）の epoch（再起動ごとに +1 / ADR-0021）。
         # 起動時にここから lossy_seq の開始基底を払い出し、再起動を跨いで lossy_seq を
         # 大域的に単調増加させる（接続維持中の web が再起動後の lossy を黙殺しないように）。
         self._mem_lossy_epoch: dict[str, int] = {}
-        # 投入済み素材のメタ (#184)。GET context/files の復元に使う。プロセス内に閉じず外部
+        # 投入済み素材のメタ。GET context/files の復元に使う。プロセス内に閉じず外部
         # ストアへ永続化することで、多インスタンス/再起動後のリロード/途中参加でも復元できる。
         self._mem_materials: dict[str, dict[str, dict[str, Any]]] = {}
-        # 現在の未回答質問の単一ポインタ (#212 / ADR-0020)。最新1問モデルなのでセッション
+        # 現在の未回答質問の単一ポインタ (ADR-0020)。最新1問モデルなのでセッション
         # ごとに 1 ドキュメント。tombstone（cleared）も含めて保持し GET で cleared_seq を返す。
         self._mem_questions: dict[str, dict[str, Any]] = {}
         # ユーザーの GitHub App 連携 (`users/{sub}` / ADR-0028)。sub -> GitHubLink。
@@ -126,6 +137,9 @@ class SessionRepository:
         # in-memory での招待応答（pending → accepted/declined + メンバー作成）を
         # アトミックにするためのロック。Firestore 経路はトランザクションが担う。
         self._mem_member_lock = threading.Lock()
+        # product slug のグローバル一意性を in-memory で担保するロック（ADR-0045）。
+        # Firestore 経路は product_slugs/{slug} レジストリ + トランザクションが担う。
+        self._mem_product_lock = threading.Lock()
 
     @staticmethod
     def _init_client():  # type: ignore[no-untyped-def]
@@ -138,7 +152,7 @@ class SessionRepository:
             return None
 
     def _expire_at(self) -> datetime | None:
-        """Retention deadline for stored data (issue #10). None = keep indefinitely.
+        """Retention deadline for stored data. None = keep indefinitely.
 
         Firestore deletes documents whose `expireAt` field is in the past, once a TTL
         policy is enabled on that field (see infra/terraform + docs/security.md).
@@ -172,9 +186,9 @@ class SessionRepository:
         return list(self._mem_sessions.values())
 
     def list_sessions_by_owner(self, owner_sub: str) -> list[SessionMeta]:
-        """呼び出しユーザー本人 (owner_sub) のセッションだけを新しい順で返す (#250)。
+        """呼び出しユーザー本人 (owner_sub) のセッションだけを新しい順で返す。
 
-        ホームの「過去の要件を見る」履歴リスト (#215) の供給元。認可は本人限定なので、
+        ホームの「過去の要件を見る」履歴リストの供給元。認可は本人限定なので、
         `list_sessions` の全件ではなく owner_sub で必ず絞る。Firestore は owner_sub の
         等価クエリ、in-memory はフィルタで同じ意味にする。並びは created_at 降順 (新しい
         ものを上に)。複合インデックス不要なよう order_by は使わずアプリ側で整列する。
@@ -205,19 +219,19 @@ class SessionRepository:
         confirmed_count: int,
         finalized_requirement_ids: list[str],
     ) -> SessionMeta | None:
-        """07 判定の「確定」を永続化する（#186 / #213）。
+        """07 判定の「確定」を永続化する。
 
         セッションを finalized にし、確定した要件件数・確定時の要件 ID 集合・刻を刻む。
         存在しなければ None。要件そのものの承認（draft→approved / TTL 解除）はここでは
         触れず、呼び出し側（API の finalize エンドポイント）が set_requirement_status で
         行う。確定スナップショットはあくまでセッション単位の不可逆マーカ。
-        `finalized_requirement_ids` は export が固定集合を起票する土台（#213）。
+        `finalized_requirement_ids` は export が固定集合を起票する土台。
         """
         meta = self.get_session(session_id)
         if meta is None:
             return None
         # 不可逆マーカ: 既に finalized なら最初のスナップショット（件数・ID集合・刻）を保持
-        # して返す（Codex P2）。確定後に要件が増減/二重 POST されても初回確定値を変えない。
+        # して返す。確定後に要件が増減/二重 POST されても初回確定値を変えない。
         if meta.status == "finalized":
             return meta
         snapshot_ids = list(finalized_requirement_ids)
@@ -329,19 +343,60 @@ class SessionRepository:
 
         product は owner が明示的に削除するまで残す運用資産なので、発話や draft 要件と
         違い TTL（expireAt）は付けない（ADR-0031 影響節）。
+        slug 付きならグローバル一意を担保する（ADR-0045）: Firestore は
+        `product_slugs/{slug}` レジストリの存在チェックと作成を同一トランザクションで
+        行い、in-memory はロックで走査を直列化する。使用済みなら ProductSlugTaken。
         """
         if self._client is not None:
+            if product.slug:
+                self._create_product_with_slug_txn(product)
+                return
             self._client.collection("products").document(product.id).set(
                 product.model_dump(mode="json")
             )
             return
-        self._mem_products[product.id] = product
+        with self._mem_product_lock:
+            if product.slug and any(p.slug == product.slug for p in self._mem_products.values()):
+                raise ProductSlugTaken(product.slug)
+            self._mem_products[product.id] = product
+
+    def _create_product_with_slug_txn(self, product: Product) -> None:
+        from google.cloud import firestore
+
+        slug_ref = self._client.collection("product_slugs").document(product.slug)
+        product_ref = self._client.collection("products").document(product.id)
+
+        @firestore.transactional  # type: ignore[misc]
+        def _txn(transaction: Any) -> None:
+            snap = slug_ref.get(transaction=transaction)
+            if snap.exists:
+                raise ProductSlugTaken(product.slug or "")
+            transaction.set(slug_ref, {"product_id": product.id})
+            transaction.set(product_ref, product.model_dump(mode="json"))
+
+        _txn(self._client.transaction())
 
     def get_product(self, product_id: str) -> Product | None:
         if self._client is not None:
             snap = self._client.collection("products").document(product_id).get()
             return Product.model_validate(snap.to_dict()) if snap.exists else None
         return self._mem_products.get(product_id)
+
+    def get_product_by_slug(self, slug: str) -> Product | None:
+        """slug から product を引く（ADR-0045）。未使用 slug は None。
+
+        Firestore はレジストリ（product_slugs/{slug}）経由で引く。レジストリと
+        product 文書の不整合（削除との競合）は None に平す（呼び出し側は 404 扱い）。
+        """
+        if not slug:
+            return None
+        if self._client is not None:
+            snap = self._client.collection("product_slugs").document(slug).get()
+            if not snap.exists:
+                return None
+            product_id = (snap.to_dict() or {}).get("product_id")
+            return self.get_product(product_id) if product_id else None
+        return next((p for p in self._mem_products.values() if p.slug == slug), None)
 
     def list_products_by_owner(self, owner_sub: str) -> list[Product]:
         """呼び出しユーザー本人 (owner_sub) の product を新しい順で返す。
@@ -369,13 +424,18 @@ class SessionRepository:
         name: str | None = None,
         description: str | None = None,
         glossary: list[str] | None = None,
+        slug: str | None = None,
         output_formats: dict[str, str] | None = None,
         check_items: list[CheckItem] | None = None,
     ) -> Product:
-        """name / description / glossary / output_formats / check_items のみ上書きする。
+        """name / description / glossary / slug / output_formats / check_items のみ上書きする。
 
         所有と出所 (owner_sub / created_at) は不変。repo 紐づけは `set_product_github` が
         担う（`update_requirement` と同じ「編集可能フィールドを閉じる」パターン）。
+        slug の変更はグローバル一意を保つ（ADR-0045）: Firestore は新 slug の空き確認・
+        旧 slug の解放・product の patch を同一トランザクションで行う。None = 変更しない
+        （slug を「未設定に戻す」経路は持たない: URL の識別子は消さない）。使用済みなら
+        ProductSlugTaken。
         output_formats は audience→テンプレートの全量置換（部分 merge にすると「既定へ
         戻す＝キー削除」が Firestore の merge write で表現できない）。
         """
@@ -389,6 +449,9 @@ class SessionRepository:
             updates["description"] = description
         if glossary is not None:
             updates["glossary"] = list(glossary)
+        slug_changed = slug is not None and slug != current.slug
+        if slug_changed:
+            updates["slug"] = slug
         if output_formats is not None:
             updates["output_formats"] = dict(output_formats)
         if check_items is not None:
@@ -403,13 +466,49 @@ class SessionRepository:
         updated = Product.model_validate(data)
 
         if self._client is not None:
-            # github_* などの並行更新を巻き戻さないよう、編集対象フィールドのみ patch する。
-            # set(merge=True) だと map（output_formats）が深マージされ「audience キーの削除＝
-            # 既定へ戻す」が永続に反映されないため、フィールド単位で全量置換する update を使う。
-            self._client.collection("products").document(product_id).update(updates)
+            if slug_changed and slug is not None:
+                self._update_product_slug_txn(product_id, current.slug, slug, updates)
+            else:
+                # github_* などの並行更新を巻き戻さないよう、編集対象フィールドのみ patch する。
+                # set(merge=True) だと map（output_formats）が深マージされ「audience キーの削除＝
+                # 既定へ戻す」が永続に反映されないため、フィールド単位で全量置換する update を使う。
+                self._client.collection("products").document(product_id).update(updates)
         else:
-            self._mem_products[product_id] = updated
+            with self._mem_product_lock:
+                if slug_changed and any(
+                    p.slug == slug for pid, p in self._mem_products.items() if pid != product_id
+                ):
+                    raise ProductSlugTaken(slug or "")
+                self._mem_products[product_id] = updated
         return updated
+
+    def _update_product_slug_txn(
+        self, product_id: str, old_slug: str | None, new_slug: str, updates: dict[str, object]
+    ) -> None:
+        """slug 変更を含む product 更新（ADR-0045）。
+
+        新 slug レジストリの空き確認・旧 slug の解放・product 文書の patch を同一
+        トランザクションで行い、並行する登録・変更と競合しても一意性を破らない。
+        """
+        from google.cloud import firestore
+
+        new_ref = self._client.collection("product_slugs").document(new_slug)
+        old_ref = self._client.collection("product_slugs").document(old_slug) if old_slug else None
+        product_ref = self._client.collection("products").document(product_id)
+
+        @firestore.transactional  # type: ignore[misc]
+        def _txn(transaction: Any) -> None:
+            snap = new_ref.get(transaction=transaction)
+            if snap.exists and (snap.to_dict() or {}).get("product_id") != product_id:
+                raise ProductSlugTaken(new_slug)
+            if old_ref is not None:
+                transaction.delete(old_ref)
+            transaction.set(new_ref, {"product_id": product_id})
+            # 非トランザクション経路（update_product 本体）と同じく update を使う:
+            # set(merge=True) だと map（output_formats）が深マージされ全量置換にならない。
+            transaction.update(product_ref, updates)
+
+        _txn(self._client.transaction())
 
     def set_product_github(
         self,
@@ -460,12 +559,15 @@ class SessionRepository:
         消してから product 文書を消す（リンクだけ残ると join 検証が親なしで通り得る）。
         メンバー・メンバー招待（トップレベルコレクション / ADR-0036）も同様に消す:
         残ると承諾で親なし product のメンバーが生まれ、一覧に幽霊が残る。
+        slug レジストリ（product_slugs / ADR-0045）も解放する: 残ると slug が永久に
+        取れなくなり、get_product_by_slug が親なしを指す。
         """
         if self._client is not None:
             from google.cloud.firestore_v1.base_query import FieldFilter
 
             ref = self._client.collection("products").document(product_id)
-            if not ref.get().exists:
+            snap = ref.get()
+            if not snap.exists:
                 return False
             for inv in ref.collection("invites").stream():
                 inv.reference.delete()
@@ -477,7 +579,10 @@ class SessionRepository:
                 )
                 for doc in docs:
                     doc.reference.delete()
-            ref.delete()
+            # product 文書と slug レジストリは同一トランザクションで消す（ADR-0045）:
+            # 途中クラッシュで「slug は解放済みなのに product 文書が残る」状態を作らない
+            # （解放された slug を別 product が取ると、生きた product と重複して見える）。
+            self._delete_product_with_slug_txn(product_id, (snap.to_dict() or {}).get("slug"))
             return True
         if product_id not in self._mem_products:
             return False
@@ -490,6 +595,27 @@ class SessionRepository:
             k: i for k, i in self._mem_member_invites.items() if i.product_id != product_id
         }
         return True
+
+    def _delete_product_with_slug_txn(self, product_id: str, slug: str | None) -> None:
+        """product 文書と slug レジストリを原子的に削除する（ADR-0045）。
+
+        別々に消すと途中クラッシュで slug が先に解放され、別 product に取られた slug と
+        削除し損ねた product 文書が併存し得る。逆順（product 先）でも slug が永久に
+        取れなくなる。invites / members の掃除は従来どおり非トランザクション（親が
+        消えれば参照経路が閉じるため、残骸は無害）。
+        """
+        from google.cloud import firestore
+
+        product_ref = self._client.collection("products").document(product_id)
+        slug_ref = self._client.collection("product_slugs").document(slug) if slug else None
+
+        @firestore.transactional  # type: ignore[misc]
+        def _txn(transaction: Any) -> None:
+            if slug_ref is not None:
+                transaction.delete(slug_ref)
+            transaction.delete(product_ref)
+
+        _txn(self._client.transaction())
 
     # ---- Product invites (深掘りリンク / ADR-0031) ---------------------------
     def create_invite(self, invite: ProductInvite) -> None:
@@ -966,7 +1092,7 @@ class SessionRepository:
 
     # ---- Utterances --------------------------------------------------------
     def add_utterance(self, session_id: str, utterance: Utterance) -> None:
-        # PII を含みうる発話は永続化前にマスクする（issue #10 / #130 / mask_pii_before_index）。
+        # PII を含みうる発話は永続化前にマスクする。
         # grounding 索引は retrieval/ingestion 側でマスク済みだが、Firestore 保存経路でも
         # 同じ方針を適用し、生 PII が at-rest で残らないようにする。
         stored = utterance
@@ -1096,12 +1222,12 @@ class SessionRepository:
             self._mem_requirements.setdefault(session_id, {})[rid] = updated
         return updated
 
-    # ---- Detections (#94/#100) ---------------------------------------------
+    # ---- Detections ---------------------------------------------------------
     def save_detection(self, session_id: str, detection: dict[str, Any]) -> None:
-        """検知 (矛盾/抜け) を Firestore に upsert する (#94/#100)。
+        """検知 (矛盾/抜け) を Firestore に upsert する。
 
         ハイドレーション (GET /detections?open=1) でリロード/途中参加時に未解消検知を
-        復元できるよう、publish だけでなく永続化する (Codex review 対応)。
+        復元できるよう、publish だけでなく永続化する。
         """
         detection_id = detection["id"]
         if self._client is not None:
@@ -1134,9 +1260,9 @@ class SessionRepository:
         if existing is not None:
             existing.update(patch)
 
-    # ---- Materials (#184) --------------------------------------------------
+    # ---- Materials -----------------------------------------------------------
     def save_material(self, session_id: str, material: dict[str, Any]) -> None:
-        """投入済み素材のメタ (id/name/kind/status/extracted) を upsert する (#184)。
+        """投入済み素材のメタ (id/name/kind/status/extracted) を upsert する。
 
         GET /context/files でリロード/途中参加時に実ファイル名・解析状態を復元できるよう、
         プロセス内ではなく外部ストアに永続化する (Cloud Run の多インスタンス/再起動対策)。
@@ -1158,7 +1284,7 @@ class SessionRepository:
         self._mem_materials.setdefault(session_id, {})[material_id] = dict(material)
 
     def list_materials(self, session_id: str) -> list[dict[str, Any]]:
-        """セッションに投入された素材メタの一覧 (#184)。"""
+        """セッションに投入された素材メタの一覧。"""
         if self._client is not None:
             docs = (
                 self._client.collection("sessions")
@@ -1172,7 +1298,7 @@ class SessionRepository:
     def get_material(self, session_id: str, asset_id: str) -> dict[str, Any] | None:
         """素材メタを 1 件返す（存在しなければ None）。
 
-        非同期動画解析（ADR-0040）の冪等ガードと「破棄済み素材を復活させない」チェックに使う:
+        非同期動画解析（ADR-0045）の冪等ガードと「破棄済み素材を復活させない」チェックに使う:
         worker は解析前と書き込み直前に status/存在を確認し、二重解析や削除済み素材の復活を防ぐ。
         """
         if self._client is not None:
@@ -1187,7 +1313,7 @@ class SessionRepository:
         return self._mem_materials.get(session_id, {}).get(asset_id)
 
     def delete_material(self, session_id: str, asset_id: str) -> bool:
-        """投入済み素材メタを削除する (#245 真の破棄)。実体を消したら True (冪等)。
+        """投入済み素材メタを削除する（真の破棄）。実体を消したら True (冪等)。
 
         GET /context/files (list_materials) から外し、リロード/再接続での復活を止める。
         中断確定で DELETE /context/file/{asset_id} から呼ばれる。存在しない asset_id でも
@@ -1210,7 +1336,7 @@ class SessionRepository:
             return True
         return False
 
-    # ---- Current question (#212 / ADR-0020) --------------------------------
+    # ---- Current question (ADR-0020) -----------------------------------------
     def save_current_question(
         self, session_id: str, question: dict[str, Any], asked_seq: int
     ) -> None:
@@ -1220,7 +1346,7 @@ class SessionRepository:
         `GET /questions/current` が金枠ピンを復元できるよう、**publish の前に**確定させる
         （順序は §5-1。送信成功〜保存完了の窓で復元失敗が起きないようにする）。
         `expireAt` 付き（発話/draft 要件と同じ 30 日 TTL）。承認のような保全対象ではないため、
-        未回答のまま離脱したら他の一過性データと同じく TTL で消える（§5-8 / issue #10）。
+        未回答のまま離脱したら他の一過性データと同じく TTL で消える（§5-8）。
         `asked_seq` はその問いが publish された envelope seq。GET の順序情報に使う（§3）。
         """
         doc: dict[str, Any] = {
@@ -1307,7 +1433,7 @@ class SessionRepository:
 
         Cloud Run 再起動・再参加後に EventPublisher の seq をここからシードし、seq が 0 へ
         戻らず単調増加を継ぐ。web の seq ガードが再起動後イベントを黙殺しないようにする
-        （#123・ADR-0021）。
+        （ADR-0021）。
         """
         if self._client is not None:
             snap = self._client.collection("sessions").document(session_id).get()
@@ -1318,12 +1444,12 @@ class SessionRepository:
         return self._mem_seq.get(session_id, 0)
 
     def get_startup_seq(self, session_id: str) -> int:
-        """起動時の reliable seq シードを返す（#270 補完・ADR-0021）。
+        """起動時の reliable seq シードを返す（ADR-0021）。
 
         last_seq（set_session_seq で保存）に加え、current question の asked_seq/cleared_seq
         も読み、その最大値を返す。question.asked/cleared は set_session_seq を呼ばないが
         publisher._seq を消費するため（§3 設計制約）、再起動後に seq が後退して web の
-        status ガード（event.seq < lastStatusSeq）に弾かれる窓を塞ぐ（#270）。
+        status ガード（event.seq < lastStatusSeq）に弾かれる窓を塞ぐ。
         """
         base = self.get_session_seq(session_id)
         if self._client is not None:
@@ -1340,7 +1466,7 @@ class SessionRepository:
         return base
 
     def reserve_session_seq(self, session_id: str, count: int = 1) -> int:
-        """次の seq を count 個アトミックに予約し、予約区間の先頭 seq を返す（#145・ADR-0021）。
+        """次の seq を count 個アトミックに予約し、予約区間の先頭 seq を返す（ADR-0021）。
 
         API も agent と同じセッション seq 空間へ realtime を publish する（ADR-0023）。両者が
         並行しても単調増加を崩さないよう、last_seq をトランザクションで進めて区間を確保する。
@@ -1376,11 +1502,11 @@ class SessionRepository:
     LOSSY_EPOCH_BLOCK = 1_000_000_000
 
     def reserve_lossy_seq_base(self, session_id: str) -> int:
-        """この起動の lossy_seq 開始基底を払い出す（#270・ADR-0021）。
+        """この起動の lossy_seq 開始基底を払い出す（ADR-0021）。
 
         lossy（status/transcript.partial）の `lossy_seq` は ephemeral でプロセス再起動時に 0 へ
         戻るが、接続を維持している web は再起動前の `lossy_seq` 高水位を保持しているため、0 から
-        振り直すと再起動後の lossy が黙殺される（#123 が reliable seq で解いた退行の lossy 版）。
+        振り直すと再起動後の lossy が黙殺される（reliable seq と同種の退行）。
         起動ごとに epoch を +1 し、`epoch * BLOCK` を lossy_seq の開始基底として返すことで、
         再起動後の lossy_seq が必ず以前を上回り、大域的に単調増加する。epoch の採番は
         Firestore トランザクションで原子的に行う（複数 worker の同時起動に耐える）。

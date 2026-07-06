@@ -1,4 +1,4 @@
-"""Binary asset storage for multimodal uploads (issue #103 / ADR-0004).
+"""Binary asset storage for multimodal uploads (ADR-0004).
 
 `POST /api/sessions/{id}/context/file` を画像/動画に拡張するための保存層。
 受理した画像/動画を Cloud Storage に保存し、**安定 ID（content hash 由来の `asset_id`）**を
@@ -27,8 +27,19 @@ IMAGE_MIME = {"image/png": ".png", "image/jpeg": ".jpg"}
 VIDEO_MIME = {"video/mp4": ".mp4", "video/quicktime": ".mov"}
 IMAGE_EXT = {".png", ".jpg", ".jpeg"}
 VIDEO_EXT = {".mp4", ".mov"}
-# テキスト系（既存経路）。ここに該当しないものは「非対応」として 415 で弾く。
-TEXT_EXT = {".txt", ".md", ".pdf"}
+# テキスト系（そのまま UTF-8 として読める資料）。ここに該当しないものは「非対応」として
+# 415 で弾く。web の ACCEPTED_DOC（apps/web/lib/api.ts）と揃える。
+TEXT_EXT = {".txt", ".md", ".markdown", ".html", ".htm", ".csv", ".json"}
+TEXT_MIME = {"text/plain", "text/markdown", "text/html", "text/csv", "application/json"}
+# バイナリ文書（テキスト抽出して grounding へ流す）。生バイトはテキストの 4 倍則が使えない
+# （zip コンテナ等でバイト数≠文字数）ため、サイズ上限は画像/動画と同じ max_asset_bytes で守る。
+DOC_BINARY_EXT = {".pdf", ".docx", ".xlsx", ".pptx"}
+DOC_BINARY_MIME = {
+    "application/pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+}
 
 
 @dataclass(frozen=True)
@@ -45,7 +56,7 @@ class Asset:
 def material_record(
     asset_id: str, name: str, kind: str, status: str, extracted: int = 0
 ) -> dict[str, object]:
-    """素材一覧（GET context/files / 契約 §4 #184）の 1 行を組み立てる。
+    """素材一覧（GET context/files / 契約 §4）の 1 行を組み立てる。
 
     web の MaterialItem（id/name/status/extracted）に対応する。バイト列ではなく
     「投入された素材のメタ」で、リロード/再接続時に実ファイル名と状態を復元する。
@@ -89,12 +100,24 @@ def resolve_content_type(filename: str, content_type: str | None, kind: str) -> 
     return "video/quicktime" if ext == ".mov" else "video/mp4"
 
 
-def is_text_upload(filename: str, content_type: str | None) -> bool:
-    """既存のテキスト取り込み（txt/md/pdf）に該当するか。"""
+def _ext_and_ct(filename: str, content_type: str | None) -> tuple[str, str]:
+    """拡張子（小文字・ドット付き）と正規化済み content-type を取り出す。"""
     name = (filename or "").lower()
     ext = name[name.rfind(".") :] if "." in name else ""
     ct = (content_type or "").split(";")[0].strip().lower()
-    return ext in TEXT_EXT or ct in {"text/plain", "text/markdown", "application/pdf"}
+    return ext, ct
+
+
+def is_text_upload(filename: str, content_type: str | None) -> bool:
+    """テキスト取り込み経路（txt/md/html/csv/json + pdf/docx/xlsx/pptx）に該当するか。"""
+    ext, ct = _ext_and_ct(filename, content_type)
+    return ext in TEXT_EXT | DOC_BINARY_EXT or ct in TEXT_MIME | DOC_BINARY_MIME
+
+
+def is_binary_document(filename: str, content_type: str | None) -> bool:
+    """バイナリ文書（pdf/docx/xlsx/pptx）か。サイズ上限の選択（max_asset_bytes）に使う。"""
+    ext, ct = _ext_and_ct(filename, content_type)
+    return ext in DOC_BINARY_EXT or ct in DOC_BINARY_MIME
 
 
 def compute_asset_id(raw: bytes) -> str:
@@ -153,7 +176,7 @@ class AssetStore:
         )
 
     def delete(self, session_id: str, asset_id: str) -> bool:
-        """保存済み binary を削除する（#245 真の破棄）。実体を消したら True（冪等）。
+        """保存済み binary を削除する（真の破棄）。実体を消したら True（冪等）。
 
         拡張子は content_type 依存で呼び出し側（DELETE エンドポイント）は持たないため、
         `sessions/{sid}/assets/{asset_id}` を接頭辞に持つオブジェクトをまとめて消す。

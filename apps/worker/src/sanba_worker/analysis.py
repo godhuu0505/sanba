@@ -94,7 +94,6 @@ def process_video(
         _mark_failed(repo, session_id, asset_id, "video_too_long")
         return TaskResult("failed", "video_too_long")
 
-    # 解析（副作用は差し込み可能）。
     config = settings.media_config()
     if settings.google_genai_use_vertexai and payload.gcs_uri:
         result = analyze(config, gcs_uri=payload.gcs_uri, content_type=payload.content_type)

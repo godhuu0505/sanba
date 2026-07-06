@@ -2,8 +2,7 @@
 
 `apps/api` のアップロード取り込みと `apps/worker` の動画解析が、同じ Elasticsearch
 grounding 索引（agent が `search_grounding` で読む索引）へ観察チャンクを投入するための
-共有実装。以前は `apps/api/src/sanba_api/ingestion.py` に閉じていたが、worker からも
-同じロジックが要るため domain 層（sanba_shared）へ移設した（ADR-0040。三重複を避ける）。
+共有実装（ADR-0040）。
 
 config は各アプリの settings に依存しないよう `GroundingConfig` で受け取り、PII マスクは
 呼び出し側の masker を注入する（api/agent は各自の pii.py を使う）。ES 未設定なら
@@ -50,7 +49,6 @@ def chunk_text(text: str, chunk_size: int = 600, overlap: int = 80) -> list[str]
     text = text.strip()
     if not text:
         return []
-    # Prefer paragraph boundaries; fall back to a sliding window for long blocks.
     paragraphs = [p.strip() for p in re.split(r"\n\s*\n", text) if p.strip()]
     chunks: list[str] = []
     buf = ""
@@ -78,7 +76,6 @@ class ContextIndexer:
         self, config: GroundingConfig | None = None, masker: Callable[[str], str] | None = None
     ) -> None:
         self._config = config or GroundingConfig()
-        # PII マスクは呼び出し側から注入（api/agent は各自の pii.py）。未指定なら素通し。
         self._masker = masker
         self._client = self._init_client()
         self._mem: list[dict] = []
@@ -116,8 +113,8 @@ class ContextIndexer:
                     },
                 )
             else:
-                # 既存 index に session_id keyword mapping を明示する（PR 以前作成の index で
-                # session スコープの term フィルタが効くように。冪等 / Codex P2）。
+                # 既存 index にも session_id keyword mapping を明示し、session スコープの
+                # term フィルタが効くようにする（冪等）。
                 try:
                     client.indices.put_mapping(
                         index=INDEX, properties={"session_id": {"type": "keyword"}}
@@ -161,7 +158,7 @@ class ContextIndexer:
         """セッションの GitHub repo 由来 chunk（source が `github:` 始まり）を全削除する。
 
         準備画面で repo を選び直した / 別 branch へ変えた / 再同期したとき、古い repo・commit の
-        コード断片が search_grounding に残って混ざるのを防ぐ（ADR-0028・Codex P2）。repo/path に
+        コード断片が search_grounding に残って混ざるのを防ぐ（ADR-0028）。repo/path に
         依らず一括で消すため、`delete_context` の `#` 境界一致ではなく `github:` 前方一致で消す。
         削除件数を返す（冪等: 0 件でも安全）。
         """
@@ -199,7 +196,7 @@ class ContextIndexer:
         return deleted
 
     def delete_context(self, session_id: str, source_prefix: str) -> int:
-        """出所が `source_prefix`（例 `asset:{asset_id}`）の grounding chunk を取り消す（#245）。
+        """出所が `source_prefix`（例 `asset:{asset_id}`）の grounding chunk を取り消す。
 
         index_context は出所を `{source_name}#{i}` で保存するため、`source_prefix` 自身と
         `source_prefix#*` を削除対象にする（別 source_name への巻き込みを避ける）。ES 接続時は

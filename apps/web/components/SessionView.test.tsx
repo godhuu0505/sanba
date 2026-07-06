@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { MaterialItem } from "@/lib/realtime/selectors";
 
-// #207: 素材投入直後の pending 行の pct/status を画像/動画で出し分ける。
+// 素材投入直後の pending 行の pct/status を画像/動画で出し分ける。
 // SessionView は LiveKit と useRealtimeSession に依存するため、表示と realtime は薄くモックし、
 // handleFile が pending（extraMaterials）へ積む値だけを検査する。
 
@@ -16,6 +16,14 @@ vi.mock("@livekit/components-react", () => ({
   useRoomContext: () => ({ disconnect: vi.fn() }),
 }));
 vi.mock("livekit-client", () => ({ Track: { Source: { Microphone: "microphone" } } }));
+
+// Drive 同意（ADR-0044）は本テストの対象外。未許可の素の状態を返す。
+vi.mock("@/lib/auth", () => ({
+  useAuth: () => ({
+    driveGranted: null,
+    requestDriveAccess: () => Promise.resolve(null),
+  }),
+}));
 
 // realtime 購読は本テストの対象外。最小の state を返す。
 vi.mock("@/lib/realtime/useRealtimeSession", () => ({
@@ -35,6 +43,7 @@ const deleteContextFile = vi.fn();
 vi.mock("@/lib/api", () => ({
   ACCEPTED_IMAGE: ".png",
   ACCEPTED_VIDEO: ".mp4",
+  ACCEPTED_DOC: ".md",
   uploadContextFile: (...args: unknown[]) => uploadContextFile(...args),
   fetchContextFiles: () => Promise.resolve({ items: [] }),
   exportRequirements: vi.fn(),
@@ -133,7 +142,7 @@ describe("SessionView handleFile pending 行", () => {
     await waitFor(() => expect(lastMaterials.at(-1)?.status).toBe("done"));
   });
 
-  // ── 中断（#219）─────────────────────────────────────────────────────
+  // ── 中断 ─────────────────────────────────────────────────────
   it("アップロード中の中断で fetch が中止され（abort）、行は cancelled・id は破棄ガードへ", async () => {
     let captured: AbortSignal | undefined;
     // 中止されるまで解決しない fetch。abort で AbortError を投げる本物の挙動を模す。
@@ -220,7 +229,7 @@ describe("SessionView handleFile pending 行", () => {
     // 成功は反映されず破棄を維持（行は cancelled・done に戻らない）。
     expect(lastMaterials.find((m) => m.id === tempId)?.status).toBe("cancelled");
     expect(lastMaterials.some((m) => m.status === "done")).toBe(false);
-    // 古い中断応答は content-hash の asset_id を破棄ガードへ積まない（同一ファイル再投入を隠さない・Codex P2）。
+    // 古い中断応答は content-hash の asset_id を破棄ガードへ積まない（同一ファイル再投入を隠さない）。
     expect(lastCancelledIds.has("img-r")).toBe(false);
   });
 
@@ -250,7 +259,7 @@ describe("SessionView handleFile pending 行", () => {
     expect(rows[0].status).toBe("done");
   });
 
-  // ── 観測テレメトリ（#232 投入種別 / #243 中断）と真の破棄（#245）──────────
+  // ── 観測テレメトリ（投入種別 / 中断）と真の破棄 ──────────
   it("投入種別の選択で material.source_selected を送る（#232）", () => {
     render(<SessionView sessionId="s1" sessionToken="t1" />);
     act(() => onAddMaterial()); // 手段選択シートを開く。

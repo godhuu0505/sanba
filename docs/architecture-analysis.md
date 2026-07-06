@@ -15,9 +15,9 @@
 
 ## 0. 30 秒サマリ
 
-- **実行基盤は Cloud Run 3 サービス**（`sanba-web` / `sanba-api` / `sanba-agent`）。GKE は不採用（ADR-0006）。
+- **実行基盤は Cloud Run 4 サービス**（`sanba-web` / `sanba-api` / `sanba-agent` / `sanba-worker`）。GKE は不採用（ADR-0006）。`sanba-worker` はアップロード動画の非同期解析（ADR-0040）を担う。
 - **音声は LiveKit Cloud（WebRTC SFU）+ Gemini Live（speech-to-speech）** の二層。低遅延の対話層と、ADK マルチエージェントの分析層を分離。
-- **状態は Firestore**（セッション/要件/発話/検知/質問。TTL で自動失効）、**素材は Cloud Storage**（実装済だが現 Terraform では未プロビジョニング＝既定は in-memory）、**RAG 根拠付けは Elasticsearch**（BM25 + Gemini embedding の kNN ハイブリッド）。
+- **状態は Firestore**（セッション/要件/発話/検知/質問。TTL で自動失効）、**素材は Cloud Storage**（`materials` バケットを `media.tf` でプロビジョニング済み、ADR-0040）、**RAG 根拠付けは Elasticsearch**（BM25 + Gemini embedding の kNN ハイブリッド）。
 - **AI は二経路切替**: 本番は **Vertex AI（キーレス・実行 SA の `aiplatform.user`）**、ローカルは **AI Studio（`GOOGLE_API_KEY`）**。
 - **公開は Global 外部 Application Load Balancer + Serverless NEG + Google 管理 SSL + Cloud DNS**（`https://youken.sanba.net`）。
 - **CI/CD は GitHub Actions + Workload Identity Federation（鍵レス）→ Artifact Registry → `gcloud run deploy`**。env/secret/scale は Terraform 管理。
@@ -28,7 +28,7 @@
 
 ## 1. システム全体構成（コンポーネント俯瞰）
 
-参加者・運用者から、Cloud Run 上の 3 アプリ、外部リアルタイム/AI/検索サービス、永続化までの一枚絵。
+参加者・運用者から、Cloud Run 上の 4 アプリ、外部リアルタイム/AI/検索サービス、永続化までの一枚絵。
 
 ```mermaid
 flowchart LR
@@ -46,6 +46,11 @@ flowchart LR
     WEB["⬜ sanba-web<br/>Next.js / App Router<br/>scale-to-zero"]
     API["⬜ sanba-api<br/>FastAPI<br/>scale-to-zero"]
     AGENT["⬜ sanba-agent<br/>LiveKit Agents worker<br/>min=1 常駐"]
+    WORKER["⬜ sanba-worker<br/>動画非同期解析 (ADR-0040)<br/>scale-to-zero"]
+  end
+
+  subgraph tasks["🟦 Cloud Tasks"]
+    CT["video_analysis queue"]
   end
 
   subgraph realtime["🟩 リアルタイム (外部)"]
@@ -86,6 +91,13 @@ flowchart LR
   API --> FS
   API --> GCS
   AGENT --> ES
+
+  API -->|upload-complete で enqueue| CT
+  CT -->|OIDC push| WORKER
+  WORKER --> VTX
+  WORKER --> GCS
+  WORKER --> ES
+  WORKER --> FS
   API --> ES
   API -. "確定要件起票" .-> GH
   AGENT -. "起票/根拠取得" .-> GH
@@ -101,20 +113,21 @@ flowchart LR
 
 | # | サービス | API | 役割（このプロジェクトでの使われ方） | 定義箇所 |
 |---|---|---|---|---|
-| 1 | **Cloud Run** | `run.googleapis.com` | `sanba-web`/`sanba-api`/`sanba-agent` の実行基盤。web/api は `min=0`+`cpu_idle=true`（scale-to-zero）、agent は `cpu_idle=false`（常駐ワーカー）。agent の `min` は **Terraform 変数の既定こそ `1` だが、CI 経由デプロイ（`terraform.yml`）は `AGENT_MIN_INSTANCES` 未設定時に `0` へ上書き**＝GitHub Actions で初期構築した環境はワーカー非常駐（LiveKit 投入後に Variable で `1` に上げる） | `cloud_run.tf` / `terraform.yml` |
+| 1 | **Cloud Run** | `run.googleapis.com` | `sanba-web`/`sanba-api`/`sanba-agent`/`sanba-worker` の実行基盤。web/api/worker は `min=0`+`cpu_idle=true`（scale-to-zero）、agent は `cpu_idle=false`（常駐ワーカー）。agent の `min` は **Terraform 変数の既定こそ `1` だが、CI 経由デプロイ（`terraform.yml`）は `AGENT_MIN_INSTANCES` 未設定時に `0` へ上書き**＝GitHub Actions で初期構築した環境はワーカー非常駐（LiveKit 投入後に Variable で `1` に上げる） | `cloud_run.tf` / `media.tf` / `terraform.yml` |
 | 2 | **Firestore (Native)** | `firestore.googleapis.com` | セッション/要件/発話/検知/現在質問の永続化。`utterances`/`requirements`/`questions` に `expireAt` TTL を設定し保持期間後に自動削除 | `main.tf` |
-| 3 | **Artifact Registry** | `artifactregistry.googleapis.com` | コンテナイメージ（`api`/`web`/`agent`）格納。cleanup policy で直近 N 個のみ保持しストレージ課金抑制 | `main.tf` |
-| 4 | **Secret Manager** | `secretmanager.googleapis.com` | `session-signing-secret`/`livekit-*`/`elasticsearch-api-key`/`google-api-key` を Cloud Run に注入。terraform は「箱と参照」のみ管理し**値は管理外**（`gcloud secrets versions add` で投入） | `secrets.tf` |
-| 5 | **Vertex AI** | `aiplatform.googleapis.com` | 本番の Gemini 実行経路（**キーレス**＝実行 SA の `roles/aiplatform.user`）。Live/推論/Vision/Embedding | `main.tf` / `variables.tf` |
-| 6 | **Cloud Trace** | `cloudtrace.googleapis.com` | OpenTelemetry の**トレース**送信先（本番）。`observability.py` が設定するのは `OTLPSpanExporter` のみ＝現状 OTLP で出るのはトレースだけ。SA に `roles/cloudtrace.agent` | `main.tf` |
-| 7 | **Cloud Monitoring** | `monitoring.googleapis.com` | SA に `roles/monitoring.metricWriter` は付与済みだが、**アプリは MeterProvider を未設定**のためメトリクス・カウンタは現状 no-op（API は定義のみ。将来 MeterProvider/Reader を足すと有効化される） | `main.tf` |
-| 8 | **Cloud Logging** | `logging.googleapis.com` | 構造化ログ（structlog→**stdout 経由**で Cloud Logging が自動収集。OTLP ログ経路ではない）+ LB アクセスログ。SA に `roles/logging.logWriter` | `main.tf` / `domain.tf` |
-| 9 | **Cloud Storage** | `storage.googleapis.com` | **現状確実に使うのは Terraform リモート state（GCS backend）**。マルチモーダル素材バケットは `storage.py` が `GCS_BUCKET` 設定時に使う実装だが、**現 Terraform には素材バケット・`GCS_BUCKET` env・実行 SA への Storage 権限のいずれも未定義**＝既定では in-memory フォールバック（本番で素材を永続化するには別途プロビジョニングが必要） | `main.tf`（state）/ `storage.py`（実装） |
-| 10 | **Cloud Load Balancing (Compute)** | `compute.googleapis.com` | Global 外部 Application LB（`EXTERNAL_MANAGED`）+ Serverless NEG + Global Anycast IP + URL map + Google 管理 SSL 証明書。`domain != ""` のときだけ作成 | `domain.tf` |
-| 11 | **Cloud DNS** | `dns.googleapis.com` | マネージドゾーン + A レコード（LB IP）。`manage_dns=true` のとき。DNSSEC 対応 | `domain.tf` |
-| 12 | **Cloud Billing Budgets** | `billingbudgets.googleapis.com` | 月次予算アラート（50/90/100%）。コストガードレール | `main.tf` |
-| 13 | **IAM / Resource Manager** | `iam`/`cloudresourcemanager.googleapis.com` | 最小権限の実行 SA `sanba-runtime` と project IAM バインディング | `main.tf` |
-| 14 | **IAM Credentials / STS** | `iamcredentials`/`sts.googleapis.com` | **Workload Identity Federation**（GitHub Actions の鍵レス認証） | `main.tf` / `deploy.yml` |
+| 3 | **Artifact Registry** | `artifactregistry.googleapis.com` | コンテナイメージ（`api`/`web`/`agent`/`worker`）格納。cleanup policy で直近 N 個のみ保持しストレージ課金抑制 | `main.tf` |
+| 4 | **Cloud Tasks** | `cloudtasks.googleapis.com` | `video_analysis` キュー。api が upload-complete 時に 1 動画 = 1 タスクを enqueue、OIDC 付きで `sanba-worker` に push（ADR-0040） | `media.tf` |
+| 5 | **Secret Manager** | `secretmanager.googleapis.com` | `session-signing-secret`/`livekit-*`/`elasticsearch-api-key`/`google-api-key` を Cloud Run に注入。terraform は「箱と参照」のみ管理し**値は管理外**（`gcloud secrets versions add` で投入） | `secrets.tf` |
+| 6 | **Vertex AI** | `aiplatform.googleapis.com` | 本番の Gemini 実行経路（**キーレス**＝実行 SA の `roles/aiplatform.user`）。Live/推論/Vision/Embedding | `main.tf` / `variables.tf` |
+| 7 | **Cloud Trace** | `cloudtrace.googleapis.com` | OpenTelemetry の**トレース**送信先（本番）。`observability.py` が設定するのは `OTLPSpanExporter` のみ＝現状 OTLP で出るのはトレースだけ。SA に `roles/cloudtrace.agent` | `main.tf` |
+| 8 | **Cloud Monitoring** | `monitoring.googleapis.com` | SA に `roles/monitoring.metricWriter` は付与済みだが、**アプリは MeterProvider を未設定**のためメトリクス・カウンタは現状 no-op（API は定義のみ。将来 MeterProvider/Reader を足すと有効化される） | `main.tf` |
+| 9 | **Cloud Logging** | `logging.googleapis.com` | 構造化ログ（structlog→**stdout 経由**で Cloud Logging が自動収集。OTLP ログ経路ではない）+ LB アクセスログ。SA に `roles/logging.logWriter` | `main.tf` / `domain.tf` |
+| 10 | **Cloud Storage** | `storage.googleapis.com` | Terraform リモート state（GCS backend）に加え、`media.tf` が `materials` バケットと `GCS_BUCKET` env・worker/api 実行 SA への Storage 権限を定義済み（ADR-0040）。マルチモーダル素材バケットは `storage.py` が `GCS_BUCKET` 設定時に使う実装 | `main.tf`（state）/ `media.tf`（バケット・IAM）/ `storage.py`（実装） |
+| 11 | **Cloud Load Balancing (Compute)** | `compute.googleapis.com` | Global 外部 Application LB（`EXTERNAL_MANAGED`）+ Serverless NEG + Global Anycast IP + URL map + Google 管理 SSL 証明書。`domain != ""` のときだけ作成 | `domain.tf` |
+| 12 | **Cloud DNS** | `dns.googleapis.com` | マネージドゾーン + A レコード（LB IP）。`manage_dns=true` のとき。DNSSEC 対応 | `domain.tf` |
+| 13 | **Cloud Billing Budgets** | `billingbudgets.googleapis.com` | 月次予算アラート（50/90/100%）。コストガードレール | `main.tf` |
+| 14 | **IAM / Resource Manager** | `iam`/`cloudresourcemanager.googleapis.com` | 最小権限の実行 SA `sanba-runtime` と project IAM バインディング | `main.tf` |
+| 15 | **IAM Credentials / STS** | `iamcredentials`/`sts.googleapis.com` | **Workload Identity Federation**（GitHub Actions の鍵レス認証） | `main.tf` / `deploy.yml` |
 
 > 補足: README の技術スタック表は CI/CD に「Cloud Build」も挙げるが、**実際の `deploy.yml` は docker buildx + GHA キャッシュでビルドし `gcloud run deploy` する**（Cloud Build は使っていない）。AI は **Vertex AI（本番）/ AI Studio Gemini API（ローカル）** の二経路。
 
@@ -126,19 +139,27 @@ flowchart TB
     WEB["sanba-web"]
     API["sanba-api"]
     AGENT["sanba-agent"]
+    WORKER["sanba-worker"]
   end
 
   WEB --> RUN["🟦 Cloud Run"]
   API --> RUN
   AGENT --> RUN
+  WORKER --> RUN
 
   API --> FS["🟦 Firestore"]
   AGENT --> FS
+  WORKER --> FS
   API --> GCS["🟦 Cloud Storage"]
+  WORKER --> GCS
   API --> VTX["🟦 Vertex AI"]
   AGENT --> VTX
+  WORKER --> VTX
   API --> SM["🟦 Secret Manager"]
   AGENT --> SM
+  WORKER --> SM
+  API --> CT["🟦 Cloud Tasks"]
+  CT --> WORKER
 
   API --> OTEL["🟦 Cloud Trace/Logging/Monitoring"]
   AGENT --> OTEL

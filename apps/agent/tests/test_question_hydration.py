@@ -1,4 +1,4 @@
-"""現在質問のハイドレーション（#212 / ADR-0020）の agent 側 orchestration テスト。
+"""現在質問のハイドレーションの agent 側 orchestration テスト。
 
 `SANBAAgent.clear_current_question` の id 照合（§5-3）・tombstone 化・`question.cleared`
 伝播（§5-5）・current 追跡のリセット（§5-6）を、LiveKit ランタイム無しで検証する。
@@ -69,7 +69,6 @@ async def test_ask_question_persists_then_tracks_current() -> None:
     assert doc["prompt"] == "並び順は？"
     assert doc["asked_seq"] >= 1
     assert agent.current_question_id == doc["id"]
-    # question.asked が publish される。
     assert transport.sent[-1]["event"]["type"] == "question.asked"
 
 

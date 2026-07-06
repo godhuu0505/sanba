@@ -1,4 +1,4 @@
-"""Gemini image analysis for uploaded images (issue #103 / ADR-0004).
+"""Gemini image analysis for uploaded images (ADR-0004).
 
 解析本体は `sanba_shared.media` へ移設した（worker の動画解析と整形ロジック・config 注入形を
 そろえるため。ADR-0040）。ここは api の settings を束ねる薄いアダプタと、既存 import
