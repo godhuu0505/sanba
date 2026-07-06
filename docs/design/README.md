@@ -18,7 +18,12 @@
 現状の `apps/web/app/page.tsx` は「参加フォーム＋音声ビジュアライザ」の最小実装。
 本ドキュメントは、その先の機能拡張 UI/UX を **情報設計（IA）→ 画面設計 → デザインシステム** の順に定義する。
 
-> ## ⭐ 正本（Single Source of Truth）
+> ## ⭐ 正本（Single Source of Truth）【Superseded — 旧・Figma 正本宣言】
+>
+> **Superseded（ADR-0039）**: 下記の「Figma が唯一の正本」「Figma モバイル縦10画面が正本」という宣言は**過去のもの**。
+> 現在の正本は **`apps/web` の実装**（ADR-0039。Figma は追従する follower）。
+> 以下は 2026-06-24 の設計判断の歴史的記録として残すが、実装・Figma の意匠を直す際の正には使わない。
+>
 > **このプロダクトの UI/UX 正本は Figma「📱 iPhone 13 Pro 操作フロー・正本」（モバイル縦・全10画面の一本道フロー）。**
 > 画面ごとの実装可能な要件票は **[`screens/`](screens/)**、リアルタイム伝送と状態復元の契約は
 > **[`realtime-contract.md`](realtime-contract.md)** に分離した。
@@ -38,8 +43,8 @@
 
 ## 🖼 ビジュアル（まず見る）
 
-UI/UX の**正本は Figma**（モバイル縦・全10画面の一本道フロー）。画面ごとの実装可能な要件は
-[`screens/`](screens/) を参照する。
+UI/UX の**正本は `apps/web` の実装**（ADR-0039。Figma は follower）。画面ごとの実装可能な要件は
+[`screens/`](screens/) を参照する。意匠（色・書体・様式）は ADR-0033 と `apps/web/app/globals.css` が正。
 
 ### Figma（ADR-0011 のデザインループ / 要 Figma ログイン）
 
