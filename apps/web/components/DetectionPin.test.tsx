@@ -11,7 +11,7 @@ describe("DetectionPin（選択肢なし検知の読み取り専用ピン・#208
     render(<DetectionPin summary="『該当なし』の空状態が未定義。" kind="gap" />);
     const pin = screen.getByRole("status");
     expect(pin.textContent).toContain("『該当なし』の空状態が未定義。");
-    // 色のみに依存しない: ラベル「抜け」＋アイコン「◇」＋ aria-label。
+    // 色のみに依存しない: ラベル「抜け」＋ lucide アイコン（CircleDashed）＋ aria-label。
     expect(screen.getByLabelText("抜け（未定義）を検知").textContent).toContain("抜け");
   });
 

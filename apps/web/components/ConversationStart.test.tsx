@@ -17,7 +17,6 @@ describe("StartIntro（03-0 開始前）", () => {
         goal="検索機能のリニューアル"
         roleLabel="企画(PdM)"
         onStartVoice={vi.fn()}
-        onStartText={vi.fn()}
         onBack={vi.fn()}
       />,
     );
@@ -29,7 +28,7 @@ describe("StartIntro（03-0 開始前）", () => {
 
   it("参考資料は未添付なら「会話中に追加できます」、添付ありは名前＋件数を出す（監査 B-2 #11）", () => {
     const { rerender } = render(
-      <StartIntro goal="" roleLabel="顧客" onStartVoice={vi.fn()} onStartText={vi.fn()} onBack={vi.fn()} />,
+      <StartIntro goal="" roleLabel="顧客" onStartVoice={vi.fn()} onBack={vi.fn()} />,
     );
     expect(screen.getByText("会話中に追加できます")).toBeTruthy();
 
@@ -39,7 +38,6 @@ describe("StartIntro（03-0 開始前）", () => {
         roleLabel="顧客"
         materialNames={["PRD.png", "demo.mp4"]}
         onStartVoice={vi.fn()}
-        onStartText={vi.fn()}
         onBack={vi.fn()}
       />,
     );
@@ -56,7 +54,6 @@ describe("StartIntro（03-0 開始前）", () => {
         materialNames={["ok.png"]}
         materialFailedCount={2}
         onStartVoice={vi.fn()}
-        onStartText={vi.fn()}
         onBack={vi.fn()}
       />,
     );
@@ -64,47 +61,35 @@ describe("StartIntro（03-0 開始前）", () => {
     expect(screen.getByRole("alert").textContent).toContain("2件は投入できませんでした");
   });
 
-  it("音声開始・テキスト開始がそれぞれ配線される", () => {
+  it("音声開始が配線され、テキスト開始の導線は出さない", () => {
     const onStartVoice = vi.fn();
-    const onStartText = vi.fn();
-    render(
-      <StartIntro
-        goal=""
-        roleLabel="顧客"
-        onStartVoice={onStartVoice}
-        onStartText={onStartText}
-        onBack={vi.fn()}
-      />,
-    );
+    render(<StartIntro goal="" roleLabel="顧客" onStartVoice={onStartVoice} onBack={vi.fn()} />);
     // ゴール未入力は明示する。
     expect(screen.getByText("（未入力）")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "音声で会話を始める" }));
     expect(onStartVoice).toHaveBeenCalledTimes(1);
-    fireEvent.click(screen.getByRole("button", { name: "音声を使わずテキストで進める" }));
-    expect(onStartText).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("button", { name: "音声を使わずテキストで進める" })).toBeNull();
   });
 });
 
 describe("MicPermissionModal（03-2 録音許可）", () => {
   afterEach(() => cleanup());
 
-  it("OS プロンプト前に理由を提示し、許可/テキストを配線する", () => {
+  it("OS プロンプト前に理由を提示し、許可を配線する（テキスト代替は出さない）", () => {
     const onAllow = vi.fn();
-    const onText = vi.fn();
-    render(<MicPermissionModal onAllow={onAllow} onText={onText} onDismiss={vi.fn()} />);
+    render(<MicPermissionModal onAllow={onAllow} onDismiss={vi.fn()} />);
     // 暗幕付きの dialog で理由提示（03 AC）。
     expect(screen.getByRole("dialog", { name: "マイクの使用許可" })).toBeTruthy();
     expect(screen.getByText("声を聞かせてくださいませ")).toBeTruthy();
     expect(screen.getByText(/端末のマイクを用います/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "マイクの使用を許可する" }));
     expect(onAllow).toHaveBeenCalledTimes(1);
-    fireEvent.click(screen.getByRole("button", { name: "音声を使わずテキストで進める" }));
-    expect(onText).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("button", { name: "音声を使わずテキストで進める" })).toBeNull();
   });
 
   it("暗幕タップで閉じる", () => {
     const onDismiss = vi.fn();
-    render(<MicPermissionModal onAllow={vi.fn()} onText={vi.fn()} onDismiss={onDismiss} />);
+    render(<MicPermissionModal onAllow={vi.fn()} onDismiss={onDismiss} />);
     fireEvent.click(screen.getByRole("button", { name: "閉じる" }));
     expect(onDismiss).toHaveBeenCalledTimes(1);
   });
@@ -130,21 +115,19 @@ describe("ConnectingOverlay（03-1 接続中）", () => {
 describe("StartFailed（03-3 失敗系）", () => {
   afterEach(() => cleanup());
 
-  it("マイク拒否は設定導線＋再試行＋テキスト代替の3導線を出す", () => {
+  it("マイク拒否は設定導線＋再試行を出す（テキスト代替は出さない）", () => {
     const onRetry = vi.fn();
-    const onText = vi.fn();
-    render(<StartFailed kind="mic" onRetry={onRetry} onText={onText} onBack={vi.fn()} />);
+    render(<StartFailed kind="mic" onRetry={onRetry} onBack={vi.fn()} />);
     expect(screen.getByText("声を捉えられませなんだ")).toBeTruthy();
     // 設定導線は第一 CTA のボタン（静的ヒント文ではない / #216）。
     expect(screen.getByRole("button", { name: "ブラウザのマイク設定を開く手順を表示" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "もう一度接続を試す" }));
     expect(onRetry).toHaveBeenCalledTimes(1);
-    fireEvent.click(screen.getByRole("button", { name: "音声を使わずテキストで続ける" }));
-    expect(onText).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("button", { name: "音声を使わずテキストで続ける" })).toBeNull();
   });
 
   it("設定ボタン押下で手順ガイドを展開する（aria-expanded 切替）", () => {
-    render(<StartFailed kind="mic" onRetry={vi.fn()} onText={vi.fn()} onBack={vi.fn()} />);
+    render(<StartFailed kind="mic" onRetry={vi.fn()} onBack={vi.fn()} />);
     const settings = screen.getByRole("button", { name: "ブラウザのマイク設定を開く手順を表示" });
     expect(settings.getAttribute("aria-expanded")).toBe("false");
     expect(screen.queryByRole("region", { name: "マイク許可の手順" })).toBeNull();
@@ -155,7 +138,7 @@ describe("StartFailed（03-3 失敗系）", () => {
   });
 
   it("接続失敗はネットワーク原因を提示し、設定導線は出さない", () => {
-    render(<StartFailed kind="connect" onRetry={vi.fn()} onText={vi.fn()} onBack={vi.fn()} />);
+    render(<StartFailed kind="connect" onRetry={vi.fn()} onBack={vi.fn()} />);
     expect(screen.getByText("繋ぐことが叶いませなんだ")).toBeTruthy();
     expect(screen.getByText(/ネットワークが不安定/)).toBeTruthy();
     // 接続失敗では「設定を開く」は無意味なので出さない。

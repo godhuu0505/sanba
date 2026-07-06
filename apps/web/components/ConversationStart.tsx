@@ -2,7 +2,7 @@
 
 // 03 会話開始（開始前 / 接続 / 許可 / 失敗）。screens/03-conversation-start.md / ADR-0018。
 // 準備（02）から会話フェーズ（04）へ橋渡しする専用レイアウト。接続とマイク許可を確実に取り、
-// 失敗時は理由提示＋復帰導線（設定・再試行・テキスト代替）を出す。
+// 失敗時は理由提示＋復帰導線（設定・再試行）を出す。
 //
 // 構成: LiveKit に触れる薄いコンテナ（ConversationStart / RoomGate）と、テスト可能な
 // 純プレゼン（StartIntro / ConnectingOverlay / StartFailed）に分ける。表示は古語、
@@ -10,10 +10,10 @@
 
 import { LiveKitRoom, StartAudio, useConnectionState } from "@livekit/components-react";
 import { ConnectionState } from "livekit-client";
-import { Check, Circle, LoaderCircle, Mic, TriangleAlert } from "lucide-react";
+import { Check, Circle, Info, LoaderCircle, Lock, Mic, TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 
-import { AppHeader, Button, Card, Screen } from "@/components/sanba";
+import { AppHeader, Button, Card, Figure, Screen } from "@/components/sanba";
 
 import type { JoinResponse } from "../lib/api";
 import { SessionView } from "./SessionView";
@@ -52,8 +52,6 @@ export function ConversationStart({
   onCancel,
 }: ConversationStartProps) {
   const [phase, setPhase] = useState<StartPhase>("intro");
-  // 音声で始めるか（テキストで進める場合はマイク publish せず接続する）。
-  const [withMic, setWithMic] = useState(true);
   const [failKind, setFailKind] = useState<StartFailKind>("connect");
 
   if (phase === "intro") {
@@ -65,10 +63,6 @@ export function ConversationStart({
         materialFailedCount={materialFailedCount}
         // OS プロンプト前に 03-2 アプリ内モーダルで理由提示してから許可を求める（03 AC）。
         onStartVoice={() => setPhase("permission")}
-        onStartText={() => {
-          setWithMic(false);
-          setPhase("entering");
-        }}
         onBack={onCancel}
       />
     );
@@ -77,14 +71,7 @@ export function ConversationStart({
   if (phase === "permission") {
     return (
       <MicPermissionModal
-        onAllow={() => {
-          setWithMic(true);
-          setPhase("entering");
-        }}
-        onText={() => {
-          setWithMic(false);
-          setPhase("entering");
-        }}
+        onAllow={() => setPhase("entering")}
         onDismiss={() => setPhase("intro")}
       />
     );
@@ -92,18 +79,7 @@ export function ConversationStart({
 
   if (phase === "failed") {
     return (
-      <StartFailed
-        kind={failKind}
-        onRetry={() => {
-          setWithMic(true);
-          setPhase("entering");
-        }}
-        onText={() => {
-          setWithMic(false);
-          setPhase("entering");
-        }}
-        onBack={onCancel}
-      />
+      <StartFailed kind={failKind} onRetry={() => setPhase("entering")} onBack={onCancel} />
     );
   }
 
@@ -113,7 +89,7 @@ export function ConversationStart({
       token={conn.token}
       serverUrl={conn.livekit_url}
       connect
-      audio={withMic}
+      audio
       video={false}
       style={{ height: "100dvh" }}
       onError={(e) => {
@@ -122,7 +98,7 @@ export function ConversationStart({
         setPhase("failed");
       }}
       onMediaDeviceFailure={() => {
-        // マイク許可拒否・デバイス不在（03-2→03-3）。テキストで続ける導線へ。
+        // マイク許可拒否・デバイス不在（03-2→03-3）。設定導線・再試行へ。
         setFailKind("mic");
         setPhase("failed");
       }}
@@ -163,9 +139,14 @@ function RoomGate({
   const reconnecting =
     state === ConnectionState.Reconnecting || state === ConnectionState.SignalReconnecting;
   return (
-    <Screen className="px-4 py-3">
+    // 会話の常時 UI（問いピン・ボトムバー）を画面最下部に固定するため、ビューポート高（h-dvh）で
+    // 画面を固定し、スクロールはシェル内のタブ本文（overflow-y-auto）だけに閉じる。下パディングは
+    // 持たせず（pt-3 のみ）、ボトムバーを画面の底辺に密着させる（判定/結果は各自 pb を持つ）。
+    // main の overflow-y-auto は判定/結果（h-full 子）が画面高を超えたときの逃げ道で、
+    // 会話シェル（flex-1 / min-h-0）は main にぴったり収まるため二重スクロールにはならない。
+    <Screen className="h-dvh px-4 pt-3">
       <AppHeader brand right={<StartAudio label="音声を有効に" />} />
-      <main className="mx-auto w-full max-w-[640px] flex-1">
+      <main className="mx-auto flex min-h-0 w-full max-w-[640px] flex-1 flex-col overflow-y-auto">
         <p className="mb-2 text-[12px] text-sanba-muted">
           セッション: <code>{conn.session_id}</code>
         </p>
@@ -198,7 +179,6 @@ export interface StartIntroProps {
   /** 投入に失敗した件数（>0 なら注意書きを出す）。 */
   materialFailedCount?: number;
   onStartVoice: () => void;
-  onStartText: () => void;
   onBack: () => void;
 }
 
@@ -215,7 +195,6 @@ export function StartIntro({
   materialNames,
   materialFailedCount,
   onStartVoice,
-  onStartText,
   onBack,
 }: StartIntroProps) {
   const materials = materialNames ?? [];
@@ -225,12 +204,8 @@ export function StartIntro({
       <AppHeader title="支度、相整いまして" onBack={onBack} />
       <main className="mx-auto flex w-full max-w-[480px] flex-1 flex-col gap-[18px] pt-2">
         <div className="flex flex-col items-center gap-2 pt-4">
-          <div
-            aria-hidden="true"
-            className="sanba-gold-gradient flex size-20 items-center justify-center rounded-full text-[30px]"
-          >
-            産
-          </div>
+          {/* ヒーローはサンバさん（ADR-0025 / 1 画面 1 体）。旧「産」丸章はロゴ系譜の棒人間へ置換。 */}
+          <Figure state="walking" className="w-[64px]" />
           <p className="text-[13px] text-sanba-muted">問答を始める支度が整いました。</p>
         </div>
 
@@ -277,9 +252,6 @@ export function StartIntro({
               <Mic size={16} aria-hidden /> 問答を始める
             </span>
           </Button>
-          <Button variant="ghost" block onClick={onStartText} aria-label="音声を使わずテキストで進める">
-            テキストで進める
-          </Button>
         </div>
       </main>
     </Screen>
@@ -289,8 +261,6 @@ export function StartIntro({
 export interface MicPermissionModalProps {
   /** マイク許可へ（OS プロンプトを呼ぶ＝音声で接続）。 */
   onAllow: () => void;
-  /** 音声を使わずテキストで進める。 */
-  onText: () => void;
   /** 暗幕タップ等で閉じ、03-0 へ戻す。 */
   onDismiss: () => void;
 }
@@ -299,7 +269,7 @@ export interface MicPermissionModalProps {
  * 03-2 録音許可モーダル。OS のマイク許可プロンプトを呼ぶ前に、アプリ内で理由を提示する
  * （Figma `139:156`）。暗幕＋中央モーダル。表示は古語、操作の aria-label は現代語（ADR-0017）。
  */
-export function MicPermissionModal({ onAllow, onText, onDismiss }: MicPermissionModalProps) {
+export function MicPermissionModal({ onAllow, onDismiss }: MicPermissionModalProps) {
   return (
     <Screen className="relative px-4 py-3">
       {/* 暗幕（scrim）。タップで閉じて 03-0 へ戻る。 */}
@@ -334,9 +304,6 @@ export function MicPermissionModal({ onAllow, onText, onDismiss }: MicPermission
             <Button variant="gold" size="lg" block onClick={onAllow} aria-label="マイクの使用を許可する">
               マイクを許可する
             </Button>
-            <Button variant="ghost" block onClick={onText} aria-label="音声を使わずテキストで進める">
-              テキストで進める
-            </Button>
           </div>
         </div>
       </div>
@@ -358,12 +325,8 @@ export function ConnectingOverlay({ state, onCancel }: ConnectingOverlayProps) {
     <Screen className="px-4 py-3">
       <AppHeader title="繋いでおります" />
       <main className="mx-auto flex w-full max-w-[420px] flex-1 flex-col items-center gap-6 pt-12">
-        <div
-          aria-hidden="true"
-          className="sanba-gold-gradient sanba-serif flex size-20 animate-pulse items-center justify-center rounded-full border-2 border-sanba-frame text-[30px] font-bold text-sanba-ink"
-        >
-          産
-        </div>
+        {/* 接続待ちもサンバさん（歩行）で待たせる。旧「産」丸章はロゴ系譜の棒人間へ置換。 */}
+        <Figure state="walking" className="w-[64px]" />
         <p className="text-[14px] font-bold text-sanba-gold-text" aria-live="polite">
           {reconnecting ? "繋ぎ直しております…" : "繋いでおります…"}
         </p>
@@ -399,12 +362,11 @@ function Step({ done, active, label }: { done: boolean; active?: boolean; label:
 export interface StartFailedProps {
   kind: StartFailKind;
   onRetry: () => void;
-  onText: () => void;
   onBack: () => void;
 }
 
-/** 03-3 失敗系。原因提示＋3導線（設定で許可・再試行・テキストで続ける）。 */
-export function StartFailed({ kind, onRetry, onText, onBack }: StartFailedProps) {
+/** 03-3 失敗系。原因提示＋復帰導線（設定で許可・再試行）。 */
+export function StartFailed({ kind, onRetry, onBack }: StartFailedProps) {
   const isMic = kind === "mic";
   // 「設定を開いて許可する」押下で手順ガイドを同画面に展開する。Web からブラウザ/OS 設定は
   // API で直接開けないため、文言フォールバックで誘導する（03 AC「不可環境では文言フォールバック」）。
@@ -464,7 +426,13 @@ export function StartFailed({ kind, onRetry, onText, onBack }: StartFailedProps)
                   className="rounded-[12px] border border-sanba-border bg-sanba-surface p-[14px] text-left text-[12px] leading-relaxed text-sanba-muted"
                 >
                   <ol className="list-decimal space-y-1 pl-4">
-                    <li>アドレスバーの 🔒 / ⓘ をタップ</li>
+                    <li>
+                      アドレスバーの錠前（
+                      <Lock size={11} aria-hidden className="inline-block align-[-1px]" />
+                      ）または情報（
+                      <Info size={11} aria-hidden className="inline-block align-[-1px]" />
+                      ）をタップ
+                    </li>
                     <li>「サイトの設定（権限）」を開く</li>
                     <li>「マイク」を「許可」に変更</li>
                     <li>このページを再読み込みして、もう一度お試しください</li>
@@ -482,9 +450,6 @@ export function StartFailed({ kind, onRetry, onText, onBack }: StartFailedProps)
             aria-label="もう一度接続を試す"
           >
             もう一度試す
-          </Button>
-          <Button variant="ghost" block onClick={onText} aria-label="音声を使わずテキストで続ける">
-            テキストで続ける
           </Button>
         </div>
       </main>

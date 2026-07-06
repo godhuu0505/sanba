@@ -6,7 +6,7 @@
 
 // 素材ビューモデルは共有セレクタ層（selectMaterials）に寄せ、ここでは再エクスポートのみ。
 import { useEffect, useState } from "react";
-import { Check, X } from "lucide-react";
+import { Check, Plus, X } from "lucide-react";
 
 import type { MaterialItem, MaterialStatus } from "@/lib/realtime/selectors";
 
@@ -16,8 +16,11 @@ export type { MaterialItem, MaterialStatus } from "@/lib/realtime/selectors";
 
 export interface MaterialsListProps {
   items: MaterialItem[];
-  /** 「＋ 素材を追加」押下（手段選択へ）。 */
-  onAdd: () => void;
+  /**
+   * 「＋ 素材を追加」押下（手段選択へ）。未指定ならボタンを出さない
+   * （セッション終了後の閲覧など、投入できない文脈で偽ボタンを作らない）。
+   */
+  onAdd?: () => void;
   /** 失敗行の再試行。 */
   onRetry?: (id: string) => void;
   /**
@@ -76,13 +79,15 @@ export function MaterialsList({
 
   return (
     <div className="flex flex-col gap-[10px] px-4 py-3">
-      <button
-        type="button"
-        onClick={onAdd}
-        className="rounded-[12px] border border-dashed border-sanba-gold-deep bg-sanba-surface px-3 py-[13px] text-[12.5px] font-bold text-sanba-gold-text"
-      >
-        ＋ 素材を追加（カメラ・アップロード・画面共有）
-      </button>
+      {onAdd && (
+        <button
+          type="button"
+          onClick={onAdd}
+          className="inline-flex items-center justify-center gap-1.5 rounded-[12px] border border-dashed border-sanba-gold-deep bg-sanba-surface px-3 py-[13px] text-[12.5px] font-bold text-sanba-gold-text"
+        >
+          <Plus size={14} aria-hidden /> 素材を追加（カメラ・アップロード・画面共有）
+        </button>
+      )}
 
       {items.length === 0 ? (
         <p className="px-1 py-4 text-center text-[12.5px] text-sanba-muted">

@@ -100,6 +100,37 @@ describe("ConversationShell（共通シェル）", () => {
     expect(onUnresolvedJump).toHaveBeenCalledTimes(1);
   });
 
+  it("閲覧モード（review）では REC・終了・問いピン・下部バーを出さず、結果へ戻る導線を出す", () => {
+    const onBackToResult = vi.fn();
+    render(
+      <ConversationShell
+        mini={mini}
+        elapsed="12:46"
+        review
+        onBackToResult={onBackToResult}
+        onEnd={vi.fn()}
+        tabs={{
+          history: <div>会話本文</div>,
+          files: <div>ファイル本文</div>,
+          scroll: <div>絵巻本文</div>,
+        }}
+        choicePin={<div>問いピン</div>}
+        bottomBar={<div>下部バー</div>}
+      />,
+    );
+    // セッション中専用 UI は（props が渡されていても）出さない。
+    expect(screen.queryByText(/REC/)).toBeNull();
+    expect(screen.queryByRole("button", { name: "会話を終了" })).toBeNull();
+    expect(screen.queryByText("問いピン")).toBeNull();
+    expect(screen.queryByText("下部バー")).toBeNull();
+    // タブと本文（閲覧）は従来どおり。
+    expect(screen.getByRole("tab", { name: "会話履歴" })).toBeTruthy();
+    expect(screen.getByText("会話本文")).toBeTruthy();
+    // 結果（08）へ戻る導線。
+    fireEvent.click(screen.getByRole("button", { name: "結果に戻る" }));
+    expect(onBackToResult).toHaveBeenCalledTimes(1);
+  });
+
   it("『要件』タップでは onUnresolvedJump を発火しない（タブ移動のみ） (#195)", () => {
     const onUnresolvedJump = vi.fn();
     render(

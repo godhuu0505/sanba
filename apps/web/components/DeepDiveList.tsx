@@ -4,6 +4,8 @@
 // 仕様: docs/design/conversation-experience.md §7 / screens/06-requirements-scroll.md。
 // 色は意味の写像（矛盾=緋 / 抜け=黄土）。色のみに依存せずラベル併記（ADR-0017）。
 
+import { ChevronRight } from "lucide-react";
+
 import { useInterviewMode } from "@/lib/interviewMode";
 import { detectionPresentation } from "@/lib/realtime/mapping";
 import type { Detection } from "@/lib/realtime/types";
@@ -11,8 +13,11 @@ import type { Detection } from "@/lib/realtime/types";
 export interface DeepDiveListProps {
   /** 未解消の検知（深掘り対象）。 */
   detections: Detection[];
-  /** 「会話で確認」押下。該当検知の id を渡す。 */
-  onJump: (detectionId: string) => void;
+  /**
+   * 「会話で確認」押下。該当検知の id を渡す。
+   * 未指定なら導線を出さない（セッション終了後の閲覧など、会話へ戻れない文脈で偽ボタンを作らない）。
+   */
+  onJump?: (detectionId: string) => void;
 }
 
 export function DeepDiveList({ detections, onJump }: DeepDiveListProps) {
@@ -39,20 +44,22 @@ export function DeepDiveList({ detections, onJump }: DeepDiveListProps) {
           >
             <div className="flex items-start gap-2">
               <span
-                className="rounded-full px-2 py-[2px] text-[10.5px] font-bold text-white"
+                className="inline-flex items-center gap-1 rounded-full px-2 py-[2px] text-[10.5px] font-bold text-white"
                 style={{ backgroundColor: k.color }}
               >
-                {k.icon} {k.label}
+                <k.Icon size={11} aria-hidden /> {k.label}
               </span>
               <p className="flex-1 text-[12.5px] text-sanba-cream">{d.summary}</p>
             </div>
-            <button
-              type="button"
-              onClick={() => onJump(d.id)}
-              className="self-start text-[11px] font-bold text-sanba-gold-text"
-            >
-              会話で確認 ›
-            </button>
+            {onJump && (
+              <button
+                type="button"
+                onClick={() => onJump(d.id)}
+                className="inline-flex items-center gap-[2px] self-start text-[11px] font-bold text-sanba-gold-text"
+              >
+                会話で確認 <ChevronRight size={11} aria-hidden />
+              </button>
+            )}
           </div>
         );
       })}

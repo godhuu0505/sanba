@@ -6,9 +6,10 @@
 // 設定画面（app/settings）と同じ認証ゲート + SANBA デザインシステムの流儀で作る。
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { AccountMenu } from "@/components/AccountMenu";
+import { MemberInviteNotices } from "@/components/MemberInviteNotices";
 import { authGate } from "@/components/RequireAuth";
 import {
   AppHeader,
@@ -40,16 +41,17 @@ export default function ProductsPage() {
   const credential = auth.credential;
 
   // 一覧の取得（新しい順は API 側が保証 / FR-1.1）。取得失敗は空状態のまま UX を止めない。
+  // 招待の承諾（MemberInviteNotices）後にも呼び直し、増えた分を即反映する（ADR-0036）。
+  const reload = useCallback(() => {
+    fetchMyProducts(credential)
+      .then(setProducts)
+      .catch(() => setProducts([]));
+  }, [credential]);
+
   useEffect(() => {
     if (!canFetch) return;
-    let cancelled = false;
-    fetchMyProducts(credential)
-      .then((items) => !cancelled && setProducts(items))
-      .catch(() => !cancelled && setProducts([]));
-    return () => {
-      cancelled = true;
-    };
-  }, [canFetch, credential]);
+    reload();
+  }, [canFetch, reload]);
 
   // 厳密な認証ゲート（設定画面と同じ）。未ログインは /login?next=/products へ。
   const gate = authGate(auth, "/products");
@@ -81,6 +83,8 @@ export default function ProductsPage() {
         right={<AccountMenu profile={auth.profile} />}
       />
       <main className="mx-auto flex w-full max-w-[480px] flex-1 flex-col gap-[18px] pt-2">
+        {/* 自分宛のメンバー招待（ADR-0036）。承諾すると一覧を再取得して即反映する。 */}
+        <MemberInviteNotices onAccepted={reload} />
         <Card>
           <CardTitle>アプリを登録</CardTitle>
           <p className="text-[12px] leading-relaxed text-sanba-muted">
@@ -131,7 +135,7 @@ export default function ProductsPage() {
                   <ListRow
                     asChild
                     icon="📦"
-                    title={p.name}
+                    title={p.role === "member" ? `${p.name}（メンバー）` : p.name}
                     subtitle={
                       (p.description || "説明なし") + (p.github_repo ? ` ・ ${p.github_repo}` : "")
                     }

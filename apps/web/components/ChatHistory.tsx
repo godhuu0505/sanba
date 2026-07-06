@@ -3,7 +3,7 @@
 // 会話履歴タブの本文。SessionState.transcript を吹き出しで描く。
 // 仕様: docs/design/conversation-experience.md §2（会話履歴）/ screens/04-conversation.md。
 
-import { Mic } from "lucide-react";
+import { LoaderCircle, Mic } from "lucide-react";
 
 import type { TranscriptLine } from "@/lib/realtime/store";
 
@@ -37,8 +37,8 @@ export function ChatHistory({ transcript }: ChatHistoryProps) {
           <ChatBubble key={line.utterance_id} author={author}>
             {line.text}
             {!line.final && (
-              <span className="ml-1 align-middle text-[11px] font-bold text-sanba-speak-text">
-                ‖ 文字起こし中…
+              <span className="ml-1 inline-flex items-center gap-1 align-middle text-[11px] font-bold text-sanba-speak-text">
+                <LoaderCircle size={11} aria-hidden className="animate-spin" /> 文字起こし中…
               </span>
             )}
           </ChatBubble>

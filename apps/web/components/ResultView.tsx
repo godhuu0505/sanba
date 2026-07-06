@@ -4,7 +4,7 @@
 // 仕様: docs/design/conversation-experience.md §7 / screens/08-result.md / Figma 144:86。
 // 画面で確認＝必須。PDF/Drive/Issue 出力＝任意（ハンドラがあるものだけ出す）。
 
-import { Check, CircleDot, Cloud, FileText, type LucideIcon } from "lucide-react";
+import { Check, ChevronRight, CircleDot, Cloud, FileText, type LucideIcon } from "lucide-react";
 
 import { Button, Figure } from "@/components/sanba";
 import { useInterviewMode } from "../lib/interviewMode";
@@ -149,10 +149,10 @@ export function ResultView({
                     >
                       <span
                         aria-hidden
-                        className="mt-[1px] text-[11px] font-bold"
+                        className="mt-[2px] shrink-0"
                         style={{ color: cat.color }}
                       >
-                        {cat.icon}
+                        <cat.Icon size={12} />
                       </span>
                       <span className="sr-only">{cat.ariaLabel}</span>
                       <span className="flex-1 text-[12.5px] leading-[1.5] text-sanba-ink">
@@ -172,9 +172,9 @@ export function ResultView({
             <button
               type="button"
               onClick={onView}
-              className="text-[11.5px] font-bold text-sanba-gold-text"
+              className="inline-flex items-center gap-[2px] text-[11.5px] font-bold text-sanba-gold-text"
             >
-              ほか {overflowCount} 件 ・ タップで全文 ›
+              ほか {overflowCount} 件 ・ タップで全文 <ChevronRight size={12} aria-hidden />
             </button>
           )}
         </div>
@@ -205,7 +205,9 @@ export function ResultView({
         onClick={onView}
         aria-label="この絵巻を画面で確認する（確定要件の全文）"
       >
-        この絵巻を画面で確認する ›
+        <span className="inline-flex items-center justify-center gap-1">
+          この絵巻を画面で確認する <ChevronRight size={15} aria-hidden />
+        </span>
       </Button>
 
       {available.length > 0 && (

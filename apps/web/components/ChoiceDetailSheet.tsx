@@ -4,7 +4,7 @@
 // 仕様: docs/design/conversation-experience.md §4。
 // 観点データ（どう並ぶ/効き目/留意/出所）は contract に無いため任意。与えられたものだけ描く。
 
-import { Mic, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Mic, X } from "lucide-react";
 
 export interface ChoiceOptionDetail {
   label: string;
@@ -91,9 +91,9 @@ export function ChoiceDetailSheet({
         <button
           type="button"
           onClick={onPrev}
-          className="flex-1 rounded-[11px] border border-sanba-border py-[11px] text-[12px] font-bold text-sanba-muted"
+          className="inline-flex flex-1 items-center justify-center gap-[2px] rounded-[11px] border border-sanba-border py-[11px] text-[12px] font-bold text-sanba-muted"
         >
-          ‹ 前の選択肢
+          <ChevronLeft size={13} aria-hidden /> 前の選択肢
         </button>
         <button
           type="button"
@@ -105,9 +105,9 @@ export function ChoiceDetailSheet({
         <button
           type="button"
           onClick={onNext}
-          className="flex-1 rounded-[11px] border border-sanba-border py-[11px] text-[12px] font-bold text-sanba-muted"
+          className="inline-flex flex-1 items-center justify-center gap-[2px] rounded-[11px] border border-sanba-border py-[11px] text-[12px] font-bold text-sanba-muted"
         >
-          次の選択肢 ›
+          次の選択肢 <ChevronRight size={13} aria-hidden />
         </button>
       </div>
     </div>
