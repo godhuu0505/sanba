@@ -16,7 +16,7 @@ Rancher Desktop (dockerd / moby) + `docker compose` を前提とする。
 | ファイル | 中身 | いつ使う |
 |---|---|---|
 | `docker-compose.yml` | web / api / agent / livekit / firestore / elasticsearch | **必須**。アプリ一式 |
-| `docker-compose.tools.yml` | OTel・Prometheus・Loki・Tempo・Grafana・Langfuse・four-keys | **任意**。あったら便利 |
+| `docker-compose.tools.yml` | OTel・Prometheus・Loki・Tempo・Grafana・four-keys | **任意**。あったら便利 |
 
 補助スタックは base に重ねる overlay。単体では起動しない (ADR-0009)。
 
@@ -50,7 +50,6 @@ just tools-down  # 補助スタックだけ停止 (アプリは残す)
 | http://localhost:9200 | Elasticsearch | 必須 |
 | localhost:8200 | Firestore エミュレータ | 必須 |
 | http://localhost:3001 | Grafana (anonymous admin) | 補助 |
-| http://localhost:3030 | Langfuse | 補助 |
 | http://localhost:9090 | Prometheus | 補助 |
 | http://localhost:9301/metrics | four-keys (DORA) | 補助 |
 
@@ -65,7 +64,7 @@ just tools-down  # 補助スタックだけ停止 (アプリは残す)
 | ADK 分析 / 埋め込み | `GOOGLE_API_KEY` (or Vertex) | ヒューリスティック近似 |
 | Firestore 永続化 | エミュレータ (既定で起動) | in-memory |
 | Elasticsearch RAG | ES (既定で起動) | 語の重なり近似 |
-| Langfuse トレース | `LANGFUSE_*` + `just up-full` | 送信スキップ |
+| OTel トレース | `just up-full` (Collector→Tempo→Grafana。本番は Cloud Trace 直送) | endpoint 未設定なら送信スキップ |
 
 `GOOGLE_API_KEY` を `.env.local` に入れて `just up` し直すと、音声を除く AI 経路が実物になる。
 音声 S2S は実機マイク + ブラウザ (http://localhost:3000) で確認する。

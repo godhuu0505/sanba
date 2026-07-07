@@ -92,9 +92,6 @@ class Settings(BaseSettings):
     # 優先し、未指定でも Vertex 実行（＝GCP 上・ADC あり）なら Cloud Trace へ直送する
     # （インフラ増ゼロ）。ローカル/テスト（use_vertexai=false）は直送しない（ADC 無しで失敗）。
     otel_traces_to_cloud_trace: bool = True
-    langfuse_host: str = ""
-    langfuse_public_key: str = ""
-    langfuse_secret_key: str = ""
 
     # External connectors. OFF by default — never affects the demo path.
     github_connector_enabled: bool = False

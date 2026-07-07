@@ -314,7 +314,7 @@ gcloud iam service-accounts add-iam-policy-binding "$TF_SA" \
 | 種別 | 置き場所 | 例 |
 |---|---|---|
 | 非機微の設定 / 公開識別子 | **GitHub → Variables（`vars.*`）** | `GCP_PROJECT_ID` / `GCP_REGION` / `TF_STATE_BUCKET` / `PROD_DOMAIN` / `LIVEKIT_URL` / `NEXT_PUBLIC_*` / `OTEL_EXPORTER_OTLP_ENDPOINT` / `BILLING_ACCOUNT` / `AGENT_MIN_INSTANCES` / **`WIF_PROVIDER` / `DEPLOY_SA` / `TF_DEPLOY_SA`**（SA email・WIF パスは公開識別子） / `ACTIVE_APP_SECRET_IDS`（JSON 配列） |
-| CI 自身が使う秘匿値のみ | **GitHub → Secrets（`secrets.*`）** | `CLAUDE_CODE_OAUTH_TOKEN` / `LANGFUSE_*`（llm-eval 用）など、SM 経由にできないもの |
+| CI 自身が使う秘匿値のみ | **GitHub → Secrets（`secrets.*`）** | `CLAUDE_CODE_OAUTH_TOKEN` など、SM 経由にできないもの |
 | アプリの秘匿値（真実） | **GCP Secret Manager に直接投入**（§6.7） | `livekit-api-key` / `livekit-api-secret` / `elasticsearch-api-key` / `session-signing-secret`（自動生成） |
 
 > ポイント:

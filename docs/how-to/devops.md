@@ -13,7 +13,7 @@ flowchart LR
         PR --> CI[CI: lint/test/build]
         CI --> Eval[LLMOps: 評価データセット回帰]
         Eval --> CD[CD: Cloud Run デプロイ]
-        CD --> Obs[観測: OTel/Grafana/Langfuse]
+        CD --> Obs[観測: OTel/Grafana/Cloud Monitoring]
         Obs --> DORA[Four Keys / DORA]
         DORA -.改善.-> Dev
     end
@@ -27,7 +27,7 @@ flowchart LR
 ## 1. CI/CD（まわす）
 
 - **CI** (`.github/workflows/ci.yml`): push/PR で lint（ruff/biome）・型チェック（mypy/tsc）・単体&結合テスト・Docker ビルド。
-- **LLM 評価** (`.github/workflows/llm-eval.yml`): プロンプト変更時に Langfuse のデータセットで回帰評価。スコア低下で fail。
+- **LLM 評価** (`.github/workflows/llm-eval.yml`): プロンプト変更時に Gemini judge の CI シナリオデータセットで回帰評価。スコア低下で fail。
 - **CD** (`.github/workflows/deploy.yml`): main マージで「マイグレーション（`infra/terraform` 変更時の terraform apply）→ イメージビルド → Cloud Run デプロイ」を順序保証つきで自動実行（ADR-0026）。Workload Identity Federation で鍵レス認証。
 - **IaC の plan/apply** (`.github/workflows/terraform.yml`): PR で `terraform plan` を自動コメント（人間レビュー）。apply は main マージで `deploy.yml` から自動、または手動 dispatch（ロールバック用）。
 
@@ -51,11 +51,11 @@ flowchart LR
 
 | 項目 | 仕組み |
 |---|---|
-| プロンプト管理 | `apps/agent/src/sanba_agent/prompts/` でバージョン管理 + Langfuse Prompts |
-| トレース | 全 LLM 呼び出しを Langfuse に送信（入出力・レイテンシ・コスト） |
-| 評価データセット | 代表的なヒアリングシナリオを `evaluation.DEFAULT_SCENARIOS` / Langfuse Datasets 化 |
+| プロンプト管理 | `apps/agent/src/sanba_agent/prompts/` で git 管理（バージョン管理） |
+| トレース | LLM 呼び出しを OTel span で Cloud Trace へ送信（レイテンシ・非 PII 属性。ADR-0051） |
+| 評価データセット | 代表的なヒアリングシナリオを `evaluation.DEFAULT_SCENARIOS` に定義し CI 回帰で回す |
 | 回帰テスト | `llm-eval` ワークフローが `python -m sanba_agent.evaluation` を実行。ルーブリック採点で順序関係・閾値を検証し劣化を検出（ADR-0005） |
-| オンライン評価 | セッション終了時に `score_session` が LLM-as-a-judge で採点し Langfuse に記録 |
+| オンライン評価 | セッション終了時に `score_session` が LLM-as-a-judge で採点し `session_scored` 構造化ログ→Cloud Logging（ログベースメトリクス）→Cloud Monitoring に記録 |
 
 ## 5. Four Keys / DORA（開発生産性）
 
@@ -72,7 +72,7 @@ flowchart LR
 
 - Cloud Run の `min-instances` / `max-instances` と concurrency を設定（`infra/terraform`）。
 - 音声セッションは長時間接続のため、ワーカーの同時実行数と graceful shutdown を調整。
-- 予算アラートを Terraform で宣言。Langfuse でセッションあたり推論コストを可視化。
+- 予算アラートを Terraform で宣言。セッションあたり推論コストは Cloud Monitoring / Cloud Billing で可視化。
 
 ## 7. ローカル開発
 
@@ -81,7 +81,7 @@ flowchart LR
 ```bash
 just up        # アプリ最小構成 (web/api/agent/livekit/firestore/elasticsearch)
 just verify    # 疎通スモークテスト
-just up-full   # 補助スタックも重ねて全部入り (+ observability / langfuse / four-keys)
+just up-full   # 補助スタックも重ねて全部入り (+ observability / four-keys)
 just test      # 単体/結合テスト
 just lint      # lint + 型チェック
 just logs      # ログ追従

@@ -1,6 +1,6 @@
 """Prompt templates for the interview agents.
 
-プロンプトはコードで管理しつつ、本番では Langfuse Prompts と同期してバージョン管理する。
+プロンプトはコードで一元管理し、バージョン管理は git に一本化する（ADR-0051）。
 """
 
 from __future__ import annotations

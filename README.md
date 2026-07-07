@@ -157,7 +157,7 @@ flowchart LR
 | IaC | **Terraform** | 再現可能なインフラ |
 | CI/CD | **GitHub Actions** + Cloud Build | 「まわす」軸 |
 | 可観測性 | **OpenTelemetry** → Cloud Trace/Logging + **Grafana / Prometheus / Loki / Tempo** | Observability |
-| LLMOps | **Langfuse**（トレース・評価・プロンプト管理） | プロンプト改善サイクル |
+| LLMOps | **Cloud Monitoring**（品質スコアのダッシュボード）+ CI 回帰評価（Gemini judge） | プロンプト改善サイクル（ADR-0051） |
 | 開発生産性 | **Four Keys / DORA メトリクス** | Findy ドメイン直撃 |
 
 選定理由・捨てた選択肢は [`docs/adr/`](docs/adr) に記録。
@@ -176,10 +176,9 @@ open http://localhost:3000/admin    # 管理画面（要件の確認・承認）
 
 # ↑ をまとめて一発で: `just init`（= setup → up）
 
-just up-full           # 補助スタックも重ねて全部入り (+ observability / langfuse / four-keys)
+just up-full           # 補助スタックも重ねて全部入り (+ observability / four-keys)
 just verify-full
 open http://localhost:3001          # Grafana
-open http://localhost:3030          # Langfuse
 ```
 
 > **二層構成**: アプリ必須スタックは `docker-compose.yml`、「必須ではないが あったら便利」な

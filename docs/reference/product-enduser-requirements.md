@@ -51,7 +51,7 @@ ADR 未起票のものは実装計画の Step 0 で起票する。
 | FR-2.5 | **grounding 出力制御**: end_user モードでは repo 由来の grounding を「質問計画の背景」に限定し、応答・引用として内部情報（コード片・未公開機能）を露出しない | end_user セッションの応答・引用イベントに repo 由来 passage が含まれない（結合テストで検証） |
 | FR-2.6 | **abuse 対策**: リンク単位・IP 単位のセッション作成レート制限。`max_uses` 消費は Firestore トランザクションでアトミック | 制限超過は 429。既定値は設定で変更可能 |
 | FR-2.7 | **ゲストデータの保持**: ゲストセッションにも既存 30 日 TTL を適用し、利用者向けに保持期間を同意文言で明示する | TTL フィールドが設定される。同意画面に保持期間の記載がある |
-| FR-2.8 | **プロンプト回帰**: end_user モードの Langfuse 評価データセット（技術用語を使わない・一問一答維持・画面語彙の使用）を追加し CI 回帰に載せる | 評価データセットが存在し、しきい値割れで CI が落ちる |
+| FR-2.8 | **プロンプト回帰**: end_user モードの評価データセット（CI 回帰。技術用語を使わない・一問一答維持・画面語彙の使用）を追加し CI 回帰に載せる | 評価データセットが存在し、しきい値割れで CI が落ちる |
 
 ### Stage 3 — 成果物と集約
 
@@ -67,7 +67,7 @@ ADR 未起票のものは実装計画の Step 0 で起票する。
 |---|---|
 | NFR-1 | **セキュリティ**: リンクは既存 HMAC 署名基盤（`apps/api/src/sanba_api/auth.py`）と同水準の署名・期限・検証。ゲスト join token の権限は当該セッションの読取＋既存 write 系（`user.selection` 等）のみ。PII マスク（`mask_pii_before_index`）は全経路で維持 |
 | NFR-2 | **情報漏洩の遮断**: private repo 由来の索引内容は end_user モードの出力に露出しない（FR-2.5）。`GITHUB_REPO_ALLOWLIST`（ADR-0027）は product の repo 紐づけにも一貫適用 |
-| NFR-3 | **観測性**: 新規処理はすべて OTel トレース＋構造化ログを通す。LLM 入出力（end_user プロンプト含む）は Langfuse へ（CLAUDE.md 原則 3） |
+| NFR-3 | **観測性**: 新規処理はすべて OTel トレース（Cloud Trace）＋構造化ログ（Cloud Monitoring）を通す。LLM 入出力（end_user プロンプト含む）は構造化ログ + Cloud Trace で観測する（CLAUDE.md 原則 3, ADR-0051） |
 | NFR-4 | **ステートレス維持**: invite の消費カウント等の状態は Firestore に置き、Cloud Run のワーカーはステートレスのまま |
 | NFR-5 | **互換性**: `product_id` を持たない既存セッション・既存 02 準備フロー・env 単一コネクタ（ADR-0007）は挙動を変えない |
 | NFR-6 | **将来の org 挿入余地**: 認可判定（sub → product）を API の単一モジュールに集約。product ID・リンク ID はランダムで、名前のグローバル一意性を仮定しない |

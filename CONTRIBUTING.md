@@ -46,7 +46,7 @@ just build   # Docker イメージのビルド
 
 - **Python**: `ruff`（lint + format）、`mypy`、型ヒント必須、`pytest`。
 - **TypeScript**: `eslint` + `prettier`、`tsc --noEmit`。
-- 振る舞いを変えたら**テストを伴わせる**。LLM 出力は Langfuse の評価データセットで回帰確認（[ADR-0005](docs/adr/0005-llm-judge-eval-loop.md)）。
+- 振る舞いを変えたら**テストを伴わせる**。LLM 出力は代表シナリオの評価データセットで CI 回帰確認（[ADR-0005](docs/adr/0005-llm-judge-eval-loop.md) / [ADR-0051](docs/adr/0051-google-native-observability-and-llmops.md)）。
 
 ## Pull Request
 

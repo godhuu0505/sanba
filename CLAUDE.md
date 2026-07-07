@@ -37,7 +37,7 @@
 - 単体: ツール/プロンプト整形/状態遷移のロジック。
 - 結合: API ↔ Firestore、Agent ↔ ADK のツール呼び出し。
 - システム/E2E: LiveKit ルームへの参加〜要件ドキュメント生成までを Playwright で。
-- LLM出力は Langfuse の評価データセットで回帰テストする（LLMOps）。
+- LLM出力は代表シナリオの評価データセットで CI 回帰テストし、品質は Cloud Monitoring で可視化する（LLMOps / ADR-0051）。
 
 ## セキュリティ
 - PR では `/security-review` を回し、指摘に対応する。

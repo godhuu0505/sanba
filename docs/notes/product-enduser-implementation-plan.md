@@ -107,7 +107,7 @@ Stage 内は PR1→PR2 以外おおむね並行可能。Stage の境界は「デ
   一問一答＋推奨回答例は維持）。
 - `apps/agent/src/sanba_agent/main.py`: セッション文書から `interview_mode` と product
   glossary を読み、instructions にシード（ADR-0028 の repo 要約シードと同じ機械的組み立て）。
-- Langfuse: end_user モードの評価データセットと CI 回帰（FR-2.8。ADR-0005 の枠組み）。
+- CI 回帰評価データセット: end_user モードの評価データセットを CI 回帰に載せる（FR-2.8。ADR-0005 の枠組み）。
 - テスト: プロンプト整形の単体、モード別の instructions スナップショット。
 - **注記（PR2/PR3 からの引き継ぎ）**: agent の grounding 参照（`search_grounding` /
   過去セッション呼び戻し）は現状**セッションスコープのみ**。product の repo 索引は
@@ -149,14 +149,14 @@ Stage 内は PR1→PR2 以外おおむね並行可能。Stage の境界は「デ
 | 単体 | invite 署名/期限/回数、認可ヘルパー、モデル互換、プロンプト整形（モード分岐） |
 | 結合 | API ↔ Firestore emulator（invite 消費のトランザクション、product 継承）、agent の grounding 出力制御 |
 | E2E（Playwright） | Stage 1: 登録→発行→入場→会話開始。Stage 2: 未ログインでの同フロー |
-| LLM 回帰（Langfuse） | end_user ペルソナ（技術用語なし・一問一答維持・画面語彙使用）のデータセット |
+| LLM 回帰（CI シナリオデータセット） | end_user ペルソナ（技術用語なし・一問一答維持・画面語彙使用）のデータセット |
 | セキュリティ | 各 PR で `/security-review`。特に PR3（トークン設計）・PR6（匿名入口）・PR8（漏洩遮断） |
 
 ## 6. リスクと緩和
 
 | リスク | 緩和 |
 |---|---|
-| 匿名入口の悪用（大量セッション・コスト増） | `guest_join_enabled` 既定 off・レート制限・`max_uses`・失効。コストは Langfuse + Billing で監視（既存 NFR） |
+| 匿名入口の悪用（大量セッション・コスト増） | `guest_join_enabled` 既定 off・レート制限・`max_uses`・失効。コストは Cloud Monitoring + Billing で監視（既存 NFR） |
 | end_user プロンプトの品質が出ない（技術用語が漏れる等） | PR7 で評価データセットを先に作り、しきい値で CI 回帰。glossary シードで語彙を固定 |
 | repo 情報の露出漏れ | PR8 を独立 PR にし、結合テストで機械的に検証。`/security-review` 重点対象 |
 | 既存 02 準備フローの回 regress | `product_id` None の旧経路をテストで固定（NFR-5）。E2E は既存経路も回す |

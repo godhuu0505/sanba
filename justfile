@@ -53,7 +53,7 @@ _env:
 up:
     {{compose}} up -d --build
 
-# 補助スタックも重ねて全部入りで起動 (+ observability / langfuse / four-keys)
+# 補助スタックも重ねて全部入りで起動 (+ observability / four-keys)
 [group('run')]
 up-full:
     {{compose_full}} up -d --build
@@ -71,7 +71,7 @@ down:
 # 補助スタックだけ落とす (アプリは残す)
 [group('run')]
 tools-down:
-    {{compose_full}} stop otel-collector prometheus loki tempo grafana four-keys langfuse langfuse-db
+    {{compose_full}} stop otel-collector prometheus loki tempo grafana four-keys
 
 # 起動中サービス一覧
 [group('run')]
