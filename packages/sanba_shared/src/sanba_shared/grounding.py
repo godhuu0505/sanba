@@ -20,7 +20,7 @@ import structlog
 log = structlog.get_logger(__name__)
 
 INDEX = "sanba-grounding"
-EMBED_DIM = 3072  # gemini-embedding-001 (must match apps/agent retrieval.py: same index)
+EMBED_DIM = 3072
 
 
 @dataclass(frozen=True)
@@ -113,8 +113,6 @@ class ContextIndexer:
                     },
                 )
             else:
-                # 既存 index にも session_id keyword mapping を明示し、session スコープの
-                # term フィルタが効くようにする（冪等）。
                 try:
                     client.indices.put_mapping(
                         index=INDEX, properties={"session_id": {"type": "keyword"}}
@@ -122,7 +120,7 @@ class ContextIndexer:
                 except Exception as exc:
                     log.warning("ensure_session_id_mapping_failed", error=str(exc))
             return client
-        except Exception as exc:  # pragma: no cover - depends on env
+        except Exception as exc:  # pragma: no cover
             log.warning("elasticsearch_unavailable_using_memory", error=str(exc))
             return None
 
@@ -137,7 +135,7 @@ class ContextIndexer:
             source = f"{source_name}#{i}"
             text = self._mask(chunk)
             embedding = _embed(text, self._config)
-            if self._client is not None:  # pragma: no cover - needs live ES
+            if self._client is not None:  # pragma: no cover
                 doc: dict[str, object] = {
                     "text": text,
                     "source": source,
@@ -162,7 +160,7 @@ class ContextIndexer:
         依らず一括で消すため、`delete_context` の `#` 境界一致ではなく `github:` 前方一致で消す。
         削除件数を返す（冪等: 0 件でも安全）。
         """
-        if self._client is not None:  # pragma: no cover - needs live ES
+        if self._client is not None:  # pragma: no cover
             try:
                 res = self._client.delete_by_query(
                     index=INDEX,
@@ -177,7 +175,7 @@ class ContextIndexer:
                     refresh=True,
                 )
                 deleted = int(res.get("deleted", 0))
-            except Exception as exc:  # pragma: no cover - depends on env
+            except Exception as exc:  # pragma: no cover
                 log.warning("repo_context_delete_failed", error=str(exc), session=session_id)
                 return 0
         else:
@@ -203,10 +201,8 @@ class ContextIndexer:
         delete_by_query、未接続（テスト/ローカル）は in-memory を filter する。削除件数を返す
         （冪等: 0 件でも安全）。これで中断素材の観察を以後の検索（search_grounding）から外す。
         """
-        if self._client is not None:  # pragma: no cover - needs live ES
+        if self._client is not None:  # pragma: no cover
             try:
-                # in-memory の _source_matches と同じ `#` 境界にそろえる: 素の prefix（あれば）と
-                # `prefix#*` のみを対象にし、別 asset への前方一致の誤爆を防ぐ。
                 res = self._client.delete_by_query(
                     index=INDEX,
                     query={
@@ -222,7 +218,7 @@ class ContextIndexer:
                     refresh=True,
                 )
                 deleted = int(res.get("deleted", 0))
-            except Exception as exc:  # pragma: no cover - depends on env
+            except Exception as exc:  # pragma: no cover
                 log.warning("context_delete_failed", error=str(exc), source=source_prefix)
                 return 0
         else:
@@ -244,7 +240,7 @@ class ContextIndexer:
 def _embed(text: str, config: GroundingConfig) -> list[float] | None:
     if not (config.google_api_key or config.use_vertexai):
         return None
-    try:  # pragma: no cover - needs creds/network
+    try:  # pragma: no cover
         from google import genai
 
         client = genai.Client(api_key=config.google_api_key or None)

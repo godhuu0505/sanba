@@ -29,9 +29,6 @@ class FakeClock:
         self.now += seconds
 
 
-# ---- AnalysisScheduler（純ロジック） ---------------------------------------
-
-
 def test_needs_min_new_utterances() -> None:
     s = AnalysisScheduler(clock=FakeClock())
     assert s.note_utterance() is False
@@ -69,16 +66,12 @@ def test_finish_requests_followup_only_when_due() -> None:
     s.start()
     s.note_utterance()
     s.note_utterance()
-    # 実行中に差分が溜まっても、間隔未達なら追い掛けない（次の発話が再評価する）。
     assert s.finish() is False
     s.start()
     s.note_utterance()
     s.note_utterance()
     clock.advance(20.0)
     assert s.finish() is True
-
-
-# ---- SANBAAgent 統合 --------------------------------------------------------
 
 
 def _agent(transport: RecordingTransport | None = None) -> SANBAAgent:
@@ -121,7 +114,6 @@ async def test_background_analysis_publishes_detections(
     assert len(calls) == 1
     types = [t["event"]["type"] for t in transport.sent]
     assert "detection.gap" in types, "背景実行でも検知カードへ publish される"
-    # 背景実行は不可視: deliberating は出さない。
     statuses = [
         t["event"]["payload"]["phase"] for t in transport.sent if t["event"]["type"] == "status"
     ]
@@ -158,7 +150,6 @@ async def test_tool_falls_back_to_sync_when_stale(
     task = agent._analysis_task
     assert task is not None
     await task
-    # 背景結果の後に 2 発話（鮮度切れ）。20 秒間隔内なので背景は再発火しない。
     agent.record_utterance("participant", "月末に一括処理があります")
     agent.record_utterance("participant", "端末はスマホが中心です")
     assert agent._analysis_task is None or agent._analysis_task.done()
@@ -173,7 +164,6 @@ async def test_tool_falls_back_to_sync_when_stale(
 async def test_background_analysis_timeout_is_fail_soft(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # 分析タイムアウト（fail-soft）: 背景実行は黙って諦め、ツールの同期経路が最新化する。
     import asyncio
 
     calls: list[str] = []
@@ -191,7 +181,7 @@ async def test_background_analysis_timeout_is_fail_soft(
     agent.record_utterance("participant", "対象は経理担当者です")
     task = agent._analysis_task
     assert task is not None
-    await task  # タイムアウトしても例外は漏れない（fail-soft）
+    await task
     assert agent._last_analysis is None
 
     tool = type(agent).analyze_requirements.__wrapped__
@@ -202,7 +192,6 @@ async def test_background_analysis_timeout_is_fail_soft(
 
 @pytest.mark.asyncio
 async def test_drain_tasks_cancels_overdue() -> None:
-    # ドレン: 猶予内に終わるタスクは送り切り、超過分はキャンセルする。
     import asyncio
 
     from sanba_agent.main import _drain_tasks
@@ -244,7 +233,7 @@ async def test_tool_rides_on_inflight_background_run(
 
     tool = type(agent).analyze_requirements.__wrapped__
     tool_task = asyncio.create_task(tool(agent, None))
-    await asyncio.sleep(0)  # ツールを走行中の背景待ちに入らせる
+    await asyncio.sleep(0)
     gate.set()
     result = await tool_task
     assert len(calls) == 1, "走行中の背景分析に相乗りし、二重の LLM 往復をしない"
@@ -255,8 +244,6 @@ async def test_tool_rides_on_inflight_background_run(
 async def test_tool_ride_along_timeout_returns_without_competing_run(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # ADR-0046 段階1: 背景分析が相乗り上限内に終わらないとき、ツールは音声ターンを塞がず
-    # 直近結果（無ければヒューリスティック）を即返し、競合する同期分析を起動しない。
     import asyncio
 
     from sanba_agent.config import settings
@@ -279,10 +266,8 @@ async def test_tool_ride_along_timeout_returns_without_competing_run(
 
     tool = type(agent).analyze_requirements.__wrapped__
     result = await tool(agent, None)
-    # 相乗り上限で切り上げ、ヒューリスティック（直近結果が無い）を即返す。
     assert result["next_question"]
     assert len(calls) == 1, "上限超過でも競合する同期分析を起動しない（背景の1回だけ）"
 
-    # 後片付け: 背景を解放してドレンする。
     gate.set()
     await agent.drain_background_tasks()

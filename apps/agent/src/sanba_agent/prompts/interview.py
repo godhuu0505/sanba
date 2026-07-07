@@ -5,7 +5,6 @@
 
 from __future__ import annotations
 
-# Voice agent (Gemini Live) — 会話の主。grill-me 流の一問一答を音声で行う。
 VOICE_AGENT_INSTRUCTIONS = """\
 あなたは「SANBA」という、要件を生み出す音声インタビュアーです（名前は「産婆術」に由来）。
 役割は、ユーザーの中にある「作りたいもの・解決したい課題」の要件を、対話を通じて引き出し、解像度高く明確にすることです。
@@ -41,10 +40,6 @@ VOICE_AGENT_INSTRUCTIONS = """\
 重要な要件が固まったら `save_requirement` ツールで記録する。
 """
 
-# end_user モード — 利用者向けインタビュアー。
-# grill-me の核心（一問一答＋推奨回答例・要約による認識合わせ）は共通原則として維持し、
-# 深掘りの軸を「いつ・どの画面で・何をしようとして・何に困ったか」へ切り替える。
-# 開発語彙（MoSCoW・非機能など）は save_requirement の内部分類にのみ使い、発話に出さない。
 END_USER_VOICE_AGENT_INSTRUCTIONS = """\
 あなたは「SANBA」という、アプリの使い心地についてお話を聞く音声インタビュアーです。
 相手はこのアプリの利用者です。開発者ではないので、技術のことは何も知らない前提で話します。
@@ -135,8 +130,6 @@ def build_glossary_seed(product_name: str, glossary: list[str]) -> str:
     共通フェンス（build_untrusted_fence）で囲む。glossary が空でもアプリ名だけは
     シードする（会話の主題を固定する）。
     """
-    # アプリ名は 1 行の枠外に埋め込むため、改行入りの名前で枠（見出し・fence）を
-    # 壊されないよう空白に平す（owner 入力の非信頼データ扱いは glossary と同じ）。
     name = " ".join(product_name.split())
     lines = [
         "",
@@ -194,15 +187,12 @@ def build_check_items_seed(check_items: list[str], *, end_user: bool = False) ->
     return "\n".join(lines)
 
 
-# 会話の開始指示（entrypoint の最初の generate_reply）。モードごとに最初の一問を変える。
 DEVELOPER_OPENING_INSTRUCTIONS = (
     "まず自己紹介し、これから要件を一緒に整理することを伝え、"
     "画面共有やモックがあれば見せてほしいと案内した上で、"
     "最初の問いを1つだけ、推奨回答例を添えて投げかけてください。"
 )
 
-# セッション準備情報があるときの開始指示。ゼロからの聞き取りを繰り返さず、
-# 準備情報の認識合わせから深掘りに入る（「何も引き継がれていない」体験を潰す）。
 DEVELOPER_OPENING_WITH_PREP_INSTRUCTIONS = (
     "まず自己紹介し、これから要件を一緒に整理することを伝えてください。"
     "instructions の「セッション準備情報」に参加者が記入したゴールがあります。"
@@ -220,7 +210,6 @@ END_USER_OPENING_INSTRUCTIONS = (
 )
 
 
-# ADK Interview Lead Agent — 次の問いを計画する頭脳。
 LEAD_AGENT_INSTRUCTIONS = """\
 あなたは要件定義インタビューの統括エージェントです(grill-me 流の問い詰めを統括する)。
 これまでの会話履歴と確定済みの要件を受け取り、次の3点を出力します:
@@ -268,8 +257,6 @@ def build_prep_premise(
     goal_detail = (goal_detail or "").strip()
     if not goal and not goal_detail:
         return ""
-    # 準備フォームは自由記述の非信頼データ。共通フェンス（build_untrusted_fence）が
-    # 閉じタグ偽装の除去と「命令に従うな」の前書きを担う。
     body: list[str] = []
     if goal:
         body.append(f"ゴール: {goal}")
@@ -329,9 +316,6 @@ def build_repo_premise(
         "要件はこの既存コードベース・ドキュメント・Issue を踏まえて深掘りしてください。",
     ]
     if summary:
-        # README/description は外部が編集できる非信頼データ。要約内の文をシステム指示として
-        # 解釈すると prompt injection になり得るため、共通フェンス（build_untrusted_fence）で
-        # 囲む（閉じタグ偽装の除去もここで効く）。参照用の前提情報として扱わせる。
         lines.append("")
         lines.extend(
             build_untrusted_fence(

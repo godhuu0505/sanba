@@ -13,11 +13,10 @@ import structlog
 
 log = structlog.get_logger(__name__)
 
-# エクスポータや otel が無い環境でも落ちないよう、メーターは Any 扱いで None フォールバックする。
 _analysis_total: Any = None
 _analysis_duration: Any = None
 
-try:  # pragma: no cover - depends on otel availability
+try:  # pragma: no cover
     from opentelemetry import metrics
 
     _meter = metrics.get_meter("sanba.worker")
@@ -36,7 +35,7 @@ except Exception:  # pragma: no cover
 
 def record_analysis(result: str, *, seconds: float | None = None) -> None:
     """解析結末を記録する（result=done/failed/skipped/error）。"""
-    if _analysis_total is not None:  # pragma: no cover - needs otel
+    if _analysis_total is not None:  # pragma: no cover
         _analysis_total.add(1, {"result": result})
         if seconds is not None and _analysis_duration is not None:
             _analysis_duration.record(seconds, {"result": result})

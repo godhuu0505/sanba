@@ -33,7 +33,7 @@ describe("RequirementsTab（要件絵巻タブ・閲覧のみ＋深掘り）", (
 
   it("MoSCoW 区分で要件を閲覧表示する（statement・確信・出所）", () => {
     render(<RequirementsTab requirements={[req({})]} deepDive={[]} onJump={vi.fn()} />);
-    expect(screen.getByText(/Must/)).toBeTruthy(); // priorityLabel = "Must 必須"
+    expect(screen.getByText(/Must/)).toBeTruthy();
     expect(screen.getByText("検索バーを新設する")).toBeTruthy();
     expect(screen.getByText(/確信 高/)).toBeTruthy();
     expect(screen.getByText(/発話×画面/)).toBeTruthy();
@@ -60,7 +60,6 @@ describe("RequirementsTab（要件絵巻タブ・閲覧のみ＋深掘り）", (
 
   it("focusUnresolved=true で深掘りへスクロールしワンショット消費する (#195)", () => {
     const onConsumed = vi.fn();
-    // jsdom は scrollIntoView 未実装のためスパイを差す（呼び出し到達と消費を検証）。
     const scrollSpy = vi.fn();
     Element.prototype.scrollIntoView = scrollSpy;
     render(

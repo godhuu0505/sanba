@@ -51,10 +51,8 @@ def _grounding_with_mixed_passages() -> GroundingStore:
     """利用者由来・repo 由来・開発語彙・アップロード資料が同時にヒットする索引を作る。"""
     g = GroundingStore()
     assert g.is_memory is True
-    # 利用者由来（allowlist 対象）。requirement は過去セッション由来でも呼び戻せる（決定8）。
     g.index_passage("請求書の画面で保存に困った", "s1:participant", "utterance", "s1")
     g.index_passage("請求書の画面に検索を付ける", "requirement:req_1", "requirement", "other")
-    # repo 由来（ES 索引 chunk / README・Issue シード）: 出力に出てはならない（NFR-2）。
     g.index_passage(
         "[octo/secret src/billing.py]\n請求書の画面の未公開機能コード",
         "github:octo/secret@main@sha1:src/billing.py#0",
@@ -62,9 +60,7 @@ def _grounding_with_mixed_passages() -> GroundingStore:
         "s1",
     )
     g.index_passage("請求書アプリのREADME 画面説明", "github:octo/secret#readme", "context", "s1")
-    # 開発語彙 knowledge（FR-2.4: MoSCoW 等は利用者に見せない）。
     g.index_passage("要件は MoSCoW で優先度付けし、請求書の画面も対象", "guide:moscow", "knowledge")
-    # owner アップロード資料（kind=context）: 内部資料なので end_user には出さない。
     g.index_passage("アップロード資料: 請求書の画面仕様", "asset:123", "context", "s1")
     return g
 
@@ -93,22 +89,18 @@ async def test_end_user_search_returns_only_user_derived_kinds() -> None:
 
 @pytest.mark.asyncio
 async def test_end_user_background_signal_is_count_only() -> None:
-    # 決定8「次に聞くことの判断材料」: repo 由来ヒットは件数のみ。内容・出所を含めない。
     repo = _repo(InviteScope.END_USER)
     agent = SANBAAgent("s1", repo, _grounding_with_mixed_passages())
     result = await _search(agent)
 
     background = result["background"]
-    # 件数のみ: speech-to-speech でモデルが読み上げる文章フィールドは付けない（NFR-2）。
     assert set(background.keys()) == {"related_internal_hits"}
-    assert background["related_internal_hits"] == 2  # ES chunk + README シード
+    assert background["related_internal_hits"] == 2
     assert "octo" not in json.dumps(background, ensure_ascii=False).lower()
 
 
 @pytest.mark.asyncio
 async def test_developer_session_still_gets_repo_passages() -> None:
-    # 回帰（FR-2.5 は developer の挙動を変えない）: 確認済み developer は repo chunk も
-    # knowledge も従来どおり返り、background は付かない。
     repo = _repo(InviteScope.DEVELOPER)
     repo.set_session_github(
         "s1",
@@ -129,7 +121,6 @@ async def test_developer_session_still_gets_repo_passages() -> None:
 
 @pytest.mark.asyncio
 async def test_unconfirmed_mode_fails_closed() -> None:
-    # セッション文書が読めない（例外）ときはフェイルオープンにせず allowlist に倒す。
     repo = _repo(InviteScope.DEVELOPER)
 
     def _boom(session_id: str) -> SessionMeta | None:
@@ -148,9 +139,6 @@ async def test_unconfirmed_mode_fails_closed() -> None:
 
 @pytest.mark.asyncio
 async def test_missing_session_meta_fails_closed() -> None:
-    # get_session が None を返す（セッション未作成/削除済みの room）場合も
-    # フェイルクローズで allowlist に倒す（confirmed=True でも meta is None ならば
-    # repo grounding 不許可）。
     repo = _repo(InviteScope.DEVELOPER)
 
     def _none(session_id: str) -> SessionMeta | None:
@@ -167,8 +155,6 @@ async def test_missing_session_meta_fails_closed() -> None:
 
 
 def test_partition_is_allowlist_and_resists_source_spoofing() -> None:
-    # 遮断は kind の allowlist で決まる: source の大文字小文字・前後空白・形式変更では
-    # すり抜けない（denylist の文字列判定に依存しない / security-review 重点）。
     passages = [
         Passage("u", "s1:participant", "utterance"),
         Passage("r", "requirement:req_1", "requirement"),
@@ -179,17 +165,12 @@ def test_partition_is_allowlist_and_resists_source_spoofing() -> None:
     ]
     kept, dropped_repo, dropped_other = _partition_passages_for_output(passages)
     assert [p.kind for p in kept] == ["utterance", "requirement"]
-    # 表記揺れの github source も repo 由来として数える（観測性・background 用の分類）。
     assert dropped_repo == 2
-    # source が github に見えなくても allowlist 外なら遮断される（すり抜け無し）。
     assert dropped_other == 2
 
 
 @pytest.mark.asyncio
 async def test_end_user_web_events_carry_no_repo_sources() -> None:
-    # NFR-2 の機械的検証（引用イベント経路）: 発話記録 → 検索 → 要件確定の一連で web へ
-    # publish される全エンベロープに repo 由来 source が現れない。requirement.upserted の
-    # citations は utterance 参照のみ（契約 §3）。
     repo = _repo(InviteScope.END_USER)
     transport = RecordingTransport()
     publisher = EventPublisher("s1", transport)

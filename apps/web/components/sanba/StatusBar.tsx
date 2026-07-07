@@ -2,7 +2,6 @@ import * as React from "react";
 
 import { cn } from "@/lib/utils";
 
-/** iOS 風ステータスバー（時刻＋電波/電池）。画面最上部に固定の高さで置く。 */
 export interface StatusBarProps extends React.HTMLAttributes<HTMLDivElement> {
   time?: string;
   signal?: string;

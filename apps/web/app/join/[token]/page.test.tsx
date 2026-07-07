@@ -4,12 +4,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApiError } from "@/lib/api";
 
-// 深掘りリンク入場（FR-1.6 / FR-2.1 ゲスト入場）:
-// - 表示だけでは POST しない（use_count を消費しない）— 最重要 AC
-// - 未ログインでもログインへ飛ばさず同意ゲートを出す（Stage 2）
-// - ゲストは joinProduct の join 直返しで接続する（joinSession を呼ばない）
-// - 401 はログイン誘導、403 reason 別の明確なエラー画面、成功時は会話へ
-
 const authState = {
   credential: "id-token" as string | null,
   profile: { name: "話し手" } as { name?: string } | null,
@@ -43,7 +37,6 @@ vi.mock("@/lib/api", async (importOriginal) => {
   };
 });
 
-// LiveKit 接続を持つ ConversationStart は挙動テストの関心外なのでマーカーに差し替える。
 vi.mock("@/components/ConversationStart", () => ({
   ConversationStart: ({
     conn,
@@ -165,10 +158,8 @@ describe("深掘りリンク入場画面（ADR-0031 / ADR-0032 / FR-1.6 / FR-2.1
       participantName: "話し手",
       idToken: "id-token",
     });
-    // product_name と interview_mode（end_user → 顧客）がサマリに引き継がれる。
     expect(screen.getByTestId("conversation-start").textContent).toContain("経費精算アプリ");
     expect(screen.getByTestId("conversation-start").textContent).toContain("顧客");
-    // ログイン済み（invite 経由）は読取専用にしない。
     expect(screen.getByTestId("conversation-start").dataset.readonly).toBe("0");
   });
 
@@ -179,10 +170,8 @@ describe("深掘りリンク入場画面（ADR-0031 / ADR-0032 / FR-1.6 / FR-2.1
     render(<JoinPage />);
     await startWithConsent();
     await waitFor(() => expect(screen.getByTestId("conversation-start")).toBeTruthy());
-    // Authorization なし（credential null）で joinProduct を呼ぶ。
     expect(joinProduct).toHaveBeenCalledWith("tok.sig", true, null);
     expect(joinSession).not.toHaveBeenCalled();
-    // ゲストは読取専用の会話画面（素材/確定/起票 UI を出さない）。
     expect(screen.getByTestId("conversation-start").dataset.readonly).toBe("1");
     expect(screen.getByTestId("conversation-start").textContent).toContain("sess-9");
   });
@@ -211,7 +200,6 @@ describe("深掘りリンク入場画面（ADR-0031 / ADR-0032 / FR-1.6 / FR-2.1
     render(<JoinPage />);
     await startWithConsent();
     expect(await screen.findByText("参加にはログインが必要です")).toBeTruthy();
-    // 開始 UI は出さない（再タップさせない）。ログイン導線から /login?next= へ。
     expect(screen.queryByRole("button", { name: "深掘りを開始する" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "ログインして参加する" }));
     expect(push).toHaveBeenCalledWith(`/login?next=${encodeURIComponent("/join/tok.sig")}`);
@@ -227,7 +215,6 @@ describe("深掘りリンク入場画面（ADR-0031 / ADR-0032 / FR-1.6 / FR-2.1
       render(<JoinPage />);
       await startWithConsent();
       expect(await screen.findByText(title)).toBeTruthy();
-      // 死リンクは開始ボタンを出さない（再タップで再消費させない）。
       expect(screen.queryByRole("button", { name: "深掘りを開始する" })).toBeNull();
       cleanup();
     }
@@ -244,7 +231,6 @@ describe("深掘りリンク入場画面（ADR-0031 / ADR-0032 / FR-1.6 / FR-2.1
     render(<JoinPage />);
     await startWithConsent();
     expect(await screen.findByRole("alert")).toBeTruthy();
-    // 429 は一時的な失敗なので開始 UI を残す（手動の再試行のみ許す）。
     expect(screen.getByRole("button", { name: "深掘りを開始する" })).toBeTruthy();
     expect(joinProduct).toHaveBeenCalledTimes(2);
   });
@@ -256,10 +242,9 @@ describe("深掘りリンク入場画面（ADR-0031 / ADR-0032 / FR-1.6 / FR-2.1
     expect(await screen.findByRole("alert")).toBeTruthy();
     expect(joinProduct).toHaveBeenCalledTimes(1);
 
-    // リトライ: joinProduct は呼ばず joinSession だけ再実行する（use_count を守る）。
     fireEvent.click(screen.getByRole("button", { name: "深掘りを開始する" }));
     await waitFor(() => expect(screen.getByTestId("conversation-start")).toBeTruthy());
-    expect(joinProduct).toHaveBeenCalledTimes(1); // 増えていない（再消費なし）
+    expect(joinProduct).toHaveBeenCalledTimes(1);
     expect(joinSession).toHaveBeenCalledTimes(2);
   });
 

@@ -1,11 +1,5 @@
 "use client";
 
-// 要件サンバ中の確認項目カード（アプリ管理画面 /products/[id]）。
-// 「セッション中に必ず確認する項目」を対象（全員/利用者/企画者/開発者）付きで登録する
-// （ADR-0043）。上限はサーバの check_items_limit（既定 10）。登録内容はセッション開始時に
-// 対象に合う項目だけが agent の初期 instructions へシードされ、結果ドキュメントにも載る。
-// 操作ごとの即時保存（追加/削除のたびに PATCH。失敗は表示だけ知らせる）は語彙カードと同じ。
-
 import { useState } from "react";
 
 import { Button, Card, CardTitle, Chip, Input, Select } from "@/components/sanba";
@@ -13,7 +7,6 @@ import { updateProduct, type Audience, type CheckItem, type Product } from "@/li
 import { AUDIENCE_LABELS, AUDIENCES } from "@/lib/audience";
 import { useAuth } from "@/lib/auth";
 
-/** 対象セレクタの値。"all" = 全員（API へは target: null で送る）。 */
 type TargetChoice = Audience | "all";
 
 const TARGET_LABELS: Record<TargetChoice, string> = {
@@ -32,7 +25,6 @@ export function ProductCheckItemsCard({
   onSaved,
 }: {
   product: Product;
-  /** 保存成功後に親の product 表示を最新化するためのフック。 */
   onSaved: (updated: Product) => void;
 }) {
   const auth = useAuth();
@@ -51,7 +43,6 @@ export function ProductCheckItemsCard({
     try {
       onSaved(await updateProduct(product.id, { check_items: next }, idToken));
     } catch {
-      // 楽観更新はしない（onSaved でのみ反映）ので巻き戻し不要。失敗だけ知らせる。
       setError("確認項目の保存に失敗しました");
     }
   }
@@ -140,7 +131,6 @@ export function ProductCheckItemsCard({
           }}
           placeholder={full ? `上限（${limit} 個）に達しています` : "例: ログイン方式を確認する"}
         />
-        {/* 語彙カードの「追加」とアクセシブルネームが衝突しないよう明示ラベルを付ける。 */}
         <Button
           variant="outline"
           size="md"

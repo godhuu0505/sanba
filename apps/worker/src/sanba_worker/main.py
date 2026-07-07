@@ -28,7 +28,6 @@ app = FastAPI(title="sanba-worker")
 _repo = SessionRepository()
 _indexer = ContextIndexer(settings.grounding_config(), masker=mask_pii)
 
-# キューの max_attempts と揃える（ADR-0040 §3。ずれても reaper が滞留素材を拾う保険がある）。
 MAX_TASK_ATTEMPTS = 5
 
 
@@ -64,7 +63,7 @@ async def analyze_video_task(req: Request) -> dict[str, str]:
     body = await req.json()
     try:
         payload = VideoTaskPayload.model_validate(body)
-    except Exception as exc:  # 恒久的に不正なペイロードはリトライしても無駄（400）。
+    except Exception as exc:
         raise HTTPException(status_code=400, detail=f"bad payload: {exc}") from exc
 
     retry_count = int(req.headers.get("X-CloudTasks-TaskRetryCount", "0"))
@@ -81,8 +80,6 @@ async def analyze_video_task(req: Request) -> dict[str, str]:
             await _publish_visual(payload.session_id, payload.asset_id, result)
         return {"status": result.status, "reason": result.reason}
     except Exception as exc:
-        # 一時エラー（ES/GCS 障害等）。最終試行なら failed 化して 2xx（Cloud Tasks は枯渇後に
-        # ハンドラを呼ばないため、ここで確定させないと素材が analyzing のまま残る）。
         log.warning(
             "video_task_error",
             session=payload.session_id,

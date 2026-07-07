@@ -1,20 +1,13 @@
 "use client";
 
-// 会話セッション内（08 結果 / ResultView）から、ホーム・過去の要件一覧・アプリ管理へ
-// 抜けるためのドロワー。通常画面の恒常サイドメニューは AppShell が担うが、ライブ会話は
-// 全画面の音声文脈で AppShell を敷かないため、ここはハンバーガー＋左ドロワーで導線を出す。
-// scrim・Escape 閉じは AccountMenu 踏襲。認可は遷移先 API が源泉で、ここは導線のみ。
-
 import { Home, Menu, Package, ScrollText, X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import type { LucideIcon } from "lucide-react";
 
-/** 現在地。自己リンクは aria-current を付け、押しても混乱しないよう強調表示にする。 */
 export type SideMenuCurrent = "home" | "results" | "products";
 
 export interface SideMenuProps {
-  /** 表示中の画面（該当項目を現在地として強調する）。結果画面などは未指定でよい。 */
   current?: SideMenuCurrent;
 }
 
@@ -27,7 +20,6 @@ const ITEMS: { key: SideMenuCurrent; href: string; label: string; Icon: LucideIc
 export function SideMenu({ current }: SideMenuProps) {
   const [open, setOpen] = useState(false);
 
-  // Escape で閉じる（a11y / AccountMenu と同じ）。開いている間だけ購読する。
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -52,7 +44,6 @@ export function SideMenu({ current }: SideMenuProps) {
 
       {open && (
         <>
-          {/* 暗幕（AccountMenu / ChoicePin 踏襲）。クリックで閉じる。 */}
           <button
             type="button"
             aria-label="閉じる（背景）"

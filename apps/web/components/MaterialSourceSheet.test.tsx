@@ -50,7 +50,6 @@ describe("MaterialSourceSheet（05-2 手段選択シート）", () => {
     setup({ onToggleCamera: undefined, onToggleScreenShare: undefined });
     expect(screen.queryByText("カメラで撮影")).toBeNull();
     expect(screen.queryByText("画面を共有")).toBeNull();
-    // アップロードと Drive は常に出る。
     expect(screen.getByText("ファイルをアップロード")).toBeTruthy();
     expect(screen.getByText("Google ドライブから選ぶ")).toBeTruthy();
   });
@@ -60,7 +59,6 @@ describe("MaterialSourceSheet（05-2 手段選択シート）", () => {
     expect(
       screen.getByRole("button", { name: "カメラの起動/停止" }).getAttribute("aria-pressed"),
     ).toBe("true");
-    // 画面共有は active 時にラベルが「停止」へ変わる。
     expect(screen.getByText("画面共有を停止")).toBeTruthy();
   });
 

@@ -25,13 +25,8 @@ router = APIRouter()
 class AuthNonceResponse(BaseModel):
     """GET /api/auth/nonce の応答。"""
 
-    # GIS の initialize({nonce}) に渡す生 nonce（ID トークンの nonce claim に入る）。
     nonce: str
-    # X-Auth-Nonce として create/join に返す HMAC 署名エンベロープ。
     token: str
-    # エンベロープの失効時刻（UNIX 秒）。web はこれを見て、期限切れの nonce で GIS を
-    # 初期化しない・期限切れエンベロープをヘッダに載せない（ADR-0047 §2。/login を
-    # 長時間開いたまま署名した credential が「新規ログインなのに 401」になる事故を防ぐ）。
     expires_at: int
 
 

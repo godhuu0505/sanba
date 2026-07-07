@@ -4,25 +4,11 @@ import * as React from "react";
 import { cn } from "@/lib/utils";
 import { Logo } from "./Logo";
 
-/**
- * 画面上部のアプリバー。SANBA ブランド（ロゴ＋ワードマーク）を**全画面共通で常時表示**する
- * （2026-07 要望「どの画面でも SANBA のヘッダー」）。
- *  - タイトル画面（管理/準備など）: `title` を渡すと小ロゴ＋縦罫で併記する。
- *  - 戻る導線: `onBack` か `back` を渡す。
- *  - 右端には REC バッジ・アカウントメニュー等を `right` スロットで差し込める。
- */
 export interface AppHeaderProps extends Omit<React.HTMLAttributes<HTMLElement>, "title"> {
   title?: React.ReactNode;
-  /** 戻るボタンを表示し、押下時に呼ぶ。 */
   onBack?: () => void;
-  /** onBack なしで戻る見た目だけ欲しい場合に true。 */
   back?: boolean;
-  /**
-   * @deprecated ロゴは常時表示になったため無指定と同義。既存呼び出し（改修中ファイル含む）を
-   * 壊さないため受け付けだけ残す。新規コードでは渡さない。
-   */
   brand?: boolean;
-  /** 右端スロット（REC バッジ・補助操作など）。 */
   right?: React.ReactNode;
 }
 
@@ -31,7 +17,6 @@ export function AppHeader({
   title,
   onBack,
   back,
-  // brand は deprecated（ロゴ常時表示）。DOM へ流出させないため destructure で捨てる。
   brand: _brand,
   right,
   ...props
@@ -40,7 +25,6 @@ export function AppHeader({
   const hasTitle = title != null && title !== "";
   return (
     <header
-      // 紙色の下地（--sanba-bg）と同化して境目が消えないよう、淡い紙面＋藁色の下罫で帯として区切る。
       className={cn(
         "flex w-full items-center gap-2.5 border-b border-sanba-border-strong bg-sanba-surface-strong px-4 py-1.5",
         className,
@@ -57,7 +41,6 @@ export function AppHeader({
           <ChevronLeft size={16} aria-hidden />
         </button>
       )}
-      {/* SANBA ブランドは全画面で出す。タイトルがある画面は小ロゴ＋縦罫で場所を譲る。 */}
       <Logo size={hasTitle ? "sm" : "md"} className="shrink-0" />
       {hasTitle && (
         <>

@@ -44,7 +44,6 @@ def _login(sub: str, email: str = "u@example.com") -> None:
 
 
 def _create(name: str = "請求アプリ", **kwargs: Any) -> dict[str, Any]:
-    # slug は必須（ADR-0045）。指定がなければ既定値で埋める（各テストの関心事を汚さない）。
     payload: dict[str, Any] = {"name": name, "slug": "test-app"}
     payload.update(kwargs)
     res = client.post("/api/products", json=payload)
@@ -57,17 +56,15 @@ def _seed(pid: str, owner: str, *, created: datetime, name: str = "t") -> None:
     main._repo.create_product(Product(id=pid, name=name, owner_sub=owner, created_at=created))
 
 
-# ---- FR-1.1: 登録・一覧 ------------------------------------------------------
 def test_create_product_returns_random_id_and_no_owner_pii() -> None:
     _login(OWNER)
     body = _create(name="  請求アプリ  ", description=" 経費精算 ", glossary=[" 請求書 ", ""])
     assert body["id"].startswith("prod-")
-    assert body["name"] == "請求アプリ"  # strip される
+    assert body["name"] == "請求アプリ"
     assert body["description"] == "経費精算"
-    assert body["glossary"] == ["請求書"]  # 空要素は捨てる
+    assert body["glossary"] == ["請求書"]
     assert body["github_index_status"] == "none"
     assert body["slug"] == "test-app"
-    # PII / 内部識別子は返さない (最小権限)。
     assert "owner_sub" not in body
 
 
@@ -82,17 +79,13 @@ def test_create_product_requires_login(monkeypatch: pytest.MonkeyPatch) -> None:
     assert client.post("/api/products", json={"name": "x", "slug": "x-app"}).status_code == 401
 
 
-# ---- slug（ADR-0045）---------------------------------------------------------
 def test_create_product_normalizes_and_validates_slug() -> None:
     _login(OWNER)
-    # 前後空白・大文字は正規化して受理する。
     body = _create(slug="  Billing-App  ")
     assert body["slug"] == "billing-app"
-    # 形式違反（1 文字・先頭/末尾ハイフン・非 ASCII・空白・記号）は 400。
     for bad in ["a", "-abc", "abc-", "日本語", "has space", "app!"]:
         res = client.post("/api/products", json={"name": "x", "slug": bad})
         assert res.status_code == 400, f"slug={bad!r} は 400 のはず"
-    # 予約語（web の既存ルートと衝突する slug）は 400。
     for reserved in ["products", "prepare", "sessions", "results", "login", "api"]:
         res = client.post("/api/products", json={"name": "x", "slug": reserved})
         assert res.status_code == 400, f"slug={reserved!r} は予約語のはず"
@@ -101,7 +94,6 @@ def test_create_product_normalizes_and_validates_slug() -> None:
 def test_create_product_duplicate_slug_is_409() -> None:
     _login(OWNER)
     _create(slug="dup-app")
-    # 別ユーザーでもグローバルに一意（テナント 1 つ / ADR-0045）。
     _login("someone-else")
     res = client.post("/api/products", json={"name": "y", "slug": "dup-app"})
     assert res.status_code == 409
@@ -111,13 +103,11 @@ def test_update_product_changes_slug_with_conflict_check() -> None:
     _login(OWNER)
     pid = _create(slug="first-app")["id"]
     _create(name="他", slug="other-app")
-    # 変更は正規化して受理、使用済みは 409、形式違反は 400。
     res = client.patch(f"/api/products/{pid}", json={"slug": "Renamed-App"})
     assert res.status_code == 200
     assert res.json()["slug"] == "renamed-app"
     assert client.patch(f"/api/products/{pid}", json={"slug": "other-app"}).status_code == 409
     assert client.patch(f"/api/products/{pid}", json={"slug": "bad slug"}).status_code == 400
-    # 409/400 後も現値は保たれる。
     assert client.get(f"/api/products/{pid}").json()["slug"] == "renamed-app"
 
 
@@ -137,13 +127,10 @@ def test_mine_returns_only_own_products_sorted_desc() -> None:
     assert [p["id"] for p in body] == ["prod-new", "prod-old"]
 
 
-# ---- FR-1.2 / NFR-6: 認可の一点集約 -----------------------------------------
 def test_get_product_owner_ok_other_user_404() -> None:
     _seed("prod-1", OWNER, created=datetime(2026, 1, 1, tzinfo=UTC))
     _login(OWNER)
     assert client.get("/api/products/prod-1").status_code == 200
-    # 非所有は 404 (403 ではない): 応答差で他人の product ID の存在を漏らさない
-    # (/api/sessions/mine/{id} と同じ方針)。
     _login("intruder")
     assert client.get("/api/products/prod-1").status_code == 404
 
@@ -173,10 +160,8 @@ def test_update_product_edits_allowed_fields_only() -> None:
     body = res.json()
     assert body["name"] == "新名称"
     assert body["glossary"] == ["検索", "絞り込み"]
-    # 空 name は 400、過長な語彙は 400。
     assert client.patch(f"/api/products/{pid}", json={"name": "  "}).status_code == 400
     assert client.patch(f"/api/products/{pid}", json={"glossary": ["x" * 101]}).status_code == 400
-    # 非所有の更新・削除も 404 に平す。
     _login("intruder")
     assert client.patch(f"/api/products/{pid}", json={"name": "hack"}).status_code == 404
     assert client.delete(f"/api/products/{pid}").status_code == 404
@@ -189,11 +174,9 @@ def test_delete_product_cascades_invites() -> None:
     assert client.delete("/api/products/prod-1").json() == {"deleted": True}
     assert main._repo.get_product("prod-1") is None
     assert main._repo.get_invite("prod-1", "inv-1") is None
-    # 削除済みは 404 (存在秘匿と同じ応答)。
     assert client.delete("/api/products/prod-1").status_code == 404
 
 
-# ---- FR-1.3: repo 紐づけと索引 ------------------------------------------------
 class FakeClient:
     """GitHubAppClient の最小 fake (test_github_link_api.py と同型・ネットワークなし)。"""
 
@@ -250,7 +233,6 @@ def test_select_repo_validates_format_and_allowlist(
     assert (
         client.post("/api/products/prod-1/github", json={"repo": "not-a-repo"}).status_code == 400
     )
-    # NFR-2: GITHUB_REPO_ALLOWLIST は product の紐づけにも一貫適用する。
     monkeypatch.setattr(main.settings, "github_repo_allowlist", "octo", raising=True)
     assert client.post("/api/products/prod-1/github", json={"repo": "evil/x"}).status_code == 400
     assert client.post("/api/products/prod-1/github", json={"repo": "octo/demo"}).status_code == 200
@@ -282,7 +264,6 @@ def test_select_repo_indexes_and_reuses_same_sha(
     res = client.post("/api/products/prod-1/github", json={"repo": "octo/demo"})
     assert res.status_code == 200
     assert res.json()["status"] == "indexing"
-    # TestClient は応答後に background task を実行する → fake 索引が完走して ready。
     assert calls == ["octo/demo"]
     body = client.get("/api/products/prod-1").json()
     assert body["github_repo"] == "octo/demo"
@@ -290,8 +271,7 @@ def test_select_repo_indexes_and_reuses_same_sha(
     assert body["github_commit_sha"] == "sha-main"
     assert body["github_index_status"] == "ready"
 
-    # 同一 (repo, branch, sha): 再索引せず現状 (ready) を返す。
     res2 = client.post("/api/products/prod-1/github", json={"repo": "octo/demo"})
     assert res2.status_code == 200
     assert res2.json()["status"] == "ready"
-    assert calls == ["octo/demo"]  # 背景タスクは増えない
+    assert calls == ["octo/demo"]

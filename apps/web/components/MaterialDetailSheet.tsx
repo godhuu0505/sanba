@@ -1,17 +1,5 @@
 "use client";
 
-// 05-1 資料詳細（ボトムシート）。1素材の抽出要件チップと「言葉×画の矛盾」を種別別に確認する。
-// 仕様: docs/reference/conversation-experience.md §6 / docs/reference/screens/05-materials.md / Figma 148:2。
-//
-// 設計ポイント:
-// - analysis.visual の conflicts（言葉×画の矛盾）は一覧（MaterialsList）には表示先が無いため、
-//   素材行 → 本シートで surface する。
-// - conflicts は store 既存形（AnalysisVisualConflict）をそのまま受ける。detection.* の有無に依らず
-//   analysis.visual に保持された矛盾を出すため、「視覚解析のみの矛盾（detection 無し）」も確認できる。
-// - 色/バッジは mapping.ts に倣う（緋=矛盾）。色のみに依存せず必ずラベル＋アイコンを伴う（ADR-0017）。
-// - a11y: 暗幕＋ボトムシート（role=dialog/aria-modal）、ESC で閉じる、フォーカストラップ、
-//   見た目（古語）に依らない現代語ラベル（MaterialSourceSheet を踏襲）。
-
 import { useEffect, useRef } from "react";
 import { Check, ChevronRight, Image as ImageIcon, X } from "lucide-react";
 
@@ -20,16 +8,10 @@ import type { MaterialDetail } from "../lib/realtime/selectors";
 
 export interface MaterialDetailSheetProps {
   detail: MaterialDetail;
-  /** 閉じる（✕ / 暗幕 / ESC）。 */
   onClose: () => void;
-  /**
-   * 矛盾を「会話で確認」する導線（会話履歴タブへ戻す・任意）。
-   * 起票（要件化）はバックエンド未接続のため出さない（偽ボタンを作らない・CLAUDE.md）。
-   */
   onConfirmInConversation?: () => void;
 }
 
-// 緋＝言葉×画の矛盾。色トークン/アイコン/ariaLabel は mapping.ts（矛盾）に倣う。
 const CONFLICT = detectionPresentation("contradiction");
 
 export function MaterialDetailSheet({
@@ -41,12 +23,10 @@ export function MaterialDetailSheet({
   const closeRef = useRef<HTMLButtonElement>(null);
   const titleId = "material-detail-title";
 
-  // 開いたらシート内へフォーカスを移す（a11y）。
   useEffect(() => {
     closeRef.current?.focus();
   }, []);
 
-  // ESC で閉じる＋Tab をシート内に閉じ込める（フォーカストラップ・a11y / MaterialSourceSheet 踏襲）。
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -77,8 +57,6 @@ export function MaterialDetailSheet({
   }, [onClose]);
 
   const done = detail.status === "done";
-  // 解析結果（analysis.visual）を保持しているときだけ、空を「無し」と断定してよい。
-  // 未取得（再接続後の done 行）/解析途中は断定せず「未取得/解析中」を出す。
   const ready = detail.analysisReady;
   const waiting = done
     ? "解析結果はこの場では取得できていません。"
@@ -86,7 +64,6 @@ export function MaterialDetailSheet({
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center">
-      {/* 暗幕（MaterialSourceSheet 踏襲）。クリックで閉じる。 */}
       <button
         type="button"
         aria-label="閉じる（背景）"
@@ -117,7 +94,6 @@ export function MaterialDetailSheet({
           </button>
         </div>
 
-        {/* プレビュー枠（画像 URL は store に無いためプレースホルダ・Figma 150:2 踏襲）。 */}
         <div
           aria-hidden="true"
           className="flex h-[140px] items-center justify-center gap-1.5 rounded-[12px] border border-sanba-border bg-sanba-surface-strong text-[13px] text-sanba-muted"
@@ -125,7 +101,6 @@ export function MaterialDetailSheet({
           <ImageIcon size={16} aria-hidden /> {detail.name}
         </div>
 
-        {/* メタ（名前・解析状態）。解析中は進捗バーで状態を可視化（色のみに依存しない）。 */}
         <div className="flex flex-col gap-[6px]">
           <span className="text-[11.5px] font-bold text-sanba-cream">{detail.name}</span>
           {done ? (
@@ -150,7 +125,6 @@ export function MaterialDetailSheet({
           )}
         </div>
 
-        {/* 種別①: 抽出した要件（チップ）。 */}
         <section aria-label="抽出した要件" className="flex flex-col gap-2">
           <span className="text-[12px] font-bold text-sanba-gold-text">抽出した要件</span>
           {detail.extracted.length > 0 ? (
@@ -171,7 +145,6 @@ export function MaterialDetailSheet({
           )}
         </section>
 
-        {/* 種別②: 言葉×画の矛盾（緋）。detection.* に依らず analysis.visual の矛盾を surface する。 */}
         <section aria-label="言葉×画の矛盾" className="flex flex-col gap-2">
           <span className="text-[12px] font-bold" style={{ color: CONFLICT.color }}>
             言葉×画の矛盾

@@ -1,58 +1,21 @@
 "use client";
 
-// 05-2 素材の手段選択シート（カメラ撮影 / ファイルアップロード / 画面共有 / Google ドライブ）。
-// 仕様: docs/reference/conversation-experience.md §6 / docs/reference/screens/05-materials.md（Figma 148:95）
-//      / ADR-0004（マルチモーダル入力）/ ADR-0018。
-//
-// 設計ポイント:
-// - SessionView 非依存の独立部品。02 準備でも再利用できるよう LiveKit には一切触れない。
-//   カメラ/画面共有のローカルトラック制御は親（SessionView）がハンドラとして注入する
-//   （ハンドラ未指定の文脈ではその導線を出さない）。これで旧 MaterialView の経路をここへ統合し、
-//   二重実装を撤去する。
-// - 投入種別（camera/screen/upload/drive）は onSelectSource で計測可能にする（CLAUDE.md 原則3）。
-// - a11y: 暗幕＋ボトムシート（role=dialog/aria-modal）、ESC で閉じる、フォーカストラップ、
-//   見た目に依らないラベル（ADR-0017）。
-//
-// Google ドライブは drive.file + Google Picker で取り込む（ADR-0049）。
-// 実導線は親が onDrive で注入する（EntryFlow / SessionView）。
 
 import { Camera, ChevronRight, Cloud, Monitor, Upload, X } from "lucide-react";
 import { type ReactNode, useEffect, useRef } from "react";
 
-/** 投入手段の種別（計測キー）。 */
 export type MaterialSource = "camera" | "screen" | "upload" | "drive";
 
 export interface MaterialSourceSheetProps {
-  /** 閉じる（キャンセル / 暗幕 / ESC）。 */
   onClose: () => void;
-  /** ファイルアップロードを選んだ（親がファイルピッカを開く）。 */
   onUpload: () => void;
-  /**
-   * カメラ撮影トグル（LiveKit ローカル映像トラック・ADR-0004）。
-   * 未指定なら行を出さない（LiveKit ルーム外＝02 準備等で再利用するため）。
-   */
   onToggleCamera?: () => void;
   cameraActive?: boolean;
-  /**
-   * 画面共有トグル（LiveKit ローカル映像トラック・ADR-0004）。
-   * 未指定なら行を出さない。
-   */
   onToggleScreenShare?: () => void;
   screenShareActive?: boolean;
-  /** Google ドライブ導線（ADR-0049）。親が Picker を開くハンドラを注入する。 */
   onDrive: () => void;
-  /**
-   * 手段選択の計測フック（CLAUDE.md 原則3・投入種別の計測）。各導線の押下で発火する。
-   * 運用での収集先（OTLP/メトリクス）への配線は別途行う。
-   */
   onSelectSource?: (source: MaterialSource) => void;
-  /** カメラ/画面共有の開始失敗（権限拒否・ピッカーキャンセル）を示す（親が制御）。 */
   error?: string | null;
-  /**
-   * 配置。既定は会話中のボトムシート（"bottom"）。02 準備では画面中央に出す（"center"）。
-   * ルーム外の準備画面はキーボード近接の必要が薄く、フォームの中で完結するダイアログとして
-   * 中央に据える方が収まりが良い。
-   */
   placement?: "bottom" | "center";
 }
 
@@ -72,12 +35,10 @@ export function MaterialSourceSheet({
   const sheetRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
 
-  // 開いたらシート内へフォーカスを移す（a11y）。
   useEffect(() => {
     closeRef.current?.focus();
   }, []);
 
-  // ESC で閉じる＋Tab をシート内に閉じ込める（フォーカストラップ・a11y）。
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -118,7 +79,7 @@ export function MaterialSourceSheet({
         centered ? "items-center px-4" : "items-end"
       }`}
     >
-      {/* 暗幕（ChoicePin/AccountMenu 踏襲）。クリックで閉じる。 */}
+      {}
       <button
         type="button"
         aria-label="閉じる（背景）"
@@ -220,7 +181,6 @@ function SourceRow({
   title: string;
   sub: string;
   active?: boolean;
-  /** 見た目（古語）に依らない現代語の機能ラベル（ADR-0017 / a11y）。 */
   actionLabel?: string;
   onClick: () => void;
 }) {

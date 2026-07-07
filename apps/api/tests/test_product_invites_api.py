@@ -54,8 +54,6 @@ def _reset() -> Iterator[None]:
 
 
 def _login(sub: str, email: str = "u@example.com") -> None:
-    # join_product はゲスト候補を許す maybe_user を使う（ADR-0032）。ログイン済みとして
-    # 振る舞わせるため、require_user と併せて両方を上書きする。
     app.dependency_overrides[require_user] = lambda: _user(sub, email)
     app.dependency_overrides[maybe_user] = lambda: _user(sub, email)
 
@@ -75,26 +73,21 @@ def _join(token: str, consent: bool = True) -> Any:
     return client.post("/api/products/join", json={"token": token, "consent_acknowledged": consent})
 
 
-# ---- トークン単体（auth.py・二段検証の 1 段目） ------------------------------
 def test_product_invite_token_roundtrip_and_kind_separation() -> None:
     token = create_product_invite_token("prod-1", "inv-1", SECRET, None)
     claim = verify_product_invite_token(token, SECRET)
     assert (claim.product_id, claim.invite_id) == ("prod-1", "inv-1")
 
-    # 期限つきは exp を過ぎると弾く。
     expired = create_product_invite_token("prod-1", "inv-1", SECRET, int(time.time()) - 10)
     with pytest.raises(InvalidProductInvite, match="expired"):
         verify_product_invite_token(expired, SECRET)
 
-    # トークン種の取り違え: セッション invite は scope 不一致で弾く。
     with pytest.raises(InvalidProductInvite, match="scope"):
         verify_product_invite_token(create_invite("sess-1", "pm", SECRET), SECRET)
-    # 逆方向（product トークンを verify_invite へ）も 500 にせず InvalidInvite。
     with pytest.raises(InvalidInvite):
         verify_invite(token, SECRET)
 
 
-# ---- FR-1.5: 発行・一覧・失効 -------------------------------------------------
 def test_issue_invite_is_owner_only() -> None:
     _seed_product()
     _login(OWNER)
@@ -110,7 +103,6 @@ def test_issue_invite_is_owner_only() -> None:
     assert saved.expires_at is not None
     assert saved.expires_at > datetime.now(UTC) + timedelta(minutes=55)
 
-    # 非所有（非 admin）は存在ごと隠す 404。
     _login("intruder")
     assert client.post("/api/products/prod-1/invites", json={}).status_code == 404
 
@@ -122,7 +114,6 @@ def test_admin_can_list_and_revoke_but_not_issue(monkeypatch: pytest.MonkeyPatch
     invite_id = _issue()["id"]
 
     _login("admin-sub", ADMIN_EMAIL)
-    # 発行は owner の意思（owner の product への入場券）なので admin でも 403。
     assert client.post("/api/products/prod-1/invites", json={}).status_code == 403
     listed = client.get("/api/products/prod-1/invites").json()
     assert [i["id"] for i in listed] == [invite_id]
@@ -137,7 +128,6 @@ def test_revoke_unknown_invite_is_404() -> None:
     assert client.post("/api/products/prod-1/invites/inv-none/revoke").status_code == 404
 
 
-# ---- FR-1.6 / FR-1.4: join とセッション継承 -----------------------------------
 def test_join_creates_session_inheriting_product_settings() -> None:
     _seed_product(
         github_repo="octo/demo",
@@ -163,13 +153,11 @@ def test_join_creates_session_inheriting_product_settings() -> None:
     assert meta.interview_mode.value == "developer"
     assert meta.owner_sub == "joiner-sub"
     assert meta.roles == ["pm"]
-    # repo 設定の継承（FR-1.4）: 索引済み要約ごと写る。
     assert meta.github_repo == "octo/demo"
     assert meta.github_commit_sha == "sha-abc"
     assert meta.github_index_status is GitHubIndexStatus.READY
     assert meta.github_summary == "repo 要約"
 
-    # 返った役割 invite はそのまま既存 join で LiveKit トークンに交換できる。
     res2 = client.post(
         "/api/sessions/join", json={"invite": body["invite"], "participant_name": "話し手"}
     )
@@ -194,7 +182,6 @@ def test_join_requires_consent_and_login(monkeypatch: pytest.MonkeyPatch) -> Non
     _login(OWNER)
     token = _issue()["token"]
     assert _join(token, consent=False).status_code == 400
-    # 未ログイン（本番相当構成）は 401。
     monkeypatch.setattr(auth_google.settings, "google_oauth_client_id", "cid", raising=True)
     monkeypatch.setattr(auth_google.settings, "auth_dev_bypass", False, raising=True)
     app.dependency_overrides.pop(require_user, None)
@@ -214,14 +201,12 @@ def test_join_rejects_unusable_invite_with_reason() -> None:
     _seed_product()
     _login(OWNER)
 
-    # 失効（文書側が正: 署名は有効なまま失効が効く = 二段検証の 2 段目）。
     revoked = _issue()
     client.post(f"/api/products/prod-1/invites/{revoked['id']}/revoke")
     res = _join(revoked["token"])
     assert res.status_code == 403
     assert "revoked" in res.json()["detail"]
 
-    # 期限切れ（トークン exp は None・文書 expires_at だけ過去 → 文書側で弾く）。
     main._repo.create_invite(
         ProductInvite(
             id="inv-expired",
@@ -234,7 +219,6 @@ def test_join_rejects_unusable_invite_with_reason() -> None:
     assert res.status_code == 403
     assert "expired" in res.json()["detail"]
 
-    # 回数超過。
     limited = _issue(max_uses=1)
     assert _join(limited["token"]).status_code == 200
     res = _join(limited["token"])
@@ -258,7 +242,7 @@ def test_join_after_product_deleted_is_404() -> None:
     _seed_product()
     _login(OWNER)
     token = _issue()["token"]
-    client.delete("/api/products/prod-1")  # invite ごとカスケード削除
+    client.delete("/api/products/prod-1")
     assert _join(token).status_code == 404
 
 

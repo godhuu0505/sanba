@@ -1,10 +1,5 @@
 "use client";
 
-// アプリ従属 URL（/{slug}/prepare・/{slug}/sessions/{id}）の複合エラー画面（ADR-0045）。
-// 「URL が存在しない」と「権限がない」を意図的に区別しない: API の存在秘匿
-// （非関係者は 404 に平す / ADR-0036）と整合させ、応答差で slug の実在を漏らさない。
-// 権限が必要な場合はアプリのオーナーに依頼する導線だけを添える。
-
 import { useRouter } from "next/navigation";
 
 import { AppHeader, Button, Card, CardTitle, Screen } from "@/components/sanba";

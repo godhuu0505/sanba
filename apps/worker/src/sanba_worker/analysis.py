@@ -35,7 +35,6 @@ class VideoTaskPayload(BaseModel):
     gcs_uri: str | None = None
     content_type: str = "video/mp4"
     filename: str = ""
-    # api が判定できた実長（秒）。未取得なら None（worker は上限チェックをスキップ）。
     duration_seconds: float | None = Field(default=None, ge=0)
 
 
@@ -46,11 +45,9 @@ class TaskResult:
     status: str
     reason: str = ""
     extracted: int = 0
-    # done のときの観察本文（analysis.visual publish に使う。ADR-0040 §4）。
     observations: list[str] = field(default_factory=list)
 
 
-# GenAI API 経路（ローカル）で bytes を取得する関数の型。Vertex 経路は gs:// を直接渡すため不要。
 BytesFetcher = Callable[[str], bytes]
 VideoAnalyzer = Callable[..., VideoAnalysis]
 
@@ -61,7 +58,6 @@ def _still_analyzing(repo: SessionRepository, session_id: str, asset_id: str) ->
 
 
 def _mark_failed(repo: SessionRepository, session_id: str, asset_id: str, reason: str) -> None:
-    # 破棄済みなら復活させない（存在するときだけ failed に更新）。
     if repo.get_material(session_id, asset_id) is None:
         return
     repo.save_material(session_id, {"id": asset_id, "status": "failed"})
@@ -85,10 +81,8 @@ def process_video(
         log.info("video_task_skipped", session=session_id, asset_id=asset_id, reason="not_found")
         return TaskResult("skipped", "not_found")
     if material.get("status") != "analyzing":
-        # 既に done/failed、または二重配信。冪等に無視する。
         return TaskResult("skipped", f"status_{material.get('status')}")
 
-    # 恒久エラー: 実長超過は failed 化（リトライしない）。
     if (
         payload.duration_seconds is not None
         and payload.duration_seconds > settings.max_video_duration_seconds
@@ -108,7 +102,6 @@ def process_video(
             return TaskResult("failed", "video_too_large_for_local")
         result = analyze(config, raw=raw, content_type=payload.content_type)
 
-    # 破棄競合ガード: 解析中に削除された素材を復活させない（書き込み直前に再確認）。
     if not _still_analyzing(repo, session_id, asset_id):
         log.info(
             "video_task_discarded",

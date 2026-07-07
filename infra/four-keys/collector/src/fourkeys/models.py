@@ -18,8 +18,6 @@ class Deployment:
     id: str
     deployed_at: datetime
     success: bool
-    # Seconds from the shipped commit being authored to the deploy finishing.
-    # ``None`` when the source commit timestamp is unavailable.
     lead_time_seconds: float | None = None
 
 

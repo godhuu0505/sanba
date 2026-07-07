@@ -5,9 +5,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ConnectingOverlay, MicPermissionModal, StartFailed, StartIntro } from "./ConversationStart";
 
-// 03 会話開始の純プレゼン（LiveKit 非依存）。開始前サマリ・接続中ステップ・失敗系の3導線。
-// 仕様: docs/reference/screens/03-conversation-start.md。
-
 describe("StartIntro（03-0 開始前）", () => {
   afterEach(() => cleanup());
 
@@ -22,7 +19,6 @@ describe("StartIntro（03-0 開始前）", () => {
     );
     expect(screen.getByText("検索機能のリニューアル")).toBeTruthy();
     expect(screen.getByText("企画(PdM)")).toBeTruthy();
-    // OS プロンプト前の理由提示（03 AC）。
     expect(screen.getByText(/マイクを使用します/)).toBeTruthy();
   });
 
@@ -64,7 +60,6 @@ describe("StartIntro（03-0 開始前）", () => {
   it("音声開始が配線され、テキスト開始の導線は出さない", () => {
     const onStartVoice = vi.fn();
     render(<StartIntro goal="" roleLabel="顧客" onStartVoice={onStartVoice} onBack={vi.fn()} />);
-    // ゴール未入力は明示する。
     expect(screen.getByText("（未入力）")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "音声で会話を始める" }));
     expect(onStartVoice).toHaveBeenCalledTimes(1);
@@ -78,7 +73,6 @@ describe("MicPermissionModal（03-2 録音許可）", () => {
   it("OS プロンプト前に理由を提示し、許可を配線する（テキスト代替は出さない）", () => {
     const onAllow = vi.fn();
     render(<MicPermissionModal onAllow={onAllow} onDismiss={vi.fn()} />);
-    // 暗幕付きの dialog で理由提示（03 AC）。
     expect(screen.getByRole("dialog", { name: "マイクの使用許可" })).toBeTruthy();
     expect(screen.getByText("声を聞かせてくださいませ")).toBeTruthy();
     expect(screen.getByText(/端末のマイクを用います/)).toBeTruthy();
@@ -119,7 +113,6 @@ describe("StartFailed（03-3 失敗系）", () => {
     const onRetry = vi.fn();
     render(<StartFailed kind="mic" onRetry={onRetry} onBack={vi.fn()} />);
     expect(screen.getByText("声を捉えられませなんだ")).toBeTruthy();
-    // 設定導線は第一 CTA のボタン（静的ヒント文ではない）。
     expect(screen.getByRole("button", { name: "ブラウザのマイク設定を開く手順を表示" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "もう一度接続を試す" }));
     expect(onRetry).toHaveBeenCalledTimes(1);
@@ -141,7 +134,6 @@ describe("StartFailed（03-3 失敗系）", () => {
     render(<StartFailed kind="connect" onRetry={vi.fn()} onBack={vi.fn()} />);
     expect(screen.getByText("繋ぐことが叶いませなんだ")).toBeTruthy();
     expect(screen.getByText(/ネットワークが不安定/)).toBeTruthy();
-    // 接続失敗では「設定を開く」は無意味なので出さない。
     expect(screen.queryByRole("button", { name: "ブラウザのマイク設定を開く手順を表示" })).toBeNull();
   });
 });

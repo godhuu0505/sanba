@@ -27,7 +27,6 @@ from sanba_api.github_app import (
 SECRET = "test-signing-secret"
 
 
-# ── state 署名 ────────────────────────────────────────────────────────────
 def test_link_state_roundtrip() -> None:
     token = create_link_state("user-123", SECRET)
     assert verify_link_state(token, SECRET) == "user-123"
@@ -58,13 +57,11 @@ def test_link_state_rejects_malformed() -> None:
         verify_link_state("not-a-token", SECRET)
 
 
-# ── App JWT ───────────────────────────────────────────────────────────────
 def test_app_jwt_claims_bounds() -> None:
     now = 1_700_000_000
     claims = build_app_jwt_claims("12345", now)
     assert claims["iss"] == "12345"
     assert claims["iat"] == now - 60
-    # GitHub は 10 分上限。9 分に収める。
     assert claims["exp"] - claims["iat"] < 10 * 60
 
 
@@ -93,9 +90,6 @@ def test_app_jwt_signs_and_verifies_with_rsa() -> None:
     assert decoded["iss"] == "app-1"
 
 
-# ── 秘匿レダクト ──────────────────────────────────────────────────────────
-# テスト用のダミー秘匿値は実行時に組み立てる（リテラルを置かない＝gitleaks を素通り
-# させず、かつソースに偽トークンを残さない）。
 def test_redact_github_token() -> None:
     fake_token = "ghp_" + "A" * 36
     out = redact_secrets(f"token = {fake_token}")
@@ -104,7 +98,6 @@ def test_redact_github_token() -> None:
 
 
 def test_redact_openai_hyphenated_token() -> None:
-    # sk-proj-… / sk-svcacct-… のような hyphen 入り現行 OpenAI 形式も値全体を伏せる。
     fake = "sk-proj-" + "A" * 32
     out = redact_secrets(f"key {fake} end")
     assert fake not in out
@@ -119,7 +112,6 @@ def test_redact_assignment_keeps_key_hides_value() -> None:
 
 
 def test_redact_private_key_block() -> None:
-    # 実鍵を実行時に生成して PEM 化する（リテラルの鍵ブロックをソースに置かない）。
     from cryptography.hazmat.primitives import serialization
     from cryptography.hazmat.primitives.asymmetric import rsa
 
@@ -140,7 +132,6 @@ def test_redact_noop_on_clean_code() -> None:
     assert redact_secrets(code) == code
 
 
-# ── 索引対象の除外/選別 ──────────────────────────────────────────────────
 @pytest.mark.parametrize(
     "path",
     [
@@ -152,7 +143,6 @@ def test_redact_noop_on_clean_code() -> None:
         ".env.production",
         "assets/logo.png",
         "vendor/lib.go",
-        # minified/bundled は dist 配下でなくても suffix で弾く（拡張子は js/css）。
         "public/app.min.js",
         "static/styles.min.css",
         "src/main.js.map",
@@ -186,7 +176,7 @@ def test_select_prioritizes_high_value_and_docs() -> None:
 def test_select_applies_total_cap_and_marks_partial() -> None:
     files = [IndexFile(f"src/f{i}.py", 100) for i in range(10)]
     res = select_indexable_files(files, max_files=10, max_total_bytes=350, max_file_bytes=10_000)
-    assert len(res.selected) == 3  # 3*100 <= 350, 4th would exceed
+    assert len(res.selected) == 3
     assert res.truncated is True
     assert len(res.skipped_over_cap) == 7
 
@@ -210,7 +200,6 @@ def test_select_max_files_cap() -> None:
     assert res.truncated is True
 
 
-# ── 要約のシード ──────────────────────────────────────────────────────────
 def test_build_repo_summary_contains_fields() -> None:
     summary = build_repo_summary(
         repo="octo/demo",
@@ -237,7 +226,7 @@ def test_build_repo_summary_truncates() -> None:
         top_level_paths=[],
         max_chars=200,
     )
-    assert len(summary) <= 201  # 200 + ellipsis
+    assert len(summary) <= 201
     assert summary.endswith("…")
 
 

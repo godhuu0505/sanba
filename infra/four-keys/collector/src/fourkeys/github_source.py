@@ -28,13 +28,12 @@ def _sample_path() -> Path:
     """Locate the bundled sample, robust to source-tree vs installed layout."""
     candidates = [
         os.getenv("FOURKEYS_SAMPLE"),
-        Path(__file__).resolve().parents[2] / "sample_events.json",  # collector/ in source
-        Path.cwd() / "sample_events.json",  # WORKDIR in the container image
+        Path(__file__).resolve().parents[2] / "sample_events.json",
+        Path.cwd() / "sample_events.json",
     ]
     for c in candidates:
         if c and Path(c).exists():
             return Path(c)
-    # Fall back to the source-tree location for a clear error message.
     return Path(__file__).resolve().parents[2] / "sample_events.json"
 
 
@@ -84,7 +83,7 @@ def _deployments_from_runs(runs: list[dict]) -> list[Deployment]:
 def _incidents_from_issues(issues: list[dict]) -> list[Incident]:
     incidents: list[Incident] = []
     for issue in issues:
-        if "pull_request" in issue:  # the issues API returns PRs too
+        if "pull_request" in issue:
             continue
         opened = _parse_ts(issue.get("created_at"))
         if opened is None:
@@ -158,7 +157,6 @@ def collect(
         deployments = _deployments_from_runs(runs)
         incidents = _incidents_from_issues(issues)
         if not deployments:
-            # No real deploy history yet — show the sample so the panel isn't blank.
             deployments, incidents = _load_sample()
             source = "sample"
         else:

@@ -52,7 +52,6 @@ def _seed(sid: str, owner_sub: str, *, created: datetime, title: str = "t") -> N
     )
 
 
-# ---- 認可: 本人限定 -------------------------------------------------------
 def test_returns_only_callers_sessions() -> None:
     _seed("sess-mine-1", "alice", created=datetime(2024, 6, 20, tzinfo=UTC))
     _seed("sess-other", "bob", created=datetime(2024, 6, 21, tzinfo=UTC))
@@ -61,7 +60,6 @@ def test_returns_only_callers_sessions() -> None:
     res = client.get("/api/sessions/mine")
     assert res.status_code == 200
     body = res.json()
-    # 「他人のは出ない」を順序非依存で確認する (本人 1 件のみ)。
     assert {s["id"] for s in body} == {"sess-mine-1"}
 
 
@@ -88,7 +86,6 @@ def test_response_omits_pii_and_exposes_finalized() -> None:
     row = client.get("/api/sessions/mine").json()[0]
     assert row["title"] == "新機能要件定義"
     assert row["finalized"] is False
-    # PII (owner_email/owner_sub) はレスポンスに載せない (最小権限)。
     assert "owner_email" not in row
     assert "owner_sub" not in row
 
@@ -103,7 +100,6 @@ def test_finalized_flag_reflects_status() -> None:
     assert row["finalized"] is True
 
 
-# ---- 認可: idToken 必須 ---------------------------------------------------
 def test_requires_login_when_configured(monkeypatch: pytest.MonkeyPatch) -> None:
     """client_id 設定済み・bypass off で未ログイン (Bearer 無し) なら 401。"""
     monkeypatch.setattr(auth_google.settings, "google_oauth_client_id", "cid", raising=True)
@@ -119,7 +115,6 @@ def test_invalid_bearer_token_is_rejected(monkeypatch: pytest.MonkeyPatch) -> No
     assert res.status_code == 401
 
 
-# ---- 過去セッションの要件絵巻 (GET /api/sessions/mine/{id}/requirements) ----
 def _seed_requirement(sid: str, rid: str = "r1") -> None:
     _read_repo._seed_requirement(
         sid,
@@ -145,10 +140,8 @@ def test_my_requirements_returns_meta_and_items() -> None:
     assert body["id"] == "sess-1"
     assert body["title"] == "新機能要件定義"
     assert body["finalized"] is False
-    # PII (owner_email/owner_sub) は載せない (一覧 API と同じ最小権限)。
     assert "owner_email" not in body
     assert "owner_sub" not in body
-    # items は契約 §3 の requirement 形 (get_requirements と同じ contract 形)。
     item = body["items"][0]
     assert item["id"] == "r1"
     assert item["priority"] == "must"
@@ -171,7 +164,6 @@ def test_my_requirements_finalized_returns_frozen_snapshot_only() -> None:
     _seed("sess-1", "alice", created=datetime(2024, 6, 20, tzinfo=UTC))
     _seed_requirement("sess-1", "r1")
     _repo.finalize_session("sess-1", confirmed_count=1, finalized_requirement_ids=["r1"])
-    # 確定後の遅延追加（凍結集合の外）。
     _seed_requirement("sess-1", "r2")
     _login("alice")
 

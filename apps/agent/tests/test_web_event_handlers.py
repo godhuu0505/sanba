@@ -38,7 +38,7 @@ async def _drain_publishes() -> None:
 
 def _agent() -> tuple[SANBAAgent, SessionRepository, RecordingTransport]:
     repo = SessionRepository()
-    repo._client = None  # メモリ fallback
+    repo._client = None
     transport = RecordingTransport()
     pub = EventPublisher("s1", transport)
     agent = SANBAAgent(session_id="s1", repo=repo, grounding=GroundingStore(), publisher=pub)
@@ -46,7 +46,6 @@ def _agent() -> tuple[SANBAAgent, SessionRepository, RecordingTransport]:
 
 
 async def test_user_text_interrupts_then_replies_as_user_turn() -> None:
-    # 音声と同じ扱い: 読み上げを中断してから、本文を user ターンとして応答生成する。
     agent, _repo, transport = _agent()
     session = FakeAgentSession()
 
@@ -54,9 +53,7 @@ async def test_user_text_interrupts_then_replies_as_user_turn() -> None:
 
     assert [name for name, _ in session.calls] == ["interrupt", "generate_reply"]
     _, kwargs = session.calls[-1]
-    # instructions への埋め込みではなく user_input（音声転写と同じ user ターン）で渡す。
     assert kwargs == {"user_input": "決済は Stripe にしたい"}
-    # 発話として記録され transcript.final が web へ届く（会話履歴に反映される）。
     await _drain_publishes()
     finals = [s["event"] for s in transport.sent if s["event"]["type"] == "transcript.final"]
     assert len(finals) == 1
@@ -65,7 +62,6 @@ async def test_user_text_interrupts_then_replies_as_user_turn() -> None:
 
 
 async def test_user_text_clears_bound_current_question() -> None:
-    # §5-6: 受信時点で束ねた current 質問 id を、テキスト回答とみなしてクリアする。
     agent, repo, _transport = _agent()
     repo.save_current_question("s1", {"id": "q1", "prompt": "並び順は？"}, asked_seq=1)
     agent._current_question_id = "q1"
@@ -79,7 +75,6 @@ async def test_user_text_clears_bound_current_question() -> None:
 
 
 async def test_user_text_without_current_question_skips_clear() -> None:
-    # current が無ければクリア経路を通らず、応答生成だけが走る。
     agent, repo, _transport = _agent()
     session = FakeAgentSession()
 
@@ -90,7 +85,6 @@ async def test_user_text_without_current_question_skips_clear() -> None:
 
 
 async def test_user_answered_interrupts_and_advances_with_question_context() -> None:
-    # 回答も読み上げ中断のうえ、問い本文つきの instructions で要件を一歩進める。
     agent, repo, transport = _agent()
     repo.save_current_question("s1", {"id": "q1", "prompt": "対象OSは？"}, asked_seq=1)
     agent._current_question_id = "q1"
@@ -104,18 +98,16 @@ async def test_user_answered_interrupts_and_advances_with_question_context() -> 
     _, kwargs = session.calls[-1]
     assert "対象OSは？" in kwargs["instructions"]
     assert "iOS のみ" in kwargs["instructions"]
-    # 回答は「問い本文つき」で発話記録される。
     await _drain_publishes()
     finals = [s["event"] for s in transport.sent if s["event"]["type"] == "transcript.final"]
     assert any("対象OSは？" in ev["text"] and "iOS のみ" in ev["text"] for ev in finals)
 
 
-# ── 動画解析結果の能動注入（ADR-0040 §4）──────────────────────────────────
 async def test_inject_video_analysis_generates_reply_without_interrupt() -> None:
     from sanba_agent.main import inject_video_analysis
 
     agent, _repo, _t = _agent()
-    agent._allow_repo_grounding = True  # developer 相当
+    agent._allow_repo_grounding = True
     session = FakeAgentSession()
 
     await inject_video_analysis(
@@ -125,7 +117,6 @@ async def test_inject_video_analysis_generates_reply_without_interrupt() -> None
         ["[00:01] ログイン画面", "[00:05] 保存ボタン"],  # type: ignore[arg-type]
     )
 
-    # 穏当な注入: interrupt せず generate_reply(instructions=...) のみ。
     assert [name for name, _ in session.calls] == ["generate_reply"]
     _, kwargs = session.calls[-1]
     assert "ログイン画面" in kwargs["instructions"]
@@ -142,7 +133,6 @@ async def test_inject_video_analysis_dedups_same_asset() -> None:
     await inject_video_analysis(agent, session, "asset-x", ["[00:01] a"])  # type: ignore[arg-type]
     await inject_video_analysis(agent, session, "asset-x", ["[00:01] a"])  # type: ignore[arg-type]
 
-    # 同一 asset は 1 回だけ注入する。
     assert [name for name, _ in session.calls] == ["generate_reply"]
 
 
@@ -150,7 +140,7 @@ async def test_inject_video_analysis_skipped_for_end_user() -> None:
     from sanba_agent.main import inject_video_analysis
 
     agent, _repo, _t = _agent()
-    agent._allow_repo_grounding = False  # end_user / モード未確認は注入しない
+    agent._allow_repo_grounding = False
     session = FakeAgentSession()
 
     await inject_video_analysis(agent, session, "asset-y", ["[00:01] a"])  # type: ignore[arg-type]

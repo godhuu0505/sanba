@@ -22,20 +22,15 @@ from typing import Any
 
 from .retrieval import tokenize
 
-# 鮮度: ユーザー確定発話 2 ターンまたは 60 秒の短い方で失効。
 DEFAULT_TTL_SECONDS = 60.0
 DEFAULT_TTL_TURNS = 2
-# ツール query とプリフェッチ種 query の語彙重なり（containment 係数）の下限。
-# モデルの検索語は発話の言い換えになりがちなので、完全一致ではなく重なりで判定する。
 DEFAULT_MIN_OVERLAP = 0.5
 
-# get() のミス理由（観測性: prefetch_hit_rate / stale_dropped_count の分類に使う）。
 REASON_HIT = "hit"
 REASON_EMPTY = "empty"
 REASON_EXPIRED_TIME = "expired_time"
 REASON_EXPIRED_TURNS = "expired_turns"
 REASON_QUERY_MISMATCH = "query_mismatch"
-# キャッシュ自体は有効だが、repo 由来 chunk の ACL 再検証（呼び出し側）で無効化された。
 REASON_ACL_RECHECK = "repo_acl_recheck"
 
 
@@ -47,8 +42,6 @@ class PrefetchEntry:
     result: dict[str, Any]
     turn: int
     created_at: float
-    # 背景検索の所要時間。ヒット時に「同期実行なら掛かっていた時間」の推定として記録する
-    # （latency_saved_ms メトリクス）。
     search_seconds: float
 
 

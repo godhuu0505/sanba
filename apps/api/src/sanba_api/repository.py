@@ -22,12 +22,6 @@ def requirement_doc_to_contract(doc: dict[str, Any]) -> dict[str, Any]:
     agent の `Requirement` モデル（id/category/statement/priority/source_speaker/
     confidence）には citations/status が無いため、契約に合わせて補完する。
     """
-    # 会話の確定軸（contract: draft|confirmed）と管理レビュー軸（draft|approved|rejected,
-    # ADR-0014）は別物。永続モデル Requirement.status は管理軸（既定 draft）で保存されるため、
-    # それを会話軸へそのまま流すと save_requirement 由来の確定要件がすべて draft 扱いになり、
-    # hydration / finalize / export の確定件数が 0 にずれる。save_requirement で
-    # 保存された要件は会話上「確定」なので confirmed とし、管理画面で却下(rejected)された
-    # ものだけ draft（非確定＝起票/確定の対象外）に落とす。approved は確定の上位なので confirmed。
     admin_status = doc.get("status")
     contract_status = "draft" if admin_status == "rejected" else "confirmed"
     return {
@@ -61,11 +55,9 @@ class ReadRepository:
 
     def __init__(self) -> None:
         self._client = self._init_client()
-        # テスト用インメモリ（_client が None のとき使用）。
         self._mem_requirements: dict[str, list[dict[str, Any]]] = {}
         self._mem_detections: dict[str, list[dict[str, Any]]] = {}
         self._mem_seq: dict[str, int] = {}
-        # 現在質問ポインタ（ADR-0020）。active or tombstone（cleared）の単一ドキュメント。
         self._mem_questions: dict[str, dict[str, Any]] = {}
 
     @staticmethod
@@ -78,7 +70,6 @@ class ReadRepository:
             log.warning("firestore_unavailable_using_memory", error=str(exc))
             return None
 
-    # ── seed（テスト用）──────────────────────────────────────────────────
     def _seed_requirement(self, session_id: str, doc: dict[str, Any]) -> None:
         self._mem_requirements.setdefault(session_id, []).append(doc)
 
@@ -91,7 +82,6 @@ class ReadRepository:
     def _seed_question(self, session_id: str, doc: dict[str, Any]) -> None:
         self._mem_questions[session_id] = doc
 
-    # ── 読み出し ─────────────────────────────────────────────────────────
     def list_requirements(self, session_id: str) -> list[dict[str, Any]]:
         if self._client is not None:
             docs = (
@@ -144,7 +134,6 @@ class ReadRepository:
         else:
             raw = self._mem_detections.get(session_id, [])
         items = [detection_doc_to_contract(d) for d in raw]
-        # open=1: 未解消のみ返す（契約 §4）。
         return [d for d in items if not d["resolved"]]
 
     def get_current_question(self, session_id: str) -> dict[str, Any]:

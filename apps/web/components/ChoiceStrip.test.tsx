@@ -43,10 +43,8 @@ describe("ChoiceStrip（問いピン・最小/一覧）", () => {
 
   it("一覧: 行タップで onSelect(index)、各行の『詳細』で onOpenDetail(index)、『閉じる』で onCollapse", () => {
     const cb = setup({ mode: "list" });
-    // 行（選択）ボタン
     fireEvent.click(screen.getByRole("button", { name: /ゆかりの深き順/ }));
     expect(cb.onSelect).toHaveBeenCalledWith(1);
-    // 詳細ボタン（動的選択肢のみ）→ 2番目の詳細
     const details = screen.getAllByRole("button", { name: /詳細/ });
     fireEvent.click(details[1]);
     expect(cb.onOpenDetail).toHaveBeenCalledWith(1);

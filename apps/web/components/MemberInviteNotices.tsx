@@ -1,9 +1,5 @@
 "use client";
 
-// 自分宛のメンバー招待のアプリ内通知（ADR-0036 決定3）。ホームと /products の上部に出し、
-// その場で承諾/辞退できる。招待が無い（未ログイン・取得失敗含む）ときは何も描画しない
-//（本流の画面を邪魔しない）。承諾するとメンバーになり、対象アプリで要件サンバができる。
-
 import { useCallback, useEffect, useState } from "react";
 
 import { Button, Card, CardTitle } from "@/components/sanba";
@@ -13,7 +9,6 @@ import { useAuth } from "@/lib/auth";
 export function MemberInviteNotices({
   onAccepted,
 }: {
-  /** 承諾後のフック（一覧の再取得や遷移）。product_id を渡す。 */
   onAccepted?: (productId: string) => void;
 }) {
   const auth = useAuth();
@@ -43,7 +38,6 @@ export function MemberInviteNotices({
       reload();
       if (action === "accept") onAccepted?.(invite.product_id);
     } catch {
-      // 409（応答済み/取り消し/期限切れ）も含め、再取得して現状に追随する。
       setError("応答できませんでした。招待が取り消されたか、期限切れの可能性があります");
       reload();
     } finally {

@@ -59,7 +59,6 @@ def test_extract_text_from_txt_upload() -> None:
     assert extract_text_from_upload("notes.md", "# 見出し\n本文".encode()) == "# 見出し\n本文"
 
 
-# ── 拡張形式のテキスト抽出（html/csv/json/docx/xlsx/pptx）───────────────────
 def test_extract_text_from_html_strips_markup_and_scripts() -> None:
     html = (
         "<html><head><title>仕様</title><style>body{color:red}</style>"
@@ -69,7 +68,6 @@ def test_extract_text_from_html_strips_markup_and_scripts() -> None:
     text = extract_text_from_upload("spec.html", html.encode())
     assert "検索機能" in text
     assert "一覧を&高速化する。" in text
-    # マークアップ・script/style は本文に混ぜない。
     assert "alert" not in text
     assert "color:red" not in text
     assert "<h1>" not in text
@@ -116,7 +114,6 @@ def test_extract_text_from_xlsx_all_sheets() -> None:
     text = extract_text_from_upload("req.xlsx", buf.getvalue())
     assert "# 要件" in text
     assert "検索\t高速化" in text
-    # 先頭シートだけでなく全シートを読む。
     assert "# 課題" in text
     assert "優先度\t高" in text
 
@@ -159,17 +156,15 @@ def test_extract_text_selects_extractor_by_mime_when_no_extension() -> None:
     document.save(buf)
 
     text = extract_text_from_upload(
-        "book",  # 拡張子なし
+        "book",
         buf.getvalue(),
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     )
     assert "要約機能が必要。" in text
-    assert "PK" not in text  # ZIP バイト列をそのまま返していない。
+    assert "PK" not in text
 
 
 def test_extract_text_from_broken_document_raises_typed_error() -> None:
-    # 壊れたバイナリ文書は型付き例外で伝える（呼び出し側が 500 にせず「抽出 0 件」へ平しつつ、
-    # メトリクスでは成功と区別して計上する）。
     for name in ("broken.docx", "broken.xlsx", "broken.pptx"):
         with pytest.raises(DocumentExtractionError):
             extract_text_from_upload(name, b"not-a-zip")
@@ -190,7 +185,6 @@ def test_zip_bomb_is_rejected_before_expansion(monkeypatch: pytest.MonkeyPatch) 
     buf = io.BytesIO()
     workbook.save(buf)
 
-    # 上限を人工的に絞り、正規の xlsx でも「展開後が大きすぎる」ケースを再現する。
     monkeypatch.setattr(ingestion, "_MAX_ZIP_EXPANSION_BYTES", 10)
     with pytest.raises(DocumentExtractionError):
         extract_text_from_upload("bomb.xlsx", buf.getvalue())
@@ -220,23 +214,20 @@ def test_memory_indexer_counts_chunks() -> None:
     assert n == 3
 
 
-# ── grounding 索引の取消（真の破棄）───────────────────────────────────────
 def test_delete_context_removes_only_matching_source() -> None:
     """出所接頭辞 `asset:{id}` の chunk だけを消し、他 source/他セッションは残す。"""
     indexer = ContextIndexer()
     indexer.index_context("sess-1", ["o1", "o2"], "asset:asset-aaa")
     indexer.index_context("sess-1", ["k1"], "asset:asset-bbb")
     indexer.index_context("sess-1", ["t1"], "prd.md")
-    indexer.index_context("sess-2", ["x1"], "asset:asset-aaa")  # 別セッションは無関係。
+    indexer.index_context("sess-2", ["x1"], "asset:asset-aaa")
 
     removed = indexer.delete_context("sess-1", "asset:asset-aaa")
     assert removed == 2
 
     remaining = {(d["session_id"], d["source"]) for d in indexer._mem}
-    # 対象セッションの asset-aaa#* は消える。
     assert ("sess-1", "asset:asset-aaa#0") not in remaining
     assert ("sess-1", "asset:asset-aaa#1") not in remaining
-    # 別 asset・別 source・別セッションは残る（巻き込まない）。
     assert ("sess-1", "asset:asset-bbb#0") in remaining
     assert ("sess-1", "prd.md#0") in remaining
     assert ("sess-2", "asset:asset-aaa#0") in remaining

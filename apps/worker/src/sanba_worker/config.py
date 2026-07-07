@@ -10,7 +10,6 @@ from sanba_shared.media import MediaConfig
 class WorkerSettings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    # GCP / Gemini
     google_cloud_project: str = "sanba-dev"
     google_cloud_location: str = "us-central1"
     google_genai_use_vertexai: bool = False
@@ -18,22 +17,16 @@ class WorkerSettings(BaseSettings):
     gemini_vision_model: str = "gemini-2.5-flash"
     gemini_embed_model: str = "gemini-embedding-001"
 
-    # Storage / grounding
     gcs_bucket: str = ""
     elasticsearch_url: str = ""
     elasticsearch_api_key: str = ""
     mask_pii_before_index: bool = True
 
-    # Video guardrails (ADR-0040: 短尺前提)
     max_video_duration_seconds: int = 600
-    # GenAI API（ローカル）で inline 送信できる上限の目安。超過はローカルでは弾く
-    # （本番 Vertex は gs:// URI 直渡しのため無関係）。
     max_inline_video_bytes: int = 20_000_000
 
     data_retention_days: int = 30
 
-    # LiveKit realtime publish（解析完了を analysis.visual で会話ルームへ / ADR-0040 §4）。
-    # 未設定なら publish は no-op（grounding 投入と素材状態更新は成立するので落とさない）。
     enable_realtime_publish: bool = True
     livekit_url: str = ""
     livekit_server_url: str = ""

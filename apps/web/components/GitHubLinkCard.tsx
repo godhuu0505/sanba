@@ -1,10 +1,5 @@
 "use client";
 
-// 設定画面の GitHub 連携カード（ADR-0028 / 仕様①）。連携アカウントの表示・連携開始・解除を行う。
-// 連携状態は Google idToken（require_user）で取得する。連携開始は GitHub App のインストール
-// URL へ遷移し、完了後 ?linked=1 で戻る。解除は users/{sub} の installation 記録のみ消す
-// （共有索引は残す / ADR-0028）。
-
 import { useEffect, useState } from "react";
 
 import { Button, Card, CardTitle, Divider } from "@/components/sanba";
@@ -38,7 +33,6 @@ export function GitHubLinkCard() {
     setError(null);
     try {
       const { install_url } = await startGithubLink(idToken);
-      // GitHub App のインストール/repo 選択画面へ遷移する（完了後 ?linked=1 で戻る）。
       window.location.href = install_url;
     } catch {
       setError("連携を開始できませんでした（GitHub App 未設定の可能性）");

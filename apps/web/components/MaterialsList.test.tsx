@@ -81,7 +81,6 @@ describe("MaterialsList（参考資料タブ・解析進捗つき）", () => {
       />,
     );
     expect(screen.queryByRole("button", { name: /詳細を開く/ })).toBeNull();
-    // 解析中/アップロード中行の進捗バーは（button ではなく）通常要素配下に残る。
     expect(screen.getAllByRole("progressbar").length).toBeGreaterThan(0);
   });
 
@@ -97,7 +96,6 @@ describe("MaterialsList（参考資料タブ・解析進捗つき）", () => {
     expect(onAdd).toHaveBeenCalledTimes(1);
   });
 
-  // ── 中断（Figma 222:2・136:14）─────────────────────────────────
   describe("中断（✕ 中断）", () => {
     it("解析中/アップロード中は onCancel 指定時に『✕ 中断』を出す", () => {
       render(
@@ -149,7 +147,6 @@ describe("MaterialsList（参考資料タブ・解析進捗つき）", () => {
       fireEvent.click(screen.getByRole("button", { name: "mock.png の解析を中断" }));
       const dialog = screen.getByRole("dialog", { name: "中断の確認" });
       expect(dialog).toBeTruthy();
-      // 破棄の警告と対象名は確認文（ダイアログ本文）に出す。
       expect(screen.getByText(/「mock\.png」の解析を中断します。途中までの結果は破棄されます/)).toBeTruthy();
     });
 
@@ -194,7 +191,6 @@ describe("MaterialsList（参考資料タブ・解析進捗つき）", () => {
       );
       fireEvent.click(screen.getByRole("button", { name: "up.png の解析を中断" }));
       expect(screen.getByRole("dialog")).toBeTruthy();
-      // アップロード成功で行 id が asset_id・status done に変わる（画像はこの時点でサーバ索引済み）。
       rerender(
         <MaterialsList
           items={[item({ id: "hash-1", name: "up.png", pct: 100, status: "done" })]}
@@ -202,7 +198,6 @@ describe("MaterialsList（参考資料タブ・解析進捗つき）", () => {
           onCancel={onCancel}
         />,
       );
-      // 確認は自動で閉じ、クライアントだけの破棄は行わない。
       expect(screen.queryByRole("dialog")).toBeNull();
       expect(onCancel).not.toHaveBeenCalled();
     });
@@ -218,8 +213,6 @@ describe("MaterialsList（参考資料タブ・解析進捗つき）", () => {
       );
       fireEvent.click(screen.getByRole("button", { name: "clip.mp4 の解析を中断" }));
       expect(screen.getByRole("dialog")).toBeTruthy();
-      // 動画はアップロード成功で id が local:* → asset_id に差し替わるが status は analyzing（中断可能）。
-      // 一意対応（aliases: local:0 → vid-1）で差し替え後の行を追跡する。
       rerender(
         <MaterialsList
           items={[item({ id: "vid-1", name: "clip.mp4", pct: 0, status: "analyzing" })]}
@@ -228,7 +221,6 @@ describe("MaterialsList（参考資料タブ・解析進捗つき）", () => {
           aliases={new Map([["local:0", "vid-1"]])}
         />,
       );
-      // 確認は閉じず、確定すると差し替わった新 id で破棄される。
       expect(screen.getByRole("dialog")).toBeTruthy();
       fireEvent.click(screen.getByRole("button", { name: "中断する" }));
       expect(onCancel).toHaveBeenCalledWith("vid-1");
@@ -236,7 +228,6 @@ describe("MaterialsList（参考資料タブ・解析進捗つき）", () => {
 
     it("同名の別素材へ中断対象をすり替えない（一意 id で追跡・Codex P2）", () => {
       const onCancel = vi.fn();
-      // 同名 clip.mp4 を2件アップロード中。local:0 の中断確認を開く。
       const { rerender } = render(
         <MaterialsList
           items={[
@@ -249,7 +240,6 @@ describe("MaterialsList（参考資料タブ・解析進捗つき）", () => {
       );
       fireEvent.click(screen.getAllByRole("button", { name: "clip.mp4 の解析を中断" })[0]);
       expect(screen.getByRole("dialog")).toBeTruthy();
-      // local:0 だけが done（サーバ反映済み）になり、同名の local:1 はまだアップロード中。
       rerender(
         <MaterialsList
           items={[
@@ -261,7 +251,6 @@ describe("MaterialsList（参考資料タブ・解析進捗つき）", () => {
           aliases={new Map([["local:0", "hash-0"]])}
         />,
       );
-      // 対象（local:0→hash-0）は done なので確認は閉じ、残った同名 local:1 を誤って破棄しない。
       expect(screen.queryByRole("dialog")).toBeNull();
       expect(onCancel).not.toHaveBeenCalled();
     });

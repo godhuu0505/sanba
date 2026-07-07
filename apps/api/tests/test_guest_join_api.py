@@ -57,7 +57,6 @@ def _issue_token(scope: str = "end_user", **body: Any) -> str:
 
 
 def _join(token: str, consent: bool = True) -> Any:
-    # Authorization ヘッダなし = 匿名（maybe_user が None を返す経路）。
     return client.post("/api/products/join", json={"token": token, "consent_acknowledged": consent})
 
 
@@ -70,7 +69,6 @@ def _use_count() -> int:
     return main._repo.list_invites("prod-1")[0].use_count
 
 
-# ---- フェイルクローズ（FR-2.1 の裏面） ----------------------------------------
 def test_anonymous_join_is_401_when_flag_off() -> None:
     """既定 (guest_join_enabled=false) では匿名 join を 401 で弾き、invite を消費しない。"""
     token = _issue_token(scope="end_user")
@@ -95,14 +93,12 @@ def test_guest_consent_gate_is_not_skippable(guest_enabled: None) -> None:
     assert _use_count() == 0
 
 
-# ---- FR-2.1: ゲスト到達性と identity / owner ----------------------------------
 def test_guest_join_reaches_livekit_token(guest_enabled: None) -> None:
     token = _issue_token(scope="end_user")
     res = _join(token)
     assert res.status_code == 200, res.text
     body = res.json()
 
-    # ログイン経路と違い invite 委譲ではなく、join（トークン一式）を直接返す。
     assert body["invite"] is None
     joined = body["join"]
     assert joined is not None
@@ -111,20 +107,18 @@ def test_guest_join_reaches_livekit_token(guest_enabled: None) -> None:
     assert joined["token"]
     assert joined["session_token"]
 
-    # LiveKit トークンは当該ルーム限定・identity と出所メタ（metadata.sub）がゲスト発番。
     payload = _jwt_payload(joined["token"])
     assert payload["sub"] == joined["identity"]
     assert payload["video"]["room"] == body["session_id"]
     metadata = json.loads(payload["metadata"])
     assert metadata["sub"] == joined["identity"]
     assert metadata["role"] == "customer"
-    assert metadata["email"] == ""  # PII 最小化: ゲストに email はない
+    assert metadata["email"] == ""
 
-    # セッションの所有は product owner（管理・履歴閲覧の権限元 / 決定3）。
     meta = main._repo.get_session(body["session_id"])
     assert meta is not None
     assert meta.owner_sub == OWNER
-    assert meta.owner_email == ""  # PII 最小化: owner の email も写さない
+    assert meta.owner_email == ""
     assert meta.interview_mode.value == "end_user"
     assert meta.roles == ["customer"]
     assert _use_count() == 1
@@ -150,28 +144,25 @@ def test_headerless_join_under_dev_bypass_stays_logged_in(
     res = _join(token)
     assert res.status_code == 200
     body = res.json()
-    assert body["invite"] is not None  # ログイン経路 = invite 委譲のまま
+    assert body["invite"] is not None
     assert body["join"] is None
     meta = main._repo.get_session(body["session_id"])
     assert meta is not None
     assert meta.owner_sub == "dev-user"
 
 
-# ---- 権限最小性: ゲスト session_token ------------------------------------------
 def test_guest_session_token_cannot_hydrate_other_sessions(guest_enabled: None) -> None:
     token = _issue_token(scope="end_user")
     first = _join(token).json()
     second = _join(token).json()
     session_token = first["join"]["session_token"]
 
-    # 自分のセッションのハイドレーションは通る。
     ok = client.get(
         f"/api/sessions/{first['session_id']}/requirements",
         headers={"Authorization": f"Bearer {session_token}"},
     )
     assert ok.status_code == 200
 
-    # 別セッション（同じリンク由来でも）は session mismatch で 403。
     denied = client.get(
         f"/api/sessions/{second['session_id']}/requirements",
         headers={"Authorization": f"Bearer {session_token}"},
@@ -179,7 +170,6 @@ def test_guest_session_token_cannot_hydrate_other_sessions(guest_enabled: None) 
     assert denied.status_code == 403
 
 
-# ---- FR-2.6: リンク単位レート制限 ----------------------------------------------
 def test_invite_rate_limit_returns_429_and_does_not_consume(
     guest_enabled: None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -190,7 +180,6 @@ def test_invite_rate_limit_returns_429_and_does_not_consume(
     res = _join(token)
     assert res.status_code == 429
     assert res.json()["detail"] == "rate limit exceeded"
-    # 429 は use_count を消費しない（ウィンドウが明ければ再入場できる）。
     assert _use_count() == 2
 
 
@@ -201,7 +190,7 @@ def test_invite_rate_limit_overlaps_with_max_uses(
     monkeypatch.setattr(main.settings, "invite_join_rate_per_minute", 2, raising=True)
     token = _issue_token(scope="end_user", max_uses=1)
     assert _join(token).status_code == 200
-    res = _join(token)  # レート上限(2)より先に max_uses(1) が尽きる
+    res = _join(token)
     assert res.status_code == 403
     assert "exhausted" in res.json()["detail"]
     assert _use_count() == 1
@@ -219,7 +208,6 @@ def test_invite_rate_limit_applies_to_logged_in_joins_too(
     assert _join(token).status_code == 429
 
 
-# ---- ADR-0032 決定4: ゲスト token の write 系拒否 ----------------------------
 def test_guest_session_token_is_read_only(guest_enabled: None) -> None:
     """ゲスト token はハイドレーション読取と telemetry のみ。write 系は 403。"""
     token = _issue_token(scope="end_user")
@@ -227,7 +215,6 @@ def test_guest_session_token_is_read_only(guest_enabled: None) -> None:
     sid = joined["session_id"]
     headers = {"Authorization": f"Bearer {joined['session_token']}"}
 
-    # 読取（ハイドレーション）と telemetry は通る。
     assert client.get(f"/api/sessions/{sid}/requirements", headers=headers).status_code == 200
     assert client.get(f"/api/sessions/{sid}/detections", headers=headers).status_code == 200
     assert client.get(f"/api/sessions/{sid}/context/files", headers=headers).status_code == 200
@@ -237,7 +224,6 @@ def test_guest_session_token_is_read_only(guest_enabled: None) -> None:
         json={"event": "material.cancel"},
     )
     assert telemetry.status_code == 200
-    # ゲストの離脱観測（join.abort）もゲスト token で通る（FR-2.1 の離脱点を追う）。
     join_abort = client.post(
         f"/api/sessions/{sid}/telemetry",
         headers=headers,
@@ -245,7 +231,6 @@ def test_guest_session_token_is_read_only(guest_enabled: None) -> None:
     )
     assert join_abort.status_code == 200
 
-    # 素材投入・削除・確定・起票は 403（ADR-0032 決定4）。
     denied = [
         client.post(
             f"/api/sessions/{sid}/context", headers=headers, json={"text": "x", "source_name": "s"}

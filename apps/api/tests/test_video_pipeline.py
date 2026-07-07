@@ -54,7 +54,6 @@ def _auth(session_id: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-# ── enqueue 経路選択 ─────────────────────────────────────────────────────
 def test_enqueue_skipped_without_worker_url(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "worker_url", "")
     assert tasks.enqueue_video_analysis({"asset_id": "a", "session_id": "s"}) == "skipped"
@@ -86,7 +85,6 @@ def test_enqueue_cloud_tasks(monkeypatch: pytest.MonkeyPatch) -> None:
     assert seen[0][2] == "sa@example.iam"
 
 
-# ── upload-init ──────────────────────────────────────────────────────────
 def test_upload_init_returns_signed_url(_video_enabled: list[dict]) -> None:
     sid = _session()
     resp = client.post(
@@ -97,9 +95,8 @@ def test_upload_init_returns_signed_url(_video_enabled: list[dict]) -> None:
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["asset_id"].startswith("asset-")
-    assert body["upload_url"]  # mem:// in tests
+    assert body["upload_url"]
     assert "x-goog-content-length-range" in body["headers"]
-    # uploading で仮登録される。
     mats = {m["id"]: m for m in _repo.list_materials(sid)}
     assert mats[body["asset_id"]]["status"] == "uploading"
 
@@ -135,7 +132,6 @@ def test_upload_init_disabled_returns_409(monkeypatch: pytest.MonkeyPatch) -> No
     assert resp.status_code == 409
 
 
-# ── upload-complete ──────────────────────────────────────────────────────
 def test_upload_complete_missing_object_409(_video_enabled: list[dict]) -> None:
     sid = _session()
     init = client.post(
@@ -143,7 +139,6 @@ def test_upload_complete_missing_object_409(_video_enabled: list[dict]) -> None:
         json={"filename": "demo.mp4", "content_type": "video/mp4", "size": 1000},
         headers=_auth(sid),
     ).json()
-    # ブラウザが PUT していない → object 無し → 409。
     resp = client.post(
         f"/api/sessions/{sid}/context/file/upload-complete",
         json={"asset_id": init["asset_id"], "content_type": "video/mp4", "filename": "demo.mp4"},
@@ -160,7 +155,6 @@ def test_upload_complete_enqueues(_video_enabled: list[dict]) -> None:
         headers=_auth(sid),
     ).json()
     asset_id = init["asset_id"]
-    # ブラウザの直送を in-memory に模す。
     blob = _asset_store.blob_name(sid, asset_id, "video/mp4")
     _asset_store._mem[blob] = b"video-bytes"
     resp = client.post(
@@ -175,20 +169,17 @@ def test_upload_complete_enqueues(_video_enabled: list[dict]) -> None:
     )
     assert resp.status_code == 200, resp.text
     assert resp.json()["analysis_pending"] is True
-    # analyzing に更新され、enqueue された。
     mats = {m["id"]: m for m in _repo.list_materials(sid)}
     assert mats[asset_id]["status"] == "analyzing"
     assert _video_enabled and _video_enabled[-1]["asset_id"] == asset_id
     assert _video_enabled[-1]["duration_seconds"] == 42
 
 
-# ── reconcile ────────────────────────────────────────────────────────────
 def test_reconcile_marks_stuck_analyzing_failed(
     _video_enabled: list[dict], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(settings, "analysis_stuck_after_seconds", 1)
     sid = _session()
-    # analyzing_since を十分過去にした素材を仕込む。
     _repo.save_material(
         sid,
         {

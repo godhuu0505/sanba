@@ -53,10 +53,8 @@ describe("AppShell（恒常サイドメニュー＋ヘッダー）", () => {
 
   it("折りたたみでアイコンのみになり、状態を localStorage に保存する（PC）", () => {
     render(<AppShell>本文</AppShell>);
-    // 既定は展開: ナビ項目にラベル文字がある。
     expect(screen.getByRole("link", { name: "ホーム" }).textContent).toContain("ホーム");
     fireEvent.click(screen.getByRole("button", { name: "サイドメニューを閉じる" }));
-    // 折りたたむとラベル文字が消え（アイコンのみ）、トグルの意味が反転する。
     expect(screen.getByRole("link", { name: "ホーム" }).textContent).toBe("");
     expect(screen.getByRole("button", { name: "サイドメニューを開く" })).toBeTruthy();
     expect(window.localStorage.getItem("sanba.sidebar.collapsed")).toBe("1");
@@ -72,7 +70,6 @@ describe("AppShell（恒常サイドメニュー＋ヘッダー）", () => {
     render(<AppShell>本文</AppShell>);
     fireEvent.click(screen.getByRole("button", { name: "メニューを開く" }));
     const drawer = screen.getByRole("complementary", { name: "サイドメニュー" });
-    // ドロワー内の項目を押すと閉じる（遷移後にドロワーを残さない）。
     fireEvent.click(within(drawer).getByRole("link", { name: "過去の要件一覧" }));
     expect(screen.queryByRole("complementary", { name: "サイドメニュー" })).toBeNull();
   });

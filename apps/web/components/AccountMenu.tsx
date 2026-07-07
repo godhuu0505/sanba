@@ -1,10 +1,5 @@
 "use client";
 
-// ホーム右上のアカウントメニュー（Figma 正本 13 `104:2` / 14 `106:2`）。
-// アバター押下で scrim 付きドロップダウンを開き、ログイン後の導線（アカウント設定・ログアウト）を
-// ここに集約する（監査 docs/notes/figma-implementation-audit.md B-1）。
-// scrim は ChoicePin と同じ暗幕パターンを踏襲。ここは導線のみで認可判定は持たない。
-
 import { CircleCheck, LogOut, Settings } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -14,12 +9,7 @@ import { Avatar, Divider } from "@/components/sanba";
 import type { GoogleProfile } from "@/lib/auth";
 
 export interface AccountMenuProps {
-  /**
-   * 表示中ユーザー。ページ側で解決済みの `useAuth().profile` を渡す（装飾目的）。
-   * ここで認証 hook を直接呼ばないことで、共有インスタンスと分断された状態を作らない。
-   */
   profile: GoogleProfile | null;
-  /** 設定画面では「アカウント設定」項目を畳む（現在地への自己リンクを避ける）。 */
   hideSettings?: boolean;
 }
 
@@ -27,7 +17,6 @@ export function AccountMenu({ profile, hideSettings }: AccountMenuProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
 
-  // Escape で閉じる（a11y）。開いている間だけ購読する。
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -38,12 +27,8 @@ export function AccountMenu({ profile, hideSettings }: AccountMenuProps) {
   }, [open]);
 
   const email = profile?.email ?? "dev@sanba.local";
-  // 表示用の頭文字（name → email → 既定）。装飾目的のみ。
   const glyph = (profile?.name || profile?.email || "客").trim().charAt(0) || "客";
 
-  // ログアウトは /login?loggedOut=1 への遷移に一本化する。実際の signOut は遷移先 /login が行い、
-  // 元ページでは signOut しない。こうすることで元ページの authGate が次描画で /login?next= へ
-  // リダイレクトして本遷移を上書きするレースを避ける。
   function handleLogout() {
     setOpen(false);
     router.push("/login?loggedOut=1");
@@ -60,7 +45,6 @@ export function AccountMenu({ profile, hideSettings }: AccountMenuProps) {
         className="flex size-[44px] items-center justify-center rounded-full text-sanba-cream transition-colors hover:bg-sanba-surface"
       >
         {profile?.picture ? (
-          // 装飾目的（隣接でアカウント名は menu 内に出す）。
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={profile.picture}
@@ -74,7 +58,6 @@ export function AccountMenu({ profile, hideSettings }: AccountMenuProps) {
 
       {open && (
         <>
-          {/* 暗幕（ChoicePin 踏襲）。クリックで閉じる。 */}
           <button
             type="button"
             aria-label="閉じる（背景）"

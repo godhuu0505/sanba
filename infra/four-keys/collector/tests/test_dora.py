@@ -42,9 +42,7 @@ def test_change_failure_rate() -> None:
 def test_lead_time_uses_only_successful_deploys() -> None:
     deps = [_deploy(1, True, 48.0), _deploy(2, True, 96.0), _deploy(3, False, 999.0)]
     m = compute(deps, [], window_days=30)
-    # median of 48h and 96h, the failed deploy's lead time is ignored.
     assert m.lead_time_hours == 72.0
-    # 1 day <= 72h < 1 week -> "high" band.
     assert m.levels["lead_time"] == "high"
 
 
@@ -53,11 +51,11 @@ def test_mttr_median_ignores_open_incidents() -> None:
     incidents = [
         Incident("1", opened_at=opened, closed_at=opened + timedelta(hours=2)),
         Incident("2", opened_at=opened, closed_at=opened + timedelta(hours=4)),
-        Incident("3", opened_at=opened, closed_at=None),  # still open -> ignored
+        Incident("3", opened_at=opened, closed_at=None),
     ]
     m = compute([], incidents, window_days=30)
     assert m.incidents_total == 3
-    assert m.mttr_hours == 3.0  # median(2, 4)
+    assert m.mttr_hours == 3.0
     assert m.levels["mttr"] == "high"
 
 
@@ -81,5 +79,4 @@ def test_prometheus_render_contains_all_series() -> None:
         "fourkeys_data_source",
     ):
         assert name in text
-    # NaN is emitted for the unavailable MTTR series, not a crash.
     assert "fourkeys_mttr_hours nan" in text

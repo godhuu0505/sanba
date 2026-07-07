@@ -1,12 +1,8 @@
 "use client";
 
-// 終了確認ダイアログ。⏹ 押下時に確定ゲート（未解消件数）を提示する。
-// 仕様: docs/reference/conversation-experience.md §C(横断)/§7 / screens/07-judgment.md。
-
 import { Scale, TriangleAlert } from "lucide-react";
 
 export interface EndConfirmDialogProps {
-  /** 未解消（矛盾/抜け/不明瞭）の件数。 */
   unresolved: number;
   onContinue: () => void;
   onEnd: () => void;

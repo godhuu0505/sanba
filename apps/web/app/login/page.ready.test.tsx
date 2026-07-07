@@ -1,11 +1,4 @@
 // @vitest-environment jsdom
-// real モード（NEXT_PUBLIC_GOOGLE_CLIENT_ID 設定済み）での /login 直訪・再訪の挙動（ADR-0052）。
-// 「ログインしているのに /login でログイン画面が見える」回帰の防止:
-//  - 認証解決前（ready=false）はサインイン UI を出さず中立スプラッシュ（読み込み中）を出す
-//  - 静かな再取得（auto_select）でログインが立ったら、中間画面を挟まず即トップへ replace
-//  - 未ログインが確定（One Tap 不表示の通知）したらサインイン UI を出す
-// CLIENT_ID はモジュール評価時に env を読むため、stubEnv → resetModules → 動的 import で
-// real モードに入る（auth-settle.test.tsx と同じ手法）。
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -32,14 +25,12 @@ const prompt = vi.fn((listener?: MomentListener) => {
 const renderButton = vi.fn();
 const disableAutoSelect = vi.fn();
 
-// 「One Tap を表示できなかった」通知（未ログイン確定のトリガ）。
 const notDisplayed = {
   isNotDisplayed: () => true,
   isSkippedMoment: () => false,
   isDismissedMoment: () => false,
 };
 
-// 表示用 decodeProfile が base64url を読めるよう、最小の JWT 風文字列を組む。
 function makeJwt(claims: Record<string, unknown> = { email: "a@example.com", name: "A" }): string {
   const b64 = (o: unknown) =>
     btoa(JSON.stringify(o)).replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
@@ -61,7 +52,6 @@ beforeEach(() => {
   prompt.mockClear();
   renderButton.mockClear();
   replace.mockClear();
-  // window.google を先に与え、setup() の同期パスで initialize/prompt を呼ばせる。
   (window as unknown as { google: unknown }).google = {
     accounts: { id: { initialize, renderButton, prompt, disableAutoSelect } },
   };
@@ -79,7 +69,6 @@ describe("LoginPage 直訪・再訪（real モード / ready ゲート）", () =
     await renderLoginReal();
 
     expect(screen.getByRole("status", { name: "読み込み中" })).toBeTruthy();
-    // サインイン UI（タグライン）は出さない＝「確認中にログイン画面が見える」窓を作らない。
     expect(screen.queryByText("解像度高く、要件を生み出す")).toBeNull();
     expect(replace).not.toHaveBeenCalled();
   });
@@ -89,7 +78,6 @@ describe("LoginPage 直訪・再訪（real モード / ready ゲート）", () =
 
     act(() => capturedCallback?.({ credential: makeJwt() }));
 
-    // 本人確認の中間画面は挟まず、即トップへ。サインイン UI も見せない。
     expect(screen.queryByText("解像度高く、要件を生み出す")).toBeNull();
     expect(replace).toHaveBeenCalledWith("/");
   });
@@ -110,7 +98,6 @@ describe("LoginPage 直訪・再訪（real モード / ready ゲート）", () =
     expect(screen.getByRole("heading", { name: "SANBA" })).toBeTruthy();
     expect(screen.getByText("解像度高く、要件を生み出す")).toBeTruthy();
     expect(replace).not.toHaveBeenCalled();
-    // サインイン UI の出現で resetButton → GIS effect が再実行され、装着済みの buttonRef へ描画される。
     expect(renderButton).toHaveBeenCalled();
   });
 });
