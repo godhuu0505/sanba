@@ -65,16 +65,22 @@ Drive 導線は `isDriveConfigured()`（`NEXT_PUBLIC_GOOGLE_API_KEY` と `NEXT_P
 
 ### 2.2 設計（実装に入れるレベル）
 
-**方針**: Terraform が「API 有効化 + リファラ制限付きブラウザキー（箱と制約）」を所有し、
-キー値（ブラウザ露出前提・リファラ制限で守るため秘匿ではない）は既存の識別子と同じく
-GitHub Variable へ公開して web ビルドへ焼き込む。`google_oauth_client_id` の扱いに揃える。
+**方針（ヒアリング 2026-07-07 で確定）**: Terraform が「API 有効化 + リファラ/API 制限付き
+ブラウザキー（箱と制約）+ 値の格納先（Secret Manager）」を所有する。値は **GitHub Variable では
+なく Secret Manager を唯一の置き場**とし、web ビルドは既にある WIF 認証で Secret Manager から
+読み出して build-arg に渡す。これは既存の秘匿値運用（"Secret Manager が唯一の置き場・GitHub には
+非秘匿識別子のみ・Terraform は箱と参照を管理"・`terraform.yml` 注記）に倣った、より安全で
+OSS（PUBLIC リポジトリ）前提の受け渡しにするため。
+> ブラウザキーの本質的な防御は「隠す」ことではなく「制限する」こと（キーは JS バンドルに焼かれ
+> 最終的に公開される）。Secret Manager 化は値を GitHub 全体に散らさないための衛生で、恒久的な
+> 防御はリファラ制限 + API ターゲット制限にある。
 
 1. **API 有効化**（`infra/terraform/main.tf` の `services` set に追加）
    - `drive.googleapis.com`（files.export / alt=media 取得）
-   - `apikeys.googleapis.com`（`google_apikeys_key` の前提）
-   - Google Picker API（サービス名 §5 で確認のうえ追加）
+   - `picker.googleapis.com`（Google Picker API・§5-1 で確定）
+   - `apikeys.googleapis.com`（`google_apikeys_key` を Terraform で作る前提）
 
-2. **ブラウザ API キー**（新規 `infra/terraform/` に定義。`media.tf` 併設 or `main.tf` 追記）
+2. **ブラウザ API キー + 値の格納**（新規 `infra/terraform/`。`media.tf` 併設 or 新ファイル）
    ```hcl
    resource "google_apikeys_key" "picker" {
      name         = "sanba-picker-browser-key"
@@ -84,50 +90,72 @@ GitHub Variable へ公開して web ビルドへ焼き込む。`google_oauth_cli
      restrictions {
        browser_key_restrictions {
          # var.domain / var.web_subdomain から web オリジンを組み立てて allowed_referrers に。
-         # domain 空（*.run.app 運用）のときは run.app の web オリジンを入れる。
+         # domain 空（*.run.app 運用）のときは web の run.app オリジンを入れる。
          allowed_referrers = local.picker_allowed_referrers
        }
        api_targets { service = "drive.googleapis.com" }
-       api_targets { service = "picker.googleapis.com" } # §5 で確認した正式名
+       api_targets { service = "picker.googleapis.com" }
      }
      depends_on = [google_project_service.services]
    }
 
-   output "picker_api_key" {
-     value       = google_apikeys_key.picker.key_string
-     sensitive   = true
-     description = "Browser key for Google Picker. Publish to GitHub Variable NEXT_PUBLIC_GOOGLE_API_KEY."
+   # 値の唯一の置き場は Secret Manager（GitHub Variable には置かない）。
+   resource "google_secret_manager_secret" "picker_api_key" {
+     secret_id = "next-public-google-api-key"
+     replication { auto {} }
+     depends_on = [google_project_service.services]
+   }
+   resource "google_secret_manager_secret_version" "picker_api_key" {
+     secret      = google_secret_manager_secret.picker_api_key.id
+     secret_data = google_apikeys_key.picker.key_string
+   }
+   # web ビルドが読む deployer SA に、このシークレットの accessor を付与（最小権限）。
+   resource "google_secret_manager_secret_iam_member" "picker_key_ci" {
+     secret_id = google_secret_manager_secret.picker_api_key.id
+     role      = "roles/secretmanager.secretAccessor"
+     member    = "serviceAccount:${var.terraform_deployer_sa}" # = web ビルドの WIF SA
    }
    ```
-   - **最小権限**: `api_targets` を Drive + Picker に限定し、リファラを web オリジンに固定する
-     （キーはバンドルに焼かれ公開されるため、制限が実質的な防御。ADR-0049 リスク欄と整合）。
+   - **最小権限**: `api_targets` を Drive + Picker に限定し、リファラを web オリジンに固定
+     （公開キーの実質的防御はここ。ADR-0049 リスク欄と整合）。
    - `allowed_referrers` は `variables.tf` の `domain` / `web_subdomain` から `locals` で導出。
-     カスタムドメイン未使用（`domain=""`）の環境では web の `run.app` オリジンを許可に入れる。
+     `domain=""`（*.run.app 運用）では web の run.app オリジンを許可に入れる。
+     **対象範囲は External / 一般公開**（§5-4）なので本番ドメイン + 必要ならデモ用オリジンを許可に。
+   - **透明性（許容する残リスク）**: Terraform がキーを作る以上 `key_string` は state（GCS・
+     限定アクセス）に平文で残る（provider 仕様上不可避）。露出前提の低機微値であり private state
+     上の保持は許容する。より厳格にするなら「キーは gcloud で作成し Secret Manager にだけ入れ、
+     Terraform は制約を持たない」変種があるが、制約が IaC から外れ再現性が落ちるため非推奨。
 
-3. **値の公開経路（境界の明示）**
-   - `NEXT_PUBLIC_*` は Next.js のビルド時に焼き込まれ、Terraform とビルドは別工程。よって
-     `terraform apply` 後に **一度だけ** `terraform output -raw picker_api_key` を GitHub Variable
-     `NEXT_PUBLIC_GOOGLE_API_KEY` に登録する（`NEXT_PUBLIC_GOOGLE_CLIENT_ID` と同じ運用）。
-   - キーはリファラ制限済みで秘匿ではないため Variable 管理でよい（Secret Manager 不要）。
-     この判断根拠を deploy-gcp.md に 1 行残す。
+3. **CI（`.github/workflows/deploy.yml` の web ビルド）**
+   - 現状の build-arg `NEXT_PUBLIC_GOOGLE_API_KEY = vars.NEXT_PUBLIC_GOOGLE_API_KEY`（GitHub
+     Variable 参照）を廃し、既存の `auth`/`setup-gcloud`（WIF）の後で
+     `gcloud secrets versions access latest --secret=next-public-google-api-key` で取得して
+     build-arg へ渡す。→ **値はリポジトリにも GitHub Variables にも載らない**（OSS 安全・ログはマスク）。
+   - 未取得（シークレット未作成の環境）でも空 build-arg で Dockerfile 既定に落ち、Drive 導線は
+     「利用不可」に退化するだけ（fail-safe・ローカルアップロードは無影響）。
 
 4. **OAuth 同意画面（手順書で担保・Terraform 化不可）**
-   - 同意画面のスコープに `.../auth/drive.file` を追加。`drive.file` は Picker 経由の
-     ユーザー選択ファイル限定のため、`drive.readonly` のようなセンシティブ全閲覧審査を避けられる
-     （ADR-0049 決定3の根拠）。審査要否は Google 側ポリシー次第なので確認結果を how-to に明記。
+   - 既存の同意画面（**External / 一般公開**・ログインで `openid/email/profile` を使用）の
+     スコープ一覧に `.../auth/drive.file` を 1 つ追加するだけ。§5-4 のとおり `drive.file` は
+     **非センシティブ**で、非センシティブのみなら **OAuth アプリ審査は不要**・未確認アプリ警告も
+     出ない（`drive.readonly` のような restricted 審査/CASA を回避＝ADR-0049 決定3の狙い）。
 
 5. **how-to 追記**（`docs/how-to/deploy-gcp.md`）
-   - 「Drive 連携を有効化する」節を新設し、(a) 上記 API 有効化は Terraform が行う、
-     (b) 同意画面スコープ追加（手動）、(c) `terraform output` → GitHub Variable 登録、
-     (d) 未設定時は導線が利用不可に退化する（fail-safe）ことを列挙。
-   - 既存の `deploy-gcp.md:148` の一文（API キーは任意）を、この節へのリンクに更新。
+   - 「Drive 連携を有効化する」節を新設し、(a) API 有効化・キー・Secret は Terraform が行う、
+     (b) 同意画面に `drive.file` を追加（手動・審査不要）、(c) web ビルドは Secret Manager から
+     値を取得する（GitHub Variable 不要）、(d) 未構成時は導線が利用不可に退化する（fail-safe）
+     ことを列挙。
+   - 既存の `deploy-gcp.md:148` の一文（API キーは任意 / GitHub Variable）を、この節へのリンクと
+     Secret Manager 運用に更新する。
 
 ### 2.3 受け入れ条件（A）
-- `terraform plan` に Drive/apikeys/Picker API 有効化と `google_apikeys_key.picker` が現れる。
+- `terraform plan` に Drive/Picker/apikeys API 有効化・`google_apikeys_key.picker`・
+  `google_secret_manager_secret(.version) picker_api_key`・deployer SA への accessor が現れる。
 - `google_apikeys_key.picker` はリファラ制限 + API ターゲット制限（Drive/Picker のみ）を持つ。
-- GitHub Variable 登録後の web ビルドで `isDriveConfigured()` が真になり、Picker が開く
+- キー値は GitHub Variables に存在しない（`vars.NEXT_PUBLIC_GOOGLE_API_KEY` 参照が deploy.yml から消える）。
+- Secret 投入済み環境の web ビルドで `isDriveConfigured()` が真になり Picker が開く
   （手動 E2E: デプロイ環境で Docs を 1 件取り込み、資料一覧に `asset_kind="doc"` で出る）。
-- 未登録環境では従来どおり「利用不可」案内に退化し、ローカルアップロードは無影響（回帰なし）。
+- Secret 未投入環境では従来どおり「利用不可」案内に退化し、ローカルアップロードは無影響（回帰なし）。
 
 ---
 
@@ -146,15 +174,20 @@ ADR-0049 で承認・実装され、`onDrive` は実文脈（EntryFlow / Session
 | `lib/googleDrive.ts:3` | ヘッダ「ADR-0044」 | **ADR-0049** に修正 |
 | `lib/auth.tsx:77`,`348` 付近 | 「ADR-0044」 | **ADR-0049** に修正 |
 
-**設計判断（要確認 §5）**: `MaterialSourceSheet` の「準備中」フォールバック分岐は、`onDrive` が
-全実文脈で注入済みの今、本番では到達しない。(i) ADR 参照と文言だけ直して残す（02 準備以外の
-再利用に備える）か、(ii) 分岐ごと削除するか。既定は **(i)**（部品の汎用性を壊さない・変更最小）。
+**設計判断（ヒアリング 2026-07-07 で確定）**: `MaterialSourceSheet` の「準備中」フォールバック
+分岐は、`onDrive` が全実文脈（EntryFlow / SessionView）で注入済みの今、本番では**到達しない
+死んだ枝**で、しかも文言が実態（ADR-0049 で実装済み）と矛盾する。さらに「未構成（APIキー無し）」
+ケースは `isDriveConfigured()` が `handleDriveImport` 内で正しい案内を出すため機能的にも重複。
+→ **分岐ごと削除して簡素化する（案 ii）**。`onDrive` 未注入時の `driveNotice` 状態・案内 UI・
+`onDrive ?? (() => setDriveNotice(true))` の握りつぶしを撤去し、Drive 行の実行は注入された
+`onDrive` に一本化する（未構成時の退化は `isDriveConfigured()` 側に委ねる）。
 
 ### 3.1 受け入れ条件（B）
 - コード内の `ADR-0007` / `ADR-0044` の Drive 関連参照が `ADR-0049` に統一される。
-- 「未承認 / 準備中 / 別チケット」が実態（実装済み）と矛盾しない表現になる。
-- `MaterialSourceSheet.test.tsx` のフォールバック文言アサーションを新文言へ追随。
-- 挙動は不変（コメント/文言のみ。`just check` green）。
+- `MaterialSourceSheet` の「準備中 / 別チケット」フォールバック分岐（`driveNotice` state・案内文・
+  `?? setDriveNotice` フォールバック）が削除され、実態と矛盾する文言が残らない。
+- `MaterialSourceSheet.test.tsx` の該当（フォールバック文言）アサーションを削除/追随させる。
+- Drive 導線の実挙動は不変（注入済み `onDrive` 経由。`just check` green）。
 
 ---
 
@@ -169,14 +202,21 @@ ADR-0049 が明示的に見送った/触れていない拡張。#304 epic の子
 
 ---
 
-## 5. 未決事項（実装前に確認したい）
+## 5. 未決事項 → すべて解決（ヒアリング 2026-07-07）
 
-1. **Google Picker API の正式サービス名**（`picker.googleapis.com` か）。`google_project_service`
-   と `api_targets` に入れる前に `gcloud services list --available | grep -i picker` で確定する。
-2. **API キーを Terraform 所有にするか**（§2.2 案）／それとも API 有効化のみ Terraform 化し
-   キーはコンソール手動のままにするか。既定は Terraform 所有（IaC 徹底）。
-3. **B のフォールバック分岐**は残す（文言修正のみ・既定）か削除するか。
-4. `drive.file` スコープの Google 審査要否（同意画面のブランド審査状況）。how-to に確認結果を反映。
+1. **Google Picker API のサービス名** → **`picker.googleapis.com`** で確定。有効化対象は
+   `drive.googleapis.com` / `picker.googleapis.com` / `apikeys.googleapis.com` の 3 つ。
+   （出典: [Cloud Console API Library](https://console.cloud.google.com/apis/library/picker.googleapis.com)）
+2. **API キーの管理** → **Terraform 所有**で確定。ただし値は GitHub Variable ではなく
+   **Secret Manager を唯一の置き場**とし、web ビルドは WIF で Secret Manager から読む（§2.2）。
+   既存の秘匿値運用に倣い、OSS（PUBLIC）前提でより安全な受け渡しにする。state への `key_string`
+   残存は露出前提の低機微値として許容。
+3. **B のフォールバック分岐** → **削除して簡素化**で確定（§3・案 ii）。
+4. **`drive.file` の審査要否** → **審査不要**で確定。`drive.file` は非センシティブスコープで、
+   非センシティブのみのアプリは OAuth 審査不要・未確認警告なし（2026 時点）。同意画面の
+   **User type は External / 一般公開**（デモ含む）。運用は同意画面へ `drive.file` を 1 つ追加するだけ。
+   （出典: [Choose Drive API scopes](https://developers.google.com/workspace/drive/api/guides/api-specific-auth) /
+   [Sensitive scope verification](https://developers.google.com/identity/protocols/oauth2/production-readiness/sensitive-scope-verification)）
 
 ---
 
@@ -184,8 +224,8 @@ ADR-0049 が明示的に見送った/触れていない拡張。#304 epic の子
 
 | PR | 内容 | 主な差分 | 依存 |
 |---|---|---|---|
-| PR-1（A） | Drive/apikeys/Picker API 有効化 + `google_apikeys_key.picker`（リファラ/API 制限）+ output + deploy-gcp.md 手順 | `infra/terraform/main.tf`・新規 apikeys 定義・`outputs.tf`・`docs/how-to/deploy-gcp.md` | §5-1,2 の確定 |
-| PR-2（B） | Drive 関連コメント/ADR 参照/フォールバック文言の是正 + テスト追随 | `MaterialSourceSheet.tsx`・`googleDrive.ts`・`auth.tsx`・対応 test | §5-3 の確定 |
+| PR-1（A） | Drive/Picker/apikeys API 有効化 + `google_apikeys_key.picker`（リファラ/API 制限）+ Secret Manager 格納 + deployer SA accessor + deploy.yml を Secret Manager 取得へ + deploy-gcp.md 手順 | `infra/terraform/main.tf`・新規 apikeys/secret 定義・`.github/workflows/deploy.yml`・`docs/how-to/deploy-gcp.md` | 解決済み（§5-1,2,4） |
+| PR-2（B） | Drive 関連コメント/ADR 参照の是正（0007/0044→0049）+ `MaterialSourceSheet` フォールバック分岐の削除 + テスト追随 | `MaterialSourceSheet.tsx`・`googleDrive.ts`・`auth.tsx`・`MaterialSourceSheet.test.tsx` | 解決済み（§5-3） |
 
-PR-1 と PR-2 は独立。いずれも単独で `just check` が通り、機能挙動を変えない（PR-1 は
-未登録環境で無影響、PR-2 は文言のみ）ことを受け入れ条件とする。
+PR-1 と PR-2 は独立。いずれも単独で `just check` が通り、Drive の実挙動を変えない（PR-1 は
+Secret 未投入環境で無影響、PR-2 は到達しない死枝の削除とコメント是正）ことを受け入れ条件とする。
