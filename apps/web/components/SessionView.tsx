@@ -64,7 +64,7 @@ export function SessionView({
     sessionToken,
     hydrateDetections: true,
   });
-  // Google ドライブ取り込みの同意/トークン（drive.file / ADR-0044）。トークンはメモリのみ。
+  // Google ドライブ取り込みの同意/トークン（drive.file / ADR-0049）。トークンはメモリのみ。
   const auth = useAuth();
 
   // マイク入力（自分の声を拾うか）= LiveKit local track の ON/OFF。
@@ -295,7 +295,7 @@ export function SessionView({
     setSourceSheetOpen(true);
   }
 
-  // Google ドライブから選んで投入する（ADR-0044）。権限は Google ログイン時に求めるが、
+  // Google ドライブから選んで投入する（ADR-0049）。権限は Google ログイン時に求めるが、
   // 未許可（拒否・ブロック・失効）ならここで再度同意ポップアップを出す（要件: 権限が無い状態で
   // アップロードしようとしたタイミングで再度権限をもらう）。許可されなければ投入しない。
   async function handleDriveImport() {

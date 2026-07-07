@@ -13,12 +13,11 @@
 // - a11y: 暗幕＋ボトムシート（role=dialog/aria-modal）、ESC で閉じる、フォーカストラップ、
 //   見た目に依らないラベル（ADR-0017）。
 //
-// Google ドライブは drive.file + Google Picker で取り込む（ADR-0044 / ADR-0007 の保留を解除）。
-// 実導線は親が onDrive で注入する（EntryFlow / SessionView）。未注入の文脈では従来どおり
-// 「準備中」を案内するフォールバックに退化する。
+// Google ドライブは drive.file + Google Picker で取り込む（ADR-0049）。
+// 実導線は親が onDrive で注入する（EntryFlow / SessionView）。
 
 import { Camera, ChevronRight, Cloud, Monitor, Upload, X } from "lucide-react";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef } from "react";
 
 /** 投入手段の種別（計測キー）。 */
 export type MaterialSource = "camera" | "screen" | "upload" | "drive";
@@ -40,11 +39,8 @@ export interface MaterialSourceSheetProps {
    */
   onToggleScreenShare?: () => void;
   screenShareActive?: boolean;
-  /**
-   * Google ドライブ導線。ADR-0007 未承認のため既定は「準備中」を案内するだけ。
-   * 実ピッカが用意できたら onDrive を注入して差し替える（別チケット）。
-   */
-  onDrive?: () => void;
+  /** Google ドライブ導線（ADR-0049）。親が Picker を開くハンドラを注入する。 */
+  onDrive: () => void;
   /**
    * 手段選択の計測フック（CLAUDE.md 原則3・投入種別の計測）。各導線の押下で発火する。
    * 運用での収集先（OTLP/メトリクス）への配線は別途行う。
@@ -75,8 +71,6 @@ export function MaterialSourceSheet({
   const centered = placement === "center";
   const sheetRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
-  // Drive 未承認（ADR-0007）の案内を押下時に開く。
-  const [driveNotice, setDriveNotice] = useState(false);
 
   // 開いたらシート内へフォーカスを移す（a11y）。
   useEffect(() => {
@@ -193,13 +187,8 @@ export function MaterialSourceSheet({
           icon={<Cloud size={20} />}
           title="Google ドライブから選ぶ"
           sub="Google ドキュメント・スプレッドシート・スライドも取り込めます"
-          onClick={() => pick("drive", onDrive ?? (() => setDriveNotice(true)))}
+          onClick={() => pick("drive", onDrive)}
         />
-        {driveNotice && !onDrive && (
-          <p role="status" className="px-1 text-[11.5px] text-sanba-muted">
-            Google ドライブ連携は準備中です（別チケット・ADR-0007）。今はファイルのアップロードをご利用ください。
-          </p>
-        )}
 
         {error && (
           <p role="alert" className="px-1 text-[11.5px] font-bold text-sanba-rec-text">
