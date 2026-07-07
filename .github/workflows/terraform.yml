@@ -102,6 +102,13 @@ jobs:
       TF_VAR_active_app_secret_ids:       ${{ vars.ACTIVE_APP_SECRET_IDS || '[]' }}
       # 注: アプリ秘匿値 (livekit/elasticsearch 等) は TF_VAR で渡さない。Secret Manager が唯一の
       # 置き場で、terraform は箱と参照だけを管理する (値を state / GitHub に残さない)。
+      # GitHub App 連携 (ADR-0028)。id/slug/client_id は秘匿物でない公開識別子なので Variables 管理。
+      # 秘匿値 (private key / client secret) は Secret Manager に投入し ACTIVE_APP_SECRET_IDS に足す。
+      # Variables 名は GH_APP_* にする (GitHub は GITHUB_ 接頭辞の変数名を予約していて作成できない)。
+      TF_VAR_github_app_enabled:          ${{ vars.GH_APP_ENABLED || 'false' }}
+      TF_VAR_github_app_id:               ${{ vars.GH_APP_ID }}
+      TF_VAR_github_app_slug:             ${{ vars.GH_APP_SLUG }}
+      TF_VAR_github_app_client_id:        ${{ vars.GH_APP_CLIENT_ID }}
       # session-signing-secret も terraform が自動生成するため GitHub には置かない。
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
