@@ -1462,11 +1462,12 @@ async def guarded_generate_reply(
 ) -> bool:
     """generate_reply を span + 失敗ログ付きで実行する（観測性 / CLAUDE.md 原則3）。
 
-    失敗（Gemini Live の generation_created タイムアウト等を含む）はセッション紐付きの
-    ``voice_reply_failed`` として構造化ログに残す。sess-2d51da04 では冒頭の generate_reply が
-    タイムアウトしたが、当時は livekit ライブラリ側のログにしか出ず session_id で追えなかった。
-    例外は呼び出し側へ伝播させない: 一言が出せなくてもセッションは生きており、次の発話から
-    会話は前進できる（無反応で居座らせない・ADR-0038 と同じ思想）。成否を bool で返す。
+    例外を投げる失敗は session 紐付きの ``voice_reply_failed`` として残す。ただし
+    **Gemini Live の generation_created タイムアウトはここでは捕捉できない**: livekit は
+    その ``RealtimeError`` を内部タスクで握って listening に戻すだけで、例外も error イベントも
+    呼び出し側へ出さない（agent_activity の generate_reply future の except 節）。この「黙って
+    一言が落ちる」ケースは開始一言では open_interview が assistant 応答の不在で検知・再試行する。
+    例外は呼び出し側へ伝播させない。成否を bool で返す。
     """
     tracer = get_tracer("sanba.voice")
     span_cm = (
@@ -1485,6 +1486,48 @@ async def guarded_generate_reply(
                 span.set_attribute("sanba.voice.reply_failed", True)
             log.warning("voice_reply_failed", session=session_id, kind=kind, error=str(exc))
             return False
+
+
+async def open_interview(
+    session: AgentSession,
+    *,
+    session_id: str,
+    instructions: str,
+    reply_seen: asyncio.Event,
+    max_attempts: int | None = None,
+    reply_timeout_s: float | None = None,
+) -> bool:
+    """開始一言（掴み）を、assistant 応答が観測できるまで最大 max_attempts 回試みる（#374）。
+
+    Gemini Live は接続直後に generation_created を返せず、開始一言が黙って落ちることがある
+    （sess-2d51da04 / sess-ae759ca3 で再現。livekit は RealtimeError を内部で握って listening に
+    戻すだけで、例外も error イベントも出ないため guarded_generate_reply では検知できない）。
+    ここでは各試行のあと ``reply_seen``（assistant の conversation_item が来たら set される
+    entrypoint 側イベント）を reply_timeout_s だけ待ち、来なければ voice_opening_no_response を
+    残して再試行する。再試行前に interrupt して、遅れて生成された一言との二重発話を避ける。
+    成功で True、上限まで応答が出なければ False（会話自体は生きており次の発話から前進できる）。
+    """
+    attempts = max_attempts if max_attempts is not None else settings.voice_opening_max_attempts
+    timeout_s = (
+        reply_timeout_s if reply_timeout_s is not None else settings.voice_opening_reply_timeout_s
+    )
+    for attempt in range(1, max(1, attempts) + 1):
+        reply_seen.clear()
+        await guarded_generate_reply(
+            session, session_id=session_id, kind="opening", instructions=instructions
+        )
+        try:
+            await asyncio.wait_for(reply_seen.wait(), timeout=timeout_s)
+        except TimeoutError:
+            log.warning("voice_opening_no_response", session=session_id, attempt=attempt)
+            if attempt < max(1, attempts):
+                with contextlib.suppress(Exception):
+                    await session.interrupt()
+            continue
+        if attempt > 1:
+            log.info("voice_opening_recovered", session=session_id, attempt=attempt)
+        return True
+    return False
 
 
 async def respond_to_user_text(
@@ -1715,6 +1758,9 @@ async def entrypoint(ctx: JobContext) -> None:
     session: AgentSession
     restart_count = 0
     restart_pending = False
+    # 開始一言（掴み）の応答検知用（#374）。assistant の conversation_item が来たら set され、
+    # open_interview が「一言が出たか」を判定する。無応答なら再試行する。
+    reply_seen = asyncio.Event()
 
     def _on_data(packet) -> None:  # type: ignore[no-untyped-def]
         topic = getattr(packet, "topic", None)
@@ -1774,6 +1820,9 @@ async def entrypoint(ctx: JobContext) -> None:
             item = getattr(ev, "item", None)
             if getattr(item, "role", None) != "assistant":
                 return
+            # assistant の発話が実際に生成された合図。open_interview の「一言が出たか」判定に使う
+            # （text_content が無い音声のみの応答でも成立と扱う / #374）。
+            reply_seen.set()
             text = getattr(item, "text_content", None)
             if text:
                 agent.publish_agent_utterance(text)
@@ -1900,14 +1949,15 @@ async def entrypoint(ctx: JobContext) -> None:
     await publisher.status("listening")
 
     # 最初の一問はモード別: developer は要件整理＋画面共有の案内、
-    # end_user は利用体験の困りごとを技術用語なしで聞く。失敗（Live の generation_created
-    # タイムアウト等）は voice_reply_failed としてセッション紐付きで残し、例外で entrypoint を
-    # 落とさない（無反応で居座らせない・sess-2d51da04 の冒頭タイムアウトを可視化する）。
-    await guarded_generate_reply(
+    # end_user は利用体験の困りごとを技術用語なしで聞く。Gemini Live は接続直後に
+    # generation_created を返せず開始一言が黙って落ちることがある（sess-2d51da04 /
+    # sess-ae759ca3 で再現）。open_interview が assistant 応答の不在で検知し、無応答なら
+    # 再試行して掴みを復旧する（無反応で居座らせない / #374）。
+    await open_interview(
         session,
         session_id=session_id,
-        kind="opening",
         instructions=opening_instructions(agent.interview_mode, agent.has_prep_context),
+        reply_seen=reply_seen,
     )
 
     # When the room closes, score the interview (LLM-as-a-judge) and emit session_scored

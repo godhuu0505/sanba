@@ -259,3 +259,89 @@ class TestSelectExporterKind:
         monkeypatch.setattr(settings, "otel_traces_to_cloud_trace", False)
         monkeypatch.setattr(settings, "google_genai_use_vertexai", True)
         assert select_exporter_kind() == "disabled"
+
+
+class _OpeningFakeSession:
+    """開始一言の復旧テスト用スタブ。指定した試行回目で assistant 応答(reply_seen)を再現する。"""
+
+    def __init__(self, *, reply_seen: object, succeed_on_attempt: int | None) -> None:
+        import asyncio
+
+        self._reply_seen: asyncio.Event = reply_seen  # type: ignore[assignment]
+        self._succeed_on = succeed_on_attempt  # この試行回目以降で応答が返る。None=永遠に無応答。
+        self.reply_calls = 0
+        self.interrupts = 0
+
+    async def generate_reply(self, **kwargs: object) -> None:
+        self.reply_calls += 1
+        # generate_reply は再生完了まで待つ挙動なので、成功時はここで応答到達を再現する。
+        if self._succeed_on is not None and self.reply_calls >= self._succeed_on:
+            self._reply_seen.set()
+
+    async def interrupt(self) -> None:
+        self.interrupts += 1
+
+
+class TestOpenInterview:
+    # #374: 開始一言が黙って落ちる（generation_created タイムアウト）ケースを検知して再試行する。
+    @pytest.mark.asyncio
+    async def test_succeeds_on_first_attempt(self) -> None:
+        import asyncio
+
+        from sanba_agent.main import open_interview
+
+        reply_seen = asyncio.Event()
+        session = _OpeningFakeSession(reply_seen=reply_seen, succeed_on_attempt=1)
+        ok = await open_interview(
+            session,
+            session_id="s1",
+            instructions="どうも",
+            reply_seen=reply_seen,
+            max_attempts=3,
+            reply_timeout_s=0.05,
+        )
+        assert ok is True
+        assert session.reply_calls == 1  # 応答が出たので再試行しない
+        assert session.interrupts == 0
+
+    @pytest.mark.asyncio
+    async def test_recovers_on_retry(self) -> None:
+        # 1回目は無応答（タイムアウト）→ interrupt して再試行 → 2回目で応答。
+        import asyncio
+
+        from sanba_agent.main import open_interview
+
+        reply_seen = asyncio.Event()
+        session = _OpeningFakeSession(reply_seen=reply_seen, succeed_on_attempt=2)
+        ok = await open_interview(
+            session,
+            session_id="s1",
+            instructions="どうも",
+            reply_seen=reply_seen,
+            max_attempts=3,
+            reply_timeout_s=0.05,
+        )
+        assert ok is True
+        assert session.reply_calls == 2
+        assert session.interrupts == 1  # 再試行前に1回 interrupt
+
+    @pytest.mark.asyncio
+    async def test_gives_up_after_max_attempts(self) -> None:
+        # 永遠に無応答なら上限まで試して False（会話自体は生きているので例外は投げない）。
+        import asyncio
+
+        from sanba_agent.main import open_interview
+
+        reply_seen = asyncio.Event()
+        session = _OpeningFakeSession(reply_seen=reply_seen, succeed_on_attempt=None)
+        ok = await open_interview(
+            session,
+            session_id="s1",
+            instructions="どうも",
+            reply_seen=reply_seen,
+            max_attempts=3,
+            reply_timeout_s=0.05,
+        )
+        assert ok is False
+        assert session.reply_calls == 3
+        assert session.interrupts == 2  # 最終試行の後は interrupt しない

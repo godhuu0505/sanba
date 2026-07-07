@@ -53,6 +53,14 @@ class Settings(BaseSettings):
     voice_session_max_restarts: int = 3
     voice_session_restart_backoff_s: float = 2.0
 
+    # --- 開始一言（掴み）の復旧（#374）---
+    # Gemini Live は接続直後に generation_created を返せず開始一言が黙って落ちることがある
+    # （livekit は RealtimeError を内部で握るだけ＝例外も error イベントも出ない）。assistant 応答を
+    # この秒数だけ待ち、来なければ再試行する（掴みからコケて無反応で居座らせない）。
+    voice_opening_reply_timeout_s: float = 8.0
+    # 開始一言の最大試行回数（初回 + 再試行）。1 なら再試行しない。
+    voice_opening_max_attempts: int = 3
+
     # --- 要件分析（ADK 多段チェーン）のタイムアウト（ADR-0046 段階1）---
     # 背景分析 1 回の LLM 往復の上限。健全時は概ね 10 秒未満で完了する。超過は fail-soft で
     # 破棄し、次の発話が再評価する。音声ターン自体は下の ride-along 上限が守るため、分析が
