@@ -126,7 +126,9 @@ resource "google_monitoring_dashboard" "sanba_quality" {
             width  = 12
             height = 3
             widget = {
-              title = "採点済みセッション数（合計）"
+              # スコアカードは整列区間（1h）ごとの採点件数を表示する（累積ではない）。
+              # スパークラインで件数の推移が分かる。
+              title = "採点済みセッション数（1時間あたり）"
               scorecard = {
                 timeSeriesQuery = {
                   timeSeriesFilter = {
