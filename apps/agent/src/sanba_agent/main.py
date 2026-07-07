@@ -1910,7 +1910,8 @@ async def entrypoint(ctx: JobContext) -> None:
         instructions=opening_instructions(agent.interview_mode, agent.has_prep_context),
     )
 
-    # When the room closes, score the interview (LLM-as-a-judge) and log to Langfuse.
+    # When the room closes, score the interview (LLM-as-a-judge) and emit session_scored
+    # (Cloud Logging → Cloud Monitoring / ADR-0051).
     async def _on_close() -> None:
         # 背景タスク（web イベント処理・先読み・背景分析・publish）を猶予付きで
         # ドレンしてから評価する（検知 publish の取りこぼしを減らす）。2 段構えなのは

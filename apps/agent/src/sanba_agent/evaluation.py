@@ -1,7 +1,8 @@
 """LLMOps: LLM-as-a-judge online evaluation + offline regression.
 
 「まわす」軸の実装 — AI を継続的に改善するサイクル。
-- online: セッション終了時にインタビュー品質を採点し Langfuse に記録する。
+- online: セッション終了時にインタビュー品質を採点し `session_scored` 構造化ログに記録する。
+  ログベースメトリクス → Cloud Monitoring ダッシュボードで可視化する（ADR-0051）。
 - offline: 代表シナリオのデータセットを CI で回帰評価し、品質劣化を検出する。
   (`python -m sanba_agent.evaluation` を llm-eval ワークフローが実行)
 
@@ -19,7 +20,6 @@ from dataclasses import dataclass
 import structlog
 
 from .config import settings
-from .observability import get_langfuse
 from .tools.analysis import heuristic_open_topics
 
 log = structlog.get_logger(__name__)
@@ -206,14 +206,13 @@ async def _llm_judge(transcript: str) -> JudgeResult:  # pragma: no cover - need
 
 
 async def score_session(session_id: str, transcript: str) -> JudgeResult:
-    """Online evaluation: score a finished session and log it to Langfuse."""
+    """Online evaluation: score a finished session and emit it as a structured log.
+
+    スコアは `session_scored` 構造化ログとして Cloud Logging に残り、ログベースメトリクス
+    → Cloud Monitoring ダッシュボードで可視化する（ADR-0051）。外部 sink は持たない。
+    """
     result = await judge_interview(transcript)
     log.info("session_scored", session=session_id, overall=result.overall, scores=result.scores)
-    lf = get_langfuse()
-    if lf is not None:  # pragma: no cover - needs Langfuse
-        for name, value in result.scores.items():
-            lf.score(trace_id=session_id, name=name, value=value)
-        lf.score(trace_id=session_id, name="overall", value=result.overall)
     return result
 
 

@@ -1,6 +1,7 @@
-"""OpenTelemetry + Langfuse wiring.
+"""OpenTelemetry (Cloud Trace) wiring.
 
 観測できないものは運用できない (CLAUDE.md)。エージェント起動時に一度だけ初期化する。
+トレースは Cloud Trace 直送、品質スコアは構造化ログ → Cloud Monitoring（ADR-0051）。
 """
 
 from __future__ import annotations
@@ -82,20 +83,3 @@ def setup_observability() -> None:
         log.info("otel_initialised", exporter=kind)
     except Exception as exc:  # pragma: no cover
         log.warning("otel_init_failed", exporter=kind, error=str(exc))
-
-
-def get_langfuse():  # type: ignore[no-untyped-def]
-    """Return a Langfuse client if configured, else None."""
-    if not (settings.langfuse_public_key and settings.langfuse_secret_key):
-        return None
-    try:
-        from langfuse import Langfuse
-
-        return Langfuse(
-            host=settings.langfuse_host,
-            public_key=settings.langfuse_public_key,
-            secret_key=settings.langfuse_secret_key,
-        )
-    except Exception as exc:  # pragma: no cover
-        log.warning("langfuse_init_failed", error=str(exc))
-        return None
