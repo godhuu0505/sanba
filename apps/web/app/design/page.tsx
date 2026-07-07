@@ -1,4 +1,4 @@
-import { CircleCheck, Image as ImageIcon, Mic, Video, Wrench } from "lucide-react";
+import { CircleCheck, Mic } from "lucide-react";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import {
@@ -16,14 +16,12 @@ import {
   Figure,
   InsightCard,
   Input,
-  ListRow,
   Logo,
   Marquee,
   Parade,
   PhoneFrame,
   RecPill,
   RequirementCard,
-  SessionRow,
   StatTile,
   StatusBar,
   VoiceInputBar,
@@ -173,7 +171,6 @@ export default function DesignKitPage() {
         <div className="flex flex-wrap gap-8">
           <LoginScreen />
           <ConversationScreen />
-          <AdminListScreen />
           <ReviewScreen />
         </div>
       </section>
@@ -219,11 +216,6 @@ function LoginScreen() {
               <Mic size={16} aria-hidden /> インタビューを始める
             </span>
           </Button>
-          <Button variant="outline" block>
-            <span className="inline-flex items-center justify-center gap-1.5">
-              <Wrench size={16} aria-hidden /> 管理画面へ
-            </span>
-          </Button>
           <Divider />
           <Button variant="ghost" className="self-center">
             ログアウト
@@ -266,31 +258,6 @@ function ConversationScreen() {
       </div>
       {/* 音声ドックは会話面の底に全幅で敷く（上辺2px墨 / ADR-0033 §7）。 */}
       <VoiceInputBar state="listening" />
-    </PhoneFrame>
-  );
-}
-
-/* ── 91 管理ホーム（セッション一覧）────────────────── */
-function AdminListScreen() {
-  return (
-    <PhoneFrame>
-      <StatusBar />
-      <AppHeader title="管理の間" back />
-      <div className="flex flex-col gap-[12px] px-[16px] pt-[6px]">
-        <Button variant="gold" block>
-          ＋ セッションを興す
-        </Button>
-        <p className="pt-[4px] text-[13px] font-bold text-sanba-muted">進行中の問答</p>
-        <SessionRow
-          title="検索機能の要件インタビュー"
-          meta="user@example.com ・ 2026-06-22"
-        />
-        <SessionRow title="オンボーディング改善" meta="pm@example.com ・ 2026-06-20" />
-        <SessionRow title="決済フロー見直し" meta="customer@example.com ・ 2026-06-18" />
-        <p className="pt-[8px] text-[13px] font-bold text-sanba-muted">素材を渡す</p>
-        <ListRow icon={<ImageIcon size={18} />} title="画像をアップロード" subtitle="PNG / JPG" />
-        <ListRow icon={<Video size={18} />} title="動画をアップロード" subtitle="MP4 / MOV" />
-      </div>
     </PhoneFrame>
   );
 }

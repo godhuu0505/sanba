@@ -106,18 +106,6 @@ def test_create_requires_nonce_when_enabled(monkeypatch) -> None:
     assert bad.status_code == 401
 
 
-def test_admin_requires_nonce_when_enabled(monkeypatch) -> None:
-    """管理経路（require_admin）も束縛される: 注入トークンで全セッションを読ませない。"""
-    monkeypatch.setattr(settings, "require_login_nonce", True, raising=True)
-    monkeypatch.setattr(settings, "admin_emails", "boss@example.com", raising=True)
-    raw, envelope = create_auth_nonce(settings.session_signing_secret, 600)
-    _login_as(_user("boss@example.com", nonce=raw))
-
-    assert client.get("/api/admin/sessions").status_code == 401
-    ok = client.get("/api/admin/sessions", headers={"X-Auth-Nonce": envelope})
-    assert ok.status_code == 200
-
-
 def test_product_join_requires_nonce_when_enabled(monkeypatch) -> None:
     """join_product のログイン済み枝も束縛される（消費前に 401 = max_uses を減らさない）。"""
     monkeypatch.setattr(settings, "require_login_nonce", True, raising=True)
