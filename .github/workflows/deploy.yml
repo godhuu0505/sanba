@@ -170,6 +170,20 @@ jobs:
           done
           [ "$missing" -eq 0 ] || exit 1
 
+      # Picker 用ブラウザ API キー (NEXT_PUBLIC_GOOGLE_API_KEY) は GitHub Variables ではなく
+      # Secret Manager を唯一の置き場にする (ADR-0049)。web ビルドは既に WIF 認証済みなので、
+      # ここで読み出して build-arg に渡す。未作成・未権限なら空のままで、Drive 導線は「利用不可」
+      # に退化するだけ (fail-safe / ローカルアップロードは無影響)。値はログでマスクする。
+      - name: Fetch Picker API key from Secret Manager (web)
+        id: picker_key
+        if: ${{ matrix.app == 'web' }}
+        run: |
+          key="$(gcloud secrets versions access latest \
+            --secret=sanba-next-public-google-api-key \
+            --project="${{ vars.GCP_PROJECT_ID }}" 2>/dev/null || true)"
+          if [ -n "$key" ]; then echo "::add-mask::$key"; fi
+          echo "value=$key" >> "$GITHUB_OUTPUT"
+
       - name: Build & push (with layer cache)
         id: build
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
@@ -188,7 +202,7 @@ jobs:
             ${{ vars.NEXT_PUBLIC_API_URL != '' && format('NEXT_PUBLIC_API_URL={0}', vars.NEXT_PUBLIC_API_URL) || '' }}
             ${{ vars.NEXT_PUBLIC_LIVEKIT_URL != '' && format('NEXT_PUBLIC_LIVEKIT_URL={0}', vars.NEXT_PUBLIC_LIVEKIT_URL) || '' }}
             ${{ vars.NEXT_PUBLIC_GOOGLE_CLIENT_ID != '' && format('NEXT_PUBLIC_GOOGLE_CLIENT_ID={0}', vars.NEXT_PUBLIC_GOOGLE_CLIENT_ID) || '' }}
-            ${{ vars.NEXT_PUBLIC_GOOGLE_API_KEY != '' && format('NEXT_PUBLIC_GOOGLE_API_KEY={0}', vars.NEXT_PUBLIC_GOOGLE_API_KEY) || '' }}
+            ${{ steps.picker_key.outputs.value != '' && format('NEXT_PUBLIC_GOOGLE_API_KEY={0}', steps.picker_key.outputs.value) || '' }}
 
       - name: Deploy to Cloud Run (image only; env/secret は Terraform 管理)
         run: |

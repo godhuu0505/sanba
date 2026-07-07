@@ -43,6 +43,9 @@ resource "google_project_service" "services" {
     "secretmanager.googleapis.com",
     "aiplatform.googleapis.com",
     "cloudtasks.googleapis.com", # 動画解析パイプラインの非同期キュー (ADR-0040)
+    "drive.googleapis.com",      # 参考資料の Google ドライブ取り込み: files.export / alt=media (ADR-0049)
+    "picker.googleapis.com",     # Google Picker (最小権限のファイル選択 UI / ADR-0049)
+    "apikeys.googleapis.com",    # Picker 用ブラウザ API キーを Terraform で払い出す前提 (ADR-0049)
     "cloudtrace.googleapis.com",
     "monitoring.googleapis.com",
     "logging.googleapis.com",

@@ -179,6 +179,15 @@ variable "terraform_deployer_sa" {
   description = "terraform apply を実行する CI SA の email（#388）。空なら tf-deployer@<project>.iam.gserviceaccount.com を使う。ログメトリクス/ダッシュボード作成権限をこの SA に付与する。"
 }
 
+# web ビルド（deploy.yml）が WIF で認証する CI SA の email（= vars.DEPLOY_SA）。Picker 用
+# ブラウザ API キーの値を持つ Secret を build 時に読むための accessor をこの SA に限定付与する
+# （ADR-0049）。空なら付与しない（＝ web ビルドが値を取得できず Drive 導線は未構成で無効になる）。
+variable "deploy_sa" {
+  type        = string
+  default     = ""
+  description = "SA email of the CI identity used by deploy.yml (vars.DEPLOY_SA). Granted read on the Picker API key secret so the web build can bake NEXT_PUBLIC_GOOGLE_API_KEY. Empty = no grant (Drive import stays unconfigured)."
+}
+
 # ---- Custom domain / Load Balancer ------------------------------------------
 # 本番 URL を Cloud Run 既定の *.run.app から独自ドメインへ。Global 外部 HTTPS LB +
 # Serverless NEG + Google 管理 SSL 証明書で配信する (本番志向: WAF/CDN 拡張余地)。
