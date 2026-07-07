@@ -22,7 +22,6 @@ describe("LoginPage ログイン/ログアウト フロー（dev モード）", 
   it("未認証は中央 1 カラム: SANBA 見出し＋タグライン＋ログインボタン（サインアップ/ヘッダー/2 ペイン/入力欄は無い）", () => {
     renderLogin();
 
-    // main ランドマークを持ち "ログイン" と名付ける（見出しがブランド名でも画面の目的が伝わる）。
     expect(screen.getByRole("main", { name: "ログイン" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "SANBA" })).toBeTruthy();
     expect(screen.getByText("解像度高く、要件を生み出す")).toBeTruthy();
