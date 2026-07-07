@@ -1,11 +1,5 @@
 "use client";
 
-// メンバー招待の承諾ページ（ADR-0036 決定2）。招待メールの URL
-// /member-invites/{token} を開いた人が、内容を確認して承諾/辞退する。
-// 承諾できるのは宛先メールアドレスの本人だけ（email_match）。ログインが必要なので
-// 未ログインは /login?next= へ誘導し、戻ってきたら自動で内容を解決する。
-// 深掘りリンク（/join）と違い、表示時の resolve は何も消費しない（安全に再読み込みできる）。
-
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
@@ -19,7 +13,6 @@ import {
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 
-/** 承諾できない状態の説明文（利用者向け・技術用語なし）。 */
 const STATUS_MESSAGE: Record<string, string> = {
   accepted: "この招待は承諾済みです。アプリ一覧からご利用いただけます。",
   declined: "この招待は辞退済みです。参加するには新しい招待を依頼してください。",
@@ -42,7 +35,6 @@ export default function MemberInvitePage() {
   const canFetch = auth.devMode || auth.loggedIn;
   const credential = auth.credential;
 
-  // 表示時にトークンを解決して確認情報を出す（消費は伴わないためリロードしても安全）。
   useEffect(() => {
     if (!canFetch) return;
     let cancelled = false;
@@ -54,7 +46,6 @@ export default function MemberInvitePage() {
     };
   }, [canFetch, token, credential]);
 
-  // 未ログインは /login へ（戻り先はこのページ）。
   const gate = authGate(auth, `/member-invites/${encodeURIComponent(params.token)}`);
   if (gate) return gate;
 

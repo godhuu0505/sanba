@@ -9,14 +9,8 @@ const SIZES = {
   lg: { box: "h-[44px]", word: "text-[20px]" },
 } as const;
 
-/**
- * SANBA のロゴ。棒人間「サンバさん」（胸に山吹の産章）のマーク＋任意のワードマーク。
- * マークは墨の線画＋山吹の産章で、アプリアイコン（`app/icon.svg`）と系譜を共有する。
- * 小サイズでも読めるよう、ヘッダー用は吹き出し・電球・タイルを省いた線画のみとする。
- */
 export interface LogoProps extends React.HTMLAttributes<HTMLDivElement> {
   size?: keyof typeof SIZES;
-  /** ワードマーク「SANBA」を併記するか。 */
   wordmark?: boolean;
 }
 

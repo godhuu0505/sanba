@@ -30,9 +30,6 @@ log = structlog.get_logger(__name__)
 
 _API = "https://api.github.com"
 
-# ── state 署名（連携の CSRF/誤紐づけ対策）────────────────────────────
-# install フロー開始時に検証済み sub を署名 state に詰めて GitHub へ渡し、callback で
-# 検証してから users/{sub} に保存する。auth.py の invite/session token と同じ HMAC 方式。
 
 _LINK_SCOPE = "github-link"
 
@@ -96,9 +93,6 @@ def verify_link_state(token: str, secret: str) -> str:
     return str(sub)
 
 
-# ── GitHub App 認証 JWT（RS256）─────────────────────────────────────────────
-
-
 def build_app_jwt_claims(app_id: str, now: int) -> dict[str, object]:
     """App 認証 JWT のクレームを組む（純関数・テスト対象）。
 
@@ -109,34 +103,22 @@ def build_app_jwt_claims(app_id: str, now: int) -> dict[str, object]:
 
 def build_app_jwt(app_id: str, private_key_pem: str, now: int) -> str:
     """App 秘密鍵で署名した RS256 JWT を返す（installation token 取得に使う）。"""
-    import jwt  # PyJWT[crypto]
+    import jwt
 
     return jwt.encode(build_app_jwt_claims(app_id, now), private_key_pem, algorithm="RS256")
 
 
-# ── コード索引前の秘匿レダクト ──────────────────────────────────────
-# gitleaks 相当の代表的なシークレットパターンをマスクしてから ES に入れる。完璧な検出は
-# 目的ではなく、生のトークン/鍵が grounding 索引・検索結果に残らないようにする一次防御。
-
 _REDACTED = "«redacted-secret»"
 
 _SECRET_PATTERNS: tuple[re.Pattern[str], ...] = (
-    # PEM private key blocks
     re.compile(r"-----BEGIN[A-Z ]*PRIVATE KEY-----.*?-----END[A-Z ]*PRIVATE KEY-----", re.DOTALL),
-    # GitHub tokens (classic / fine-grained / oauth / app)
     re.compile(r"gh[pousr]_[A-Za-z0-9]{20,}"),
     re.compile(r"github_pat_[A-Za-z0-9_]{20,}"),
-    # AWS access key id
     re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b"),
-    # Google API key
     re.compile(r"\bAIza[0-9A-Za-z_\-]{20,}\b"),
-    # Slack tokens
     re.compile(r"xox[baprs]-[A-Za-z0-9-]{10,}"),
-    # OpenAI / generic sk- secrets（sk-proj-… / sk-svcacct-… 等 hyphen/underscore 含む形も）
     re.compile(r"\bsk-[A-Za-z0-9_-]{20,}"),
-    # Bearer tokens in headers/config
     re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._\-]{20,}"),
-    # key/secret/password/token = "value" assignments
     re.compile(
         r"(?i)(api[_-]?key|secret|password|passwd|token|client[_-]?secret)"
         r"(\s*[:=]\s*)[\"']?[A-Za-z0-9._\-/+]{12,}[\"']?"
@@ -149,16 +131,12 @@ def redact_secrets(text: str) -> str:
     redacted = text
     for pat in _SECRET_PATTERNS:
         if pat.groups >= 2:
-            # 代入形は key と区切りを残し、値だけ伏せる（文脈は保ちつつ秘匿）。
             redacted = pat.sub(lambda m: f"{m.group(1)}{m.group(2)}{_REDACTED}", redacted)
         else:
             redacted = pat.sub(_REDACTED, redacted)
     return redacted
 
 
-# ── 索引対象ファイルの関連度優先 + 総量キャップ ──────────────────────
-
-# 索引から除外するディレクトリ/拡張子（生成物・依存・binary・lockfile・秘匿）。
 _EXCLUDED_DIR_PARTS = frozenset(
     {
         "node_modules",
@@ -225,7 +203,6 @@ _BINARY_EXTS = frozenset(
         "min.js",
     }
 )
-# 関連度の高い「説明系/設定系」ファイル。優先して索引する。
 _HIGH_VALUE_BASENAMES = frozenset(
     {
         "readme",
@@ -259,8 +236,6 @@ def is_excluded_path(path: str) -> bool:
         return True
     if base == ".env" or base.startswith(".env."):
         return True
-    # minified バンドルは拡張子が js/css になり _BINARY_EXTS の "min.js" 比較に当たらないため
-    # suffix で別途弾く（圧縮済み巨大ファイルが総量 cap を食って通常ソースを押し出すのを防ぐ）。
     if base.endswith((".min.js", ".min.css", ".bundle.js", ".map")):
         return True
     if "." in base:
@@ -330,7 +305,6 @@ def select_indexable_files(
         else:
             candidates.append(f)
 
-    # 安定ソート: 関連度ランク昇順。Python の sort は安定なので同順位は入力順を保つ。
     candidates.sort(key=lambda f: _relevance_rank(f.path))
 
     total = 0
@@ -341,9 +315,6 @@ def select_indexable_files(
         result.selected.append(f)
         total += f.size
     return result
-
-
-# ── repo 要約のシード（機械的組み立て）──────────────────────────────
 
 
 def build_repo_summary(
@@ -388,14 +359,11 @@ def repo_source_name(repo: str, branch: str, sha: str, path: str) -> str:
     return f"github:{repo}@{branch}@{sha}:{path}"
 
 
-# ── 薄い GitHub App REST クライアント（App 設定時のみ使用）─────────────────────
-
-
 @dataclass(frozen=True)
 class RepoRef:
     """インストールが管理するリポジトリの最小情報。"""
 
-    full_name: str  # "owner/name"
+    full_name: str
     default_branch: str
     private: bool
 
@@ -435,14 +403,9 @@ class GitHubAppClient:  # pragma: no cover - network
     ) -> None:
         self.app_id = app_id
         self.private_key_pem = private_key_pem
-        # user-to-server OAuth（install 時の所有権検証用）。
         self.oauth_client_id = oauth_client_id
         self.oauth_client_secret = oauth_client_secret
-        # installation token は短命だが 1h 有効。1 索引ジョブで 1500 ファイル取得しても
-        # 毎回発行しないよう (token, expiry_epoch) をプロセス内キャッシュして再利用する。
         self._token_cache: dict[int, tuple[str, float]] = {}
-        # ファイル取得のホットパス用の共有 HTTP クライアント（接続プール再利用）。
-        # 1500 ファイルで TLS を都度確立しないよう lazy 生成し、ジョブ終了時に close する。
         self._http: object | None = None
 
     @property
@@ -707,7 +670,6 @@ class GitHubAppClient:  # pragma: no cover - network
                 params={"state": "all", "per_page": max_issues},
             )
         res.raise_for_status()
-        # PR も /issues に含まれるため pull_request キーで除外する。
         return [i for i in res.json() if "pull_request" not in i]
 
     def installation_login(self, installation_id: int) -> str:

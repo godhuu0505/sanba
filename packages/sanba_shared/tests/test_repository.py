@@ -18,7 +18,6 @@ from sanba_shared.repository import RequirementNotFound, SessionRepository
 
 
 def _repo() -> SessionRepository:
-    # client が None (= メモリ fallback) になることを前提にする。
     repo = SessionRepository(data_retention_days=30)
     assert repo._client is None, "テストは Firestore 非接続のメモリ fallback で走る前提"
     return repo
@@ -56,10 +55,8 @@ def test_set_session_title_updates_and_ignores_blank() -> None:
     assert updated is not None
     assert updated.title == "在庫管理アプリの通知要件"
     assert repo.get_session("sess-t").title == "在庫管理アプリの通知要件"
-    # 空文字は既存タイトルを温存する（生成失敗で上書きしない）。
     repo.set_session_title("sess-t", "   ")
     assert repo.get_session("sess-t").title == "在庫管理アプリの通知要件"
-    # 存在しないセッションは None。
     assert repo.set_session_title("missing", "x") is None
 
 
@@ -85,7 +82,6 @@ def test_list_sessions_by_owner_filters_and_sorts() -> None:
     _seed("b-1", "bob", datetime(2024, 6, 1, tzinfo=UTC))
 
     mine = repo.list_sessions_by_owner("alice")
-    # owner_sub 一致のみ・created_at 降順 (新しいものを上に)。
     assert [m.id for m in mine] == ["a-new", "a-old"]
     assert repo.list_sessions_by_owner("carol") == []
 
@@ -103,7 +99,6 @@ def test_update_requirement_only_touches_allowed_fields() -> None:
     assert updated.statement == "SSO でログインできること"
     assert updated.priority is Priority.SHOULD
     assert updated.category is RequirementCategory.NON_FUNCTIONAL
-    # 出所メタは不変。
     assert updated.id == original.id
     assert updated.created_at == original.created_at
     assert updated.source_speaker == original.source_speaker
@@ -142,7 +137,6 @@ def test_reject_clears_approval_fields() -> None:
     assert rejected.approved_at is None
 
 
-# ── GitHub link / session repo binding (ADR-0028) ────────────────────────────
 def test_github_link_set_get_delete() -> None:
     from sanba_shared.models import GitHubLink
 
@@ -158,7 +152,6 @@ def test_github_link_set_get_delete() -> None:
 
     assert repo.delete_github_link("sub-1") is True
     assert repo.get_github_link("sub-1") is None
-    # 冪等: 既に無ければ False。
     assert repo.delete_github_link("sub-1") is False
 
 
@@ -181,7 +174,6 @@ def test_set_session_github_binds_repo_and_status() -> None:
     assert updated.github_branch == "main"
     assert updated.github_commit_sha == "abc123"
     assert updated.github_index_status is GitHubIndexStatus.INDEXING
-    # 永続化されたメタからも読める。
     reread = repo.get_session("sess-9")
     assert reread is not None
     assert reread.github_index_status is GitHubIndexStatus.INDEXING

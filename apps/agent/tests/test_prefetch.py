@@ -41,9 +41,6 @@ class FakeClock:
 RESULT = {"passages": [{"text": "t", "source": "s1:participant", "kind": "utterance"}]}
 
 
-# ---- PrefetchCache（純ロジック） ------------------------------------------
-
-
 def test_hit_within_ttl() -> None:
     clock = FakeClock()
     cache = PrefetchCache(clock=clock)
@@ -61,13 +58,11 @@ def test_expired_by_time_drops_entry() -> None:
     clock.advance(61.0)
     entry, reason = cache.get("ログイン画面の認証方式", turn=1)
     assert entry is None and reason == REASON_EXPIRED_TIME
-    # 失効時に破棄済み（2 回目は empty）。
     _, reason2 = cache.get("ログイン画面の認証方式", turn=1)
     assert reason2 == REASON_EMPTY
 
 
 def test_expired_by_turns() -> None:
-    # ユーザー確定発話 2 ターンで失効（会話が進んだら古い先読みは使わない 決定2）。
     cache = PrefetchCache(clock=FakeClock())
     cache.put("ログイン画面の認証方式", RESULT, turn=1, search_seconds=0.5)
     entry, reason = cache.get("ログイン画面の認証方式", turn=3)
@@ -75,13 +70,10 @@ def test_expired_by_turns() -> None:
 
 
 def test_query_mismatch_keeps_entry_for_similar_query() -> None:
-    # 語彙が重ならない検索語には使わないが、エントリは破棄しない（同一ターン内で
-    # モデルが別観点→類似観点の順に検索することがある）。
     cache = PrefetchCache(clock=FakeClock())
     cache.put("ログイン画面の認証方式はどうしますか", RESULT, turn=1, search_seconds=0.5)
     entry, reason = cache.get("決済手数料の負担者", turn=1)
     assert entry is None and reason == REASON_QUERY_MISMATCH
-    # モデルの言い換え（部分語彙）にはヒットする。
     entry2, reason2 = cache.get("ログイン画面 認証", turn=1)
     assert reason2 == REASON_HIT and entry2 is not None
 
@@ -99,9 +91,6 @@ def test_latest_wins_replaces_previous_entry() -> None:
 
 def test_query_overlap_empty_tokens() -> None:
     assert query_overlap("", "ログイン") == 0.0
-
-
-# ---- SANBAAgent 統合（メモリ fallback） ------------------------------------
 
 
 def _developer_repo() -> SessionRepository:
@@ -153,7 +142,7 @@ async def test_prefetch_hit_skips_sync_search() -> None:
     agent._grounded_search = _counting  # type: ignore[method-assign]
     agent.record_utterance("participant", "請求書の画面で保存に困った")
     await _await_prefetch(agent)
-    assert sync_calls == 1  # 先読みの 1 回だけ
+    assert sync_calls == 1
 
     tool = type(agent).search_grounding.__wrapped__
     result = await tool(agent, None, "請求書の画面 保存")
@@ -163,8 +152,6 @@ async def test_prefetch_hit_skips_sync_search() -> None:
 
 @pytest.mark.asyncio
 async def test_prefetch_end_user_cache_holds_only_filtered_output() -> None:
-    # キャッシュには出力制御通過後の結果しか入らない。end_user の
-    # 先読み結果に repo 由来（github:）が現れないことを、ヒット返答で機械検証する。
     repo = SessionRepository()
     assert repo._client is None
     repo.create_session_doc(
@@ -193,8 +180,6 @@ async def test_prefetch_end_user_cache_holds_only_filtered_output() -> None:
 
 @pytest.mark.asyncio
 async def test_prefetch_acl_recheck_falls_back_when_link_revoked() -> None:
-    # 先読み後に owner が GitHub 連携を解除した窓（≤TTL）: 古い ACL で通した repo chunk を
-    # 返さず、同期検索（revoked 遮断）へフォールバックする。
     repo = _developer_repo()
     agent = SANBAAgent("s1", repo, _grounding())
     agent.record_utterance("participant", "請求書の画面で保存に困った")
@@ -216,8 +201,6 @@ async def test_prefetch_acl_recheck_falls_back_when_link_revoked() -> None:
 
 @pytest.mark.asyncio
 async def test_prefetch_timeout_is_fail_soft(monkeypatch: pytest.MonkeyPatch) -> None:
-    # 検索タイムアウト（fail-soft）: 例外は漏れず、キャッシュは空のまま（次のツール
-    # 呼び出しは同期検索＝従来どおり）。
     import time as _time
 
     repo = _developer_repo()
@@ -232,7 +215,7 @@ async def test_prefetch_timeout_is_fail_soft(monkeypatch: pytest.MonkeyPatch) ->
     agent.record_utterance("participant", "請求書の画面で保存に困った")
     task = agent._prefetch_task
     assert task is not None
-    await task  # TimeoutError はタスク内で処理される
+    await task
     assert agent._prefetch._entry is None
 
 
@@ -240,8 +223,6 @@ async def test_prefetch_timeout_is_fail_soft(monkeypatch: pytest.MonkeyPatch) ->
 async def test_prefetch_acl_recheck_timeout_falls_back(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # ACL 再検証がタイムアウト/障害で判定不能なときは fail-closed: ヒットを捨てて
-    # 最新 ACL を適用する同期検索へ倒す（sanba-reviewer P1 の回帰テスト）。
     repo = _developer_repo()
     agent = SANBAAgent("s1", repo, _grounding())
     agent.record_utterance("participant", "請求書の画面で保存に困った")
@@ -274,7 +255,6 @@ async def test_prefetch_acl_recheck_timeout_falls_back(
 async def test_prefetch_latest_wins_cancels_inflight_task(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # 2 発話目で背景分析（段階B）も発火するため、高速スタブに差し替えてからドレンする。
     from sanba_shared.models import AnalysisResult
 
     async def _stub(transcript: str) -> AnalysisResult:

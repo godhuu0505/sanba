@@ -71,7 +71,6 @@ def test_new_member_invite_id_is_random_and_prefixed() -> None:
     assert a != b
 
 
-# ---- メンバー CRUD -----------------------------------------------------------
 def test_member_crud_roundtrip() -> None:
     repo = _repo()
     _seed_product(repo)
@@ -81,7 +80,6 @@ def test_member_crud_roundtrip() -> None:
     assert [m.sub for m in repo.list_product_members("prod-1")] == ["sub-1"]
     assert repo.remove_product_member("prod-1", "sub-1") is True
     assert repo.get_product_member("prod-1", "sub-1") is None
-    # 冪等: 既に居ない sub の削除は False で安全に返る。
     assert repo.remove_product_member("prod-1", "sub-1") is False
 
 
@@ -111,12 +109,10 @@ def test_list_products_by_member_returns_membership_products_newest_first() -> N
     repo.add_product_member(_member(pid="prod-new", sub="sub-1"))
     repo.add_product_member(_member(pid="prod-new", sub="sub-2"))
     assert [p.id for p in repo.list_products_by_member("sub-1")] == ["prod-new", "prod-old"]
-    # メンバーシップが指す product が消えた行はスキップされる（delete との競合）。
     repo.delete_product("prod-new")
     assert [p.id for p in repo.list_products_by_member("sub-1")] == ["prod-old"]
 
 
-# ---- メンバー招待: 作成・一覧 --------------------------------------------------
 def test_create_member_invite_requires_parent_product() -> None:
     repo = _repo()
     with pytest.raises(ProductNotFound):
@@ -137,7 +133,6 @@ def test_list_member_invites_by_product_and_email() -> None:
     }
 
 
-# ---- メンバー招待: 応答 --------------------------------------------------------
 def test_accept_invite_creates_member_atomically() -> None:
     repo = _repo()
     _seed_product(repo)
@@ -201,7 +196,6 @@ def test_respond_rejects_when_product_deleted() -> None:
     repo = _repo()
     _seed_product(repo)
     _invite(repo)
-    # カスケード削除で招待自体が消える経路が正だが、競合の窓（read 後の削除）を模す。
     del repo._mem_products["prod-1"]
     with pytest.raises(ProductNotFound):
         repo.respond_member_invite("minv-1", accept=True, sub="sub-9", email="invitee@example.com")
@@ -228,14 +222,12 @@ def test_concurrent_accept_only_transitions_once() -> None:
     assert len(repo.list_product_members("prod-1")) == 1
 
 
-# ---- メンバー招待: 取り消し ----------------------------------------------------
 def test_revoke_member_invite_is_idempotent_and_blocks_response() -> None:
     repo = _repo()
     _seed_product(repo)
     _invite(repo)
     revoked = repo.revoke_member_invite("minv-1")
     assert revoked.status is MemberInviteStatus.REVOKED
-    # 冪等: 既 revoked でも例外にしない。
     assert repo.revoke_member_invite("minv-1").status is MemberInviteStatus.REVOKED
     with pytest.raises(MemberInviteNotPending) as exc:
         repo.respond_member_invite("minv-1", accept=True, sub="sub-9", email="invitee@example.com")
@@ -252,7 +244,6 @@ def test_revoke_rejects_responded_and_missing() -> None:
         repo.revoke_member_invite("minv-missing")
 
 
-# ---- delete_product のカスケード -----------------------------------------------
 def test_delete_product_cascades_members_and_member_invites() -> None:
     repo = _repo()
     _seed_product(repo)
@@ -265,6 +256,5 @@ def test_delete_product_cascades_members_and_member_invites() -> None:
     assert repo.list_product_members("prod-1") == []
     assert repo.list_member_invites("prod-1") == []
     assert repo.get_member_invite("minv-1") is None
-    # 他 product は巻き込まない。
     assert [m.sub for m in repo.list_product_members("prod-2")] == ["sub-2"]
     assert repo.get_member_invite("minv-2") is not None

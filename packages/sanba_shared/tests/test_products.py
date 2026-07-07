@@ -62,9 +62,6 @@ def _invite(
     return invite
 
 
-# ---- モデル検証 -------------------------------------------------------------
-
-
 def test_product_rejects_empty_name() -> None:
     with pytest.raises(ValidationError):
         Product(id="prod-1", name="", owner_sub="sub-1")
@@ -100,11 +97,7 @@ def test_random_ids_have_prefix_and_do_not_collide() -> None:
     iids = {new_invite_id() for _ in range(100)}
     assert len(pids) == 100 and all(p.startswith("prod-") for p in pids)
     assert len(iids) == 100 and all(i.startswith("inv-") for i in iids)
-    # リンク ID は URL に露出するため product ID より長いエントロピーを持つ。
     assert min(len(i) for i in iids) > max(len(p) for p in pids)
-
-
-# ---- products CRUD ----------------------------------------------------------
 
 
 def test_create_get_and_list_products_by_owner() -> None:
@@ -126,7 +119,6 @@ def test_create_get_and_list_products_by_owner() -> None:
         repo.create_product(p)
 
     assert repo.get_product("prod-old") == old
-    # owner_sub 一致のみ・created_at 降順（list_sessions_by_owner と同じ意味論）。
     assert [p.id for p in repo.list_products_by_owner("alice")] == ["prod-new", "prod-old"]
     assert repo.list_products_by_owner("carol") == []
 
@@ -137,7 +129,6 @@ def test_update_product_only_touches_editable_fields() -> None:
     updated = repo.update_product("prod-1", name="新名称", glossary=["請求書", "取引先"])
     assert updated.name == "新名称"
     assert updated.glossary == ["請求書", "取引先"]
-    # 所有・出所は不変。
     assert updated.owner_sub == "sub-1"
     assert updated.created_at == repo.get_product("prod-1").created_at  # type: ignore[union-attr]
 
@@ -161,13 +152,11 @@ def test_update_product_output_formats_and_check_items() -> None:
     )
     assert updated.output_formats == {Audience.DEVELOPER: "# 開発者向け\n{{requirements}}"}
     assert updated.check_items == items
-    # 他の編集可能フィールドは温存される。
     assert updated.name == "請求アプリ"
 
-    # 全量置換: audience キーを含まない dict を渡すと登録が消える（既定へ戻す操作）。
     cleared = repo.update_product("prod-1", output_formats={})
     assert cleared.output_formats == {}
-    assert cleared.check_items == items  # 触っていない方は不変
+    assert cleared.check_items == items
 
 
 def test_set_product_github_preserves_other_fields() -> None:
@@ -197,17 +186,12 @@ def test_set_product_github_preserves_other_fields() -> None:
     )
 
 
-# ---- slug（ADR-0045）--------------------------------------------------------
-
-
 def test_create_product_enforces_slug_uniqueness() -> None:
     repo = _repo()
     repo.create_product(Product(id="prod-1", name="A", owner_sub="alice", slug="billing"))
     with pytest.raises(ProductSlugTaken):
         repo.create_product(Product(id="prod-2", name="B", owner_sub="bob", slug="billing"))
-    # 衝突した作成は保存されない。
     assert repo.get_product("prod-2") is None
-    # 未設定（None）同士は衝突しない（slug 導入前の既存アプリ相当）。
     repo.create_product(Product(id="prod-3", name="C", owner_sub="carol"))
     repo.create_product(Product(id="prod-4", name="D", owner_sub="dave"))
 
@@ -226,21 +210,17 @@ def test_update_product_changes_slug_and_frees_old_one() -> None:
     repo.create_product(Product(id="prod-1", name="A", owner_sub="alice", slug="old"))
     repo.create_product(Product(id="prod-2", name="B", owner_sub="bob", slug="taken"))
 
-    # 他 product が使用中の slug へは変更できない（値も変わらない）。
     with pytest.raises(ProductSlugTaken):
         repo.update_product("prod-1", slug="taken")
     assert repo.get_product("prod-1").slug == "old"  # type: ignore[union-attr]
 
-    # 空いている slug へは変更でき、旧 slug は解放される。
     updated = repo.update_product("prod-1", slug="new")
     assert updated.slug == "new"
     assert repo.get_product_by_slug("new").id == "prod-1"  # type: ignore[union-attr]
     assert repo.get_product_by_slug("old") is None
 
-    # 同値への変更は no-op（自分自身とは衝突しない）。
     assert repo.update_product("prod-1", slug="new").slug == "new"
 
-    # slug 変更と他フィールドの更新は同時にできる。
     both = repo.update_product("prod-1", name="改名", slug="renamed")
     assert both.name == "改名" and both.slug == "renamed"
 
@@ -269,7 +249,6 @@ def test_delete_product_frees_slug() -> None:
     repo.create_product(Product(id="prod-1", name="A", owner_sub="alice", slug="billing"))
     assert repo.delete_product("prod-1") is True
     assert repo.get_product_by_slug("billing") is None
-    # 解放後は別 product が同じ slug を取れる。
     repo.create_product(Product(id="prod-2", name="B", owner_sub="bob", slug="billing"))
     assert repo.get_product_by_slug("billing").id == "prod-2"  # type: ignore[union-attr]
 
@@ -281,11 +260,7 @@ def test_delete_product_removes_invites_too() -> None:
     assert repo.delete_product("prod-1") is True
     assert repo.get_product("prod-1") is None
     assert repo.get_invite("prod-1", "inv-1") is None
-    # 冪等: 既に無ければ False。
     assert repo.delete_product("prod-1") is False
-
-
-# ---- invites ----------------------------------------------------------------
 
 
 def test_create_invite_requires_existing_product() -> None:
@@ -303,7 +278,6 @@ def test_list_and_revoke_invites() -> None:
 
     assert repo.revoke_invite("prod-1", "inv-1") is True
     assert repo.get_invite("prod-1", "inv-1").revoked is True  # type: ignore[union-attr]
-    # 冪等: 既失効でも True、存在しなければ False。
     assert repo.revoke_invite("prod-1", "inv-1") is True
     assert repo.revoke_invite("prod-1", "inv-none") is False
 
@@ -341,7 +315,6 @@ def test_consume_invite_rejects_unusable_without_consuming() -> None:
         repo.consume_invite("prod-1", "inv-full")
     assert exc.value.reason == "exhausted"
 
-    # どの理由でも use_count は消費されない。
     assert repo.get_invite("prod-1", "inv-revoked").use_count == 0  # type: ignore[union-attr]
     assert repo.get_invite("prod-1", "inv-expired").use_count == 0  # type: ignore[union-attr]
     assert repo.get_invite("prod-1", "inv-full").use_count == 1  # type: ignore[union-attr]
@@ -385,13 +358,11 @@ def test_consume_invite_rate_limit_fixed_window() -> None:
     assert repo.consume_invite("prod-1", "inv-1", rate_limit_per_minute=2).use_count == 2
     with pytest.raises(InviteRateLimited):
         repo.consume_invite("prod-1", "inv-1", rate_limit_per_minute=2)
-    # 429 相当は use_count もウィンドウ計上も消費しない。
     saved = repo.get_invite("prod-1", "inv-1")
     assert saved is not None
     assert saved.use_count == 2
     assert saved.join_window_count == 2
 
-    # ウィンドウ経過後はリセットされて再び通る。
     repo._mem_invites["prod-1"]["inv-1"] = saved.model_copy(
         update={"join_window_start": datetime.now(UTC) - timedelta(seconds=61)}
     )

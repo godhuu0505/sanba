@@ -1,9 +1,5 @@
 "use client";
 
-// 08 結果（要件産婆結果）。確定要件の受け渡し。
-// 仕様: docs/reference/conversation-experience.md §7 / screens/08-result.md / Figma 144:86。
-// 画面で確認＝必須。PDF/Drive/Issue 出力＝任意（ハンドラがあるものだけ出す）。
-
 import { Check, ChevronRight, CircleDot, Cloud, FileText, type LucideIcon } from "lucide-react";
 
 import { Button, Figure } from "@/components/sanba";
@@ -12,11 +8,6 @@ import { SideMenu } from "./SideMenu";
 import { categoryPresentation, priorityLabel } from "../lib/realtime/mapping";
 import type { Priority, Requirement } from "../lib/realtime/types";
 
-/**
- * artifact の href として安全な scheme か（http/https のみ許可）。
- * artifacts は LiveKit データチャネル（session.completed）由来で送信者・payload を信頼できないため、
- * `javascript:` / `data:` 等を href に渡すとクリックで実行され得る。表示前に弾く。
- */
 function isSafeHttpUrl(url: string): boolean {
   try {
     const u = new URL(url);
@@ -26,17 +17,12 @@ function isSafeHttpUrl(url: string): boolean {
   }
 }
 
-/**
- * Issue 起票（POST /export）の進行状態。fire-and-forget をやめ、成功 URL・失敗理由・
- * 送信中を利用者に返す（起票したのに何も起きないように見える無反応を防ぐ）。
- */
 export type IssueExportStatus =
   | { status: "idle" }
   | { status: "pending" }
   | { status: "done"; url?: string }
   | { status: "error"; reason?: string };
 
-/** api の failure reason（英語）を利用者向けの日本語に言い換える。未知は汎用文言へ。 */
 function issueExportReasonText(reason?: string): string {
   switch (reason) {
     case "github connector disabled":
@@ -48,39 +34,21 @@ function issueExportReasonText(reason?: string): string {
   }
 }
 
-/** プレビューで先に出す優先度（Figma 08：Must/Should を優先表示）。 */
 const PREVIEW_PRIORITIES: readonly Priority[] = ["must", "should"];
-/** 各優先度セクションでプレビューに出す最大件数。超過は「ほか N 件 ›」へ畳む。 */
 const SECTION_LIMIT = 3;
 
 export interface ResultViewProps {
   confirmedCount: number;
-  /** Must/Should/Could の内訳（任意）。 */
   breakdown?: { must: number; should: number; could: number };
-  /**
-   * プレビューに出す確定要件（status==="confirmed" のもの／selectConfirmedRequirements 由来）。
-   * 確定判定は呼び出し側のセレクタに一元化し、本コンポーネントは表示のみを担う。
-   * 未指定（テスト等）ならプレビューは出さず件数サマリのみ。
-   */
   requirements?: Requirement[];
-  /** 未解消を残したまま終了した暫定結果か（07 の onForceEnd 経路）。確定済みと区別する。 */
   provisional?: boolean;
-  /**
-   * session.completed のサーバ集計（届いていれば表示）。確定件数と異なり、会話全体の成果
-   * （矛盾解消・抜け検知・Issue 起票）を agent 側の値で示す。ローカル再集計しない。
-   */
   summary?: { contradictions_resolved: number; gaps_found: number; issues_created: number } | null;
-  /** 生成物リンク（session.completed.artifacts）。PDF/Drive/Issue などの成果物 URL。 */
   artifacts?: { kind: string; url: string }[];
-  /** この絵巻を画面で確認する（既定動線・必須）。 */
   onView: () => void;
-  /** 新しい問答を始める。 */
   onRestart: () => void;
-  /** 任意出力。未指定のものはボタンを出さない。 */
   onExportPdf?: () => void;
   onExportDrive?: () => void;
   onExportIssue?: () => void;
-  /** Issue 起票の進行状態（未指定は idle 扱い）。送信中は Issue ボタンを無効化し結果を表示する。 */
   issueExport?: IssueExportStatus;
 }
 
@@ -98,12 +66,8 @@ export function ResultView({
   onExportIssue,
   issueExport = { status: "idle" },
 }: ResultViewProps) {
-  // end_user モード（FR-2.4 / ADR-0032）: MoSCoW の内訳文字列（Must n ・ Should n ...）は
-  // 内部分類の露出になるため出さない。セクション見出しは priorityLabel(mode) が利用者の
-  // 言葉に差し替える。summary の「矛盾解消/抜け検知/Issue 起票」も開発語彙なので出さない。
   const interviewMode = useInterviewMode();
   const endUser = interviewMode === "end_user";
-  // 信頼できない URL scheme（javascript: 等）は表示しない（XSS 防止）。
   const artifactLinks = (artifacts ?? []).filter((a) => isSafeHttpUrl(a.url));
   const outputs: { label: string; icon: LucideIcon; handler?: () => void }[] = [
     { label: "PDF", icon: FileText, handler: onExportPdf },
@@ -112,9 +76,6 @@ export function ResultView({
   ];
   const available = outputs.filter((o) => o.handler);
 
-  // 確定要件のプレビュー（Figma 144:86）。Must/Should を優先表示し、各セクション SECTION_LIMIT 件まで。
-  // それ以外（Could/Won't や上限超過分）は「ほか N 件 ›」に畳んで全文（onView）へ誘導する。
-  // 空の優先度セクションは描画しない。
   const confirmedReqs = requirements ?? [];
   const previewGroups = PREVIEW_PRIORITIES.map((priority) => ({
     priority,
@@ -125,16 +86,11 @@ export function ResultView({
 
   return (
     <div className="flex h-full flex-col items-center px-4 pb-4 pt-5">
-      {/* サイドメニュー（結果画面からホーム/準備/アプリ管理へ横断遷移）。end_user は
-          開発者向け導線（アプリ管理）を見せない（ADR-0032 の語彙方針と同じ倒し方）。 */}
       {!endUser && (
         <div className="flex w-full justify-start">
           <SideMenu />
         </div>
       )}
-      {/* 結果の主役はサンバさん（ADR-0033 §6）。確定＝両手を挙げるひらめき、暫定＝書き留める姿。
-          産章は胸のバッジに宿り、静止した金章から「動く産婆さん」へ。意味は下の見出しが読み上げる
-          ので figure は装飾（label 無し＝aria-hidden・reduced-motion 静止）。 */}
       <Figure state={provisional ? "writing" : "insight"} className="w-[84px]" />
       <p className="mt-[10px] text-center text-[18px] font-bold text-sanba-gold-text">
         {endUser
@@ -249,7 +205,6 @@ export function ResultView({
           <div className="mt-[6px] flex w-full gap-2">
             {available.map((o) => {
               const Icon = o.icon;
-              // Issue は起票中だけ無効化（連打による重複起票を UI 側でも止める）。
               const busy = o.label === "Issue" && issueExport.status === "pending";
               return (
                 <button

@@ -22,7 +22,6 @@ describe("ChatHistory（会話履歴タブ）", () => {
   });
 
   it("SANBA(agent) と あなた(参加者) を author 区別で吹き出し表示する", () => {
-    // 実データの参加者ロールは participant / customer / pm（user は来ない）。
     render(
       <ChatHistory
         transcript={[

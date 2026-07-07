@@ -1,9 +1,4 @@
 // @vitest-environment jsdom
-// ADR-0047: ログイン nonce のペアリング（§2）と exp 先読みリフレッシュ（§1）。
-// - X-Auth-Nonce は「エンベロープと一致する nonce claim を持つ credential が到着したとき」
-//   だけ有効化される（片側だけの差し替えで自作の不一致 401 を作らない）。
-// - 不成立時は 1 回だけ nonce を採り直して静かに再取得する（無限 prompt ループにしない）。
-// - リフレッシュは exp-5min に予約され、ログアウトで必ず解除される。
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -26,7 +21,6 @@ function makeJwt(claims: Record<string, unknown>): string {
   return `${b64({ alg: "none" })}.${b64(claims)}.sig`;
 }
 
-/** /api/auth/nonce と一般 API を捌く fetch スタブ。API 呼び出しのヘッダを検査できるよう控える。 */
 function stubFetch(nonceBody: { nonce: string; token: string; expires_at: number } | null) {
   const calls: Array<{ url: string; headers: Record<string, string> }> = [];
   const fetchMock = vi.fn((url: string, init?: { headers?: Record<string, string> }) => {
@@ -41,7 +35,6 @@ function stubFetch(nonceBody: { nonce: string; token: string; expires_at: number
   return calls;
 }
 
-/** マウント直後の非同期処理（nonce 先読み等）を流す。 */
 async function flush() {
   await act(async () => {
     await vi.advanceTimersByTimeAsync(0);
@@ -79,7 +72,7 @@ describe("ログイン nonce のペアリング（ADR-0047 §2）", () => {
     const { fetchMySessions } = await import("./api");
 
     renderHook(() => useGoogleAuth());
-    await flush(); // nonce 先読み完了を待つ
+    await flush();
 
     act(() => capturedCallback?.({ credential: makeJwt({ nonce: "raw-1" }) }));
     await flush();
@@ -97,17 +90,14 @@ describe("ログイン nonce のペアリング（ADR-0047 §2）", () => {
     await flush();
     const promptsBefore = prompt.mock.calls.length;
 
-    // nonce-less credential（claim を埋められなかった復元）→ 不一致ヘッダを送らない。
     act(() => capturedCallback?.({ credential: makeJwt({ email: "a@example.com" }) }));
     await flush();
 
     await fetchMySessions("tok");
     expect(apiCalls.at(-1)?.headers["X-Auth-Nonce"]).toBeUndefined();
-    // 採り直し: nonce 付きで initialize し直し、静かな prompt を 1 回だけ追加。
     expect(capturedNonces.at(-1)).toBe("raw-1");
     expect(prompt.mock.calls.length).toBe(promptsBefore + 1);
 
-    // 採り直しで claim 付き credential が届けばペアリング成立に自己回復する。
     act(() => capturedCallback?.({ credential: makeJwt({ nonce: "raw-1" }) }));
     await flush();
     await fetchMySessions("tok");
@@ -129,7 +119,6 @@ describe("ログイン nonce のペアリング（ADR-0047 §2）", () => {
     expect(result.current.loggedIn).toBe(true);
     await fetchMySessions("tok");
     expect(apiCalls.at(-1)?.headers["X-Auth-Nonce"]).toBeUndefined();
-    // nonce が無いのに prompt を無駄撃ちしない（FedCM クールダウンを進めない）。
     expect(prompt.mock.calls.length).toBe(promptsBefore);
   });
 });
@@ -147,13 +136,11 @@ describe("exp 先読みリフレッシュ（ADR-0047 §1）", () => {
     await flush();
     const promptsBefore = prompt.mock.calls.length;
 
-    // exp-5min より手前では発火しない。
     await act(async () => {
       await vi.advanceTimersByTimeAsync(54 * 60 * 1000);
     });
     expect(prompt.mock.calls.length).toBe(promptsBefore);
 
-    // exp-5min を跨ぐと静かな再取得が走る。
     await act(async () => {
       await vi.advanceTimersByTimeAsync(2 * 60 * 1000);
     });

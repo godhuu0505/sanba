@@ -15,7 +15,7 @@ from sanba_worker.config import WorkerSettings
 
 
 def _repo_with_material(status: str = "analyzing") -> SessionRepository:
-    repo = SessionRepository()  # ES/Firestore 未接続 → in-memory
+    repo = SessionRepository()
     repo.save_material(
         "s1", {"id": "asset-abc", "name": "demo.mp4", "kind": "video", "status": status}
     )
@@ -23,7 +23,7 @@ def _repo_with_material(status: str = "analyzing") -> SessionRepository:
 
 
 def _indexer() -> ContextIndexer:
-    return ContextIndexer()  # 未設定 → in-memory
+    return ContextIndexer()
 
 
 def _payload(**kw: object) -> VideoTaskPayload:
@@ -60,7 +60,7 @@ def test_analyzes_and_marks_done() -> None:
 
 
 def test_skips_when_material_missing() -> None:
-    repo = SessionRepository()  # 素材なし（削除済み相当）
+    repo = SessionRepository()
     result = process_video(
         _payload(), repo=repo, indexer=_indexer(), settings=_settings(), analyze=_fake_analyze("x")
     )

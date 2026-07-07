@@ -2,7 +2,6 @@ import * as React from "react";
 
 import { cn } from "@/lib/utils";
 
-/** 藁色の 1px 区切り線。任意でラベルを中央に挟める。 */
 export interface DividerProps extends React.HTMLAttributes<HTMLDivElement> {
   label?: React.ReactNode;
 }

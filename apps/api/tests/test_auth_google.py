@@ -102,7 +102,6 @@ def test_expired_token_is_rejected(mint, verifier) -> None:
 def test_tampered_token_is_rejected(mint, verifier) -> None:
     token = mint()
     header, payload, sig = token.split(".")
-    # ペイロードを 1 文字書き換えると署名が一致しなくなる。
     tampered = f"{header}.{payload[:-2] + ('A' if payload[-1] != 'A' else 'B')}.{sig}"
     with pytest.raises(GoogleTokenError):
         verify_google_id_token(tampered, CLIENT_ID, verifier=verifier)
@@ -115,7 +114,6 @@ def test_audience_mismatch_is_rejected(mint, verifier) -> None:
 
 
 def test_wrong_issuer_is_rejected(mint, verifier) -> None:
-    # 署名・aud・exp は通るが iss が Google でない → _validate_claims が弾く。
     token = mint(iss="https://evil.example.com")
     with pytest.raises(GoogleTokenError, match="issuer"):
         verify_google_id_token(token, CLIENT_ID, verifier=verifier)
@@ -128,7 +126,6 @@ def test_unverified_email_is_rejected(mint, verifier) -> None:
 
 
 def test_email_verified_as_string_is_accepted(mint, verifier) -> None:
-    # Google は email_verified を文字列 "true" で返すことがある。
     user = verify_google_id_token(mint(email_verified="true"), CLIENT_ID, verifier=verifier)
     assert user.email_verified is True
 
@@ -139,20 +136,13 @@ def test_missing_sub_is_rejected(mint, verifier) -> None:
         verify_google_id_token(token, CLIENT_ID, verifier=verifier)
 
 
-# ── nonce claim の取り出し (ADR-0047) ─────────────────────────────────────────
-
-
 def test_nonce_claim_is_extracted(mint, verifier) -> None:
     user = verify_google_id_token(mint(nonce="n-abc123"), CLIENT_ID, verifier=verifier)
     assert user.nonce == "n-abc123"
 
 
 def test_missing_nonce_claim_is_none(mint, verifier) -> None:
-    # nonce を渡さない ID トークンでは nonce は None（require_login_nonce=off では検証しない）。
     assert verify_google_id_token(mint(), CLIENT_ID, verifier=verifier).nonce is None
-
-
-# ── ルーム作成の許可リスト (ADR-0012 §3) ───────────────────────────────────────
 
 
 def _user(email: str) -> AuthUser:
@@ -180,7 +170,6 @@ def test_can_create_room_matches_domain(monkeypatch) -> None:
 
 
 def test_can_create_room_admin_always_allowed(monkeypatch) -> None:
-    # allowlist に無くても admin は作成可（is_admin 経由）。
     monkeypatch.setattr(settings, "room_creator_allowlist", "other@example.com", raising=True)
     monkeypatch.setattr(settings, "admin_emails", "boss@example.com", raising=True)
     assert can_create_room(_user("boss@example.com")) is True

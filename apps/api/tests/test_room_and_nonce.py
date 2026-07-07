@@ -44,9 +44,6 @@ def _login_as(user: AuthUser) -> None:
     app.dependency_overrides[maybe_user] = lambda: user
 
 
-# ── ルーム作成 allowlist (ADR-0047 §3) ─────────────────────────────────────────
-
-
 def test_create_denied_for_non_allowlisted(monkeypatch) -> None:
     monkeypatch.setattr(settings, "room_creator_allowlist", "team.example", raising=True)
     _login_as(_user("outsider@gmail.com"))
@@ -80,9 +77,6 @@ def test_create_product_denied_for_non_allowlisted(monkeypatch) -> None:
     assert res.status_code == 403
 
 
-# ── ログイン nonce 束縛 (ADR-0047 §2) ─────────────────────────────────────────
-
-
 def test_create_off_by_default_ignores_nonce() -> None:
     """require_login_nonce=false（既定）では nonce 無しでも作成できる（挙動不変）。"""
     _login_as(_user(nonce=None))
@@ -95,12 +89,9 @@ def test_create_requires_nonce_when_enabled(monkeypatch) -> None:
     raw, envelope = create_auth_nonce(settings.session_signing_secret, 600)
     _login_as(_user(nonce=raw))
 
-    # nonce ヘッダ欠落 → 401。
     assert client.post("/api/sessions", json=_CREATE_BODY).status_code == 401
-    # 正しい envelope かつ claim 一致 → 200。
     ok = client.post("/api/sessions", json=_CREATE_BODY, headers={"X-Auth-Nonce": envelope})
     assert ok.status_code == 200
-    # claim 不一致（別の nonce の envelope）→ 401。
     _, other = create_auth_nonce(settings.session_signing_secret, 600)
     bad = client.post("/api/sessions", json=_CREATE_BODY, headers={"X-Auth-Nonce": other})
     assert bad.status_code == 401
@@ -128,9 +119,7 @@ def test_product_join_requires_nonce_when_enabled(monkeypatch) -> None:
     token = invite.json()["token"]
 
     join_body = {"token": token, "consent_acknowledged": True}
-    # nonce ヘッダ欠落 → 401（invite は消費されない）。
     assert client.post("/api/products/join", json=join_body).status_code == 401
-    # 束縛を満たせば join でき、直前の 401 で max_uses=1 が消費されていないことも同時に確かめる。
     ok = client.post("/api/products/join", json=join_body, headers={"X-Auth-Nonce": envelope})
     assert ok.status_code == 200
 
@@ -139,7 +128,6 @@ def test_dev_bypass_skips_nonce_even_when_enabled(monkeypatch) -> None:
     """ローカル dev bypass は nonce を持たないため素通し（require_login_nonce=true でも）。"""
     monkeypatch.setattr(settings, "auth_dev_bypass", True, raising=True)
     monkeypatch.setattr(settings, "require_login_nonce", True, raising=True)
-    # dev bypass では require_user 自体が固定 dev identity を返すため override しない。
     assert client.post("/api/sessions", json=_CREATE_BODY).status_code == 200
 
 
@@ -148,6 +136,5 @@ def test_auth_nonce_endpoint_roundtrips() -> None:
     assert res.status_code == 200
     body = res.json()
     assert verify_auth_nonce(body["token"], settings.session_signing_secret) == body["nonce"]
-    # expires_at は web が期限切れ nonce を掴み続けないためのヒント（未来の UNIX 秒）。
     assert isinstance(body["expires_at"], int)
     assert body["expires_at"] > 0

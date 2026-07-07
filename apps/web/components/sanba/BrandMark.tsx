@@ -1,15 +1,5 @@
 import * as React from "react";
 
-/**
- * SANBA のシンボルマーク（棒人間「サンバさん」＋胸の山吹の産章）だけを描く SVG。
- * ワードマークやレイアウトは持たず、`className` でサイズを与えて使う。
- * ロゴ（Logo）・ログイン画面・読み込みスプラッシュ（BrandSplash）が同一の実体を共有し、
- * アプリアイコン（`app/icon.svg`）とも系譜を合わせる。
- *
- * 既定では装飾用のマークを想定し a11y 属性は付けない。単独で意味を持たせる場合は
- * 呼び出し側で `role="img"` / `aria-label` を、隣にワードマーク等がある場合は
- * `aria-hidden` を渡す。
- */
 export function BrandMark({ className, ...props }: React.SVGAttributes<SVGSVGElement>) {
   return (
     <svg

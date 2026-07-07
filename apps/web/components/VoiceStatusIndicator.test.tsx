@@ -59,7 +59,6 @@ describe("VoiceStatusIndicator（ラベル＋アイコン・色非依存）", ()
     const { container } = render(
       <VoiceStatusIndicator phase="listening" micOn muted={false} agentSpeaking={false} />,
     );
-    // Figure listening の音波は .sanba-fig-joint（reduced-motion 静止）を持つ＝figure が出ている印。
     expect(container.querySelector(".sanba-fig-joint")).not.toBeNull();
   });
 
@@ -75,7 +74,6 @@ describe("VoiceStatusIndicator（ラベル＋アイコン・色非依存）", ()
     const el = screen.getByRole("status");
     expect(el.getAttribute("data-status")).toBe("agent-speaking");
     expect(el.textContent).toContain("発話中／読み上げ中");
-    // 色だけでなくテキストラベルで判別できる（aria でも現代語ラベル）。
     expect(el.getAttribute("aria-label")).toBe("音声状態: 発話中／読み上げ中");
   });
 

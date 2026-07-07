@@ -33,11 +33,6 @@ export const metadata: Metadata = {
   description: "SANBA デザインシステムのショーケース（白い紙×原色×ステッカー×棒人間 / ADR-0033）。",
 };
 
-/**
- * SANBA デザインシステムの生きたカタログ。
- * ADR-0033「白い紙の上の問答」の確定意匠（ステッカー×原色×動く棒人間）を、
- * components/sanba の再利用部品だけで主要画面に組み直し、目視で検証するための開発用ページ。
- */
 export default function DesignKitPage() {
   if (process.env.NODE_ENV === "production") notFound();
   return (
@@ -50,7 +45,6 @@ export default function DesignKitPage() {
         </p>
       </header>
 
-      {/* プリミティブ一覧 */}
       <section className="mx-auto mb-10 max-w-6xl rounded-2xl border border-sanba-border bg-sanba-surface p-6">
         <h2 className="mb-4 text-lg font-semibold text-sanba-cream">Primitives</h2>
         <div className="sanba-font flex flex-wrap items-start gap-8 rounded-xl sanba-screen-bg p-6">
@@ -118,7 +112,6 @@ export default function DesignKitPage() {
         </div>
       </section>
 
-      {/* 帯と動き（ADR-0033 §5） */}
       <section className="mx-auto mb-10 max-w-6xl rounded-2xl border border-sanba-border bg-sanba-surface p-6">
         <h2 className="mb-4 text-lg font-semibold text-sanba-cream">帯と動き（Motion）</h2>
         <div className="sanba-font flex flex-col gap-6 rounded-xl sanba-screen-bg p-6">
@@ -165,7 +158,6 @@ export default function DesignKitPage() {
         </div>
       </section>
 
-      {/* 画面再構成 */}
       <section className="mx-auto max-w-6xl">
         <h2 className="mb-4 text-lg font-semibold text-sanba-cream">Screens</h2>
         <div className="flex flex-wrap gap-8">
@@ -187,7 +179,6 @@ function Stack({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-/* ── 13 ログイン済み（導線）─────────────────────────── */
 function LoginScreen() {
   return (
     <PhoneFrame>
@@ -226,7 +217,6 @@ function LoginScreen() {
   );
 }
 
-/* ── 07 会話（返答＋矛盾検知＋音声ドック）──────────────── */
 function ConversationScreen() {
   return (
     <PhoneFrame>
@@ -256,13 +246,11 @@ function ConversationScreen() {
           </BottomSheet>
         </div>
       </div>
-      {/* 音声ドックは会話面の底に全幅で敷く（上辺2px墨 / ADR-0033 §7）。 */}
       <VoiceInputBar state="listening" />
     </PhoneFrame>
   );
 }
 
-/* ── 11 結果（要件絵巻）＋ 93 要件を検める ───────────── */
 function ReviewScreen() {
   return (
     <PhoneFrame>

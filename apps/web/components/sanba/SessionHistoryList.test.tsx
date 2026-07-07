@@ -4,9 +4,6 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { SessionHistoryList, type SessionHistoryItem } from "./SessionHistoryList";
 
-// 01 ホーム「過去の要件を見る」履歴リスト（Figma 正本 99:3）。
-// 空状態の文言・行の描画・遷移先 href・色のみ非依存の手掛かりを検証する。
-
 const ITEMS: SessionHistoryItem[] = [
   { id: "s1", title: "新機能要件定義", date: "2024/06/20" },
   { id: "s2", title: "決済フロー見直し", date: "2024/06/18" },
@@ -34,10 +31,8 @@ describe("SessionHistoryList（過去の要件を見る）", () => {
   it("items があると標題・日付＋セッションID・末尾シェブロン › を行ごとに出す", () => {
     render(<SessionHistoryList items={ITEMS} />);
     expect(screen.getByText("新機能要件定義")).toBeTruthy();
-    // 日付とセッションIDを同じサブ行に併記する（どのセッションか一覧で識別できる）。
     expect(screen.getByText("2024/06/20 ・ s1")).toBeTruthy();
     expect(screen.getByText("決済フロー見直し")).toBeTruthy();
-    // 色のみに依存しない遷移手掛かり（シェブロン）が各行にある。
     expect(screen.getAllByText("›")).toHaveLength(ITEMS.length);
   });
 

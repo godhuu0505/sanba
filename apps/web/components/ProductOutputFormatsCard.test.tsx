@@ -4,9 +4,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Product } from "@/lib/api";
 
-// 出力フォーマットカード: audience タブの切り替え・全量置換での保存・
-// 「デフォルト使用中/登録済み」の出し分け・デフォルトへ戻すを検証する。
-
 const authState = { credential: "id-token", loggedIn: true, ready: true, profile: null };
 vi.mock("@/lib/auth", () => ({ useAuth: () => authState }));
 

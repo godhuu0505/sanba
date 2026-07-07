@@ -11,9 +11,6 @@ def test_memory_store_is_used_without_elasticsearch() -> None:
 
 
 def test_memory_mode_does_not_call_embeddings(monkeypatch) -> None:
-    # メモリフォールバック検索（_search_mem）はトークン重なりで採点し、埋め込みを参照しない。
-    # 使われない埋め込み API 呼び出しは (1) Vertex の gemini-embedding クォータを浪費して 429 を
-    # 招き (2) 同期ブロッキングで音声ループを塞ぐため、メモリモードでは embed しないこと。
     import sanba_agent.retrieval as retrieval
 
     def _boom(text: str) -> list[float] | None:
@@ -23,10 +20,8 @@ def test_memory_mode_does_not_call_embeddings(monkeypatch) -> None:
     store = GroundingStore()
     assert store.is_memory is True
     store.index_passage("非機能要件はセキュリティと可用性を確認する。", "guide:nfr", "knowledge")
-    # 埋め込み無しでも memory 検索はトークンでヒットする（索引は成立している）。
     results = store.search("セキュリティ 要件", k=2)
     assert results and results[0].source == "guide:nfr"
-    # _MemDoc には埋め込みを保持しない（そもそも検索で使わない）。
     assert store._mem[0].embedding is None
 
 
@@ -51,8 +46,6 @@ def test_search_can_filter_by_kind() -> None:
 
 
 def test_build_search_params_uses_keyword_args_not_legacy_body() -> None:
-    # `body=` was removed in elasticsearch-py 9.0; the params must be top-level
-    # keyword arguments so the ES path keeps working under elasticsearch>=8.14,<10.
     params = GroundingStore._build_search_params("セキュリティ", k=3, kinds=None, embedding=None)
     assert "body" not in params
     assert params["size"] == 3
@@ -71,8 +64,6 @@ def test_build_search_params_includes_knn_and_filter_when_available() -> None:
 
 
 def test_context_passages_are_scoped_to_session() -> None:
-    # context（セッション固有素材: ゴール/資料/紐づけ repo コード）は、session_id を渡すと
-    # 当該セッションのものだけが返る（他セッションの private 断片の越境ヒットを防ぐ）。
     store = GroundingStore()
     src_a = "github:o/r@main:rank.py"
     src_b = "github:o/r2@main:billing.py"
@@ -86,7 +77,6 @@ def test_context_passages_are_scoped_to_session() -> None:
 
 
 def test_non_context_kinds_still_recall_across_sessions() -> None:
-    # 知識/過去要件は横断的に呼び戻す（session_id 指定でも絞らない）。
     store = GroundingStore()
     store.index_passage("非機能要件は可用性99.9%", "req-1", "requirement", "other-session")
     out = store.search("可用性 要件", k=5, session_id="sess-A")
@@ -97,14 +87,11 @@ def test_build_search_params_scopes_context_to_session() -> None:
     params = GroundingStore._build_search_params(
         "x", k=3, kinds=None, embedding=None, session_id="sess-A"
     )
-    # context は session 一致 OR 非 context のみ通すフィルタが入る。
     filters = params["query"]["bool"]["filter"]
     assert any("bool" in f and "should" in f["bool"] for f in filters)
 
 
 def test_index_passage_upserts_with_deterministic_id(monkeypatch) -> None:
-    # doc_id を渡した ES 経路は `id=` 付きで index する（同じ文書の再投入で重複を作らない）。
-    # 未指定なら従来どおり自動採番（id を渡さない）。ライブ ES 無しで分岐だけ検証する。
     import sanba_agent.retrieval as retrieval
 
     calls: list[dict] = []
@@ -115,7 +102,7 @@ def test_index_passage_upserts_with_deterministic_id(monkeypatch) -> None:
 
     monkeypatch.setattr(retrieval, "embed_text", lambda text: None)
     store = GroundingStore()
-    store._client = _FakeClient()  # is_memory=False（ES 経路）へ切り替える
+    store._client = _FakeClient()
     store.index_passage("KB text", "guide:x", "knowledge", doc_id="knowledge:guide:x")
     store.index_passage("no id", "guide:y", "knowledge")
     assert calls[0]["id"] == "knowledge:guide:x"
@@ -124,7 +111,6 @@ def test_index_passage_upserts_with_deterministic_id(monkeypatch) -> None:
 
 
 def test_seed_knowledge_base_populates_grounding() -> None:
-    # is_memory かどうかに関わらず KB を投入する（ES 有効時に knowledge が空になる事故を防ぐ）。
     from sanba_agent.main import KNOWLEDGE_BASE, seed_knowledge_base
 
     store = GroundingStore()
@@ -142,13 +128,11 @@ def test_is_stale_repo_passage_filters_other_sha() -> None:
     old = "github:o/r@main@shaOLD:src/a.py"
     assert _is_stale_repo_passage(old, "shaNEW") is True
     assert _is_stale_repo_passage(cur, "shaNEW") is False
-    # 知識や env connector 形式（@ なし）は対象外。
     assert _is_stale_repo_passage("knowledge:reqs#1", "shaNEW") is False
     assert _is_stale_repo_passage("github:o/r#readme", "shaNEW") is False
 
 
 def test_unlinked_owner_blocks_repo_passages(monkeypatch) -> None:
-    # owner が連携解除したら、索引済み repo chunk を検索時に遮断する（query-time ACL）。
     from sanba_shared.models import GitHubIndexStatus, SessionMeta
     from sanba_shared.repository import SessionRepository
 
@@ -172,9 +156,7 @@ def test_unlinked_owner_blocks_repo_passages(monkeypatch) -> None:
     grounding.index_passage("repo code", "github:octo/r@main@sha1:a.py", "context", "sess-x")
 
     agent = SANBAAgent("sess-x", repo, grounding)
-    # 連携あり → revoked=False。
     repo.set_github_link(GitHubLink(sub="owner", installation_id=1, github_login="octo"))
     assert agent._repo_access() == ("sha1", False)
-    # 連携解除 → revoked=True（共有索引は消さず query 時に遮断する）。
     repo.delete_github_link("owner")
     assert agent._repo_access() == ("sha1", True)

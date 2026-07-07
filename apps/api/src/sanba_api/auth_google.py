@@ -28,10 +28,8 @@ from .observability import record_auth_event
 
 log = structlog.get_logger(__name__)
 
-# Google が発行する ID トークンの `iss` (どちらの表記も正規)。
 _GOOGLE_ISSUERS = frozenset({"accounts.google.com", "https://accounts.google.com"})
 
-# 検証関数の型: (token, client_id) -> claims dict。失敗時は例外を送出する。
 Verifier = Callable[[str, str], dict[str, object]]
 
 
@@ -48,8 +46,6 @@ class AuthUser:
     email_verified: bool
     name: str
     dev: bool = False
-    # ID トークンの `nonce` claim（ADR-0047）。GIS に渡した nonce が入る。未設定のトークンや
-    # dev bypass では None。create/join の nonce 束縛（require_user_bound）でのみ照合する。
     nonce: str | None = None
 
 
@@ -81,7 +77,6 @@ def _validate_claims(claims: dict[str, object]) -> AuthUser:
         raise GoogleTokenError("missing sub")
 
     email = str(claims.get("email", ""))
-    # email_verified は文字列 "true" で来ることがあるため寛容に解釈する。
     raw_verified = claims.get("email_verified", False)
     email_verified = raw_verified is True or str(raw_verified).lower() == "true"
     if not email_verified:
@@ -111,7 +106,6 @@ def verify_google_id_token(
     except GoogleTokenError:
         raise
     except ValueError as exc:
-        # google-auth は署名/aud/exp 不正をすべて ValueError で投げる。
         raise GoogleTokenError(str(exc)) from exc
     except Exception as exc:  # pragma: no cover - 想定外の検証器エラー
         raise GoogleTokenError(f"verification failed: {exc}") from exc
@@ -159,7 +153,6 @@ def require_user(
     return user
 
 
-# create_session / join_session が結線する依存性エイリアス。
 CurrentUser = Annotated[AuthUser, Depends(require_user)]
 
 
@@ -208,7 +201,6 @@ def require_user_bound(
     return user
 
 
-# create_session / join_session（identity クリティカル）が結線する nonce 束縛付きエイリアス。
 CurrentUserBound = Annotated[AuthUser, Depends(require_user_bound)]
 
 

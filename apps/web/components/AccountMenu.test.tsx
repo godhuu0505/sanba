@@ -33,7 +33,6 @@ describe("AccountMenu", () => {
     const items = screen.getAllByRole("menuitem").map((el) => el.textContent ?? "");
     expect(items[0]).toMatch(/アカウント設定/);
     expect(items[1]).toMatch(/ログアウト/);
-    // ページ側で解決済みの profile をそのまま表示する（別 hook インスタンスを作らない）。
     expect(screen.getByText(/go@sanba\.local/)).toBeTruthy();
   });
 

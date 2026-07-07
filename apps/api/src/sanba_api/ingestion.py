@@ -59,9 +59,6 @@ class DocumentExtractionError(Exception):
     """
 
 
-# zip コンテナ（docx/xlsx/pptx）の展開後合計サイズ上限。受理サイズ（max_asset_bytes=25MB）は
-# 圧縮後のバイト数なので、極端な圧縮率の zip bomb は展開時にメモリを食い尽くし得る。
-# 展開前に infolist の非圧縮サイズ合計で弾く（Cloud Run 同居リクエストを OOM で巻き込まない）。
 _MAX_ZIP_EXPANSION_BYTES = 100_000_000
 
 
@@ -178,7 +175,6 @@ def _extract_html(raw: bytes) -> str:
     return extractor.text()
 
 
-# 拡張子 → 抽出関数。storage.py の TEXT_EXT / DOC_BINARY_EXT（受理判定）とペアで保守する。
 _EXTRACTORS: dict[str, Callable[[bytes], str]] = {
     ".pdf": _extract_pdf,
     ".docx": _extract_docx,
@@ -188,9 +184,6 @@ _EXTRACTORS: dict[str, Callable[[bytes], str]] = {
     ".htm": _extract_html,
 }
 
-# MIME → 抽出関数。受理判定（storage.py is_text_upload）は拡張子と MIME のどちらでも通すため、
-# 拡張子なし・MIME のみのアップロード（例: ファイル名 "book" + Office MIME）でも正しい抽出器を
-# 選べるようにする（拡張子だけだと ZIP バイト列を UTF-8 デコードして索引してしまう）。
 _MIME_EXTRACTORS: dict[str, Callable[[bytes], str]] = {
     "application/pdf": _extract_pdf,
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document": _extract_docx,
@@ -213,9 +206,6 @@ def extract_text_from_upload(filename: str, raw: bytes, content_type: str | None
         try:
             return extractor(raw)
         except Exception as exc:
-            # 壊れたファイル・想定外の中身・zip bomb。呼び出し側が 500 にせず「抽出 0 件」に
-            # 平しつつ、成功（indexed）と区別してメトリクス計上できるよう型付き例外で伝える。
             log.warning("document_extract_failed", ext=ext, content_type=ct, error=str(exc))
             raise DocumentExtractionError(f"failed to extract {ext or ct}") from exc
-    # txt / md / csv / json / anything decodable as utf-8
     return raw.decode("utf-8", errors="replace")

@@ -4,8 +4,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Product } from "@/lib/api";
 
-// 確認項目カード: 対象タグ付きの追加/削除の即時保存・サーバ供給の上限・重複無視を検証する。
-
 const authState = { credential: "id-token", loggedIn: true, ready: true, profile: null };
 vi.mock("@/lib/auth", () => ({ useAuth: () => authState }));
 
@@ -106,7 +104,6 @@ describe("ProductCheckItemsCard", () => {
         onSaved={vi.fn()}
       />,
     );
-    // セレクタの <option> にも「全員」があるため、リスト行内のラベルはリスト側で検証する。
     const rows = screen.getAllByRole("listitem").map((li) => li.textContent ?? "");
     expect(rows[0]).toContain("全員");
     expect(rows[0]).toContain("全員項目");
@@ -164,7 +161,6 @@ describe("ProductCheckItemsCard", () => {
     fireEvent.click(screen.getByRole("button", { name: "確認項目を追加する" }));
     expect(updateProduct).not.toHaveBeenCalled();
 
-    // 対象が違えば別項目として登録できる。
     fireEvent.change(screen.getByLabelText("確認項目の対象"), {
       target: { value: "end_user" },
     });

@@ -31,7 +31,7 @@ log = structlog.get_logger(__name__)
 
 SCHEMA_VERSION = 1
 EVENTS_TOPIC = "sanba.events"
-WEB_EVENTS_TOPIC = "sanba.events.web"  # web → agent
+WEB_EVENTS_TOPIC = "sanba.events.web"
 
 
 class EventPublishError(RuntimeError):
@@ -74,13 +74,11 @@ def _now() -> datetime:
     return datetime.now(UTC)
 
 
-# 緋/黄土の機能名（契約 §3）。
 DETECTOR_CONTRADICTION = "contradiction_detector"
 DETECTOR_SCOPE = "scope_specialist"
 DETECTOR_NFR = "nfr_specialist"
 DETECTOR_AMBIGUITY = "ambiguity_detector"
 
-# 解消理由（detection.resolved）。ユーザー選択＝矛盾カードの解消、agent＝抜けの自動解消。
 RESOLUTION_USER_SELECTED = "user_selected"
 RESOLUTION_AGENT_RESOLVED = "agent_resolved"
 
@@ -100,17 +98,9 @@ class EventPublisher:
         self._session_id = session_id
         self._transport = transport
         self._clock = clock
-        # 再起動後も seq を単調増加させるため、保存済み last_seq でシード。
-        # 既定 0（新規）。永続値の読み出しは呼び出し側（repo.get_session_seq）。
         self._seq = start_seq
-        # lossy（status/transcript.partial）専用カウンタ。reliable seq と別系統。
-        # lossy は reliable seq を消費せず echo するので、欠落しても reliable seq に穴を空けない。
-        # 再起動を跨いだ大域単調性のため epoch ブロック基底でシードする。0 から振り直すと
-        # 接続維持中の web が再起動後の lossy を黙殺するため、起動ごとに前回より大きい基底にする。
         self._lossy_seq = start_lossy_seq
         self._lock = asyncio.Lock()
-        # 観測性: 要件数・検知数を種別ごとに計測（契約 §5 の評価に使う）。
-        # session.completed のサマリを実測から組み立てるため、抜け/矛盾/解消を分けて持つ。
         self.requirements_published = 0
         self.gaps_published = 0
         self.contradictions_published = 0
@@ -137,16 +127,11 @@ class EventPublisher:
     async def _emit(
         self, type_: str, payload: dict[str, Any], *, reliable: bool = True
     ) -> dict[str, Any]:
-        # ロックで採番〜送信を直列化し、単調増加と配信順序を保証する。
         async with self._lock:
             if reliable:
-                # reliable: 要件/検知/question/analysis/session.completed 等。欠番検知の対象。
                 self._seq += 1
                 envelope = self._build_envelope(type_, self._seq, payload, reliable=True)
             else:
-                # lossy（status/transcript.partial）: reliable seq を消費せず現在値を echo し、
-                # 独立の lossy_seq で順序付ける。これで lossy 欠落が reliable
-                # seq に穴を空けず、web の誤ギャップ判定・不要な GET 再取得を防ぐ。
                 self._lossy_seq += 1
                 envelope = self._build_envelope(
                     type_, self._seq, payload, reliable=False, lossy_seq=self._lossy_seq
@@ -171,17 +156,13 @@ class EventPublisher:
         握りつぶさず ``EventPublishError`` で返す（接続中の他参加者へ確実に補償するため）。
         """
         async with self._lock:
-            # §5-1: 次 seq を「予約」するだけ（self._seq はまだ進めない）。
             seq = self._seq + 1
             envelope = self._build_envelope(type_, seq, payload)
-            # 採番 → 保存（Firestore tombstone / current 保存）→ 送信。
             if not before_send(seq):
                 return None
-            # 保存成功後に初めて採番を確定する（ここで seq を消費する）。
             self._seq = seq
             sent = await self._send_envelope(envelope, reliable=True)
             if critical_send and not sent:
-                # §5-9: commit 後の publish 失敗を成功扱いしない（呼び出し元で補償）。
                 raise EventPublishError(f"publish failed after commit: {type_} seq={seq}")
             return envelope
 
@@ -194,8 +175,6 @@ class EventPublisher:
         reliable: bool = True,
         lossy_seq: int | None = None,
     ) -> dict[str, Any]:
-        # `reliable` を全イベントに明示（既定 true）。欠番検知は reliable のみ対象。
-        # lossy イベントは `lossy_seq` で順序付ける（`seq` は現在の reliable 値の echo）。
         envelope: dict[str, Any] = {
             "v": SCHEMA_VERSION,
             "type": type_,
@@ -228,17 +207,14 @@ class EventPublisher:
                 await self._transport.send(data, topic=EVENTS_TOPIC, reliable=reliable)
                 sent = True
             except Exception as exc:  # pragma: no cover - network/optional
-                # publish 失敗は会話を止めない（ライブ差分は次のイベントで前進）。
                 log.warning("event_publish_failed", type=type_, seq=seq, error=str(exc))
         log.info("event_published", type=type_, seq=seq, reliable=reliable, sent=sent)
         return sent
 
-    # ── §3 種別ヘルパ ──────────────────────────────────────────────────
     async def status(self, phase: str, agents_active: int | None = None) -> dict[str, Any]:
         payload: dict[str, Any] = {"phase": phase}
         if agents_active is not None:
             payload["agents_active"] = agents_active
-        # 高頻度・使い捨ては lossy 可（契約 §1）。
         return await self._emit("status", payload, reliable=False)
 
     async def transcript_partial(
@@ -336,7 +312,6 @@ class EventPublisher:
         }
         if selected_value is not None:
             payload["selected_value"] = selected_value
-        # 解消の実測。矛盾カードの解消（ユーザー選択）は session.completed のサマリへ。
         self.detections_resolved += 1
         if resolution == RESOLUTION_USER_SELECTED:
             self.contradictions_resolved += 1
@@ -375,7 +350,7 @@ class EventPublisher:
         else:
 
             def _before_send(seq: int) -> bool:
-                on_persist(seq)  # 採番 → 保存（失敗時は例外で abort = 採番せず送らない）。
+                on_persist(seq)
                 return True
 
             env = await self._emit_guarded("question.asked", payload, before_send=_before_send)
@@ -410,9 +385,6 @@ class EventPublisher:
         return env
 
     async def analysis_progress(self, asset_id: str, pct: int, stage: str) -> dict[str, Any]:
-        # analysis.* は reliable ストリーム。reliable seq を採番して送る。lossy に
-        # すると echo 仕様で連続 progress（10%→50%）が同一 seq になり、web の upsert（seq
-        # 版管理）が 2 件目を重複破棄して進捗が止まる。API 経由も reliable。
         return await self._emit(
             "analysis.progress",
             {"asset_id": asset_id, "pct": pct, "stage": stage},
@@ -514,9 +486,6 @@ def _decode_web_event(
     return obj
 
 
-# user.text のサーバ側長さ上限。従来の /context（max_context_chars）相当の
-# ガードがデータチャネル経由には無いため、長大入力でメモリ/LLM コンテキストを浪費しないよう
-# agent 受信境界で切り詰める。1ターンの発話としては十分広い値。
 MAX_USER_TEXT_CHARS = 4000
 
 
@@ -560,7 +529,6 @@ def decode_user_answered(
     return question_id, answer.strip()[:MAX_USER_TEXT_CHARS]
 
 
-# 動画解析の観察を会話に注入する際、注入プロンプトへ載せる最大件数（LLM コンテキスト保護）。
 MAX_INJECTED_OBSERVATIONS = 12
 
 

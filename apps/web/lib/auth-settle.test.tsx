@@ -1,9 +1,4 @@
 // @vitest-environment jsdom
-// 回帰テスト: real モードで id.prompt() を呼んだ *だけ* では ready を立てない。
-// 通知コールバック（notDisplayed/skipped/dismissed）・credential 到着・タイムアウトの
-// いずれかで初めて解決する。これにより auto_select でセッションを静かに復元できる
-// ユーザーが、ready=true かつ loggedIn=false の窓で RequireAuth に早期リダイレクト
-// される事象を防ぐ。
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -20,20 +15,17 @@ const initialize = vi.fn((config: { callback: (res: { credential?: string }) => 
   capturedCallback = config.callback;
 });
 const renderButton = vi.fn();
-// prompt は momentListener を保持するだけ（自動発火させない）= 「通知前」状態を再現する。
 const prompt = vi.fn((listener?: MomentListener) => {
   capturedListener = listener ?? null;
 });
 const disableAutoSelect = vi.fn();
 
-// 解決トリガとなる通知（dismissed = ユーザーが One Tap を閉じた）。
 const dismissed = {
   isNotDisplayed: () => false,
   isSkippedMoment: () => false,
   isDismissedMoment: () => true,
 };
 
-// 表示用 decodeProfile が base64url を読めるよう、最小の JWT 風文字列を組む。
 function makeJwt(claims: Record<string, unknown> = { email: "a@example.com", name: "A" }): string {
   const b64 = (o: unknown) =>
     btoa(JSON.stringify(o)).replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
@@ -44,13 +36,11 @@ beforeEach(() => {
   vi.stubEnv("NEXT_PUBLIC_GOOGLE_CLIENT_ID", "test-client-id.apps.googleusercontent.com");
   vi.resetModules();
   vi.useFakeTimers();
-  // credential 到着でヒントが書かれるため、テスト間で持ち越さない。
   window.localStorage.clear();
   capturedListener = null;
   capturedCallback = null;
   initialize.mockClear();
   prompt.mockClear();
-  // window.google を先に与え、setup() の同期パスで initialize/prompt を呼ばせる。
   (window as unknown as { google: unknown }).google = {
     accounts: { id: { initialize, renderButton, prompt, disableAutoSelect } },
   };
@@ -105,9 +95,6 @@ describe("useGoogleAuth settle race (#192)", () => {
   });
 });
 
-// ログイン痕跡ヒント（AUTH_HINT_KEY）: 「ログイン済みでフルロードすると固定 2.5s の settle が
-// One Tap 復元より先に発火し、毎回 /login を経由してから元ページへ戻る」バグの回帰テスト。
-// ヒントがあるブラウザでは復元を長めに待ち、保護ページへ直接入れるようにする。
 describe("useGoogleAuth ログイン痕跡ヒント（復元待ちの延長）", () => {
   it("credential 到着でヒントが書かれ、signOut で消える", async () => {
     const { useGoogleAuth, AUTH_HINT_KEY } = await import("./auth");
@@ -125,13 +112,11 @@ describe("useGoogleAuth ログイン痕跡ヒント（復元待ちの延長）",
     window.localStorage.setItem(AUTH_HINT_KEY, "1");
     const { result } = renderHook(() => useGoogleAuth());
 
-    // 従来の固定値（2.5s）を過ぎても未ログイン確定にしない＝/login への誤送を防ぐ。
     act(() => {
       vi.advanceTimersByTime(2500);
     });
     expect(result.current.ready).toBe(false);
 
-    // 遅れて届いた復元をそのまま受けてログイン状態で解決する。
     act(() => capturedCallback?.({ credential: makeJwt() }));
     expect(result.current.loggedIn).toBe(true);
     expect(result.current.ready).toBe(true);

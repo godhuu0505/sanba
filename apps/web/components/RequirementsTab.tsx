@@ -1,9 +1,5 @@
 "use client";
 
-// 要件絵巻タブの本文。MoSCoW 区分の要件を**閲覧のみ**で並べ、未解消の深掘り対象を続ける。
-// 仕様: docs/reference/conversation-experience.md §3,§7 / screens/06-requirements-scroll.md。
-// 編集はしない（確定操作は 07 判定 → 08 結果）。
-
 import { useEffect, useRef } from "react";
 import { TriangleAlert } from "lucide-react";
 
@@ -13,25 +9,11 @@ import type { Detection, Requirement } from "@/lib/realtime/types";
 import { DeepDiveList } from "./DeepDiveList";
 import { RequirementsScrollList } from "./RequirementsScrollList";
 
-// MoSCoW 区分の本体リスト（空状態含む）は RequirementsScrollList に抽出済み。
-// このタブは見出し＋深掘り（未解消）導線のみを所有する。
-
 export interface RequirementsTabProps {
   requirements: Requirement[];
-  /** 未解消の検知（深掘り対象）。 */
   deepDive: Detection[];
-  /**
-   * 深掘りの「会話で確認」押下。未指定なら導線を出さない
-   * （セッション終了後の閲覧など、会話へ戻れない文脈で偽ボタンを作らない）。
-   */
   onJump?: (detectionId: string) => void;
-  /**
-   * ミニ状況「未確定」からの遷移時に true。深掘り（未解消）対象の見出しへスクロールして
-   * 視線を誘導する。要件タブを開いただけ（要件タップ）では false。タブ再マウントで誤発火しない
-   * よう、消費後は親が onUnresolvedFocusConsumed で false に戻す（ワンショット）。
-   */
   focusUnresolved?: boolean;
-  /** focusUnresolved を消費したことを親へ通知（false へ戻す）。 */
   onUnresolvedFocusConsumed?: () => void;
 }
 
@@ -42,12 +24,8 @@ export function RequirementsTab({
   focusUnresolved = false,
   onUnresolvedFocusConsumed,
 }: RequirementsTabProps) {
-  // end_user モードでは MoSCoW 等の開発語彙を見出しから外す（FR-2.4 / ADR-0032）。
   const endUser = useInterviewMode() === "end_user";
   const deepDiveRef = useRef<HTMLHeadingElement>(null);
-  // 「未確定」からの遷移時のみ深掘り対象へスクロールし、ワンショットで消費する。
-  // 要件タップ（focusUnresolved=false）や通常のタブ再マウントでは発火しない。
-  // jsdom は scrollIntoView 未実装のため optional 呼び出しで安全に no-op になる。
   useEffect(() => {
     if (!focusUnresolved) return;
     deepDiveRef.current?.scrollIntoView?.({ behavior: "smooth", block: "start" });

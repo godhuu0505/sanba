@@ -44,7 +44,6 @@ def test_transient_error_before_last_attempt_returns_503(
         headers={"X-CloudTasks-TaskRetryCount": "0"},
     )
     assert resp.status_code == 503
-    # まだ failed 化しない（リトライ余地あり）。
     assert repo.get_material("s1", "asset-x")["status"] == "analyzing"
 
 
@@ -64,7 +63,6 @@ def test_transient_error_on_last_attempt_marks_failed_and_200(
     )
     assert resp.status_code == 200
     assert resp.json()["status"] == "failed"
-    # 枯渇時はハンドラ内で failed 化する（Cloud Tasks は再呼び出ししないため）。
     assert repo.get_material("s1", "asset-x")["status"] == "failed"
 
 
@@ -72,7 +70,7 @@ def test_bad_payload_returns_400(
     client_with_material: tuple[TestClient, SessionRepository],
 ) -> None:
     client, _ = client_with_material
-    resp = client.post("/tasks/analyze-video", json={"asset_id": "x"})  # session_id 欠落
+    resp = client.post("/tasks/analyze-video", json={"asset_id": "x"})
     assert resp.status_code == 400
 
 

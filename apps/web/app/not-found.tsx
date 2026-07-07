@@ -2,14 +2,9 @@ import Link from "next/link";
 
 import { AppHeader, Button, Figure, Screen } from "@/components/sanba";
 
-/**
- * 404。白い紙×原色×棒人間（ADR-0025）の意匠で、迷子をホームへ導く。
- * サンバさん（問いかけ）が「この頁は見当たりませぬ」と首をかしげる。
- */
 export default function NotFound() {
   return (
     <Screen>
-      {/* どの画面でも SANBA ヘッダー（2026-07 要望）。迷子の頁でもブランドを保つ。 */}
       <AppHeader />
       <div className="mx-auto flex w-full max-w-90 flex-1 flex-col items-center justify-center gap-3.5 px-6 py-10 text-center">
         <Figure state="asking" className="w-[84px]" label="頁が見つからず首をかしげる棒人間" />

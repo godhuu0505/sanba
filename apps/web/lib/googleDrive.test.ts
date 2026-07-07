@@ -3,10 +3,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { driveFetchPlan, importDriveFile } from "./googleDrive";
 
-// Google ドライブ取り込み（ADR-0049）の変換規約を検証する:
-// - Google ネイティブ形式は export（Docs→Markdown / スプレッドシート→xlsx / スライド→テキスト）
-// - それ以外は alt=media でそのまま取得
-// - 実体が受理外の形式なら例外（サーバ 415 を踏む前に弾く）
 
 afterEach(() => {
   vi.restoreAllMocks();

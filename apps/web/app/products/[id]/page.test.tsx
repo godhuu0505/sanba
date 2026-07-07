@@ -4,9 +4,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApiError, type Product } from "@/lib/api";
 
-// アプリ詳細（FR-1.2）: 404 の「見つからない」平し・基本情報の保存・語彙の即時 PATCH・
-// 削除の二段確認を検証する。子カード（repo/invites）は API をモックして薄く通す。
-
 const authState = {
   credential: "id-token",
   profile: null,
@@ -37,7 +34,6 @@ vi.mock("@/lib/api", async (importOriginal) => {
     fetchProduct: (...args: unknown[]) => fetchProduct(...args),
     updateProduct: (...args: unknown[]) => updateProduct(...args),
     deleteProduct: (...args: unknown[]) => deleteProduct(...args),
-    // 子カードの API は空応答で薄く通す（このテストの関心外）。
     fetchGithubRepos: () => Promise.resolve({ enabled: false, repos: [], default: null }),
     listProductInvites: () => Promise.resolve([]),
   };
@@ -104,7 +100,6 @@ describe("アプリ詳細画面（ADR-0031 / FR-1.2）", () => {
   it("URL キーワードを変更して保存でき、形式違反は API を呼ばず弾く（ADR-0045）", async () => {
     render(<ProductDetailPage />);
     const slugInput = await screen.findByLabelText("URL キーワード（必須）");
-    // 大文字は小文字へ正規化して送る。
     fireEvent.change(slugInput, { target: { value: "Renamed-App" } });
     fireEvent.click(screen.getByRole("button", { name: "保存する" }));
     await waitFor(() =>
@@ -114,7 +109,6 @@ describe("アプリ詳細画面（ADR-0031 / FR-1.2）", () => {
         "id-token",
       ),
     );
-    // 形式違反はその場で指摘し API を呼ばない。
     updateProduct.mockClear();
     fireEvent.change(slugInput, { target: { value: "bad slug!" } });
     fireEvent.click(screen.getByRole("button", { name: "保存する" }));

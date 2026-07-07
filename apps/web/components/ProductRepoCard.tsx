@@ -1,10 +1,5 @@
 "use client";
 
-// アプリの前提リポジトリ紐づけカード（ADR-0031 / FR-1.3）。
-// 02 準備の repo+branch 選択（app/page.tsx / ADR-0027・0028）と同じ API を使い、
-// POST /api/products/{id}/github で product 単位に紐づけ・索引する。
-// 紐づけは GitHub App 連携済み（repos.linked）が前提（API が 409 を返す）。
-
 import { useEffect, useState } from "react";
 
 import { Button, Card, CardTitle, Chip, Divider, Field, Select } from "@/components/sanba";
@@ -17,7 +12,6 @@ import {
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 
-/** 索引状態 → 表示ラベルとトーン（ubiquitous-language: GitHubIndexStatus）。 */
 const STATUS_LABEL: Record<string, { label: string; tone: "neutral" | "gold" | "success" | "danger" | "info" }> = {
   none: { label: "未紐づけ", tone: "neutral" },
   pending: { label: "索引待ち", tone: "info" },
@@ -32,7 +26,6 @@ export function ProductRepoCard({
   onChanged,
 }: {
   product: Product;
-  /** 紐づけ完了（indexing 開始）後に親が product を再取得するためのフック。 */
   onChanged: () => void;
 }) {
   const auth = useAuth();
@@ -45,8 +38,6 @@ export function ProductRepoCard({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // 候補一覧はこのカードのマウント時に取得する。管理画面は明示的に「紐づけに来た」
-  // 文脈なので、02 準備の「入るまで叩かない」原則（ADR-0027）と整合する。
   useEffect(() => {
     let cancelled = false;
     fetchGithubRepos(idToken)
@@ -57,7 +48,6 @@ export function ProductRepoCard({
     };
   }, [idToken]);
 
-  // repo を選んだら branch 一覧を取得（既定はデフォルトブランチ / ADR-0028）。
   const appItem = choices?.linked ? (choices.items ?? []).find((i) => i.full_name === repo) : undefined;
   useEffect(() => {
     if (!appItem) {
@@ -75,9 +65,7 @@ export function ProductRepoCard({
         setBranches(names);
         setBranch((cur) => (names.includes(cur) ? cur : appItem.default_branch));
       })
-      .catch(() => {
-        // branch 一覧の不調はデフォルトブランチのまま進める（本流を止めない）。
-      });
+      .catch(() => {});
     return () => {
       cancelled = true;
     };

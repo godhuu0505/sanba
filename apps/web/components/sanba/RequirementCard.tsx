@@ -12,22 +12,14 @@ const STATUS: Record<RequirementStatus, { label: string; tone: ChipTone }> = {
   rejected: { label: "却下", tone: "danger" },
 };
 
-/**
- * 「要件を検める」のレビュー札。状態チップ＋確度（役割）／要件文／メタ（優先度・分類）／
- * 操作（改める・認める・退ける）。操作は handler を渡すと既定の三択を描く。
- */
 export interface RequirementCardProps extends React.HTMLAttributes<HTMLDivElement> {
   status: RequirementStatus;
-  /** 例: "企画 ・ 確度 82%"。 */
   confidence?: React.ReactNode;
-  /** 要件の本文。children と同義（どちらでも可）。 */
   statement?: React.ReactNode;
-  /** 例: "優先度: should ・ 分類: scope"。 */
   meta?: React.ReactNode;
   onRevise?: () => void;
   onApprove?: () => void;
   onReject?: () => void;
-  /** handler を渡さず操作行だけ描きたいとき（ショーケース等）に true。 */
   showActions?: boolean;
 }
 
@@ -49,8 +41,6 @@ export function RequirementCard({
   return (
     <div
       className={cn(
-        // 要件を検めるレビュー札。主要カードより軽い 1.5px 墨枠＋手描きの揺らぎ角丸＋
-        // 3px の淡い墨影（積み重なっても重くならない札の質感 / ADR-0033）。
         "sanba-wobble flex w-full flex-col gap-[10px] border-[1.5px] border-sanba-frame bg-sanba-surface px-[16px] py-[14px] shadow-[3px_3px_0_var(--sanba-shadow)]",
         className,
       )}
@@ -68,7 +58,6 @@ export function RequirementCard({
       {meta != null && <p className="text-[12px] text-sanba-muted">{meta}</p>}
       {hasActions && (
         <div className="flex gap-[8px] pt-[2px]">
-          {/* showActions はショーケース用で全ボタンを強制表示。通常は handler が渡された分だけ描く。 */}
           {(showActions || onRevise) && (
             <Button variant="outline" size="sm" onClick={onRevise}>
               改める

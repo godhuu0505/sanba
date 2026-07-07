@@ -40,61 +40,52 @@ async def test_envelope_has_required_fields() -> None:
 
 @pytest.mark.asyncio
 async def test_reliable_seq_is_monotonic_and_lossy_does_not_consume_it() -> None:
-    # reliable イベントは連続した seq を採る。lossy（status）は reliable seq を消費せず現在値を
-    # echo し、独立の lossy_seq で順序付ける。
     t = RecordingTransport()
     pub = EventPublisher("s1", t)
-    await pub.transcript_final("顧客", "customer", "u1", "検索したい")  # reliable seq=1
-    s = await pub.status("listening")  # lossy: seq echoes 1, lossy_seq=1
-    await pub.detection_gap("d1", "性能が未確認", "non_functional", [])  # reliable seq=2
+    await pub.transcript_final("顧客", "customer", "u1", "検索したい")
+    s = await pub.status("listening")
+    await pub.detection_gap("d1", "性能が未確認", "non_functional", [])
     reliable = [m["event"] for m in t.sent if m["event"].get("reliable") is not False]
-    assert [e["seq"] for e in reliable] == [1, 2]  # reliable seq は連続
+    assert [e["seq"] for e in reliable] == [1, 2]
     assert s["reliable"] is False
-    assert s["seq"] == 1  # 現在の reliable seq を echo（消費しない）
+    assert s["seq"] == 1
     assert s["lossy_seq"] == 1
 
 
 @pytest.mark.asyncio
 async def test_lossy_seq_increments_independently() -> None:
-    # 連続する lossy イベントは reliable seq を進めず lossy_seq だけ進める。
     t = RecordingTransport()
     pub = EventPublisher("s1", t)
     a = await pub.status("listening")
     b = await pub.status("deliberating")
     assert a["lossy_seq"] == 1
     assert b["lossy_seq"] == 2
-    assert a["seq"] == b["seq"] == 0  # reliable seq は未消費（0 のまま echo）
+    assert a["seq"] == b["seq"] == 0
     assert pub.seq == 0
 
 
 @pytest.mark.asyncio
 async def test_start_lossy_seq_seeds_lossy_across_restart() -> None:
-    # 再起動シミュレーション: epoch ブロック基底からシードすると lossy_seq が前回を上回り、
-    # 接続維持中の web が再起動後の status を黙殺しない（lossy_seq の大域単調性）。
     t = RecordingTransport()
     pub = EventPublisher("s1", t, start_lossy_seq=1_000_000_000)
     s = await pub.status("listening")
-    assert s["lossy_seq"] == 1_000_000_001  # base+1（0 から振り直さない）
+    assert s["lossy_seq"] == 1_000_000_001
 
 
 @pytest.mark.asyncio
 async def test_analysis_progress_is_reliable_with_distinct_seq() -> None:
-    # analysis.* は reliable。連続 progress は別々の reliable seq を採り、web の
-    # upsert（seq 版管理）で 2 件目が重複破棄されない。
     t = RecordingTransport()
     pub = EventPublisher("s1", t)
     a = await pub.analysis_progress("a1", 10, "received")
     b = await pub.analysis_progress("a1", 50, "analyzing")
-    assert a.get("reliable") is not False  # lossy ではない
+    assert a.get("reliable") is not False
     assert "lossy_seq" not in a
     assert a["seq"] == 1
-    assert b["seq"] == 2  # 別 seq → web で重複破棄されない
+    assert b["seq"] == 2
 
 
 @pytest.mark.asyncio
 async def test_start_seq_seeds_monotonic_continuation() -> None:
-    # 再起動シミュレーション: 保存済み last_seq=5 からシードすると次の reliable は seq=6。
-    # 0 から振り直さないことで web の seq ガードが再起動後イベントを黙殺しない。
     t = RecordingTransport()
     pub = EventPublisher("s1", t, start_seq=5)
     env = await pub.detection_gap("d1", "性能が未確認", "non_functional", [])
@@ -128,10 +119,10 @@ async def test_detection_ambiguous_payload() -> None:
     assert ev["type"] == "detection.ambiguous"
     assert ev["detector"] == "ambiguity_detector"
     assert ev["refs"] == ["u3"]
-    assert "category" not in ev  # 抜けと違い category は持たない
+    assert "category" not in ev
     assert t.sent[0]["reliable"] is True
     assert pub.ambiguous_published == 1
-    assert pub.detections_published == 1  # 不明瞭も検知総数に算入
+    assert pub.detections_published == 1
 
 
 @pytest.mark.asyncio
@@ -152,10 +143,8 @@ async def test_question_asked_payload() -> None:
     assert pub.questions_published == 1
 
 
-# ── 現在質問の保存→送信順序・クリア──────────────
 @pytest.mark.asyncio
 async def test_question_asked_persists_before_send() -> None:
-    # §5-1: 採番 → 保存 → 送信。on_persist は publish の前に呼ばれ、asked_seq = envelope seq。
     t = RecordingTransport()
     pub = EventPublisher("s1", t)
     order: list[str] = []
@@ -173,15 +162,14 @@ async def test_question_asked_persists_before_send() -> None:
 
     t.send = tracking_send  # type: ignore[method-assign]
     env = await pub.question_asked("q1", "並び順は？", on_persist=on_persist)
-    assert order == ["persist", "send"]  # 保存が送信より先
+    assert order == ["persist", "send"]
     assert env is not None
-    assert seen_seq == [env["seq"]]  # asked_seq は envelope seq と一致
+    assert seen_seq == [env["seq"]]
     assert pub.questions_published == 1
 
 
 @pytest.mark.asyncio
 async def test_question_asked_save_failure_does_not_send_or_consume_seq() -> None:
-    # §5-1: 保存失敗時は送信せず採番も確定しない（欠番を作らない）。
     t = RecordingTransport()
     pub = EventPublisher("s1", t)
 
@@ -190,17 +178,15 @@ async def test_question_asked_save_failure_does_not_send_or_consume_seq() -> Non
 
     with pytest.raises(RuntimeError):
         await pub.question_asked("q1", "p", on_persist=failing_persist)
-    assert t.sent == []  # 送られていない
-    assert pub.seq == 0  # seq は消費されていない
+    assert t.sent == []
+    assert pub.seq == 0
     assert pub.questions_published == 0
-    # 次の reliable イベントは欠番にならず seq=1 を採る（lossy は reliable seq を消費しない）。
     env = await pub.detection_gap("d1", "性能が未確認", "non_functional", [])
     assert env["seq"] == 1
 
 
 @pytest.mark.asyncio
 async def test_question_cleared_uses_envelope_seq_and_persists_first() -> None:
-    # §5-5/§5-9: cleared_seq は envelope seq そのもの。tombstone commit → publish の順。
     t = RecordingTransport()
     pub = EventPublisher("s1", t)
     order: list[str] = []
@@ -223,13 +209,12 @@ async def test_question_cleared_uses_envelope_seq_and_persists_first() -> None:
     assert env["type"] == "question.cleared"
     assert env["question_id"] == "q1"
     assert order == ["persist", "send"]
-    assert persisted_seq == [env["seq"]]  # cleared_seq == envelope seq（二重採番しない）
+    assert persisted_seq == [env["seq"]]
     assert pub.questions_cleared == 1
 
 
 @pytest.mark.asyncio
 async def test_question_cleared_aborts_when_cas_rejects() -> None:
-    # §5-3/§5-7: CAS が False（id 不一致/既クリア）なら publish せず採番もしない。
     t = RecordingTransport()
     pub = EventPublisher("s1", t)
 
@@ -239,13 +224,12 @@ async def test_question_cleared_aborts_when_cas_rejects() -> None:
     env = await pub.question_cleared("q1", on_persist=on_persist)
     assert env is None
     assert t.sent == []
-    assert pub.seq == 0  # 欠番を作らない
+    assert pub.seq == 0
     assert pub.questions_cleared == 0
 
 
 @pytest.mark.asyncio
 async def test_question_cleared_raises_when_publish_fails_after_commit() -> None:
-    # §5-9: commit 後の送信失敗を成功扱いしない（EventPublishError で呼び出し元へ返す）。
     class FailingTransport:
         async def send(self, payload: bytes, *, topic: str, reliable: bool) -> None:
             raise RuntimeError("network down")
@@ -255,12 +239,12 @@ async def test_question_cleared_raises_when_publish_fails_after_commit() -> None
     committed: list[int] = []
 
     def on_persist(cleared_seq: int) -> bool:
-        committed.append(cleared_seq)  # tombstone は commit 済みを模す
+        committed.append(cleared_seq)
         return True
 
     with pytest.raises(EventPublishError):
         await pub.question_cleared("q1", on_persist=on_persist)
-    assert committed == [1]  # commit は起きた（seq は消費される）
+    assert committed == [1]
     assert pub.seq == 1
 
 
@@ -270,7 +254,6 @@ async def test_question_asked_without_options() -> None:
     pub = EventPublisher("s1", t)
     await pub.question_asked("q2", "自由にお聞かせください")
     ev = t.sent[0]["event"]
-    # 選択肢なし（自由記述）の問いは options を持たない。
     assert "options" not in ev
 
 
@@ -329,7 +312,6 @@ async def test_counters_track_detections() -> None:
     pub = EventPublisher("s1", t)
     await pub.detection_gap("d1", "性能が未確認", "non_functional", [])
     await pub.detection_contradiction("d2", "食い違い", refs=[])
-    # 種別ごとに分けて計測し、detections_published は合算（後方互換）。
     assert pub.gaps_published == 1
     assert pub.contradictions_published == 1
     assert pub.detections_published == 2
@@ -339,9 +321,7 @@ async def test_counters_track_detections() -> None:
 async def test_resolution_counters_distinguish_user_and_agent() -> None:
     t = RecordingTransport()
     pub = EventPublisher("s1", t)
-    # 抜けの自動解消（agent）は contradictions_resolved に数えない。
     await pub.detection_resolved("d1", resolution="agent_resolved")
-    # 矛盾カードのユーザー解消のみ contradictions_resolved。
     await pub.detection_resolved("d2", resolution="user_selected", selected_value="relevance")
     assert pub.detections_resolved == 2
     assert pub.contradictions_resolved == 1
@@ -362,7 +342,6 @@ async def test_session_completed_summary_uses_real_counts() -> None:
         artifacts=[{"kind": "issue", "url": "http://x"}],
     )
     summary = t.sent[-1]["event"]["summary"]
-    # gaps_found は抜けのみ（矛盾を二重計上しない）、contradictions_resolved は解消済みの矛盾のみ。
     assert summary["gaps_found"] == 2
     assert summary["contradictions_resolved"] == 1
 
@@ -421,12 +400,10 @@ def test_decode_user_selection_rejects_other_session() -> None:
     assert decode_user_selection(payload, expected_session_id="s1") is None
 
 
-# ── user.text ─────────────────────────────────────────────────────────────
 def test_decode_user_text_valid() -> None:
     payload = json.dumps(
         {"v": 1, "type": "user.text", "session_id": "s1", "text": "  新着順で  "}
     ).encode()
-    # 前後空白は落として本文を返す。
     assert decode_user_text(payload) == "新着順で"
 
 
@@ -446,7 +423,6 @@ def test_decode_user_text_rejects_other_session() -> None:
 
 
 def test_decode_user_text_truncates_oversized_input() -> None:
-    # 長大入力はサーバ受信境界で切り詰める（メモリ/LLM コンテキスト保護）。
     from sanba_agent.events import MAX_USER_TEXT_CHARS
 
     payload = json.dumps({"type": "user.text", "text": "あ" * (MAX_USER_TEXT_CHARS + 500)}).encode()
@@ -455,7 +431,6 @@ def test_decode_user_text_truncates_oversized_input() -> None:
     assert len(decoded) == MAX_USER_TEXT_CHARS
 
 
-# ── user.answered ─────────────────────────────────────────────────────────
 def test_decode_user_answered_prefers_selected_value() -> None:
     payload = json.dumps(
         {
@@ -466,7 +441,6 @@ def test_decode_user_answered_prefers_selected_value() -> None:
             "text": "自由記述",
         }
     ).encode()
-    # 選択肢値があれば優先する。
     assert decode_user_answered(payload, expected_session_id="s1") == ("q1", "relevance")
 
 
@@ -483,7 +457,6 @@ def test_decode_user_answered_rejects_missing_answer() -> None:
 
 
 def test_decode_user_answered_truncates_oversized_text() -> None:
-    # 自由記述回答も user.text と同じ上限で切り詰める（防御の迂回を防ぐ）。
     from sanba_agent.events import MAX_USER_TEXT_CHARS
 
     payload = json.dumps(
@@ -506,7 +479,6 @@ def test_requirement_to_contract_handles_missing_speaker() -> None:
     assert out["status"] == "draft"
 
 
-# ── decode_analysis_visual（worker/api → agent の解析完了 / ADR-0040 §4）────
 def _visual_payload(**over: object) -> bytes:
     base = {
         "v": 1,
@@ -528,7 +500,6 @@ def test_decode_analysis_visual_valid() -> None:
 
 
 def test_decode_analysis_visual_rejects_screen_share_echo() -> None:
-    # agent 自身の画面共有由来（visual: 始まり）はエコーなので弾く。
     assert decode_analysis_visual(_visual_payload(asset_id="visual:1")) is None
 
 
@@ -543,4 +514,4 @@ def test_decode_analysis_visual_rejects_other_session() -> None:
 def test_decode_analysis_visual_truncates_observations() -> None:
     many = [f"[00:0{i}] obs{i}" for i in range(30)]
     got = decode_analysis_visual(_visual_payload(extracted=many), expected_session_id="s1")
-    assert got is not None and len(got[1]) == 12  # MAX_INJECTED_OBSERVATIONS
+    assert got is not None and len(got[1]) == 12

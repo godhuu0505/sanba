@@ -23,10 +23,8 @@ from .config import settings
 
 log = structlog.get_logger(__name__)
 
-# Cloud Tasks の task 名に使える文字（[A-Za-z0-9_-]）へ正規化する。
 _TASK_NAME_SAFE = re.compile(r"[^A-Za-z0-9_-]")
 
-# 差し込み可能なディスパッチャ（テスト用）。(url, payload, oidc_sa|None) を受ける。
 Dispatcher = Callable[[str, dict[str, Any], str | None], None]
 
 

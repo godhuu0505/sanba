@@ -38,8 +38,6 @@ def heuristic_open_topics(transcript: str) -> list[str]:
     return missing
 
 
-# 基準が曖昧な言い回し。「触れられているが具体性を欠く」論点の合図。
-# 抜け（heuristic_open_topics）が「触れられていない論点」を拾うのとは対象が異なる。
 _AMBIGUITY_MARKERS = (
     "いい感じ",
     "良い感じ",
@@ -74,7 +72,6 @@ def heuristic_ambiguous_topics(transcript: str) -> list[str]:
         line = raw.strip()
         if not line:
             continue
-        # "[u1] participant: 本文" の本文部分のみを対象にする（話者ラベルの誤検出回避）。
         body = line.split(":", 1)[1].strip() if ":" in line else line
         if not any(marker in body for marker in _AMBIGUITY_MARKERS):
             continue

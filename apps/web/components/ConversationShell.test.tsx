@@ -51,7 +51,6 @@ describe("ConversationShell（共通シェル）", () => {
     fireEvent.click(screen.getByRole("tab", { name: "参考資料" }));
     expect(screen.getByText("ファイル本文")).toBeTruthy();
     expect(screen.queryByText("会話本文")).toBeNull();
-    // 音声会話の常時UIはタブに依らず描画され続ける
     expect(screen.getByText("問いピン")).toBeTruthy();
     expect(screen.getByText("下部バー")).toBeTruthy();
     expect(screen.getByText(/要件 8/)).toBeTruthy();
@@ -118,15 +117,12 @@ describe("ConversationShell（共通シェル）", () => {
         bottomBar={<div>下部バー</div>}
       />,
     );
-    // セッション中専用 UI は（props が渡されていても）出さない。
     expect(screen.queryByText(/REC/)).toBeNull();
     expect(screen.queryByRole("button", { name: "会話を終了" })).toBeNull();
     expect(screen.queryByText("問いピン")).toBeNull();
     expect(screen.queryByText("下部バー")).toBeNull();
-    // タブと本文（閲覧）は従来どおり。
     expect(screen.getByRole("tab", { name: "会話履歴" })).toBeTruthy();
     expect(screen.getByText("会話本文")).toBeTruthy();
-    // 結果（08）へ戻る導線。
     fireEvent.click(screen.getByRole("button", { name: "結果に戻る" }));
     expect(onBackToResult).toHaveBeenCalledTimes(1);
   });
@@ -152,13 +148,10 @@ describe("ConversationShell（共通シェル）", () => {
         bottomBar={<div>bar</div>}
       />,
     );
-    // 既定は展開: ミニ状況が見える。
     expect(screen.getByText(/要件 8/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "ヘッダーを最小化" }));
-    // 最小化でミニ状況（要件/未確定/資料）は隠れ、タブは残る。
     expect(screen.queryByText(/要件 8/)).toBeNull();
     expect(screen.getByRole("tab", { name: "会話履歴" })).toBeTruthy();
-    // 復帰トグルで元に戻る。
     fireEvent.click(screen.getByRole("button", { name: "ヘッダーを開く" }));
     expect(screen.getByText(/要件 8/)).toBeTruthy();
   });

@@ -1,9 +1,5 @@
 "use client";
 
-// ルートのエラー境界 (App Router)。これが無いと未捕捉の例外で Next 既定の
-// 「This page couldn't load」だけが出て原因が分からない。SANBA 意匠で実エラーを
-// 見せ、再試行と再読込（チャンク不整合＝古いタブ対策）の導線を出す。
-
 import { useEffect } from "react";
 
 import { AppHeader, Button, Card, CardTitle, Screen } from "@/components/sanba";
@@ -16,18 +12,15 @@ export default function Error({
   reset: () => void;
 }) {
   useEffect(() => {
-    // 観測性: クライアント例外をコンソールへ。将来 Sentry/OTel に送る土台。
     console.error("[app/error]", error);
   }, [error]);
 
-  // ビルド更新で旧チャンクが 404 になる典型は名前で判別できる。再読込で直る。
   const isChunkError = /ChunkLoadError|Loading chunk|importing a module script failed/i.test(
     error.message,
   );
 
   return (
     <Screen>
-      {/* どの画面でも SANBA ヘッダー（2026-07 要望）。エラー時もブランドと現在地を保つ。 */}
       <AppHeader />
       <div className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center px-6 py-10">
         <p className="mb-2 text-[12px] tracking-[0.2em] text-sanba-gold-text">

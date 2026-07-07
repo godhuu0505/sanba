@@ -1,17 +1,11 @@
 "use client";
 
-// 会話履歴タブの本文。SessionState.transcript を吹き出しで描く。
-// 仕様: docs/reference/conversation-experience.md §2（会話履歴）/ screens/04-conversation.md。
-
 import { LoaderCircle, Mic } from "lucide-react";
 
 import type { TranscriptLine } from "@/lib/realtime/store";
 
 import { ChatBubble } from "./sanba/ChatBubble";
 
-// SANBA（エージェント）側の role 集合。これ以外（participant / customer / pm 等）は参加者扱い。
-// 実データの参加者ロールは "participant"（apps/agent main.py）/ "customer" / "pm"（fixtures）で
-// "user" は来ないため、user リテラル一致ではなくエージェント側を allowlist して判定する。
 const AGENT_ROLES = new Set(["assistant", "agent", "sanba"]);
 
 export interface ChatHistoryProps {

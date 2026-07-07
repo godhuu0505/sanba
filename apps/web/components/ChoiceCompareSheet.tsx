@@ -1,8 +1,5 @@
 "use client";
 
-// 選択肢の比較（ボトムシート）。全選択肢を効き目（萌黄）/留意（黄土）で横並びに見比べ、各行で選べる。
-// 仕様: docs/reference/conversation-experience.md §4。
-
 import { Check, TriangleAlert, X } from "lucide-react";
 
 export interface CompareRow {
@@ -15,7 +12,6 @@ export interface ChoiceCompareSheetProps {
   rows: CompareRow[];
   onSelect: (index: number) => void;
   onClose: () => void;
-  /** 各行から詳細へ深掘りする（任意）。 */
   onDetail?: (index: number) => void;
 }
 

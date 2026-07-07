@@ -30,7 +30,6 @@ def test_parse_observations_respects_limit() -> None:
 
 
 def test_analyze_returns_empty_without_creds() -> None:
-    # creds 未設定（use_vertexai=False, api_key 空）なら静かに空を返す。
     cfg = MediaConfig(use_vertexai=False, google_api_key="")
     assert analyze_image(b"x", "image/png", cfg) == []
     result = analyze_video(cfg, gcs_uri="gs://b/o.mp4")

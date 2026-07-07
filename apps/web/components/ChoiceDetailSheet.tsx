@@ -1,28 +1,18 @@
 "use client";
 
-// 選択肢の詳細確認（ボトムシート）。1選択肢を観点ごとに深掘りし、前後で巡回・比較・確定できる。
-// 仕様: docs/reference/conversation-experience.md §4。
-// 観点データ（どう並ぶ/効き目/留意/出所）は contract に無いため任意。与えられたものだけ描く。
-
 import { ChevronLeft, ChevronRight, Mic, X } from "lucide-react";
 
 export interface ChoiceOptionDetail {
   label: string;
-  /** どう並ぶ？ */
   how?: string;
-  /** 効き目（萌黄）。 */
   effect?: string;
-  /** 留意（黄土）。 */
   caution?: string;
-  /** 関連・出所。 */
   source?: string;
 }
 
 export interface ChoiceDetailSheetProps {
   option: ChoiceOptionDetail;
-  /** 何番目か（0 始まり・表示用）。 */
   index: number;
-  /** 全選択肢数（表示用）。 */
   total: number;
   onSelect: () => void;
   onPrev: () => void;

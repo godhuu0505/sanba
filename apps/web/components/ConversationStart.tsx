@@ -1,13 +1,5 @@
 "use client";
 
-// 03 会話開始（開始前 / 接続 / 許可 / 失敗）。screens/03-conversation-start.md / ADR-0018。
-// 準備（02）から会話フェーズ（04）へ橋渡しする専用レイアウト。接続とマイク許可を確実に取り、
-// 失敗時は理由提示＋復帰導線（設定・再試行）を出す。
-//
-// 構成: LiveKit に触れる薄いコンテナ（ConversationStart / RoomGate）と、テスト可能な
-// 純プレゼン（StartIntro / ConnectingOverlay / StartFailed）に分ける。表示は古語、
-// 操作の aria-label は現代語・状態はラベル＋アイコン併記（ADR-0017）。
-
 import { LiveKitRoom, StartAudio, useConnectionState } from "@livekit/components-react";
 import { ConnectionState, type RoomOptions } from "livekit-client";
 import { Check, Circle, Info, LoaderCircle, Lock, Mic, TriangleAlert } from "lucide-react";
@@ -18,11 +10,6 @@ import { AppHeader, Button, Card, Figure, Screen } from "@/components/sanba";
 import type { JoinResponse } from "../lib/api";
 import { SessionView } from "./SessionView";
 
-// マイク取得のブラウザ側前処理を明示する（ADR-0039）。既定でも大半のブラウザは有効だが、
-// エコー除去・ノイズ抑制・自動ゲインを明示することで、雑音・PC 内蔵マイク由来の誤認識
-// （韓国語/中国語化・変な文字）を入口で減らす。ノイズの主対策はエージェント側の Krisp BVC に
-// 集約し、ブラウザ側の voiceIsolation（強いノイズ分離）は重ねない: BVC と二重にかけると
-// 対応ブラウザで音声が過処理され単語落ち・発話検出悪化を招くため（LiveKit 推奨）。
 const MIC_CONSTRAINTS = {
   autoGainControl: true,
   echoCancellation: true,
@@ -55,25 +42,15 @@ function classifyStartError(error: unknown): StartFailKind {
 
 type StartPhase = "intro" | "permission" | "entering" | "failed";
 
-/** 失敗の種別（理由提示の出し分け）。mic=許可拒否 / connect=接続失敗。 */
 export type StartFailKind = "mic" | "connect";
 
 export interface ConversationStartProps {
   conn: JoinResponse;
-  /** 02 で入力したゴール（開始前サマリに引き継ぐ）。 */
   goal: string;
-  /** 02 で選んだ役割の表示名。 */
   roleLabel: string;
-  /** 02 で添付し「実際に投入できた」参考資料のファイル名（開始前サマリに引き継ぐ）。 */
   materialNames?: string[];
-  /** 投入に失敗した参考資料の件数（>0 なら注意書きを出す）。 */
   materialFailedCount?: number;
-  /**
-   * ゲスト入場（読取専用 session_token / ADR-0032 決定4）。素材投入・確定・起票など
-   * サーバが 403 で拒む操作の UI を出さない（SessionView へ委譲）。
-   */
   readOnly?: boolean;
-  /** 中断して準備（02）へ戻す。 */
   onCancel: () => void;
 }
 
@@ -115,7 +92,6 @@ export function ConversationStart({
         roleLabel={roleLabel}
         materialNames={materialNames}
         materialFailedCount={materialFailedCount}
-        // OS プロンプト前に 03-2 アプリ内モーダルで理由提示してから許可を求める（03 AC）。
         onStartVoice={() => setPhase("permission")}
         onBack={onCancel}
       />
@@ -137,7 +113,6 @@ export function ConversationStart({
     );
   }
 
-  // entering / live: ルームへ接続する。接続状態は RoomGate が監視し、Connected で 04 を出す。
   return (
     <LiveKitRoom
       token={conn.token}
@@ -155,7 +130,6 @@ export function ConversationStart({
         setPhase("failed");
       }}
       onMediaDeviceFailure={() => {
-        // マイク許可拒否・デバイス不在（03-2→03-3）。設定導線・再試行へ。
         setFailKind("mic");
         setPhase("failed");
       }}
@@ -165,7 +139,6 @@ export function ConversationStart({
   );
 }
 
-/** ルーム接続が完了するまで 03-1 を出し、Connected で 04（SessionView）へ。 */
 function RoomGate({
   conn,
   readOnly,
@@ -176,31 +149,18 @@ function RoomGate({
   onCancel: () => void;
 }) {
   const state = useConnectionState();
-  // 一度でも接続が成立したか。初回接続前のみ全面ローディングを出し、以後の一時的な再接続では
-  // SessionView をアンマウントしない（store・回答済み質問・投入素材・判定/結果フェーズなどの
-  // ローカル状態を失わないため）。
   const [hasConnected, setHasConnected] = useState(false);
   useEffect(() => {
     if (state === ConnectionState.Connected) setHasConnected(true);
   }, [state]);
 
-  // 初回接続が成立するまでは接続中表示（03-1）。SessionView はまだ載せない。
   if (!hasConnected) {
     return <ConnectingOverlay state={state} onCancel={onCancel} />;
   }
 
-  // 接続後は SessionView を載せたまま保持する。一時的な再接続中は状態を壊さないよう
-  // アンマウントせず、上から非破壊のオーバーレイ帯で知らせるだけにする。
-  // 「再接続中」に限定して帯を出す（Disconnected は含めない）。セッション終了で意図的に
-  // ルームを切断したとき（08 結果画面）に「繋ぎ直しております」を誤表示しないため。
   const reconnecting =
     state === ConnectionState.Reconnecting || state === ConnectionState.SignalReconnecting;
   return (
-    // 会話の常時 UI（問いピン・ボトムバー）を画面最下部に固定するため、ビューポート高（h-dvh）で
-    // 画面を固定し、スクロールはシェル内のタブ本文（overflow-y-auto）だけに閉じる。下パディングは
-    // 持たせず（pt-3 のみ）、ボトムバーを画面の底辺に密着させる（判定/結果は各自 pb を持つ）。
-    // main の overflow-y-auto は判定/結果（h-full 子）が画面高を超えたときの逃げ道で、
-    // 会話シェル（flex-1 / min-h-0）は main にぴったり収まるため二重スクロールにはならない。
     <Screen className="h-dvh px-4 pt-3">
       <AppHeader brand right={<StartAudio label="音声を有効に" />} />
       <main className="mx-auto flex min-h-0 w-full max-w-[640px] flex-1 flex-col overflow-y-auto">
@@ -226,26 +186,20 @@ function RoomGate({
   );
 }
 
-// ── 純プレゼン（テスト可能・LiveKit 非依存）─────────────────────────────────
-
 export interface StartIntroProps {
   goal: string;
   roleLabel: string;
-  /** 02 で添付し投入できた参考資料のファイル名（無ければ「会話中に追加できます」を出す）。 */
   materialNames?: string[];
-  /** 投入に失敗した件数（>0 なら注意書きを出す）。 */
   materialFailedCount?: number;
   onStartVoice: () => void;
   onBack: () => void;
 }
 
-/** 添付名のサマリ表示。Figma 89:132 の `PRD_検索改善.pdf ・ 他1件` に倣う。 */
 function summarizeMaterials(names: string[]): string {
   if (names.length === 1) return names[0];
   return `${names[0]} ・ 他${names.length - 1}件`;
 }
 
-/** 03-0 開始前。準備サマリ＋マイク注記（OS プロンプト前の理由提示）＋開始導線。 */
 export function StartIntro({
   goal,
   roleLabel,
@@ -261,7 +215,6 @@ export function StartIntro({
       <AppHeader title="支度、相整いまして" onBack={onBack} />
       <main className="mx-auto flex w-full max-w-[480px] flex-1 flex-col gap-[18px] pt-2">
         <div className="flex flex-col items-center gap-2 pt-4">
-          {/* ヒーローはサンバさん（ADR-0025 / 1 画面 1 体）。旧「産」丸章はロゴ系譜の棒人間へ置換。 */}
           <Figure state="walking" className="w-[64px]" />
           <p className="text-[13px] text-sanba-muted">問答を始める支度が整いました。</p>
         </div>
@@ -297,7 +250,6 @@ export function StartIntro({
           </dl>
         </Card>
 
-        {/* OS プロンプトの前にマイク使用の理由を提示する（03 AC）。 */}
         <p className="flex items-start gap-1.5 text-[12px] leading-relaxed text-sanba-muted">
           <Mic size={14} aria-hidden className="mt-0.5 shrink-0" />
           <span>音声で問答するためマイクを使用します。次の画面で許可を求めます。</span>
@@ -316,20 +268,10 @@ export function StartIntro({
 }
 
 export interface MicPermissionModalProps {
-  /**
-   * マイク許可へ。OS の許可プロンプト（getUserMedia）はこのタップ＝ユーザー操作の中で
-   * 呼ぶ必要がある（iOS Safari の transient activation 要件）。非同期を許容し、解決までは
-   * 二重タップを抑止する。
-   */
   onAllow: () => void | Promise<void>;
-  /** 暗幕タップ等で閉じ、03-0 へ戻す。 */
   onDismiss: () => void;
 }
 
-/**
- * 03-2 録音許可モーダル。OS のマイク許可プロンプトを呼ぶ前に、アプリ内で理由を提示する
- * （Figma `139:156`）。暗幕＋中央モーダル。表示は古語、操作の aria-label は現代語（ADR-0017）。
- */
 export function MicPermissionModal({ onAllow, onDismiss }: MicPermissionModalProps) {
   const [requesting, setRequesting] = useState(false);
   // 許可タップの中で OS プロンプトを待つ間は再タップを抑止する。成功/失敗のいずれでも
@@ -345,15 +287,12 @@ export function MicPermissionModal({ onAllow, onDismiss }: MicPermissionModalPro
   }
   return (
     <Screen className="relative px-4 py-3">
-      {/* 暗幕（scrim）。タップで閉じて 03-0 へ戻る。 */}
       <button
         type="button"
         aria-label="閉じる"
         onClick={onDismiss}
         className="fixed inset-0 z-40 cursor-default bg-sanba-frame/60"
       />
-      {/* ラッパーは全画面だが pointer-events-none で、空き領域のクリックは下の暗幕ボタンへ通す。
-          ダイアログ本体だけ pointer-events-auto で操作可能にする（暗幕タップ→onDismiss を阻害しない）。 */}
       <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center px-4">
         <div
           role="dialog"
@@ -396,16 +335,13 @@ export interface ConnectingOverlayProps {
   onCancel: () => void;
 }
 
-/** 03-1 接続中。ルーム参加〜音声確立〜SANBA 起動待機のステップを出し、キャンセル可能。 */
 export function ConnectingOverlay({ state, onCancel }: ConnectingOverlayProps) {
-  // ルーム参加は SignalConnected 以降で済む。実用上は Connecting=参加中、Reconnecting=再接続。
   const joined = state === ConnectionState.Connected || state === ConnectionState.Reconnecting;
   const reconnecting = state === ConnectionState.Reconnecting;
   return (
     <Screen className="px-4 py-3">
       <AppHeader title="繋いでおります" />
       <main className="mx-auto flex w-full max-w-[420px] flex-1 flex-col items-center gap-6 pt-12">
-        {/* 接続待ちもサンバさん（歩行）で待たせる。旧「産」丸章はロゴ系譜の棒人間へ置換。 */}
         <Figure state="walking" className="w-[64px]" />
         <p className="text-[14px] font-bold text-sanba-gold-text" aria-live="polite">
           {reconnecting ? "繋ぎ直しております…" : "繋いでおります…"}
@@ -445,11 +381,8 @@ export interface StartFailedProps {
   onBack: () => void;
 }
 
-/** 03-3 失敗系。原因提示＋復帰導線（設定で許可・再試行）。 */
 export function StartFailed({ kind, onRetry, onBack }: StartFailedProps) {
   const isMic = kind === "mic";
-  // 「設定を開いて許可する」押下で手順ガイドを同画面に展開する。Web からブラウザ/OS 設定は
-  // API で直接開けないため、文言フォールバックで誘導する（03 AC「不可環境では文言フォールバック」）。
   const [showGuide, setShowGuide] = useState(false);
   return (
     <Screen className="px-4 py-3">
@@ -484,7 +417,6 @@ export function StartFailed({ kind, onRetry, onBack }: StartFailedProps) {
         </div>
         <div className="flex-1" />
         <div className="flex w-full flex-col gap-[8px]">
-          {/* マイク失敗の主操作（Figma 139:233 第一 CTA）。設定を直接は開けないため手順を展開する。 */}
           {isMic && (
             <>
               <Button

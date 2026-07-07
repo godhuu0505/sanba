@@ -41,7 +41,6 @@ def _reset(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     main._repo._mem_member_invites.clear()
     main._repo._mem_sessions.clear()
     assert main._repo._client is None, "テストは Firestore 非接続のメモリ fallback 前提"
-    # 招待メールは既定でスタブ（SMTP 未設定でも send がスキップするが、呼び出し自体を観測する）。
     monkeypatch.setattr(members, "send_member_invite_email", lambda **kwargs: True)
     yield
     app.dependency_overrides.pop(require_user, None)
@@ -87,7 +86,6 @@ def _invite_via_api(email: str = MEMBER_EMAIL, pid: str = "prod-1") -> dict[str,
     return body
 
 
-# ---- 認可: member のアクセス範囲 ----------------------------------------------
 def test_member_can_view_product_with_member_role() -> None:
     _seed_product()
     _seed_member()
@@ -95,7 +93,6 @@ def test_member_can_view_product_with_member_role() -> None:
     res = client.get("/api/products/prod-1")
     assert res.status_code == 200
     assert res.json()["role"] == "member"
-    # owner から見ると role=owner。
     _login(OWNER, OWNER_EMAIL)
     assert client.get("/api/products/prod-1").json()["role"] == "owner"
 
@@ -155,7 +152,6 @@ def test_my_products_merges_owned_and_membered() -> None:
     assert rows == {"prod-own": "owner", "prod-1": "member"}
 
 
-# ---- メンバー一覧・削除 --------------------------------------------------------
 def test_member_list_visible_to_members_and_owner() -> None:
     _seed_product()
     _seed_member()
@@ -176,7 +172,6 @@ def test_owner_can_remove_member_and_access_is_lost() -> None:
     assert res.status_code == 200 and res.json()["removed"] is True
     _login(MEMBER, MEMBER_EMAIL)
     assert client.get("/api/products/prod-1").status_code == 404
-    # 冪等ではなく不存在は 404（既に外れている）。
     _login(OWNER, OWNER_EMAIL)
     assert client.delete(f"/api/products/prod-1/members/{MEMBER}").status_code == 404
 
@@ -191,18 +186,16 @@ def test_member_can_leave_but_not_remove_others() -> None:
     assert client.get("/api/products/prod-1").status_code == 404
 
 
-# ---- 招待の発行 ---------------------------------------------------------------
 def test_owner_issues_invite_and_email_task_is_queued(monkeypatch: pytest.MonkeyPatch) -> None:
     _seed_product()
     sent: list[dict[str, Any]] = []
     monkeypatch.setattr(members, "send_member_invite_email", lambda **kw: sent.append(kw) or True)
     body = _invite_via_api(email="  Member@Example.com  ")
-    assert body["email"] == MEMBER_EMAIL  # 小文字正規化
+    assert body["email"] == MEMBER_EMAIL
     assert body["status"] == "pending"
     assert body["invited_by_email"] == OWNER_EMAIL
     assert body["token"]
     assert body["expires_at"] is not None
-    # 背景タスク（TestClient は応答後に同期実行）でメールが 1 通、承諾 URL 付きで送られる。
     assert len(sent) == 1
     assert sent[0]["to"] == MEMBER_EMAIL
     assert sent[0]["product_name"] == "請求アプリ"
@@ -218,12 +211,10 @@ def test_invite_validation_rejects_bad_and_duplicate_targets() -> None:
     assert (
         client.post("/api/products/prod-1/member-invites", json={"email": OWNER_EMAIL})
     ).status_code == 400
-    # 既にメンバー → 409。
     _seed_member()
     assert (
         client.post("/api/products/prod-1/member-invites", json={"email": MEMBER_EMAIL})
     ).status_code == 409
-    # 保留中の招待が既にある → 409（期限切れ・応答済みなら再招待できる）。
     res = client.post("/api/products/prod-1/member-invites", json={"email": "new@example.com"})
     assert res.status_code == 200
     assert (
@@ -256,7 +247,6 @@ def test_invite_creation_is_capped_by_pending_count(monkeypatch: pytest.MonkeyPa
         assert res.status_code == 200
     res = client.post("/api/products/prod-1/member-invites", json={"email": "u3@example.com"})
     assert res.status_code == 429
-    # 保留が減れば再び発行できる（上限は在庫であってレート窓ではない）。
     first = main._repo.list_member_invites("prod-1")[-1]
     client.post(f"/api/products/prod-1/member-invites/{first.id}/revoke")
     res = client.post("/api/products/prod-1/member-invites", json={"email": "u3@example.com"})
@@ -272,7 +262,6 @@ def test_invite_list_is_owner_only_and_marks_expired() -> None:
     assert res.json()[0]["status"] == "expired"
 
 
-# ---- アプリ内通知（mine）と応答 -------------------------------------------------
 def test_my_invites_lists_only_my_pending() -> None:
     _seed_product()
     _seed_product(pid="prod-2", name="別アプリ")
@@ -301,12 +290,10 @@ def test_accept_invite_grants_membership() -> None:
     res = client.post("/api/member-invites/minv-1/respond", json={"action": "accept"})
     assert res.status_code == 200
     assert res.json() == {"status": "accepted", "product_id": "prod-1"}
-    # メンバー化: 詳細が読め、一覧に role=member で出る。通知からは消える。
     assert client.get("/api/products/prod-1").status_code == 200
     assert client.get("/api/member-invites/mine").json() == []
     member = main._repo.get_product_member("prod-1", MEMBER)
     assert member is not None and member.email == MEMBER_EMAIL
-    # 二重応答は 409。
     res = client.post("/api/member-invites/minv-1/respond", json={"action": "accept"})
     assert res.status_code == 409
 
@@ -326,7 +313,6 @@ def test_respond_hides_invites_addressed_to_others() -> None:
     _login(STRANGER, "stranger@example.com")
     res = client.post("/api/member-invites/minv-1/respond", json={"action": "accept"})
     assert res.status_code == 404
-    # 大文字小文字は同一視（宛先は小文字正規化済み・照合も lower）。
     _login(MEMBER, "Member@Example.com")
     assert (
         client.post("/api/member-invites/minv-1/respond", json={"action": "accept"}).status_code
@@ -343,22 +329,18 @@ def test_revoke_blocks_response_and_is_idempotent() -> None:
     _login(MEMBER, MEMBER_EMAIL)
     res = client.post("/api/member-invites/minv-1/respond", json={"action": "accept"})
     assert res.status_code == 409
-    # 承諾済みの招待は取り消せない（履歴を書き換えない）。
     _seed_invite(invite_id="minv-2")
     client.post("/api/member-invites/minv-2/respond", json={"action": "accept"})
     _login(OWNER, OWNER_EMAIL)
     assert client.post("/api/products/prod-1/member-invites/minv-2/revoke").status_code == 409
-    # product 不一致の invite id は 404（他 product の招待を触れない）。
     _seed_product(pid="prod-2")
     assert client.post("/api/products/prod-2/member-invites/minv-2/revoke").status_code == 404
 
 
-# ---- 招待 URL（トークン経由） ---------------------------------------------------
 def test_resolve_and_respond_by_token() -> None:
     _seed_product()
     body = _invite_via_api()
     token = body["token"]
-    # 宛先本人: email_match=true、承諾できる。
     _login(MEMBER, MEMBER_EMAIL)
     res = client.post("/api/member-invites/resolve", json={"token": token})
     assert res.status_code == 200
@@ -366,7 +348,7 @@ def test_resolve_and_respond_by_token() -> None:
     assert resolved["product_name"] == "請求アプリ"
     assert resolved["email_match"] is True
     assert resolved["status"] == "pending"
-    assert MEMBER_EMAIL not in resolved["masked_email"]  # 完全な宛先は返さない
+    assert MEMBER_EMAIL not in resolved["masked_email"]
     res = client.post(
         "/api/member-invites/respond-by-token", json={"token": token, "action": "accept"}
     )
@@ -384,14 +366,12 @@ def test_respond_by_token_rejects_other_email_and_tampered_token() -> None:
         "/api/member-invites/respond-by-token", json={"token": token, "action": "accept"}
     )
     assert res.status_code == 403
-    # 署名改ざんは 403（文書照合の前に弾く）。
     res = client.post(
         "/api/member-invites/respond-by-token", json={"token": token + "x", "action": "accept"}
     )
     assert res.status_code == 403
 
 
-# ---- カスケード -----------------------------------------------------------------
 def test_product_delete_cascades_membership_and_invites() -> None:
     _seed_product()
     _seed_member()
