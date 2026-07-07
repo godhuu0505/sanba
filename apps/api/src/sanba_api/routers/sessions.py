@@ -27,7 +27,7 @@ from sanba_shared.result_document import issue_title, render_result_document
 
 from .. import github_export
 from ..auth import InvalidInvite, SessionAccess, create_invite, verify_invite
-from ..auth_google import AuthUser, require_user
+from ..auth_google import AuthUser, ensure_room_creator, require_user, require_user_bound
 from ..config import settings
 from ..deps import (
     _GITHUB_REPO_RE,
@@ -205,13 +205,16 @@ def _enum_or_other(value: str | None, allowed: set[str]) -> str:
 
 @router.post("/api/sessions", response_model=CreateSessionResponse)
 def create_session(
-    req: CreateSessionRequest, user: AuthUser = Depends(require_user)
+    req: CreateSessionRequest, user: AuthUser = Depends(require_user_bound)
 ) -> CreateSessionResponse:
     """Create an interview room and mint a signed invite per role.
 
     Requires a verified Google identity (ADR-0012): only a logged-in owner can
     open a room. The invite still scopes which room/role a guest may join.
+    ID トークンは nonce 束縛される（ADR-0047 §2 / require_user_bound）。
     """
+    # ルーム作成の許可リスト（ADR-0012 §3 / ADR-0047 §3）。空なら誰でも可。
+    ensure_room_creator(user, operation="create_session")
     if settings.require_consent and not req.consent_acknowledged:
         raise HTTPException(
             status_code=400,
@@ -888,7 +891,7 @@ def delete_context_file(
 @router.post("/api/sessions/join", response_model=JoinResponse)
 def join_session(
     req: JoinRequest,
-    user: AuthUser = Depends(require_user),
+    user: AuthUser = Depends(require_user_bound),
 ) -> JoinResponse:
     """Exchange a valid invite for a scoped, short-lived LiveKit token.
 
@@ -896,6 +899,7 @@ def join_session(
     the verified Google identity proves *who*. Both must hold. The LiveKit
     participant identity is derived from the verified `sub` (not a self-reported
     name) so the provenance metadata on captured requirements is trustworthy.
+    ID トークンは nonce 束縛される（ADR-0047 §2 / require_user_bound）。
     """
     if settings.auth_dev_bypass and req.invite.startswith("dev:"):
         # Local-dev only: "dev:<session_id>:<role>" bypasses signing. Never in prod.

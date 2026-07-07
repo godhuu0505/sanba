@@ -22,6 +22,7 @@ from typing import Annotated
 import structlog
 from fastapi import Depends, Header, HTTPException
 
+from .auth import InvalidAuthNonce, verify_auth_nonce
 from .config import settings
 from .observability import record_auth_event
 
@@ -47,6 +48,9 @@ class AuthUser:
     email_verified: bool
     name: str
     dev: bool = False
+    # ID トークンの `nonce` claim（ADR-0047）。GIS に渡した nonce が入る。未設定のトークンや
+    # dev bypass では None。create/join の nonce 束縛（require_user_bound）でのみ照合する。
+    nonce: str | None = None
 
 
 def _default_verifier(token: str, client_id: str) -> dict[str, object]:
@@ -83,11 +87,13 @@ def _validate_claims(claims: dict[str, object]) -> AuthUser:
     if not email_verified:
         raise GoogleTokenError("email not verified")
 
+    raw_nonce = claims.get("nonce")
     return AuthUser(
         sub=str(sub),
         email=email,
         email_verified=True,
         name=str(claims.get("name", "") or email),
+        nonce=str(raw_nonce) if raw_nonce else None,
     )
 
 
@@ -157,6 +163,91 @@ def require_user(
 CurrentUser = Annotated[AuthUser, Depends(require_user)]
 
 
+def enforce_login_nonce(user: AuthUser, x_auth_nonce: str | None) -> None:
+    """ログイン nonce の束縛を検証する（ADR-0047 §2 の検証本体）。
+
+    ID トークンの `nonce` claim が、サーバが発行した nonce（`X-Auth-Nonce` の署名
+    エンベロープ）と一致することを要求し、別文脈で得た ID トークンの注入を弾く。
+    トークン発行・管理に直結する identity クリティカルな依存性
+    （`require_user_bound` / `maybe_user_bound` / `require_admin`）から呼ぶ。
+
+    `require_login_nonce=false`（既定 / 段階リリース）と `auth_dev_bypass`（ローカル）では
+    検証せず素通しする。前者は「実環境で on にするまで挙動を変えない」ため、後者は
+    dev bypass トークンが nonce を持たないため。いずれの場合も ID トークン自体の検証
+    （署名・aud・iss・exp・email_verified）は require_user が済ませている。
+    """
+    if not settings.require_login_nonce or settings.auth_dev_bypass:
+        return
+
+    if not x_auth_nonce:
+        log.warning("auth_nonce_missing", sub=user.sub)
+        record_auth_event("nonce_missing")
+        raise HTTPException(status_code=401, detail="missing auth nonce")
+
+    try:
+        expected = verify_auth_nonce(x_auth_nonce, settings.session_signing_secret)
+    except InvalidAuthNonce as exc:
+        log.warning("auth_nonce_rejected", reason=str(exc))
+        record_auth_event("nonce_rejected")
+        raise HTTPException(status_code=401, detail="invalid auth nonce") from exc
+
+    if user.nonce != expected:
+        log.warning("auth_nonce_mismatch", sub=user.sub)
+        record_auth_event("nonce_mismatch")
+        raise HTTPException(status_code=401, detail="auth nonce mismatch")
+
+    record_auth_event("nonce_verified")
+
+
+def require_user_bound(
+    user: Annotated[AuthUser, Depends(require_user)],
+    x_auth_nonce: Annotated[str | None, Header()] = None,
+) -> AuthUser:
+    """`require_user` + ログイン nonce の束縛（ADR-0047 §2）。create/join が結線する。"""
+    enforce_login_nonce(user, x_auth_nonce)
+    return user
+
+
+# create_session / join_session（identity クリティカル）が結線する nonce 束縛付きエイリアス。
+CurrentUserBound = Annotated[AuthUser, Depends(require_user_bound)]
+
+
+def can_create_room(user: AuthUser) -> bool:
+    """ルーム(セッション)作成を許可されているか（ADR-0012 §3 / ROOM_CREATOR_ALLOWLIST）。
+
+    admin は常に可。allowlist が空なら誰でも可（現行の「ログイン済みなら誰でも」を維持 /
+    GITHUB_REPO_ALLOWLIST と同じ「空=無制限」）。非空なら email 完全一致か、その email の
+    ドメイン一致のときだけ可。`is_admin` と同じく dev bypass でも allowlist を照合する
+    （素通しの特別扱いをしない。空既定なので `just up` は影響を受けない）。
+    """
+    if is_admin(user):
+        return True
+    allow = settings.room_creator_allow_set
+    if not allow:
+        return True
+    email = user.email.lower()
+    if email in allow:
+        return True
+    domain = email.rpartition("@")[2]
+    return bool(domain) and domain in allow
+
+
+def ensure_room_creator(user: AuthUser, operation: str) -> None:
+    """ルーム作成 allowlist を強制する（403 / 観測付き）。
+
+    ルームを自発的に開ける経路は create_session と create_product の 2 つ
+    （product は自分で深掘りリンクを発行してルームを量産できる入り口なので、
+    create_session だけ縛っても product 経由で全バイパスできてしまう）。
+    深掘りリンクからの join_product は縛らない: 入場者は owner が発行した招待の
+    権限で入るのであって、自発的な開設ではない（ADR-0047 §3）。
+    """
+    if can_create_room(user):
+        return
+    log.warning("room_create_denied", sub=user.sub, email=user.email, operation=operation)
+    record_auth_event("room_create_denied")
+    raise HTTPException(status_code=403, detail="not allowed to create rooms")
+
+
 def maybe_user(
     authorization: Annotated[str | None, Header()] = None,
 ) -> AuthUser | None:
@@ -177,6 +268,23 @@ def maybe_user(
     return require_user(authorization)
 
 
+def maybe_user_bound(
+    user: Annotated[AuthUser | None, Depends(maybe_user)],
+    x_auth_nonce: Annotated[str | None, Header()] = None,
+) -> AuthUser | None:
+    """`maybe_user` + ログイン nonce の束縛（ADR-0047 §2）。join_product 専用。
+
+    ゲスト候補（None）は素通し（束縛すべきトークンが無い）。ログイン済みは
+    create/join と同じ束縛を掛ける: join_product はセッション作成と LiveKit 入場
+    invite の発行に直結するため、ここだけ未束縛だと注入トークンの抜け道になる。
+    依存性の内側で `maybe_user` を Depends 解決するのは、テストの
+    dependency_overrides[maybe_user] を束縛ごしにも効かせるため。
+    """
+    if user is not None:
+        enforce_login_nonce(user, x_auth_nonce)
+    return user
+
+
 def is_admin(user: AuthUser) -> bool:
     """ADMIN_EMAILS 許可リストに含まれるか。
 
@@ -187,12 +295,14 @@ def is_admin(user: AuthUser) -> bool:
     return user.email.lower() in settings.admin_email_set
 
 
-def require_admin(user: Annotated[AuthUser, Depends(require_user)]) -> AuthUser:
+def require_admin(user: Annotated[AuthUser, Depends(require_user_bound)]) -> AuthUser:
     """FastAPI 依存性: 管理者 (ADMIN_EMAILS 許可リスト) のみ通す。それ以外は 403。
 
     `auth_dev_bypass` でも許可リストを照合する: dev identity (dev@sanba.local) を
     `ADMIN_EMAILS` に入れておけば `just up` で管理画面が開く。本人確認は require_user
-    が済ませており、ここは認可 (誰が管理者か) だけを見る。
+    が済ませており、ここは認可 (誰が管理者か) だけを見る。全セッションの閲覧に至る
+    管理経路も identity クリティカルなため nonce 束縛（require_user_bound / ADR-0047 §2）
+    の内側に置く。
     """
     allow = settings.admin_email_set
     if not allow:

@@ -36,7 +36,13 @@ from ..auth import (
     create_product_invite_token,
     verify_product_invite_token,
 )
-from ..auth_google import AuthUser, is_admin, maybe_user, require_user
+from ..auth_google import (
+    AuthUser,
+    ensure_room_creator,
+    is_admin,
+    maybe_user_bound,
+    require_user,
+)
 from ..config import settings
 from ..deps import (
     _GITHUB_REPO_RE,
@@ -308,7 +314,11 @@ def create_product(
     """アプリを登録する（FR-1.1 / ADR-0031）。owner は呼び出しユーザー。
 
     slug は必須（ADR-0045）。形式・予約語は 400、使用済みは 409。
+    ルーム作成 allowlist（ADR-0047 §3）はここにも掛ける: product の owner は自分で
+    深掘りリンクを発行して join_product でルームを量産できるため、create_session
+    だけ縛っても product 経由で全バイパスできてしまう。
     """
+    ensure_room_creator(user, operation="create_product")
     name = req.name.strip()
     if not name:
         raise HTTPException(status_code=400, detail="name must not be empty")
@@ -720,10 +730,13 @@ def revoke_product_invite(
 
 @router.post("/api/products/join", response_model=ProductJoinResponse)
 def join_product(
-    req: ProductJoinRequest, user: AuthUser | None = Depends(maybe_user)
+    req: ProductJoinRequest, user: AuthUser | None = Depends(maybe_user_bound)
 ) -> ProductJoinResponse:
     """深掘りリンクからセッションを自動作成する（FR-1.6 / FR-2.1 / ADR-0031 決定3）。
 
+    ログイン済みの ID トークンは create/join と同じく nonce 束縛する（ADR-0047 §2 /
+    maybe_user_bound）。依存性なので束縛違反の 401 は invite 消費より前に返り、
+    max_uses を無駄に減らさない。
     認証は原則ログイン必須。唯一の例外（ADR-0032 決定1）: `guest_join_enabled` かつ
     invite の `scope=end_user` のとき、未認証（Authorization ヘッダ無し）を受ける。
     同意ゲート（FR-2.2）はゲストでも省略しない。検証は二段: 署名（owner が発行した

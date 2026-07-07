@@ -17,9 +17,12 @@ from google.auth import crypt
 from google.auth import jwt as google_jwt
 
 from sanba_api.auth_google import (
+    AuthUser,
     GoogleTokenError,
+    can_create_room,
     verify_google_id_token,
 )
+from sanba_api.config import settings
 
 CLIENT_ID = "test-client-id.apps.googleusercontent.com"
 KID = "test-kid"
@@ -134,3 +137,50 @@ def test_missing_sub_is_rejected(mint, verifier) -> None:
     token = mint(sub="")
     with pytest.raises(GoogleTokenError, match="sub"):
         verify_google_id_token(token, CLIENT_ID, verifier=verifier)
+
+
+# ── nonce claim の取り出し (ADR-0047) ─────────────────────────────────────────
+
+
+def test_nonce_claim_is_extracted(mint, verifier) -> None:
+    user = verify_google_id_token(mint(nonce="n-abc123"), CLIENT_ID, verifier=verifier)
+    assert user.nonce == "n-abc123"
+
+
+def test_missing_nonce_claim_is_none(mint, verifier) -> None:
+    # nonce を渡さない ID トークンでは nonce は None（require_login_nonce=off では検証しない）。
+    assert verify_google_id_token(mint(), CLIENT_ID, verifier=verifier).nonce is None
+
+
+# ── ルーム作成の許可リスト (ADR-0012 §3) ───────────────────────────────────────
+
+
+def _user(email: str) -> AuthUser:
+    return AuthUser(sub="s", email=email, email_verified=True, name="u")
+
+
+def test_can_create_room_allows_everyone_when_list_empty(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "room_creator_allowlist", "", raising=True)
+    monkeypatch.setattr(settings, "admin_emails", "", raising=True)
+    assert can_create_room(_user("anyone@example.com")) is True
+
+
+def test_can_create_room_matches_email(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "room_creator_allowlist", "ok@example.com", raising=True)
+    monkeypatch.setattr(settings, "admin_emails", "", raising=True)
+    assert can_create_room(_user("ok@example.com")) is True
+    assert can_create_room(_user("no@example.com")) is False
+
+
+def test_can_create_room_matches_domain(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "room_creator_allowlist", "leverages.jp", raising=True)
+    monkeypatch.setattr(settings, "admin_emails", "", raising=True)
+    assert can_create_room(_user("someone@leverages.jp")) is True
+    assert can_create_room(_user("someone@gmail.com")) is False
+
+
+def test_can_create_room_admin_always_allowed(monkeypatch) -> None:
+    # allowlist に無くても admin は作成可（is_admin 経由）。
+    monkeypatch.setattr(settings, "room_creator_allowlist", "other@example.com", raising=True)
+    monkeypatch.setattr(settings, "admin_emails", "boss@example.com", raising=True)
+    assert can_create_room(_user("boss@example.com")) is True

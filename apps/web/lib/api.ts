@@ -2,11 +2,52 @@ import type { Detection, Question, Requirement } from "./realtime/types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
 
+// ── ログイン nonce（ADR-0047 §2 / ID トークン注入対策）─────────────────────
+// サーバ発行の nonce エンベロープ。AuthProvider が「エンベロープと一致する nonce claim を
+// 持つ credential が到着したとき」だけ setAuthNonce で有効化する（credential とエンベロープは
+// 常に対で動かす。片方だけ差し替えると不一致 401 を自分で作ってしまう）。nonce は「今ログイン
+// しているクライアントの ambient な認証状態」で業務引数ではないため、長い createSession の
+// 引数に増やさず authHeaders の単一経路で全 authorized リクエストに載せる（サーバが照合する
+// のは束縛エンドポイントのみ: create/join・products/join・admin / enforce_login_nonce）。
+let currentAuthNonce: string | null = null;
+
+/** 現在のログイン nonce エンベロープを差し替える（null で消す）。AuthProvider が呼ぶ。 */
+export function setAuthNonce(envelope: string | null): void {
+  currentAuthNonce = envelope;
+}
+
+export interface AuthNonce {
+  /** GIS の id.initialize({nonce}) に渡す生 nonce。 */
+  nonce: string;
+  /** X-Auth-Nonce に載せる HMAC 署名エンベロープ。 */
+  token: string;
+  /** エンベロープの失効時刻（UNIX 秒）。期限切れの nonce で GIS を初期化しないために使う。 */
+  expires_at: number;
+}
+
+/**
+ * GET /api/auth/nonce（ADR-0047）。ログイン nonce を採る。失敗時は null（呼び出し側は
+ * nonce 無しで GIS を初期化する: ログイン UI は動くが、REQUIRE_LOGIN_NONCE=on の
+ * サーバでは create/join が 401 になり再サインインへ誘導される＝セキュリティ側にフェイル）。
+ */
+export async function fetchAuthNonce(): Promise<AuthNonce | null> {
+  try {
+    const res = await fetch(`${API_URL}/api/auth/nonce`);
+    if (!res.ok) return null;
+    return (await res.json()) as AuthNonce;
+  } catch {
+    return null;
+  }
+}
+
 // 検証済み identity を API に運ぶ (ADR-0012)。idToken が null (dev モード) のときは
 // Authorization を付けず、API 側の AUTH_DEV_BYPASS に委ねる。
 function authHeaders(idToken: string | null): Record<string, string> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (idToken) headers.Authorization = `Bearer ${idToken}`;
+  // ログイン nonce（ADR-0047 §2）。照合は束縛エンドポイントのみだが、単一経路で載せる
+  // （他エンドポイントは未知ヘッダとして無視する）。
+  if (currentAuthNonce) headers["X-Auth-Nonce"] = currentAuthNonce;
   return headers;
 }
 

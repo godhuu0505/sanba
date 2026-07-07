@@ -41,7 +41,7 @@ from .deps import (
     require_session_access,
 )
 from .observability import record_rate_limited, setup_observability
-from .routers import admin, github_link, members, products, sessions
+from .routers import admin, auth, github_link, members, products, sessions
 from .routers.products import MAX_CHECK_ITEM_CHARS, MAX_OUTPUT_FORMAT_CHARS
 
 # tests の後方互換の再エクスポート: 従来 `sanba_api.main` に住んでいた公開名を、同一
@@ -120,6 +120,7 @@ def healthz() -> dict[str, str]:
 
 
 # ドメイン別ルータの登録。各エンドポイントのパス・認可・response_model は移設前のまま。
+app.include_router(auth.router)
 app.include_router(sessions.router)
 app.include_router(github_link.router)
 app.include_router(products.router)
