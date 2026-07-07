@@ -35,9 +35,6 @@ log = structlog.get_logger(__name__)
 router = APIRouter()
 
 
-# ---- GitHub App: per-user repo linking (ADR-0028) --------------------------
-
-
 class GitHubLinkStatus(BaseModel):
     linked: bool
     github_login: str | None = None
@@ -78,13 +75,9 @@ def github_link_start(user: AuthUser = Depends(require_user)) -> GitHubLinkStart
 
     state に検証済み sub を束縛し、callback で CSRF/誤紐づけを防ぐ。
     """
-    # callback と同じ必須設定（app_id/private_key）も開始時に確認してフェイルクローズする
-    # 。
     client = _github_app_client()
     if client is None or not settings.github_app_slug:
         raise HTTPException(status_code=503, detail="github app not configured")
-    # 所有権検証に必要な OAuth が無い本番では、install させても callback で拒否されるので
-    # 開始時点でも止める（dev bypass 時のみ許可）。
     if not client.oauth_configured and not settings.auth_dev_bypass:
         raise HTTPException(status_code=503, detail="ownership verification not configured")
     state = create_link_state(
@@ -114,9 +107,6 @@ def github_link_callback(installation_id: int, state: str, code: str | None = No
         log.warning("github_link_state_rejected", reason=str(exc))
         raise HTTPException(status_code=403, detail=f"invalid state: {exc}") from exc
 
-    # 所有権検証はフェイルクローズ: OAuth 未構成なら本番では拒否する。秘密鍵だけ
-    # 先に入った設定漏れでも、別人が既知の他者 installation_id を横取りできないようにする。
-    # ローカル/CI の開発時のみ auth_dev_bypass で検証を省ける（既存の dev bypass 方針に合わせる）。
     if client.oauth_configured:
         if not code:
             raise HTTPException(status_code=403, detail="missing oauth code")
@@ -141,7 +131,6 @@ def github_link_callback(installation_id: int, state: str, code: str | None = No
         login = ""
     _repo.set_github_link(GitHubLink(sub=sub, installation_id=installation_id, github_login=login))
     log.info("github_linked", sub=sub, installation_id=installation_id, login=login)
-    # 連携保存後は web の設定画面へ戻す（api callback とは別の web URL）。
     if settings.github_app_web_return_url:
         return JSONResponse(
             status_code=302,
@@ -162,18 +151,10 @@ def github_unlink(user: AuthUser = Depends(require_user)) -> GitHubLinkStatus:
 class GithubReposResponse(BaseModel):
     """`GET /api/github/repos`（ADR-0027）。02 準備「連携リポジトリ」の候補一覧。"""
 
-    # コネクタ/App 連携のいずれかが使える状態か。False のとき UI はフィールドごと隠す
-    # （ADR-0007 の不干渉）。
     enabled: bool
-    # 読める "owner/name" の一覧（更新が新しい順）。
     repos: list[str]
-    # 環境変数の既定リポジトリ（あれば UI が初期選択に使える）。
     default: str | None = None
-    # ---- 追加情報（ADR-0028 / 後方互換の additive）----
-    # 本人が GitHub App 連携済みで一覧が App installation 由来か。True のとき web は
-    # branch 選択と開始時の索引キック（POST /api/sessions/{id}/github）を有効化する。
     linked: bool = False
-    # App 由来のときの詳細（default_branch / private）。connector 由来では空。
     items: list[GitHubRepoItem] = Field(default_factory=list)
 
 
@@ -190,8 +171,6 @@ def list_github_repos(user: AuthUser = Depends(require_user)) -> GithubReposResp
     """
     client = _github_app_client()
     link = _repo.get_github_link(user.sub)
-    # 既定リポジトリも許可リストを通す（許可外の既定はリポ名の露出になり、
-    # UI が候補外の既定値を選択肢として補ってしまう）。App/connector の両経路で共通。
     default = settings.github_repo if settings.github_repo else None
     if default is not None and not _github_repo_allowed(default):
         default = None
@@ -201,8 +180,6 @@ def list_github_repos(user: AuthUser = Depends(require_user)) -> GithubReposResp
         except Exception as exc:  # pragma: no cover - network
             log.warning("github_list_repos_failed", error=str(exc))
             app_repos = []
-        # 許可リスト（設定時）は App 由来の候補にも一貫適用する（connector
-        # だけ絞って App 側に許可外リポの選択経路が残るのを防ぐ）。
         app_repos = [r for r in app_repos if _github_repo_allowed(r.full_name)]
         log.info("github_repos_listed", count=len(app_repos), sub=user.sub, source="app")
         return GithubReposResponse(
@@ -219,8 +196,6 @@ def list_github_repos(user: AuthUser = Depends(require_user)) -> GithubReposResp
         )
     if not (settings.github_connector_enabled and settings.github_token):
         return GithubReposResponse(enabled=False, repos=[])
-    # 許可リスト（設定時）で候補を絞る。SANBA にログインできる ≠ 対象 GitHub 組織の
-    # メンバーである環境で、共有トークンが読める private リポ名を漏らさない。
     repos = [r for r in github_export.list_repos(settings.github_token) if _github_repo_allowed(r)]
     log.info("github_repos_listed", count=len(repos), sub=user.sub, source="connector")
     return GithubReposResponse(enabled=True, repos=repos, default=default)
@@ -258,14 +233,9 @@ def _index_repo_task(
     if client is None:  # pragma: no cover - guarded by caller
         return
     try:
-        # 古いジョブの巻き戻し防止: repo A の索引中に B へ選び直すと、遅れて走る A の
-        # ジョブが B の chunk を消し A を書き戻し得る。開始時に現在の選択（SessionMeta）がこの
-        # ジョブの (repo,branch,sha) と一致するか確認し、ズレていれば何もしない。
         if not _selection_current(session_id, repo, branch, commit_sha):
             log.info("repo_index_skipped_stale", session=session_id, repo=repo, branch=branch)
             return
-        # repo 選び直し / branch 変更 / 再同期で古い github: chunk が残ると search_grounding に
-        # 旧 commit の断片が混ざる。索引前に当該 session の repo chunk を一掃する。
         _indexer.delete_repo_context(session_id)
         try:
             outcome = fetch_and_index_repo(
@@ -280,9 +250,6 @@ def _index_repo_task(
                 max_total_bytes=settings.github_index_max_total_bytes,
                 max_file_bytes=settings.github_index_max_file_bytes,
             )
-            # SessionMeta 保存用の要約は秘匿レダクト＋PII マスクする（Firestore at-rest / agent
-            # premise に直接入るため）。要約には repo description が redact 前で混じるので、ES 経路
-            # （index_context が別途マスク）とは別に保存前にも両方を通す。
             summary = redact_secrets(outcome.summary)
             if settings.mask_pii_before_index:
                 summary = mask_pii(summary)
@@ -296,7 +263,6 @@ def _index_repo_task(
             log.warning("repo_index_failed", session=session_id, repo=repo, error=str(exc))
             status = GitHubIndexStatus.FAILED
             summary = None
-        # 完了時にも再確認: 索引中に B へ選び直されていたら status/選択を巻き戻さない。
         if not _selection_current(session_id, repo, branch, commit_sha):
             log.info("repo_index_writeback_skipped_stale", session=session_id, repo=repo)
             return
@@ -309,7 +275,6 @@ def _index_repo_task(
             summary=summary,
         )
     finally:
-        # 共有 HTTP クライアントを必ず閉じる（接続リーク防止）。
         client.close()
 
 
@@ -339,11 +304,8 @@ def select_session_repo(
     meta = _repo.get_session(session_id)
     if meta is None:
         raise HTTPException(status_code=404, detail="session not found")
-    # owner 固定（ADR-0028）: セッション所有者のみが前提 repo を紐づけられる。
     if access.sub != meta.owner_sub:
         raise HTTPException(status_code=403, detail="owner only")
-    # 許可リスト（GITHUB_REPO_ALLOWLIST）は App 経路の保存にも一貫適用する
-    # （候補一覧に出ないリポを直接 POST で紐づけ・索引する抜け道を塞ぐ）。
     if not _github_repo_allowed(req.repo):
         raise HTTPException(status_code=400, detail="github_repo is not allowed")
     client = _github_app_client()

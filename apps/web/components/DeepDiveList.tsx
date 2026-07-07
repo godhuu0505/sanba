@@ -1,9 +1,5 @@
 "use client";
 
-// 要件絵巻タブの「深掘り対象」セクション。未解消の検知（矛盾/抜け）を並べ、会話へ戻す導線を持つ。
-// 仕様: docs/reference/conversation-experience.md §7 / screens/06-requirements-scroll.md。
-// 色は意味の写像（矛盾=緋 / 抜け=黄土）。色のみに依存せずラベル併記（ADR-0017）。
-
 import { ChevronRight } from "lucide-react";
 
 import { useInterviewMode } from "@/lib/interviewMode";
@@ -11,17 +7,11 @@ import { detectionPresentation } from "@/lib/realtime/mapping";
 import type { Detection } from "@/lib/realtime/types";
 
 export interface DeepDiveListProps {
-  /** 未解消の検知（深掘り対象）。 */
   detections: Detection[];
-  /**
-   * 「会話で確認」押下。該当検知の id を渡す。
-   * 未指定なら導線を出さない（セッション終了後の閲覧など、会話へ戻れない文脈で偽ボタンを作らない）。
-   */
   onJump?: (detectionId: string) => void;
 }
 
 export function DeepDiveList({ detections, onJump }: DeepDiveListProps) {
-  // end_user モードでは「矛盾/抜け」等の開発語彙を利用者向けに切替える（FR-2.4 / ADR-0032）。
   const interviewMode = useInterviewMode();
   if (detections.length === 0) {
     return (

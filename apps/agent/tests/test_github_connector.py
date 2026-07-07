@@ -19,8 +19,6 @@ def test_issues_to_passages_skips_pull_requests() -> None:
 
 
 def test_seed_github_context_skips_when_repo_indexed(monkeypatch) -> None:
-    # セッションの repo が GitHub App 経由で ES 索引済み（index_status が none/failed 以外）
-    # なら connector seed を走らせない（repo 本体 chunk と README/Issue seed の二重化を防ぐ）。
     from sanba_shared.models import GitHubIndexStatus, SessionMeta
     from sanba_shared.repository import SessionRepository
 
@@ -28,7 +26,6 @@ def test_seed_github_context_skips_when_repo_indexed(monkeypatch) -> None:
     from sanba_agent.config import settings as agent_settings
     from sanba_agent.retrieval import GroundingStore
 
-    # connector を「有効」に見せる（本来なら seed が走る条件）。
     monkeypatch.setattr(agent_settings, "github_connector_enabled", True)
     monkeypatch.setattr(agent_settings, "github_token", "x")
     monkeypatch.setattr(agent_settings, "github_repo", "global/other")
@@ -49,15 +46,12 @@ def test_seed_github_context_skips_when_repo_indexed(monkeypatch) -> None:
     assert grounding.is_memory
 
     resolved = agent_main._resolve_github_repo(repo, "sess-1")
-    assert resolved == "octo/linked"  # 解決はセッション選択が最優先
+    assert resolved == "octo/linked"
     agent_main.seed_github_context(grounding, "sess-1", repo, resolved)
-    # connector の fetch は呼ばれず、何も索引されない。
     assert grounding._mem == []
 
 
 def test_seed_github_context_seeds_selected_repo_without_app_index(monkeypatch) -> None:
-    # ES 索引が無い（App 未連携の connector 選択）場合は、解決された repo を
-    # connector で seed する。
     from sanba_shared.models import SessionMeta
     from sanba_shared.repository import SessionRepository
 
@@ -72,7 +66,7 @@ def test_seed_github_context_seeds_selected_repo_without_app_index(monkeypatch) 
 
     class FakeConnector:
         def __init__(self, token: str, repo_name: str) -> None:
-            assert repo_name == "acme/picked"  # セッション選択が seed 対象になる
+            assert repo_name == "acme/picked"
 
         def fetch_context_passages(self) -> list[tuple[str, str]]:
             return [("readme text", "github:acme/picked#readme")]

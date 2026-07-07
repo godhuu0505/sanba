@@ -1,11 +1,5 @@
 "use client";
 
-// 要件結果の出力フォーマット登録カード（アプリ管理画面 /products/[id]）。
-// 利用者・企画者・開発者の audience ごとに Markdown テンプレートを 1 つ登録できる。
-// 未登録の audience はサーバの既定テンプレート（product.output_format_defaults）が使われる。
-// 保存は audience 別の明示ボタン（語彙カードの即時保存と違い、長文の編集途中で
-// PATCH が飛ばないようにする）。空にして保存すると「既定へ戻す」。
-
 import { useState } from "react";
 
 import { Button, Card, CardTitle, Chip, Textarea } from "@/components/sanba";
@@ -18,14 +12,12 @@ export function ProductOutputFormatsCard({
   onSaved,
 }: {
   product: Product;
-  /** 保存成功後に親の product 表示を最新化するためのフック。 */
   onSaved: (updated: Product) => void;
 }) {
   const auth = useAuth();
   const idToken = auth.credential;
 
   const [audience, setAudience] = useState<Audience>("end_user");
-  // audience ごとの編集ドラフト。初期値は登録済みテンプレート（未登録は空 = 既定使用）。
   const [drafts, setDrafts] = useState<Record<Audience, string>>(() => ({
     end_user: product.output_formats.end_user ?? "",
     planner: product.output_formats.planner ?? "",
@@ -43,7 +35,6 @@ export function ProductOutputFormatsCard({
     setError(null);
     setSavedAt(null);
     try {
-      // 全量置換: 3 audience 分を常に送る。空文字はサーバ側で「未登録＝既定へ戻す」になる。
       const updated = await updateProduct(
         product.id,
         { output_formats: { ...drafts, [audience]: value } },

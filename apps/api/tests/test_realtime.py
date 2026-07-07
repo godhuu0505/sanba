@@ -30,7 +30,7 @@ class _RecordingSender:
 
 def _mem_repo() -> SessionRepository:
     repo = SessionRepository()
-    repo._client = None  # force in-memory path
+    repo._client = None
     return repo
 
 
@@ -46,7 +46,7 @@ def test_progress_emits_contract_envelope_with_stage_pct() -> None:
     assert ev["session_id"] == "s1"
     assert ev["asset_id"] == "a1"
     assert ev["stage"] == "received"
-    assert ev["pct"] == 10  # received=10（ADR-0023 §1 の境界値）
+    assert ev["pct"] == 10
     assert ev["seq"] == 1
     assert "ts" in ev
 
@@ -65,7 +65,7 @@ def test_stage_pct_mapping_received_analyzing_done() -> None:
     assert pcts == [10, 50]
     visual = next(s["event"] for s in sender.sent if s["event"]["type"] == "analysis.visual")
     assert visual["extracted"] == ["要件X", "要件Y"]
-    assert visual["conflicts"] == []  # 突合未実装は空配列（ADR-0023 §2）
+    assert visual["conflicts"] == []
 
 
 def test_seq_is_monotonic_across_events() -> None:
@@ -83,7 +83,6 @@ def test_seq_is_monotonic_across_events() -> None:
 
 
 def test_seq_continues_from_shared_space() -> None:
-    # agent が進めた last_seq の続きから採番する（共有 seq 空間 / ADR-0021）。
     repo = _mem_repo()
     repo.set_session_seq("s1", 7)
     sender = _RecordingSender()
@@ -105,20 +104,17 @@ def test_publish_failure_does_not_raise() -> None:
             raise RuntimeError("livekit down")
 
     pub = AnalysisPublisher("s1", _Boom(), _mem_repo())
-    # 送信失敗でも例外を投げない（アップロードを止めない / ADR-0023 §3）。
     ev = asyncio.run(pub.progress("a1", "received"))
-    assert ev["seq"] == 1  # seq は採番され、エンベロープは返る
+    assert ev["seq"] == 1
 
 
 def test_build_sender_returns_null_when_unconfigured() -> None:
     assert isinstance(build_sender("", "", "", "room"), NullSender)
     assert isinstance(build_sender("ws://x", "k", "s", ""), NullSender)
-    # 全て揃えば本番送信（LiveKitServerSender）。
     assert not isinstance(build_sender("ws://x", "k", "s", "room"), NullSender)
 
 
 def test_livekit_publish_url_falls_back_to_livekit_url() -> None:
-    # server-side publish 用 URL は、未設定なら join 用 livekit_url に等しい（本番 Cloud 等）。
     from sanba_api.config import Settings
 
     s = Settings(livekit_url="ws://browser:7880", livekit_server_url="")
@@ -126,7 +122,6 @@ def test_livekit_publish_url_falls_back_to_livekit_url() -> None:
 
 
 def test_livekit_publish_url_overrides_join_url_when_set() -> None:
-    # docker-compose ローカル: ブラウザ向け join URL(localhost) と publish 先(サービス名)を分離。
     from sanba_api.config import Settings
 
     s = Settings(livekit_url="ws://localhost:7880", livekit_server_url="ws://livekit:7880")

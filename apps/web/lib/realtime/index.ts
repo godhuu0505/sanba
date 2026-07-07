@@ -1,7 +1,3 @@
-// 共有 realtime 受信基盤の公開 API。
-//
-// 3画面（05 検知 / 08 解析 / 09 要件絵巻）はここからだけ import する。購読層・ストア・
-// ハイドレーション・マッピングはこのモジュールに一本化されている（衝突回避ルール）。
 
 export * from "./types";
 export { decodeServerEvent, encodeUserSelection } from "./parse";

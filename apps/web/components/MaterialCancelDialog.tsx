@@ -1,19 +1,11 @@
 "use client";
 
-// 素材の中断確認ダイアログ（Figma 222:2）。解析/アップロード中の素材を中断する前に、
-// 「途中までの結果は破棄されます」を提示して確認する。確定で破棄、続けるで継続。
-// a11y: 暗幕＋role=dialog/aria-modal＋フォーカストラップ＋ESC は MaterialSourceSheet /
-// ChoiceDetailSheet のパターンに倣う（見た目に依らない現代語ラベル・ADR-0017）。
-
 import { useEffect, useRef } from "react";
 import { X } from "lucide-react";
 
 export interface MaterialCancelDialogProps {
-  /** 中断対象の素材名（確認文に出す）。 */
   materialName: string;
-  /** 「続ける」= 中断しない（ダイアログを閉じる・背景/ESC も同じ）。 */
   onContinue: () => void;
-  /** 「中断する」= 確定（途中までの結果を破棄）。 */
   onConfirm: () => void;
 }
 
@@ -23,15 +15,12 @@ export function MaterialCancelDialog({
   onConfirm,
 }: MaterialCancelDialogProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
-  // 破壊的操作なので既定フォーカスは安全側の「続ける」に置く。
   const continueRef = useRef<HTMLButtonElement>(null);
 
-  // 開いたらダイアログ内へフォーカスを移す（a11y）。
   useEffect(() => {
     continueRef.current?.focus();
   }, []);
 
-  // ESC で閉じる（=続ける）＋Tab をダイアログ内に閉じ込める（フォーカストラップ・a11y）。
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -63,7 +52,6 @@ export function MaterialCancelDialog({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
-      {/* 暗幕（MaterialSourceSheet 踏襲）。クリックで閉じる（=続ける）。 */}
       <button
         type="button"
         aria-label="閉じる（背景）"

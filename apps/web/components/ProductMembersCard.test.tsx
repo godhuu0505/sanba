@@ -4,10 +4,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ProductMember, ProductMemberInvite } from "@/lib/api";
 
-// メンバー管理カード（ADR-0036）: 招待の発行・重複エラーの出し分け・メンバー削除・
-// canManage=false（メンバー閲覧）で管理操作が出ないことを検証する。API はモックし、
-// UI の振る舞い（何をどのパラメータで呼ぶか）に集中する。
-
 const authState = { credential: "id-token", loggedIn: true, ready: true, profile: null };
 vi.mock("@/lib/auth", () => ({ useAuth: () => authState }));
 

@@ -82,7 +82,6 @@ def _seed_requirement(sid: str, rid: str = "r1", statement: str = "CSV を出力
     )
 
 
-# ---- PATCH: 出力フォーマットの登録 ------------------------------------------
 def test_patch_output_formats_registers_per_audience() -> None:
     _seed_product()
     _login(OWNER)
@@ -93,7 +92,6 @@ def test_patch_output_formats_registers_per_audience() -> None:
     assert res.status_code == 200, res.text
     body = res.json()
     assert body["output_formats"] == {"developer": "# 独自開発者向け\n{{requirements}}"}
-    # 既定テンプレートは常に 3 audience 分返る（web の「未登録＝この既定」表示用）。
     assert set(body["output_format_defaults"]) == {"end_user", "planner", "developer"}
 
 
@@ -101,7 +99,6 @@ def test_patch_output_formats_blank_value_resets_to_default() -> None:
     _seed_product()
     _login(OWNER)
     client.patch("/api/products/prod-1", json={"output_formats": {"planner": "# 独自"}})
-    # 空文字（空白のみ）で送ると登録が消え、既定フォールバックに戻る。
     body = client.patch("/api/products/prod-1", json={"output_formats": {"planner": "   "}}).json()
     assert body["output_formats"] == {}
 
@@ -124,7 +121,6 @@ def test_patch_output_formats_rejects_too_long_template_as_400() -> None:
     assert res.status_code == 400
 
 
-# ---- PATCH: 確認項目の登録 ---------------------------------------------------
 def test_patch_check_items_normalizes_and_saves() -> None:
     _seed_product()
     _login(OWNER)
@@ -140,7 +136,6 @@ def test_patch_check_items_normalizes_and_saves() -> None:
         },
     )
     assert res.status_code == 200, res.text
-    # strip・空要素除去・順序を保った (text, target) の重複除去。
     assert res.json()["check_items"] == [
         {"text": "ログイン方式", "target": None},
         {"text": "課金の有無", "target": "developer"},
@@ -153,7 +148,7 @@ def test_patch_check_items_rejects_more_than_ten_as_422() -> None:
     res = client.patch(
         "/api/products/prod-1", json={"check_items": [{"text": f"項目{i}"} for i in range(11)]}
     )
-    assert res.status_code == 422  # Pydantic の max_length（要求仕様: 最大 10 個）
+    assert res.status_code == 422
 
 
 def test_patch_check_items_accepts_exactly_ten() -> None:
@@ -180,7 +175,7 @@ def test_patch_result_config_is_owner_only() -> None:
     _seed_product()
     _login("intruder")
     res = client.patch("/api/products/prod-1", json={"check_items": [{"text": "x"}]})
-    assert res.status_code == 404  # 非関係者は存在秘匿の 404
+    assert res.status_code == 404
 
 
 def test_get_product_returns_result_config_fields() -> None:
@@ -192,7 +187,6 @@ def test_get_product_returns_result_config_fields() -> None:
     assert set(body["output_format_defaults"]) == {"end_user", "planner", "developer"}
 
 
-# ---- GET /api/sessions/mine/{id}/result-document -----------------------------
 def _get_document(sid: str, audience: str) -> Any:
     return client.get(f"/api/sessions/mine/{sid}/result-document", params={"audience": audience})
 
@@ -208,7 +202,6 @@ def test_result_document_uses_default_format_when_unset() -> None:
     body = res.json()
     assert body["audience"] == "developer"
     assert body["is_custom_format"] is False
-    # 既定テンプレートの章立て・要件・メタが埋まっている。
     assert "要件定義書（開発者向け）: 請求の深掘り" in body["markdown"]
     assert "請求アプリ" in body["markdown"]
     assert "請求業務を自動化する" in body["markdown"]
@@ -231,11 +224,10 @@ def test_result_document_uses_registered_format_per_audience() -> None:
     planner = _get_document("sess-1", "planner").json()
     assert planner["is_custom_format"] is True
     assert planner["markdown"].startswith("# 企画レビュー用")
-    # 登録していない audience は既定のまま（1 audience 1 フォーマット）。
     developer = _get_document("sess-1", "developer").json()
     assert developer["is_custom_format"] is False
     assert "要件定義書（開発者向け）" in developer["markdown"]
-    assert "- 課金の有無" in developer["markdown"]  # 確認項目も文書に載る
+    assert "- 課金の有無" in developer["markdown"]
 
 
 def test_result_document_end_user_hides_dev_vocabulary() -> None:
@@ -258,7 +250,7 @@ def test_result_document_works_for_standalone_session() -> None:
 
     body = _get_document("sess-1", "developer").json()
     assert body["is_custom_format"] is False
-    assert "（未設定）" in body["markdown"]  # app_name のフォールバック
+    assert "（未設定）" in body["markdown"]
 
 
 def test_result_document_finalized_uses_frozen_snapshot() -> None:
@@ -307,7 +299,6 @@ def test_patch_check_items_rejects_unknown_target_as_400() -> None:
 
 
 def test_get_product_returns_check_items_limit() -> None:
-    # 上限は API 応答で渡し、web に定数を複製させない（ADR-0043）。
     _seed_product()
     _login(OWNER)
     assert client.get("/api/products/prod-1").json()["check_items_limit"] == 10

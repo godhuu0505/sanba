@@ -1,25 +1,13 @@
 "use client";
 
-// 常時2行ボトムバー。仕様: docs/reference/conversation-experience.md §5。
-// 1行目: 消音（音声出力 ON/OFF）/ マイク・ミュート（マイク入力 ON/OFF）の2系統トグル。
-// 2行目: テキスト入力欄 + 送信（音声と併用）。
-// a11y: 見た目が古語でも aria-label は現代語の機能名（ADR-0017）。
-//
-// 高さは一定に保つ（可変高の音声状態インジケータはここに置かない）。ボトムバー直上に固定した
-// 選択肢フォーム（問いピン）を、聞き取りアイコンの表示/非表示で上下させないため、音声状態は
-// ヘッダ側の固定領域（ConversationShell）へ移した（会話 UI の安定化）。
-
 import { useState } from "react";
 import { Mic, MicOff, SendHorizontal, Volume2, VolumeX } from "lucide-react";
 
 export interface BottomBarProps {
-  /** 会話＝マイク入力 ON か。 */
   micOn: boolean;
-  /** 消音＝音声出力 OFF か。 */
   muted: boolean;
   onToggleMic: () => void;
   onToggleMute: () => void;
-  /** テキスト送信（本文）。 */
   onSend: (text: string) => void;
 }
 
@@ -39,7 +27,6 @@ export function BottomBar({ micOn, muted, onToggleMic, onToggleMute, onSend }: B
       aria-label="会話コントロール"
       className="flex flex-col gap-2 border-t-2 border-sanba-frame bg-sanba-surface px-4 pb-[14px] pt-[10px]"
     >
-      {/* 1行目: 消音（音声出力）/ マイク・ミュート（マイク入力） */}
       <div className="flex gap-2">
         <button
           type="button"
@@ -85,14 +72,12 @@ export function BottomBar({ micOn, muted, onToggleMic, onToggleMute, onSend }: B
         </button>
       </div>
 
-      {/* 2行目: テキスト入力 / 送信 */}
       <div className="flex items-center gap-2">
         <input
           aria-label="テキストで入力"
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
-            // 日本語IMEの変換確定 Enter で誤送信しない（isComposing / keyCode 229 を除外）。
             if (e.key === "Enter" && !e.nativeEvent.isComposing && e.keyCode !== 229) send();
           }}
           placeholder="テキストで入力…"

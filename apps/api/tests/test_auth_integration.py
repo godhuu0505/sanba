@@ -69,10 +69,8 @@ def test_unauthenticated_join_spam_is_rate_limited(monkeypatch) -> None:
     main._join_hits.clear()
 
     body = {"invite": "broken", "participant_name": "x"}
-    # 上限内は認証で 401（レートリミット自体には未到達）。
     for _ in range(2):
         assert client.post("/api/sessions/join", json=body).status_code == 401
-    # 上限超過は認証へ到達する前に 429。
     assert client.post("/api/sessions/join", json=body).status_code == 429
 
 
@@ -91,7 +89,6 @@ def test_rate_limit_emits_observability(monkeypatch) -> None:
     monkeypatch.setattr(main, "record_rate_limited", lambda: calls.append(1), raising=True)
 
     body = {"invite": "broken", "participant_name": "x"}
-    # 上限内（1回目）は未発火、上限超過（2回目）で 429 とともに計上される。
     assert client.post("/api/sessions/join", json=body).status_code == 401
     assert calls == []
     assert client.post("/api/sessions/join", json=body).status_code == 429
@@ -110,12 +107,10 @@ def test_rate_limit_fires_before_body_parsing(monkeypatch) -> None:
     monkeypatch.setattr(main.settings, "join_rate_per_minute", 1, raising=True)
     main._join_hits.clear()
 
-    # 1回目で上限に達する（壊れた invite で 401 = body 解析後の認証拒否）。
     assert (
         client.post("/api/sessions/join", json={"invite": "x", "participant_name": "y"}).status_code
         == 401
     )
-    # 2回目は壊れた JSON（本来なら 422 解析エラー）でも、解析前に 429 で短絡する。
     res = client.post(
         "/api/sessions/join",
         content=b"{not-json",

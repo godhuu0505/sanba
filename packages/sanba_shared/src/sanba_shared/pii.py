@@ -15,11 +15,8 @@ from __future__ import annotations
 import re
 
 _EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
-# Phone: JP (0X-XXXX-XXXX / 0XXXXXXXXXX) and international (+...), 9+ digits.
 _PHONE = re.compile(r"(?<!\d)(?:\+?\d[\d\-\s()]{8,}\d)(?!\d)")
-# Long digit runs that look like card / account numbers (13-16 digits).
 _CARD = re.compile(r"(?<!\d)(?:\d[ -]?){13,16}(?!\d)")
-# My number / generic 12-digit IDs.
 _LONGNUM = re.compile(r"(?<!\d)\d{12}(?!\d)")
 
 

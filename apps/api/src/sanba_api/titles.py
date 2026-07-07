@@ -19,8 +19,6 @@ from .config import settings
 
 log = structlog.get_logger(__name__)
 
-# 生成タイトルの安全上限。プロンプトでは 30 文字を指示するが、モデルが超過しても
-# Issue 標題として破綻しない長さで切る（説明文を返してきた場合の保険）。
 _MAX_TITLE_CHARS = 60
 
 

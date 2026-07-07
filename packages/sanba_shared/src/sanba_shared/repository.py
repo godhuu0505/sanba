@@ -33,8 +33,6 @@ from .pii import mask_pii
 
 log = structlog.get_logger(__name__)
 
-# 上書き可能な要件フィールド (ADR-0014 §10)。出所メタ (id/created_at/source_speaker/
-# confidence) はここに含めない = 人手で書き換えない。
 EDITABLE_REQUIREMENT_FIELDS = frozenset({"statement", "priority", "category"})
 
 
@@ -101,44 +99,23 @@ class SessionRepository:
 
     def __init__(self, data_retention_days: int = 30, mask_pii_before_persist: bool = True) -> None:
         self._retention_days = data_retention_days
-        # 発話を永続化する前に PII をマスクするか。
-        # ドメイン層は app config に依存しないので、呼び出し側 (agent/api) が注入する。
         self._mask_pii = mask_pii_before_persist
         self._client = self._init_client()
-        # In-memory fallback used when Firestore is not configured.
         self._mem_sessions: dict[str, SessionMeta] = {}
         self._mem_utterances: dict[str, list[Utterance]] = {}
         self._mem_requirements: dict[str, dict[str, Requirement]] = {}
-        # 検知 (矛盾/抜け) と適用済み最大 seq。ハイドレーションの土台。
         self._mem_detections: dict[str, dict[str, dict[str, Any]]] = {}
         self._mem_seq: dict[str, int] = {}
-        # lossy（status/transcript.partial）の epoch（再起動ごとに +1 / ADR-0021）。
-        # 起動時にここから lossy_seq の開始基底を払い出し、再起動を跨いで lossy_seq を
-        # 大域的に単調増加させる（接続維持中の web が再起動後の lossy を黙殺しないように）。
         self._mem_lossy_epoch: dict[str, int] = {}
-        # 投入済み素材のメタ。GET context/files の復元に使う。プロセス内に閉じず外部
-        # ストアへ永続化することで、多インスタンス/再起動後のリロード/途中参加でも復元できる。
         self._mem_materials: dict[str, dict[str, dict[str, Any]]] = {}
-        # 現在の未回答質問の単一ポインタ (ADR-0020)。最新1問モデルなのでセッション
-        # ごとに 1 ドキュメント。tombstone（cleared）も含めて保持し GET で cleared_seq を返す。
         self._mem_questions: dict[str, dict[str, Any]] = {}
-        # ユーザーの GitHub App 連携 (`users/{sub}` / ADR-0028)。sub -> GitHubLink。
         self._mem_github_links: dict[str, GitHubLink] = {}
-        # product と深掘りリンク (ADR-0031)。product_id -> Product / invite_id -> ProductInvite。
         self._mem_products: dict[str, Product] = {}
         self._mem_invites: dict[str, dict[str, ProductInvite]] = {}
-        # in-memory での invite 消費をアトミックにするためのロック（Firestore 経路は
-        # トランザクションが担う。consume_invite の read-check-increment を直列化する）。
         self._mem_invite_lock = threading.Lock()
-        # product メンバーとメンバー招待 (ADR-0036)。キーは Firestore の doc id と同じ
-        # `{product_id}__{sub}` / invite_id（トップレベルコレクションを模す）。
         self._mem_members: dict[str, ProductMember] = {}
         self._mem_member_invites: dict[str, ProductMemberInvite] = {}
-        # in-memory での招待応答（pending → accepted/declined + メンバー作成）を
-        # アトミックにするためのロック。Firestore 経路はトランザクションが担う。
         self._mem_member_lock = threading.Lock()
-        # product slug のグローバル一意性を in-memory で担保するロック（ADR-0045）。
-        # Firestore 経路は product_slugs/{slug} レジストリ + トランザクションが担う。
         self._mem_product_lock = threading.Lock()
 
     @staticmethod
@@ -147,7 +124,7 @@ class SessionRepository:
             from google.cloud import firestore
 
             return firestore.Client()
-        except Exception as exc:  # pragma: no cover - depends on env
+        except Exception as exc:  # pragma: no cover
             log.warning("firestore_unavailable_using_memory", error=str(exc))
             return None
 
@@ -160,7 +137,6 @@ class SessionRepository:
         days = self._retention_days
         return datetime.now(UTC) + timedelta(days=days) if days > 0 else None
 
-    # ---- Sessions (ADR-0014 §4) -------------------------------------------
     def create_session_doc(self, meta: SessionMeta, *, apply_ttl: bool = False) -> None:
         """`sessions/{id}` 文書を作成する。一覧/閲覧/承認の土台になる。
 
@@ -230,8 +206,6 @@ class SessionRepository:
         meta = self.get_session(session_id)
         if meta is None:
             return None
-        # 不可逆マーカ: 既に finalized なら最初のスナップショット（件数・ID集合・刻）を保持
-        # して返す。確定後に要件が増減/二重 POST されても初回確定値を変えない。
         if meta.status == "finalized":
             return meta
         snapshot_ids = list(finalized_requirement_ids)
@@ -320,7 +294,6 @@ class SessionRepository:
             self._mem_sessions[session_id] = updated
         return updated
 
-    # ---- User GitHub link (`users/{sub}` / ADR-0028) -----------------------
     def get_github_link(self, sub: str) -> GitHubLink | None:
         """ユーザー (Google sub) の GitHub App 連携を取得する。未連携なら None。"""
         if self._client is not None:
@@ -358,7 +331,6 @@ class SessionRepository:
             return True
         return self._mem_github_links.pop(sub, None) is not None
 
-    # ---- Products (ADR-0031) -----------------------------------------------
     def create_product(self, product: Product) -> None:
         """`products/{id}` 文書を作成する。所有・repo 紐づけ・深掘りリンクの土台。
 
@@ -476,12 +448,9 @@ class SessionRepository:
         if output_formats is not None:
             updates["output_formats"] = dict(output_formats)
         if check_items is not None:
-            # Firestore へは JSON 形（{text, target}）で保存する（読み戻しは Product の
-            # validator が CheckItem に起こす。旧 str リスト文書も同 validator が平す）。
             updates["check_items"] = [c.model_dump(mode="json") for c in check_items]
         if not updates:
             return current
-        # dict に適用してから検証する（name 空などの不正値検出を一度で行う）。
         data = current.model_dump()
         data.update(updates)
         updated = Product.model_validate(data)
@@ -490,9 +459,6 @@ class SessionRepository:
             if slug_changed and slug is not None:
                 self._update_product_slug_txn(product_id, current.slug, slug, updates)
             else:
-                # github_* などの並行更新を巻き戻さないよう、編集対象フィールドのみ patch する。
-                # set(merge=True) だと map（output_formats）が深マージされ「audience キーの削除＝
-                # 既定へ戻す」が永続に反映されないため、フィールド単位で全量置換する update を使う。
                 self._client.collection("products").document(product_id).update(updates)
         else:
             with self._mem_product_lock:
@@ -525,8 +491,6 @@ class SessionRepository:
             if old_ref is not None:
                 transaction.delete(old_ref)
             transaction.set(new_ref, {"product_id": product_id})
-            # 非トランザクション経路（update_product 本体）と同じく update を使う:
-            # set(merge=True) だと map（output_formats）が深マージされ全量置換にならない。
             transaction.update(product_ref, updates)
 
         _txn(self._client.transaction())
@@ -600,9 +564,6 @@ class SessionRepository:
                 )
                 for doc in docs:
                     doc.reference.delete()
-            # product 文書と slug レジストリは同一トランザクションで消す（ADR-0045）:
-            # 途中クラッシュで「slug は解放済みなのに product 文書が残る」状態を作らない
-            # （解放された slug を別 product が取ると、生きた product と重複して見える）。
             self._delete_product_with_slug_txn(product_id, (snap.to_dict() or {}).get("slug"))
             return True
         if product_id not in self._mem_products:
@@ -638,7 +599,6 @@ class SessionRepository:
 
         _txn(self._client.transaction())
 
-    # ---- Product invites (深掘りリンク / ADR-0031) ---------------------------
     def create_invite(self, invite: ProductInvite) -> None:
         """深掘りリンクを作成する。親 product が無ければ ProductNotFound。
 
@@ -724,7 +684,6 @@ class SessionRepository:
 
         @firestore.transactional  # type: ignore[misc]
         def _txn(transaction: Any) -> ProductInvite:
-            # delete_product との競合で孤立した invite を消費させない。
             product_snap = (
                 self._client.collection("products")
                 .document(product_id)
@@ -736,7 +695,6 @@ class SessionRepository:
             if not snap.exists:
                 raise InviteNotFound(invite_id)
             invite = ProductInvite.model_validate(snap.to_dict())
-            # 検証と増分を同一トランザクションにし、並行 join でも max_uses を超えない。
             self._check_invite_usable(invite)
             updated = self._consumed_copy(invite, rate_limit_per_minute)
             transaction.set(
@@ -793,7 +751,6 @@ class SessionRepository:
             .document(invite_id)
         )
 
-    # ---- Product members (ADR-0036) -----------------------------------------
     @staticmethod
     def _member_key(product_id: str, sub: str) -> str:
         """`product_members` の doc id。(product, sub) で一意（1 人 1 メンバーシップ）。"""
@@ -872,7 +829,6 @@ class SessionRepository:
         found = [p for p in products if p is not None]
         return sorted(found, key=lambda p: p.created_at, reverse=True)
 
-    # ---- Member invites (メンバー招待 / ADR-0036) -----------------------------
     def create_member_invite(self, invite: ProductMemberInvite) -> None:
         """メンバー招待を作成する。親 product が無ければ ProductNotFound。"""
         if self.get_product(invite.product_id) is None:
@@ -1040,7 +996,6 @@ class SessionRepository:
                 raise MemberInviteNotFound(invite_id)
             invite = ProductMemberInvite.model_validate(snap.to_dict())
             self._check_invite_pending(invite)
-            # delete_product との競合で親なしメンバーを作らない（consume_invite と同方針）。
             product_snap = (
                 self._client.collection("products")
                 .document(invite.product_id)
@@ -1111,11 +1066,7 @@ class SessionRepository:
         )
         return updated, member
 
-    # ---- Utterances --------------------------------------------------------
     def add_utterance(self, session_id: str, utterance: Utterance) -> None:
-        # PII を含みうる発話は永続化前にマスクする。
-        # grounding 索引は retrieval/ingestion 側でマスク済みだが、Firestore 保存経路でも
-        # 同じ方針を適用し、生 PII が at-rest で残らないようにする。
         stored = utterance
         if self._mask_pii:
             stored = utterance.model_copy(update={"text": mask_pii(utterance.text)})
@@ -1132,11 +1083,9 @@ class SessionRepository:
             return
         self._mem_utterances.setdefault(session_id, []).append(stored)
 
-    # ---- Requirements ------------------------------------------------------
     def save_requirement(self, session_id: str, requirement: Requirement) -> None:
         if self._client is not None:
             doc = requirement.model_dump(mode="json")
-            # 承認済みは TTL の対象外 (§11)。それ以外はリテンション期限を付ける。
             if requirement.status is not RequirementStatus.APPROVED:
                 if (exp := self._expire_at()) is not None:
                     doc["expireAt"] = exp
@@ -1186,13 +1135,11 @@ class SessionRepository:
             updates["category"] = category
         if not updates:
             return current
-        # dict に適用してから検証する (enum へのコアース・不正値検出を一度で行う)。
         data = current.model_dump()
         data.update(updates)
         updated = Requirement.model_validate(data)
 
         if self._client is not None:
-            # merge=True は必須: model に無い expireAt (TTL センチネル) を消さず温存する。
             self._req_doc(session_id, rid).set(updated.model_dump(mode="json"), merge=True)
         else:
             self._mem_requirements.setdefault(session_id, {})[rid] = updated
@@ -1232,18 +1179,14 @@ class SessionRepository:
             from google.cloud import firestore
 
             if is_approved and not keep_expiry:
-                # null 代入では「null フィールド」が残り TTL が効き続ける懸念があるため
-                # センチネルで明示削除する (ADR-0014 §17)。
                 doc["expireAt"] = firestore.DELETE_FIELD
             elif not is_approved and (exp := self._expire_at()) is not None:
                 doc["expireAt"] = exp
-            # is_approved かつ keep_expiry=True: expireAt を触らず既存 TTL を温存する。
             self._req_doc(session_id, rid).set(doc, merge=True)
         else:
             self._mem_requirements.setdefault(session_id, {})[rid] = updated
         return updated
 
-    # ---- Detections ---------------------------------------------------------
     def save_detection(self, session_id: str, detection: dict[str, Any]) -> None:
         """検知 (矛盾/抜け) を Firestore に upsert する。
 
@@ -1281,7 +1224,6 @@ class SessionRepository:
         if existing is not None:
             existing.update(patch)
 
-    # ---- Materials -----------------------------------------------------------
     def save_material(self, session_id: str, material: dict[str, Any]) -> None:
         """投入済み素材のメタ (id/name/kind/status/extracted) を upsert する。
 
@@ -1357,7 +1299,6 @@ class SessionRepository:
             return True
         return False
 
-    # ---- Current question (ADR-0020) -----------------------------------------
     def save_current_question(
         self, session_id: str, question: dict[str, Any], asked_seq: int
     ) -> None:
@@ -1378,7 +1319,6 @@ class SessionRepository:
             "cleared": False,
         }
         if self._client is not None:
-            # set（merge なし）で全置換する: 前の tombstone（cleared/cleared_seq）を引き継がない。
             if (exp := self._expire_at()) is not None:
                 doc["expireAt"] = exp
             self._question_doc(session_id).set(doc)
@@ -1418,15 +1358,12 @@ class SessionRepository:
         def _txn(transaction: Any) -> bool:
             snap = doc_ref.get(transaction=transaction)
             data = snap.to_dict() if snap.exists else None
-            # 古い回答処理が一致を読んだ直後に新しい ask が上書きする競合を防ぐため、
-            # 読み取り〜条件付き書き込みを 1 トランザクションにする（§5-7）。
             if data is None or data.get("cleared") or data.get("id") != question_id:
                 return False
             tombstone: dict[str, Any] = {
                 "id": question_id,
                 "cleared": True,
                 "cleared_seq": cleared_seq,
-                # PII を含みうる本文/選択肢は tombstone から消す（§5-9）。
                 "prompt": firestore.DELETE_FIELD,
                 "options": firestore.DELETE_FIELD,
                 "asked_seq": firestore.DELETE_FIELD,
@@ -1517,9 +1454,6 @@ class SessionRepository:
         self._mem_seq[session_id] = current + count
         return current + 1
 
-    # lossy_seq epoch のブロック幅。1 起動あたり最大この件数の lossy イベントを許容する。
-    # 起動ごとに [epoch*BLOCK, (epoch+1)*BLOCK) の区間を割り当て、再起動を跨いで lossy_seq を
-    # 大域単調にする。JS の安全整数（2^53）に対し十分小さく、現実の lossy 件数を大きく上回る。
     LOSSY_EPOCH_BLOCK = 1_000_000_000
 
     def reserve_lossy_seq_base(self, session_id: str) -> int:
@@ -1555,7 +1489,6 @@ class SessionRepository:
             self._mem_lossy_epoch[session_id] = epoch
         return epoch * self.LOSSY_EPOCH_BLOCK
 
-    # ---- internal ----------------------------------------------------------
     def _req_doc(self, session_id: str, rid: str):  # type: ignore[no-untyped-def]
         return (
             self._client.collection("sessions")
@@ -1565,7 +1498,6 @@ class SessionRepository:
         )
 
     def _question_doc(self, session_id: str):  # type: ignore[no-untyped-def]
-        # 最新1問モデル: サブコレクション `questions` の単一ポインタ（doc id="current"）。
         return (
             self._client.collection("sessions")
             .document(session_id)

@@ -4,8 +4,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApiError, type Product } from "@/lib/api";
 
-// アプリ管理（一覧・登録 / FR-1.1）: 認証ゲート・一覧表示・登録 → 詳細遷移・空名の 400 相当を検証。
-
 const authState = {
   credential: null as string | null,
   profile: null as { name?: string; email?: string } | null,
@@ -124,7 +122,6 @@ describe("アプリ管理画面（ADR-0031 / FR-1.1）", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: /登録する/ }));
     expect((await screen.findByRole("alert")).textContent).toContain("URL キーワード");
-    // 予約語（web の既存ルート）もサーバー往復なしでその場で弾く。
     fireEvent.change(screen.getByLabelText("URL キーワード（必須）"), {
       target: { value: "products" },
     });

@@ -83,12 +83,9 @@ class Requirement(BaseModel):
     priority: Priority = Priority.SHOULD
     source_speaker: str | None = None
     confidence: float = Field(default=0.7, ge=0.0, le=1.0)
-    # 根拠となった発話 id（"u3" 等。transcript.* / detection.refs と同じ id 空間）。
-    # 契約 §3 の citations:[{kind, ref}] へ整形して web に送る（要件カードの引用表示）。
     citations: list[str] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=_now)
 
-    # ---- レビュー状態 (ADR-0014) ----
     status: RequirementStatus = RequirementStatus.DRAFT
     approved_by: str | None = None
     approved_at: datetime | None = None
@@ -136,9 +133,6 @@ class Audience(StrEnum):
     DEVELOPER = "developer"
 
 
-# 要件サンバ中に必ず確認する項目の登録上限。プロンプトへ機械的にシードするため、
-# Firestore 文書と初期 instructions の肥大を抑える上限をドメイン側で一元定義する
-# （API のバリデーションと agent のシードが同じ値を見る。web へは API 応答で渡す）。
 MAX_CHECK_ITEMS = 10
 
 
@@ -186,25 +180,11 @@ class Product(BaseModel):
     name: str = Field(min_length=1)
     description: str = ""
     owner_sub: str
-    # URL キーワード（グローバル一意 / ADR-0045）。/{slug}/prepare 等のアプリ従属 URL の
-    # 識別子。None = 未設定（slug 導入前の既存アプリ）。未設定の間は slug URL を持てず、
-    # web は壁打ち開始を塞ぐ。形式検証は API 層（`_clean_slug`）、一意性の担保は
-    # `SessionRepository`（Firestore は product_slugs/{slug} レジストリ）が行う。
     slug: str | None = None
     created_at: datetime = Field(default_factory=_now)
-    # 利用者向け語彙（画面名・機能の呼び名）。end_user モードのプロンプトへ機械的に
-    # シードする（ADR-0032 決定7）。Stage 1 では保持のみで未使用。
     glossary: list[str] = Field(default_factory=list)
 
-    # ---- 要件結果の出力フォーマット / 確認項目 ----
-    # audience（利用者/企画者/開発者）→ Markdown テンプレート。各 audience につき 1 つ。
-    # 未登録の audience は `output_formats.resolve_output_format` が既定テンプレートへ
-    # フォールバックするため、旧文書・新規作成とも空 dict でよい。
     output_formats: dict[Audience, str] = Field(default_factory=dict)
-    # 要件サンバ中に必ず確認する項目（最大 MAX_CHECK_ITEMS 件。上限は API 層で検証）。
-    # agent が初期 instructions へ機械的にシードする（glossary と同型）。対象ペルソナは
-    # CheckItem.target（None = 全員）。シード・文書掲載の絞り込みは check_items_for_scope /
-    # check_items_for_audience が正（ADR-0043）。
     check_items: list[CheckItem] = Field(default_factory=list)
 
     @field_validator("check_items", mode="before")
@@ -215,12 +195,8 @@ class Product(BaseModel):
             return [{"text": item} if isinstance(item, str) else item for item in value]
         return value
 
-    # ---- 連携 GitHub リポジトリ (ADR-0027 / ADR-0028 を product に持ち上げ) ----
-    # 意味は SessionMeta の同名フィールドと同じ。None = 未指定（環境変数フォールバック）、
-    # 空文字 = 明示的な「連携しない」、"owner/name" = 選択済み。
     github_repo: str | None = None
     github_branch: str | None = None
-    # 索引をピン留めした commit sha（(repo,branch,sha) 共有索引のキー / ADR-0028）。
     github_commit_sha: str | None = None
     github_index_status: GitHubIndexStatus = GitHubIndexStatus.NONE
     github_summary: str | None = None
@@ -255,9 +231,6 @@ class ProductInvite(BaseModel):
     use_count: int = Field(default=0, ge=0)
     revoked: bool = False
     created_at: datetime = Field(default_factory=_now)
-    # リンク単位のセッション作成レート制限の固定ウィンドウ (ADR-0032 決定5 / FR-2.6)。
-    # 消費 (consume_invite) と同一トランザクションで read-check-increment するため
-    # invite 文書に同居させる（別カウンタ文書を持たず、多インスタンスでも整合）。
     join_window_start: datetime | None = None
     join_window_count: int = Field(default=0, ge=0)
 
@@ -315,7 +288,6 @@ class ProductMemberInvite(BaseModel):
     created_at: datetime = Field(default_factory=_now)
     expires_at: datetime | None = None
     responded_at: datetime | None = None
-    # 承諾したユーザーの sub（監査用。承諾前は None）。
     accepted_sub: str | None = None
 
 
@@ -325,8 +297,6 @@ class Utterance(BaseModel):
     ts: datetime = Field(default_factory=_now)
 
 
-# セッション作成時の既定タイトル。要件確定（finalize）で Vertex AI 生成タイトルに
-# 差し替わる前の暫定値であり、Issue タイトルのフォールバック判定でも「未生成」の目印に使う。
 DEFAULT_SESSION_TITLE = "要件インタビュー"
 
 
@@ -342,44 +312,21 @@ class SessionMeta(BaseModel):
     owner_sub: str
     owner_email: str
     roles: list[str] = Field(default_factory=list)
-    # ---- セッション準備情報 (02 準備フォーム / ADR-0035) ----
-    # 準備画面で入力されたゴールとその詳細（背景・現状・制約）。agent が起動時に読んで
-    # 初期 instructions へ proactive にシードする（ADR-0028 と同じく retrieval 任せにしない）。
-    # RAG（kind=context）への投入は join 後で agent 起動と競合し得るため、こちらが正本。
-    # None = 未入力（旧文書の互換）。
     goal: str | None = None
     goal_detail: str | None = None
-    # active → finalized（07 判定で参加者が要件を確定したとき）。
     status: str = "active"
     created_at: datetime = Field(default_factory=_now)
-    # 確定スナップショットの刻と件数。未確定なら None。
     finalized_at: datetime | None = None
     finalized_count: int | None = None
-    # 確定時点の要件 ID の不可逆スナップショット。finalize 後に要件が増減/却下
-    # されても export はこの集合に固定して起票する。旧文書は既定 [] でフォールバック。
     finalized_requirement_ids: list[str] = Field(default_factory=list)
 
-    # ---- product 従属 (ADR-0031) ----
-    # 深掘りリンク経由で作られたセッションが従属する product。None = 従来どおりの
-    # 単発セッション（旧文書の互換）。repo 解決は「セッション明示 > product > 環境変数」。
     product_id: str | None = None
-    # インタビュー・モード（ADR-0032）。リンクの scope から決まり、agent がプロンプト・
-    # 語彙・成果物の形式を分岐する。旧文書は既定 developer でフォールバックする。
     interview_mode: InviteScope = InviteScope.DEVELOPER
 
-    # ---- 連携 GitHub リポジトリ (ADR-0027 / ADR-0028) ----
-    # セッション単位の GitHub リポジトリ（ADR-0027）。02 準備で選択され、grounding 取り込みと
-    # 要件→Issue 起票の対象になる。None = 未指定（環境変数へフォールバック / 旧文書の互換）、
-    # 空文字 = 明示的な「連携しない」（既定リポジトリにも送らない）、"owner/name" = 選択済み。
     github_repo: str | None = None
-    # 以下は GitHub App 連携（ADR-0028）での拡張。owner の App installation が読める repo を
-    # 選ぶと branch を確定し ES 索引される。旧文書・connector 選択は既定（None / none）のまま。
     github_branch: str | None = None
-    # 索引をピン留めした commit sha（鮮度の基準・(repo,branch,sha) 索引キー）。
     github_commit_sha: str | None = None
     github_index_status: GitHubIndexStatus = GitHubIndexStatus.NONE
-    # 索引時に組み立てた repo 要約（名/説明/README先頭/ツリー概要）。agent が初期 instructions に
-    # proactive シードする（ADR-0028・retrieval 任せにしない）。索引完了時に書き込む。
     github_summary: str | None = None
 
 
@@ -388,8 +335,6 @@ class AnalysisResult(BaseModel):
 
     summary: str
     open_topics: list[str] = Field(default_factory=list)
-    # 触れられているが基準が曖昧な論点（矛盾でも抜けでもない第三類 / ADR-0022）。
-    # open_topics（未確認の抜け）と区別し、detection.ambiguous として発火する。
     ambiguous_topics: list[str] = Field(default_factory=list)
     next_question: str
     suggested_answer: str

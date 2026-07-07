@@ -1,19 +1,4 @@
-# インタビュー品質（LLMOps）の可視化 — ログベースメトリクス + Cloud Monitoring ダッシュボード。
-#
-# 設計 (ADR-0051 / #376):
-#   - agent はセッション終了時に LLM-as-judge の採点を `session_scored` 構造化ログへ出す
-#     (evaluation.score_session)。ここではそのログから値を抽出する **ログベースメトリクス**を作り、
-#     Cloud Monitoring ダッシュボードで総合スコア/観点別スコア/採点件数を可視化する。
-#   - 追加コード不要（既存ログを基点にする）。Langfuse の score sink を置き換える Google ネイティブ経路。
-#
-# 結合の前提 (why):
-#   value_extractor の正規表現は `session_scored` のログ本文フォーマットに結合している
-#   （`overall=0.0 scores={'nfr_coverage': 0.0, ...}`）。evaluation.py のログ整形を変えるときは
-#   ここの正規表現も合わせて更新する（テキストログの表記に依存するため、構造化 JSON ログへ
-#   移行できれば jsonPayload 抽出に切り替えるのが望ましい）。
-
 locals {
-  # 観点別スコア。key はメトリクス名の接尾辞、pattern は session_scored ログからの抽出正規表現。
   quality_metric_defs = [
     {
       key     = "overall"
@@ -38,44 +23,33 @@ locals {
   ]
   quality_metric_map = { for m in local.quality_metric_defs : m.key => m }
 
-  # 採点ログの母集合。agent の session_scored のみ（他サービス/他ログを混ぜない）。
   session_scored_filter = "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"sanba-agent\" AND textPayload:\"session_scored\""
 
-  # terraform apply を実行する CI SA。空なら命名規約から導出する（#388: この SA に
-  # ログメトリクス/ダッシュボード作成権限を付与しないと apply が 403 で落ちる）。
   tf_deployer_sa = var.terraform_deployer_sa != "" ? var.terraform_deployer_sa : "tf-deployer@${var.project_id}.iam.gserviceaccount.com"
 }
 
-# CI SA(tf-deployer) にログベースメトリクス/ダッシュボード作成権限を付与する（#388）。
-# tf-deployer は roles/resourcemanager.projectIamAdmin を持つため自己付与できる。これが無いと
-# `logging.logMetrics.create` / `monitoring.dashboards.create` が 403 になり CD の terraform
-# apply が全て失敗する（bootstrap で付け忘れていた権限の穴を IaC 側で塞ぐ）。
 resource "google_project_iam_member" "tf_deployer_observability" {
   for_each = toset([
-    "roles/logging.configWriter",       # logging.logMetrics.create
-    "roles/monitoring.dashboardEditor", # monitoring.dashboards.create
+    "roles/logging.configWriter",
+    "roles/monitoring.dashboardEditor",
   ])
   project    = var.project_id
   role       = each.value
   member     = "serviceAccount:${local.tf_deployer_sa}"
-  depends_on = [google_project_service.services] # cloudresourcemanager API 有効化を待つ
+  depends_on = [google_project_service.services]
 }
 
-# 自己付与した権限の IAM 伝搬待ち。初回 apply で「binding 作成直後にメトリクス作成 → まだ
-# 権限が効かず 403」というレースを避ける（create 時のみ待つ。以後 binding 不変なら再待機しない）。
 resource "time_sleep" "observability_iam_propagation" {
   depends_on      = [google_project_iam_member.tf_deployer_observability]
   create_duration = "60s"
 }
 
-# 観点別スコアの分布メトリクス（0.0〜1.0 を 0.1 刻みで分布化）。
 resource "google_logging_metric" "session_quality" {
   for_each = local.quality_metric_map
 
   name   = "sanba/session_quality_${each.key}"
   filter = local.session_scored_filter
 
-  # 権限付与 + 伝搬を待ってから作成する（#388）。
   depends_on = [time_sleep.observability_iam_propagation]
 
   metric_descriptor {
@@ -96,7 +70,6 @@ resource "google_logging_metric" "session_quality" {
   }
 }
 
-# 採点済みセッション数（母集団の把握用カウンタ）。
 resource "google_logging_metric" "sessions_scored_count" {
   name   = "sanba/sessions_scored_count"
   filter = local.session_scored_filter
@@ -111,11 +84,7 @@ resource "google_logging_metric" "sessions_scored_count" {
   }
 }
 
-# 品質ダッシュボード。観点別スコアの平均推移 + 採点件数。
-# NOTE: dashboard_json の内部構造は terraform のスキーマ検証対象外（不透明文字列）。
-#       初回 apply 後に Cloud Monitoring 上で表示を確認すること。
 resource "google_monitoring_dashboard" "sanba_quality" {
-  # monitoring.dashboards.create の権限付与 + 伝搬を待ってから作成する（#388）。
   depends_on = [time_sleep.observability_iam_propagation]
 
   dashboard_json = jsonencode({
@@ -160,8 +129,6 @@ resource "google_monitoring_dashboard" "sanba_quality" {
             width  = 12
             height = 3
             widget = {
-              # スコアカードは整列区間（1h）ごとの採点件数を表示する（累積ではない）。
-              # スパークラインで件数の推移が分かる。
               title = "採点済みセッション数（1時間あたり）"
               scorecard = {
                 timeSeriesQuery = {

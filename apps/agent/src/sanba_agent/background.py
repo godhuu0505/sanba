@@ -32,7 +32,6 @@ class AnalysisScheduler:
         self._min_interval_seconds = min_interval_seconds
         self._min_new_utterances = min_new_utterances
         self._clock = clock
-        # 前回実行開始以降に届いた確定発話数（実行開始でゼロに戻す）。
         self._pending = 0
         self._last_started_at: float | None = None
         self._running = False

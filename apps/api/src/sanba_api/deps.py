@@ -48,8 +48,6 @@ def _get_tracer() -> Any:
         return None
 
 
-# In-memory per-IP rate limiter for the join endpoint. Stateless workers can use
-# a shared store (Redis/Firestore) later; this is enough to blunt abuse in the MVP.
 _join_hits: dict[str, deque[float]] = defaultdict(deque)
 
 
@@ -68,25 +66,18 @@ def _over_rate_limit(client_ip: str) -> bool:
     return False
 
 
-# Context indexer shares the agent's Elasticsearch grounding index.
 _indexer = ContextIndexer()
 
-# 画像/動画アセットの保存層。GCS 未設定なら in-memory にフォールバック。
 _asset_store = AssetStore()
 
-# Firestore SDK は OS 環境変数 FIRESTORE_EMULATOR_HOST を直接読む。config 経由で指定された
-# 場合に SDK へ橋渡しする (compose では .env で渡るが、config だけ変えた場合の取りこぼしを防ぐ)。
-# 未設定なら何もしない = 本番では実 Firestore に接続する。
 if settings.firestore_emulator_host:
     os.environ.setdefault("FIRESTORE_EMULATOR_HOST", settings.firestore_emulator_host)
 
-# セッション/要件の永続化境界。agent と同じ sanba_shared を使う。
 _repo = SessionRepository(
     data_retention_days=settings.data_retention_days,
     mask_pii_before_persist=settings.mask_pii_before_index,
 )
 
-# Read-side store for hydration APIs（契約 §4）。agent が書いた要件・検知を読む。
 _read_repo = ReadRepository()
 
 
@@ -111,8 +102,6 @@ def require_session_access(
     return access
 
 
-# ゲスト identity の接頭辞。Google の sub は数値文字列でこの形を
-# 取り得ないため、署名済み session_token の sub がこれで始まる = ゲスト、は偽装できない。
 _GUEST_SUB_PREFIX = "guest:"
 
 
@@ -134,8 +123,6 @@ def forbid_guest_writes(access: SessionAccess, operation: str) -> None:
         raise HTTPException(status_code=403, detail="guests cannot perform this operation")
 
 
-# "owner/name" 形式。GitHub の実際の命名規則より緩いが、パス注入
-# （`/` の追加や空文字）を弾ければ十分（トークン権限外のリポは GitHub 側が 404 を返す）。
 _GITHUB_REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 
 
@@ -228,7 +215,6 @@ class JoinResponse(BaseModel):
     livekit_url: str
     session_id: str
     identity: str
-    # 契約 §4: ハイドレーション/起票 API を保護する「join 済みトークン」。
     session_token: str
 
 
@@ -252,7 +238,7 @@ def _mint_join_tokens(
             .with_grants(
                 api.VideoGrants(
                     room_join=True,
-                    room=session_id,  # scoped to exactly this room
+                    room=session_id,
                     can_publish=True,
                     can_subscribe=True,
                 )
@@ -263,8 +249,6 @@ def _mint_join_tokens(
         log.error("token_issue_failed", error=str(exc))
         raise HTTPException(status_code=500, detail="failed to issue token") from exc
 
-    # ハイドレーション/起票 API を保護する署名トークン（契約 §4）。LiveKit トークンと
-    # 同じ寿命にして、リロード時の GET /requirements が同じ間だけ通るようにする。
     session_token = create_session_token(
         session_id,
         sub,
@@ -282,8 +266,7 @@ def _mint_join_tokens(
 
 
 class SelectRepoRequest(BaseModel):
-    repo: str  # "owner/name"
-    # 省略時はデフォルトブランチを使う（branch 既定=デフォルト）。
+    repo: str
     branch: str | None = None
 
 

@@ -112,8 +112,6 @@ def fetch_and_index_repo(
 
     meta = fetcher.repo_meta(installation_id, repo)
     raw_readme = fetcher.fetch_readme(installation_id, repo, commit_sha)
-    # README 先頭にも秘匿が混じり得る（API_KEY=… / PEM 等）。要約へ渡す前にレダクトする
-    # （_summary も ES に保存・検索可能になるため）。
     readme = redact_secrets(raw_readme) if raw_readme else None
     summary = build_repo_summary(
         repo=repo,
@@ -126,20 +124,16 @@ def fetch_and_index_repo(
 
     indexed_files = 0
     indexed_chunks = 0
-    # 要約自体も索引する（search_grounding が「前提リポジトリ」を引けるように）。要約も念のため
-    # 全体をレダクトしてから索引する（description 等にも秘匿が混じる可能性に二重で備える）。
     indexed_chunks += indexer.index_context(
         session_id,
         chunk_text(redact_secrets(summary)),
         repo_source_name(repo, branch, commit_sha, "_summary"),
     )
 
-    # Issue も前提情報として索引する（ADR-0028 索引範囲 / agent 指示も Issue 参照を前提とする）。
     issues_failed = False
     try:
         issues = fetcher.fetch_issues(installation_id, repo)
     except Exception as exc:
-        # Issues 権限不足/無効化/レート制限。前提に Issue を含むので欠落は PARTIAL に反映する。
         issues_failed = True
         log.warning("repo_issues_fetch_failed", repo=repo, error=str(exc))
         issues = []
@@ -158,24 +152,19 @@ def fetch_and_index_repo(
         try:
             raw = fetcher.fetch_file(installation_id, repo, commit_sha, f.path)
         except Exception as exc:
-            # 404/403/レート制限など。失敗は握り潰さず集計し、状態に反映する。
             fetch_failures += 1
             log.warning("repo_file_fetch_failed", repo=repo, path=f.path, error=str(exc))
             continue
-        # コード中の生シークレットを索引前にレダクトする（PII マスクは indexer 側で並行）。
         safe = redact_secrets(raw)
         chunks = chunk_text(safe)
         if not chunks:
             continue
-        # repo 名/path をクエリで引けるよう、各 chunk 先頭にメタ行を付す（search は
-        # source ではなく text を対象にするため、{repo} 検索で本文を拾えるように）。
         tagged = [f"[{repo} {f.path}]\n{c}" for c in chunks]
         indexed_chunks += indexer.index_context(
             session_id, tagged, repo_source_name(repo, branch, commit_sha, f.path)
         )
         indexed_files += 1
 
-    # キャップ/過大スキップ/除外、ツリー打ち切り、ファイル/Issue 取得失敗 → PARTIAL。
     partial = (
         selection.truncated
         or bool(selection.skipped_too_large)
@@ -183,7 +172,6 @@ def fetch_and_index_repo(
         or fetch_failures > 0
         or issues_failed
     )
-    # 索引すべき候補があったのに 1 件も取得できなかった → FAILED（要約しか入っていない）。
     failed = bool(selection.selected) and indexed_files == 0
     outcome = IndexOutcome(
         indexed_files=indexed_files,

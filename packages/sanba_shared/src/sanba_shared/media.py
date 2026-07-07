@@ -26,7 +26,6 @@ class MediaConfig:
     google_api_key: str = ""
 
 
-# 画像から要件のヒントになる観察を、短い箇条書きで引き出すための指示。
 _IMAGE_PROMPT = (
     "この画像はソフトウェア要件定義の素材（UIモック・スクリーンショット・手書き・写真）です。"
     "要件の手掛かりになる観察を、日本語の短い箇条書きで最大8件、各1行で挙げてください。"
@@ -34,8 +33,6 @@ _IMAGE_PROMPT = (
     "箇条書き本文のみを返し、前置き・見出し・コードブロックは付けないでください。"
 )
 
-# 動画から要件のヒントを引き出す指示。各行にタイムスタンプ [MM:SS] を付け、映像と音声の
-# 両方（画面操作・発話）から観察する。転写そのものではなく「要件に効く観察」に寄せる。
 _VIDEO_PROMPT = (
     "この動画はソフトウェア要件定義の素材（画面操作の録画・デモ・バグ再現・モック説明）です。"
     "要件の手掛かりになる観察を、日本語の短い箇条書きで最大20件、各1行で挙げてください。"
@@ -93,7 +90,7 @@ def analyze_image(raw: bytes, content_type: str, config: MediaConfig) -> list[st
     """画像から観察文の配列を返す。creds 未設定や失敗時は空配列。"""
     if not (config.google_api_key or config.use_vertexai):
         return []
-    try:  # pragma: no cover - needs creds/network
+    try:  # pragma: no cover
         from google.genai import types
 
         resp = _client(config).models.generate_content(
@@ -126,7 +123,7 @@ def analyze_video(
         return VideoAnalysis()
     if gcs_uri is None and raw is None:
         raise ValueError("analyze_video requires gcs_uri or raw bytes")
-    try:  # pragma: no cover - needs creds/network
+    try:  # pragma: no cover
         from google.genai import types
 
         if gcs_uri is not None:

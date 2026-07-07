@@ -1,12 +1,5 @@
 "use client";
 
-// 過去要件の絵巻閲覧画面（/results/[id] / ADR-0045 で /sessions/[id] から移設。旧 URL は
-// リダイレクトで互換維持）。ホーム「過去の要件を見る」の行をタップした先で、
-// そのセッションの要件絵巻と結果ドキュメント出力（ADR-0042/0043）を閲覧する。
-// データ源は本人限定 API（GET /api/sessions/mine/{id}/requirements）。認証は Google idToken
-// （ADR-0012）で、非所有・不存在は API が 404 に平すため、ここでは「見つからない」表示に落とす。
-// 絵巻本体の見た目は会話中の 06 要件絵巻タブと共有する（RequirementsScrollList）。
-
 import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 
@@ -26,8 +19,6 @@ import {
 import { AUDIENCE_LABELS, AUDIENCES } from "@/lib/audience";
 import { useAuth } from "@/lib/auth";
 
-// ISO 8601 を表示用の日付（YYYY/MM/DD）へ整形する（ホームの履歴リストと同じ表記）。
-// パースできない値は空文字にする（壊れた値で落とさない）。
 function formatSessionDate(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
@@ -57,7 +48,6 @@ export default function PastRequirementsPage() {
   const sessionId = params.id;
 
   const [load, setLoad] = useState<Load>({ state: "loading" });
-  // 結果ドキュメントの出力（audience 別フォーマット）。タブを押したときだけ取得する。
   const [audience, setAudience] = useState<Audience>("developer");
   const [doc, setDoc] = useState<DocLoad>({ state: "idle" });
   const [copied, setCopied] = useState(false);
@@ -78,16 +68,12 @@ export default function PastRequirementsPage() {
   );
 
   const fetchScroll = useCallback(async () => {
-    // dev モードは idToken=null のまま API の AUTH_DEV_BYPASS に委ねる（admin と同じ扱い）。
     if (!auth.devMode && !auth.loggedIn) return;
     try {
       setLoad({ state: "loading" });
       const data = await fetchMySessionRequirements(sessionId, auth.credential);
       setLoad({ state: "ok", data });
     } catch (e) {
-      // 404 = 非所有 or 不存在（API が同じ応答に平す）。401 = idToken 期限切れ/失効で、
-      // authGate はメモリ上の loggedIn しか見ないため到達する（再認証導線へ）。
-      // それ以外は再試行導線つきの失敗表示。
       if (e instanceof ApiError && e.status === 404) setLoad({ state: "notfound" });
       else if (e instanceof ApiError && e.status === 401) setLoad({ state: "unauthenticated" });
       else setLoad({ state: "error" });
@@ -98,7 +84,6 @@ export default function PastRequirementsPage() {
     void fetchScroll();
   }, [fetchScroll]);
 
-  // 厳密な認証ゲート（全画面保護）。未ログインは /login?next= へ戻し、ログイン後にここへ復帰する。
   const gate = authGate(auth, `/results/${sessionId}`);
   if (gate) return gate;
 
@@ -125,10 +110,6 @@ export default function PastRequirementsPage() {
             <p className="text-[13px] leading-relaxed text-sanba-muted">
               ログインの期限が切れました。もう一度ログインしてください。
             </p>
-            {/* 期限切れ credential が残ったままだと同じ無効トークンで再試行し続けるため、
-                admin と同様に signOut で clear し、authGate 経由で /login?next= へ送る。
-                期限切れ回復であり明示ログアウトではないため、他タブへは伝播させない
-                （broadcast:false / 別タブの進行中会話を巻き添えにしない / ADR-0030）。 */}
             <Button variant="gold" block onClick={() => auth.signOut({ broadcast: false })}>
               ログインへ
             </Button>
@@ -160,8 +141,6 @@ export default function PastRequirementsPage() {
               emptyText="このセッションの要件はまだ生まれておりませぬ。"
             />
 
-            {/* 結果ドキュメントの出力: 読み手（利用者/企画者/開発者）別のフォーマットで整形。
-                フォーマットはアプリ管理画面で登録でき、未登録はデフォルトが使われる。 */}
             <div className="flex flex-col gap-[8px] px-1 pt-2">
               <h3 className="text-[14px] font-bold text-sanba-cream">結果ドキュメントを出力</h3>
               <p className="text-[12px] leading-relaxed text-sanba-muted">

@@ -50,7 +50,6 @@ describe("decodeServerEvent", () => {
   });
 
   it("rejects a known type with a missing required payload field", () => {
-    // requirement.upserted なのに requirement が無い → store.apply で落ちる前に弾く。
     const { reason } = decodeServerEvent(
       bytes({ v: 1, type: "requirement.upserted", seq: 1, ts: "t", session_id: "s1" }),
     );
@@ -65,7 +64,7 @@ describe("decodeServerEvent", () => {
         seq: 1,
         ts: "t",
         session_id: "s1",
-        requirement: { id: "r1" }, // statement 等が欠落
+        requirement: { id: "r1" },
       }),
     );
     expect(reason).toBe("bad-payload");

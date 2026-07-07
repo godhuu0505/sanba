@@ -3,22 +3,10 @@ import { Slot, Slottable } from "@radix-ui/react-slot";
 
 import { cn } from "@/lib/utils";
 
-/**
- * アイコン＋2 行ラベル＋末尾シェブロンの汎用リスト行。
- * 「素材を渡す」の入力手段一覧などに使う。
- *
- * `asChild` で行全体を <button>/<a> 化できる（#162）。本コンポーネントは内容（icon/title/
- * trailing）を複数の子として描画するため、素朴に Slot へ渡すと Radix の「単一子のみ」制約に
- * 触れて実行時クラッシュする。Slottable で host 要素（利用側の <a>/<button>）を 1 つの
- * マージ対象として印付けし、他の子をその中へ入れることで解消する。利用例:
- *   <ListRow asChild title="…" icon={…}><a href="/x" /></ListRow>
- *   → <a href="/x" class="row…">{icon}{title}{trailing}</a>
- */
 export interface ListRowProps extends Omit<React.HTMLAttributes<HTMLElement>, "title"> {
   icon?: React.ReactNode;
   title: React.ReactNode;
   subtitle?: React.ReactNode;
-  /** 末尾要素。既定はシェブロン（›）。null で消す。 */
   trailing?: React.ReactNode;
   asChild?: boolean;
 }
@@ -30,7 +18,6 @@ export const ListRow = React.forwardRef<HTMLElement, ListRowProps>(
       <Comp
         ref={ref as never}
         className={cn(
-          // 1.5px 墨枠＋角丸16 の札。ホバーで墨のオフセット影が生えて浮く（ADR-0033）。
           "flex w-full items-center gap-[12px] rounded-[16px] border-[1.5px] border-sanba-frame bg-sanba-surface px-[14px] py-[12px] text-left transition-[box-shadow,transform] hover:shadow-[3px_3px_0_var(--sanba-shadow)]",
           className,
         )}
@@ -54,8 +41,6 @@ export const ListRow = React.forwardRef<HTMLElement, ListRowProps>(
         ) : (
           trailing
         )}
-        {/* asChild 時の host 要素（利用側の <a>/<button>）。上記の子はこの中に入る。
-            非 asChild（div）では children 未指定が通常で、Slottable は何も描かない。 */}
         <Slottable>{children}</Slottable>
       </Comp>
     );

@@ -37,14 +37,6 @@ log = structlog.get_logger(__name__)
 router = APIRouter()
 
 
-# ---- Product members & member invites (メンバー管理・招待 / ADR-0036) ---------
-# 深掘りリンク（再利用可能な入場券）と違い、メンバー招待はメールアドレス宛の 1 回限りで、
-# 承諾すると「その product で要件サンバができる」永続権限（メンバーシップ）になる。
-# 通知は 2 経路: 招待メール（mailer / SMTP 未設定ならスキップ）と、アプリ内通知
-# （GET /api/member-invites/mine をログイン時に表示）。承諾は宛先 email と検証済み
-# identity の email 照合を必須にする（URL の転送だけでは第三者は承諾できない）。
-
-
 def _is_valid_invite_email(email: str) -> bool:
     """招待宛先の形式検証（厳密な RFC 準拠ではなく明らかな入力ミスを弾く）。
 
@@ -140,9 +132,7 @@ class MemberInviteResolution(BaseModel):
     product_name: str
     invited_by_email: str
     masked_email: str
-    # pending / accepted / declined / revoked / expired（expired は expires_at からの導出）
     status: str
-    # ログイン中ユーザーの email が宛先と一致するか（承諾ボタンの活性判定）。
     email_match: bool
 
 
@@ -253,18 +243,11 @@ def create_product_member_invite(
         raise HTTPException(status_code=400, detail="cannot invite yourself")
     if any(m.email.lower() == email for m in _repo.list_product_members(product_id)):
         raise HTTPException(status_code=409, detail="already a member")
-    # 重複チェックは read-check-create で、並行 POST では保留中招待が 2 通できる余地を
-    # 許容する（Cloud Run 多インスタンス）。実害は「余分な招待行」に留まる: メンバーの
-    # doc id は product__sub の upsert なのでどちらを承諾しても同じメンバーシップになり、
-    # 承諾の直列化は respond_member_invite のトランザクションが担う。
     pending = [
         i for i in _repo.list_member_invites(product_id) if _invite_effective_status(i) == "pending"
     ]
     if any(i.email == email for i in pending):
         raise HTTPException(status_code=409, detail="already invited")
-    # 任意メール宛の送信エンドポイントを bulk 送信に乱用されないための総量ガード。
-    # 上と同じく read-check なので並行時に僅かに超え得るが、上限の趣旨（桁の暴走を止める）
-    # には足りる。取り消し・応答で保留が減れば再び発行できる。
     if len(pending) >= settings.member_invite_max_pending_per_product:
         record_rate_limited(limiter="member_invite")
         log.warning(
@@ -394,7 +377,6 @@ def _respond_member_invite(
     except MemberInviteNotFound as exc:
         raise HTTPException(status_code=404, detail="invite not found") from exc
     except ProductNotFound as exc:
-        # 応答とアプリ削除の競合。招待不在と同じ 404 に平す。
         raise HTTPException(status_code=404, detail="invite not found") from exc
     except MemberInviteNotPending as exc:
         raise HTTPException(status_code=409, detail=f"invite not pending: {exc.reason}") from exc

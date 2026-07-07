@@ -1,10 +1,5 @@
 "use client";
 
-// メンバー管理カード（ADR-0036）。owner がメールアドレスで招待し、承諾した人が
-// このアプリで要件サンバをできるようになる。招待するとメールとアプリ内通知が届く。
-// canManage=false（メンバー閲覧）のときは一覧のみ表示し、招待・削除の操作は出さない。
-// 認可の源泉は API 側（member の管理操作は 403）: ここでの出し分けは表示制御のみ。
-
 import { useCallback, useEffect, useState } from "react";
 
 import { Button, Card, CardTitle, Chip, Divider, Field, Input } from "@/components/sanba";
@@ -32,7 +27,6 @@ function formatDate(iso: string | null): string {
   return new Date(iso).toLocaleString("ja-JP", { dateStyle: "medium", timeStyle: "short" });
 }
 
-/** 招待 URL を組む（メールに載る URL と同じ承諾ページ /member-invites/{token}）。 */
 export function memberInviteUrl(token: string, origin: string): string {
   return `${origin}/member-invites/${encodeURIComponent(token)}`;
 }
@@ -58,7 +52,6 @@ export function ProductMembersCard({
     fetchProductMembers(productId, idToken)
       .then(setMembers)
       .catch(() => setError("メンバーの取得に失敗しました"));
-    // 招待一覧は管理者のみ読める（member は 403 になるため呼ばない）。
     if (canManage) {
       listMemberInvites(productId, idToken)
         .then(setInvites)
@@ -83,7 +76,6 @@ export function ProductMembersCard({
       setEmail("");
       reload();
     } catch (e) {
-      // 409 = 既にメンバー or 招待済み。入力ミス（400）と分けて案内する。
       const status = (e as { status?: number }).status;
       if (status === 409) setError("そのアドレスは既にメンバーか、招待済みです");
       else if (status === 400) setError("メールアドレスの形式を確認してください");

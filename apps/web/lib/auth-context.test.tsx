@@ -20,7 +20,6 @@ describe("AuthProvider / useAuth（共有インスタンス）", () => {
   afterEach(() => cleanup());
 
   it("Provider 外で useAuth を呼ぶと throw する", () => {
-    // Context 未提供時の throw は React がエラーを console に出すため握り潰す。
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     expect(() => render(<Consumer id="x" />)).toThrow(/AuthProvider/);
     spy.mockRestore();
@@ -40,7 +39,6 @@ describe("AuthProvider / useAuth（共有インスタンス）", () => {
       fireEvent.click(screen.getByText("signin-a"));
     });
 
-    // 片方からのログインが、もう片方の consumer にも反映される（単一インスタンスの証拠）。
     expect(screen.getByTestId("state-a").textContent).toBe("in");
     expect(screen.getByTestId("state-b").textContent).toBe("in");
   });

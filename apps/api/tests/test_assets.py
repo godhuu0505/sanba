@@ -52,7 +52,6 @@ def _session_auth(session_id: str, role: str = "pm") -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-# ── 分類 ────────────────────────────────────────────────────────────────
 def test_asset_kind_classifies_image_and_video() -> None:
     assert asset_kind("mock.png", "image/png") == "image"
     assert asset_kind("photo.JPG", None) == "image"
@@ -66,11 +65,9 @@ def test_asset_kind_rejects_unsupported() -> None:
 
 
 def test_resolve_content_type_infers_from_extension() -> None:
-    # content-type 欠落でも拡張子から実体に合わせる（JPEG を PNG と誤らない）。
     assert resolve_content_type("photo.jpg", None, "image") == "image/jpeg"
     assert resolve_content_type("mock.png", "", "image") == "image/png"
     assert resolve_content_type("clip.mov", None, "video") == "video/quicktime"
-    # 明示された正規 content-type はそのまま採用。
     assert resolve_content_type("x.bin", "image/png", "image") == "image/png"
 
 
@@ -82,7 +79,6 @@ def test_is_text_upload_detects_text_family() -> None:
 
 
 def test_is_text_upload_detects_extended_document_types() -> None:
-    # 追加した資料形式（html/csv/json/docx/xlsx/pptx）。拡張子・MIME どちらでも受理する。
     assert is_text_upload("spec.html", None) is True
     assert is_text_upload("page.htm", "text/html") is True
     assert is_text_upload("data.csv", "text/csv") is True
@@ -100,14 +96,12 @@ def test_is_text_upload_detects_extended_document_types() -> None:
 
 
 def test_is_binary_document_splits_size_guard() -> None:
-    # バイナリ文書は max_asset_bytes、プレーンテキストは文字数上限×4 で守る（境界の判定）。
     assert is_binary_document("doc.pdf", None) is True
     assert is_binary_document("doc.docx", None) is True
     assert is_binary_document("spec.md", "text/markdown") is False
     assert is_binary_document("spec.html", None) is False
 
 
-# ── 安定 ID / 保存 ────────────────────────────────────────────────────────
 def test_compute_asset_id_is_stable_and_content_addressed() -> None:
     a = compute_asset_id(b"same-bytes")
     b = compute_asset_id(b"same-bytes")
@@ -124,12 +118,10 @@ def test_asset_store_memory_roundtrip() -> None:
     assert asset.kind == "image"
     assert asset.size == 6
     assert asset.uri.startswith("mem://")
-    # 同じバイト列は同じ asset_id（冪等・対応付けが揺れない）。
     again = store.store("sess-1", "image", "image/png", b"\x89PNG\r\n")
     assert again.asset_id == asset.asset_id
 
 
-# ── Gemini 出力の整形 ────────────────────────────────────────────────────
 def test_parse_observations_strips_bullets_and_numbers() -> None:
     text = "- ログイン画面にSSOボタン\n* 検索バーが上部\n1. 件数バッジ=12\n\n・送信ボタンが無効"
     obs = parse_observations(text)
@@ -146,7 +138,6 @@ def test_parse_observations_respects_limit() -> None:
     assert len(parse_observations(text, limit=8)) == 8
 
 
-# ── エンドポイント契約 ────────────────────────────────────────────────────
 def test_upload_image_returns_asset_id() -> None:
     sid = _new_session()
     res = client.post(
@@ -159,7 +150,6 @@ def test_upload_image_returns_asset_id() -> None:
     assert body["asset_id"].startswith("asset-")
     assert body["asset_kind"] == "image"
     assert body["analysis_pending"] is False
-    # creds 未設定のテストでは解析は空 → 索引 0 でも asset_id は返る。
     assert body["indexed_chunks"] == 0
 
 
@@ -187,7 +177,6 @@ def test_upload_unsupported_type_rejected() -> None:
     assert res.status_code == 415
 
 
-# ── 素材一覧ハイドレーション（GET context/files）──────────────────────
 def test_context_files_requires_session_token() -> None:
     res = client.get("/api/sessions/sess-nofiles/context/files")
     assert res.status_code == 401
@@ -195,7 +184,6 @@ def test_context_files_requires_session_token() -> None:
 
 def test_context_files_lists_uploaded_materials() -> None:
     sid = _new_session()
-    # 画像（同期解析済み = done）と動画（解析未実装 = analyzing）を投入。
     client.post(
         f"/api/sessions/{sid}/context/file",
         files={"file": ("mock.png", b"\x89PNG\r\n\x1a\n", "image/png")},
@@ -210,7 +198,6 @@ def test_context_files_lists_uploaded_materials() -> None:
     assert res.status_code == 200
     items = res.json()["items"]
     by_name = {it["name"]: it for it in items}
-    # 実ファイル名と asset_id・状態が復元できる（リロード/再接続のハイドレーション）。
     assert by_name["mock.png"]["kind"] == "image"
     assert by_name["mock.png"]["status"] == "done"
     assert by_name["mock.png"]["id"].startswith("asset-")
@@ -225,7 +212,6 @@ def test_context_files_empty_for_new_session() -> None:
     assert res.json()["items"] == []
 
 
-# ── 真の破棄（DELETE context/file）──────────────────────────────────
 def test_delete_context_file_requires_session_token() -> None:
     res = client.delete("/api/sessions/sess-x/context/file/asset-deadbeef")
     assert res.status_code == 401
@@ -241,8 +227,6 @@ def test_delete_context_file_removes_binary_meta_and_grounding() -> None:
         headers=_session_auth(sid),
     )
     asset_id = up.json()["asset_id"]
-    # 解析（grounding）は creds 依存で空のため、出所 asset:{id} の chunk を明示的に投入して
-    # 「真の破棄」が索引まで消すことを検証する（本番では index_context が同経路で入る）。
     _indexer.index_context(sid, ["観察A", "観察B"], f"asset:{asset_id}")
     assert any(d.get("source", "").startswith(f"asset:{asset_id}") for d in _indexer._mem)
 
@@ -251,25 +235,20 @@ def test_delete_context_file_removes_binary_meta_and_grounding() -> None:
     body = res.json()
     assert body == {"deleted": True, "existed": True}
 
-    # (1) GET context/files に出ない（リロードで復活しない）。
     files = client.get(f"/api/sessions/{sid}/context/files", headers=_session_auth(sid)).json()
     assert all(it["id"] != asset_id for it in files["items"])
-    # (2) grounding 索引から消える。
     assert not any(d.get("source", "").startswith(f"asset:{asset_id}") for d in _indexer._mem)
-    # (3) binary が消える（再削除は実体なし）。
     assert _asset_store.delete(sid, asset_id) is False
 
 
 def test_delete_context_file_is_idempotent() -> None:
     sid = _new_session()
-    # 存在しない asset でも 200・existed=false（冪等）。
     res = client.delete(
         f"/api/sessions/{sid}/context/file/asset-doesnotexist", headers=_session_auth(sid)
     )
     assert res.status_code == 200
     assert res.json() == {"deleted": True, "existed": False}
 
-    # 実在 asset を消したあと、二度目も 200・existed=false（一貫）。
     up = client.post(
         f"/api/sessions/{sid}/context/file",
         files={"file": ("rec.mp4", b"\x00\x00\x00\x18ftypmp42", "video/mp4")},
@@ -301,7 +280,6 @@ def test_upload_text_indexes_and_returns_doc_asset() -> None:
     assert body["asset_kind"] == "doc"
     assert body["analysis_pending"] is False
 
-    # 素材一覧（GET context/files）に載り、リロード後も実ファイル名・件数を復元できる。
     files = client.get(f"/api/sessions/{sid}/context/files", headers=_session_auth(sid)).json()
     by_name = {it["name"]: it for it in files["items"]}
     assert by_name["prd.md"]["kind"] == "doc"

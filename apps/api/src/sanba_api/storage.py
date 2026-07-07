@@ -21,18 +21,12 @@ from .config import settings
 
 log = structlog.get_logger(__name__)
 
-# 受理する MIME（要件票 06: 画像 PNG/JPG・動画 MP4/MOV）。拡張子だけに頼らず
-# content-type と拡張子の両方から種別を判定する（ピッカ偽装・欠落への保険）。
 IMAGE_MIME = {"image/png": ".png", "image/jpeg": ".jpg"}
 VIDEO_MIME = {"video/mp4": ".mp4", "video/quicktime": ".mov"}
 IMAGE_EXT = {".png", ".jpg", ".jpeg"}
 VIDEO_EXT = {".mp4", ".mov"}
-# テキスト系（そのまま UTF-8 として読める資料）。ここに該当しないものは「非対応」として
-# 415 で弾く。web の ACCEPTED_DOC（apps/web/lib/api.ts）と揃える。
 TEXT_EXT = {".txt", ".md", ".markdown", ".html", ".htm", ".csv", ".json"}
 TEXT_MIME = {"text/plain", "text/markdown", "text/html", "text/csv", "application/json"}
-# バイナリ文書（テキスト抽出して grounding へ流す）。生バイトはテキストの 4 倍則が使えない
-# （zip コンテナ等でバイト数≠文字数）ため、サイズ上限は画像/動画と同じ max_asset_bytes で守る。
 DOC_BINARY_EXT = {".pdf", ".docx", ".xlsx", ".pptx"}
 DOC_BINARY_MIME = {
     "application/pdf",
@@ -47,10 +41,10 @@ class Asset:
     """保存済みアセットの参照。`asset_id` が web との対応付けキー。"""
 
     asset_id: str
-    kind: str  # "image" | "video"
+    kind: str
     content_type: str
     size: int
-    uri: str  # gs://bucket/... もしくは mem://... （in-memory 時）
+    uri: str
 
 
 def material_record(
@@ -130,7 +124,6 @@ class AssetStore:
 
     def __init__(self) -> None:
         self._bucket = self._init_bucket()
-        # in-memory フォールバック: テスト・ローカルで保存先がないときの退避（本番は GCS）。
         self._mem: dict[str, bytes] = {}
 
     @property
@@ -154,7 +147,6 @@ class AssetStore:
         """アセットを保存し、安定 `asset_id` 付きの参照を返す。"""
         asset_id = compute_asset_id(raw)
         ext = IMAGE_MIME.get(content_type) or VIDEO_MIME.get(content_type) or ""
-        # セッション配下に置き、asset_id をオブジェクト名にする（同素材は上書き=冪等）。
         blob_name = f"sessions/{session_id}/assets/{asset_id}{ext}"
         if self._bucket is not None:  # pragma: no cover - needs live GCS
             blob = self._bucket.blob(blob_name)
@@ -203,10 +195,6 @@ class AssetStore:
             )
         return removed
 
-    # ---- 動画の直送アップロード（ADR-0040） ---------------------------------
-    # 200MB の動画は Cloud Run の HTTP/1 request 上限（32MiB）を超えるため multipart で受けない。
-    # ブラウザから GCS へ署名付き URL で直送し、api はバイト列を経由しない。
-
     @staticmethod
     def blob_name(session_id: str, asset_id: str, content_type: str) -> str:
         ext = IMAGE_MIME.get(content_type) or VIDEO_MIME.get(content_type) or ""
@@ -238,7 +226,6 @@ class AssetStore:
         import google.auth
         from google.auth.transport import requests as ga_requests
 
-        # Cloud Run の SA には鍵ファイルが無いため、IAM SignBlob（tokenCreator on self）で署名する。
         credentials, _ = google.auth.default()
         credentials.refresh(ga_requests.Request())
         blob = self._bucket.blob(blob_name)

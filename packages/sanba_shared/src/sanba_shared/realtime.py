@@ -30,13 +30,11 @@ log = structlog.get_logger(__name__)
 SCHEMA_VERSION = 1
 EVENTS_TOPIC = "sanba.events"
 
-# アップロード解析の「正直な」ステージ（ADR-0023 §1）。実体のない多段は作らない。
 STAGE_RECEIVED = "received"
 STAGE_ANALYZING = "analyzing"
 STAGE_DONE = "done"
 STAGE_FAILED = "failed"
 
-# ステージ→pct（意味のある境界値のみ。細分された中間 pct は捏造しない / ADR-0023 §1）。
 STAGE_PCT: dict[str, int] = {
     STAGE_RECEIVED: 10,
     STAGE_ANALYZING: 50,
@@ -105,7 +103,6 @@ class AnalysisPublisher:
         self._clock = clock
 
     async def _emit(self, type_: str, payload: dict[str, Any], *, reliable: bool) -> dict[str, Any]:
-        # 共有 seq 空間から 1 つ予約する（ADR-0021 / agent と衝突しても単調増加を保つ）。
         seq = self._repo.reserve_session_seq(self._session_id)
         envelope: dict[str, Any] = {
             "v": SCHEMA_VERSION,
@@ -119,8 +116,7 @@ class AnalysisPublisher:
         try:
             await self._sender.send(data, topic=EVENTS_TOPIC, reliable=reliable)
             sent = True
-        except Exception as exc:  # pragma: no cover - network/optional
-            # publish 失敗はアップロードを止めない（GET context/files でも復元できる / §3）。
+        except Exception as exc:  # pragma: no cover
             log.warning("analysis_publish_failed", type=type_, seq=seq, error=str(exc))
             sent = False
         log.info("analysis_published", type=type_, seq=seq, sent=sent)

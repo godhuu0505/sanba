@@ -4,9 +4,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { MyMemberInvite } from "@/lib/api";
 
-// アプリ内の招待通知（ADR-0036 決定3）: 招待が無ければ何も出ない・承諾/辞退の API 呼び出し・
-// 承諾後の onAccepted フックを検証する。API はモックする。
-
 const authState = { credential: "id-token", loggedIn: true, ready: true, profile: null, devMode: false };
 vi.mock("@/lib/auth", () => ({ useAuth: () => authState }));
 

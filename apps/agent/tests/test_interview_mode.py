@@ -30,8 +30,6 @@ from sanba_agent.prompts.interview import (
     build_language_directive,
 )
 
-# 全モードの初期 instructions 末尾に付く言語固定指示。既定 GEMINI_LANGUAGE から
-# 決まるため、素の instructions と比較するテストは基準にこの接尾辞を足す。
 _LANG = build_language_directive(settings.gemini_language)
 
 
@@ -75,8 +73,8 @@ def test_developer_session_keeps_grill_me_with_repo_premise() -> None:
     instructions, mode, allow_repo, _ = build_agent_instructions(repo, "s1")
     assert mode is InviteScope.DEVELOPER
     assert instructions.startswith(VOICE_AGENT_INSTRUCTIONS)
-    assert "前提リポジトリ" in instructions  # ADR-0028 の既存挙動は不変
-    assert allow_repo is True  # 確認済み developer は GitHub seed も従来どおり
+    assert "前提リポジトリ" in instructions
+    assert allow_repo is True
 
 
 def test_end_user_session_switches_persona_and_seeds_glossary() -> None:
@@ -93,11 +91,10 @@ def test_end_user_session_switches_persona_and_seeds_glossary() -> None:
     instructions, mode, allow_repo, _ = build_agent_instructions(repo, "s1")
     assert mode is InviteScope.END_USER
     assert instructions.startswith(END_USER_VOICE_AGENT_INSTRUCTIONS)
-    # glossary シード（FR-2.4）: アプリ名と語彙が機械的に埋め込まれる。
     assert "請求アプリ" in instructions
     assert "請求書一覧" in instructions
     assert "明細画面" in instructions
-    assert allow_repo is False  # end_user は GitHub seed を許さない
+    assert allow_repo is False
 
 
 def test_end_user_session_never_seeds_repo_premise() -> None:
@@ -236,10 +233,10 @@ def test_unreadable_session_fails_closed_for_repo_grounding() -> None:
 
     repo.get_session = _boom  # type: ignore[method-assign]
     instructions, mode, allow_repo, _ = build_agent_instructions(repo, "s1")
-    assert mode is InviteScope.DEVELOPER  # 会話は成立させる（既定ペルソナ）
-    assert instructions == VOICE_AGENT_INSTRUCTIONS + _LANG  # repo 前提は付けない
+    assert mode is InviteScope.DEVELOPER
+    assert instructions == VOICE_AGENT_INSTRUCTIONS + _LANG
     assert "octo/secret" not in instructions
-    assert allow_repo is False  # GitHub seed も止める
+    assert allow_repo is False
 
 
 def test_opening_instructions_selected_by_mode() -> None:
@@ -247,7 +244,6 @@ def test_opening_instructions_selected_by_mode() -> None:
     assert opening_instructions(InviteScope.END_USER) == END_USER_OPENING_INSTRUCTIONS
 
 
-# ---- セッション準備情報の前提化--------------------------------------
 def test_developer_session_seeds_prep_premise_before_repo_premise() -> None:
     repo = _repo()
     _seed_session(
@@ -260,11 +256,9 @@ def test_developer_session_seeds_prep_premise_before_repo_premise() -> None:
     assert "セッション準備情報" in setup.instructions
     assert "検索を速くしたい" in setup.instructions
     assert "商品検索" in setup.instructions
-    # 主題（準備情報）が先、repo 前提（裏付け）が後。
     assert setup.instructions.index("セッション準備情報") < setup.instructions.index(
         "前提リポジトリ"
     )
-    # analyze へ渡す事前情報ノートも併せて返す（矛盾検知が突き合わせられる）。
     assert "検索を速くしたい" in setup.prep_note
 
 
@@ -295,7 +289,6 @@ def test_opening_instructions_confirm_goal_when_prep_seeded() -> None:
         opening_instructions(InviteScope.DEVELOPER, has_prep_context=True)
         == DEVELOPER_OPENING_WITH_PREP_INSTRUCTIONS
     )
-    # end_user は準備情報の有無に依らず利用者向けの開始指示のまま。
     assert (
         opening_instructions(InviteScope.END_USER, has_prep_context=True)
         == END_USER_OPENING_INSTRUCTIONS

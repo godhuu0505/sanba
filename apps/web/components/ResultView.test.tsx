@@ -79,15 +79,12 @@ describe("ResultView（要件産婆結果）", () => {
         req("s1", "should", "パスワード再設定ができること"),
       ],
     });
-    // 名前付き group ランドマークとして公開する（aria-label が AT に確実に届く）。
     const preview = screen.getByRole("group", { name: "確定要件のプレビュー" });
     expect(preview).toBeTruthy();
     expect(screen.getByText("ログインできること")).toBeTruthy();
     expect(screen.getByText("パスワード再設定ができること")).toBeTruthy();
-    // 見出し（Must/Should）が出る。
     expect(screen.getByText(/Must/)).toBeTruthy();
     expect(screen.getByText(/Should/)).toBeTruthy();
-    // 超過がなければ「ほか N 件」は出さない。
     expect(screen.queryByText(/ほか/)).toBeNull();
   });
 
@@ -98,15 +95,12 @@ describe("ResultView（要件産婆結果）", () => {
         req("m1", "must", "M1"),
         req("m2", "must", "M2"),
         req("m3", "must", "M3"),
-        // SECTION_LIMIT(3) 超過の Must は畳む。
         req("m4", "must", "M4"),
         req("s1", "should", "S1"),
-        // Could/Won't はプレビュー対象外（畳む）。
         req("c1", "could", "C1"),
         req("w1", "wont", "W1"),
       ],
     });
-    // プレビューは Must 上位3 + Should 1 = 4 件。残り3件が「ほか」。
     expect(screen.getByText("M1")).toBeTruthy();
     expect(screen.getByText("M3")).toBeTruthy();
     expect(screen.queryByText("M4")).toBeNull();
@@ -123,7 +117,6 @@ describe("ResultView（要件産婆結果）", () => {
     });
     expect(screen.getByText(/Must/)).toBeTruthy();
     expect(screen.queryByText(/Should/)).toBeNull();
-    // Could のみでも Must/Should 見出しは出ず、全件が「ほか」へ。
     cleanup();
     setup({ confirmedCount: 2, requirements: [req("c1", "could", "C1"), req("w1", "wont", "W1")] });
     expect(screen.queryByText(/Must/)).toBeNull();
@@ -158,7 +151,6 @@ describe("ResultView（要件産婆結果）", () => {
         { kind: "PDF", url: "https://example.com/ok.pdf" },
       ],
     });
-    // 安全な https のみリンク化され、危険/相対 URL は描画されない。
     expect(screen.getAllByRole("link")).toHaveLength(1);
     expect(screen.getByRole("link", { name: /PDF を開く/ }).getAttribute("href")).toBe(
       "https://example.com/ok.pdf",
