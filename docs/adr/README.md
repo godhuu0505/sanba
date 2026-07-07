@@ -3,7 +3,7 @@
 > このファイルは `just docs-index`（`scripts/gen-docs-index.py`）で生成する。
 > 手で編集しない。ADR を追加・改訂したら再生成する。
 
-設計判断記録（Architecture Decision Record）の一覧。全 53 件。
+設計判断記録（Architecture Decision Record）の一覧。全 54 件。
 書き方・ステータス制御語彙は [`/adr` 雛形](../../.claude/commands/adr.md) を参照。
 
 | # | タイトル | ステータス |
@@ -26,7 +26,7 @@
 | [0016](0016-cicd-strategy.md) | CI/CD 戦略 — リポジトリ public 化による無料・無制限 Actions 基盤 | Proposed |
 | [0017](0017-figma-canonical-onepath-archaic-copy.md) | Figma 正本を正とするデザイン方針確定（一本道フロー・全面古語・a11y は現代語で担保） | Superseded by ADR-0047 |
 | [0018](0018-conversation-experience.md) | 会話体験（会話フェーズの 3 タブ・選択肢 3 モード・二系統コントロール） | Accepted |
-| [0019](0019-google-signin-button-branding.md) | ログイン画面 Google ボタンの意匠（純正維持 + 金彩フレーム） | Accepted |
+| [0019](0019-google-signin-button-branding.md) | ログイン画面 Google ボタンの意匠（純正維持 + 金彩フレーム） | Superseded by ADR-0052 |
 | [0020](0020-question-asked-hydration.md) | question.asked のハイドレーション方式（サーバ保存 + GET 復元） | Accepted |
 | [0021](0021-realtime-reliable-seq-and-persistence.md) | realtime イベントの reliable-seq 名前空間と seq 永続化 | Proposed |
 | [0022](0022-conversation-realtime-model-ambiguous-and-voice-state.md) | 会話 realtime モデルの拡張 — 不明瞭検知（ambiguous）と音声状態の表現 | Proposed |
@@ -60,6 +60,7 @@
 | [0049](0049-upload-types-and-google-drive-import.md) | 資料アップロードの形式拡張と Google ドライブ取り込み | Accepted |
 | [0050](0050-documentation-placement-and-lifecycle.md) | ドキュメントの配置方針とライフサイクル（AI 駆動開発前提） | Accepted |
 | [0051](0051-google-native-observability-and-llmops.md) | 観測性・LLMOps を Google Cloud ネイティブに統一する（Cloud Trace / Cloud Monitoring / Vertex・ADK eval、Langfuse 廃止） | Proposed |
+| [0052](0052-login-redesign-nashi-gen-alignment.md) | ログイン画面の刷新（NASHI GEN 準拠のクリーン化）と復元中の中立スプラッシュ | Accepted |
 | [0053](0053-ui-copy-terminology-unification-and-help.md) | UIコピーの用語統一・平易化とヘルプ補足（機能名への統一・Radix Popover ヘルプ） | Proposed |
 
 付随資料は [`supplements/`](supplements/) に置く（特定 ADR の実測・検証データ）。
