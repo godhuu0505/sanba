@@ -24,25 +24,20 @@ from .tools.analysis import heuristic_open_topics
 
 log = structlog.get_logger(__name__)
 
-# 採点ルーブリック。各観点 0.0〜1.0。
 RUBRIC = [
     ("nfr_coverage", "非機能要件(性能/可用性/セキュリティ/コスト/規模)を十分に確認したか"),
     ("question_specificity", "曖昧さを残さず、具体的で測定可能な問いを立てたか"),
     ("contradiction_handling", "矛盾や抜けを検知して掘り下げたか"),
 ]
 
-# CI で許容する最低スコア(平均)。これを下回ると回帰とみなし fail。
 QUALITY_THRESHOLD = 0.5
 
-# ---- end_user モード ------------------------------
-# 利用者インタビューの品質観点。developer の RUBRIC と独立に採点する。
 END_USER_RUBRIC = [
     ("no_jargon", "技術用語(API/DB/非機能/MoSCoW 等)を利用者への発話に出していないか"),
     ("single_question", "1ターンに問いを1つに保ち、畳みかけていないか"),
     ("glossary_usage", "アプリの画面語彙(glossary)で話しているか"),
 ]
 
-# SANBA の発話に出てはいけない開発語彙（heuristic 用の代表集合。網羅ではなく回帰検出用）。
 _JARGON_TERMS = (
     "MoSCoW",
     "非機能",
@@ -56,7 +51,6 @@ _JARGON_TERMS = (
     "要件定義",
 )
 
-# end_user モードの CI 最低スコア。glossary 使用まで含めた総合で判定する。
 END_USER_QUALITY_THRESHOLD = 0.6
 
 
@@ -85,7 +79,7 @@ def _heuristic_end_user_scores(transcript: str, glossary: list[str]) -> JudgeRes
         used = sum(1 for t in terms if t in agent_text)
         glossary_usage = used / len(terms)
     else:
-        glossary_usage = 1.0  # 語彙未登録の product は不問（減点しない）
+        glossary_usage = 1.0
 
     return JudgeResult.from_scores(
         {
@@ -216,7 +210,6 @@ async def score_session(session_id: str, transcript: str) -> JudgeResult:
     return result
 
 
-# ---- Offline regression dataset (CI) ---------------------------------------
 DEFAULT_SCENARIOS: list[dict] = [
     {
         "name": "well_covered",
@@ -236,9 +229,6 @@ DEFAULT_SCENARIOS: list[dict] = [
 ]
 
 
-# end_user モードの回帰データセット。
-# 良例: 技術用語なし・一問一答・glossary の語彙で「いつ・どの画面で・何をしようとして・
-# 何に困ったか」を具体化する。悪例: 開発語彙で畳みかける（developer ペルソナの漏出）。
 END_USER_GLOSSARY = ["請求書一覧", "明細画面", "送信ボタン"]
 
 END_USER_SCENARIOS: list[dict] = [
@@ -279,7 +269,6 @@ async def run_dataset_eval() -> int:
         print(f"[{sc['name']:>14}] overall={res.overall:.2f} scores={res.scores}")
 
     mean = sum(r.overall for _, r in results) / len(results)
-    # The shallow scenario *should* score lower than the well-covered one.
     by_name = {n: r.overall for n, r in results}
     ordering_ok = by_name.get("well_covered", 0) >= by_name.get("shallow", 1)
     print(f"mean_overall={mean:.3f} threshold={QUALITY_THRESHOLD} ordering_ok={ordering_ok}")
@@ -292,7 +281,6 @@ async def run_dataset_eval() -> int:
         print("REGRESSION: best scenario below quality threshold", file=sys.stderr)
         exit_code = 1
 
-    # end_user モード（FR-2.8）: developer 回帰が落ちても続けて全観点を報告する。
     eu_results = []
     for sc in END_USER_SCENARIOS:
         res = await judge_end_user_interview(sc["transcript"], sc["glossary"])

@@ -9,15 +9,9 @@ from __future__ import annotations
 
 import re
 
-# Email. Quantifiers are bounded and the domain labels exclude '.' so the
-# separator is unambiguous — this keeps matching linear on untrusted input
-# (avoids polynomial ReDoS on runs like "%%%%…"; CodeQL py/polynomial-redos).
 _EMAIL = re.compile(r"[A-Za-z0-9._%+-]{1,64}@(?:[A-Za-z0-9-]{1,63}\.){1,8}[A-Za-z]{2,63}")
-# Phone: JP (0X-XXXX-XXXX / 0XXXXXXXXXX) and international (+...), 9+ digits.
 _PHONE = re.compile(r"(?<!\d)(?:\+?\d[\d\-\s()]{8,}\d)(?!\d)")
-# Long digit runs that look like card / account numbers (13-16 digits).
 _CARD = re.compile(r"(?<!\d)(?:\d[ -]?){13,16}(?!\d)")
-# My number / generic 12-digit IDs.
 _LONGNUM = re.compile(r"(?<!\d)\d{12}(?!\d)")
 
 

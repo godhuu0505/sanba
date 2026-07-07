@@ -2,10 +2,6 @@ import * as React from "react";
 
 import { cn } from "@/lib/utils";
 
-/**
- * 円形アバター。SANBA（産婆）は山吹の産章、参加者は瑠璃の淡色面で描き分ける。
- * どちらも墨の縁取り（ADR-0025 の手描き線）。役割の一字（企/エ/客 など）を入れて話者を示す。
- */
 export interface AvatarProps extends React.HTMLAttributes<HTMLSpanElement> {
   tone?: "agent" | "user";
   glyph: string;

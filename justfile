@@ -127,12 +127,18 @@ test:
 
 # lint + 型チェック
 [group('verify')]
-lint:
+lint: check-comments
     cd packages/sanba_shared && uv run ruff check . && uv run mypy src
     cd apps/agent && uv run ruff check . && uv run mypy src
     cd apps/api && uv run ruff check . && uv run mypy src
     cd infra/four-keys/collector && uv run ruff check . && uv run mypy src
     cd apps/web && npm run lint && npm run typecheck
+
+# 説明的コメントの追加を禁止する (CLAUDE.md)。noqa/type: ignore/eslint-disable 等は許可
+[group('verify')]
+check-comments:
+    python3 scripts/check_no_comments.py
+    node scripts/check-no-comments.mjs
 
 # フォーマット
 [group('verify')]

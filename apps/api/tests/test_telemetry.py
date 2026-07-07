@@ -85,8 +85,6 @@ def test_telemetry_records_cancel() -> None:
 
 
 def test_telemetry_records_join_abort() -> None:
-    # リンク入場後の離脱（join.abort）を受理し、素材カウンタではなく
-    # 専用カウンタ（sanba_join_ui_events_total / record_join_ui_event）へ計上する。
     sid = _new_session()
     res = client.post(
         f"/api/sessions/{sid}/telemetry",
@@ -98,7 +96,6 @@ def test_telemetry_records_join_abort() -> None:
 
 
 def test_telemetry_join_abort_coerces_unknown_result() -> None:
-    # join.abort も列挙値のみ: 未知 result は other へ丸めて受理（PII をラベルに乗せない）。
     sid = _new_session()
     res = client.post(
         f"/api/sessions/{sid}/telemetry",
@@ -110,7 +107,6 @@ def test_telemetry_join_abort_coerces_unknown_result() -> None:
 
 
 def test_telemetry_rejects_unknown_event() -> None:
-    # 許可リスト外の event は弾く（PII/任意イベントの混入を防ぐ）。
     sid = _new_session()
     res = client.post(
         f"/api/sessions/{sid}/telemetry",
@@ -121,8 +117,6 @@ def test_telemetry_rejects_unknown_event() -> None:
 
 
 def test_telemetry_coerces_unknown_attr_values() -> None:
-    # 未知の属性値は 422 にせず受理する（other に丸めて高カーディナリティ/PII を防ぐ）。
-    # 列挙値のみが計上されるため、自由記述（PII）はカウンタのラベルに乗らない。
     sid = _new_session()
     res = client.post(
         f"/api/sessions/{sid}/telemetry",

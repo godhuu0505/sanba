@@ -2,9 +2,6 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-// 設定画面の認証ゲート（全画面保護）と最小項目（プロフィール/保持日数/ログアウト）を検証する。
-// 認証 hook はモックし、ゲートの挙動と表示に集中する。
-
 const authState = {
   credential: null as string | null,
   profile: null as { name?: string; email?: string; picture?: string } | null,
@@ -57,7 +54,6 @@ describe("アカウント設定画面（#227）", () => {
     expect(screen.getByText("アカウント設定")).toBeTruthy();
     expect(screen.getByText("産婆")).toBeTruthy();
     expect(screen.getByText("go@sanba.local")).toBeTruthy();
-    // 保持日数は表示のみ（既定 30 日）。値と説明文の両方に現れる。
     expect(screen.getAllByText(/最大 30 日/).length).toBeGreaterThanOrEqual(1);
   });
 

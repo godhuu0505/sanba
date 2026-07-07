@@ -1,9 +1,5 @@
 "use client";
 
-// 07 判定（確定ゲート）。終了押下時に未解消が 0 件か検める。
-// 仕様: docs/reference/conversation-experience.md §7 / screens/07-judgment.md。
-// 未解消が 1 件でも残れば確定不可（戻って解く / 未解消のまま終う）。0 件なら確定可。
-
 import { Scale, TriangleAlert } from "lucide-react";
 
 import { useInterviewMode } from "@/lib/interviewMode";
@@ -14,17 +10,11 @@ import { DeepDiveList } from "./DeepDiveList";
 
 export interface JudgmentGateProps {
   unresolved: number;
-  /** 未解消の内訳（矛盾/抜け）。渡すと件数だけでなく項目＋戻り先を表示する。 */
   detections?: Detection[];
-  /** 問答に戻って解く。 */
   onBack: () => void;
-  /** 未解消のまま終う（不可逆・確定されない）。 */
   onForceEnd: () => void;
-  /** 要件を確定する（全解消時のみ）。 */
   onConfirm: () => void;
-  /** 確定に失敗したときの理由（サーバ 409 等）。表示して結果へ進ませない。 */
   error?: string;
-  /** 内訳項目の「会話で確認」押下（該当検知へ）。 */
   onJump?: (detectionId: string) => void;
 }
 
@@ -38,7 +28,6 @@ export function JudgmentGate({
   onJump,
 }: JudgmentGateProps) {
   const resolved = unresolved === 0;
-  // end_user モードでは「要件を確定」等の開発語彙を利用者向けに切替える（FR-2.4 / ADR-0032）。
   const endUser = useInterviewMode() === "end_user";
 
   return (

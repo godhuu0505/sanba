@@ -66,7 +66,6 @@ log = structlog.get_logger(__name__)
 router = APIRouter()
 
 
-# ---- Products (ADR-0031) ----------------------------------------------------
 class CreateProductRequest(BaseModel):
     """`POST /api/products`（FR-1.1）。name はハンドラ側で strip + 空を 400 にする。
 
@@ -77,8 +76,6 @@ class CreateProductRequest(BaseModel):
     name: str = Field(max_length=200)
     slug: str = Field(max_length=60)
     description: str = Field(default="", max_length=2000)
-    # 利用者向け語彙（ADR-0032 でプロンプトにシード）。件数はここで、各語の長さは
-    # `_clean_glossary` で制限する（Firestore 文書とプロンプトの肥大防止）。
     glossary: list[str] = Field(default_factory=list, max_length=100)
 
 
@@ -105,9 +102,7 @@ class UpdateProductRequest(BaseModel):
     slug: str | None = Field(default=None, max_length=60)
     description: str | None = Field(default=None, max_length=2000)
     glossary: list[str] | None = Field(default=None, max_length=100)
-    # audience（end_user/planner/developer）→ 出力フォーマット（Markdown テンプレート）。
     output_formats: dict[str, str] | None = None
-    # 要件サンバ中に必ず確認する項目（最大 MAX_CHECK_ITEMS 件・対象タグ付き / ADR-0043）。
     check_items: list[CheckItemRequest] | None = Field(default=None, max_length=MAX_CHECK_ITEMS)
 
 
@@ -127,8 +122,6 @@ class ProductResponse(BaseModel):
 
     id: str
     name: str
-    # URL キーワード（ADR-0045）。None = 未設定（slug 導入前の既存アプリ）。web は
-    # 未設定アプリの壁打ち開始を塞ぎ、アプリ管理での設定を促す。
     slug: str | None = None
     description: str
     glossary: list[str]
@@ -138,12 +131,8 @@ class ProductResponse(BaseModel):
     github_commit_sha: str | None = None
     github_index_status: str = "none"
     role: str = "owner"
-    # 登録済みの出力フォーマット（audience → テンプレート。未登録キーは載せない）と
-    # 既定テンプレート（web が「未登録＝この既定が使われる」を表示するための参照値。
-    # 正はサーバ側 DEFAULT_OUTPUT_FORMATS で、web に定数を複製させない）。
     output_formats: dict[str, str] = Field(default_factory=dict)
     output_format_defaults: dict[str, str] = Field(default_factory=dict)
-    # 確認項目（{text, target}）と登録上限。上限も応答で渡し web に定数を複製させない。
     check_items: list[CheckItemResponse] = Field(default_factory=list)
     check_items_limit: int = MAX_CHECK_ITEMS
 
@@ -183,13 +172,8 @@ def _clean_glossary(glossary: list[str]) -> list[str]:
     return cleaned
 
 
-# slug の形式（ADR-0045）: 小文字英数とハイフン、先頭末尾は英数、2〜40 文字。
-# URL のパス片になるため大文字・記号・空白は受けず、入力は小文字へ正規化してから検証する。
 _SLUG_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]{0,38}[a-z0-9]$")
 
-# web の既存ルート・予約パスと衝突する slug は取らせない（/{slug}/... が Next.js の
-# 静的ルートに負けて永久に到達不能な URL になる）。ルートを増やしたらここと
-# web 側の複製（apps/web/lib/slug.ts）も更新する。
 _RESERVED_SLUGS = frozenset(
     {
         "admin",
@@ -228,10 +212,7 @@ def _clean_slug(raw: str) -> str:
     return slug
 
 
-# 出力フォーマット（Markdown テンプレート）1 件の長さ上限。Firestore 文書 1MB と
-# 閲覧ドキュメントとしての実用性から十分に余裕のある値に倒す。
 MAX_OUTPUT_FORMAT_CHARS = 8000
-# 確認項目 1 件の長さ上限（プロンプトへシードするため glossary より長めの一文まで）。
 MAX_CHECK_ITEM_CHARS = 200
 
 
@@ -340,8 +321,6 @@ def create_product(
     return _product_response(product)
 
 
-# 注意: "/api/products/mine" は "/api/products/{product_id}" より先に登録する
-# （FastAPI は登録順にマッチするため、逆だと "mine" が product_id として解釈される）。
 @router.get("/api/products/mine", response_model=list[ProductResponse])
 def list_my_products(user: AuthUser = Depends(require_user)) -> list[ProductResponse]:
     """本人の product 一覧を新しい順で返す（FR-1.1 / ADR-0036）。
@@ -351,7 +330,6 @@ def list_my_products(user: AuthUser = Depends(require_user)) -> list[ProductResp
     """
     owned = _repo.list_products_by_owner(user.sub)
     owned_ids = {p.id for p in owned}
-    # owner が自分の product のメンバーに紛れても二重に出さない（招待側で防いでいるが防御的に）。
     membered = [p for p in _repo.list_products_by_member(user.sub) if p.id not in owned_ids]
     rows = [(p, "owner") for p in owned] + [(p, "member") for p in membered]
     rows.sort(key=lambda r: r[0].created_at, reverse=True)
@@ -400,10 +378,8 @@ def update_product(
     except ProductSlugTaken as exc:
         raise HTTPException(status_code=409, detail="slug already taken") from exc
     except ProductNotFound as exc:
-        # 認可チェック後に消えた競合。存在秘匿の方針に合わせ 404 のまま返す。
         raise HTTPException(status_code=404, detail="product not found") from exc
     record_product_event("updated")
-    # slug は URL の識別子なのでリネームを運用で追える形で残す（ADR-0045 / CLAUDE.md 原則3）。
     log.info("product_updated", product=product_id, owner=user.sub, slug=updated.slug)
     return _product_response(updated)
 
@@ -521,8 +497,6 @@ def select_product_repo(
         raise HTTPException(status_code=403, detail="owner only")
     if not _GITHUB_REPO_RE.match(req.repo):
         raise HTTPException(status_code=400, detail="github_repo must be in 'owner/name' format")
-    # 許可リスト（GITHUB_REPO_ALLOWLIST / ADR-0027）は product の紐づけにも一貫適用する
-    # （NFR-2。セッション経路だけ絞って product 側に抜け道が残るのを防ぐ）。
     if not _github_repo_allowed(req.repo):
         raise HTTPException(status_code=400, detail="github_repo is not allowed")
     client = _github_app_client()
@@ -539,8 +513,6 @@ def select_product_repo(
         log.warning("github_resolve_branch_failed", error=str(exc))
         raise HTTPException(status_code=502, detail="github error") from exc
 
-    # 同一 (repo, branch, sha) が索引中/索引済みなら再索引しない（FR-1.3 AC）。
-    # failed のときだけ同一 sha でも再試行を許す。
     if (
         product.github_repo == req.repo
         and product.github_branch == branch
@@ -587,7 +559,6 @@ def select_product_repo(
     )
 
 
-# ---- Product invites: 深掘りリンク (ADR-0031 決定3 / FR-1.5, FR-1.6) ----------
 class CreateProductInviteRequest(BaseModel):
     """`POST /api/products/{id}/invites`。期限は ttl_seconds で受け expires_at に変換する。
 
@@ -615,7 +586,6 @@ class ProductInviteResponse(BaseModel):
 
 class ProductJoinRequest(BaseModel):
     token: str
-    # 録音・AI 処理への同意。セッション作成を伴うため create_session と同じゲート。
     consent_acknowledged: bool = False
 
 
@@ -635,7 +605,6 @@ class ProductJoinResponse(BaseModel):
     product_id: str
     product_name: str
     interview_mode: str
-    # ゲスト入場のときのみ非 null（ログイン済みは従来どおり invite 経由）。
     join: JoinResponse | None = None
 
 
@@ -658,8 +627,6 @@ def _invite_response(invite: ProductInvite) -> ProductInviteResponse:
     )
 
 
-# invite の scope → 既存セッションの役割語彙（ubiquitous-language §2: 企画/エンジニア/顧客）。
-# developer リンクは PdM 壁打ち、end_user リンクは「顧客」役として入場する。
 _INVITE_ROLE = {InviteScope.DEVELOPER: "pm", InviteScope.END_USER: "customer"}
 
 
@@ -721,7 +688,7 @@ def revoke_product_invite(
     if not _repo.revoke_invite(product_id, invite_id):
         raise HTTPException(status_code=404, detail="invite not found")
     invite = _repo.get_invite(product_id, invite_id)
-    if invite is None:  # revoke 直後の削除と競合した稀ケース
+    if invite is None:
         raise HTTPException(status_code=404, detail="invite not found")
     record_product_event("invite_revoked")
     log.info("invite_revoked", product=product_id, invite=invite_id, by=user.sub)
@@ -757,9 +724,6 @@ def join_product(
         log.warning("product_invite_rejected", reason=str(exc))
         raise HTTPException(status_code=403, detail=f"invalid invite link: {exc}") from exc
     if guest:
-        # フェイルクローズ: フラグ off は即 401（invite を消費しない）。scope の判定は
-        # 文書側が正（署名トークンは scope を持たない）。scope は発行後に変わらないため
-        # 消費前の read で判定してよい（消費と可否検証の原子性は consume_invite が担う）。
         if not settings.guest_join_enabled:
             record_guest_join("flag_off")
             log.warning(
@@ -782,9 +746,6 @@ def join_product(
                 scope=invite_doc.scope.value,
             )
             raise HTTPException(status_code=401, detail="authentication required")
-    # 消費（use_count++）は最後の関門: consent・署名・ゲスト可否を先に検証し、失敗する
-    # 要求で使用回数を減らさない。文書照合・リンク単位レート判定（FR-2.6）と消費は
-    # 原子的（ADR-0031 / ADR-0032 決定5 / consume_invite）。
     try:
         invite = _repo.consume_invite(
             claim.product_id,
@@ -792,8 +753,6 @@ def join_product(
             rate_limit_per_minute=settings.invite_join_rate_per_minute,
         )
     except (InviteNotFound, ProductNotFound) as exc:
-        # Firestore 経路は join と product 削除の競合で ProductNotFound を投げ得る
-        # （トランザクション内の親存在チェック）。invite 不在と同じ 404 に平す。
         raise HTTPException(status_code=404, detail="invite not found") from exc
     except InviteNotUsable as exc:
         log.warning(
@@ -821,12 +780,8 @@ def join_product(
 
     role = _INVITE_ROLE[invite.scope]
     session_id = f"sess-{uuid.uuid4().hex[:8]}"
-    # ゲスト identity（ADR-0032 決定2）: users/{sub} は作らず、発話・要件の出所メタは
-    # この匿名 identity に束ねる。owner はセッションの管理・履歴閲覧の権限元（決定3）。
     guest_identity = f"guest:{uuid.uuid4().hex[:12]}" if guest else None
     owner_sub = product.owner_sub if guest else user.sub  # type: ignore[union-attr]
-    # PII 最小化: ゲストセッションに owner の email は写さない（権限判定は owner_sub が
-    # 単一の正で、email を使う経路が無い。product 文書も email を持たない）。
     owner_email = "" if guest else user.email  # type: ignore[union-attr]
     _repo.create_session_doc(
         SessionMeta(
@@ -837,16 +792,12 @@ def join_product(
             roles=[role],
             product_id=product.id,
             interview_mode=invite.scope,
-            # repo 設定の継承（FR-1.4）: 「セッション明示 > product > 環境変数」の
-            # product 段。索引済み要約ごと写すので agent のシードもそのまま効く。
             github_repo=product.github_repo,
             github_branch=product.github_branch,
             github_commit_sha=product.github_commit_sha,
             github_index_status=product.github_index_status,
             github_summary=product.github_summary,
         ),
-        # ゲスト作成分はセッション文書にも 30 日 TTL を張る（FR-2.7。同意文言の
-        # 保持期間の約束をメタ文書にも効かせる）。ログイン済みは従来どおり張らない。
         apply_ttl=guest,
     )
     record_product_event("invite_redeemed")

@@ -41,7 +41,6 @@ class TestBuildTurnDetection:
         assert aad.prefix_padding_ms == 300
 
     def test_empty_and_nonpositive_fall_back_to_server_defaults(self) -> None:
-        # 空文字・0 以下は「サーバ既定」= None で送る（明示的に上書きしない）。
         conf = build_turn_detection(
             silence_duration_ms=0,
             end_sensitivity="",
@@ -56,7 +55,6 @@ class TestBuildTurnDetection:
         assert aad.prefix_padding_ms is None
 
     def test_unknown_sensitivity_falls_back_instead_of_raising(self) -> None:
-        # 設定ミス（typo 等）で Gemini への接続自体が失敗しないこと（fail-safe）。
         conf = build_turn_detection(
             silence_duration_ms=800,
             end_sensitivity="medium",
@@ -83,17 +81,13 @@ class TestBuildTurnDetection:
 
 class TestDefaultSettings:
     def test_defaults_wait_for_user_to_finish(self) -> None:
-        # 考えながらの沈黙で発話が途中確定して分断されないよう、無音待ちを延長。
         assert settings.turn_end_sensitivity == "low"
         assert settings.turn_silence_duration_ms >= 1000
 
     def test_defaults_require_sustained_speech_to_start(self) -> None:
-        # 一瞬の環境音・相槌の漏れで start が誤検出され発話が区切られないよう、
-        # start-of-speech 確定に最低限の発話長を要求する。
         assert settings.turn_prefix_padding_ms >= 100
 
     def test_language_pinned_by_default(self) -> None:
-        # 日本語固定が既定（認識ドリフト＝韓国語/中国語化の主対策）。
         assert settings.gemini_language == "ja-JP"
 
     def test_context_window_compression_enabled_by_default(self) -> None:
@@ -107,14 +101,12 @@ class TestDefaultSettings:
         assert settings.voice_session_restart_backoff_s > 0
 
     def test_analysis_timeouts_protect_the_voice_turn(self) -> None:
-        # ADR-0046 段階1: 相乗り上限は音声ターンを塞がない短さで、背景上限以下に収まる。
         assert settings.analysis_ride_along_timeout_seconds <= 10
         assert settings.analysis_ride_along_timeout_seconds <= settings.analysis_timeout_seconds
 
 
 class TestBuildInputTranscription:
     def test_uses_configured_language_as_hint(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        # 入力文字起こしに言語ヒントを与え、誤認識ドリフトを抑える。
         monkeypatch.setattr(settings, "gemini_language", "ja-JP")
         conf = build_input_transcription()
         assert conf.language_codes == ["ja-JP"]
@@ -122,7 +114,6 @@ class TestBuildInputTranscription:
     def test_empty_language_falls_back_to_auto_detect(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        # 空文字なら language_codes を付けず、モデルの自動判定に委ねる。
         monkeypatch.setattr(settings, "gemini_language", "")
         conf = build_input_transcription()
         assert conf.language_codes is None
@@ -132,8 +123,6 @@ class TestBuildRealtimeModel:
     def test_builds_with_turn_detection_and_compression(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        # RealtimeModel は構築時に認証情報とモデル名/API の整合だけ検証する（接続はしない）。
-        # 既定モデル gemini-live-2.5-flash-native-audio は VertexAI 系のため Vertex 側で構築する。
         monkeypatch.setenv("GOOGLE_GENAI_USE_VERTEXAI", "true")
         monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "test-project")
         monkeypatch.setenv("GOOGLE_CLOUD_LOCATION", "us-central1")
@@ -177,7 +166,6 @@ class TestNoiseCancellation:
     def test_livekit_cloud_url_detection(self) -> None:
         assert _is_livekit_cloud_url("wss://my-proj.livekit.cloud")
         assert _is_livekit_cloud_url("wss://livekit.cloud")
-        # self-host / local は Cloud transport 前提を満たさない。
         assert not _is_livekit_cloud_url("ws://localhost:7880")
         assert not _is_livekit_cloud_url("wss://livekit.example.com")
         assert not _is_livekit_cloud_url("")
@@ -219,7 +207,6 @@ class TestGuardedGenerateReply:
 
     @pytest.mark.asyncio
     async def test_failure_is_swallowed_and_returns_false(self) -> None:
-        # Live の generation_created タイムアウト等でも例外を伝播させず、会話は続行できる。
         from sanba_agent.main import guarded_generate_reply
 
         session = _FakeSession(raises=TimeoutError("generation_created timed out"))
@@ -228,7 +215,6 @@ class TestGuardedGenerateReply:
 
 
 class TestSelectExporterKind:
-    # ADR-0051: トレースのエクスポータ選択（純関数・ネットワーク不要）。
     def test_otlp_endpoint_takes_precedence(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from sanba_agent.observability import select_exporter_kind
 
@@ -245,7 +231,6 @@ class TestSelectExporterKind:
         assert select_exporter_kind() == "cloud_trace"
 
     def test_disabled_locally_without_vertex(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        # ローカル/テスト（use_vertexai=false）は直送しない（ADC が無く失敗するため）。
         from sanba_agent.observability import select_exporter_kind
 
         monkeypatch.setattr(settings, "otel_exporter_otlp_endpoint", "")
@@ -268,13 +253,12 @@ class _OpeningFakeSession:
         import asyncio
 
         self._reply_seen: asyncio.Event = reply_seen  # type: ignore[assignment]
-        self._succeed_on = succeed_on_attempt  # この試行回目以降で応答が返る。None=永遠に無応答。
+        self._succeed_on = succeed_on_attempt
         self.reply_calls = 0
         self.interrupts = 0
 
     async def generate_reply(self, **kwargs: object) -> None:
         self.reply_calls += 1
-        # generate_reply は再生完了まで待つ挙動なので、成功時はここで応答到達を再現する。
         if self._succeed_on is not None and self.reply_calls >= self._succeed_on:
             self._reply_seen.set()
 
@@ -283,7 +267,6 @@ class _OpeningFakeSession:
 
 
 class TestOpenInterview:
-    # #374: 開始一言が黙って落ちる（generation_created タイムアウト）ケースを検知して再試行する。
     @pytest.mark.asyncio
     async def test_succeeds_on_first_attempt(self) -> None:
         import asyncio
@@ -301,12 +284,11 @@ class TestOpenInterview:
             reply_timeout_s=0.05,
         )
         assert ok is True
-        assert session.reply_calls == 1  # 応答が出たので再試行しない
+        assert session.reply_calls == 1
         assert session.interrupts == 0
 
     @pytest.mark.asyncio
     async def test_recovers_on_retry(self) -> None:
-        # 1回目は無応答（タイムアウト）→ interrupt して再試行 → 2回目で応答。
         import asyncio
 
         from sanba_agent.main import open_interview
@@ -323,11 +305,10 @@ class TestOpenInterview:
         )
         assert ok is True
         assert session.reply_calls == 2
-        assert session.interrupts == 1  # 再試行前に1回 interrupt
+        assert session.interrupts == 1
 
     @pytest.mark.asyncio
     async def test_gives_up_after_max_attempts(self) -> None:
-        # 永遠に無応答なら上限まで試して False（会話自体は生きているので例外は投げない）。
         import asyncio
 
         from sanba_agent.main import open_interview
@@ -344,4 +325,4 @@ class TestOpenInterview:
         )
         assert ok is False
         assert session.reply_calls == 3
-        assert session.interrupts == 2  # 最終試行の後は interrupt しない
+        assert session.interrupts == 2

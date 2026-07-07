@@ -1,18 +1,9 @@
-// 契約準拠のモックイベント列。
-//
-// backend（publish / GET）未完でも 3画面（05/06/08/09）が UI を組めるようにする、
-// フロント先行着手の鍵。realtime-contract.md §3 の各種別を網羅し、05-detection /
-// 08-analysis / 09-scroll の要件票にある実例コピーをそのまま使う。
-//
-// seq は単調増加。重複排除・欠番検知のテストもこの列から派生させる。
 
 import type { Requirement, ServerEvent } from "./types";
 
 const SESSION = "demo-session";
 const ts = (n: number) => new Date(2026, 5, 24, 12, 48, n % 60).toISOString();
 
-// 共通エンベロープ（v/session_id/seq）を補完する。union に対して Omit を分配させる
-// ため DistributiveOmit を使う（素の Omit は union の共通キーしか残さない）。
 type DistributiveOmit<T, K extends keyof T> = T extends unknown ? Omit<T, K> : never;
 
 function ev(
@@ -22,15 +13,7 @@ function ev(
   return { v: 1, session_id: SESSION, seq, ...body } as ServerEvent;
 }
 
-/**
- * 05/08/09 を一通り再現するイベント列。検索機能リニューアルの壁打ちを題材にする
- * （09-scroll.md「検索機能リニューアル · 確定12 · 検知6」のミニ版）。
- */
-// 注（ADR-0021）: reliable イベントは seq を 1 から連続で採る。lossy（status）は reliable
-// seq を消費せず**現在値を echo**し（reliable:false）、独立の lossy_seq で順序付ける。これにより
-// lossy が落ちても reliable seq に穴が空かない（誤ギャップを出さない）。
 export const contractEventFixture: ServerEvent[] = [
-  // status は lossy。まだ reliable が無いので seq=0 を echo、lossy_seq=1。
   ev(0, { type: "status", ts: ts(1), phase: "listening", reliable: false, lossy_seq: 1 }),
   ev(1, {
     type: "transcript.final",
@@ -48,7 +31,6 @@ export const contractEventFixture: ServerEvent[] = [
     utterance_id: "u2",
     text: "さっきは新着順と言っていた気がします。",
   }),
-  // status（lossy）: 現在の reliable seq=2 を echo、lossy_seq=2。reliable seq は消費しない。
   ev(2, {
     type: "status",
     ts: ts(4),
@@ -57,7 +39,6 @@ export const contractEventFixture: ServerEvent[] = [
     reliable: false,
     lossy_seq: 2,
   }),
-  // 矛盾検知（05 のボトムシート + 選択肢）。reliable seq=3。
   ev(3, {
     type: "detection.contradiction",
     ts: ts(5),
@@ -70,7 +51,6 @@ export const contractEventFixture: ServerEvent[] = [
     ],
     detector: "contradiction_detector",
   }),
-  // 抜け検知（05/08 の黄土）。
   ev(4, {
     type: "detection.gap",
     ts: ts(6),
@@ -80,7 +60,6 @@ export const contractEventFixture: ServerEvent[] = [
     refs: ["u1"],
     detector: "scope_specialist",
   }),
-  // 要件が確定し始める（08/09）。
   ev(5, {
     type: "requirement.upserted",
     ts: ts(7),
@@ -94,7 +73,6 @@ export const contractEventFixture: ServerEvent[] = [
       status: "confirmed",
     }),
   }),
-  // 素材アップロード → 解析の進捗（07/08）。
   ev(6, {
     type: "analysis.progress",
     ts: ts(8),
@@ -109,7 +87,6 @@ export const contractEventFixture: ServerEvent[] = [
     pct: 80,
     stage: "OCR",
   }),
-  // 言葉×画の矛盾（08）。
   ev(8, {
     type: "analysis.visual",
     ts: ts(10),
@@ -122,7 +99,6 @@ export const contractEventFixture: ServerEvent[] = [
       },
     ],
   }),
-  // ユーザーが選択肢をタップ → agent 側で解消され resolved が返る（05 の往復）。
   ev(9, {
     type: "detection.resolved",
     ts: ts(11),
@@ -130,7 +106,6 @@ export const contractEventFixture: ServerEvent[] = [
     resolution: "user_selected",
     selected_value: "relevance",
   }),
-  // 解消メモが要件として確定（09 の「解消」タグ相当）。
   ev(10, {
     type: "requirement.upserted",
     ts: ts(12),
@@ -172,7 +147,6 @@ function requirement(
   return { id, ...rest };
 }
 
-/** ハイドレーション（GET /requirements）のモック。seq=6 までを反映済みとする。 */
 export const hydrationFixture: { items: Requirement[]; seq: number } = {
   seq: 6,
   items: [

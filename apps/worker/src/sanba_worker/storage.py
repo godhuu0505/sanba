@@ -18,7 +18,7 @@ def parse_gs_uri(gcs_uri: str) -> tuple[str, str]:
     return bucket, obj
 
 
-def gcs_fetch_bytes(gcs_uri: str) -> bytes:  # pragma: no cover - needs GCS creds/network
+def gcs_fetch_bytes(gcs_uri: str) -> bytes:  # pragma: no cover
     """gs:// オブジェクトの中身を取得する。"""
     from google.cloud import storage  # type: ignore[attr-defined]
 

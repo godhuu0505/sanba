@@ -11,12 +11,9 @@ import {
   setAuthNonce,
 } from "./api";
 
-// 素材の観測テレメトリ送信とサーバ破棄の API シーム。
-// fetch をスタブし、送信先・列挙属性・失敗の握りつぶし・冪等 DELETE の契約を検証する。
 
 afterEach(() => {
   vi.restoreAllMocks();
-  // モジュールレベルの ambient 状態（ADR-0047 §2）をテスト間で持ち越さない。
   setAuthNonce(null);
 });
 
@@ -46,7 +43,7 @@ describe("setAuthNonce / X-Auth-Nonce（ADR-0047 §2）", () => {
   });
 });
 
-describe("classifyUpload / classifyFileUpload（受理判定・ADR-0044）", () => {
+describe("classifyUpload / classifyFileUpload（受理判定・ADR-0049）", () => {
   it("画像/動画に加えて資料（md/pdf/html/csv/json/Office）を受理する", () => {
     expect(classifyUpload("mock.png")).toBe("image");
     expect(classifyUpload("rec.MOV")).toBe("video");
@@ -102,11 +99,9 @@ describe("sendTelemetry（#232/#243 送信シーム）", () => {
     const fetchMock = vi.fn().mockRejectedValue(new Error("network"));
     vi.stubGlobal("fetch", fetchMock);
 
-    // 同期的に throw しないこと。
     expect(() =>
       sendTelemetry("s1", "material.cancel", { result: "aborted" }, null),
     ).not.toThrow();
-    // マイクロタスクを流して未処理 rejection が出ないことを確かめる。
     await Promise.resolve();
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });

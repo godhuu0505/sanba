@@ -1,10 +1,5 @@
 "use client";
 
-// アプリ管理（一覧・登録）画面（ADR-0031 / FR-1.1）。
-// 開発者 / PdM が深掘り対象の「アプリ」を登録し、詳細（/products/[id]）で
-// repo 紐づけ・利用者向け語彙・深掘りリンクの発行を行う入口。
-// 設定画面（app/settings）と同じ認証ゲート + SANBA デザインシステムの流儀で作る。
-
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
@@ -31,19 +26,14 @@ export default function ProductsPage() {
 
   const [products, setProducts] = useState<Product[] | null>(null);
   const [name, setName] = useState("");
-  // URL キーワード（必須・グローバル一意 / ADR-0045）。/{slug}/prepare 等の URL になる。
   const [slug, setSlug] = useState("");
   const [description, setDescription] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // dev モード（authGate 素通し）は credential=null のまま API の AUTH_DEV_BYPASS に委ねる。
-  // 実モードでは gate がリダイレクトするまで fetch を抑止する（401 ノイズを出さない）。
   const canFetch = auth.devMode || auth.loggedIn;
   const credential = auth.credential;
 
-  // 一覧の取得（新しい順は API 側が保証 / FR-1.1）。取得失敗は空状態のまま UX を止めない。
-  // 招待の承諾（MemberInviteNotices）後にも呼び直し、増えた分を即反映する（ADR-0036）。
   const reload = useCallback(() => {
     fetchMyProducts(credential)
       .then(setProducts)
@@ -55,7 +45,6 @@ export default function ProductsPage() {
     reload();
   }, [canFetch, reload]);
 
-  // 厳密な認証ゲート（設定画面と同じ）。未ログインは /login?next=/products へ。
   const gate = authGate(auth, "/products");
   if (gate) return gate;
 
@@ -65,8 +54,6 @@ export default function ProductsPage() {
       setError("アプリ名を入力してください");
       return;
     }
-    // slug は API と同じ規則へ正規化してから送る（ADR-0045）。形式違反・予約語は
-    // サーバへ投げる前にその場で指摘する（最終判定は API 側）。
     const cleanedSlug = cleanSlug(slug);
     if (cleanedSlug === null) {
       setError(
@@ -78,10 +65,8 @@ export default function ProductsPage() {
     setError(null);
     try {
       const created = await createProduct(trimmed, cleanedSlug, description.trim(), credential);
-      // 登録後は詳細へ。repo 紐づけ・深掘りリンク発行は詳細画面で続ける。
       router.push(`/products/${encodeURIComponent(created.id)}`);
     } catch (e) {
-      // 409 = slug 使用済み（グローバル一意）、400 = 形式・予約語（サーバ側の最終判定）。
       if (e instanceof ApiError && e.status === 409) {
         setError("この URL キーワードは既に使われています。別のキーワードにしてください");
       } else if (e instanceof ApiError && e.status === 400) {
@@ -100,7 +85,6 @@ export default function ProductsPage() {
       headerRight={<AccountMenu profile={auth.profile} />}
     >
       <div className="mx-auto flex w-full max-w-[480px] flex-col gap-[18px] px-4 py-4">
-        {/* 自分宛のメンバー招待（ADR-0036）。承諾すると一覧を再取得して即反映する。 */}
         <MemberInviteNotices onAccepted={reload} />
         <Card>
           <CardTitle>アプリを登録</CardTitle>

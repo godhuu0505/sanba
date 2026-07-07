@@ -22,14 +22,14 @@ from .pii import mask_pii
 log = structlog.get_logger(__name__)
 
 INDEX = "sanba-grounding"
-EMBED_DIM = 3072  # gemini-embedding-001 (default; truncation requires manual L2 normalize)
+EMBED_DIM = 3072
 
 
 @dataclass
 class Passage:
     text: str
     source: str
-    kind: str  # "knowledge" | "requirement" | "utterance"
+    kind: str
     score: float = 0.0
     session_id: str | None = None
 
@@ -49,9 +49,6 @@ class GroundingStore:
     def __init__(self) -> None:
         self._client = self._init_client()
         self._mem: list[_MemDoc] = []
-        # メモリフォールバックは音声 worker の書き込みがスレッドへ逃がされる（main.py の
-        # _persist）ため、索引 append と検索走査が別スレッドで並走し得る。_mem をロックで
-        # 守り、走査中の並行 append と競合しないようにする（ES 経路では未使用）。
         self._mem_lock = threading.Lock()
         if self._client is not None:
             self._ensure_index()
@@ -61,7 +58,6 @@ class GroundingStore:
         """True when running on the in-memory fallback (no Elasticsearch)."""
         return self._client is None
 
-    # ---- backend setup ------------------------------------------------
     @staticmethod
     def _init_client():  # type: ignore[no-untyped-def]
         if not settings.elasticsearch_url:
@@ -73,16 +69,12 @@ class GroundingStore:
             if settings.elasticsearch_api_key:
                 kwargs["api_key"] = settings.elasticsearch_api_key
             return Elasticsearch(**kwargs)
-        except Exception as exc:  # pragma: no cover - depends on env
+        except Exception as exc:  # pragma: no cover
             log.warning("elasticsearch_unavailable_using_memory", error=str(exc))
             return None
 
-    def _ensure_index(self) -> None:  # pragma: no cover - needs live ES
+    def _ensure_index(self) -> None:  # pragma: no cover
         if self._client.indices.exists(index=INDEX):
-            # 既存 index は PR 以前の mapping で作られている可能性がある。session_id が keyword で
-            # 無いと term フィルタ（session スコープ）がヒットせず context が検索から
-            # 消えるため、起動時に keyword mapping を明示する（既に keyword なら冪等・型衝突時は
-            # ログのみで会話は止めない）。
             try:
                 self._client.indices.put_mapping(
                     index=INDEX, properties={"session_id": {"type": "keyword"}}
@@ -108,7 +100,6 @@ class GroundingStore:
             },
         )
 
-    # ---- write --------------------------------------------------------
     def index_passage(
         self,
         text: str,
@@ -117,21 +108,13 @@ class GroundingStore:
         session_id: str | None = None,
         doc_id: str | None = None,
     ) -> None:
-        # doc_id を渡すと ES 経路はその _id で upsert する（同じ内容の再投入で重複を作らない）。
-        # 起動時に毎回シードする KB のように、複数 agent インスタンスが同じ文書を書いても
-        # 一意になるよう決定的 _id を与えるための口（未指定なら従来どおり自動採番）。
-        # Mask PII before anything is persisted to the grounding store.
         if settings.mask_pii_before_index:
             text = mask_pii(text)
         if self._client is None:
-            # メモリフォールバックの検索（_search_mem）はトークン重なりだけで採点し、
-            # 埋め込みを参照しない。使われない埋め込みを毎回計算すると (1) Vertex の
-            # gemini-embedding クォータを浪費して 429 を招き、(2) 同期ブロッキング呼び出しで
-            # 音声パイプラインのイベントループを塞ぐため、メモリモードでは embed しない。
             with self._mem_lock:
                 self._mem.append(_MemDoc(text, source, kind, session_id, None))
             return
-        embedding = embed_text(text)  # pragma: no cover - needs live ES
+        embedding = embed_text(text)  # pragma: no cover
         doc: dict[str, object] = {
             "text": text,
             "source": source,
@@ -145,7 +128,6 @@ class GroundingStore:
         else:
             self._client.index(index=INDEX, document=doc)
 
-    # ---- read ---------------------------------------------------------
     def search(
         self,
         query: str,
@@ -161,7 +143,7 @@ class GroundingStore:
         これが無いと、別セッションの参加者が repo 名や実装語で検索したとき他者の private
         リポジトリ断片が返り得る（cross-tenant leak）。
         """
-        if self._client is not None:  # pragma: no cover - needs live ES
+        if self._client is not None:  # pragma: no cover
             return self._search_es(query, k, kinds, session_id)
         return self._search_mem(query, k, kinds, session_id)
 
@@ -180,7 +162,6 @@ class GroundingStore:
         """
         kind_filter: list[dict] = [{"terms": {"kind": kinds}}] if kinds else []
         if session_id is not None:
-            # context（セッション固有素材）は当該 session_id のものだけ。非 context は横断可。
             kind_filter.append(
                 {
                     "bool": {
@@ -206,7 +187,7 @@ class GroundingStore:
             }
         return params
 
-    def _search_es(  # pragma: no cover - needs live ES
+    def _search_es(  # pragma: no cover
         self, query: str, k: int, kinds: list[str] | None, session_id: str | None = None
     ) -> list[Passage]:
         embedding = embed_text(query)
@@ -228,13 +209,11 @@ class GroundingStore:
     ) -> list[Passage]:
         tokens = tokenize(query)
         scored: list[Passage] = []
-        # ロック下でスナップショットを取り、並行 append（_persist 経由の索引）と競合しない。
         with self._mem_lock:
             docs = list(self._mem)
         for doc in docs:
             if kinds and doc.kind not in kinds:
                 continue
-            # context（セッション固有素材）は当該セッションのものだけを返す。
             if session_id is not None and doc.kind == "context" and doc.session_id != session_id:
                 continue
             overlap = len(tokens & tokenize(doc.text))
@@ -259,7 +238,7 @@ _embed_client: object | None = None
 _embed_client_lock = threading.Lock()
 
 
-def _embedding_client():  # type: ignore[no-untyped-def] # pragma: no cover - needs genai
+def _embedding_client():  # type: ignore[no-untyped-def] # pragma: no cover
     """遅延生成した genai.Client を使い回す。
 
     従来は呼び出しごとに Client を生成しており、発話・要件のたびに接続確立コストが
@@ -279,7 +258,7 @@ def embed_text(text: str) -> list[float] | None:
     """Embed text with Gemini. Returns None when no credentials are configured."""
     if not (settings.google_api_key or settings.google_genai_use_vertexai):
         return None
-    try:  # pragma: no cover - needs network/credentials
+    try:  # pragma: no cover
         client = _embedding_client()
         resp = client.models.embed_content(model=settings.gemini_embed_model, contents=text)
         embeddings = resp.embeddings

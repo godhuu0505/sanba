@@ -14,7 +14,6 @@ output "runtime_service_account" {
   value = google_service_account.runtime.email
 }
 
-# ---- Session materials / video analysis (ADR-0040) --------------------------
 output "materials_bucket" {
   value       = google_storage_bucket.materials.name
   description = "GCS bucket holding session materials (images/videos). Wired to the API as GCS_BUCKET."
@@ -45,7 +44,11 @@ output "managed_secrets" {
   description = "Secret Manager に作成した箱 (値は terraform 管理外。gcloud で投入する)。"
 }
 
-# ---- Custom domain / Load Balancer (domain 設定時のみ意味を持つ) -------------
+output "picker_api_key_secret" {
+  value       = google_secret_manager_secret.picker_api_key.secret_id
+  description = "Secret Manager secret holding NEXT_PUBLIC_GOOGLE_API_KEY (browser Picker key). The web build reads it via WIF at build time."
+}
+
 output "lb_ip" {
   value       = local.domain_enabled ? google_compute_global_address.lb[0].address : ""
   description = "Anycast IP of the HTTPS load balancer. Point your A records here (apex/www/api)."
@@ -56,14 +59,12 @@ output "dns_name_servers" {
   description = "Cloud DNS name servers. Set these at your registrar after buying the domain."
 }
 
-# 値はすべて文字列にして map(string) に保つ (リスト混在だと domain 無効時の `{}` と型統一できず
-# plan が "Inconsistent conditional result types" で落ちるため。複数ホストは ", " 区切りで連結)。
 output "public_urls" {
   value = local.domain_enabled ? {
-    web         = "https://${local.web_host}"                                  # ログイン/アプリの主 URL
-    api         = "https://${local.api_host}"                                  # API
-    web_aliases = join(", ", [for h in local.web_hosts : "https://${h}"])      # web を直接配信するホスト (apex モードでは apex+www)
-    redirects   = join(", ", [for h in local.redirect_hosts : "https://${h}"]) # web へ 301 されるホスト (subdomain モードの apex/www)
+    web         = "https://${local.web_host}"
+    api         = "https://${local.api_host}"
+    web_aliases = join(", ", [for h in local.web_hosts : "https://${h}"])
+    redirects   = join(", ", [for h in local.redirect_hosts : "https://${h}"])
   } : {}
   description = "Production URLs once DNS + managed certificate are active."
 }

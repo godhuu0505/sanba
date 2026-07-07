@@ -70,11 +70,9 @@ describe("BottomBar（常時2行：消音/マイク・テキスト/送信）", (
     fireEvent.change(input, { target: { value: "かいぎ" } });
     fireEvent.keyDown(input, { key: "Enter", isComposing: true });
     expect(cb.onSend).not.toHaveBeenCalled();
-    expect(input.value).toBe("かいぎ"); // 変換途中なので消えない
+    expect(input.value).toBe("かいぎ");
   });
 
-  // 音声状態インジケータはボトムバーから上部の固定領域（ConversationShell）へ移した。
-  // 可変高の装飾で選択肢フォームを上下させないため、ここ（高さ一定のボトムバー）には出さない。
   it("音声状態インジケータはボトムバーに出さない（上部固定領域へ移設）", () => {
     setup({ micOn: true, muted: false });
     expect(screen.queryByRole("status")).toBeNull();

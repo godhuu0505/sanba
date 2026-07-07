@@ -4,9 +4,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ProductInvite } from "@/lib/api";
 
-// 深掘りリンクカード（FR-1.5）: 発行フォームの「制限なし」の意味論・URL コピー・失効を検証する。
-// API はモックし、UI の振る舞い（何をどのパラメータで呼ぶか）に集中する。
-
 const authState = { credential: "id-token", loggedIn: true, ready: true, profile: null };
 vi.mock("@/lib/auth", () => ({ useAuth: () => authState }));
 
@@ -105,7 +102,6 @@ describe("ProductInvitesCard（深掘りリンク / FR-1.5）", () => {
     expect(await screen.findByText("失効済み")).toBeTruthy();
 
     const revokeButtons = screen.getAllByRole("button", { name: "リンクを失効" });
-    // 失効済み（inv-2）の行は disabled。
     expect((revokeButtons[1] as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(revokeButtons[0]);
     await waitFor(() =>

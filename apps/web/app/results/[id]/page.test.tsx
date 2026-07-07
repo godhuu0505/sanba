@@ -2,9 +2,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-// 過去要件の絵巻閲覧画面（/results/[id]）。ホーム履歴からの遷移先で、要件絵巻だけを閲覧する。
-// 認証ゲート・本人限定 404・絵巻本体（MoSCoW 区分）・空状態を検証する。
-
 const authState = {
   credential: "id-token" as string | null,
   profile: null as { name?: string } | null,
@@ -94,10 +91,8 @@ describe("過去要件の絵巻閲覧画面（/results/[id]）", () => {
     expect(screen.getByText("要件絵巻")).toBeTruthy();
     expect(screen.getByText(/2024\/06\/20/)).toBeTruthy();
     expect(screen.getByText(/確定済み/)).toBeTruthy();
-    // MoSCoW 区分（必ず/なるべく）に分かれて要件が並ぶ。
     expect(screen.getByText("キーワード検索を新設する")).toBeTruthy();
     expect(screen.getByText("検索結果は 1 秒以内に返す")).toBeTruthy();
-    // 絵巻の閲覧のみ: 承認/却下/編集の操作は出さない。
     expect(screen.queryByText(/認める|退ける|改める|検める/)).toBeNull();
   });
 
@@ -110,12 +105,10 @@ describe("過去要件の絵巻閲覧画面（/results/[id]）", () => {
   });
 
   it("401（idToken 期限切れ）は再認証導線を出し、押下で signOut して credential を clear する", async () => {
-    // authGate はメモリ上の loggedIn しか見ないため、期限切れ token では API 401 でここに到達する。
     vi.mocked(fetchMySessionRequirements).mockRejectedValue(new ApiError(401, "unauthorized"));
     render(<PastRequirementsPage />);
     await waitFor(() => expect(screen.getByText("ログインへ")).toBeTruthy());
     fireEvent.click(screen.getByText("ログインへ"));
-    // 無効トークンでの再試行ループに入らず、authGate 経由で /login?next= へ送る。
     expect(authState.signOut).toHaveBeenCalledTimes(1);
   });
 

@@ -97,7 +97,7 @@ describe("RealtimeStore — seq ordering", () => {
   it("does not overwrite a newer entity with a re-ordered older seq", () => {
     const s = new RealtimeStore();
     s.apply(reqEvent(5, "r1", { statement: "newer" }));
-    s.apply(reqEvent(2, "r1", { statement: "older" })); // 逆順で遅着
+    s.apply(reqEvent(2, "r1", { statement: "older" }));
     expect(s.getSnapshot().requirements[0].statement).toBe("newer");
   });
 });
@@ -106,7 +106,7 @@ describe("RealtimeStore — dedup", () => {
   it("ignores an exact re-delivery of the same seq", () => {
     const s = new RealtimeStore();
     s.apply(contradiction(1, "d1"));
-    s.apply(contradiction(1, "d1")); // 再配信
+    s.apply(contradiction(1, "d1"));
     expect(s.getSnapshot().detections).toHaveLength(1);
     expect(s.metrics.read().duplicates).toBe(1);
     expect(s.metrics.read().received).toBe(1);
@@ -128,10 +128,9 @@ describe("RealtimeStore — analysis.visual = 完了 (#209 案A)", () => {
     s.apply(visual(2, "a1", ["要件X", "要件Y"]));
 
     const a = s.getSnapshot().analysis[0];
-    expect(a.pct).toBe(100); // 直前の 40% を引きずらない
-    expect(a.extracted).toEqual(["要件X", "要件Y"]); // 抽出は保持
+    expect(a.pct).toBe(100);
+    expect(a.extracted).toEqual(["要件X", "要件Y"]);
 
-    // AC: セレクタ越しに done + 抽出件数まで通ること。
     expect(selectMaterials(s.getSnapshot())).toEqual([
       { id: "a1", name: "a1", pct: 100, status: "done", extracted: 2 },
     ]);
@@ -149,10 +148,10 @@ describe("RealtimeStore — analysis.visual = 完了 (#209 案A)", () => {
     const s = new RealtimeStore();
     s.apply(progress(2, "a1", 40));
     s.apply(visual(3, "a1", ["要件X"]));
-    s.apply(visual(1, "a1", [])); // 古い seq の遅着 → 無視
+    s.apply(visual(1, "a1", []));
     const a = s.getSnapshot().analysis[0];
     expect(a.pct).toBe(100);
-    expect(a.extracted).toEqual(["要件X"]); // 上書きされない
+    expect(a.extracted).toEqual(["要件X"]);
   });
 });
 
@@ -160,9 +159,8 @@ describe("RealtimeStore — gap detection", () => {
   it("records a gap when a seq is skipped", () => {
     const s = new RealtimeStore();
     s.apply(reqEvent(1, "r1"));
-    s.apply(reqEvent(4, "r4")); // 2,3 が欠番
+    s.apply(reqEvent(4, "r4"));
     expect(s.metrics.read().gaps).toBe(1);
-    // 欠番でも前進はする。
     expect(s.getSnapshot().requirements).toHaveLength(2);
   });
 });
@@ -170,12 +168,10 @@ describe("RealtimeStore — gap detection", () => {
 describe("RealtimeStore — hydration boundary", () => {
   it("discards live events at or below the hydration seq, applies above", () => {
     const s = new RealtimeStore();
-    s.hydrateRequirements(hydrationFixture.items, hydrationFixture.seq); // seq=6
-    // seq<=6 のライブ差分は破棄（スナップショットに含まれる）。
+    s.hydrateRequirements(hydrationFixture.items, hydrationFixture.seq);
     s.apply(reqEvent(6, "r1", { statement: "stale" }));
     expect(s.getSnapshot().requirements[0].statement).not.toBe("stale");
     expect(s.metrics.read().duplicates).toBe(1);
-    // seq>6 は適用。
     s.apply(reqEvent(7, "r1", { statement: "live", status: "confirmed" }));
     expect(s.getSnapshot().requirements[0].statement).toBe("live");
   });
@@ -188,12 +184,9 @@ describe("RealtimeStore — hydration boundary", () => {
     expect(r?.status).toBe("confirmed");
   });
 
-  // GET スナップショットに含まれない種別（status/transcript/analysis/session.completed）
-  // は requirements 境界で捨てない。GET 実行中〜直後に seq<=境界 で後着しても取りこぼさない。
   it("applies non-snapshot events (status) that arrive at/below the requirements boundary", () => {
     const s = new RealtimeStore();
-    s.hydrateRequirements(hydrationFixture.items, 6); // requirementsHydrationSeq=6
-    // requirements GET 実行中に publish 済みだった status（lossy, seq=4 echo）が GET 完了後に後着。
+    s.hydrateRequirements(hydrationFixture.items, 6);
     s.apply({
       v: 1,
       type: "status",
@@ -204,7 +197,7 @@ describe("RealtimeStore — hydration boundary", () => {
       reliable: false,
       lossy_seq: 1,
     });
-    expect(s.getSnapshot().phase).toBe("deliberating"); // 旧実装では duplicate 扱いで欠落していた
+    expect(s.getSnapshot().phase).toBe("deliberating");
     expect(s.metrics.read().duplicates).toBe(0);
   });
 
@@ -225,12 +218,10 @@ describe("RealtimeStore — hydration boundary", () => {
     expect(s.getSnapshot().transcript).toHaveLength(1);
   });
 
-  // detection 境界は requirements とは独立。detections を hydrate しない画面では
-  // requirements 境界で detection を捨てない（境界 0 = ノーガード）。
   it("does not drop a detection by the requirements boundary when detections were not hydrated", () => {
     const s = new RealtimeStore();
-    s.hydrateRequirements(hydrationFixture.items, 6); // detections は未 hydrate
-    s.apply(contradiction(2, "d1")); // seq=2 <= requirements 境界6 だが detection 境界は0
+    s.hydrateRequirements(hydrationFixture.items, 6);
+    s.apply(contradiction(2, "d1"));
     expect(s.getSnapshot().detections).toHaveLength(1);
     expect(s.metrics.read().duplicates).toBe(0);
   });
@@ -241,9 +232,9 @@ describe("RealtimeStore — hydration boundary", () => {
       [{ id: "d1", kind: "gap", summary: "snap", refs: [], detector: "", resolved: false }],
       6,
     );
-    s.apply(contradiction(5, "d1")); // 5 <= detections 境界6 → スナップショットに含まれる → 破棄
+    s.apply(contradiction(5, "d1"));
     expect(s.metrics.read().duplicates).toBe(1);
-    s.apply(contradiction(7, "d2")); // 7 > 6 → 適用
+    s.apply(contradiction(7, "d2"));
     expect(s.getSnapshot().detections.find((d) => d.id === "d2")).toBeTruthy();
   });
 });
@@ -269,7 +260,6 @@ describe("RealtimeStore — detection lifecycle", () => {
 });
 
 describe("RealtimeStore — status ordering", () => {
-  // status は lossy。順序キーは (echoSeq, lossy_seq)。echoSeq は echo した reliable seq。
   const status = (echoSeq: number, lossySeq: number, phase: string) => ({
     v: 1,
     type: "status" as const,
@@ -284,22 +274,19 @@ describe("RealtimeStore — status ordering", () => {
   it("does not roll back phase with a stale, lower lossy_seq status (同一 echoSeq)", () => {
     const s = new RealtimeStore();
     s.apply(status(0, 5, "deliberating"));
-    s.apply(status(0, 2, "listening")); // 同 echoSeq・古い lossy_seq → 巻き戻さない
+    s.apply(status(0, 2, "listening"));
     expect(s.getSnapshot().phase).toBe("deliberating");
   });
 
   it("再起動後も lossy_seq の epoch ブロックで status が復帰する", () => {
     const s = new RealtimeStore();
-    s.apply(status(3, 9, "listening")); // 再起動前: lossy_seq=9
-    // 再起動: agent は lossy_seq を epoch ブロック基底（例 1e9+1）から振り出す。
-    // echo した reliable seq は後退し得る（例 2）が、status は lossy_seq 単独で順序付けるため復帰する。
+    s.apply(status(3, 9, "listening"));
     s.apply(status(2, 1_000_000_001, "deliberating"));
     expect(s.getSnapshot().phase).toBe("deliberating");
   });
 
   it("旧 agent（lossy_seq 無し）は seq で順序付く（後方互換 / Codex P2）", () => {
     const s = new RealtimeStore();
-    // reliable/lossy_seq を持たない旧 status。seq が進むので順に適用される。
     s.apply({ v: 1, type: "status", seq: 1, ts: "t", session_id: SESSION, phase: "listening" });
     s.apply({ v: 1, type: "status", seq: 2, ts: "t", session_id: SESSION, phase: "deliberating" });
     expect(s.getSnapshot().phase).toBe("deliberating");
@@ -307,12 +294,12 @@ describe("RealtimeStore — status ordering", () => {
 
   it("does not record a gap or advance maxSeq for lossy status events (#122)", () => {
     const s = new RealtimeStore();
-    s.apply(reqEvent(1, "r1")); // reliable seq=1 → maxSeq=1
+    s.apply(reqEvent(1, "r1"));
     s.apply(status(1, 1, "deliberating"));
-    s.apply(status(1, 3, "listening")); // lossy_seq 飛び（2 欠落）でも gap にしない
-    s.apply(reqEvent(2, "r2")); // reliable seq=2（連続）→ gap 無し
+    s.apply(status(1, 3, "listening"));
+    s.apply(reqEvent(2, "r2"));
     expect(s.metrics.read().gaps).toBe(0);
-    expect(s.getSnapshot().seq).toBe(2); // maxSeq は reliable のみで前進
+    expect(s.getSnapshot().seq).toBe(2);
   });
 });
 
@@ -349,7 +336,7 @@ describe("RealtimeStore — transcript partial/final（#122）", () => {
     s.apply(partial(1, "u1", "けんさ"));
     s.apply(partial(2, "u1", "検索した"));
     expect(s.getSnapshot().transcript[0].text).toBe("検索した");
-    s.apply(final(1, "u1", "検索したい")); // reliable 確定
+    s.apply(final(1, "u1", "検索したい"));
     const line = s.getSnapshot().transcript[0];
     expect(line.text).toBe("検索したい");
     expect(line.final).toBe(true);
@@ -358,7 +345,7 @@ describe("RealtimeStore — transcript partial/final（#122）", () => {
   it("確定（final）は遅着 partial で巻き戻らない", () => {
     const s = new RealtimeStore();
     s.apply(final(1, "u1", "検索したい"));
-    s.apply(partial(9, "u1", "けんさく…")); // 遅れて届いた partial
+    s.apply(partial(9, "u1", "けんさく…"));
     const line = s.getSnapshot().transcript[0];
     expect(line.text).toBe("検索したい");
     expect(line.final).toBe(true);
@@ -368,7 +355,7 @@ describe("RealtimeStore — transcript partial/final（#122）", () => {
     const s = new RealtimeStore();
     s.apply(final(1, "u1", "一"));
     s.apply(final(2, "u2", "二"));
-    s.apply(partial(1, "u3", "さん…")); // lossy_seq=1 でも末尾（現在進行）
+    s.apply(partial(1, "u3", "さん…"));
     expect(s.getSnapshot().transcript.map((t) => t.utterance_id)).toEqual(["u1", "u2", "u3"]);
   });
 });
@@ -380,7 +367,6 @@ describe("RealtimeStore — session isolation", () => {
     s.apply({ ...contradiction(1, "d1"), session_id: "other" });
     expect(s.getSnapshot().detections).toHaveLength(0);
     expect(s.metrics.read().dropped).toBe(1);
-    // 正しいセッションのものは適用される。
     s.apply(contradiction(2, "d2"));
     expect(s.getSnapshot().detections).toHaveLength(1);
   });
@@ -394,7 +380,7 @@ describe("RealtimeStore — gap recovery", () => {
       fired += 1;
     });
     s.apply(reqEvent(1, "r1"));
-    s.apply(reqEvent(4, "r4")); // 2,3 欠番
+    s.apply(reqEvent(4, "r4"));
     expect(fired).toBe(1);
   });
 });
@@ -423,7 +409,6 @@ describe("RealtimeStore — question.asked（#181）", () => {
     expect(s.getSnapshot().question?.id).toBe("q1");
     s.apply(questionAsked(3, "q2", [{ label: "B", value: "b" }]));
     expect(s.getSnapshot().question?.id).toBe("q2");
-    // 古い seq の再配信（q1@2）は無視され、最新 q2 を保つ。
     s.apply(questionAsked(2, "q1", [{ label: "A", value: "a" }]));
     expect(s.getSnapshot().question?.id).toBe("q2");
   });
@@ -451,13 +436,13 @@ describe("RealtimeStore — hydrateQuestion（#212 / ADR-0020）", () => {
     const s = new RealtimeStore();
     s.hydrateQuestion({ id: "q1", prompt: "並び順は？", options: [] }, 5, true);
     expect(s.getSnapshot().question?.id).toBe("q1");
-    expect(s.getSnapshot().seq).toBe(5); // 主スナップ成功なら maxSeq 前進
+    expect(s.getSnapshot().seq).toBe(5);
   });
 
   it("復元直後の live N+1 / N+2 で誤 gap を出さない（§5-2/§5-4）", () => {
     const s = new RealtimeStore();
     s.hydrateRequirements(hydrationFixture.items, 5);
-    s.hydrateQuestion({ id: "q1", prompt: "p", options: [] }, 5, true); // asked_seq=5
+    s.hydrateQuestion({ id: "q1", prompt: "p", options: [] }, 5, true);
     s.apply(questionAsked(6, "q2"));
     s.apply(questionAsked(7, "q3"));
     expect(s.metrics.read().gaps).toBe(0);
@@ -466,30 +451,29 @@ describe("RealtimeStore — hydrateQuestion（#212 / ADR-0020）", () => {
 
   it("古い current を読んだ遅延 GET は新しい live 質問を巻き戻さない（§5-2）", () => {
     const s = new RealtimeStore();
-    s.apply(questionAsked(7, "q2")); // 新しい live 質問が先着（lastQuestionSeq=7）
-    s.hydrateQuestion({ id: "q1", prompt: "old", options: [] }, 5, true); // 遅延 GET（古い）
-    expect(s.getSnapshot().question?.id).toBe("q2"); // 巻き戻らない
+    s.apply(questionAsked(7, "q2"));
+    s.hydrateQuestion({ id: "q1", prompt: "old", options: [] }, 5, true);
+    expect(s.getSnapshot().question?.id).toBe("q2");
   });
 
   it("遅延 null（回答済み）は新しい live 質問を消さない（§5-4）", () => {
     const s = new RealtimeStore();
-    s.apply(questionAsked(7, "q2")); // lastQuestionSeq=7
-    s.hydrateQuestion(null, 5, true); // 古い cleared_seq=5 の null
+    s.apply(questionAsked(7, "q2"));
+    s.hydrateQuestion(null, 5, true);
     expect(s.getSnapshot().question?.id).toBe("q2");
   });
 
   it("新しい null（回答済み）は古い問いを畳む（§5-4）", () => {
     const s = new RealtimeStore();
-    s.apply(questionAsked(3, "q1")); // lastQuestionSeq=3
-    s.hydrateQuestion(null, 6, true); // cleared_seq=6 > 3
+    s.apply(questionAsked(3, "q1"));
+    s.hydrateQuestion(null, 6, true);
     expect(s.getSnapshot().question).toBeNull();
   });
 
   it("主スナップショット失敗時は question seq で maxSeq を進めない（§5-11）", () => {
     const s = new RealtimeStore();
-    s.apply(reqEvent(2, "r1")); // maxSeq=2
-    s.hydrateQuestion({ id: "q1", prompt: "p", options: [] }, 9, false); // 主 GET 失敗
-    // lastQuestionSeq は進む（ピン復元）が、global maxSeq は据え置き（gap/retry を残す）。
+    s.apply(reqEvent(2, "r1"));
+    s.hydrateQuestion({ id: "q1", prompt: "p", options: [] }, 9, false);
     expect(s.getSnapshot().question?.id).toBe("q1");
     expect(s.getSnapshot().seq).toBe(2);
   });
@@ -498,7 +482,6 @@ describe("RealtimeStore — hydrateQuestion（#212 / ADR-0020）", () => {
     const s = new RealtimeStore();
     s.hydrateQuestion(null, 0, true);
     expect(s.getSnapshot().question).toBeNull();
-    // 先着していた live 質問は §5-4 のとおり遅延 null（seq=0）で消えない。
     s.apply(questionAsked(3, "q1"));
     s.hydrateQuestion(null, 0, true);
     expect(s.getSnapshot().question?.id).toBe("q1");
@@ -506,9 +489,9 @@ describe("RealtimeStore — hydrateQuestion（#212 / ADR-0020）", () => {
 
   it("クリア適用後に古い GET が後着してもクリア済みを復活させない（§5-10）", () => {
     const s = new RealtimeStore();
-    s.apply(questionCleared(6, "q1")); // current=null でも lastQuestionSeq=6 へ前進
-    s.hydrateQuestion({ id: "q1", prompt: "revive?", options: [] }, 5, true); // 古い GET
-    expect(s.getSnapshot().question).toBeNull(); // 5 <= 6 で適用されず復活しない
+    s.apply(questionCleared(6, "q1"));
+    s.hydrateQuestion({ id: "q1", prompt: "revive?", options: [] }, 5, true);
+    expect(s.getSnapshot().question).toBeNull();
   });
 });
 
@@ -522,17 +505,16 @@ describe("RealtimeStore — question.cleared（#212 / ADR-0020 §5-10）", () =>
 
   it("古い question.cleared は新しい問いを畳まない（§5-10）", () => {
     const s = new RealtimeStore();
-    s.apply(questionAsked(7, "q2")); // lastQuestionSeq=7
-    s.apply(questionCleared(6, "q1")); // 6 <= 7 で棄却
+    s.apply(questionAsked(7, "q2"));
+    s.apply(questionCleared(6, "q1"));
     expect(s.getSnapshot().question?.id).toBe("q2");
   });
 
   it("id 不一致のクリアは現在の問いを消さないが seq カーソルは前進（§5-10）", () => {
     const s = new RealtimeStore();
-    s.apply(questionAsked(4, "q2")); // 現在の問いは q2
-    s.apply(questionCleared(5, "q1")); // 別 id 対象 → 畳まない
+    s.apply(questionAsked(4, "q2"));
+    s.apply(questionCleared(5, "q1"));
     expect(s.getSnapshot().question?.id).toBe("q2");
-    // 受信した live seq として maxSeq を前進（次の seq=6 で誤 gap を出さない）。
     expect(s.getSnapshot().seq).toBe(5);
     s.apply(questionAsked(6, "q3"));
     expect(s.metrics.read().gaps).toBe(0);
@@ -540,9 +522,8 @@ describe("RealtimeStore — question.cleared（#212 / ADR-0020 §5-10）", () =>
 
   it("current=null のクリアでも seq を前進し、後着の古い GET で復活させない（§5-10）", () => {
     const s = new RealtimeStore();
-    s.apply(questionCleared(6, "q1")); // ask を取り逃した（current=null）
-    expect(s.getSnapshot().seq).toBe(6); // maxSeq 前進
-    // 先に開始していた古い GET（q1@5）が後着 → lastQuestionSeq=6 で弾かれ復活しない。
+    s.apply(questionCleared(6, "q1"));
+    expect(s.getSnapshot().seq).toBe(6);
     s.hydrateQuestion({ id: "q1", prompt: "revive?", options: [] }, 5, true);
     expect(s.getSnapshot().question).toBeNull();
   });
@@ -558,7 +539,6 @@ describe("RealtimeStore — fixture replay", () => {
     expect(st.analysis[0].extracted).toContain("フィルタUI");
     expect(st.completed?.issues_created).toBe(3);
     expect(st.phase).toBe("deliberating");
-    // 欠番・重複は無いフィクスチャ。
     expect(s.metrics.read().gaps).toBe(0);
     expect(s.metrics.read().duplicates).toBe(0);
   });

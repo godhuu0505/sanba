@@ -44,11 +44,6 @@ from .observability import record_rate_limited, setup_observability
 from .routers import auth, github_link, members, products, sessions
 from .routers.products import MAX_CHECK_ITEM_CHARS, MAX_OUTPUT_FORMAT_CHARS
 
-# tests の後方互換の再エクスポート: 従来 `sanba_api.main` に住んでいた公開名を、同一
-# オブジェクトのまま `main.X` / `from sanba_api.main import X` で参照できるように保つ
-# （`_repo` 等のシングルトンは deps のインスタンスそのもの）。関数を monkeypatch する
-# 場合は、この再エクスポートではなくその関数が住むモジュール（routers/* / deps）へ
-# パッチすること。
 __all__ = [
     "MAX_CHECK_ITEM_CHARS",
     "MAX_OUTPUT_FORMAT_CHARS",
@@ -87,15 +82,12 @@ async def _rate_limit_join(request: Request, call_next: Any) -> Any:
     超過時は body に触れず 429 を返す。CORS より内側で動くよう CORS の前に登録し、429 応答にも
     CORS ヘッダが付くようにする（ミドルウェアは後から add した方が外側になる）。
     """
-    # 深掘りリンク入場（/api/products/join）も同じ未認証スパム面を持つため同枠で制限する。
     if request.method == "POST" and request.url.path in (
         "/api/sessions/join",
         "/api/products/join",
     ):
         client_ip = request.client.host if request.client else "unknown"
         if _over_rate_limit(client_ip):
-            # 認証より前に短絡するため auth イベントに現れない。DoS 緩和の発火をログ＋
-            # メトリクスで本番検知できるようにする（CLAUDE.md 原則3）。
             log.warning(
                 "join_rate_limited", client_ip=client_ip, limit=settings.join_rate_per_minute
             )
@@ -110,7 +102,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-# OTLP エンドポイントが設定されていれば分散トレースを有効化する (未設定なら no-op)。
 setup_observability(app)
 
 
@@ -119,7 +110,6 @@ def healthz() -> dict[str, str]:
     return {"status": "ok"}
 
 
-# ドメイン別ルータの登録。各エンドポイントのパス・認可・response_model は移設前のまま。
 app.include_router(auth.router)
 app.include_router(sessions.router)
 app.include_router(github_link.router)

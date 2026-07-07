@@ -11,6 +11,7 @@ function setup(over: Partial<React.ComponentProps<typeof MaterialSourceSheet>> =
     onToggleCamera: vi.fn(),
     onToggleScreenShare: vi.fn(),
     onSelectSource: vi.fn(),
+    onDrive: vi.fn(),
   };
   render(<MaterialSourceSheet {...cb} {...over} />);
   return cb;
@@ -49,7 +50,6 @@ describe("MaterialSourceSheet（05-2 手段選択シート）", () => {
     setup({ onToggleCamera: undefined, onToggleScreenShare: undefined });
     expect(screen.queryByText("カメラで撮影")).toBeNull();
     expect(screen.queryByText("画面を共有")).toBeNull();
-    // アップロードと Drive は常に出る。
     expect(screen.getByText("ファイルをアップロード")).toBeTruthy();
     expect(screen.getByText("Google ドライブから選ぶ")).toBeTruthy();
   });
@@ -59,24 +59,14 @@ describe("MaterialSourceSheet（05-2 手段選択シート）", () => {
     expect(
       screen.getByRole("button", { name: "カメラの起動/停止" }).getAttribute("aria-pressed"),
     ).toBe("true");
-    // 画面共有は active 時にラベルが「停止」へ変わる。
     expect(screen.getByText("画面共有を停止")).toBeTruthy();
   });
 
-  it("Drive は未承認（ADR-0007）なので押下で準備中を案内し、計測（drive）だけ走る", () => {
+  it("Drive を押すと onDrive（Picker）を呼び、種別（drive）を計測する（ADR-0049）", () => {
     const cb = setup();
     fireEvent.click(screen.getByText("Google ドライブから選ぶ"));
+    expect(cb.onDrive).toHaveBeenCalledTimes(1);
     expect(cb.onSelectSource).toHaveBeenCalledWith("drive");
-    expect(screen.getByText(/準備中/)).toBeTruthy();
-  });
-
-  it("onDrive 注入時は準備中ではなく実導線を呼ぶ", () => {
-    const onDrive = vi.fn();
-    const cb = setup({ onDrive });
-    fireEvent.click(screen.getByText("Google ドライブから選ぶ"));
-    expect(onDrive).toHaveBeenCalledTimes(1);
-    expect(cb.onSelectSource).toHaveBeenCalledWith("drive");
-    expect(screen.queryByText(/準備中/)).toBeNull();
   });
 
   it("キャンセル・背景・ESC で閉じる（a11y）", () => {

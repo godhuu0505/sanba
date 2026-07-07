@@ -27,7 +27,6 @@ def _fake_user() -> AuthUser:
 
 
 class FakeClient:
-    # OAuth 未構成（dev/local パス）を既定にする。所有権検証テストはサブクラスで上書きする。
     oauth_configured = False
 
     def user_owns_installation(self, code: str, installation_id: int) -> bool:
@@ -74,8 +73,6 @@ def _setup(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     monkeypatch.setattr(github_link, "_github_app_client", lambda: FakeClient())
     monkeypatch.setattr(main.settings, "github_app_enabled", True)
     monkeypatch.setattr(main.settings, "github_app_slug", "sanba-app")
-    # OAuth 未構成（FakeClient.oauth_configured=False）でも検証を省けるよう dev bypass にする
-    # （本番の所有権検証フェイルクローズは別テストで検証する）。
     monkeypatch.setattr(main.settings, "auth_dev_bypass", True)
     main._repo.delete_github_link(OWNER)
     yield
@@ -115,7 +112,6 @@ def test_callback_rejects_bad_state() -> None:
     assert res.status_code == 403
 
 
-# ── 所有権検証（user-to-server OAuth 構成時）─────────────────────────
 class _OAuthClient(FakeClient):
     oauth_configured = True
 
@@ -130,7 +126,7 @@ def test_callback_requires_code_when_oauth_configured(monkeypatch: pytest.Monkey
     monkeypatch.setattr(github_link, "_github_app_client", lambda: _OAuthClient(owns=True))
     state = create_link_state(OWNER, main.settings.session_signing_secret)
     res = client.get("/api/github/link/callback", params={"installation_id": 99, "state": state})
-    assert res.status_code == 403  # code 無し → 拒否
+    assert res.status_code == 403
 
 
 def test_callback_rejects_unowned_installation(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -147,7 +143,6 @@ def test_callback_rejects_unowned_installation(monkeypatch: pytest.MonkeyPatch) 
 def test_callback_failclosed_when_oauth_unconfigured_and_no_dev_bypass(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # OAuth 未構成 かつ dev bypass 無効（本番相当）→ 所有権検証できないので拒否する。
     monkeypatch.setattr(main.settings, "auth_dev_bypass", False)
     state = create_link_state(OWNER, main.settings.session_signing_secret)
     res = client.get("/api/github/link/callback", params={"installation_id": 99, "state": state})
@@ -174,8 +169,6 @@ def test_unlink_removes_link() -> None:
 
 
 def test_list_repos_unlinked_and_connector_disabled_is_hidden() -> None:
-    # 統一エンドポイント（ADR-0027 応答形）: 未連携かつ connector 無効は enabled=False
-    # （フィールドごと隠す。409 にはしない）。
     res = client.get("/api/github/repos")
     assert res.status_code == 200
     body = res.json()
@@ -185,7 +178,6 @@ def test_list_repos_unlinked_and_connector_disabled_is_hidden() -> None:
 
 
 def test_list_repos_uses_app_installation_when_linked() -> None:
-    # App 連携済みなら installation 由来の一覧（linked=True + items に default_branch 付き）。
     _link()
     res = client.get("/api/github/repos")
     assert res.status_code == 200
@@ -198,7 +190,6 @@ def test_list_repos_uses_app_installation_when_linked() -> None:
 
 
 def test_list_repos_prefers_app_link_over_connector(monkeypatch: pytest.MonkeyPatch) -> None:
-    # connector も有効な環境では App 連携（本人の repo）を優先する。未連携なら connector 一覧。
     monkeypatch.setattr(main.settings, "github_connector_enabled", True)
     monkeypatch.setattr(main.settings, "github_token", "t")
     monkeypatch.setattr(main.github_export, "list_repos", lambda token: ["conn/repo"])
@@ -214,14 +205,12 @@ def test_list_repos_prefers_app_link_over_connector(monkeypatch: pytest.MonkeyPa
 def test_list_repos_app_candidates_filtered_by_allowlist(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # 許可リスト（GITHUB_REPO_ALLOWLIST）は App 由来の候補一覧にも一貫適用する。
-    # 既定リポジトリも同じ判定を通す（許可外の既定はリポ名の露出になる）。
     _link()
     monkeypatch.setattr(main.settings, "github_repo_allowlist", "acme")
     monkeypatch.setattr(main.settings, "github_repo", "octo/demo")
     body = client.get("/api/github/repos").json()
     assert body["linked"] is True
-    assert body["repos"] == []  # octo/demo は許可外
+    assert body["repos"] == []
     assert body["items"] == []
     assert body["default"] is None
 
@@ -233,7 +222,6 @@ def test_list_branches() -> None:
     assert names == ["main", "dev"]
 
 
-# ── session repo selection（owner 固定 + 非同期索引） ─────────────────────────
 def _override_session_access(session_id: str, sub: str) -> None:
     def _fake(session_id: str = session_id) -> SessionAccess:  # noqa: B008
         return SessionAccess(session_id=session_id, sub=sub, role="pm")
@@ -255,9 +243,8 @@ def test_select_repo_defaults_to_default_branch_and_indexes() -> None:
         assert res.status_code == 200
         body = res.json()
         assert body["repo"] == "octo/demo"
-        assert body["branch"] == "main"  # 既定=デフォルトブランチ
+        assert body["branch"] == "main"
         assert body["commit_sha"] == "sha-main"
-        # 背景タスク完了後（TestClient は同期実行）、状態は ready。
         got = client.get(f"/api/sessions/{sid}/github").json()
         assert got["status"] == "ready"
     finally:
@@ -286,8 +273,6 @@ def test_select_repo_requires_link() -> None:
 
 
 def test_select_repo_rejects_repo_outside_allowlist(monkeypatch: pytest.MonkeyPatch) -> None:
-    # 候補一覧を許可リストで絞っても、直接 POST で許可外リポを紐づけ・索引する抜け道を塞ぐ
-    # （App 経路の保存にも一貫適用）。
     _link()
     sid = _make_session()
     _override_session_access(sid, OWNER)
@@ -295,7 +280,6 @@ def test_select_repo_rejects_repo_outside_allowlist(monkeypatch: pytest.MonkeyPa
     try:
         res = client.post(f"/api/sessions/{sid}/github", json={"repo": "octo/demo"})
         assert res.status_code == 400
-        # 索引もキックされない（選択は保存されないまま）。
         meta = main._repo.get_session(sid)
         assert meta is not None and meta.github_repo is None
     finally:
@@ -303,8 +287,6 @@ def test_select_repo_rejects_repo_outside_allowlist(monkeypatch: pytest.MonkeyPa
 
 
 def test_stale_index_job_is_skipped() -> None:
-    # repo A のジョブが走る前に B を選んだ状態（SessionMeta=B）にして A のジョブを直接呼ぶと、
-    # 現在選択と一致しないので索引も書き戻しもしない（stale job guard）。
     from sanba_shared.models import GitHubIndexStatus
 
     sid = _make_session()
@@ -324,5 +306,4 @@ def test_stale_index_job_is_skipped() -> None:
     )
     meta = main._repo.get_session(sid)
     assert meta is not None
-    # 選択は B のまま（A に巻き戻っていない）。
     assert meta.github_repo == "octo/repoB"

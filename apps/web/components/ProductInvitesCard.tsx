@@ -1,9 +1,5 @@
 "use client";
 
-// 深掘りリンクの発行・一覧・失効カード（ADR-0031 決定3 / FR-1.5）。
-// owner が期限・回数を決めてリンクを発行し、URL をコピーして利用者/開発者に配る。
-// 配布手段（メール等）は SANBA の外。失効の正は API 側の invite 文書（二段検証）。
-
 import { useCallback, useEffect, useState } from "react";
 
 import { Button, Card, CardTitle, Chip, Divider, Field, Input, Select } from "@/components/sanba";
@@ -15,7 +11,6 @@ import {
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 
-/** 期限プリセット（秒）。空文字 = 制限なし（API に ttl_seconds を送らない）。 */
 const TTL_CHOICES = [
   { value: "", label: "期限なし" },
   { value: String(24 * 3600), label: "1 日" },
@@ -33,7 +28,6 @@ function formatDate(iso: string | null): string {
   return new Date(iso).toLocaleString("ja-JP", { dateStyle: "medium", timeStyle: "short" });
 }
 
-/** リンク URL を組む（/join ページは PR5。トークンは URL-safe だが念のためエンコード）。 */
 export function inviteUrl(token: string, origin: string): string {
   return `${origin}/join/${encodeURIComponent(token)}`;
 }
@@ -61,7 +55,6 @@ export function ProductInvitesCard({ productId }: { productId: string }) {
   }, [reload]);
 
   async function handleIssue() {
-    // max_uses は 1 以上の整数のみ。空 = 制限なし。
     const uses = maxUses.trim() === "" ? undefined : Number(maxUses);
     if (uses !== undefined && (!Number.isInteger(uses) || uses < 1)) {
       setError("回数上限は 1 以上の整数で入力してください");

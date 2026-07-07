@@ -34,7 +34,6 @@ def _stub_analysis(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_sync_context_persists_inline() -> None:
-    # 実行中のループが無い同期環境では、書き込みは即時実行しタスクを積まない（従来挙動）。
     agent = _agent()
     agent.record_utterance("participant", "請求管理のアプリを作りたい")
     assert agent._persist_tasks == set(), "ループが無ければオフロードせず同期実行する"
@@ -44,21 +43,16 @@ def test_sync_context_persists_inline() -> None:
 
 @pytest.mark.asyncio
 async def test_async_context_offloads_then_drains(monkeypatch: pytest.MonkeyPatch) -> None:
-    # 音声ループ上では書き込みをスレッドへ逃がす。transcript は同期で即時反映され、
-    # 永続化はドレン後に完了する。
     _stub_analysis(monkeypatch)
     agent = _agent()
     agent.record_utterance("participant", "最初の発話")
     agent.record_utterance("participant", "次の発話")
 
-    # 分析入力の transcript は同期で積まれている（オフロードに依らず即時）。
     assert agent.transcript == ["[u1] participant: 最初の発話", "[u2] participant: 次の発話"]
-    # 書き込みは別タスクへ逃がされている（ループを塞がない）。
     assert agent._persist_tasks, "音声ループ上では永続化を背景タスクへ逃がす"
 
     await agent.drain_background_tasks()
 
-    # 到着順に保存される（_persist_lock による直列化）。
     stored = [u.text for u in agent._repo._mem_utterances["s1"]]
     assert stored == ["最初の発話", "次の発話"]
     assert agent._persist_tasks == set(), "ドレン後は永続化タスクが残らない"
@@ -66,7 +60,6 @@ async def test_async_context_offloads_then_drains(monkeypatch: pytest.MonkeyPatc
 
 @pytest.mark.asyncio
 async def test_persist_failure_is_fail_soft(monkeypatch: pytest.MonkeyPatch) -> None:
-    # 永続化の失敗は握り、会話は止めない（transcript は同期で保持済み・分析入力は失われない）。
     _stub_analysis(monkeypatch)
     agent = _agent()
 
@@ -77,5 +70,4 @@ async def test_persist_failure_is_fail_soft(monkeypatch: pytest.MonkeyPatch) -> 
     agent.record_utterance("participant", "落ちても会話は続く")
     await agent.drain_background_tasks()
 
-    # 例外は _on_persist_done がログして握り、transcript には残っている。
     assert agent.transcript == ["[u1] participant: 落ちても会話は続く"]

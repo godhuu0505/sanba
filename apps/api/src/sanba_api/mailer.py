@@ -22,7 +22,6 @@ from .observability import record_member_invite_email
 
 log = structlog.get_logger(__name__)
 
-# 接続・送信のタイムアウト（秒）。背景タスクでも無限に掴まない。
 _SMTP_TIMEOUT_SECONDS = 10.0
 
 

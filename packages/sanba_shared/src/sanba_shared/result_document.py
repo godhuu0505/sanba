@@ -20,8 +20,6 @@ from typing import Any
 from .models import DEFAULT_SESSION_TITLE, Requirement, RequirementStatus
 
 _PRIORITY_ORDER = ["must", "should", "could", "wont"]
-# 企画者にもそのまま見せられるよう MoSCoW に日本語注記を併記する（閲覧ドキュメント・
-# Issue 本文の両方で使うため、読み手に寄せた表記に統一する）。
 _PRIORITY_LABELS = {
     "must": "Must（必須）",
     "should": "Should（重要）",

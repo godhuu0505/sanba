@@ -1,11 +1,5 @@
 "use client";
 
-// アプリ詳細画面（ADR-0031 / FR-1.2, FR-1.3, FR-1.5）。
-// 基本情報（name/description）と利用者向け語彙の編集、前提リポジトリの紐づけ、
-// 深掘りリンクの発行・失効、アプリの削除を行う。
-// 認可の源泉は API（_require_product_access）: 非所有・不存在はどちらも 404 が返るので、
-// web は「見つからない」表示に平すだけで owner 判定を複製しない。
-
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
@@ -46,8 +40,6 @@ export default function ProductDetailPage() {
   const [product, setProduct] = useState<Product | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [name, setName] = useState("");
-  // URL キーワード（必須・グローバル一意 / ADR-0045）。既存アプリ（slug 未設定）は
-  // ここで設定するまで壁打ちを開始できないため、空のまま促す。
   const [slugInput, setSlugInput] = useState("");
   const [description, setDescription] = useState("");
   const [newTerm, setNewTerm] = useState("");
@@ -55,8 +47,6 @@ export default function ProductDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
-  // dev モード（authGate 素通し）は credential=null のまま API の AUTH_DEV_BYPASS に委ねる。
-  // 実モードでは gate がリダイレクトするまで fetch を抑止する（401 ノイズを出さない）。
   const canFetch = auth.devMode || auth.loggedIn;
   const credential = auth.credential;
 
@@ -69,7 +59,6 @@ export default function ProductDetailPage() {
         setDescription(p.description);
       })
       .catch((e) => {
-        // 404 = 不存在または非所有（存在秘匿）。どちらも「見つからない」に平す。
         if (e instanceof ApiError && e.status === 404) setNotFound(true);
         else setError("読み込みに失敗しました");
       });
@@ -80,7 +69,6 @@ export default function ProductDetailPage() {
     load();
   }, [canFetch, load]);
 
-  // 索引中はポーリングして状態（indexing → ready/partial/failed）を追う。
   useEffect(() => {
     if (product?.github_index_status !== "indexing") return;
     const timer = window.setInterval(load, 3000);
@@ -96,8 +84,6 @@ export default function ProductDetailPage() {
       setError("アプリ名を入力してください");
       return;
     }
-    // slug は必須（ADR-0045）。API と同じ規則へ正規化し、形式違反・予約語は送信前に
-    // 指摘する。既存アプリ（未設定）もこの保存で設定してもらう（設定するまで壁打ち開始不可）。
     const cleanedSlug = cleanSlug(slugInput);
     if (cleanedSlug === null) {
       setError(
@@ -128,7 +114,6 @@ export default function ProductDetailPage() {
     }
   }
 
-  // 語彙は操作ごとに即保存する（追加/削除のたびに PATCH。失敗時は表示を巻き戻す）。
   async function saveGlossary(next: string[]) {
     if (!product) return;
     const prev = product;
@@ -200,8 +185,6 @@ export default function ProductDetailPage() {
             <p className="text-[12px] text-sanba-muted">読み込み中…</p>
           </Card>
         ) : product.role === "member" ? (
-          // メンバー閲覧（ADR-0036）: 管理操作（編集・repo・リンク・削除）は出さず、
-          // 概要とメンバー一覧のみ。要件サンバの開始はホームの準備画面から行う。
           <>
             <Card>
               <CardTitle>{product.name}</CardTitle>
@@ -214,8 +197,6 @@ export default function ProductDetailPage() {
                 あなたはこのアプリのメンバーです。ホームの「壁打ちを始める」から
                 対象にこのアプリを選ぶと、要件サンバを始められます。
               </p>
-              {/* slug 設定済みならこのアプリの準備 URL へ直行。未設定（既存アプリ）は
-                  ホームへ送り、オーナーによる設定を待つ（ADR-0045）。 */}
               <Button
                 variant="gold"
                 block

@@ -1,15 +1,5 @@
 "use client";
 
-// アプリ全体の外枠（ヘッダー＋サイドメニュー＋本文）。SaaS の定番構成に倣い、
-// 遷移導線をサイドメニューに集約する（要望 2026-07「基本はサイドメニューから遷移」）。
-//  - PC（lg 以上）: サイドメニューを常時表示。開閉でき、閉じるとアイコン（lucide）のみの
-//    レール表示になる。開閉状態は localStorage に保つ（再訪時も維持）。
-//  - スマホ（lg 未満）: 常時表示は場所を食うため、ヘッダーのハンバーガーで開く
-//    オフキャンバス・ドロワー（scrim 付き）にする。項目/背景/Escape で閉じる。
-// 現在地の強調は current で受ける（ホームフローは History API で URL だけ書き換わり
-// ルート遷移しないため、usePathname では追随できない）。認可は遷移先 API が源泉で、
-// ここは導線のみ（SideMenu 踏襲）。
-
 import {
   ChevronLeft,
   Home,
@@ -27,7 +17,6 @@ import type { LucideIcon } from "lucide-react";
 import { Logo } from "@/components/sanba";
 import { cn } from "@/lib/utils";
 
-/** 現在地。自己リンクは aria-current を付け、押しても混乱しないよう強調表示にする。 */
 export type AppNavKey = "home" | "results" | "products";
 
 interface NavItem {
@@ -37,8 +26,6 @@ interface NavItem {
   Icon: LucideIcon;
 }
 
-// サイドメニューの遷移項目。ホーム・過去の要件一覧・アプリ管理をここに集約する
-//（要望: 過去のセッションとアプリ管理をサイドメニューへ移す／過去の要件一覧への導線を置く）。
 const NAV_ITEMS: NavItem[] = [
   { key: "home", href: "/", label: "ホーム", Icon: Home },
   { key: "results", href: "/results", label: "過去の要件一覧", Icon: ScrollText },
@@ -48,21 +35,14 @@ const NAV_ITEMS: NavItem[] = [
 const COLLAPSE_KEY = "sanba.sidebar.collapsed";
 
 export interface AppShellProps {
-  /** 現在表示中の画面。該当ナビ項目を現在地として強調する。 */
   current?: AppNavKey;
-  /** ヘッダーの見出し（画面名）。 */
   title?: React.ReactNode;
-  /** 戻る導線。渡すとヘッダー左に戻るボタンを出す。 */
   onBack?: () => void;
-  /** ヘッダー右のスロット（アカウントメニュー等）。 */
   headerRight?: React.ReactNode;
-  /** 本文の追加クラス（縦中央寄せなど画面ごとのレイアウト調整に使う）。 */
   mainClassName?: string;
   children: React.ReactNode;
 }
 
-// サイドメニューの中身（ロゴ＋遷移項目）。PC の常時表示とスマホのドロワーで共有する。
-// collapsed=true はアイコンのみのレール表示。onNavigate は項目押下時に呼ぶ（スマホは閉じる）。
 function SidebarBody({
   current,
   collapsed,
@@ -109,18 +89,13 @@ export function AppShell({
   mainClassName,
   children,
 }: AppShellProps) {
-  // PC のレール折りたたみ（アイコンのみ）。既定は展開（要望「デフォルトは常に表示」）。
-  // SSR とハイドレーション不一致を避けるため、初期は false で描画し、マウント後に復元する。
   const [collapsed, setCollapsed] = React.useState(false);
-  // スマホのドロワー開閉。既定は閉じ（ハンバーガーで開く）。
   const [mobileOpen, setMobileOpen] = React.useState(false);
 
   React.useEffect(() => {
     try {
       if (window.localStorage.getItem(COLLAPSE_KEY) === "1") setCollapsed(true);
-    } catch {
-      // localStorage 不可（プライベートブラウズ等）は既定の展開のまま。
-    }
+    } catch {}
   }, []);
 
   const toggleCollapsed = React.useCallback(() => {
@@ -128,14 +103,11 @@ export function AppShell({
       const next = !v;
       try {
         window.localStorage.setItem(COLLAPSE_KEY, next ? "1" : "0");
-      } catch {
-        // 保存できなくても表示は切り替える（永続化は副次）。
-      }
+      } catch {}
       return next;
     });
   }, []);
 
-  // Escape でドロワーを閉じる（a11y / AccountMenu と同じ）。開いている間だけ購読する。
   React.useEffect(() => {
     if (!mobileOpen) return;
     const onKey = (e: KeyboardEvent) => {
@@ -147,7 +119,6 @@ export function AppShell({
 
   return (
     <div className="sanba-screen-bg sanba-font flex min-h-dvh w-full text-sanba-cream">
-      {/* ── PC: 常時表示のサイドメニュー（開閉でアイコンのみのレールへ）─────────── */}
       <aside
         className={cn(
           "hidden shrink-0 flex-col border-r border-sanba-border bg-sanba-surface-strong p-[12px] transition-[width] duration-200 ease-out lg:flex",
@@ -187,7 +158,6 @@ export function AppShell({
         </button>
       </aside>
 
-      {/* ── スマホ: オフキャンバス・ドロワー（scrim 付き）──────────────────────── */}
       {mobileOpen && (
         <div className="fixed inset-0 z-50 flex lg:hidden">
           <button
@@ -220,10 +190,8 @@ export function AppShell({
         </div>
       )}
 
-      {/* ── 本文カラム（ヘッダー＋スクロールする本文）──────────────────────────── */}
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex h-[52px] shrink-0 items-center gap-[10px] border-b border-sanba-border-strong bg-sanba-surface-strong px-[14px]">
-          {/* スマホはサイドメニューが隠れるためハンバーガーを出す（PC は常時表示なので不要）。 */}
           <button
             type="button"
             aria-haspopup="menu"
@@ -244,7 +212,6 @@ export function AppShell({
               <ChevronLeft size={16} aria-hidden />
             </button>
           )}
-          {/* スマホはサイドメニューのロゴが隠れるため、ヘッダーにブランドを添える。 */}
           <Link href="/" aria-label="SANBA ホーム" className="flex items-center lg:hidden">
             <Logo size="sm" wordmark={false} />
           </Link>
@@ -261,8 +228,6 @@ export function AppShell({
             mainClassName,
           )}
         >
-          {/* ページ遷移のさりげない導入（フェード＋僅かな上げ）。current で再マウントし直す。
-              flex-1 の flex 縦積みにし、本文側は mx-auto（上寄せ）や m-auto（上下中央）で寄せる。 */}
           <div key={current} className="sanba-page-enter flex flex-1 flex-col">
             {children}
           </div>

@@ -2,8 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import { choiceReducer, initialChoiceState } from "./choiceDisclosure";
 
-// 選択肢の開示レベル（最小 ⇄ 一覧 ⇄ 詳細 ⇄ 比較）の純レデューサ。
-// 仕様: docs/reference/conversation-experience.md §4。
 describe("choiceReducer（選択肢4モード切替）", () => {
   it("初期は hidden（問いが無い）", () => {
     expect(initialChoiceState.mode).toBe("hidden");
@@ -73,9 +71,9 @@ describe("choiceReducer（選択肢4モード切替）", () => {
       { type: "openDetail", index: 2 },
     );
     s = choiceReducer(s, { type: "focusNext" });
-    expect(s.focused).toBe(0); // 2 → wrap → 0
+    expect(s.focused).toBe(0);
     s = choiceReducer(s, { type: "focusPrev" });
-    expect(s.focused).toBe(2); // 0 → wrap → 2
+    expect(s.focused).toBe(2);
   });
 
   it("select すると hidden に閉じる（回答確定→選択肢UIは閉じる）", () => {

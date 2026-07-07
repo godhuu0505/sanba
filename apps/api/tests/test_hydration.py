@@ -25,7 +25,6 @@ def _fake_user() -> AuthUser:
 @pytest.fixture(autouse=True)
 def _assume_logged_in() -> Iterator[None]:
     app.dependency_overrides[require_user] = _fake_user
-    # 各テストはインメモリ読み出しを使う（Firestore 無し環境）。
     _read_repo._mem_requirements.clear()
     _read_repo._mem_detections.clear()
     _read_repo._mem_questions.clear()
@@ -43,7 +42,6 @@ def _auth(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-# ── 要件 status の軸マッピング ─────────────────────────────────────────────
 def test_requirement_status_maps_admin_axis_to_conversation_axis() -> None:
     from sanba_api.repository import requirement_doc_to_contract
 
@@ -53,15 +51,12 @@ def test_requirement_status_maps_admin_axis_to_conversation_axis() -> None:
             doc["status"] = admin
         return requirement_doc_to_contract(doc)["status"]
 
-    # save_requirement 由来（管理軸 draft 既定）や approved は会話上「確定」。
     assert status_of("draft") == "confirmed"
     assert status_of("approved") == "confirmed"
     assert status_of(None) == "confirmed"
-    # 管理画面で却下されたものだけ会話上も未確定（起票/確定の対象外）。
     assert status_of("rejected") == "draft"
 
 
-# ── 認可 ──────────────────────────────────────────────────────────────────
 def test_requirements_requires_session_token() -> None:
     res = client.get("/api/sessions/sess-1/requirements")
     assert res.status_code == 401
@@ -78,7 +73,6 @@ def test_requirements_rejects_tampered_token() -> None:
     assert res.status_code == 403
 
 
-# ── GET /requirements（P0）────────────────────────────────────────────────
 def test_requirements_snapshot_shape() -> None:
     _read_repo._seed_requirement(
         "sess-1",
@@ -97,14 +91,12 @@ def test_requirements_snapshot_shape() -> None:
     assert body["seq"] == 0
     assert len(body["items"]) == 1
     item = body["items"][0]
-    # 契約 §3 の requirement 形（citations / status 補完）。
     assert item["id"] == "r1"
     assert item["priority"] == "must"
     assert item["citations"] == []
     assert item["status"] == "confirmed"
 
 
-# ── GET /detections?open=1（P1）───────────────────────────────────────────
 def test_detections_returns_only_unresolved() -> None:
     _read_repo._seed_detection(
         "sess-2", {"id": "d1", "kind": "gap", "summary": "性能未確認", "resolved": False}
@@ -119,7 +111,6 @@ def test_detections_returns_only_unresolved() -> None:
 
 
 def test_requirements_returns_persisted_seq_boundary() -> None:
-    # 適用済み最大 seq をハイドレーション境界として返す（seq=0 固定にしない）。
     _read_repo._seed_requirement(
         "sess-seq",
         {"id": "r1", "statement": "x", "category": "functional", "priority": "must"},
@@ -129,7 +120,6 @@ def test_requirements_returns_persisted_seq_boundary() -> None:
     assert res.json()["seq"] == 42
 
 
-# ── GET /questions/current（ADR-0020）───────────────────────────────────────
 def test_current_question_requires_session_token() -> None:
     res = client.get("/api/sessions/sess-q/questions/current")
     assert res.status_code == 401
@@ -154,14 +144,13 @@ def test_current_question_returns_active_question_with_asked_seq() -> None:
     res = client.get("/api/sessions/sess-q/questions/current", headers=_auth(_token("sess-q")))
     assert res.status_code == 200
     body = res.json()
-    assert body["seq"] == 5  # asked_seq を順序情報として返す
+    assert body["seq"] == 5
     assert body["question"]["id"] == "q1"
     assert body["question"]["prompt"].startswith("並び順")
     assert body["question"]["options"][0]["value"] == "関連度順"
 
 
 def test_current_question_returns_null_with_cleared_seq_for_tombstone() -> None:
-    # §5-4: 回答済み（tombstone）でも seq=cleared_seq を返す（遅延 null で新しい問いを消さない）。
     _read_repo._seed_question(
         "sess-q",
         {"id": "q1", "cleared": True, "cleared_seq": 8},
@@ -181,7 +170,6 @@ def test_current_question_returns_null_seq_zero_when_unset() -> None:
     assert body["seq"] == 0
 
 
-# ── POST /finalize ──────────────────────────────────────────────────────────
 def test_finalize_requires_session_token() -> None:
     res = client.post("/api/sessions/sess-fin/finalize")
     assert res.status_code == 401
@@ -212,7 +200,6 @@ def test_finalize_marks_session_and_counts_confirmed() -> None:
             "statement": "却下",
             "category": "scope",
             "priority": "should",
-            # 管理画面で却下された要件は会話上の確定からも外れる（contract: draft）。
             "status": "rejected",
         },
     )
@@ -220,14 +207,12 @@ def test_finalize_marks_session_and_counts_confirmed() -> None:
     assert res.status_code == 200
     body = res.json()
     assert body["finalized"] is True
-    assert body["confirmed_count"] == 1  # 却下を除く確定要件のみ数える
-    # セッションが finalized に遷移し、確定件数が刻まれる（不可逆マーカ）。
+    assert body["confirmed_count"] == 1
     meta = _repo.get_session(sid)
     assert meta is not None
     assert meta.status == "finalized"
     assert meta.finalized_count == 1
     assert meta.finalized_at is not None
-    # 確定時の要件 ID スナップショット。却下を除く確定要件のみ。
     assert meta.finalized_requirement_ids == ["c1"]
 
 
@@ -242,8 +227,6 @@ def test_finalize_approves_confirmed_requirements_for_preservation() -> None:
 
     created = client.post("/api/sessions", json={"roles": ["pm"], "consent_acknowledged": True})
     sid = created.json()["session_id"]
-    # 書き込み側（_repo）と読み出し側（_read_repo）はメモリ fallback では別ストアのため
-    # 両方に同じ要件を置く（本番は同一 Firestore）。
     _repo.save_requirement(
         sid,
         Requirement(
@@ -261,7 +244,6 @@ def test_finalize_approves_confirmed_requirements_for_preservation() -> None:
     stored = _repo.get_requirement(sid, "c1")
     assert stored is not None
     assert stored.status.value == "approved"
-    # 承認主体は確定操作の join 済みトークンの sub。
     assert stored.approved_by == "owner-123456789"
     assert stored.approved_at is not None
 
@@ -270,7 +252,6 @@ def test_finalize_survives_missing_requirement_on_preservation() -> None:
     """読み出し側にだけ在る要件（TTL 失効等）は保全をスキップし finalize は成立する。"""
     created = client.post("/api/sessions", json={"roles": ["pm"], "consent_acknowledged": True})
     sid = created.json()["session_id"]
-    # _repo（書き込み側）には無い = set_requirement_status が RequirementNotFound を投げる状況。
     _read_repo._seed_requirement(
         sid, {"id": "gone", "statement": "消えた", "category": "scope", "priority": "should"}
     )
@@ -280,7 +261,6 @@ def test_finalize_survives_missing_requirement_on_preservation() -> None:
 
 
 def test_finalize_rejects_when_unresolved_detections_remain() -> None:
-    # 07 判定の「未解消 0 件で確定可」をサーバ側でも担保する。
     created = client.post("/api/sessions", json={"roles": ["pm"], "consent_acknowledged": True})
     sid = created.json()["session_id"]
     _read_repo._seed_detection(
@@ -294,7 +274,6 @@ def test_finalize_rejects_when_unresolved_detections_remain() -> None:
 
 
 def test_finalize_is_idempotent_and_keeps_first_snapshot() -> None:
-    # 再確定/二重 POST しても最初のスナップショット件数を保つ（上書きしない）。
     created = client.post("/api/sessions", json={"roles": ["pm"], "consent_acknowledged": True})
     sid = created.json()["session_id"]
     _read_repo._seed_requirement(
@@ -306,13 +285,12 @@ def test_finalize_is_idempotent_and_keeps_first_snapshot() -> None:
     assert meta1 is not None
     first_at = meta1.finalized_at
 
-    # 確定後に要件が増えても、再 finalize は最初の件数・刻を変えない。
     _read_repo._seed_requirement(
         sid, {"id": "c2", "statement": "後から追加", "category": "scope", "priority": "should"}
     )
     second = client.post(f"/api/sessions/{sid}/finalize", headers=_auth(_token(sid)))
     assert second.status_code == 200
-    assert second.json()["confirmed_count"] == 1  # 1 のまま（2 にならない）
+    assert second.json()["confirmed_count"] == 1
     meta2 = _repo.get_session(sid)
     assert meta2 is not None
     assert meta2.finalized_count == 1
@@ -320,7 +298,6 @@ def test_finalize_is_idempotent_and_keeps_first_snapshot() -> None:
 
 
 def test_finalize_idempotent_even_with_late_open_detection() -> None:
-    # 既 finalized なら、後から open 検知が付いても再 POST は 409 にならず保存値を返す。
     created = client.post("/api/sessions", json={"roles": ["pm"], "consent_acknowledged": True})
     sid = created.json()["session_id"]
     _read_repo._seed_requirement(
@@ -328,7 +305,6 @@ def test_finalize_idempotent_even_with_late_open_detection() -> None:
     )
     first = client.post(f"/api/sessions/{sid}/finalize", headers=_auth(_token(sid)))
     assert first.status_code == 200
-    # 確定後に遅延した agent が未解消検知を保存しても、再 POST は冪等に成功する。
     _read_repo._seed_detection(
         sid, {"id": "d-late", "kind": "gap", "summary": "後追い", "resolved": False}
     )
@@ -337,7 +313,6 @@ def test_finalize_idempotent_even_with_late_open_detection() -> None:
     assert again.json()["confirmed_count"] == 1
 
 
-# ── POST /export（P1）──────────────────────────────────────────────────────
 def test_export_disabled_by_default() -> None:
     res = client.post("/api/sessions/sess-3/export", headers=_auth(_token("sess-3")))
     assert res.status_code == 200
@@ -369,7 +344,6 @@ def _enable_github(monkeypatch: pytest.MonkeyPatch) -> dict[str, object]:
 
 
 def test_export_uses_session_selected_repo(monkeypatch: pytest.MonkeyPatch) -> None:
-    # 02 準備で選んだリポジトリへ起票する（ADR-0027）。環境変数 "o/r" ではなく選択値が勝つ。
     created = client.post(
         "/api/sessions",
         json={"roles": ["pm"], "consent_acknowledged": True, "github_repo": "acme/product-a"},
@@ -385,13 +359,10 @@ def test_export_uses_session_selected_repo(monkeypatch: pytest.MonkeyPatch) -> N
     res = client.post(f"/api/sessions/{sid}/export", headers=_auth(_token(sid)))
     assert res.json()["exported"] is True
     assert captured["repo"] == "acme/product-a"
-    # 確定要件の priority / category からラベルが機械的に付く（sanba は常に付与）。
     assert captured["labels"] == ["sanba", "priority:must", "functional"]
 
 
 def test_export_respects_explicit_opt_out(monkeypatch: pytest.MonkeyPatch) -> None:
-    # 空文字 = 明示的な「連携しない」。環境変数 "o/r" が設定されていてもフォールバックしない
-    # 「連携しない」を選んだのに既定リポへ起票される事故を防ぐ。
     created = client.post(
         "/api/sessions",
         json={"roles": ["pm"], "consent_acknowledged": True, "github_repo": ""},
@@ -407,14 +378,12 @@ def test_export_respects_explicit_opt_out(monkeypatch: pytest.MonkeyPatch) -> No
     res = client.post(f"/api/sessions/{sid}/export", headers=_auth(_token(sid)))
     body = res.json()
     assert body["exported"] is False
-    assert "repo" not in captured  # create_issue は呼ばれない
+    assert "repo" not in captured
 
 
 def test_export_fallback_repo_outside_allowlist_is_blocked(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # 一覧・保存で絞っても、フォールバック先（環境変数の既定リポ）が許可リスト外なら
-    # 起票しない（fail-closed）。旧クライアントの github_repo 省略経路を塞ぐ。
     created = client.post("/api/sessions", json={"roles": ["pm"], "consent_acknowledged": True})
     sid = created.json()["session_id"]
     _read_repo._seed_requirement(
@@ -429,13 +398,12 @@ def test_export_fallback_repo_outside_allowlist_is_blocked(
     body = res.json()
     assert body["exported"] is False
     assert body["reason"] == "github repo not allowed"
-    assert "repo" not in captured  # create_issue は呼ばれない
+    assert "repo" not in captured
 
 
 def test_export_falls_back_to_env_repo_without_selection(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # リポジトリ未選択のセッションは従来どおり環境変数 GITHUB_REPO へ（ADR-0027 の互換）。
     created = client.post("/api/sessions", json={"roles": ["pm"], "consent_acknowledged": True})
     sid = created.json()["session_id"]
     _read_repo._seed_requirement(
@@ -451,7 +419,6 @@ def test_export_falls_back_to_env_repo_without_selection(
 
 
 def test_export_uses_only_confirmed_requirements(monkeypatch: pytest.MonkeyPatch) -> None:
-    # 却下(rejected)を Issue 化せず、count は確定要件数に一致する（会話確定軸）。
     created = client.post("/api/sessions", json={"roles": ["pm"], "consent_acknowledged": True})
     sid = created.json()["session_id"]
     _read_repo._seed_requirement(
@@ -461,7 +428,6 @@ def test_export_uses_only_confirmed_requirements(monkeypatch: pytest.MonkeyPatch
             "statement": "確定",
             "category": "functional",
             "priority": "must",
-            # 管理軸 approved も会話上は確定（contract: confirmed）。
             "status": "approved",
         },
     )
@@ -476,7 +442,6 @@ def test_export_uses_only_confirmed_requirements(monkeypatch: pytest.MonkeyPatch
         },
     )
     captured = _enable_github(monkeypatch)
-    # export は finalize 時に凍結した集合を起票する。まず確定する。
     client.post(f"/api/sessions/{sid}/finalize", headers=_auth(_token(sid)))
 
     res = client.post(f"/api/sessions/{sid}/export", headers=_auth(_token(sid)))
@@ -487,7 +452,6 @@ def test_export_uses_only_confirmed_requirements(monkeypatch: pytest.MonkeyPatch
 
 
 def test_export_uses_finalized_snapshot_not_recomputed(monkeypatch: pytest.MonkeyPatch) -> None:
-    # 受け入れ基準: finalize 後に要件が増えても export は確定時集合のみ起票する。
     created = client.post("/api/sessions", json={"roles": ["pm"], "consent_acknowledged": True})
     sid = created.json()["session_id"]
     _read_repo._seed_requirement(
@@ -498,7 +462,6 @@ def test_export_uses_finalized_snapshot_not_recomputed(monkeypatch: pytest.Monke
     fin = client.post(f"/api/sessions/{sid}/finalize", headers=_auth(_token(sid)))
     assert fin.json()["confirmed_count"] == 1
 
-    # 確定後に遅延 agent が新しい確定要件を追加しても、export には現れない。
     _read_repo._seed_requirement(
         sid,
         {"id": "c2", "statement": "後から追加", "category": "scope", "priority": "should"},
@@ -506,7 +469,7 @@ def test_export_uses_finalized_snapshot_not_recomputed(monkeypatch: pytest.Monke
     res = client.post(f"/api/sessions/{sid}/export", headers=_auth(_token(sid)))
     body = res.json()
     assert body["exported"] is True
-    assert body["count"] == 1  # 確定時集合（c1）のみ。c2 は含めない。
+    assert body["count"] == 1
     assert "確定済み" in str(captured["body"])
     assert "後から追加" not in str(captured["body"])
 
@@ -514,7 +477,6 @@ def test_export_uses_finalized_snapshot_not_recomputed(monkeypatch: pytest.Monke
 def test_export_keeps_finalized_requirement_even_if_later_rejected(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # 確定時集合は不可逆。finalize 後に却下されても確定時に含まれていれば起票され続ける。
     created = client.post("/api/sessions", json={"roles": ["pm"], "consent_acknowledged": True})
     sid = created.json()["session_id"]
     _read_repo._seed_requirement(
@@ -524,7 +486,6 @@ def test_export_keeps_finalized_requirement_even_if_later_rejected(
     captured = _enable_github(monkeypatch)
     client.post(f"/api/sessions/{sid}/finalize", headers=_auth(_token(sid)))
 
-    # 確定後に管理画面で却下しても、確定時スナップショットに含まれるので起票対象に残る。
     _read_repo._mem_requirements[sid][0]["status"] = "rejected"
     res = client.post(f"/api/sessions/{sid}/export", headers=_auth(_token(sid)))
     body = res.json()
@@ -535,15 +496,12 @@ def test_export_keeps_finalized_requirement_even_if_later_rejected(
 def test_export_falls_back_for_legacy_finalized_without_snapshot(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # 後方互換: 本機能デプロイ前に finalized（snapshot 欠落・count>0）だったセッションは、
-    # 空 Issue ではなく確定要件を再計算して起票する。
     created = client.post("/api/sessions", json={"roles": ["pm"], "consent_acknowledged": True})
     sid = created.json()["session_id"]
     _read_repo._seed_requirement(
         sid,
         {"id": "c1", "statement": "旧確定要件", "category": "functional", "priority": "must"},
     )
-    # 旧データを模す: finalized だが finalized_requirement_ids は空、count は確定時の値。
     meta = _repo.get_session(sid)
     assert meta is not None
     _repo._mem_sessions[sid] = meta.model_copy(
@@ -558,7 +516,6 @@ def test_export_falls_back_for_legacy_finalized_without_snapshot(
 
 
 def test_finalize_then_export_is_idempotent(monkeypatch: pytest.MonkeyPatch) -> None:
-    # 二重 finalize / finalize 後の複数回 export が同じ確定時集合を返す（冪等）。
     created = client.post("/api/sessions", json={"roles": ["pm"], "consent_acknowledged": True})
     sid = created.json()["session_id"]
     _read_repo._seed_requirement(
@@ -567,7 +524,6 @@ def test_finalize_then_export_is_idempotent(monkeypatch: pytest.MonkeyPatch) -> 
     )
     _enable_github(monkeypatch)
     first_fin = client.post(f"/api/sessions/{sid}/finalize", headers=_auth(_token(sid)))
-    # 二重 finalize しても確定時集合（ID）は変わらない。
     _read_repo._seed_requirement(
         sid,
         {"id": "c2", "statement": "後から", "category": "scope", "priority": "should"},
@@ -576,7 +532,6 @@ def test_finalize_then_export_is_idempotent(monkeypatch: pytest.MonkeyPatch) -> 
     assert first_fin.json()["confirmed_count"] == second_fin.json()["confirmed_count"] == 1
     assert _repo.get_session(sid).finalized_requirement_ids == ["c1"]
 
-    # export を複数回叩いても同じ件数（確定時集合）を返す。
     first_exp = client.post(f"/api/sessions/{sid}/export", headers=_auth(_token(sid)))
     second_exp = client.post(f"/api/sessions/{sid}/export", headers=_auth(_token(sid)))
     assert first_exp.json()["count"] == second_exp.json()["count"] == 1

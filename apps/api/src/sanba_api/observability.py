@@ -16,9 +16,6 @@ from .config import settings
 log = structlog.get_logger(__name__)
 _initialised = False
 
-# 認証イベントのカウンタ。MeterProvider 未設定でも OTel API は no-op meter を返すため
-# 常に安全に呼べる (OTLP 未設定のローカルでは送信されないだけ)。新しい認証経路を必ず
-# メトリクスに通すための一点 (CLAUDE.md: 観測できないものは運用できない)。
 _auth_counter = metrics.get_meter("sanba_api.auth").create_counter(
     "sanba_auth_events_total",
     description="Google ログイン検証イベント数 (result ごと)",
@@ -33,9 +30,6 @@ def record_auth_event(result: str) -> None:
         pass
 
 
-# join エンドポイントのレートリミット発火カウンタ。IP 単位は
-# 認証より前に 429 で短絡するため、auth イベント（sanba_auth_events_total）には現れない。
-# DoS 緩和が本番で実際に発動しているかを計測する（CLAUDE.md 原則3）。
 _rate_limit_counter = metrics.get_meter("sanba_api.ratelimit").create_counter(
     "sanba_join_rate_limited_total",
     description="join レートリミットで 429 短絡した回数 (limiter=ip/invite ごと)",
@@ -54,8 +48,6 @@ def record_rate_limited(limiter: str = "ip") -> None:
         pass
 
 
-# マルチモーダル素材（画像/動画）アップロードのカウンタ。kind/result で分類し、
-# 「何枚の素材が、解析まで通ったか」を計測する（契約 §5 / CLAUDE.md 原則3）。
 _asset_counter = metrics.get_meter("sanba_api.assets").create_counter(
     "sanba_asset_uploads_total",
     description="画像/動画アップロード数 (kind/result ごと)",
@@ -70,8 +62,6 @@ def record_asset_upload(kind: str, result: str) -> None:
         pass
 
 
-# 現在質問ハイドレーション（GET /questions/current）のカウンタ（ADR-0020 §5）。
-# requirements_hydrated と同様に「未回答の問いが復元できたか」を計測する（契約 §5）。
 _question_hydration_counter = metrics.get_meter("sanba_api.questions").create_counter(
     "sanba_question_hydrations_total",
     description="現在質問ハイドレーション数 (result=question/empty ごと)",
@@ -86,11 +76,6 @@ def record_question_hydration(has_question: bool) -> None:
         pass
 
 
-# web UI 由来の素材イベント（投入種別選択・中断・サーバ破棄）のカウンタ。
-# クライアント観測を第三者分析 SDK ではなくサーバ側 OTLP に集約する（CLAUDE.md 原則3 /
-# 既存 metrics 基盤に一致する最小構成）。PII/自由記述は載せない: event/source/status/result
-# は列挙値のみ（main.py の許可リストで検証し、未知値は other へ丸めて高カーディナリティ/PII
-# 流入を防ぐ）。
 _material_event_counter = metrics.get_meter("sanba_api.materials").create_counter(
     "sanba_material_events_total",
     description="素材 UI イベント数 (event/source/status/result ごと)",
@@ -119,8 +104,6 @@ def record_material_event(
         pass
 
 
-# product 管理イベント（登録/更新/削除/repo 紐づけ / ADR-0031）のカウンタ。深掘りリンクの
-# 準備がどれだけ行われているかを観測する（CLAUDE.md 原則3）。event は列挙値のみ・PII 非送信。
 _product_counter = metrics.get_meter("sanba_api.products").create_counter(
     "sanba_product_events_total",
     description="product 管理イベント数 (event=created/updated/deleted/github_set ごと / ADR-0031)",
@@ -135,8 +118,6 @@ def record_product_event(event: str) -> None:
         pass
 
 
-# product メンバー管理イベント（ADR-0036）のカウンタ。招待の発行〜応答のファネルと
-# メンバーの増減を観測する（CLAUDE.md 原則3）。event は列挙値のみ・PII 非送信。
 _member_counter = metrics.get_meter("sanba_api.products").create_counter(
     "sanba_product_member_events_total",
     description=(
@@ -156,8 +137,6 @@ def record_member_event(event: str) -> None:
         pass
 
 
-# メンバー招待メール（ADR-0036 決定3）の送信結果カウンタ。skipped（SMTP 未設定）が
-# 本番で増えるのは設定漏れのシグナル。result は列挙値のみ・宛先等の PII は送らない。
 _member_invite_email_counter = metrics.get_meter("sanba_api.products").create_counter(
     "sanba_member_invite_emails_total",
     description="メンバー招待メールの送信数 (result=sent/failed/skipped / ADR-0036)",
@@ -172,8 +151,6 @@ def record_member_invite_email(result: str) -> None:
         pass
 
 
-# ゲスト入場（ADR-0032 / FR-2.1）のカウンタ。匿名入口の成功と拒否理由を分計し、
-# abuse 兆候（flag off への試行・scope 不一致・レート超過の急増）を本番で追える形にする。
 _guest_join_counter = metrics.get_meter("sanba_api.guest").create_counter(
     "sanba_guest_join_total",
     description=(
@@ -190,10 +167,6 @@ def record_guest_join(result: str) -> None:
         pass
 
 
-# リンク入場後の離脱（web /join → 会話開始前の中断 / FR-2.1 の離脱観測）。
-# join 成立（sanba_guest_join_total{result=granted}）と会話成立（agent 側ログ）の間の
-# 落ち込みを web からの join.abort telemetry で埋める。result は列挙値のみ
-# （aborted=利用者の中断 / error=接続・マイク失敗）・PII 非送信。
 _join_ui_counter = metrics.get_meter("sanba_api.guest").create_counter(
     "sanba_join_ui_events_total",
     description="リンク入場 UI の離脱イベント数 (event=join.abort, result=aborted/error)",
@@ -208,9 +181,6 @@ def record_join_ui_event(event: str, result: str = "none") -> None:
         pass
 
 
-# 本人セッション一覧 (GET /api/sessions/mine) のカウンタ。ホーム「過去の要件を見る」
-# に供給する一覧の取得を計測する (契約 §5 / CLAUDE.md 原則3)。リクエストを 1 ずつ計上し
-# (record_auth_event と統一)、result=empty/listed で「履歴が空のユーザーの頻度」を観測する。
 _my_sessions_counter = metrics.get_meter("sanba_api.sessions").create_counter(
     "sanba_my_sessions_listed_total",
     description="本人セッション一覧取得リクエスト数 (result=empty/listed ごと)",
@@ -230,9 +200,6 @@ def record_my_sessions_listed(count: int) -> None:
         pass
 
 
-# 本人セッションの要件絵巻閲覧 (GET /api/sessions/mine/{id}/requirements) のカウンタ。
-# ホーム履歴からの詳細閲覧ファネルを観測する (CLAUDE.md 原則3)。
-# record_my_sessions_listed と同じく 1 リクエスト 1 計上・result=empty/viewed。
 _my_requirements_counter = metrics.get_meter("sanba_api.sessions").create_counter(
     "sanba_my_requirements_viewed_total",
     description="本人セッションの要件絵巻閲覧リクエスト数 (result=empty/viewed ごと)",
@@ -251,9 +218,6 @@ def record_my_requirements_viewed(count: int) -> None:
         pass
 
 
-# 要件結果ドキュメント生成 (GET /api/sessions/mine/{id}/result-document) のカウンタ。
-# どの audience 向けが読まれ、登録フォーマットと既定のどちらが使われたかを観測する
-# (CLAUDE.md 原則3。既定ばかりならアプリ管理画面の登録導線に課題がある合図)。
 _result_document_counter = metrics.get_meter("sanba_api.sessions").create_counter(
     "sanba_result_document_rendered_total",
     description="要件結果ドキュメントの生成数 (audience / format=custom|default ごと)",

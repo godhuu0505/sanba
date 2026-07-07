@@ -58,7 +58,6 @@ def test_requirements_grouped_by_moscow_with_category_tag() -> None:
             _req("ログインできる", priority="must", category="non_functional"),
         ],
     )
-    # Must が先・見出しは ###・分類タグを併記。
     assert out.index("### Must（必須）") < out.index("### Should（重要）")
     assert "- [non_functional] ログインできる" in out
     assert "- [functional] CSV を出力できる" in out
@@ -75,7 +74,6 @@ def test_requirements_plain_hides_dev_vocabulary() -> None:
 
 
 def test_rejected_requirements_are_excluded() -> None:
-    # 契約形では rejected は status=draft に落ちている（confirmed のみ載せる）。
     out = _render(
         "{{requirements}}",
         requirements=[_req("却下済み", status="draft"), _req("確定済み")],
@@ -102,7 +100,6 @@ def test_empty_optional_fields_fall_back_to_placeholder_text() -> None:
 
 
 def test_substituted_values_are_not_rescanned_for_placeholders() -> None:
-    # 発話由来の要件文にプレースホルダを偽装されても、そのまま文字列として残る。
     out = _render(
         "{{requirements_plain}}",
         requirements=[_req("{{check_items}} を表示したい")],
@@ -118,7 +115,6 @@ def test_unknown_placeholders_are_left_as_is() -> None:
 def test_issue_title_uses_generated_session_title() -> None:
     from sanba_shared.result_document import issue_title
 
-    # 要件確定時に生成したタイトルをそのまま Issue 標題に使う（api / agent で同形）。
     assert issue_title("在庫管理アプリの通知要件", "sess-1") == "在庫管理アプリの通知要件"
 
 
@@ -126,7 +122,6 @@ def test_issue_title_falls_back_to_session_id_when_title_is_default_or_empty() -
     from sanba_shared.models import DEFAULT_SESSION_TITLE
     from sanba_shared.result_document import issue_title
 
-    # 生成前（既定タイトルのまま）・空文字は従来のセッションID書式へフォールバックする。
     assert issue_title(DEFAULT_SESSION_TITLE, "sess-1") == "要件定義: sess-1"
     assert issue_title("", "sess-1") == "要件定義: sess-1"
     assert issue_title("   ", "sess-1") == "要件定義: sess-1"
@@ -183,7 +178,6 @@ def test_requirements_to_render_dicts_maps_models_to_contract_shape() -> None:
         "priority": "must",
         "status": "confirmed",
     }
-    # rejected は非確定（draft）に落ち、レンダラが文書から除外する。
     assert dicts[1]["status"] == "draft"
     out = render_result_document(
         "{{requirements}}",
@@ -199,7 +193,6 @@ def test_requirements_to_render_dicts_maps_models_to_contract_shape() -> None:
 
 
 def test_issue_labels_derive_from_priority_and_category() -> None:
-    # 決定的な順序（sanba → priority は MoSCoW 順 → category は名前順）で重複は除く。
     labels = requirements_to_issue_labels(
         [
             _req("A", priority="should", category="functional"),
@@ -217,7 +210,6 @@ def test_issue_labels_derive_from_priority_and_category() -> None:
 
 
 def test_issue_labels_ignore_non_confirmed_but_keep_base() -> None:
-    # 非確定（rejected→draft）は集計から外す。確定が無くても sanba だけは残す。
     labels = requirements_to_issue_labels(
         [
             _req("A", priority="must", category="functional", status="draft"),

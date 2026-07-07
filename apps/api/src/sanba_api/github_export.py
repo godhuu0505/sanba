@@ -43,7 +43,6 @@ def list_repos(  # pragma: no cover - network
                     params={"per_page": per_page, "sort": "updated", "page": page},
                 )
                 if res.status_code != 200:
-                    # レート制限・一時障害。部分結果を候補として返さない（完全 or 手入力）。
                     log.warning("github_list_repos_failed", status=res.status_code, page=page)
                     return []
                 body = res.json()
@@ -55,7 +54,7 @@ def list_repos(  # pragma: no cover - network
                     if isinstance(r, dict) and isinstance(r.get("full_name"), str)
                 )
                 if len(body) < per_page:
-                    break  # 最終ページ
+                    break
     except Exception as exc:
         log.warning("github_list_repos_failed", error=str(exc))
         return []

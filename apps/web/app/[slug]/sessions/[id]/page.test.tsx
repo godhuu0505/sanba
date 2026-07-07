@@ -2,10 +2,6 @@
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-// 会話中セッション URL（/{slug}/sessions/{id} / ADR-0045）への直アクセス・リロードの受け皿:
-// slug が本人のアプリ一覧に解決できれば /results/{id} へ送り、解決できなければ
-// 複合エラー画面（不存在と権限なしを区別しない）に落とすことを検証する。
-
 const authState = {
   credential: "id-token" as string | null,
   profile: null,
@@ -21,9 +17,6 @@ vi.mock("@/lib/auth", () => ({ useAuth: () => authState }));
 
 const replace = vi.fn();
 const push = vi.fn();
-// router は毎レンダー同一の参照を返す（Next.js 実物と同じ安定性）。呼び出しごとに新しい
-// オブジェクトを返すと、ページの effect（deps に router）が再レンダーごとに再実行され、
-// mock*Once を使い切った 2 回目の fetchMyProducts が undefined を返して落ちる（CI で顕在化）。
 const routerMock = { replace, push, refresh: vi.fn() };
 vi.mock("next/navigation", () => ({
   useRouter: () => routerMock,
@@ -45,8 +38,6 @@ describe("会話中セッション URL の直アクセス（/{slug}/sessions/{id
   beforeEach(() => {
     authState.loggedIn = true;
     replace.mockClear();
-    // 既定は空一覧（= 複合エラー側に倒れる fail-closed）。各テストは mock*Once で上書きし、
-    // 想定外の追加呼び出しがあっても promise を返す（undefined.then で落とさない）。
     fetchMyProducts.mockReset().mockResolvedValue([]);
   });
   afterEach(() => cleanup());

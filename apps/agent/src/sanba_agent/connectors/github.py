@@ -41,7 +41,6 @@ class GitHubConnector:
     """Thin GitHub REST client. Only used when the connector is enabled."""
 
     def __init__(self, token: str, repo: str) -> None:
-        # repo is "owner/name"
         self.token = token
         self.repo = repo
 

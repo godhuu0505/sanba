@@ -27,7 +27,7 @@ def get_tracer(name: str) -> Any:
         from opentelemetry import trace
 
         return trace.get_tracer(name)
-    except Exception:  # pragma: no cover - otel optional
+    except Exception:  # pragma: no cover
         return None
 
 
@@ -71,7 +71,7 @@ def setup_observability() -> None:
                 endpoint=settings.otel_exporter_otlp_endpoint,
                 insecure=settings.otel_exporter_insecure,
             )
-        else:  # cloud_trace: ADC（実行 SA の roles/cloudtrace.agent）で Cloud Trace へ直送。
+        else:
             from opentelemetry.exporter.cloud_trace import CloudTraceSpanExporter
 
             exporter = CloudTraceSpanExporter(project_id=settings.google_cloud_project or None)

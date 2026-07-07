@@ -2,31 +2,14 @@ import * as React from "react";
 
 import { cn } from "@/lib/utils";
 
-/**
- * 棒人間「サンバさん」（ADR-0025）。装飾ではなく、エージェントの状態を伝える UI 部品。
- * SVG 線画の関節を globals.css のキーフレーム（sanba-fig-*）で駆動する。
- *
- *  - `walking`:   のんびり歩く。ホームの待ち・空き時間に。
- *  - `asking`:    首をかしげ「？」が浮かぶ。問いの組み立て中・空状態の誘い。
- *  - `listening`: 耳に手を当て、萌黄の音波が届く。発話認識中。
- *  - `insight`:   両手を上げ、山吹の電球が灯る。要件確定の瞬間。
- *  - `writing`:   紙に書き続ける。ドキュメント生成などの待機表示。
- *
- * 運用ルール: 1 画面に同時に出すのは 1 体まで。`prefers-reduced-motion` では
- * 静止ポーズになる（.sanba-fig-joint 側で animation を無効化）。
- * 既定は装飾（aria-hidden）。状態表示として使う場合は `label` を渡すと role="img" になる。
- */
 export type FigureState = "walking" | "asking" | "listening" | "insight" | "writing";
 
 export interface FigureProps extends React.SVGAttributes<SVGSVGElement> {
   state?: FigureState;
-  /** 読み上げる説明。渡すと role="img"、省略時は aria-hidden の装飾になる。 */
   label?: string;
-  /** 産章（山吹の丸）を胸に付ける。SANBA 本人を表すときに true（既定）。 */
   badge?: boolean;
 }
 
-/** 関節グループ。transform-origin を viewBox 座標で指定し、CSS キーフレームで回す。 */
 function Joint({
   origin,
   animation,
@@ -50,7 +33,6 @@ const STROKE: React.SVGAttributes<SVGGElement> = {
   fill: "none",
 };
 
-/** 胸の産章（山吹の丸）。 */
 function Badge({ cx, cy, r = 4.5 }: { cx: number; cy: number; r?: number }) {
   return <circle cx={cx} cy={cy} r={r} fill="var(--sanba-gold)" strokeWidth={2} />;
 }
@@ -141,7 +123,6 @@ export function Figure({
           <circle cx="42" cy="26" r="12" fill="var(--sanba-surface)" />
           <line x1="42" y1="38" x2="42" y2="70" />
           <line x1="42" y1="48" x2="26" y2="62" />
-          {/* 耳に手を当てる */}
           <path d="M42 48 L58 40 L56 30" />
           <line x1="42" y1="70" x2="30" y2="96" />
           <line x1="42" y1="70" x2="54" y2="96" />
@@ -196,7 +177,6 @@ export function Figure({
     );
   }
 
-  // writing
   return (
     <svg viewBox="0 0 84 108" className={cn("w-[62px]", className)} {...a11y} {...props}>
       <g {...STROKE}>

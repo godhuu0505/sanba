@@ -77,25 +77,13 @@ def verify_invite(token: str, secret: str) -> Invite:
     except Exception as exc:
         raise InvalidInvite("malformed payload") from exc
 
-    # exp が欠落・null（例: 無期限の product invite トークン）の別種トークンでも
-    # int(None) の 500 にせず弾く。セッション invite は常に int の exp を持つ。
     exp = payload.get("exp")
     if not isinstance(exp, int) or exp < int(time.time()):
         raise InvalidInvite("expired")
 
-    # 同一シークレットで署名された別種トークン（product invite / session token）を
-    # 誤って渡されても KeyError の 500 にせず 403 に落とす。
     if not isinstance(payload.get("sid"), str):
         raise InvalidInvite("wrong token kind")
     return Invite(session_id=payload["sid"], role=payload.get("role", "participant"))
-
-
-# ── Product-invite tokens（深掘りリンク）───────────────────────
-# product の再利用可能な入場リンク。セッション invite（1 セッション・短命）と違い、
-# 失効・使用回数・期限の「正」は Firestore の invite 文書側にあり、このトークンは
-# 「owner が発行した本物のリンクである」ことだけを証明する（二段検証の 1 段目）。
-# そのため exp は invite 文書の expires_at を写した任意項目で、None（無期限リンク）を許す。
-# 検証側は必ず consume_invite（文書照合＋トランザクション消費）を併用すること。
 
 
 class InvalidProductInvite(Exception):
@@ -160,14 +148,6 @@ def verify_product_invite_token(token: str, secret: str) -> ProductInviteClaim:
     return ProductInviteClaim(product_id=product_id, invite_id=invite_id)
 
 
-# ── Member-invite tokens（メンバー招待）──────────────────────────────
-# メールで配る招待 URL のトークン。product invite（深掘りリンク）と同じ二段検証:
-# このトークンは「owner が発行した本物の招待である」ことだけを証明し、状態
-# （pending/accepted/declined/revoked・期限）の正は Firestore の member_invites 文書側。
-# 検証側は必ず respond_member_invite（文書照合＋トランザクション遷移）と宛先 email の
-# 照合を併用すること（URL の転送だけでは第三者は承諾できない）。
-
-
 class InvalidMemberInvite(Exception):
     """Raised when a member-invite token is malformed, tampered, or expired."""
 
@@ -230,12 +210,6 @@ def verify_member_invite_token(token: str, secret: str) -> MemberInviteClaim:
     return MemberInviteClaim(product_id=product_id, invite_id=invite_id)
 
 
-# ── Session-access tokens（契約 §4）─────────────────────────────
-# ハイドレーション・起票 API は「join 済みトークン」で保護する。join 時に発行し、
-# web は Bearer として GET /requirements 等に付与する。`session_id` をパスに含むだけ
-# では参加者以外に要件・検知が漏洩するため、必ずこの署名トークンを検証する。
-
-
 def create_session_token(
     session_id: str, sub: str, role: str, secret: str, ttl_seconds: int = 3600
 ) -> str:
@@ -277,16 +251,6 @@ def verify_session_token(token: str, secret: str) -> SessionAccess:
         sub=payload.get("sub", ""),
         role=payload.get("role", "participant"),
     )
-
-
-# ── ログイン nonce チャレンジ（ADR-0047）──────────────────────────────────────
-# ID トークン注入（aud だけ合う、別文脈で得た Google ID トークンの使い回し）を防ぐ。
-# サーバが nonce を発行 → web が GIS の initialize({nonce}) に渡す → Google が ID トークンの
-# `nonce` claim に埋める → create/join でサーバが claim と照合する。invite/session token と
-# 同じステートレス HMAC 方式で、サーバ側に nonce を保存しない（多インスタンスでも整合）。
-# 生 nonce をそのまま header で送り返すだけだと「トークンを盗めば nonce も送れる」ため無力
-# だが、ここでは **サーバ署名エンベロープ** を返させることで、claim と一致する nonce を持つ
-# エンベロープをサーバの署名なしには作れなくしている（照合の正がサーバの HMAC 鍵側にある）。
 
 
 class InvalidAuthNonce(Exception):

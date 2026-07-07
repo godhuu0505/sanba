@@ -19,9 +19,6 @@ from __future__ import annotations
 
 from .models import Audience, Product
 
-# audience ごとの既定テンプレート。登録が無いときに必ずこれが使われる（「セットしなければ
-# デフォルト」の要求）。利用者向けは開発語彙（MoSCoW・非機能等）を出さない（ADR-0032 の
-# end_user 語彙方針と同じ倒し方）。
 DEFAULT_OUTPUT_FORMATS: dict[Audience, str] = {
     Audience.END_USER: """\
 # {{app_name}} についてお聞きした内容のまとめ

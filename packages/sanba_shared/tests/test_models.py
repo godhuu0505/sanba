@@ -20,7 +20,6 @@ def test_requirement_defaults_to_draft() -> None:
 
 
 def test_legacy_requirement_without_status_falls_back_to_draft() -> None:
-    # status フィールドを持たない旧 Firestore 文書を読み込むケース。
     legacy = {
         "id": "r-old",
         "category": "functional",
@@ -47,8 +46,6 @@ def test_session_meta_roundtrips_through_json() -> None:
 
 
 def test_session_meta_product_fields_default_for_legacy_docs() -> None:
-    # 旧文書（product_id / interview_mode 無し）は None / developer でフォールバックする
-    # (ADR-0031 / ADR-0032。既存セッションの挙動を変えない = 要件定義 NFR-5)。
     legacy = {
         "id": "sess-old",
         "title": "t",
@@ -63,7 +60,6 @@ def test_session_meta_product_fields_default_for_legacy_docs() -> None:
 def test_session_meta_github_fields_default_for_legacy_docs() -> None:
     from sanba_shared.models import GitHubIndexStatus
 
-    # 旧文書（github_* 無し）は None / none でフォールバックする (ADR-0028)。
     legacy = {
         "id": "sess-old",
         "title": "t",

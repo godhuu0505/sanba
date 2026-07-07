@@ -10,13 +10,8 @@ vi.mock("next/navigation", () => ({
 import { AuthProvider } from "@/lib/auth";
 import LoginPage from "./page";
 
-// LoginPage は useAuth() で共有 auth を読むため、AuthProvider 配下で描画する。
 const renderLogin = () => render(<LoginPage />, { wrapper: AuthProvider });
 
-// dev モード（NEXT_PUBLIC_GOOGLE_CLIENT_ID 未設定）では GIS 無しに全フローを駆動できる。
-// ADR-0052（NASHI GEN 準拠のクリーン化）: 中央 1 カラムの最小構成。ログイン後は本人確認の
-// 中間画面を挟まず即ホーム（or ?next）へ replace し、ログアウト（?loggedOut=1）は挨拶を
-// 挟まずそのままクリーンなログイン画面を出す。
 describe("LoginPage ログイン/ログアウト フロー（dev モード）", () => {
   afterEach(() => {
     cleanup();
@@ -27,11 +22,11 @@ describe("LoginPage ログイン/ログアウト フロー（dev モード）", 
   it("未認証は中央 1 カラム: SANBA 見出し＋タグライン＋ログインボタン（サインアップ/ヘッダー/2 ペイン/入力欄は無い）", () => {
     renderLogin();
 
+    expect(screen.getByRole("main", { name: "ログイン" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "SANBA" })).toBeTruthy();
     expect(screen.getByText("解像度高く、要件を生み出す")).toBeTruthy();
     expect(screen.getByText("開発用ログイン（bypass）")).toBeTruthy();
 
-    // 廃止したもの: サインアップ導線・上部ヘッダー・左ブランドペイン（2 ペイン）・メール/パスワード欄。
     expect(screen.queryByRole("button", { name: "今すぐサインアップ" })).toBeNull();
     expect(screen.queryByRole("banner")).toBeNull();
     expect(screen.queryByRole("complementary")).toBeNull();
@@ -44,7 +39,6 @@ describe("LoginPage ログイン/ログアウト フロー（dev モード）", 
     act(() => {
       fireEvent.click(screen.getByText("開発用ログイン（bypass）"));
     });
-    // 「Google アカウントを確認しています」等の中間画面は無い。即トップへ。
     expect(replace).toHaveBeenCalledWith("/");
   });
 
@@ -67,7 +61,6 @@ describe("LoginPage ログイン/ログアウト フロー（dev モード）", 
       act(() => {
         fireEvent.click(screen.getByText("開発用ログイン（bypass）"));
       });
-      // 危険な next は無視され、evil へは飛ばさず "/" に丸める。
       expect(replace).toHaveBeenCalledWith("/");
       expect(replace).not.toHaveBeenCalledWith(evil);
     },
@@ -77,12 +70,10 @@ describe("LoginPage ログイン/ログアウト フロー（dev モード）", 
     window.history.replaceState({}, "", "/login?loggedOut=1");
     renderLogin();
 
-    // 挨拶画面（おつかれさまでした）は廃止。そのままサインイン画面を出し、ホームへは送らない。
     expect(screen.getByRole("heading", { name: "SANBA" })).toBeTruthy();
     expect(screen.getByText("開発用ログイン（bypass）")).toBeTruthy();
     expect(replace).not.toHaveBeenCalledWith("/");
 
-    // 再ログインは通常どおりホームへ送る（loggedOut ガードが解けている）。
     act(() => {
       fireEvent.click(screen.getByText("開発用ログイン（bypass）"));
     });

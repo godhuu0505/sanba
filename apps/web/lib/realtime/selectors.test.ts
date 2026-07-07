@@ -10,7 +10,6 @@ import {
 import type { MaterialItem } from "./selectors";
 import type { AnalysisState, SessionState } from "./store";
 
-// 通常質問（金枠）。選択肢があるときだけ問いピンの対象にする。
 describe("selectActiveQuestion", () => {
   const state = (question: SessionState["question"]): SessionState =>
     ({ question }) as SessionState;
@@ -29,7 +28,6 @@ describe("selectActiveQuestion", () => {
   });
 });
 
-// 復元（hydrated）/投入直後（local）/ライブ（realtime）の素材行を asset_id で統合する。
 describe("mergeMaterials", () => {
   const item = (over: Partial<MaterialItem>): MaterialItem => ({
     id: "a1",
@@ -46,7 +44,6 @@ describe("mergeMaterials", () => {
     expect(m.status).toBe("done");
     expect(m.pct).toBe(100);
     expect(m.extracted).toBe(2);
-    // 表示名は asset_id ではなく実ファイル名（hydrated）を優先する。
     expect(m.name).toBe("mock.png");
   });
 
@@ -66,7 +63,6 @@ describe("mergeMaterials", () => {
     expect(merged.map((m) => m.id)).toEqual(["v1", "f1"]);
   });
 
-  // 中断で破棄した素材は表示・件数から除く（ゾンビ行・遅延 analysis.* の復活を防ぐ）。
   it("cancelledIds の素材は除外する（遅延 realtime が来ても復活しない）", () => {
     const realtime = [
       item({ id: "a1", name: "a1", pct: 80, status: "analyzing" }),
@@ -74,7 +70,6 @@ describe("mergeMaterials", () => {
     ];
     const local = [item({ id: "a1", name: "mock.png", pct: 0, status: "uploading" })];
     const merged = mergeMaterials(realtime, local, [], new Set(["a1"]));
-    // a1 は破棄済みなので、遅延 realtime（解析中）が来ても行は出ない。a2 のみ残る。
     expect(merged.map((m) => m.id)).toEqual(["a2"]);
   });
 
@@ -88,17 +83,12 @@ describe("mergeMaterials", () => {
   });
 
   it("cancelled 行は同 id の realtime 後勝ちでも復活しない（cancelledIds 未指定）", () => {
-    // 破棄済み local 行（cancelled）と、遅延して届いた同 id の realtime 解析行。
     const local = [item({ id: "a1", name: "破棄.png", status: "cancelled" })];
     const realtime = [item({ id: "a1", name: "a1", pct: 60, status: "analyzing" })];
-    // cancelledIds を渡さなくても、status==="cancelled" の id を事前集約して除外する。
     expect(mergeMaterials(realtime, local, [])).toEqual([]);
   });
 });
 
-// 参考資料タブ（05）の素材ビューモデル。analysis.progress/visual 由来の AnalysisState を
-// MaterialsList が消費する MaterialItem へ寄せる純セレクタ。
-// 仕様: docs/reference/conversation-experience.md §3,§6。GET context/files で name/失敗状態を補完予定。
 describe("selectMaterials", () => {
   const analysis = (over: Partial<AnalysisState>): AnalysisState => ({
     asset_id: "a1",
@@ -145,8 +135,6 @@ describe("selectMaterials", () => {
     expect(selectMaterials({ analysis: [] })).toEqual([]);
   });
 
-  // ADR-0023: API は失敗時 stage="failed" を pct=100 で送る。pct だけ見ると done と
-  // 誤判定するため stage を優先して failed にし、再試行導線（MaterialsList）へ繋ぐ。
   it("stage='failed' は pct=100 でも failed（done と誤判定しない）", () => {
     expect(
       selectMaterials({ analysis: [analysis({ asset_id: "a4", pct: 100, stage: "failed" })] }),
@@ -160,8 +148,6 @@ describe("selectMaterials", () => {
   });
 });
 
-// 05-1 資料詳細。抽出要件の中身と言葉×画の矛盾を含む詳細ビューモデル。
-// conflicts は analysis.visual（store 既存形）を出所にし、detection.* に依存しない。
 describe("selectMaterialDetail", () => {
   const analysis = (over: Partial<AnalysisState>): AnalysisState => ({
     asset_id: "a1",
@@ -197,7 +183,6 @@ describe("selectMaterialDetail", () => {
   });
 
   it("detection が無くても analysis.visual の矛盾を surface する（視覚解析のみの矛盾・#202 AC）", () => {
-    // store には detections を一切渡さない（= detection.* が来ていない）。それでも conflicts は出る。
     const detail = selectMaterialDetail(
       {
         analysis: [
@@ -219,7 +204,6 @@ describe("selectMaterialDetail", () => {
     );
     expect(detail?.status).toBe("analyzing");
     expect(detail?.pct).toBe(40);
-    // 解析途中は extracted/conflicts を確定値とみなさない（空でも「無し」と断定しない）。
     expect(detail?.analysisReady).toBe(false);
   });
 
@@ -238,17 +222,15 @@ describe("selectMaterialDetail", () => {
   });
 });
 
-// ミニ状況（◆要件 N ・ ⚠未確定 N ・ 📎資料 N（解析中））の純セレクタ。
-// 仕様: docs/reference/conversation-experience.md §2（常時ミニ状況）。
 describe("selectMiniStatus", () => {
   it("要件数・未解消検知数・素材数・解析中フラグを導出する（深掘り一覧と同じ規則）", () => {
     const s = {
       requirements: [{}, {}, {}],
       detections: [
-        { resolved: false, summary: "矛盾" }, // 数える
-        { resolved: true, summary: "解決済" }, // 数えない（解消済）
-        { resolved: false, summary: "抜け" }, // 数える
-        { resolved: false, summary: "" }, // 数えない（summary 未着＝深掘り一覧にも出ない）
+        { resolved: false, summary: "矛盾" },
+        { resolved: true, summary: "解決済" },
+        { resolved: false, summary: "抜け" },
+        { resolved: false, summary: "" },
       ],
       analysis: [{ pct: 62 }, { pct: 100 }],
     };
