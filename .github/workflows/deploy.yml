@@ -126,7 +126,7 @@ jobs:
     permissions:
       contents: read
       id-token: write # Workload Identity Federation
-      attestations: write # SLSA build provenance + SBOM attestation (actions/attest-build-provenance, actions/attest-sbom)
+      attestations: write # SLSA build provenance + SBOM attestation (actions/attest-build-provenance, actions/attest)
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -217,7 +217,7 @@ jobs:
       - name: Attest SBOM
         # SBOM を GitHub に署名付きで記録する。build provenance と同様デプロイ後に実行し、
         # attestation の失敗が本番反映を止めないようにする。
-        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
+        uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763 # v4.1.1
         with:
           subject-name: ${{ env.REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ env.REPO }}/${{ matrix.app }}
           subject-digest: ${{ steps.build.outputs.digest }}
