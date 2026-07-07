@@ -9,6 +9,11 @@ terraform {
       source  = "hashicorp/random"
       version = "~> 3.6"
     }
+    # IAM 自己付与の伝搬待ち（time_sleep / observability.tf, #388）。
+    time = {
+      source  = "hashicorp/time"
+      version = "~> 0.11"
+    }
   }
   # リモート state (チーム/CI で共有・ロック)。bucket は環境差を避けるためコードに固定せず
   # init 時に渡す: terraform init -backend-config="bucket=<TF_STATE_BUCKET>" -backend-config="prefix=terraform/state"

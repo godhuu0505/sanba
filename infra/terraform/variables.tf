@@ -173,6 +173,12 @@ variable "otel_exporter_otlp_endpoint" {
   description = "OTLP/gRPC endpoint for traces (e.g. an OpenTelemetry Collector sidecar that forwards to Cloud Trace). Empty = tracing is skipped."
 }
 
+variable "terraform_deployer_sa" {
+  type        = string
+  default     = ""
+  description = "terraform apply を実行する CI SA の email（#388）。空なら tf-deployer@<project>.iam.gserviceaccount.com を使う。ログメトリクス/ダッシュボード作成権限をこの SA に付与する。"
+}
+
 # ---- Custom domain / Load Balancer ------------------------------------------
 # 本番 URL を Cloud Run 既定の *.run.app から独自ドメインへ。Global 外部 HTTPS LB +
 # Serverless NEG + Google 管理 SSL 証明書で配信する (本番志向: WAF/CDN 拡張余地)。
