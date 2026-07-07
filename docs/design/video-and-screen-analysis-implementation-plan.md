@@ -104,11 +104,21 @@ PR-S2 が共用するため、注入部分は Stage V を先行させる。
 - テスト: enqueue 経路選択・upload-init/complete・kind 別上限・reconcile・フラグ OFF 退行。
 - **PR-V3 に含めなかったもの**（本番有効化の手順へ）: `enable_video_analysis` の自動フラグ立て、worker service ゲート解除、deploy.yml の worker build（ブートストラップ順の制約）。`analysis.visual` の worker publish は PR-V4（agent 注入）に集約。ローカルの fake-gcs-server compose は将来の補強。
 
-### PR-V4: agent — 解析結果の能動注入（規模 M）
-- `apps/agent/src/sanba_agent/main.py`: room のデータチャネル（topic `sanba.events`）で `analysis.visual`（source=`asset:`）を購読し、要約・要件候補・矛盾候補を会話コンテキストへ注入 → エージェントが動画内容への深掘り質問を生成できるようにする。
-- `prompts/interview.py`: 「アップロード素材の解析結果が届いたら内容に触れて深掘りする」誘導を追記。
-- 注入は既存の背景注入方針（ADR-0037 の `AnalysisScheduler` / prefetch パターン）に揃える。ルームが無い場合は skip（grounding 側で担保）。
-- テスト: フェイクイベント → 注入内容の単体、Langfuse 評価データセットに「動画解析を踏まえた質問」ケースを追加。
+### PR-V4: worker publish + agent — 解析結果の能動注入（規模 M）
+
+> 状態: **実装済み**。Stage V（動画）を完結させる最後の PR。api の realtime publisher を
+> `sanba_shared.realtime` へ移設（api はシムで互換維持）し、worker が解析完了時に
+> `analysis.visual` を publish、agent が受けて Live 会話へ注入する。
+> 検証: shared 98 / api 323 / worker 13 / agent 187、ruff+mypy+fmt 全通過。
+
+- **worker publish**（前提。PR-V2/V3 から持ち越し）:
+  - `sanba_shared/realtime.py`: `AnalysisPublisher` / senders / `build_sender` を api から移設（worker と共有）。
+  - worker は `process_video` の done 時に `analysis.progress(done)` + `analysis.visual(asset_id, observations)` を publish（`asset_id` は素材 ID `asset-…`）。LiveKit 未設定/未接続でも fail-open。
+- **agent 受信**: `events.py` に `decode_analysis_visual`（`asset-` 始まりのみ受理・`visual:` エコー除外・件数上限）。`main.py` の `_on_data` を `sanba.events`（EVENTS_TOPIC）へ拡張し、`session_id` 照合の上で注入タスクを起動。
+- **agent 注入**: `inject_video_analysis(agent, session, asset_id, observations)` が `guarded_generate_reply(instructions=…)` で深掘り質問を促す。**穏当な注入**（`interrupt()` しない — ADR-0037 の非同期割り込み回避を尊重）。**dedup + モードゲート**は `SANBAAgent.claim_video_injection`（同一 asset は 1 回・end_user は注入しない = grounding 出力制御 ADR-0032 と整合）。ルーム閉室時は generate_reply 失敗を guarded 側で握る（grounding には投入済み）。
+- `prompts/interview.py`: 「アップロード動画の解析結果が届いたら触れて深掘りする」誘導を追記。
+- テスト: `decode_analysis_visual`（受理/エコー除外/空/別セッション/件数上限）、`inject_video_analysis`（注入/dedup/end_user スキップ）、worker publish（progress+visual 送信/無効時 no-op）。
+- **設計判断**: ADR-0037（非同期割り込み回避）と ADR-0040 §4（analysis.visual に限る注入許可）の緊張は、穏当注入（interrupt 無し）＋ developer 限定で解消。ADR-0040/0037 に追記。
 
 ## 3. Stage S — 画面共有キーフレーム解析
 
