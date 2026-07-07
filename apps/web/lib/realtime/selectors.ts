@@ -62,7 +62,7 @@ export function selectStats(state: SessionState): SessionStats {
 export { PRIORITY_ORDER };
 
 // ── ミニ状況（常時表示）─────────────────────────────────────────────
-// 仕様: docs/design/conversation-experience.md §2（◆要件 N ・ ⚠未確定 N ・ 📎資料 N）。
+// 仕様: docs/reference/conversation-experience.md §2（◆要件 N ・ ⚠未確定 N ・ 📎資料 N）。
 
 /** selectMiniStatus が必要とする SessionState の構造的サブセット（テスト容易性のため）。 */
 export interface MiniStatusInput {
@@ -83,7 +83,7 @@ export interface MiniStatus {
 }
 
 // ── 参考資料（05）─────────────────────────────────────────────────────
-// 仕様: docs/design/conversation-experience.md §3,§6 / screens/05-materials.md。
+// 仕様: docs/reference/conversation-experience.md §3,§6 / screens/05-materials.md。
 
 /**
  * 素材行の状態（MaterialsList と共有）。
@@ -144,7 +144,7 @@ export function selectMaterials(s: { analysis: readonly AnalysisState[] }): Mate
 }
 
 // ── 参考資料 詳細（05-1）─────────────────────────────────────────────
-// 仕様: docs/design/conversation-experience.md §6（05-1 詳細）/ screens/05-materials.md / Figma 148:2。
+// 仕様: docs/reference/conversation-experience.md §6（05-1 詳細）/ screens/05-materials.md / Figma 148:2。
 // 一覧（selectMaterials）は件数だけ持つ最小ビューに留め、抽出要件の中身と「言葉×画の矛盾」は
 // 詳細でだけ surface する。
 

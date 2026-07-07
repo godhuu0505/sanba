@@ -58,7 +58,7 @@ dns_managed_zone_name = "sanba"      # manage_dns=true のときのゾーン名 
 # ---- シークレット (Secret Manager を値の唯一の置き場にする) ----
 # アプリ秘匿値 (livekit/elasticsearch/google) は terraform では扱わない。値は gcloud で
 # Secret Manager に直接投入し、投入済みの id を active_app_secret_ids に入れて apply する。
-# 詳細は docs/runbooks/deploy-gcp.md「Secret Manager への値投入」。
+# 詳細は docs/how-to/deploy-gcp.md「Secret Manager への値投入」。
 # session_signing_secret は通常空のまま (terraform が自動生成して SM に格納)。
 session_signing_secret = ""
 # 作成する箱の集合 (既定で OK)。値は管理しない。

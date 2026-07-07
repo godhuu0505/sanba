@@ -58,4 +58,4 @@ uv run ruff check . && uv run mypy .
 | `GET` | `/api/admin/sessions/{id}/requirements` | セッションの要件一覧 |
 | `PATCH` | `/api/admin/sessions/{id}/requirements/{rid}` | 要件の編集（statement/priority/category）・承認/却下 |
 
-`.env.example` が正。アクセス制御・データ取り扱いは [`docs/security.md`](../../docs/security.md)。
+`.env.example` が正。アクセス制御・データ取り扱いは [`docs/reference/security.md`](../../docs/reference/security.md)。

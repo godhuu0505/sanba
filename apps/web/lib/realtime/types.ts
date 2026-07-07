@@ -1,4 +1,4 @@
-// リアルタイム契約（docs/design/realtime-contract.md §2/§3/§4.5）の TypeScript 表現。
+// リアルタイム契約（docs/reference/realtime-contract.md §2/§3/§4.5）の TypeScript 表現。
 // agent → web のデータチャネル・イベントと、GET ハイドレーションのスナップショット、
 // web → agent のユーザー操作（user.selection）を型として固定する。
 //

@@ -1,7 +1,7 @@
 """Data channel publish.
 
 P0 画面が依存するリアルタイム基盤のうち、**agent → web のデータチャネル publish**を担う。
-契約（docs/design/realtime-contract.md §1/§2/§3）に従い、LiveKit ルームへ
+契約（docs/reference/realtime-contract.md §1/§2/§3）に従い、LiveKit ルームへ
 ``topic="sanba.events"`` で reliable publish する（音声と同一接続）。
 
 - エンベロープ §2: ``v/type/seq/ts/session_id``。``seq`` はセッション内で単調増加。

@@ -20,7 +20,7 @@ body:
     id: phase
     attributes:
       label: 関連フェーズ（ロードマップ）
-      description: docs/roadmap.md 参照
+      description: docs/explanation/roadmap.md 参照
       options:
         - Phase 1 — 1:1 音声インタビュー MVP
         - Phase 2 — 多人数 (N:1)

@@ -1,9 +1,9 @@
 # ADR-0033: UI デザイン刷新 v2（白い紙の上の問答 — ステッカー×原色×動く棒人間）
 
-- ステータス: **Accepted（受理・2026-07-05 確定 / 全 Phase 実装・検証完了 2026-07-05）**
+- ステータス: Accepted（受理・2026-07-05 確定 / 全 Phase 実装・検証完了 2026-07-05）
   - Phase 1〜4: トークン・ステッカー意匠・棒人間配線・帯/動き（#305/#306/#308 ほか）。
   - Phase 5: 一貫性クリーンアップ（暗幕→墨・mapping トークン化・色クラス記法統一 / #310）。
-  - Phase 6: 品質検証（AA / reduced-motion / 純黒 / 実機スモーク）→ [検証記録](../a11y-contrast-adr0033.md)。**実欠陥なし。**
+  - Phase 6: 品質検証（AA / reduced-motion / 純黒 / 実機スモーク）→ [検証記録](supplements/0033-a11y-contrast.md)。**実欠陥なし。**
 - 日付: 2026-07-05
 - 関連:
   - **[ADR-0025](0025-light-paper-redesign.md) を Superseded にする**（本 ADR が唯一の正）。
@@ -141,7 +141,7 @@ no fill、頭は白 fill。**5 状態**と**実画面への配線**:
 ## 検証（Phase 6・2026-07-05）
 
 全 Phase 実装後の品質ゲート総点検。詳細と実測表は
-[docs/a11y-contrast-adr0033.md](../a11y-contrast-adr0033.md)。**AA・reduced-motion・色のみ非依存・
+[docs/adr/supplements/0033-a11y-contrast.md](supplements/0033-a11y-contrast.md)。**AA・reduced-motion・色のみ非依存・
 純黒禁止のいずれも実欠陥なし**（UI 是正ゼロ・意匠不変）。要点:
 
 - **AA コントラスト（WCAG 2.1 相対輝度で実測）**: 本文トークンは全て実使用面で 4.5:1 以上。

@@ -1,7 +1,7 @@
 "use client";
 
 // 問いピンのコンテナ。useChoiceDisclosure（4モード）と strip/detail/compare を結線する。
-// 仕様: docs/design/conversation-experience.md §4。
+// 仕様: docs/reference/conversation-experience.md §4。
 // 親は question/options/detectionKind を渡し、回答は onAnswer(index) で受け取る。
 // 回答すると select で選択肢UIは閉じ（hidden）、次の問いで再表示される。
 

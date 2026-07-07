@@ -1,7 +1,7 @@
 "use client";
 
 // 選択肢の比較（ボトムシート）。全選択肢を効き目（萌黄）/留意（黄土）で横並びに見比べ、各行で選べる。
-// 仕様: docs/design/conversation-experience.md §4。
+// 仕様: docs/reference/conversation-experience.md §4。
 
 import { Check, TriangleAlert, X } from "lucide-react";
 

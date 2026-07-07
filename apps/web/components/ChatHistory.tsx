@@ -1,7 +1,7 @@
 "use client";
 
 // 会話履歴タブの本文。SessionState.transcript を吹き出しで描く。
-// 仕様: docs/design/conversation-experience.md §2（会話履歴）/ screens/04-conversation.md。
+// 仕様: docs/reference/conversation-experience.md §2（会話履歴）/ screens/04-conversation.md。
 
 import { LoaderCircle, Mic } from "lucide-react";
 

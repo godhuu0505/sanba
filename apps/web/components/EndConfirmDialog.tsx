@@ -1,7 +1,7 @@
 "use client";
 
 // 終了確認ダイアログ。⏹ 押下時に確定ゲート（未解消件数）を提示する。
-// 仕様: docs/design/conversation-experience.md §C(横断)/§7 / screens/07-judgment.md。
+// 仕様: docs/reference/conversation-experience.md §C(横断)/§7 / screens/07-judgment.md。
 
 import { Scale, TriangleAlert } from "lucide-react";
 
