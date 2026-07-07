@@ -63,12 +63,14 @@ from .config import settings
 from .events import (
     DETECTOR_AMBIGUITY,
     DETECTOR_NFR,
+    EVENTS_TOPIC,
     RESOLUTION_AGENT_RESOLVED,
     RESOLUTION_USER_SELECTED,
     WEB_EVENTS_TOPIC,
     EventPublisher,
     EventPublishError,
     LiveKitTransport,
+    decode_analysis_visual,
     decode_user_answered,
     decode_user_selection,
     decode_user_text,
@@ -344,10 +346,15 @@ class SANBAAgent(Agent):
         # 現在の未回答質問 id。自由記述/音声回答には question_id が
         # 無いため、「発話受信時点の current 質問」をこの値で束ねクリア対象を固定する。回答で None。
         self._current_question_id: str | None = None
+        # 現在の金枠を発行した時点のユーザーターン（_user_turn）。1ターン1問を強制するため、
+        # 同一ターンで 2 度目の ask_question が来たら前の問いを畳んでから出す（-1 = 未発行）。
+        self._question_asked_turn = -1
         # 既に publish 済みの検知 id（open_topic の重複 gap を抑止）。
         self._published_gaps: set[str] = set()
         # 既に publish 済みの不明瞭検知 id。
         self._published_ambiguous: set[str] = set()
+        # 既に会話へ注入済みのアップロード素材 asset_id（動画解析の二重注入を抑止 / ADR-0040 §4）。
+        self._injected_assets: set[str] = set()
         # fire-and-forget の publish タスクを保持（GC による途中消滅を防ぐ）。
         self._publish_tasks: set[asyncio.Task[Any]] = set()
         # 書き込み系ブロッキング I/O（Firestore add_utterance・grounding 索引）をイベント
@@ -388,6 +395,25 @@ class SANBAAgent(Agent):
     def allow_repo_grounding(self) -> bool:
         """repo 由来素材（GitHub seed）を許すか。モード確認済みの非 end_user のみ True。"""
         return self._allow_repo_grounding
+
+    @property
+    def session_id(self) -> str:
+        return self._session_id
+
+    def claim_video_injection(self, asset_id: str) -> bool:
+        """動画解析の会話注入を 1 回だけ許可する（ADR-0040 §4）。
+
+        - end_user モードでは注入しない（grounding 出力制御 ADR-0032 決定8 と揃え、
+          内部素材の観察が Live 発話へ素通りするのを防ぐ）。allow_repo_grounding を流用する。
+        - 同一 asset は 1 回だけ（`_published_gaps` と同じ dedup パターン）。
+        許可したら asset_id を消費して True。以後の同一 asset は False。
+        """
+        if not self._allow_repo_grounding:
+            return False
+        if asset_id in self._injected_assets:
+            return False
+        self._injected_assets.add(asset_id)
+        return True
 
     @property
     def current_question_id(self) -> str | None:
@@ -819,6 +845,19 @@ class SANBAAgent(Agent):
             options: 選択肢ラベル（2〜4個。例 ["関連度順","新着順"]）。
                 自由に答えてほしい問いでは省略する（音声/テキストで回答）。
         """
+        # 1ターン1問の強制（#374）。プロンプトは「畳みかけない」と指示済みだが、モデルが
+        # 従わず同一ターンで複数問うことがある（実セッションで観測）。前の金枠が未回答のまま
+        # 同じユーザーターンで再度問われたら、前の問いを畳んでから新しい問いを出す。これで
+        # 競合する 2 つの金枠が同時に立たず、常に「最新の1問」だけを提示する（latest-wins）。
+        if self._current_question_id is not None and self._question_asked_turn == self._user_turn:
+            superseded = self._current_question_id
+            log.info(
+                "question_superseded",
+                session=self._session_id,
+                previous=superseded,
+                turn=self._user_turn,
+            )
+            await self.clear_current_question(superseded)
         # 発行ごとに一意な ID にする（Codex P2）。同じ文面を再質問しても web 側の
         # answeredQuestions（回答済み ID）に当たらず、新しい問いとして再表示できる。
         self._question_seq += 1
@@ -828,6 +867,8 @@ class SANBAAgent(Agent):
         opts = [{"label": o, "value": o} for o in (options or [])]
         # §5-6: 自由記述/音声回答（question_id なし）のクリア対象を束ねる現在質問 id。
         self._current_question_id = question_id
+        # 1ターン1問の判定基準（この問いを出した時点のターン）。
+        self._question_asked_turn = self._user_turn
         if self._publisher is not None:
             # question.asked はハイドレーション・スナップショット（GET /requirements,/detections）に
             # 含まれない一過性イベント。ここで last_seq を進めると、後続の再ハイドレーションで
@@ -1466,6 +1507,32 @@ async def respond_to_answer(
     )
 
 
+async def inject_video_analysis(
+    agent: SANBAAgent, session: AgentSession, asset_id: str, observations: list[str]
+) -> None:
+    """アップロード動画の解析結果を会話へ能動注入する（ADR-0040 §4）。
+
+    worker が publish した analysis.visual を受けて、エージェントが動画内容に触れて深掘り
+    質問を投げられるようにする。ADR-0037 は非同期の会話割り込みを避ける決定だったが、本注入は
+    ADR-0040 §4 が analysis.visual に限って許可する。ただし発話を遮らない穏当な注入にする
+    （`session.interrupt()` は呼ばない）: 次の発話境界で自然に織り込ませ、読み上げ中の割り込みを
+    避ける。dedup・モードゲートは `claim_video_injection` に集約（end_user は注入しない）。
+    ルームが閉じていれば generate_reply は失敗するが guarded 側で握る（grounding には投入済み）。
+    """
+    if not agent.claim_video_injection(asset_id):
+        return
+    bullets = "\n".join(f"- {o}" for o in observations)
+    instructions = (
+        "利用者がアップロードした動画の解析結果が届きました。動画から読み取れた観察は次のとおりです。\n"
+        f"{bullets}\n"
+        "この内容に自然に触れつつ、要件を深掘りする質問を1つだけ、日本語で簡潔に投げてください。"
+        "既に会話で扱った点の繰り返しは避けてください。"
+    )
+    await guarded_generate_reply(
+        session, session_id=agent.session_id, kind="video_analysis", instructions=instructions
+    )
+
+
 def _is_livekit_cloud_url(url: str) -> bool:
     """接続先が LiveKit Cloud か（BVC が実効する transport か）を判定する（ADR-0039）。
 
@@ -1627,9 +1694,18 @@ async def entrypoint(ctx: JobContext) -> None:
     restart_pending = False
 
     def _on_data(packet) -> None:  # type: ignore[no-untyped-def]
-        if getattr(packet, "topic", None) != WEB_EVENTS_TOPIC:
-            return
+        topic = getattr(packet, "topic", None)
         data = getattr(packet, "data", b"")
+        # worker/api → agent の解析完了（sanba.events）。動画解析結果を会話へ能動注入する
+        # （ADR-0040 §4）。web → agent の会話イベント（sanba.events.web）とは別トピック。
+        if topic == EVENTS_TOPIC:
+            visual = decode_analysis_visual(data, expected_session_id=session_id)
+            if visual is not None:
+                asset_id, observations = visual
+                _schedule(inject_video_analysis(agent, session, asset_id, observations))
+            return
+        if topic != WEB_EVENTS_TOPIC:
+            return
         # session_id を照合し、同室の別セッション向けイベント混入を弾く。
         sel = decode_user_selection(data, expected_session_id=session_id)
         if sel is not None:

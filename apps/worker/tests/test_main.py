@@ -74,3 +74,48 @@ def test_bad_payload_returns_400(
     client, _ = client_with_material
     resp = client.post("/tasks/analyze-video", json={"asset_id": "x"})  # session_id 欠落
     assert resp.status_code == 400
+
+
+def test_publish_visual_emits_progress_and_visual(monkeypatch: pytest.MonkeyPatch) -> None:
+    """done の解析結果が analysis.progress(done) + analysis.visual として publish される。"""
+    import asyncio
+
+    from sanba_worker.analysis import TaskResult
+
+    sent: list[bytes] = []
+
+    class _Recorder:
+        async def send(self, payload: bytes, *, topic: str, reliable: bool) -> None:
+            sent.append(payload)
+
+    monkeypatch.setattr(main.settings, "enable_realtime_publish", True)
+    monkeypatch.setattr(main, "build_sender", lambda *a, **k: _Recorder())
+    monkeypatch.setattr(main, "_repo", SessionRepository())
+
+    asyncio.run(
+        main._publish_visual(
+            "s1", "asset-x", TaskResult("done", extracted=1, observations=["[00:01] ログイン画面"])
+        )
+    )
+    joined = b"".join(sent)
+    assert b"analysis.visual" in joined
+    assert b"analysis.progress" in joined
+    assert b"asset-x" in joined and "ログイン画面".encode() in joined
+
+
+def test_publish_visual_noop_when_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    import asyncio
+
+    from sanba_worker.analysis import TaskResult
+
+    called = False
+
+    def _fail(*a, **k):
+        nonlocal called
+        called = True
+        raise AssertionError("should not build a sender when publish is disabled")
+
+    monkeypatch.setattr(main.settings, "enable_realtime_publish", False)
+    monkeypatch.setattr(main, "build_sender", _fail)
+    asyncio.run(main._publish_visual("s1", "asset-x", TaskResult("done", extracted=0)))
+    assert called is False

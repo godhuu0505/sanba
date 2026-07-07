@@ -16,6 +16,7 @@ from sanba_agent.events import (
     EventPublisher,
     EventPublishError,
     RecordingTransport,
+    decode_analysis_visual,
     decode_user_answered,
     decode_user_selection,
     decode_user_text,
@@ -503,3 +504,43 @@ def test_requirement_to_contract_handles_missing_speaker() -> None:
     out = requirement_to_contract(req, "draft")
     assert out["source_speaker"] == ""
     assert out["status"] == "draft"
+
+
+# ── decode_analysis_visual（worker/api → agent の解析完了 / ADR-0040 §4）────
+def _visual_payload(**over: object) -> bytes:
+    base = {
+        "v": 1,
+        "type": "analysis.visual",
+        "seq": 1,
+        "ts": "2026-07-06T00:00:00Z",
+        "session_id": "s1",
+        "asset_id": "asset-abc",
+        "extracted": ["[00:01] ログイン画面", "[00:05] 保存ボタン"],
+        "conflicts": [],
+    }
+    base.update(over)
+    return json.dumps(base).encode()
+
+
+def test_decode_analysis_visual_valid() -> None:
+    got = decode_analysis_visual(_visual_payload(), expected_session_id="s1")
+    assert got == ("asset-abc", ["[00:01] ログイン画面", "[00:05] 保存ボタン"])
+
+
+def test_decode_analysis_visual_rejects_screen_share_echo() -> None:
+    # agent 自身の画面共有由来（visual: 始まり）はエコーなので弾く。
+    assert decode_analysis_visual(_visual_payload(asset_id="visual:1")) is None
+
+
+def test_decode_analysis_visual_rejects_empty_extracted() -> None:
+    assert decode_analysis_visual(_visual_payload(extracted=[])) is None
+
+
+def test_decode_analysis_visual_rejects_other_session() -> None:
+    assert decode_analysis_visual(_visual_payload(), expected_session_id="other") is None
+
+
+def test_decode_analysis_visual_truncates_observations() -> None:
+    many = [f"[00:0{i}] obs{i}" for i in range(30)]
+    got = decode_analysis_visual(_visual_payload(extracted=many), expected_session_id="s1")
+    assert got is not None and len(got[1]) == 12  # MAX_INJECTED_OBSERVATIONS

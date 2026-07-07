@@ -2372,6 +2372,7 @@ dependencies = [
     { name = "elasticsearch" },
     { name = "google-cloud-firestore" },
     { name = "google-genai" },
+    { name = "livekit-api" },
     { name = "pydantic" },
     { name = "structlog" },
 ]
@@ -2381,6 +2382,7 @@ requires-dist = [
     { name = "elasticsearch", specifier = ">=8.14,<10" },
     { name = "google-cloud-firestore", specifier = ">=2.16.0" },
     { name = "google-genai", specifier = ">=1.0.0" },
+    { name = "livekit-api", specifier = ">=0.7" },
     { name = "pydantic", specifier = ">=2.7" },
     { name = "structlog", specifier = ">=24.1" },
 ]

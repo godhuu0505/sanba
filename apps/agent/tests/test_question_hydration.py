@@ -92,6 +92,38 @@ async def test_ask_question_persist_failure_resets_current_tracking() -> None:
 
 
 @pytest.mark.asyncio
+async def test_second_question_same_turn_supersedes_first() -> None:
+    # #374: プロンプトは「畳みかけない」と指示済みだが、モデルが従わず同一ターンで 2 問
+    # 出すことがある（実セッションで観測）。tool 層で前の金枠を畳んでから新問を出し、
+    # 常に最新の 1 問だけを提示する（競合する 2 つの金枠を同時に立てない）。
+    agent, repo, transport, _pub = _agent()
+    ask = type(agent).ask_question.__wrapped__
+    r1 = await ask(agent, None, "Q1?")
+    r2 = await ask(agent, None, "Q2?")  # 同一ターン（_user_turn は不変）
+    types = [t["event"]["type"] for t in transport.sent]
+    # 2 度目は「前問を cleared → 新問を asked」の clean transition になる。
+    assert types == ["question.asked", "question.cleared", "question.asked"]
+    assert r1["asked"] != r2["asked"]
+    assert agent.current_question_id == r2["asked"]
+    # Firestore の現在質問も最新（Q2）を指し、未クリア。
+    assert repo._mem_questions["s1"]["id"] == r2["asked"]
+    assert repo._mem_questions["s1"]["cleared"] is False
+
+
+@pytest.mark.asyncio
+async def test_question_in_new_turn_is_not_superseded_by_guard() -> None:
+    # 別ターンでの問いは 1ターン1問ガードの対象外（前ターンの未回答は §5-6 が別途畳む）。
+    agent, _repo, transport, _pub = _agent()
+    ask = type(agent).ask_question.__wrapped__
+    await ask(agent, None, "Q1?")
+    agent._user_turn += 1  # 次のユーザーターンへ進む
+    transport.sent.clear()
+    await ask(agent, None, "Q2?")
+    types = [t["event"]["type"] for t in transport.sent]
+    assert types == ["question.asked"]  # ガードは発火せず、新問を出すだけ
+
+
+@pytest.mark.asyncio
 async def test_clear_without_publisher_is_noop() -> None:
     # publisher 未設定でも会話は成立する（クリアは付加価値）。例外を投げない。
     repo = SessionRepository()

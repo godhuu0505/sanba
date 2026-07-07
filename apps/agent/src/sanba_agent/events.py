@@ -560,6 +560,35 @@ def decode_user_answered(
     return question_id, answer.strip()[:MAX_USER_TEXT_CHARS]
 
 
+# 動画解析の観察を会話に注入する際、注入プロンプトへ載せる最大件数（LLM コンテキスト保護）。
+MAX_INJECTED_OBSERVATIONS = 12
+
+
+def decode_analysis_visual(
+    payload: bytes | str, *, expected_session_id: str | None = None
+) -> tuple[str, list[str]] | None:
+    """worker/api → agent の analysis.visual（契約 §3 / ADR-0040 §4）をデコードする。
+
+    アップロード素材（動画）の解析完了イベント。``(asset_id, extracted)`` を返す。asset_id が
+    アップロード素材（``asset-`` 始まり）でない、または extracted が空なら None。
+    ``visual:`` 始まり（agent 自身の画面共有 note_visual_requirement 由来）はエコーなので弾く。
+    観察は上限件数で切り詰める（注入プロンプトの肥大を防ぐ）。
+    """
+    obj = _decode_web_event(payload, "analysis.visual", expected_session_id=expected_session_id)
+    if obj is None:
+        return None
+    asset_id = obj.get("asset_id")
+    if not isinstance(asset_id, str) or not asset_id.startswith("asset-"):
+        return None
+    extracted = obj.get("extracted")
+    if not isinstance(extracted, list):
+        return None
+    observations = [s for s in extracted if isinstance(s, str) and s.strip()]
+    if not observations:
+        return None
+    return asset_id, observations[:MAX_INJECTED_OBSERVATIONS]
+
+
 def _get_tracer() -> Any:
     try:
         from opentelemetry import trace

@@ -16,13 +16,20 @@ describe("SideMenu", () => {
     expect(screen.queryByRole("menu")).toBeNull();
   });
 
-  it("ハンバーガー押下でホーム/セッション準備/アプリ管理の3項目を出す", () => {
+  it("ハンバーガー押下でホーム/過去の要件一覧/アプリ管理の3項目を出す", () => {
     render(<SideMenu />);
     open();
     const items = screen.getAllByRole("menuitem").map((el) => el.textContent ?? "");
     expect(items[0]).toMatch(/ホーム/);
-    expect(items[1]).toMatch(/セッション準備/);
+    expect(items[1]).toMatch(/過去の要件一覧/);
     expect(items[2]).toMatch(/アプリ管理/);
+  });
+
+  it("過去の要件一覧は /results へ遷移する menuitem", () => {
+    render(<SideMenu />);
+    open();
+    const results = screen.getByRole("menuitem", { name: /過去の要件一覧/ });
+    expect(results.getAttribute("href")).toBe("/results");
   });
 
   it("アプリ管理は /products へ遷移する menuitem（要求仕様: サイドメニューから管理画面へ）", () => {

@@ -108,3 +108,52 @@ async def test_user_answered_interrupts_and_advances_with_question_context() -> 
     await _drain_publishes()
     finals = [s["event"] for s in transport.sent if s["event"]["type"] == "transcript.final"]
     assert any("対象OSは？" in ev["text"] and "iOS のみ" in ev["text"] for ev in finals)
+
+
+# ── 動画解析結果の能動注入（ADR-0040 §4）──────────────────────────────────
+async def test_inject_video_analysis_generates_reply_without_interrupt() -> None:
+    from sanba_agent.main import inject_video_analysis
+
+    agent, _repo, _t = _agent()
+    agent._allow_repo_grounding = True  # developer 相当
+    session = FakeAgentSession()
+
+    await inject_video_analysis(
+        agent,
+        session,
+        "asset-abc",
+        ["[00:01] ログイン画面", "[00:05] 保存ボタン"],  # type: ignore[arg-type]
+    )
+
+    # 穏当な注入: interrupt せず generate_reply(instructions=...) のみ。
+    assert [name for name, _ in session.calls] == ["generate_reply"]
+    _, kwargs = session.calls[-1]
+    assert "ログイン画面" in kwargs["instructions"]
+    assert "asset-abc" in agent._injected_assets
+
+
+async def test_inject_video_analysis_dedups_same_asset() -> None:
+    from sanba_agent.main import inject_video_analysis
+
+    agent, _repo, _t = _agent()
+    agent._allow_repo_grounding = True
+    session = FakeAgentSession()
+
+    await inject_video_analysis(agent, session, "asset-x", ["[00:01] a"])  # type: ignore[arg-type]
+    await inject_video_analysis(agent, session, "asset-x", ["[00:01] a"])  # type: ignore[arg-type]
+
+    # 同一 asset は 1 回だけ注入する。
+    assert [name for name, _ in session.calls] == ["generate_reply"]
+
+
+async def test_inject_video_analysis_skipped_for_end_user() -> None:
+    from sanba_agent.main import inject_video_analysis
+
+    agent, _repo, _t = _agent()
+    agent._allow_repo_grounding = False  # end_user / モード未確認は注入しない
+    session = FakeAgentSession()
+
+    await inject_video_analysis(agent, session, "asset-y", ["[00:01] a"])  # type: ignore[arg-type]
+
+    assert session.calls == []
+    assert "asset-y" not in agent._injected_assets
