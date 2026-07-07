@@ -469,13 +469,15 @@ export function useGoogleAuth(): GoogleAuth {
       // 直前セッションの credential を再取得できる必要がある (ADR-0014 §7)。
       initializeGis(id, nonce);
       if (buttonRef.current) {
-        // 意匠は ADR-0019: 純正ボタンは Google 承認バリアントへ寄せ（filled_black /
-        // continue_with / ja）、金彩は本ボタンを囲むフレーム側（login 画面）で表現する。
-        // ボタン地色・ロゴ・文言は改変しない（ブランド規約／ADR-0012 信頼境界は不変）。
+        // 意匠は ADR-0052（ADR-0019 のボタン意匠を置換）: 白い紙面（ADR-0025）に馴染む
+        // Google 承認バリアント outline（白系）をそのまま中央に置く。金彩フレームは廃止した
+        // （filled_black の暗色ボタン＋金枠が生成りの下地で黒白が入り乱れて見えたため）。
+        // 文言は signin_with（「Google でログイン」）。ボタン地色・ロゴ・文言は改変しない
+        // （ブランド規約／ADR-0012 信頼境界は不変）。
         id.renderButton(buttonRef.current, {
-          theme: "filled_black",
+          theme: "outline",
           size: "large",
-          text: "continue_with",
+          text: "signin_with",
           shape: "pill",
           locale: "ja",
         });

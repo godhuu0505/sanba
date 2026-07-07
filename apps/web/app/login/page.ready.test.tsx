@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
-// real モード（NEXT_PUBLIC_GOOGLE_CLIENT_ID 設定済み）での /login 直訪・再訪の挙動。
+// real モード（NEXT_PUBLIC_GOOGLE_CLIENT_ID 設定済み）での /login 直訪・再訪の挙動（ADR-0052）。
 // 「ログインしているのに /login でログイン画面が見える」回帰の防止:
-//  - 認証解決前（ready=false）はサインイン UI を出さず「確認中」を出す
-//  - 静かな再取得（auto_select）でログインが立ったら、12 の welcome を挟まず即トップへ replace
+//  - 認証解決前（ready=false）はサインイン UI を出さず中立スプラッシュ（読み込み中）を出す
+//  - 静かな再取得（auto_select）でログインが立ったら、中間画面を挟まず即トップへ replace
 //  - 未ログインが確定（One Tap 不表示の通知）したらサインイン UI を出す
 // CLIENT_ID はモジュール評価時に env を読むため、stubEnv → resetModules → 動的 import で
 // real モードに入る（auth-settle.test.tsx と同じ手法）。
@@ -75,21 +75,22 @@ afterEach(() => {
 });
 
 describe("LoginPage 直訪・再訪（real モード / ready ゲート）", () => {
-  it("認証解決前はサインイン UI を出さず「確認中」を出す", async () => {
+  it("認証解決前はサインイン UI を出さず中立スプラッシュ（読み込み中）を出す", async () => {
     await renderLoginReal();
 
-    expect(screen.getByText("ログイン状態を確認しています…")).toBeTruthy();
-    expect(screen.queryByRole("heading", { name: "サインイン" })).toBeNull();
+    expect(screen.getByRole("status", { name: "読み込み中" })).toBeTruthy();
+    // サインイン UI（タグライン）は出さない＝「確認中にログイン画面が見える」窓を作らない。
+    expect(screen.queryByText("解像度高く、要件を生み出す")).toBeNull();
     expect(replace).not.toHaveBeenCalled();
   });
 
-  it("静かな再取得（auto_select）でログインが立ったら、welcome を挟まず即 / へ replace する", async () => {
+  it("静かな再取得（auto_select）でログインが立ったら、中間画面を挟まず即 / へ replace する", async () => {
     await renderLoginReal();
 
     act(() => capturedCallback?.({ credential: makeJwt() }));
 
-    // 12（Google アカウントを確認しています）を挟まず、即トップへ。
-    expect(screen.queryByText("Google アカウントを確認しています")).toBeNull();
+    // 本人確認の中間画面は挟まず、即トップへ。サインイン UI も見せない。
+    expect(screen.queryByText("解像度高く、要件を生み出す")).toBeNull();
     expect(replace).toHaveBeenCalledWith("/");
   });
 
@@ -106,9 +107,10 @@ describe("LoginPage 直訪・再訪（real モード / ready ゲート）", () =
 
     act(() => capturedListener?.(notDisplayed));
 
-    expect(screen.getByRole("heading", { name: "サインイン" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "SANBA" })).toBeTruthy();
+    expect(screen.getByText("解像度高く、要件を生み出す")).toBeTruthy();
     expect(replace).not.toHaveBeenCalled();
-    // 11 の出現で resetButton → GIS effect が再実行され、装着済みの buttonRef へ描画される。
+    // サインイン UI の出現で resetButton → GIS effect が再実行され、装着済みの buttonRef へ描画される。
     expect(renderButton).toHaveBeenCalled();
   });
 });
