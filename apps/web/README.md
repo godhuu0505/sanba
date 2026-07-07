@@ -39,6 +39,6 @@ npm run build           # 本番ビルド
 
 ## UX 方針
 
-- セッション参加は**同意チェック**でゲートする（録音・AI 処理への明示的同意。[`docs/security.md`](../../docs/security.md)）。
+- セッション参加は**同意チェック**でゲートする（録音・AI 処理への明示的同意。[`docs/reference/security.md`](../../docs/reference/security.md)）。
 - 本番品質 UX を Cloud Run で提供する（[ADR-0001](../../docs/adr/0001-tech-stack.md)）。
-- 画面共有 / モック映像の共有 UI は Phase 2（[`docs/roadmap.md`](../../docs/roadmap.md)）。
+- 画面共有 / モック映像の共有 UI は Phase 2（[`docs/explanation/roadmap.md`](../../docs/explanation/roadmap.md)）。

@@ -10,7 +10,7 @@ import { ConversationSessionView } from "./ConversationSessionView";
 
 // 会話シェルの結線（Phase 6）。共有 realtime state を 3 タブ＋問いピン＋ボトムバーへ配り、
 // 検知ドリブンの選択肢回答・終了→判定→結果までを通す。
-// 仕様: docs/design/conversation-experience.md §2,§4,§7。
+// 仕様: docs/reference/conversation-experience.md §2,§4,§7。
 
 const req = (over: Partial<Requirement>): Requirement => ({
   id: "r1",

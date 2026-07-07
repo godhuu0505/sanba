@@ -426,7 +426,7 @@ export default function EntryFlow({
     prevLoggedIn.current = auth.loggedIn;
   }, [auth.loggedIn]);
 
-  // 厳密な認証ゲート（全画面保護 / docs/design/figma-implementation-audit.md A節）。
+  // 厳密な認証ゲート（全画面保護 / docs/notes/figma-implementation-audit.md A節）。
   // 未ログインは /login?next= へ戻す。next は現在のステップに対応する URL にし、ログイン後に
   // 元の画面（準備なら /{slug}/prepare）へ戻す。判定は authGate に集約（解決前・dev の扱いも含む）。
   const gate = authGate(auth, step === "prepare" && urlSlug ? preparePath(urlSlug) : HOME_PATH);

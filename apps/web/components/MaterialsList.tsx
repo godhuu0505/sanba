@@ -1,7 +1,7 @@
 "use client";
 
 // 参考資料タブの本文。投入済み素材を一覧し、解析進捗をインライン表示する。
-// 仕様: docs/design/conversation-experience.md §3,§6 / screens/05-materials.md。
+// 仕様: docs/reference/conversation-experience.md §3,§6 / screens/05-materials.md。
 // 解析はバックグラウンドで進む（会話を止めない）ため、各行に状態（アップロード/解析中/完了/失敗）を出す。
 
 // 素材ビューモデルは共有セレクタ層（selectMaterials）に寄せ、ここでは再エクスポートのみ。

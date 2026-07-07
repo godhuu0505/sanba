@@ -1,7 +1,7 @@
 "use client";
 
 // 08 結果（要件産婆結果）。確定要件の受け渡し。
-// 仕様: docs/design/conversation-experience.md §7 / screens/08-result.md / Figma 144:86。
+// 仕様: docs/reference/conversation-experience.md §7 / screens/08-result.md / Figma 144:86。
 // 画面で確認＝必須。PDF/Drive/Issue 出力＝任意（ハンドラがあるものだけ出す）。
 
 import { Check, ChevronRight, CircleDot, Cloud, FileText, type LucideIcon } from "lucide-react";

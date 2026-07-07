@@ -2,8 +2,8 @@
 
 ## 質問・使い方の相談
 
-まず [`README.md`](README.md) / [`docs/local-dev.md`](docs/local-dev.md) / [`docs/architecture.md`](docs/architecture.md) を確認してください。
-解決しない場合は **[Issue](.github/ISSUE_TEMPLATE/)** を立ててください（bug / feature / config のテンプレートから選択）。
+まず [`README.md`](README.md) / [`docs/how-to/local-dev.md`](docs/how-to/local-dev.md) / [`docs/reference/architecture.md`](docs/reference/architecture.md) を確認してください。
+解決しない場合は **[Issue](.github/ISSUE_TEMPLATE)** を立ててください（bug / feature / config のテンプレートから選択）。
 
 ## バグ報告・機能要望
 

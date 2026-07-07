@@ -1,6 +1,6 @@
 "use client";
 
-// 常時2行ボトムバー。仕様: docs/design/conversation-experience.md §5。
+// 常時2行ボトムバー。仕様: docs/reference/conversation-experience.md §5。
 // 1行目: 消音（音声出力 ON/OFF）/ マイク・ミュート（マイク入力 ON/OFF）の2系統トグル。
 // 2行目: テキスト入力欄 + 送信（音声と併用）。
 // a11y: 見た目が古語でも aria-label は現代語の機能名（ADR-0017）。

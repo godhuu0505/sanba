@@ -1,7 +1,7 @@
 "use client";
 
 // 05-1 資料詳細（ボトムシート）。1素材の抽出要件チップと「言葉×画の矛盾」を種別別に確認する。
-// 仕様: docs/design/conversation-experience.md §6 / docs/design/screens/05-materials.md / Figma 148:2。
+// 仕様: docs/reference/conversation-experience.md §6 / docs/reference/screens/05-materials.md / Figma 148:2。
 //
 // 設計ポイント:
 // - analysis.visual の conflicts（言葉×画の矛盾）は一覧（MaterialsList）には表示先が無いため、

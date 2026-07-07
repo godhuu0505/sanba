@@ -1,7 +1,7 @@
 "use client";
 
 // 問いピン（選択肢）の最小構成 / 一覧（展開カード）を描くプレゼン部品。
-// 仕様: docs/design/conversation-experience.md §4。
+// 仕様: docs/reference/conversation-experience.md §4。
 // - min : 問い1行＋横スクロールchip（タップ=回答）＋『広げる』。
 // - list: 行（タップ=即選択）＋各行『詳細›』（動的選択肢のみ）＋『閉じる』。
 // 検知（矛盾/抜け）はバッジ＋枠色で示す（色のみ依存しない・ADR-0017）。

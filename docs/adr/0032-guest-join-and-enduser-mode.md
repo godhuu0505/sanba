@@ -1,14 +1,14 @@
 # ADR-0032: ゲスト入場と利用者モード（interview_mode）
 
-- ステータス: **Accepted（受理）**
+- ステータス: Accepted（受理）
 - 日付: 2026-07-05（提案・受理）
 - 関連: [ADR-0031](0031-product-entity-and-invite-links.md)（product・深掘りリンク — 本 ADR はその
   `scope=end_user` を解禁する）/ [ADR-0012](0012-google-login.md)（Google ログイン — 本 ADR が例外を定義）/
   [ADR-0024](0024-grill-me-interview-persona.md)（grill-me ペルソナ — developer モードとして位置づけ）/
   [ADR-0003](0003-elasticsearch-grounding.md)・[ADR-0028](0028-github-repo-linking.md)（grounding / repo 索引）/
   [ADR-0005](0005-llm-judge-eval-loop.md)（評価ループ）
-- 背景文書: [personas-and-use-cases.md](../design/personas-and-use-cases.md) /
-  [要件定義](../design/product-enduser-requirements.md) FR-2.x
+- 背景文書: [personas-and-use-cases.md](../explanation/personas-and-use-cases.md) /
+  [要件定義](../reference/product-enduser-requirements.md) FR-2.x
 
 ## コンテキスト
 

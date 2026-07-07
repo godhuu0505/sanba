@@ -98,7 +98,7 @@ describe("mergeMaterials", () => {
 
 // 参考資料タブ（05）の素材ビューモデル。analysis.progress/visual 由来の AnalysisState を
 // MaterialsList が消費する MaterialItem へ寄せる純セレクタ。
-// 仕様: docs/design/conversation-experience.md §3,§6。GET context/files で name/失敗状態を補完予定。
+// 仕様: docs/reference/conversation-experience.md §3,§6。GET context/files で name/失敗状態を補完予定。
 describe("selectMaterials", () => {
   const analysis = (over: Partial<AnalysisState>): AnalysisState => ({
     asset_id: "a1",
@@ -239,7 +239,7 @@ describe("selectMaterialDetail", () => {
 });
 
 // ミニ状況（◆要件 N ・ ⚠未確定 N ・ 📎資料 N（解析中））の純セレクタ。
-// 仕様: docs/design/conversation-experience.md §2（常時ミニ状況）。
+// 仕様: docs/reference/conversation-experience.md §2（常時ミニ状況）。
 describe("selectMiniStatus", () => {
   it("要件数・未解消検知数・素材数・解析中フラグを導出する（深掘り一覧と同じ規則）", () => {
     const s = {

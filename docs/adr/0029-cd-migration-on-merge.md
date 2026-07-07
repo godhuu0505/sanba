@@ -1,11 +1,11 @@
 # ADR-0029: main マージ→本番デプロイ時のマイグレーション実行設計
 
-- ステータス: Proposed（提案中）
+- ステータス: Proposed
 - 日付: 2026-06-29
 - 関連: #36（Cloud Run 実デプロイ）/ ADR-0016（CI/CD 戦略・public 化）/ ADR-0006（Cloud Run + LiveKit）/
   ADR-0003（Elasticsearch グラウンディング）/
   **ADR-0026（main マージで terraform 自動 apply — 本 ADR の前提）** /
-  `docs/runbooks/deploy-gcp.md` / `.github/workflows/deploy.yml`
+  `docs/how-to/deploy-gcp.md` / `.github/workflows/deploy.yml`
 - 下敷き: CLAUDE.md「本番志向（production-ready）」「観測できないものは運用できない」「設計判断とレビューは人間が行う」
 - 調査: 2024–2026 の一次情報（Google Cloud / Elastic / GitHub Actions 公式）を多ソース検証し、初版の前提を見直して改訂（§7 参考文献・§8 検証ノート）。
 - 改訂（2026-07-04）: ADR-0026（PR #284）により **Terraform 管理の宣言的設定（Firestore TTL /
@@ -27,7 +27,7 @@
 `on: push: branches:[main]` で、変更のあった app（agent/api/web）だけを Cloud Run にデプロイする
 （WIF キーレス認証・Buildx GHA キャッシュ・**イメージ差し替えのみ**で env/secret は Terraform 管理、
 ADR-0016）。ただし起動ガード `if: ${{ vars.GCP_PROJECT_ID != '' }}` があり、**GCP 未配線の間は
-スキップされ何も起きない**。実 GCP の配線状態は `docs/runbooks/deploy-gcp.md` §1–§6 と §1「GCP 状態の
+スキップされ何も起きない**。実 GCP の配線状態は `docs/how-to/deploy-gcp.md` §1–§6 と §1「GCP 状態の
 確認手順」で点検する。
 
 2 の **「マイグレーション」に相当する明示的な step は CD に存在しない**。SANBA に SQL DB / Alembic は

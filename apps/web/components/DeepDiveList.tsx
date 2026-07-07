@@ -1,7 +1,7 @@
 "use client";
 
 // 要件絵巻タブの「深掘り対象」セクション。未解消の検知（矛盾/抜け）を並べ、会話へ戻す導線を持つ。
-// 仕様: docs/design/conversation-experience.md §7 / screens/06-requirements-scroll.md。
+// 仕様: docs/reference/conversation-experience.md §7 / screens/06-requirements-scroll.md。
 // 色は意味の写像（矛盾=緋 / 抜け=黄土）。色のみに依存せずラベル併記（ADR-0017）。
 
 import { ChevronRight } from "lucide-react";

@@ -1,7 +1,7 @@
 "use client";
 
 // 07 判定（確定ゲート）。終了押下時に未解消が 0 件か検める。
-// 仕様: docs/design/conversation-experience.md §7 / screens/07-judgment.md。
+// 仕様: docs/reference/conversation-experience.md §7 / screens/07-judgment.md。
 // 未解消が 1 件でも残れば確定不可（戻って解く / 未解消のまま終う）。0 件なら確定可。
 
 import { Scale, TriangleAlert } from "lucide-react";

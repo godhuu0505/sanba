@@ -4,7 +4,7 @@
 - 日付: 2026-06-28
 - 関連: #145（analysis.progress / analysis.visual の publish）/ #143（05 参考資料の進捗表示）/
   #287（実ルーム publish スモークテスト・`enable_realtime_publish` 本番 ON）/
-  ADR-0004（マルチモーダル入力）/ ADR-0021（reliable-seq・seq 永続化）/ 契約 `docs/design/realtime-contract.md` §3,§5
+  ADR-0004（マルチモーダル入力）/ ADR-0021（reliable-seq・seq 永続化）/ 契約 `docs/reference/realtime-contract.md` §3,§5
 - 下敷き: ADR-0008（中核＝矛盾・抜け検知）/ ADR-0018（会話体験・05 参考資料は会話を止めない）
 
 ## コンテキスト

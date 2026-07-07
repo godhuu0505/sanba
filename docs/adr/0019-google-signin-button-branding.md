@@ -2,7 +2,7 @@
 
 - ステータス: Accepted（方針確定。実装は WAVE2 / issue #218 フォローアップ）
 - 日付: 2026-06-28
-- 関連: ADR-0012（Google ログイン）、ADR-0014（ログイン/管理画面）、ADR-0008（製品コンセプト / 出所メタ）、issue #218、親エピック #157、監査 `docs/design/figma-implementation-audit.md` B-1 #2
+- 関連: ADR-0012（Google ログイン）、ADR-0014（ログイン/管理画面）、ADR-0008（製品コンセプト / 出所メタ）、issue #218、親エピック #157、監査 `docs/notes/figma-implementation-audit.md` B-1 #2
 
 ## コンテキスト
 
