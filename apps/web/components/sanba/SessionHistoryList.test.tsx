@@ -31,13 +31,19 @@ describe("SessionHistoryList（過去の要件を見る）", () => {
     expect(screen.getByText("まだ何もありません")).toBeTruthy();
   });
 
-  it("items があると標題・日付・末尾シェブロン › を行ごとに出す", () => {
+  it("items があると標題・日付＋セッションID・末尾シェブロン › を行ごとに出す", () => {
     render(<SessionHistoryList items={ITEMS} />);
     expect(screen.getByText("新機能要件定義")).toBeTruthy();
-    expect(screen.getByText("2024/06/20")).toBeTruthy();
+    // 日付とセッションIDを同じサブ行に併記する（どのセッションか一覧で識別できる）。
+    expect(screen.getByText("2024/06/20 ・ s1")).toBeTruthy();
     expect(screen.getByText("決済フロー見直し")).toBeTruthy();
     // 色のみに依存しない遷移手掛かり（シェブロン）が各行にある。
     expect(screen.getAllByText("›")).toHaveLength(ITEMS.length);
+  });
+
+  it("日付が空でもセッションIDはサブ行に出す", () => {
+    render(<SessionHistoryList items={[{ id: "s9", title: "無題", date: "" }]} />);
+    expect(screen.getByText("s9")).toBeTruthy();
   });
 
   it("各行はリンクで、既定の遷移先は過去要件の絵巻閲覧画面 /results/{id}", () => {

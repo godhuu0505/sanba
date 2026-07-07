@@ -325,6 +325,11 @@ class Utterance(BaseModel):
     ts: datetime = Field(default_factory=_now)
 
 
+# セッション作成時の既定タイトル。要件確定（finalize）で Vertex AI 生成タイトルに
+# 差し替わる前の暫定値であり、Issue タイトルのフォールバック判定でも「未生成」の目印に使う。
+DEFAULT_SESSION_TITLE = "要件インタビュー"
+
+
 class SessionMeta(BaseModel):
     """インタビューセッションのメタ文書 (`sessions/{id}`)。
 

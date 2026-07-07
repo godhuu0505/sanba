@@ -115,11 +115,41 @@ def test_unknown_placeholders_are_left_as_is() -> None:
     assert out == "{{unknown_thing}}\n"
 
 
-def test_issue_title_is_stable_across_exporters() -> None:
+def test_issue_title_uses_generated_session_title() -> None:
     from sanba_shared.result_document import issue_title
 
-    # api / agent の起票が同じ標題を使う（本文整形の一本化 / ADR-0043）。
-    assert issue_title("sess-1") == "要件定義: sess-1"
+    # 要件確定時に生成したタイトルをそのまま Issue 標題に使う（api / agent で同形）。
+    assert issue_title("在庫管理アプリの通知要件", "sess-1") == "在庫管理アプリの通知要件"
+
+
+def test_issue_title_falls_back_to_session_id_when_title_is_default_or_empty() -> None:
+    from sanba_shared.models import DEFAULT_SESSION_TITLE
+    from sanba_shared.result_document import issue_title
+
+    # 生成前（既定タイトルのまま）・空文字は従来のセッションID書式へフォールバックする。
+    assert issue_title(DEFAULT_SESSION_TITLE, "sess-1") == "要件定義: sess-1"
+    assert issue_title("", "sess-1") == "要件定義: sess-1"
+    assert issue_title("   ", "sess-1") == "要件定義: sess-1"
+
+
+def test_build_title_prompt_lists_only_confirmed_statements() -> None:
+    from sanba_shared.result_document import build_title_prompt
+
+    prompt = build_title_prompt(
+        [
+            {"statement": "在庫を検索できる", "status": "confirmed"},
+            {"statement": "却下された要件", "status": "draft"},
+        ]
+    )
+    assert "在庫を検索できる" in prompt
+    assert "却下された要件" not in prompt
+
+
+def test_build_title_prompt_handles_no_confirmed_requirements() -> None:
+    from sanba_shared.result_document import build_title_prompt
+
+    prompt = build_title_prompt([{"statement": "却下", "status": "draft"}])
+    assert "（確定要件なし）" in prompt
 
 
 def test_requirements_to_render_dicts_maps_models_to_contract_shape() -> None:

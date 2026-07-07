@@ -6,7 +6,7 @@ import { ListRow } from "./ListRow";
 
 /**
  * 01 ホーム「過去の要件を見る」履歴セクション（Figma 正本 40:2 / 子 99:3・99:5）。
- * 見出し＋履歴リスト（標題＋日付＋末尾 ›）をまとめて描画する領域コンポーネント。
+ * 見出し＋履歴リスト（標題＋日付・セッションID＋末尾 ›）をまとめて描画する領域コンポーネント。
  * データ取得 API は別途。`items` を props で受け、空配列のときは空状態の
  * 文言だけを出す（遷移要素は出さない）。行は既存 ListRow を再利用する。
  */
@@ -63,10 +63,14 @@ export const SessionHistoryList = React.forwardRef<HTMLElement, SessionHistoryLi
                     依存しない遷移手掛かり、min-h-[44px] でタップ領域 44px 以上を確保する。 */}
                 <Link
                   href={hrefFor(item.id)}
-                  aria-label={`${item.title}（${item.date}）`}
+                  aria-label={`${item.title}（${item.date}・${item.id}）`}
                   className="block rounded-[12px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sanba-gold"
                 >
-                  <ListRow className="min-h-[44px]" title={item.title} subtitle={item.date} />
+                  <ListRow
+                    className="min-h-[44px]"
+                    title={item.title}
+                    subtitle={item.date ? `${item.date} ・ ${item.id}` : item.id}
+                  />
                 </Link>
               </li>
             ))}

@@ -257,6 +257,27 @@ class SessionRepository:
             self._mem_sessions[session_id] = updated
         return updated
 
+    def set_session_title(self, session_id: str, title: str) -> SessionMeta | None:
+        """セッションのタイトルを差し替える（要件確定時の Vertex AI 生成タイトル）。
+
+        過去要件一覧の見出しと GitHub Issue の標題がこの値を共有する。存在しなければ None。
+        merge 保存で確定スナップショット等の他フィールドを温存する。
+        """
+        title = title.strip()
+        if not title:
+            return self.get_session(session_id)
+        meta = self.get_session(session_id)
+        if meta is None:
+            return None
+        updated = meta.model_copy(update={"title": title})
+        if self._client is not None:
+            self._client.collection("sessions").document(session_id).set(
+                {"title": title}, merge=True
+            )
+        else:
+            self._mem_sessions[session_id] = updated
+        return updated
+
     def set_session_github(
         self,
         session_id: str,

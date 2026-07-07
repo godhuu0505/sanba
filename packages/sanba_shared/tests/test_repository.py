@@ -47,6 +47,22 @@ def test_create_and_list_sessions() -> None:
     assert repo.list_sessions() == [meta]
 
 
+def test_set_session_title_updates_and_ignores_blank() -> None:
+    repo = _repo()
+    repo.create_session_doc(
+        SessionMeta(id="sess-t", title="要件インタビュー", owner_sub="sub", owner_email="o@e.com")
+    )
+    updated = repo.set_session_title("sess-t", "  在庫管理アプリの通知要件  ")
+    assert updated is not None
+    assert updated.title == "在庫管理アプリの通知要件"
+    assert repo.get_session("sess-t").title == "在庫管理アプリの通知要件"
+    # 空文字は既存タイトルを温存する（生成失敗で上書きしない）。
+    repo.set_session_title("sess-t", "   ")
+    assert repo.get_session("sess-t").title == "在庫管理アプリの通知要件"
+    # 存在しないセッションは None。
+    assert repo.set_session_title("missing", "x") is None
+
+
 def test_list_sessions_by_owner_filters_and_sorts() -> None:
     from datetime import UTC, datetime
 
