@@ -406,6 +406,60 @@ terraform state mv \
 
 ---
 
+## 6.8. Elasticsearch（grounding）を有効化する
+
+grounding（RAG の根拠付け・過去セッション検索・素材のベクトル/全文検索。ADR-0003）は既定で
+**in-memory フォールバック**で動く（`ELASTICSEARCH_URL` 空）。in-memory はプロセス内メモリで
+揮発し複数インスタンス間で共有されず、kNN ベクトル検索も無効（トークン重なりのみ）になる。
+本番で grounding を機能させるにはマネージド Elasticsearch を用意して接続する。
+
+> 配線（`TF_VAR_elasticsearch_url` / `ELASTICSEARCH_API_KEY` の Cloud Run 注入・secret の箱）は
+> terraform 側で完成済み。以下は**設定値の投入だけ**で、terraform コードの変更は不要。
+
+**手順（Elastic Cloud を利用する場合）**
+
+1. **Elastic Cloud で deployment を作成**する。クラスタ本体は out-of-band（コンソール）で用意する
+   （secrets.tf の方針: terraform は箱と参照だけを管理し、値・クラスタは管理しない）。
+   - リージョンは Cloud Run と揃える（**GCP `us-central1`** 推奨。レイテンシ最小）。
+   - バージョンは Python クライアント互換（`elasticsearch>=8.14,<10`）に合わせ **8.14 以上**（9.x も可）。
+   - deployment の **Elasticsearch endpoint URL**（例 `https://xxxx.es.us-central1.gcp.elastic-cloud.com`）と、
+     **API key** を発行して控える（Kibana → Stack Management → API keys、または deployment 作成時のキー）。
+
+2. **endpoint URL を GitHub Variable `ELASTICSEARCH_URL` に設定**する（非機微の識別子なので Variables）。
+   Settings → Secrets and variables → Actions → Variables タブ。
+
+3. **API key を Secret Manager に投入**する（値の唯一の置き場。GitHub / state には残さない。§6.7 と同じ流儀）:
+   ```bash
+   printf '%s' "$ELASTICSEARCH_API_KEY" | gcloud secrets versions add sanba-elasticsearch-api-key --data-file=-
+   ```
+
+4. **`elasticsearch-api-key` を GitHub Variable `ACTIVE_APP_SECRET_IDS`（JSON 配列）に追加**する。
+   これで Cloud Run（api / agent / worker）に `ELASTICSEARCH_API_KEY` が注入される（空箱参照は起動失敗
+   するため、値投入済みのものだけ active にする）:
+   ```
+   ACTIVE_APP_SECRET_IDS = ["livekit-api-key","livekit-api-secret","elasticsearch-api-key"]
+   ```
+
+5. **apply**（Actions → Terraform → `apply`）。`ELASTICSEARCH_URL` が env に入り、常駐している
+   `sanba-agent` は secret env をインスタンス起動時に解決するため、反映には新 revision の
+   デプロイ（インスタンス入れ替え）が要る（§6.7 の再デプロイ手順を参照）。
+
+6. **確認**:
+   - 反映後、agent のログに `elasticsearch_unavailable_using_memory` が**出ない**こと。
+   - 知識ベース（KB）は agent 起動時に**冪等シード**される（`knowledge:<source>` の決定的 _id で upsert。
+     複数インスタンスでも重複しない）。`sanba-grounding` インデックスに `kind=knowledge` の
+     ドキュメントが 5 件入ることを Kibana で確認する。
+
+> **コスト/運用の再検討**: Elastic Cloud マネージドは運用不要な反面ランニングコストが高い
+> （最小構成でも比較的高額。14 日無料トライアルあり）。トライアル期間内に「継続課金するか、
+> GCE 単一ノード自前ホスト等へ切り替えるか」を判断する。
+
+> **データ所在の注意**: grounding にはセッション由来テキストが入る。`MASK_PII_BEFORE_INDEX=true`
+> でマスクした上で投入するが、Elastic Cloud は GCP 外（Elastic 運用基盤）なので第三者データ処理に
+> あたる。データフロー・保持の扱いは `../reference/security.md` を正とする。
+
+---
+
 ## 7. public 化に伴う GitHub 設定ハードニング（#68）
 
 リポジトリを public にする**前後**に、GUI で **コード化されないリポジトリ設定**を有効化する
@@ -423,6 +477,7 @@ branch protection・特権ワークフローの確認）。
 - [ ] 公開 URL でインタビュー開始できる（README に掲載）。
 - [ ] `deploy.yml` が GitHub Actions / GitHub Mobile から再現デプロイできる。
 - [ ] LiveKit 実キーで音声経路が通る（#35 と連携）。
+- [ ] （§6.8）Elasticsearch を有効化するなら: `ELASTICSEARCH_URL` 設定・`sanba-elasticsearch-api-key` 投入・`ACTIVE_APP_SECRET_IDS` に追加・再デプロイ済み。agent ログに `elasticsearch_unavailable_using_memory` が出ず、KB が索引済み。
 - [ ] #68 のリポジトリ設定が全て有効。PR #74（#67）がマージ済み。
 - [ ] （§6.5）apex 取得・`vars.PROD_DOMAIN`（+ 必要なら `vars.PROD_WEB_SUBDOMAIN`）設定・apply 済み・NS を Cloud DNS に向け済み・`sanba-cert` が `ACTIVE`。
 - [ ] （§6.5）Google OAuth の承認済み JavaScript 生成元に web オリジン（例 `https://youken.sanba.net`）を追加済み。

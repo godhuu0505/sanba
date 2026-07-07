@@ -102,6 +102,39 @@ def test_build_search_params_scopes_context_to_session() -> None:
     assert any("bool" in f and "should" in f["bool"] for f in filters)
 
 
+def test_index_passage_upserts_with_deterministic_id(monkeypatch) -> None:
+    # doc_id を渡した ES 経路は `id=` 付きで index する（同じ文書の再投入で重複を作らない）。
+    # 未指定なら従来どおり自動採番（id を渡さない）。ライブ ES 無しで分岐だけ検証する。
+    import sanba_agent.retrieval as retrieval
+
+    calls: list[dict] = []
+
+    class _FakeClient:
+        def index(self, **kwargs: object) -> None:
+            calls.append(kwargs)
+
+    monkeypatch.setattr(retrieval, "embed_text", lambda text: None)
+    store = GroundingStore()
+    store._client = _FakeClient()  # is_memory=False（ES 経路）へ切り替える
+    store.index_passage("KB text", "guide:x", "knowledge", doc_id="knowledge:guide:x")
+    store.index_passage("no id", "guide:y", "knowledge")
+    assert calls[0]["id"] == "knowledge:guide:x"
+    assert calls[0]["index"] == retrieval.INDEX
+    assert "id" not in calls[1]
+
+
+def test_seed_knowledge_base_populates_grounding() -> None:
+    # is_memory かどうかに関わらず KB を投入する（ES 有効時に knowledge が空になる事故を防ぐ）。
+    from sanba_agent.main import KNOWLEDGE_BASE, seed_knowledge_base
+
+    store = GroundingStore()
+    assert store.is_memory is True
+    seed_knowledge_base(store)
+    assert len(store._mem) == len(KNOWLEDGE_BASE)
+    hits = store.search("MoSCoW 優先度付け", k=3)
+    assert any(p.source == "guide:moscow" for p in hits)
+
+
 def test_is_stale_repo_passage_filters_other_sha() -> None:
     from sanba_agent.main import _is_stale_repo_passage
 
