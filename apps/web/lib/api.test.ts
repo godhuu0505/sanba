@@ -46,7 +46,7 @@ describe("setAuthNonce / X-Auth-Nonce（ADR-0047 §2）", () => {
   });
 });
 
-describe("classifyUpload / classifyFileUpload（受理判定・ADR-0044）", () => {
+describe("classifyUpload / classifyFileUpload（受理判定・ADR-0049）", () => {
   it("画像/動画に加えて資料（md/pdf/html/csv/json/Office）を受理する", () => {
     expect(classifyUpload("mock.png")).toBe("image");
     expect(classifyUpload("rec.MOV")).toBe("video");

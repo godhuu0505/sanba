@@ -11,6 +11,7 @@ function setup(over: Partial<React.ComponentProps<typeof MaterialSourceSheet>> =
     onToggleCamera: vi.fn(),
     onToggleScreenShare: vi.fn(),
     onSelectSource: vi.fn(),
+    onDrive: vi.fn(),
   };
   render(<MaterialSourceSheet {...cb} {...over} />);
   return cb;
@@ -63,20 +64,11 @@ describe("MaterialSourceSheet（05-2 手段選択シート）", () => {
     expect(screen.getByText("画面共有を停止")).toBeTruthy();
   });
 
-  it("Drive は未承認（ADR-0007）なので押下で準備中を案内し、計測（drive）だけ走る", () => {
+  it("Drive を押すと onDrive（Picker）を呼び、種別（drive）を計測する（ADR-0049）", () => {
     const cb = setup();
     fireEvent.click(screen.getByText("Google ドライブから選ぶ"));
+    expect(cb.onDrive).toHaveBeenCalledTimes(1);
     expect(cb.onSelectSource).toHaveBeenCalledWith("drive");
-    expect(screen.getByText(/準備中/)).toBeTruthy();
-  });
-
-  it("onDrive 注入時は準備中ではなく実導線を呼ぶ", () => {
-    const onDrive = vi.fn();
-    const cb = setup({ onDrive });
-    fireEvent.click(screen.getByText("Google ドライブから選ぶ"));
-    expect(onDrive).toHaveBeenCalledTimes(1);
-    expect(cb.onSelectSource).toHaveBeenCalledWith("drive");
-    expect(screen.queryByText(/準備中/)).toBeNull();
   });
 
   it("キャンセル・背景・ESC で閉じる（a11y）", () => {

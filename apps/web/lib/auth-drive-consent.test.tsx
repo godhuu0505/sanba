@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// Google ドライブ同意（drive.file / ADR-0044）:
+// Google ドライブ同意（drive.file / ADR-0049）:
 // - requestDriveAccess は GIS トークンクライアントで同意を求め、許可でトークン・拒否で null。
 // - 有効期限内のトークンは使い回し、同意ポップアップを乱発しない。
 // - 明示ログイン（select_by=btn 等）の直後に自動で同意を求める。リロード時の静かな復元

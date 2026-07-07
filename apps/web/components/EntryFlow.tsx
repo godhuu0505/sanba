@@ -169,7 +169,7 @@ export default function EntryFlow({
   const [staged, setStaged] = useState<File[]>([]);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [attachError, setAttachError] = useState<string | null>(null);
-  // Google ドライブからの取り込み中（export/download 中）の表示（ADR-0044）。
+  // Google ドライブからの取り込み中（export/download 中）の表示（ADR-0049）。
   const [driveBusy, setDriveBusy] = useState(false);
   // 開始時に「実際に投入できた」名前と失敗件数のスナップショット。03-0 サマリは
   // staged ではなくこれを参照し、未登録ファイルを「添付済み」と誤認させない。
@@ -621,7 +621,7 @@ export default function EntryFlow({
     );
   }
 
-  // Google ドライブから選んでステージする（ADR-0044）。権限は Google ログイン時に求めるが、
+  // Google ドライブから選んでステージする（ADR-0049）。権限は Google ログイン時に求めるが、
   // 未許可（拒否・ブロック・失効）ならここで再度同意ポップアップを出す（要件: 権限が無い状態で
   // アップロードしようとしたタイミングで再度権限をもらう）。それでも許可されなければ取り込まない。
   async function handleDriveImport() {
@@ -1024,7 +1024,7 @@ export default function EntryFlow({
 
         {/* 資料の追加方法シート（再利用）。準備画面は LiveKit ルーム外のため
             カメラ/画面共有ハンドラは渡さない＝アップロード/Drive のみ。Drive は drive.file +
-            Google Picker（ADR-0044）。権限未許可の失敗はシート内の error に出し、再タップで
+            Google Picker（ADR-0049）。権限未許可の失敗はシート内の error に出し、再タップで
             再同意を求める。投入種別は onSelectSource で計測可能にする（配線予定）。 */}
         {sheetOpen && (
           <MaterialSourceSheet

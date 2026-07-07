@@ -16,7 +16,7 @@ const authState = {
   devSignIn: vi.fn(),
   signOut: vi.fn(),
   resetButton: vi.fn(),
-  // Drive 同意（ADR-0044）。既定は未確定・未許可（取り込みテストで個別に上書きする）。
+  // Drive 同意（ADR-0049）。既定は未確定・未許可（取り込みテストで個別に上書きする）。
   driveGranted: null as boolean | null,
   requestDriveAccess: vi.fn(async () => null as string | null),
 };
@@ -112,7 +112,7 @@ vi.mock("../lib/api", () => ({
   },
 }));
 
-// Google ドライブ連携（ADR-0044）。既定は未構成（＝この環境では利用できない案内）。
+// Google ドライブ連携（ADR-0049）。既定は未構成（＝この環境では利用できない案内）。
 // 取り込みフローのテストは driveConfigured / 各 fn を上書きして使う。
 let driveConfigured = false;
 const openDrivePicker = vi.fn(async (..._a: unknown[]) => [] as unknown[]);
@@ -721,7 +721,7 @@ describe("入口フロー（#140）", () => {
   });
 
   it("非対応形式は弾いて理由を出し、ステージしない", async () => {
-    // .txt/.md/.pdf 等の資料は受理対象になった（ADR-0044）ため、非対応例は実行ファイル。
+    // .txt/.md/.pdf 等の資料は受理対象になった（ADR-0049）ため、非対応例は実行ファイル。
     const { container } = await gotoPrepare();
     const bad = new File(["x"], "malware.exe", { type: "application/octet-stream" });
     pickFiles(container, [bad]);
@@ -729,7 +729,7 @@ describe("入口フロー（#140）", () => {
     expect(screen.queryByRole("list", { name: "添付した参考資料" })).toBeNull();
   });
 
-  it("資料（Markdown/PDF/Office）もステージできる（ADR-0044）", async () => {
+  it("資料（Markdown/PDF/Office）もステージできる（ADR-0049）", async () => {
     const { container } = await gotoPrepare();
     pickFiles(container, [
       new File(["# spec"], "spec.md", { type: "text/markdown" }),
@@ -808,7 +808,7 @@ describe("入口フロー（#140）", () => {
     });
   });
 
-  it("Drive 取り込み中は開始・追加を無効化し、完了後にステージへ載る（ADR-0044 / Codex P2）", async () => {
+  it("Drive 取り込み中は開始・追加を無効化し、完了後にステージへ載る（ADR-0049 / Codex P2）", async () => {
     driveConfigured = true;
     authState.requestDriveAccess.mockImplementation(async () => "drive-tok");
     openDrivePicker.mockImplementation(async () => [
@@ -842,7 +842,7 @@ describe("入口フロー（#140）", () => {
     ).toBe(false);
   });
 
-  it("Drive 権限が未許可なら取り込まず、シート内で再同意を促す文言を出す（ADR-0044）", async () => {
+  it("Drive 権限が未許可なら取り込まず、シート内で再同意を促す文言を出す（ADR-0049）", async () => {
     driveConfigured = true;
     authState.requestDriveAccess.mockImplementation(async () => null); // 拒否/ブロック。
     await gotoPrepare();

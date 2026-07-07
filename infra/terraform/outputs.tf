@@ -45,6 +45,12 @@ output "managed_secrets" {
   description = "Secret Manager に作成した箱 (値は terraform 管理外。gcloud で投入する)。"
 }
 
+# 参考資料の Google ドライブ取り込み (ADR-0049)。
+output "picker_api_key_secret" {
+  value       = google_secret_manager_secret.picker_api_key.secret_id
+  description = "Secret Manager secret holding NEXT_PUBLIC_GOOGLE_API_KEY (browser Picker key). The web build reads it via WIF at build time."
+}
+
 # ---- Custom domain / Load Balancer (domain 設定時のみ意味を持つ) -------------
 output "lb_ip" {
   value       = local.domain_enabled ? google_compute_global_address.lb[0].address : ""

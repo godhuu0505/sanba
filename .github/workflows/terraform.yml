@@ -95,6 +95,9 @@ jobs:
       # Google ログインの OAuth Web クライアント ID。web (NEXT_PUBLIC) と API (aud 検証) で同値を使う。
       # 未設定だと API は認証経路を 503 でフェイルクローズする (apps/api auth_google.py)。
       TF_VAR_google_oauth_client_id:      ${{ vars.NEXT_PUBLIC_GOOGLE_CLIENT_ID }}
+      # web ビルド SA。Picker 用 API キーの Secret を build 時に読む accessor をこの SA に付与する
+      # (ADR-0049)。SA email は公開識別子なので Variable 管理。空なら付与しない (Drive 導線は無効)。
+      TF_VAR_deploy_sa:                   ${{ vars.DEPLOY_SA }}
       TF_VAR_elasticsearch_url:           ${{ vars.ELASTICSEARCH_URL }}
       TF_VAR_otel_exporter_otlp_endpoint: ${{ vars.OTEL_EXPORTER_OTLP_ENDPOINT }}
       # 値が投入済みで Cloud Run に注入する app secret の id (JSON 配列)。値そのものは GitHub には
