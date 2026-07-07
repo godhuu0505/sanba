@@ -1305,7 +1305,7 @@ class SANBAAgent(Agent):
             ),
         )
         url = GitHubConnector(settings.github_token, gh_repo).create_issue(
-            issue_title(self._session_id),
+            issue_title(meta.title if meta is not None else self._session_id, self._session_id),
             body,
             labels=requirements_to_issue_labels(render_dicts),
         )

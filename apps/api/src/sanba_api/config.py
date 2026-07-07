@@ -123,6 +123,8 @@ class Settings(BaseSettings):
     google_api_key: str = ""
     google_genai_use_vertexai: bool = False
     gemini_embed_model: str = "gemini-embedding-001"
+    # 要件確定時の成果物/Issue タイトル生成に使う推論モデル（agent と同じ既定）。
+    gemini_reasoning_model: str = "gemini-2.5-flash"
     # Max characters accepted per context upload (guards memory/cost).
     max_context_chars: int = 200_000
 

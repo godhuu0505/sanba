@@ -15,6 +15,7 @@ import structlog
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 from sanba_shared.models import (
+    DEFAULT_SESSION_TITLE,
     Audience,
     Product,
     RequirementStatus,
@@ -76,6 +77,7 @@ from ..storage import (
     resolve_content_type,
 )
 from ..tasks import build_payload, enqueue_video_analysis
+from ..titles import generate_requirement_title
 from ..vision import analyze_image
 
 log = structlog.get_logger(__name__)
@@ -85,7 +87,7 @@ router = APIRouter()
 
 # ---- Schemas ---------------------------------------------------------------
 class CreateSessionRequest(BaseModel):
-    title: str = "要件インタビュー"
+    title: str = DEFAULT_SESSION_TITLE
     # Roles to mint invites for (owner shares these links with participants).
     roles: list[str] = ["pm", "engineer", "customer"]
     # Explicit consent to recording + AI processing.
@@ -1062,6 +1064,13 @@ def finalize_session_requirements(
     )
     if meta is None:
         raise HTTPException(status_code=404, detail="session not found")
+    # 確定要件から成果物タイトルを Vertex AI で生成し、セッションタイトルへ保存する。
+    # 過去要件一覧の見出しと GitHub Issue の標題がこの値を共有する。生成不可（認証情報なし・
+    # 失敗）のときは既定タイトルを保ち、Issue 標題は issue_title のフォールバックに委ねる。
+    generated_title = generate_requirement_title(confirmed)
+    if generated_title:
+        _repo.set_session_title(session_id, generated_title)
+        log.info("session_title_generated", session=session_id, title=generated_title)
     # 確定時集合を成果物として保全する: 通常は approved で expireAt が外れ 30 日 TTL の
     # 対象外になる。ゲストセッション（owner_email == ""）は例外: セッション文書
     # 自体が 30 日 TTL で消えるため要件 TTL を外すと orphan になる（ADR-0032 / FR-2.7）。
@@ -1142,7 +1151,7 @@ def export_requirements(
     url = github_export.create_issue(
         settings.github_token,
         export_repo,
-        issue_title(session_id),
+        issue_title(session.title, session_id),
         body,
         labels=requirements_to_issue_labels(confirmed),
     )

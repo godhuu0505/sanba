@@ -17,7 +17,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from .models import Requirement, RequirementStatus
+from .models import DEFAULT_SESSION_TITLE, Requirement, RequirementStatus
 
 _PRIORITY_ORDER = ["must", "should", "could", "wont"]
 # 企画者にもそのまま見せられるよう MoSCoW に日本語注記を併記する（閲覧ドキュメント・
@@ -32,9 +32,34 @@ _PRIORITY_LABELS = {
 _PLACEHOLDER = re.compile(r"\{\{(\w+)\}\}")
 
 
-def issue_title(session_id: str) -> str:
-    """GitHub Issue 起票時の標題（api / agent で同一の形を保つ）。"""
-    return f"要件定義: {session_id}"
+def issue_title(session_title: str, session_id: str) -> str:
+    """GitHub Issue 起票時の標題（api / agent で同一の形を保つ）。
+
+    要件確定時に Vertex AI で生成したタイトル（`SessionMeta.title` に保存済み）を
+    そのまま Issue タイトルに使う。生成前・生成失敗でセッションが既定タイトルのままの
+    ときだけ、従来のセッションID書式へフォールバックする（起票元をたどれる目印を残す）。
+    """
+    title = (session_title or "").strip()
+    if not title or title == DEFAULT_SESSION_TITLE:
+        return f"要件定義: {session_id}"
+    return title
+
+
+def build_title_prompt(requirements: list[dict[str, Any]]) -> str:
+    """確定要件から成果物/Issue の標題を1行生成させるプロンプト（純粋関数）。
+
+    LLM 呼び出しは呼び出し側（api）が行う。ここは整形だけに徹し、単体テスト可能に保つ。
+    """
+    confirmed = _confirmed(requirements)
+    statements = [str(r.get("statement", "")).strip() for r in confirmed]
+    body = "\n".join(f"- {s}" for s in statements if s) or "（確定要件なし）"
+    return (
+        "あなたは要件定義の成果物に短い標題を付ける編集者です。以下の確定要件を読み、"
+        "全体を一言で表す日本語のタイトルを1つだけ返してください。\n"
+        "制約: 30文字以内、体言止め、記号・引用符・接頭辞（「要件定義:」等）を付けない、"
+        "改行やコードブロックを含めない、タイトル本文のみを出力する。\n"
+        f"---\n{body}\n---"
+    )
 
 
 def requirements_to_render_dicts(requirements: list[Requirement]) -> list[dict[str, Any]]:
