@@ -1323,8 +1323,9 @@ class SANBAAgent(Agent):
 
 
 # Requirements-engineering knowledge base used to ground the agent's questions.
-# In production this is seeded once into Elasticsearch (see scripts/seed_kb); in
-# local/dev (memory-backed store) we seed inline so grounding works out of the box.
+# 起動時に冪等シードする（seed_knowledge_base）。ES 経路では source 由来の決定的 _id で
+# upsert するため、複数 agent インスタンスが同時起動しても重複せず、別途の out-of-band
+# シード（旧構成の scripts/seed_kb）は不要。
 KNOWLEDGE_BASE: list[tuple[str, str]] = [
     (
         "非機能要件は性能・可用性・セキュリティ・拡張性・運用性・コストの観点で確認する。",
@@ -1350,10 +1351,12 @@ KNOWLEDGE_BASE: list[tuple[str, str]] = [
 
 
 def seed_knowledge_base(grounding: GroundingStore) -> None:
-    if not grounding.is_memory:
-        return  # production KB is seeded out-of-band to avoid duplicate indexing
+    # ES 経路でも決定的 _id (`knowledge:<source>`) で upsert するので、起動のたびに呼んでも
+    # 重複しない。ES 有効時に KB を投入し損ねて grounding の knowledge が空になる事故を防ぐ。
     for text, source in KNOWLEDGE_BASE:
-        grounding.index_passage(text=text, source=source, kind="knowledge")
+        grounding.index_passage(
+            text=text, source=source, kind="knowledge", doc_id=f"knowledge:{source}"
+        )
 
 
 def _github_ready(repo_name: str) -> bool:

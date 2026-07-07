@@ -110,8 +110,16 @@ class GroundingStore:
 
     # ---- write --------------------------------------------------------
     def index_passage(
-        self, text: str, source: str, kind: str, session_id: str | None = None
+        self,
+        text: str,
+        source: str,
+        kind: str,
+        session_id: str | None = None,
+        doc_id: str | None = None,
     ) -> None:
+        # doc_id を渡すと ES 経路はその _id で upsert する（同じ内容の再投入で重複を作らない）。
+        # 起動時に毎回シードする KB のように、複数 agent インスタンスが同じ文書を書いても
+        # 一意になるよう決定的 _id を与えるための口（未指定なら従来どおり自動採番）。
         # Mask PII before anything is persisted to the grounding store.
         if settings.mask_pii_before_index:
             text = mask_pii(text)
@@ -132,7 +140,10 @@ class GroundingStore:
         }
         if embedding is not None:
             doc["embedding"] = embedding
-        self._client.index(index=INDEX, document=doc)
+        if doc_id is not None:
+            self._client.index(index=INDEX, id=doc_id, document=doc)
+        else:
+            self._client.index(index=INDEX, document=doc)
 
     # ---- read ---------------------------------------------------------
     def search(
