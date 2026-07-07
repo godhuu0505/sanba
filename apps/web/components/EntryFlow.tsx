@@ -1,9 +1,9 @@
 "use client";
 
-// 入口フロー（01 ホーム → 02 準備）。Issue #140 / Figma 正本 40:2・40:19。
+// 入口フロー（01 ホーム → 02 準備）。Figma 正本 40:2・40:19。
 // ADR-0017（一本道・Figma 正本準拠）に従い、価値訴求のホームと準備フォームを
 // 別ビューに分離する。タブ式ナビは持たず、戻る ‹ のみの一本道で進む。
-// 準備が整い接続すると 03 以降（SessionView）へ引き渡す（中身は #141 が担当）。
+// 準備が整い接続すると 03 以降（SessionView）へ引き渡す。
 //
 // 対象アプリの選択は 01 ホームの開始ゲート（ADR-0044）: アプリを選ぶまで
 // 「＋ 壁打ちを始める」は活性化せず、02 準備は選択済みのアプリ名を表示するだけで
@@ -19,7 +19,7 @@
 // ときは複合エラー画面（AccessErrorScreen）に落とす。ブラウザの戻る/進む（popstate）にも
 // 追随する。
 //
-// 認証は /login へ寄せる（#140）。本ページはログイン状態を「開始ゲート」としてのみ参照し、
+// 認証は /login へ寄せる。本ページはログイン状態を「開始ゲート」としてのみ参照し、
 // 未ログインなら理由提示＋/login への導線を出す（インラインのログインパネルは廃止）。
 
 import { Check, FileText, Film, Image as ImageIcon, Mic, Package, Plus, X } from "lucide-react";
@@ -27,18 +27,13 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
 import {
-  AppHeader,
   Button,
   Card,
   Chip,
   Field,
   Figure,
   Input,
-  ListRow,
-  Screen,
   Select,
-  SessionHistoryList,
-  type SessionHistoryItem,
   Textarea,
 } from "@/components/sanba";
 import {
@@ -51,7 +46,6 @@ import {
   createSession,
   fetchGithubRepos,
   fetchMyProducts,
-  fetchMySessions,
   type GithubRepos,
   joinSession,
   listGithubBranches,
@@ -64,8 +58,8 @@ import { AUDIENCE_LABELS } from "../lib/audience";
 import { useAuth } from "../lib/auth";
 import { importDriveFile, isDriveConfigured, openDrivePicker } from "../lib/googleDrive";
 import { AccountMenu } from "./AccountMenu";
+import { AppShell } from "./AppShell";
 import { ConversationStart } from "./ConversationStart";
-import { SideMenu } from "./SideMenu";
 import { MemberInviteNotices } from "./MemberInviteNotices";
 import {
   MaterialSourceSheet,
@@ -76,7 +70,7 @@ import { AccessErrorScreen } from "./AccessErrorScreen";
 import { clearPrep, readPrep, writePrep } from "../lib/prepFormStorage";
 
 // 役割チップ。表示は日本語、value は API（POST /api/sessions の roles）に渡す既存値。
-// 並びは 利用者 → 企画者 → 開発者、既定は「利用者」= customer（02-prepare.md / #222）。
+// 並びは 利用者 → 企画者 → 開発者、既定は「利用者」= customer（02-prepare.md）。
 // ラベルは Audience（利用者/企画者/開発者 / lib/audience.ts）と同じ 3 人の登場人物を指す。
 // 対応: customer=end_user / pm=planner / engineer=developer（表記の正を一本化 / ADR-0043）。
 const ROLES = [
@@ -101,7 +95,7 @@ function sessionPath(slug: string, sessionId: string): string {
   return `/${encodeURIComponent(slug)}/sessions/${encodeURIComponent(sessionId)}`;
 }
 
-// ゴールの記入例（役割ごとに視点を変える / #222）。表示専用（クリック挙動なし）。
+// ゴールの記入例（役割ごとに視点を変える）。表示専用（クリック挙動なし）。
 const GOAL_EXAMPLES: Record<string, string[]> = {
   // 利用者: 使っていて困る「現象」を起点にした言い回し。
   customer: [
@@ -142,17 +136,6 @@ function FieldBadge({ required }: { required?: boolean }) {
   );
 }
 
-// ISO 8601 の作成時刻を履歴リスト表示用の日付（YYYY/MM/DD）へ整形する（#250）。
-// パースできない値は空文字にし、行は出すが日付欄は空にする（壊れた値で落とさない）。
-function formatSessionDate(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}/${m}/${day}`;
-}
-
 type Step = "home" | "prepare";
 
 // 入口フロー本体。初期ステップはマウント元のルートが決める（"/" = home /
@@ -171,7 +154,7 @@ export default function EntryFlow({
   const [urlSlug, setUrlSlug] = useState<string | null>(initialSlug ?? null);
   const [role, setRole] = useState<string>(DEFAULT_ROLE);
   const [goal, setGoal] = useState("");
-  // ゴールの詳細（背景・現状・制約などの自由記述 / #222）。開始時に文脈として投入する。
+  // ゴールの詳細（背景・現状・制約などの自由記述）。開始時に文脈として投入する。
   const [goalDetail, setGoalDetail] = useState("");
   const [consent, setConsent] = useState(false);
   // 対象のプロダクト・アプリ（必須 / ADR-0031・ADR-0044）。選択は 01 ホームの開始ゲート。
@@ -189,27 +172,25 @@ export default function EntryFlow({
   // Google ドライブからの取り込み中（export/download 中）の表示（ADR-0044）。
   const [driveBusy, setDriveBusy] = useState(false);
   // 開始時に「実際に投入できた」名前と失敗件数のスナップショット。03-0 サマリは
-  // staged ではなくこれを参照し、未登録ファイルを「添付済み」と誤認させない（Codex P2）。
+  // staged ではなくこれを参照し、未登録ファイルを「添付済み」と誤認させない。
   const [uploadedNames, setUploadedNames] = useState<string[]>([]);
   const [uploadFailedCount, setUploadFailedCount] = useState(0);
   const fileInput = useRef<HTMLInputElement>(null);
-  // ホーム「過去の要件を見る」履歴リスト（#215）の中身（#250）。取得できるまでは空 = 空状態。
-  const [history, setHistory] = useState<SessionHistoryItem[]>([]);
   // 連携リポジトリ（任意 / ADR-0027）。空文字 = 連携しない。
   const [githubRepo, setGithubRepo] = useState("");
   // リポジトリ候補（GET /api/github/repos）。null = 「未取得」（取得前・取得中）で、
-  // この間は開始を塞ぐ（Codex P2: effect 実行前の初回描画の窓も含めて、連携先を
+  // この間は開始を塞ぐ（effect 実行前の初回描画の窓も含めて、連携先を
   // 確認できるまでセッションを作らせない）。取得失敗は enabled:false の番兵で settle
   // させ、フィールド非表示 = 連携しない（fail-closed）として開始は解放する。
   const [repoChoices, setRepoChoices] = useState<GithubRepos | null>(null);
-  // 「未初期化」と「明示的な連携しない（空文字）」の区別（Codex P2）。sessionStorage は
+  // 「未初期化」と「明示的な連携しない（空文字）」の区別。sessionStorage は
   // 永続化 effect が復元直後から常に githubRepo を書くため readPrep では判別できない。
   // 保存値の復元・ユーザー操作で true になり、以後は既定リポの初期選択で上書きしない。
   const githubRepoTouched = useRef(false);
   // GitHub App 連携時の branch 選択（ADR-0028）。既定はデフォルトブランチ。
   const [githubBranch, setGithubBranch] = useState("");
   const [branchChoices, setBranchChoices] = useState<string[]>([]);
-  // 02 準備フォームの保存値を復元し終えたか（#179）。宣言は productId 突き合わせ effect より
+  // 02 準備フォームの保存値を復元し終えたか。宣言は productId 突き合わせ effect より
   // 前に置く（deps で参照するため）。復元・保存の effect 本体は後方の「02 準備フォーム」節。
   const [prepHydrated, setPrepHydrated] = useState(false);
   const auth = useAuth();
@@ -274,37 +255,7 @@ export default function EntryFlow({
     ? (products ?? []).find((p) => p.id === productId)
     : undefined;
 
-  // 本人のセッション履歴を取得して履歴リストへ供給する（#250）。ログイン済みのときだけ叩き、
-  // 失敗時は空状態を維持する（履歴は補助情報なので本流＝壁打ち開始は止めない）。idToken が
-  // 変わったら取り直す。アンマウント/再取得時の遅延解決は cancelled で握りつぶす。
-  useEffect(() => {
-    if (!auth.loggedIn) {
-      setHistory([]);
-      return;
-    }
-    let cancelled = false;
-    fetchMySessions(auth.credential)
-      .then((sessions) => {
-        if (cancelled) return;
-        setHistory(
-          sessions.map((s) => ({
-            id: s.id,
-            title: s.title,
-            date: formatSessionDate(s.created_at),
-          })),
-        );
-      })
-      .catch(() => {
-        // 取得失敗（ネットワーク/401 等）は空状態のまま据え置く（UX を止めない）。
-        if (!cancelled) setHistory([]);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [auth.loggedIn, auth.credential]);
-
-  // 連携リポジトリの候補を取得する（ADR-0027）。02 準備に入るまで叩かない（Codex P2:
-  // ホーム/履歴閲覧だけで共有トークンの /user/repos 全ページ取得を発火させ、GitHub
+  // 連携リポジトリの候補を取得する（ADR-0027）。02 準備に入るまで叩かない（// ホーム/履歴閲覧だけで共有トークンの /user/repos 全ページ取得を発火させ、GitHub
   // レート制限と API ワーカー時間を浪費しない）。取得済みなら再取得しない。
   // 無効（enabled=false）・取得失敗はフィールドを出さない/手入力のみで、本流は止めない。
   useEffect(() => {
@@ -315,7 +266,7 @@ export default function EntryFlow({
         if (!cancelled) {
           setRepoChoices(choices);
           // 未初期化のときだけ既定リポジトリを初期選択する（ADR-0027）。保存済みの値
-          // （明示的な「連携しない」= 空文字を含む）とユーザー操作は上書きしない（Codex P2）。
+          // （明示的な「連携しない」= 空文字を含む）とユーザー操作は上書きしない。
           if (choices.default && !githubRepoTouched.current) {
             setGithubRepo((cur) => cur || choices.default!);
           }
@@ -349,8 +300,8 @@ export default function EntryFlow({
     };
   }, [auth.loggedIn, auth.credential, products]);
 
-  // 対象アプリの選択値を取得済み候補と突き合わせる（ADR-0031 / PR#314 P2 / ADR-0045)。
-  // - アドレスバーに slug がある（/{slug}/prepare 直アクセス・popstate）なら、URL を正として
+  // 対象アプリの選択値を取得済み候補と突き合わせる（ADR-0031 / ADR-0045)。
+  // - アドレスバーに slug がある（{slug}/prepare 直アクセス・popstate）なら、URL を正として
   //   productId を slug のアプリに確定する。解決できない slug は render 側で複合エラー画面。
   // - 復元した productId が候補に無い（削除済み・権限外・取得失敗）ならクリアして、
   //   実在しない product で開始できないようにする（開始条件は selectedProduct の実在）。
@@ -376,7 +327,7 @@ export default function EntryFlow({
     const selected = products.find((p) => p.id === productId);
     if (step === "prepare" && prepHydrated && (!selected || !selected.slug)) {
       // 運用でこのフォールバック（直リンク・並行削除等）の頻度を追えるよう構造化ログを残す
-      // （CLAUDE.md 原則3。収集先の OTLP/メトリクス配線は #232）。PII は含めない。
+      // （CLAUDE.md 原則3。収集先の OTLP/メトリクス配線は）。PII は含めない。
       console.info("[entry-flow] fallback to home", { reason: "product-unselected" });
       navigateStep("home");
     }
@@ -387,7 +338,7 @@ export default function EntryFlow({
 
   // App 由来の repo が確定したら branch 一覧を取得する（ADR-0028。既定はデフォルトブランチ）。
   // 一覧が来るまで（または取得失敗時も）デフォルトブランチだけで開始できる（本流を止めない）。
-  // repo を素早く切り替えたときの古い応答は cancelled で破棄し、選択を巻き戻さない（Codex P2）。
+  // repo を素早く切り替えたときの古い応答は cancelled で破棄し、選択を巻き戻さない。
   useEffect(() => {
     if (!appDefaultBranch) {
       setBranchChoices([]);
@@ -419,16 +370,16 @@ export default function EntryFlow({
     };
   }, [githubRepo, appDefaultBranch, auth.credential]);
 
-  // 02 準備フォーム（ゴール/役割/同意）を /login 往復で失わないよう復元・保存する（#179）。
+  // 02 準備フォーム（ゴール/役割/同意）を /login 往復で失わないよう復元・保存する。
   // ハイドレーション不一致を避けるためマウント後に復元し（読み出しが先）、以降の変更を保存する。
   // prepHydrated は *state*（ref ではない）。ref だと同じ初回 effect flush 内で persist が
   // 復元前の既定値を書き戻し、authGate の /login リダイレクトで再描画前にアンマウントされると
-  // 入力が既定値で上書きされてしまう（Codex P2）。state にすることで「復元値が反映された
+  // 入力が既定値で上書きされてしまう。state にすることで「復元値が反映された
   // render」以降にのみ初回 write が走る。宣言自体は前方（productId 突き合わせ effect の deps）。
   useEffect(() => {
     const saved = readPrep();
     // 復元する role は既知の選択肢に限定する。古い/壊れた値（例: "designer"）は既定 pm に戻す
-    // （未サポート role で createSession を呼ばない / チップ未選択の見た目を防ぐ。Codex P2）。
+    // （未サポート role で createSession を呼ばない / チップ未選択の見た目を防ぐ。）。
     if (saved.role && ROLES.some((r) => r.value === saved.role)) setRole(saved.role);
     if (typeof saved.goal === "string") setGoal(saved.goal);
     if (typeof saved.goalDetail === "string") setGoalDetail(saved.goalDetail);
@@ -443,7 +394,7 @@ export default function EntryFlow({
   }, []);
   useEffect(() => {
     if (!prepHydrated) return;
-    // githubRepo は「触った」ときだけ保存する（Codex P2: 未操作の空文字まで保存すると、
+    // githubRepo は「触った」ときだけ保存する（未操作の空文字まで保存すると、
     // リロード後の復元が明示オプトアウト扱いになり既定リポの初期選択が効かなくなる）。
     writePrep({
       role,
@@ -455,7 +406,7 @@ export default function EntryFlow({
     });
   }, [prepHydrated, role, goal, goalDetail, consent, productId, githubRepo]);
 
-  // ログアウト時（ログイン中→未ログインの遷移）は準備フォームを破棄する（#179 / Codex P2）。
+  // ログアウト時（ログイン中→未ログインの遷移）は準備フォームを破棄する。
   // 固定キー sessionStorage を同一タブの別ユーザーへ引き継がせない（goal に PII が入り得る）。
   // 開始成功時の clearPrep と合わせ、保存は「このユーザーの未開始セッション」に限定される。
   const prevLoggedIn = useRef(auth.loggedIn);
@@ -494,18 +445,18 @@ export default function EntryFlow({
   }
 
   async function handleStart() {
-    // 二重送信防止（#140 AC）。Drive 取り込み中も開始しない: クリック時点の staged だけが
-    // 投入されるため、取り込み完了後にステージされる Drive 資料が漏れる（Codex P2）。
+    // 二重送信防止（AC）。Drive 取り込み中も開始しない: クリック時点の staged だけが
+    // 投入されるため、取り込み完了後にステージされる Drive 資料が漏れる。
     if (busy || driveBusy) return;
     try {
       setBusy(true);
       setError(null);
-      // 同意ゲート後にセッションを作成（issue #10）。createSession → join で
+      // 同意ゲート後にセッションを作成。createSession → join で
       // 「join 済みトークン」を得てから、ゴール文を文脈として投稿する（契約 §4）。
       // 本人確認は Google ログイン（ADR-0012）。
       // 連携リポジトリ（ADR-0027）＋対象プロダクト（ADR-0031）。repo 解決は「セッション明示 >
       // product > 環境変数」。コネクタ有効（フィールド表示）のときだけユーザーの明示選択を送る:
-      // 空文字 = 明示的な「連携しない」（product repo でも上書きしない / PR#314 P1）、"owner/name"
+      // 空文字 = 明示的な「連携しない」（product repo でも上書きしない）、"owner/name"
       // = このセッション専用の repo。フィールド非表示（無効・取得失敗）は undefined を送り、
       // 選択 product の索引済み repo を API 側で継承させる（未選択のまま既定 repo へは流さない）。
       const session = await createSession(
@@ -514,7 +465,7 @@ export default function EntryFlow({
         auth.credential,
         undefined,
         repoChoices?.enabled ? githubRepo.trim() : undefined,
-        // 取得済み候補に実在する product だけ送る（stale な sessionStorage 値を弾く / PR#314 P2）。
+        // 取得済み候補に実在する product だけ送る（stale な sessionStorage 値を弾く）。
         selectedProduct?.id,
         // ゴール・詳細は作成時に SessionMeta へも保存する（ADR-0035）。join 後の
         // addSessionContext（RAG）は agent 起動と競合し得るため、agent の初期前提はこちらが担う。
@@ -532,7 +483,7 @@ export default function EntryFlow({
         await addSessionContext(joined.session_id, goal, joined.session_token, "goal");
       }
       if (goalDetail.trim()) {
-        // ゴールの詳細（背景・現状・制約）も文脈として取り込む（source_name=goal_detail / #222）。
+        // ゴールの詳細（背景・現状・制約）も文脈として取り込む（source_name=goal_detail）。
         await addSessionContext(
           joined.session_id,
           goalDetail,
@@ -567,13 +518,13 @@ export default function EntryFlow({
       }
       // 対象プロダクトの前提 repo は createSession で product_id を渡した時点で API 側が
       // 継承する（索引済み要約ごと写す / ADR-0031）。ここでクライアントから selectSessionRepo で
-      // 上書き・再索引はしない（明示的な「連携しない」を尊重するため / PR#314 P1）。
+      // 上書き・再索引はしない（明示的な「連携しない」を尊重するため）。
       if (appRepoItem) {
         // App 連携済みの repo は branch を確定して非同期索引をキックする（ADR-0028）。
         // 索引完了は会話開始までに間に合わなくても部分結果で深掘りできるため待たない。ただし
         // キック自体に失敗（権限変更/branch削除/GitHub 502 等）したら、ユーザーが前提 repo を
-        // 明示選択しているのに索引無しで開始すると気づけないため、開始を止めて理由を表示する
-        // （Codex P2）。session は TTL で消えるので再開始でやり直せる。
+        // 明示選択しているのに索引無しで開始すると気づけないため、開始を止めて理由を表示する。
+        // session は TTL で消えるので再開始でやり直せる。
         try {
           await selectSessionRepo(
             joined.session_id,
@@ -592,7 +543,7 @@ export default function EntryFlow({
       // 準備画面でステージした参考資料を、会話開始前に join 済みトークンで順次投入する
       // （契約 §4 / ADR-0017 一本道。join 前 upload 経路が無いためここで一括投入）。
       // 1 件の失敗で開始全体は止めないが、成功した分だけをサマリに渡し、失敗件数は別途知らせる
-      // （未登録ファイルを「添付済み」と誤認させない / Codex P2）。
+      // （未登録ファイルを「添付済み」と誤認させない）。
       const uploaded: string[] = [];
       let failed = 0;
       for (const file of staged) {
@@ -601,7 +552,7 @@ export default function EntryFlow({
           uploaded.push(file.name);
         } catch (uploadErr) {
           failed += 1;
-          // PII 回避: ファイル名は出さず、種別・エラーのみ残す（収集先の OTLP/メトリクス配線は #232）。
+          // PII 回避: ファイル名は出さず、種別・エラーのみ残す（収集先の OTLP/メトリクス配線は）。
           console.error("staged material upload failed", { kind: classifyFile(file), error: uploadErr });
         }
       }
@@ -618,7 +569,7 @@ export default function EntryFlow({
           sessionPath(selectedProduct.slug, joined.session_id),
         );
       }
-      // 壁打ち開始に成功したら準備フォームの一時保存は破棄する（次回へ持ち越さない / #179）。
+      // 壁打ち開始に成功したら準備フォームの一時保存は破棄する（次回へ持ち越さない）。
       clearPrep();
     } catch (e) {
       setError(String(e));
@@ -629,14 +580,14 @@ export default function EntryFlow({
 
   // ── 参考資料（バイナリ添付）の操作 ────────────────────────────────────────
   // 投入種別の計測 seam（CLAUDE.md 原則3）。準備画面はカメラ/画面共有を出さないため
-  // upload/drive のみが流れる。収集先（OTLP/メトリクス基盤）への本配線は #232 だが、それまでも
+  // upload/drive のみが流れる。収集先（OTLP/メトリクス基盤）への本配線は だが、それまでも
   // 運用でファネル/誤タップを追えるよう構造化ログを残す（"新しい処理に観測性を通す"）。
   function measureSource(source: MaterialSource) {
     console.info("[material-source] select", { source, surface: "prepare" });
   }
 
   // 受理判定は API（content-type）と揃える。拡張子に加えて File.type も見る共通判定
-  // （lib/api.ts classifyFileUpload）を使う（Codex P2 / 資料形式の追加で単一定義に統合）。
+  // （lib/api.ts classifyFileUpload）を使う（資料形式の追加で単一定義に統合）。
   const classifyFile = classifyFileUpload;
 
   // 受理済みファイルをステージへ足す（同名・同サイズの重複は取り違え防止で捨てる）。
@@ -654,7 +605,7 @@ export default function EntryFlow({
   function handleAddFiles(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? []);
     e.target.value = ""; // 同じファイルの再選択でも change を発火させる。
-    // 開始処理・Drive 取り込み中は投入セットを固定する（Codex P2）。
+    // 開始処理・Drive 取り込み中は投入セットを固定する。
     if (busy || driveBusy || files.length === 0) return;
     const accepted: File[] = [];
     const rejected: string[] = [];
@@ -719,7 +670,7 @@ export default function EntryFlow({
   }
 
   function removeStaged(index: number) {
-    if (busy || driveBusy) return; // 開始処理・Drive 取り込み中は投入セットを固定する（Codex P2）。
+    if (busy || driveBusy) return; // 開始処理・Drive 取り込み中は投入セットを固定する。
     setStaged((prev) => prev.filter((_, i) => i !== index));
     setAttachError(null);
   }
@@ -734,12 +685,12 @@ export default function EntryFlow({
         goal={goal}
         roleLabel={roleLabel}
         // 03-0 開始前サマリの「参考資料」には "実際に投入できた" 名前だけを反映する
-        // （未登録ファイルを添付済みと誤認させない / 監査 B-2 #11・Codex P2）。
+        // （未登録ファイルを添付済みと誤認させない）。
         materialNames={uploadedNames}
         materialFailedCount={uploadFailedCount}
         // 中断したら会話を畳んで準備（02）へ戻す（マイク送信は SessionView 側で停止済み）。
-        // 会話 URL（/{slug}/sessions/{id}）を積んでいたら履歴を戻し、popstate が step と
-        // urlSlug をアドレス（/{slug}/prepare）に揃える（ADR-0045）。
+        // 会話 URL（{slug}/sessions/{id}）を積んでいたら履歴を戻し、popstate が step と
+        // urlSlug をアドレス（{slug}/prepare）に揃える（ADR-0045）。
         onCancel={() => {
           setConn(null);
           if (typeof window !== "undefined" && SESSION_PATH_RE.test(window.location.pathname)) {
@@ -753,14 +704,14 @@ export default function EntryFlow({
   // ── 02 準備 ───────────────────────────────────────────────────────────
   if (step === "prepare") {
     // 候補が settle する（repoChoices が入る）まで開始を待たせる: ユーザーが連携先を
-    // 確認する前にセッションが作られるのを防ぐ（Codex P2。effect 実行前の初回描画の
+    // 確認する前にセッションが作られるのを防ぐ（effect 実行前の初回描画の
     // 窓も null で塞がる）。取得は失敗でも番兵で settle するので詰まらない。
-    // 対象アプリは「取得済み候補に実在する product」を選べていることを条件にする（PR#314 P2）:
+    // 対象アプリは「取得済み候補に実在する product」を選べていることを条件にする:
     // sessionStorage 由来の stale な productId 文字列だけでは開始させない。
     // slug 未設定のアプリでは開始させない（会話 URL を組めない / ADR-0045。突き合わせ effect
     // がホームへ戻すが、戻るまでの窓も塞ぐ fail-closed）。
     // Drive 取り込み中（driveBusy）も開始を止める: handleStart はクリック時点の staged だけを
-    // 投入するため、取り込み完了後の資料が漏れて「添付したのに渡っていない」になる（Codex P2）。
+    // 投入するため、取り込み完了後の資料が漏れて「添付したのに渡っていない」になる。
     const canStart =
       consent &&
       goal.trim() !== "" &&
@@ -771,13 +722,13 @@ export default function EntryFlow({
       !driveBusy &&
       repoChoices !== null;
     return (
-      <Screen className="px-4 py-3">
-        <AppHeader
-          title="セッション準備"
-          onBack={() => navigateStep("home")}
-          right={<SideMenu current="prepare" />}
-        />
-        <main className="mx-auto flex w-full max-w-[480px] flex-1 flex-col gap-[18px] pt-2">
+      <AppShell
+        current="home"
+        title="セッション準備"
+        onBack={() => navigateStep("home")}
+        headerRight={<AccountMenu profile={auth.profile} />}
+      >
+        <div className="mx-auto flex w-full max-w-[480px] flex-col gap-[18px] px-4 py-4">
           {/* どのアプリでセッション準備を進めているかを常に示す（ADR-0044）。選択は 01 ホームで
               済ませてくる（選択 UI はここに置かない）。候補取得前（直リンク直後）は確認中を出し、
               settle 後も未確定なら上の effect が 01 へ戻す。 */}
@@ -836,7 +787,7 @@ export default function EntryFlow({
               // API の上限（ADR-0035）と揃える。超過ペーストで開始が 422 に落ちるのを防ぐ。
               maxLength={2000}
             />
-            {/* 記入例（役割で内容が変わる）。表示専用でクリック挙動は持たない（#222）。 */}
+            {/* 記入例（役割で内容が変わる）。表示専用でクリック挙動は持たない。 */}
             <div className="flex flex-col gap-[3px] text-[12px] leading-relaxed text-sanba-muted/80">
               {(GOAL_EXAMPLES[role] ?? GOAL_EXAMPLES[DEFAULT_ROLE]).map((example) => (
                 <span key={example}>例：{example}</span>
@@ -932,7 +883,7 @@ export default function EntryFlow({
             </Field>
           )}
 
-          {/* 参考資料（バイナリ添付）。Figma 89:25 / 91:10。押下で手段選択シート（#201 再利用）を開く。
+          {/* 参考資料（バイナリ添付）。Figma 89:25 / 91:10。押下で手段選択シート（再利用）を開く。
               準備画面は LiveKit ルーム外のためカメラ/画面共有は渡さず、アップロード/Drive のみ。
               選んだファイルはステージ（チップ表示・削除可）し、handleStart で会話開始前に投入する。 */}
           <div className="flex flex-col gap-[8px]">
@@ -947,7 +898,7 @@ export default function EntryFlow({
 
 
             {/* 開始処理中（busy）は追加/削除を止める。クリック時点の staged のみが投入されるため、
-                遅れて足した資料が「添付済み」に見えて実際は未送信、という齟齬を防ぐ（Codex P2）。 */}
+                遅れて足した資料が「添付済み」に見えて実際は未送信、という齟齬を防ぐ。 */}
             <button
               type="button"
               onClick={() => {
@@ -961,14 +912,14 @@ export default function EntryFlow({
               <Plus size={14} aria-hidden /> ファイルを追加
             </button>
 
-            {/* 追加した資料は「ファイルを追加」の直下に、サムネイル＋ファイル名で並べる（#222）。
+            {/* 追加した資料は「ファイルを追加」の直下に、サムネイル＋ファイル名で並べる。
                 画像は object URL のプレビュー、動画はフィルムアイコンで表す。 */}
             {staged.length > 0 && (
               <ul aria-label="添付した参考資料" className="flex flex-col gap-[8px]">
                 {staged.map((file, i) => {
                   // 種別アイコンのサムネイル（画像/動画/その他）。ローカル画像のプレビューは
                   // object URL 経由になるが、DOM 由来 File → 属性の流入は誤検知の温床（CodeQL
-                  // js/xss-through-dom）なので、種別アイコンで表す方針にする（#222）。
+                  // js/xss-through-dom）なので、種別アイコンで表す方針にする。
                   const kind = classifyFile(file);
                   const Icon = kind === "image" ? ImageIcon : kind === "video" ? Film : FileText;
                   return (
@@ -1019,7 +970,7 @@ export default function EntryFlow({
             className="hidden"
           />
 
-          {/* 同意ゲート（issue #10）。保持日数を併記。開始の必須条件。 */}
+          {/* 同意ゲート。保持日数を併記。開始の必須条件。 */}
           <label className="flex items-start gap-[10px] text-[13px] leading-relaxed text-sanba-cream">
             <input
               type="checkbox"
@@ -1069,12 +1020,12 @@ export default function EntryFlow({
             )}
             {error && <p className="text-[12px] text-sanba-rec-text">{error}</p>}
           </div>
-        </main>
+        </div>
 
-        {/* 資料の追加方法シート（#201 再利用）。準備画面は LiveKit ルーム外のため
+        {/* 資料の追加方法シート（再利用）。準備画面は LiveKit ルーム外のため
             カメラ/画面共有ハンドラは渡さない＝アップロード/Drive のみ。Drive は drive.file +
             Google Picker（ADR-0044）。権限未許可の失敗はシート内の error に出し、再タップで
-            再同意を求める。投入種別は onSelectSource で計測可能にする（#232 へ配線）。 */}
+            再同意を求める。投入種別は onSelectSource で計測可能にする（配線予定）。 */}
         {sheetOpen && (
           <MaterialSourceSheet
             placement="center"
@@ -1088,28 +1039,19 @@ export default function EntryFlow({
             error={attachError}
           />
         )}
-      </Screen>
+      </AppShell>
     );
   }
 
   // ── 01 ホーム ─────────────────────────────────────────────────────────
-  // Figma 正本（40:2）に *実績(stat)カード* は無い（#140/#147）。ヒーロー＋一語 CTA に加え、
-  // 正本 99:3「過去の要件を見る」履歴リスト（stat カードとは別物）を下に置く（#215）。
-  // 中身は本人のセッション一覧 API（GET /api/sessions/mine / #250）から供給する。0 件や
-  // 未ログイン・取得失敗時は SessionHistoryList が空状態の文言を出す。
-  // 対象アプリの選択はここが正本（ADR-0044）: 選べるまで CTA は活性化しない。
+  // Figma 正本（40:2）を踏まえつつ、遷移導線はサイドメニューへ集約した（要望 2026-07）。
+  // ホームは「壁打ちを始める」枠だけを上下中央に据える。過去の要件一覧・アプリ管理は
+  // サイドメニュー（AppShell）から辿る。対象アプリの選択はここが正本（ADR-0044）:
+  // 選べるまで CTA は活性化しない。
   return (
-    <Screen className="px-4 py-3">
-      <AppHeader
-        brand
-        right={
-          <div className="flex items-center gap-[2px]">
-            <SideMenu current="home" />
-            <AccountMenu profile={auth.profile} />
-          </div>
-        }
-      />
-      <main className="mx-auto flex w-full max-w-[480px] flex-1 flex-col gap-[18px] pt-3">
+    <AppShell current="home" headerRight={<AccountMenu profile={auth.profile} />}>
+      {/* 「壁打ちを始める」枠を上下中央に据える（要望 2026-07）。m-auto で縦横中央寄せ。 */}
+      <div className="m-auto flex w-full max-w-[480px] flex-col gap-[18px] px-4 py-6">
         {/* 自分宛のメンバー招待の通知（ADR-0036 決定3）。無ければ何も出ない。 */}
         <MemberInviteNotices />
         <Card>
@@ -1170,7 +1112,7 @@ export default function EntryFlow({
               対象のアプリを選ぶと壁打ちを始められます。
             </p>
           )}
-          {/* slug 未設定のアプリは URL（/{slug}/prepare）を組めないため開始できない
+          {/* slug 未設定のアプリは URL（{slug}/prepare）を組めないため開始できない
               （ADR-0045）。アプリ管理での設定へ誘導する。 */}
           {selectedProduct && !selectedProduct.slug && (
             <p className="text-[12px] text-sanba-muted">
@@ -1184,17 +1126,7 @@ export default function EntryFlow({
             </p>
           )}
         </Card>
-        <SessionHistoryList items={history} />
-        {/* アプリ管理（ADR-0031）への導線。深掘りリンクの発行・repo 紐づけの入口。 */}
-        <ListRow
-          asChild
-          icon={<Package size={17} aria-hidden />}
-          title="アプリ管理"
-          subtitle="深掘りリンクの発行・リポジトリの紐づけ"
-        >
-          <Link href="/products" aria-label="アプリ管理へ" />
-        </ListRow>
-      </main>
-    </Screen>
+      </div>
+    </AppShell>
   );
 }

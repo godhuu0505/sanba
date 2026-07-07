@@ -57,7 +57,7 @@ def test_invite_not_yet_expired_passes() -> None:
     assert int(time.time()) > 0  # sanity
 
 
-# ── ログイン nonce チャレンジ (ADR-0046) ───────────────────────────────────────
+# ── ログイン nonce チャレンジ (ADR-0047) ───────────────────────────────────────
 
 
 def test_auth_nonce_roundtrip_returns_raw() -> None:

@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { SessionHistoryList, type SessionHistoryItem } from "./SessionHistoryList";
 
-// 01 ホーム「過去の要件を見る」履歴リスト（#215 / Figma 正本 99:3）。
+// 01 ホーム「過去の要件を見る」履歴リスト（Figma 正本 99:3）。
 // 空状態の文言・行の描画・遷移先 href・色のみ非依存の手掛かりを検証する。
 
 const ITEMS: SessionHistoryItem[] = [

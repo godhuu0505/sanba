@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     livekit_url: str = "ws://localhost:7880"
     livekit_api_key: str = "devkey"
     livekit_api_secret: str = "secret"
-    # server-side publish（analysis.progress/visual を RoomService.send_data で送る / ADR-0023）
+    # server-side publish（analysis.progress/visual を RoomService.send_data で送る）
     # 用の LiveKit URL。通常は livekit_url と同一だが、docker-compose ローカルでは食い違う:
     # ブラウザへ返す join URL は host から見た localhost、api コンテナからの publish 先は
     # compose のサービス名（ws://livekit:7880）である必要がある（agent の AGENT_LIVEKIT_URL と
@@ -44,16 +44,16 @@ class Settings(BaseSettings):
     # Simple per-IP rate limit on join (requests per minute).
     join_rate_per_minute: int = 30
 
-    # ---- ゲスト入場 (ADR-0032) ----
+    # ---- ゲスト入場 ----
     # scope=end_user の深掘りリンクを Google ログインなしで受けるか。既定 off（フェイル
     # クローズ）。段階リリース用のフラグで、on でも他 API の認可は変わらない（決定1）。
     guest_join_enabled: bool = False
-    # 深掘りリンク（invite）単位のセッション作成レート制限（毎分・ADR-0032 決定5 / FR-2.6）。
+    # 深掘りリンク（invite）単位のセッション作成レート制限（毎分）。
     # IP 単位の join_rate_per_minute と重ねて掛かる。多インスタンスでも Firestore の
     # invite 文書カウンタで整合する（in-memory fallback あり）。超過は 429。
     invite_join_rate_per_minute: int = 10
 
-    # ---- メンバー招待 (ADR-0036) ----
+    # ---- メンバー招待 ----
     # メンバー招待の有効期限（秒）。深掘りリンクと違い永続権限の付与なので必ず期限を切る。
     member_invite_ttl_seconds: int = 14 * 24 * 3600
     # product あたりの保留中招待の上限。任意メール宛の送信エンドポイントを bulk メール送信に
@@ -72,24 +72,24 @@ class Settings(BaseSettings):
     # STARTTLS で暗号化する（既定 on。平文 SMTP はローカルの mailpit 等の検証用途のみ）。
     smtp_starttls: bool = True
 
-    # ---- Identity: Google ログイン (ADR-0012) ----
+    # ---- Identity: Google ログイン ----
     # OAuth 2.0 Web クライアント ID。ID トークン検証の `aud` に使う (秘匿物ではない)。
     # 未設定かつ auth_dev_bypass=false の本番構成では認証経路をフェイルクローズする。
     google_oauth_client_id: str = ""
 
-    # ---- ログイン nonce チャレンジ (ADR-0046) ----
+    # ---- ログイン nonce チャレンジ (ADR-0047) ----
     # ID トークン注入対策。サーバが発行した nonce を GIS に渡させ、ID トークンの `nonce`
     # claim を create/join でサーバ照合する。段階リリース用フラグ（既定 false）: 実環境で
     # true にして強制する。false の間は nonce を検証しない（ID トークン自体の署名・aud・
     # iss・exp・email_verified 検証は常に効くため、これは多層防御の 1 層の on/off）。
     require_login_nonce: bool = False
     # nonce エンベロープの有効期限（秒）。ID トークン(約1h)より長くして、リフレッシュ直前
-    # まで同じ nonce で create/join が通るようにする（既定 65 分。ADR-0046）。
+    # まで同じ nonce で create/join が通るようにする（既定 65 分。ADR-0047）。
     auth_nonce_ttl_seconds: int = 3900
 
-    # ---- 管理者 (ADR-0014 §2) ----
+    # ---- 管理者 ----
     # 管理画面を使える Google アカウントの email 許可リスト (カンマ区切り)。
-    # 検証済み identity の email をサーバ側で照合する。dev bypass でも照合する (§13)。
+    # 検証済み identity の email をサーバ側で照合する。dev bypass でも照合する。
     admin_emails: str = ""
 
     # ---- ルーム作成の許可リスト (ADR-0012 §3) ----
@@ -98,7 +98,7 @@ class Settings(BaseSettings):
     # 維持 / GITHUB_REPO_ALLOWLIST と同じ「空=無制限」方針）。admin は常に作成可。
     room_creator_allowlist: str = ""
 
-    # ---- Firestore (ADR-0014 §15) ----
+    # ---- Firestore ----
     # api はセッション/要件のリーダー兼ライターになった。emulator 利用時は接続先を
     # FIRESTORE_EMULATOR_HOST で指定する (compose ではローカルの firestore:8200)。
     firestore_emulator_host: str = ""
@@ -116,7 +116,7 @@ class Settings(BaseSettings):
             e.strip().lower() for e in self.room_creator_allowlist.split(",") if e.strip()
         )
 
-    # ---- Context ingestion -> RAG grounding (issue #6) ----
+    # ---- Context ingestion -> RAG grounding ----
     # Shared with the agent's grounding store (same Elasticsearch index).
     elasticsearch_url: str = ""
     elasticsearch_api_key: str = ""
@@ -126,32 +126,50 @@ class Settings(BaseSettings):
     # Max characters accepted per context upload (guards memory/cost).
     max_context_chars: int = 200_000
 
-    # ---- Multimodal assets: 画像/動画アップロード (issue #103 / ADR-0004) ----
+    # ---- Multimodal assets: 画像/動画アップロード ----
     # Cloud Storage バケット名。未設定なら in-memory にフォールバック（ローカル/テスト）。
     gcs_bucket: str = ""
-    # 画像/動画 1 件あたりのバイト上限（メモリ/コスト/帯域のガード）。既定 25MB。
+    # 画像 1 件あたりのバイト上限（メモリ/コスト/帯域のガード）。既定 25MB。
     max_asset_bytes: int = 25_000_000
+    # 動画 1 件あたりのバイト上限（ADR-0040: 短尺前提。既定 200MB）。画像とは別枠にして、
+    # 単一設定の引き上げで画像側のメモリ/コストガードを壊さないようにする。
+    max_video_asset_bytes: int = 200_000_000
     # 画像解析に使う Gemini マルチモーダルモデル。
     gemini_vision_model: str = "gemini-2.5-flash"
-    # 動画解析は未実装（web では「準備中」でグレーアウト）。有効化は別 PR。
+    # 動画解析パイプライン（GCS 直送 → Cloud Tasks → worker）の有効化（ADR-0040）。
+    # 本番は Terraform 変数 enable_video_analysis から ENABLE_VIDEO_ANALYSIS で注入する。
     enable_video_analysis: bool = False
-    # アップロード解析の進捗を LiveKit データチャネルへ live publish するか（#145 / ADR-0023）。
-    # 既定 ON（#287 で実ルームへの publish 到達・LiveKit 断時の fail-open をスモークテスト済み）。
-    # ローカル/CI では LiveKit へ未接続だと送信が失敗し警告ログになるだけで本処理は止まらない
-    # （web は未接続でも GET context/files のハイドレーションで状態を復元できる）。
+
+    # ---- 動画解析の非同期パイプライン（ADR-0040） ----
+    # Cloud Tasks キュー名 / ロケーション / worker URL / worker を叩く OIDC identity。
+    # いずれも Terraform（PR-V1）が Cloud Run env に配線する。未設定なら enqueue は no-op。
+    video_tasks_queue: str = ""
+    video_tasks_location: str = ""
+    worker_url: str = ""
+    worker_invoker_sa: str = ""
+    # ローカル開発: Cloud Tasks の公式エミュレータが無いため、api が worker エンドポイントを
+    # 直接 HTTP で叩くバイパス（compose 用）。本番は false のまま（Cloud Tasks 経由）。
+    local_direct_dispatch: bool = False
+    # 署名付きアップロード URL の有効期限（秒）。ブラウザの直送に十分・短めに。
+    signed_url_ttl_seconds: int = 900
+    # analyzing のまま滞留した素材を failed 化する閾値（秒）。GET context/files で reconcile する。
+    analysis_stuck_after_seconds: int = 1800
+    # アップロード解析の進捗を LiveKit データチャネルへ live publish するか。
+    # 既定 ON。ローカル/CI では LiveKit へ未接続だと送信が失敗し警告ログになるだけで
+    # 本処理は止まらない（web は GET context/files のハイドレーションで状態を復元できる）。
     enable_realtime_publish: bool = True
 
-    # ---- Requirement export -> GitHub Issue (契約 §4 POST /export, #39) ----
+    # ---- Requirement export -> GitHub Issue (契約 §4 POST /export) ----
     # OFF by default. Enable + provide a token/repo to let 09 要件絵巻 起票する。
     github_connector_enabled: bool = False
     github_token: str = ""
     github_repo: str = ""  # "owner/name"
-    # セッション単位で選択・保存できるリポジトリの許可リスト（ADR-0027 / Codex P1）。
+    # セッション単位で選択・保存できるリポジトリの許可リスト。
     # "owner"（配下すべて）または "owner/name" のカンマ区切り。空 = 制限なし
     # （単一チームでの利用前提。SANBA にログインできる全員が候補一覧を見られる点に注意）。
     github_repo_allowlist: str = ""
 
-    # ---- GitHub App: per-user repo linking (ADR-0028) ----
+    # ---- GitHub App: per-user repo linking ----
     # 連携機能のフラグ。未設定（app id/秘密鍵なし）の構成では連携経路をフェイルクローズする。
     github_app_enabled: bool = False
     # GitHub App の数値 ID（App 認証 JWT の iss）。秘匿物ではない。
@@ -162,7 +180,7 @@ class Settings(BaseSettings):
     github_app_slug: str = ""
     # GitHub App の OAuth client（user-to-server）。install 時にユーザー認可も取り、callback で
     # 「そのユーザーが当該 installation を実際に保有するか」を検証して別人の installation_id
-    # 横取りを防ぐ（ADR-0028 / Codex P1）。両方設定されているときに検証を有効化する。
+    # 横取りを防ぐ。両方設定されているときに検証を有効化する。
     # App 設定で "Request user authorization (OAuth) during installation" を ON にすること。
     github_app_client_id: str = ""
     github_app_client_secret: str = ""
@@ -170,16 +188,16 @@ class Settings(BaseSettings):
     github_app_callback_url: str = ""
     # 連携保存後にユーザーを戻す web 設定画面の URL（api callback とは別物。ここへ 302 する）。
     github_app_web_return_url: str = ""
-    # 連携開始時に発行する state 署名の有効期限（CSRF/誤紐づけ対策・ADR-0028）。
+    # 連携開始時に発行する state 署名の有効期限（CSRF/誤紐づけ対策）。
     github_link_state_ttl_seconds: int = 600
-    # ---- repo 索引の総量キャップ（関連度優先 + 上限・ADR-0028）----
+    # ---- repo 索引の総量キャップ（関連度優先 + 上限）----
     # 索引対象の最大ファイル数と総バイト。超過分はスキップして log + UI に出す。
     github_index_max_files: int = 1500
     github_index_max_total_bytes: int = 20_000_000
     # 単一ファイルのバイト上限（巨大ファイル/生成物の混入ガード）。
     github_index_max_file_bytes: int = 200_000
 
-    # ---- Data governance (issue #10) ----
+    # ---- Data governance ----
     # Mask PII before context is written to the shared grounding index.
     mask_pii_before_index: bool = True
     # Require explicit consent (recording + AI processing) to create a session.

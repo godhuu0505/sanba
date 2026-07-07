@@ -1,4 +1,4 @@
-"""音声ターン検出のチューニングとセッション安定化（ADR-0038）のテスト。
+"""音声ターン検出のチューニングとセッション安定化のテスト。
 
 `build_turn_detection` が env 設定を Gemini の自動 VAD 設定へ正しく写像すること
 （発話途中の被せ発話対策）、`resume_instructions` が再起動後の再開文脈を組み立てる
@@ -83,22 +83,20 @@ class TestBuildTurnDetection:
 
 class TestDefaultSettings:
     def test_defaults_wait_for_user_to_finish(self) -> None:
-        # 既定値が「待ち長め」に倒れていること（発話途中の被せ発話対策の本丸）。
-        # ADR-0039: 考えながらの沈黙で発話が途中確定して分断されないよう、無音待ちを延長。
+        # 考えながらの沈黙で発話が途中確定して分断されないよう、無音待ちを延長。
         assert settings.turn_end_sensitivity == "low"
         assert settings.turn_silence_duration_ms >= 1000
 
     def test_defaults_require_sustained_speech_to_start(self) -> None:
-        # ADR-0039: 一瞬の環境音・相槌の漏れで start が誤検出され発話が区切られないよう、
+        # 一瞬の環境音・相槌の漏れで start が誤検出され発話が区切られないよう、
         # start-of-speech 確定に最低限の発話長を要求する。
         assert settings.turn_prefix_padding_ms >= 100
 
     def test_language_pinned_by_default(self) -> None:
-        # ADR-0039: 日本語固定が既定（認識ドリフト＝韓国語/中国語化の主対策）。
+        # 日本語固定が既定（認識ドリフト＝韓国語/中国語化の主対策）。
         assert settings.gemini_language == "ja-JP"
 
     def test_context_window_compression_enabled_by_default(self) -> None:
-        # 長時間セッションがコンテキスト上限で打ち切られない既定であること。
         assert settings.gemini_context_window_compression is True
         assert (
             settings.gemini_context_sliding_window_tokens < settings.gemini_context_trigger_tokens
@@ -108,10 +106,15 @@ class TestDefaultSettings:
         assert settings.voice_session_max_restarts >= 1
         assert settings.voice_session_restart_backoff_s > 0
 
+    def test_analysis_timeouts_protect_the_voice_turn(self) -> None:
+        # ADR-0046 段階1: 相乗り上限は音声ターンを塞がない短さで、背景上限以下に収まる。
+        assert settings.analysis_ride_along_timeout_seconds <= 10
+        assert settings.analysis_ride_along_timeout_seconds <= settings.analysis_timeout_seconds
+
 
 class TestBuildInputTranscription:
     def test_uses_configured_language_as_hint(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        # ADR-0039: 入力文字起こしに言語ヒントを与え、誤認識ドリフトを抑える。
+        # 入力文字起こしに言語ヒントを与え、誤認識ドリフトを抑える。
         monkeypatch.setattr(settings, "gemini_language", "ja-JP")
         conf = build_input_transcription()
         assert conf.language_codes == ["ja-JP"]
@@ -119,7 +122,7 @@ class TestBuildInputTranscription:
     def test_empty_language_falls_back_to_auto_detect(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        # 空文字なら language_codes を付けず、モデルの自動判定に委ねる（従来挙動）。
+        # 空文字なら language_codes を付けず、モデルの自動判定に委ねる。
         monkeypatch.setattr(settings, "gemini_language", "")
         conf = build_input_transcription()
         assert conf.language_codes is None
@@ -145,7 +148,6 @@ class TestBuildRealtimeModel:
         )
 
     def test_pins_language_and_input_transcription(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        # ADR-0039: 言語固定（出力 language_code）と入力文字起こしヒントが載ること。
         monkeypatch.setenv("GOOGLE_GENAI_USE_VERTEXAI", "true")
         monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "test-project")
         monkeypatch.setenv("GOOGLE_CLOUD_LOCATION", "us-central1")
@@ -162,7 +164,7 @@ class TestResumeInstructions:
         text = resume_instructions(transcript, tail=10)
         assert "発話20" in text
         assert "発話11" in text
-        assert "発話10" not in text  # 末尾 10 件より古い発話は含めない
+        assert "発話10" not in text
         assert "復旧" in text
 
     def test_empty_transcript_still_produces_instructions(self) -> None:
@@ -185,7 +187,41 @@ class TestNoiseCancellation:
         assert build_noise_cancellation() is None
 
     def test_self_host_disables_bvc(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        # ADR-0039 / Codex 指摘: 非 Cloud transport では BVC を渡さない（自動無効化）。
         monkeypatch.setattr(settings, "noise_cancellation_enabled", True)
         monkeypatch.setattr(settings, "livekit_url", "ws://localhost:7880")
         assert build_noise_cancellation() is None
+
+
+class _FakeSession:
+    """generate_reply だけを持つ最小の AgentSession スタブ（観測性ヘルパのテスト用）。"""
+
+    def __init__(self, *, raises: BaseException | None = None) -> None:
+        self.calls: list[dict[str, object]] = []
+        self._raises = raises
+
+    async def generate_reply(self, **kwargs: object) -> None:
+        self.calls.append(kwargs)
+        if self._raises is not None:
+            raise self._raises
+
+
+class TestGuardedGenerateReply:
+    @pytest.mark.asyncio
+    async def test_success_returns_true_and_forwards_kwargs(self) -> None:
+        from sanba_agent.main import guarded_generate_reply
+
+        session = _FakeSession()
+        ok = await guarded_generate_reply(
+            session, session_id="s1", kind="opening", instructions="はじめまして"
+        )
+        assert ok is True
+        assert session.calls == [{"instructions": "はじめまして"}]
+
+    @pytest.mark.asyncio
+    async def test_failure_is_swallowed_and_returns_false(self) -> None:
+        # Live の generation_created タイムアウト等でも例外を伝播させず、会話は続行できる。
+        from sanba_agent.main import guarded_generate_reply
+
+        session = _FakeSession(raises=TimeoutError("generation_created timed out"))
+        ok = await guarded_generate_reply(session, session_id="s1", kind="opening")
+        assert ok is False

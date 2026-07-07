@@ -34,8 +34,8 @@ class FakeClock:
 
 def test_needs_min_new_utterances() -> None:
     s = AnalysisScheduler(clock=FakeClock())
-    assert s.note_utterance() is False  # 1 件目では発火しない
-    assert s.note_utterance() is True  # 2 件目で発火
+    assert s.note_utterance() is False
+    assert s.note_utterance() is True
 
 
 def test_running_blocks_new_start() -> None:
@@ -43,8 +43,8 @@ def test_running_blocks_new_start() -> None:
     s.note_utterance()
     s.note_utterance()
     s.start()
-    assert s.pending == 0  # 実行開始で差分はゼロに戻る
-    assert s.note_utterance() is False  # 実行中は発火しない（機内 1 件）
+    assert s.pending == 0
+    assert s.note_utterance() is False
     assert s.note_utterance() is False
 
 
@@ -56,7 +56,7 @@ def test_min_interval_blocks_until_elapsed() -> None:
     s.start()
     s.finish()
     s.note_utterance()
-    assert s.note_utterance() is False  # 差分 2 件でも 20 秒未満は発火しない
+    assert s.note_utterance() is False
     clock.advance(20.0)
     assert s.note_utterance() is True
 
@@ -75,7 +75,7 @@ def test_finish_requests_followup_only_when_due() -> None:
     s.note_utterance()
     s.note_utterance()
     clock.advance(20.0)
-    assert s.finish() is True  # 間隔も満ちていれば追い掛け実行
+    assert s.finish() is True
 
 
 # ---- SANBAAgent 統合 --------------------------------------------------------
@@ -121,7 +121,7 @@ async def test_background_analysis_publishes_detections(
     assert len(calls) == 1
     types = [t["event"]["type"] for t in transport.sent]
     assert "detection.gap" in types, "背景実行でも検知カードへ publish される"
-    # 背景実行は不可視: deliberating は出さない（ADR-0037 決定1 / ツール経路のみ）。
+    # 背景実行は不可視: deliberating は出さない。
     statuses = [
         t["event"]["payload"]["phase"] for t in transport.sent if t["event"]["type"] == "status"
     ]
@@ -202,7 +202,7 @@ async def test_background_analysis_timeout_is_fail_soft(
 
 @pytest.mark.asyncio
 async def test_drain_tasks_cancels_overdue() -> None:
-    # ドレン: 猶予内に終わるタスクは送り切り、超過分はキャンセルする（ADR-0037）。
+    # ドレン: 猶予内に終わるタスクは送り切り、超過分はキャンセルする。
     import asyncio
 
     from sanba_agent.main import _drain_tasks
@@ -249,3 +249,40 @@ async def test_tool_rides_on_inflight_background_run(
     result = await tool_task
     assert len(calls) == 1, "走行中の背景分析に相乗りし、二重の LLM 往復をしない"
     assert result["next_question"] == "q?"
+
+
+@pytest.mark.asyncio
+async def test_tool_ride_along_timeout_returns_without_competing_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # ADR-0046 段階1: 背景分析が相乗り上限内に終わらないとき、ツールは音声ターンを塞がず
+    # 直近結果（無ければヒューリスティック）を即返し、競合する同期分析を起動しない。
+    import asyncio
+
+    from sanba_agent.config import settings
+
+    calls: list[str] = []
+    gate: asyncio.Event = asyncio.Event()
+
+    async def _hang(transcript: str) -> AnalysisResult:
+        calls.append(transcript)
+        await gate.wait()
+        return AnalysisResult(summary="s", next_question="q?", suggested_answer="a")
+
+    monkeypatch.setattr("sanba_agent.main.analyze_transcript", _hang)
+    monkeypatch.setattr(settings, "analysis_ride_along_timeout_seconds", 0.05)
+    agent = _agent()
+    agent.record_utterance("participant", "請求管理のアプリを作りたい")
+    agent.record_utterance("participant", "対象は経理担当者です")
+    task = agent._analysis_task
+    assert task is not None and not task.done()
+
+    tool = type(agent).analyze_requirements.__wrapped__
+    result = await tool(agent, None)
+    # 相乗り上限で切り上げ、ヒューリスティック（直近結果が無い）を即返す。
+    assert result["next_question"]
+    assert len(calls) == 1, "上限超過でも競合する同期分析を起動しない（背景の1回だけ）"
+
+    # 後片付け: 背景を解放してドレンする。
+    gate.set()
+    await agent.drain_background_tasks()

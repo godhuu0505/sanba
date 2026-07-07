@@ -89,7 +89,7 @@ export function SessionView({
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
   }, [timerRunning, startedAt]);
-  // エージェント発話／読み上げ中の検知（#248）。useSpeakingParticipants は ActiveSpeakersChanged で
+  // エージェント発話／読み上げ中の検知。useSpeakingParticipants は ActiveSpeakersChanged で
   // reactive に更新され、購読は本コンポーネント（会話画面）のマウント中だけに閉じる（リーク防止）。
   // ローカル参加者（自分）を除いたリモート＝エージェントの発話を音声状態インジケータへ渡す。
   const speaking = useSpeakingParticipants();
@@ -102,9 +102,9 @@ export function SessionView({
   // 投入直後の素材ローカル行（uploading/failed）。realtime の analysis.progress/visual が届くまで、
   // また動画の「準備中」を可視化する橋渡し。
   const [pending, setPending] = useState<MaterialItem[]>([]);
-  // #184: リロード/途中参加時に GET context/files で実ファイル名・状態を復元する。
+  // リロード/途中参加時に GET context/files で実ファイル名・状態を復元する。
   const [hydratedMaterials, setHydratedMaterials] = useState<MaterialItem[]>([]);
-  // #219: 中断で破棄した素材の id 集合。mergeMaterials で表示・件数から除き、遅延 analysis.* が
+  // 中断で破棄した素材の id 集合。mergeMaterials で表示・件数から除き、遅延 analysis.* が
   // 来ても行を復活させないガード（realtime 契約・サーバ取消は触らずクライアント側の破棄に留める）。
   const [cancelledIds, setCancelledIds] = useState<ReadonlySet<string>>(() => new Set());
   const fileInput = useRef<HTMLInputElement>(null);
@@ -113,12 +113,12 @@ export function SessionView({
   const uploadAborters = useRef<Map<string, AbortController>>(new Map());
   // アップロード成功で行 id は tempId→asset_id に差し替わる（realtime と突き合わせるため）。
   // 確認ダイアログを tempId で開いた直後に成功すると、確定時は古い tempId が渡る。両 id を
-  // 中断対象に解決できるよう tempId↔asset_id の対応（一意）を保持する（#219 / Codex P2）。
+  // 中断対象に解決できるよう tempId↔asset_id の対応（一意）を保持する。
   // MaterialsList の中断確認も、表示名ではなくこの一意対応で id 差し替え後の行を追跡するため
   // state で持ち、props として配る（同名素材の取り違えを防ぐ）。
   const [uploadAliases, setUploadAliases] = useState<ReadonlyMap<string, string>>(() => new Map());
 
-  // 接続/再接続時に投入済み素材のメタを取り戻す（契約 §4 / #184）。失敗してもライブ差分で前進する。
+  // 接続/再接続時に投入済み素材のメタを取り戻す（契約 §4）。失敗してもライブ差分で前進する。
   // 読取専用（ゲスト）は素材 UI 自体を出さないため取得しない（無駄な読取を避ける）。
   useEffect(() => {
     if (readOnly) return;
@@ -154,7 +154,7 @@ export function SessionView({
   // ファイル 1 件を投入する（ローカルピッカと Google ドライブ取り込みが共用する本流）。
   async function startUpload(file: File) {
     const tempId = `local:${tempSeq.current++}`;
-    // 中断（#219）で送信中の fetch を止められるよう AbortController を紐づける。
+    // 中断で送信中の fetch を止められるよう AbortController を紐づける。
     const aborter = new AbortController();
     uploadAborters.current.set(tempId, aborter);
     setPending((p) => [...p, { id: tempId, name: file.name, pct: 0, status: "uploading" }]);
@@ -164,13 +164,13 @@ export function SessionView({
       // 成功を反映しない（行は handleCancelMaterial が立てた cancelled のまま＝破棄を維持）。
       // ここで res.asset_id を破棄ガードへ積まないこと: asset_id は内容ハッシュで安定するため
       // 同一ファイルを再投入すると同じ id になり、古い中断応答が後から再投入済みの行を隠してしまう
-      // （Codex P2）。サーバに作られた asset の取消／再読込をまたぐ整合は #245（クライアントは
+      // サーバに作られた asset の取消／再読込をまたぐ整合は別途対応する（クライアントは
       // tempId の cancelled 行で表示破棄に留める）。
       if (aborter.signal.aborted) {
-        // #245: abort 直前に成功応答が解決していたレース。画像はレスポンス前に grounding 索引と
+        // abort 直前に成功応答が解決していたレース。画像はレスポンス前に grounding 索引と
         // material(done) まで完了しているため、クライアント破棄だけでは観察がサーバに残り、
         // リロードで復活する。確定した asset_id をサーバ側でも「真の破棄」してから抜ける
-        // （cancelledIds には積まない＝再投入を隠さない方針は維持・Codex P2）。
+        // （cancelledIds には積まない＝再投入を隠さない方針は維持）。
         if (res.asset_id) void discardOnServer(res.asset_id);
         return;
       }
@@ -186,7 +186,7 @@ export function SessionView({
       }
       // 成功で abort 対象ではなくなったので controller を片付ける（中断は破棄ガードに切替わる）。
       uploadAborters.current.delete(tempId);
-      // 明示的な再投入は復活させる（#219 / Codex P2）。API は内容ハッシュで安定 asset_id を返すため
+      // 明示的な再投入は復活させる。API は内容ハッシュで安定 asset_id を返すため
       // （storage.compute_asset_id）、中断後に同じファイルを再追加すると asset_id が前回の破棄
       // tombstone と一致してしまう。成功時に当該 asset_id を破棄ガードから外す。
       setCancelledIds((prev) => {
@@ -213,7 +213,7 @@ export function SessionView({
           ),
       );
     } catch (err) {
-      // 中断（#219）による abort は失敗ではない。handleCancelMaterial が行を cancelled にして
+      // 中断による abort は失敗ではない。handleCancelMaterial が行を cancelled にして
       // 破棄済みなので、ここでは failed に上書きしない（途中までの結果を破棄したまま終える）。
       if (aborter.signal.aborted) return;
       // 失敗（415/413/ネットワーク）は沈黙させず行を failed にし、再試行導線を出す。
@@ -227,21 +227,21 @@ export function SessionView({
     }
   }
 
-  // 解析/アップロード中の素材を中断して破棄する（#219）。
+  // 解析/アップロード中の素材を中断して破棄する。
   // - アップロード中: 送信中の fetch を AbortController.abort() で中止する。
   // - 解析中（realtime/動画準備中）: ローカル行を cancelled にし、id を cancelledIds へ積む。
   // cancelledIds により、破棄後に遅延 analysis.* が届いても mergeMaterials が行を復活させない。
   // サーバ側の解析ジョブ取消は Out of Scope（必要なら別 issue）。クライアントの破棄に留める。
   function handleCancelMaterial(id: string) {
     // 確認ダイアログを tempId で開いた後にアップロードが成功すると行 id は asset_id に変わる。
-    // どちらで渡されても確実に破棄できるよう、tempId↔asset_id の対応を双方向に解決する（Codex P2）。
+    // どちらで渡されても確実に破棄できるよう、tempId↔asset_id の対応を双方向に解決する。
     const ids = new Set<string>([id]);
     const aliased = uploadAliases.get(id);
     if (aliased) ids.add(aliased);
     for (const [tempId, assetId] of uploadAliases) if (assetId === id) ids.add(tempId);
 
     // 中断時の状態（uploading|analyzing）を telemetry 用に解決する。pending に無い realtime/
-    // 復元由来の行は解析中（動画準備中・遅延 analysis.*）なので analyzing 扱いにする（#243）。
+    // 復元由来の行は解析中（動画準備中・遅延 analysis.*）なので analyzing 扱いにする。
     const target = pending.find((m) => ids.has(m.id));
     const status = target?.status === "uploading" ? "uploading" : "analyzing";
 
@@ -262,12 +262,12 @@ export function SessionView({
       for (const cid of ids) next.add(cid);
       return next;
     });
-    // #245 真の破棄: サーバに実体がある asset（tempId=local:* 以外）は binary・メタ・grounding
+    // 真の破棄: サーバに実体がある asset（tempId=local:* 以外）は binary・メタ・grounding
     // 索引を DELETE で取り消す。これでリロードでの復活と、画像の grounding 残留を断つ。
     for (const cid of ids) {
       if (!cid.startsWith("local:")) void discardOnServer(cid);
     }
-    // 観測性（CLAUDE.md 原則3 / #243）: 中断率・abort 有無・対象状態を OTLP カウンタへ集約する。
+    // 観測性（CLAUDE.md 原則3）: 中断率・abort 有無・対象状態を OTLP カウンタへ集約する。
     // PII/自由記述は送らず、列挙値（status/result）のみ。result は abort の有無で分ける。
     sendTelemetry(
       sessionId,
@@ -277,10 +277,10 @@ export function SessionView({
     );
   }
 
-  // #245: 中断確定した素材をサーバ側でも破棄する（binary・メタ・grounding 索引）。
+  // 中断確定した素材をサーバ側でも破棄する（binary・メタ・grounding 索引）。
   // 失敗してもローカル破棄（cancelled・abort）は維持して UX を止めない。サーバに実体が残ると
   // リロードで復活し得るが、その際の再中断で再度 DELETE される（失敗時は行を残す方針）。
-  // 破棄失敗は result=error で観測へ記録する（#243）。
+  // 破棄失敗は result=error で観測へ記録する。
   async function discardOnServer(assetId: string) {
     try {
       await deleteContextFile(sessionId, assetId, sessionToken);
@@ -380,11 +380,11 @@ export function SessionView({
   }
 
   function handleFinalize(): Promise<FinalizeResult> {
-    // 07 判定の「確定」を永続化する（#186）。確定スナップショット（件数）を刻む。
+    // 07 判定の「確定」を永続化する。確定スナップショット（件数）を刻む。
     return finalizeSession(sessionId, sessionToken);
   }
 
-  // テキスト送信は user.text（契約 §4.5 / #185）として agent へ会話ターンで届ける。
+  // テキスト送信は user.text（契約 §4.5）として agent へ会話ターンで届ける。
   // agent 側は発話として記録し（transcript.final で会話履歴にも反映）、応答を生成する。
   function handleSendText(text: string) {
     sendText(text);
@@ -442,7 +442,7 @@ export function SessionView({
       />
 
       {/*
-        投入種別（camera/screen/upload/drive）の運用計測（#232）:
+        投入種別（camera/screen/upload/drive）の運用計測:
         - upload は API 側 `sanba_asset_uploads_total`（kind/result）で計上済み（observability.py）。
         - camera/screen は LiveKit ローカルトラックの publish としてもサーバ側で観測できる。
         加えて「どの手段が選ばれたか」の比率を運用で追えるよう、選択イベントを onSelectSource →

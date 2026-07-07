@@ -38,7 +38,7 @@ def heuristic_open_topics(transcript: str) -> list[str]:
     return missing
 
 
-# 基準が曖昧な言い回し（#260 / ADR-0022）。「触れられているが具体性を欠く」論点の合図。
+# 基準が曖昧な言い回し。「触れられているが具体性を欠く」論点の合図。
 # 抜け（heuristic_open_topics）が「触れられていない論点」を拾うのとは対象が異なる。
 _AMBIGUITY_MARKERS = (
     "いい感じ",
@@ -65,7 +65,7 @@ def heuristic_ambiguous_topics(transcript: str) -> list[str]:
     """曖昧な言い回しを含む発話を不明瞭な論点として抽出する（gap/矛盾ではない第三類）。
 
     ADK が無い環境でも最低限の不明瞭検知を保証するための、依存ゼロの pre-filter。
-    LLM による精度向上（誤検出抑制・論点の言語化）は #40 / Langfuse 評価に委ねる
+    LLM による精度向上（誤検出抑制・論点の言語化）は Langfuse 評価に委ねる
     （gap 検知が heuristic_open_topics を持つのと同じ構成）。
     """
     found: list[str] = []
@@ -97,14 +97,26 @@ async def analyze_transcript(transcript: str) -> AnalysisResult:
     try:
         return await _run_adk(transcript, open_topics, ambiguous_topics)
     except Exception:
-        first_gap = open_topics[0] if open_topics else "他に考慮すべき制約はありますか"
-        return AnalysisResult(
-            summary=_naive_summary(transcript),
-            open_topics=open_topics,
-            ambiguous_topics=ambiguous_topics,
-            next_question=f"{first_gap}について教えてください。",
-            suggested_answer="（例）まだ決めていません。一般的な水準で構いません。",
-        )
+        return heuristic_result(transcript)
+
+
+def heuristic_result(transcript: str) -> AnalysisResult:
+    """ADK 無し/タイムアウト時のヒューリスティック分析結果（LLM 往復なし・即時）。
+
+    抜け（heuristic_open_topics）と曖昧語（heuristic_ambiguous_topics）から最低限の
+    「次の一問」を組み立てる。ローカル/dev、認証なしのユニットテスト、および分析が上限内に
+    完了しないとき（ADR-0046 段階1 の ride-along タイムアウト）のフォールバックで使う。
+    """
+    open_topics = heuristic_open_topics(transcript)
+    ambiguous_topics = heuristic_ambiguous_topics(transcript)
+    first_gap = open_topics[0] if open_topics else "他に考慮すべき制約はありますか"
+    return AnalysisResult(
+        summary=_naive_summary(transcript),
+        open_topics=open_topics,
+        ambiguous_topics=ambiguous_topics,
+        next_question=f"{first_gap}について教えてください。",
+        suggested_answer="（例）まだ決めていません。一般的な水準で構いません。",
+    )
 
 
 def _naive_summary(transcript: str) -> str:

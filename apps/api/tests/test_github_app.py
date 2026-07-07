@@ -129,7 +129,7 @@ def test_redact_private_key_block() -> None:
         format=serialization.PrivateFormat.TraditionalOpenSSL,
         encryption_algorithm=serialization.NoEncryption(),
     ).decode()
-    body = pem.splitlines()[1]  # base64 本文の一部
+    body = pem.splitlines()[1]
     out = redact_secrets(f"key:\n{pem}\n")
     assert body not in out
     assert "PRIVATE KEY" not in out

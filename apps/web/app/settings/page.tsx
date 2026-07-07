@@ -1,25 +1,24 @@
 "use client";
 
-// アカウント設定画面「設えの間」（Figma 正本 14 アカウントメニュー `106:45` の ⚙ アカウント設定 の遷移先 / #227）。
+// アカウント設定画面「設えの間」（Figma 正本 14 アカウントメニュー `106:45` の ⚙ アカウント設定 の遷移先）。
 // 最低限の項目（プロフィール表示・データ保持日数・ログアウト）を SANBA デザインシステム（components/sanba/*）の
 // 金彩テーマで提供する。Figma に専用の設定画面ノードは無いため、メニューの世界観に揃えた最小構成とする。
 //
-// 認可・認証ロジックは不変（CLAUDE.md「スキン」方針）。保持日数は表示のみ（実バックエンド変更は範囲外 / 別 issue）。
+// 認可・認証ロジックは不変（CLAUDE.md「スキン」方針）。保持日数は表示のみ（実バックエンド変更は範囲外）。
 // 認証ゲート配下に置き、未ログインでは露出しない（authGate → /login?next=/settings）。
 
 import { useRouter } from "next/navigation";
 
 import { AccountMenu } from "@/components/AccountMenu";
+import { AppShell } from "@/components/AppShell";
 import { GitHubLinkCard } from "@/components/GitHubLinkCard";
 import { authGate } from "@/components/RequireAuth";
 import {
-  AppHeader,
   Avatar,
   Button,
   Card,
   CardTitle,
   Divider,
-  Screen,
 } from "@/components/sanba";
 import { useAuth } from "@/lib/auth";
 
@@ -48,13 +47,12 @@ export default function SettingsPage() {
   }
 
   return (
-    <Screen className="px-4 py-3 sanba-scroll">
-      <AppHeader
-        title="アカウント設定"
-        onBack={() => router.push("/")}
-        right={<AccountMenu profile={profile} hideSettings />}
-      />
-      <main className="mx-auto flex w-full max-w-[480px] flex-1 flex-col gap-[18px] pt-2">
+    <AppShell
+      title="アカウント設定"
+      onBack={() => router.push("/")}
+      headerRight={<AccountMenu profile={profile} hideSettings />}
+    >
+      <div className="mx-auto flex w-full max-w-[480px] flex-col gap-[18px] px-4 py-4">
         {/* プロフィール表示（装飾目的。認証の真偽は API 側が源泉）。 */}
         <Card>
           <CardTitle>プロフィール</CardTitle>
@@ -79,7 +77,7 @@ export default function SettingsPage() {
           </div>
         </Card>
 
-        {/* データの取り扱い（保持日数）。表示のみ（実バックエンド変更は範囲外 / #227）。 */}
+        {/* データの取り扱い（保持日数）。表示のみ（実バックエンド変更は範囲外）。 */}
         <Card>
           <CardTitle>データの取り扱い</CardTitle>
           <dl className="flex flex-col gap-[6px]">
@@ -106,7 +104,7 @@ export default function SettingsPage() {
             ⎋ ログアウト
           </Button>
         </Card>
-      </main>
-    </Screen>
+      </div>
+    </AppShell>
   );
 }

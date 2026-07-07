@@ -1,7 +1,7 @@
 "use client";
 
 // 過去要件の絵巻閲覧画面（/results/[id] / ADR-0045 で /sessions/[id] から移設。旧 URL は
-// リダイレクトで互換維持）。ホーム「過去の要件を見る」（#215/#250）の行をタップした先で、
+// リダイレクトで互換維持）。ホーム「過去の要件を見る」の行をタップした先で、
 // そのセッションの要件絵巻と結果ドキュメント出力（ADR-0042/0043）を閲覧する。
 // データ源は本人限定 API（GET /api/sessions/mine/{id}/requirements）。認証は Google idToken
 // （ADR-0012）で、非所有・不存在は API が 404 に平すため、ここでは「見つからない」表示に落とす。
@@ -10,10 +10,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 
-import { AppHeader, Button, Chip, Screen } from "@/components/sanba";
+import { Button, Chip } from "@/components/sanba";
+import { AccountMenu } from "@/components/AccountMenu";
+import { AppShell } from "@/components/AppShell";
 import { RequirementsScrollList } from "@/components/RequirementsScrollList";
 import { authGate } from "@/components/RequireAuth";
-import { SideMenu } from "@/components/SideMenu";
 import {
   ApiError,
   fetchMySessionRequirements,
@@ -85,7 +86,7 @@ export default function PastRequirementsPage() {
       setLoad({ state: "ok", data });
     } catch (e) {
       // 404 = 非所有 or 不存在（API が同じ応答に平す）。401 = idToken 期限切れ/失効で、
-      // authGate はメモリ上の loggedIn しか見ないため到達する（再認証導線へ / Codex P2）。
+      // authGate はメモリ上の loggedIn しか見ないため到達する（再認証導線へ）。
       // それ以外は再試行導線つきの失敗表示。
       if (e instanceof ApiError && e.status === 404) setLoad({ state: "notfound" });
       else if (e instanceof ApiError && e.status === 401) setLoad({ state: "unauthenticated" });
@@ -102,9 +103,13 @@ export default function PastRequirementsPage() {
   if (gate) return gate;
 
   return (
-    <Screen className="sanba-scroll">
-      <AppHeader back onBack={() => router.push("/")} title="要件絵巻" right={<SideMenu />} />
-      <main className="mx-auto flex w-full max-w-md flex-col gap-3 px-4 pb-10 pt-1">
+    <AppShell
+      current="results"
+      title="要件絵巻"
+      onBack={() => router.push("/results")}
+      headerRight={<AccountMenu profile={auth.profile} />}
+    >
+      <div className="mx-auto flex w-full max-w-md flex-col gap-3 px-4 pb-10 pt-3">
         {load.state === "loading" && (
           <p className="px-1 py-3 text-[13px] text-sanba-muted">読み込み中…</p>
         )}
@@ -121,7 +126,7 @@ export default function PastRequirementsPage() {
               ログインの期限が切れました。もう一度ログインしてください。
             </p>
             {/* 期限切れ credential が残ったままだと同じ無効トークンで再試行し続けるため、
-                admin と同様に signOut で clear し、authGate 経由で /login?next= へ送る（Codex P2）。
+                admin と同様に signOut で clear し、authGate 経由で /login?next= へ送る。
                 期限切れ回復であり明示ログアウトではないため、他タブへは伝播させない
                 （broadcast:false / 別タブの進行中会話を巻き添えにしない / ADR-0030）。 */}
             <Button variant="gold" block onClick={() => auth.signOut({ broadcast: false })}>
@@ -216,7 +221,7 @@ export default function PastRequirementsPage() {
             </div>
           </>
         )}
-      </main>
-    </Screen>
+      </div>
+    </AppShell>
   );
 }

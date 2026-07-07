@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     google_cloud_location: str = "us-central1"
     gemini_live_model: str = "gemini-live-2.5-flash-native-audio"
     gemini_reasoning_model: str = "gemini-2.5-flash"
-    # 音声認識/合成の言語固定（ADR-0039）。BCP-47 コード。入力文字起こしのヒント
+    # 音声認識/合成の言語固定。BCP-47 コード。入力文字起こしのヒント
     # （AudioTranscriptionConfig.language_codes）と出力音声の language_code に使う。
     # 未設定（""）でモデルの自動言語判定に委ねる（従来挙動）。日本語セッションで
     # 韓国語/中国語へ誤認識ドリフトするのを抑える主レバー。
@@ -29,8 +29,8 @@ class Settings(BaseSettings):
     # --- 音声ターン検出（Gemini Live 自動 VAD）の感度 ---
     # 参加者が話し終えたと判定するまでに要求する無音時間 (ms)。大きいほど発話途中の間で
     # エージェントが被せて話し始めにくくなる代わりに、応答開始は遅くなる。
-    # ADR-0039: 「考えながら長めに沈黙する」要件インタビューで発話が途中確定して吹き出しが
-    # 分断されるのを抑えるため、ADR-0038 の 800 から 1200 に延長。
+    # 「考えながら長めに沈黙する」要件インタビューで発話が途中確定して吹き出しが
+    # 分断されるのを抑えるため 800 から 1200 に延長。
     turn_silence_duration_ms: int = 1200
     # 発話終端検出の感度。"low" = 終わったと判定されにくい（待ちが長い）/ "high" /
     # "" = サーバ既定。話し途中の割り込み対策の主レバー。
@@ -39,7 +39,7 @@ class Settings(BaseSettings):
     # なるが、短い返事を取りこぼすリスクがある。既定はサーバ既定（""）。
     turn_start_sensitivity: str = ""
     # start-of-speech 確定に要する発話長 (ms)。0 以下はサーバ既定。
-    # ADR-0039: 一瞬の環境音・相槌の漏れ込みで発話が誤って区切られる（短い相槌で切られる）のを
+    # 一瞬の環境音・相槌の漏れ込みで発話が誤って区切られる（短い相槌で切られる）のを
     # 抑えるため 100ms の連続発話を start 確定の条件にする。BVC と併せて誤検出を減らす。
     turn_prefix_padding_ms: int = 100
 
@@ -53,7 +53,17 @@ class Settings(BaseSettings):
     voice_session_max_restarts: int = 3
     voice_session_restart_backoff_s: float = 2.0
 
-    # --- 入力ノイズ抑制（ADR-0039）---
+    # --- 要件分析（ADK 多段チェーン）のタイムアウト（ADR-0046 段階1）---
+    # 背景分析 1 回の LLM 往復の上限。健全時は概ね 10 秒未満で完了する。超過は fail-soft で
+    # 破棄し、次の発話が再評価する。音声ターン自体は下の ride-along 上限が守るため、分析が
+    # 完了しきれるだけの余裕を残しつつ 30→20 秒へ短縮する。
+    analysis_timeout_seconds: float = 20.0
+    # analyze_requirements（ツール）が走行中の背景分析へ相乗りして待つ上限。これを超えたら
+    # 音声ターンをそれ以上塞がず、直近結果（無ければヒューリスティック）を即返す。背景は走り
+    # 切り、結果は次ターンに反映される。音声ターンのレイテンシ保護の主レバー（ADR-0046 段階1）。
+    analysis_ride_along_timeout_seconds: float = 8.0
+
+    # --- 入力ノイズ抑制 ---
     # LiveKit Cloud の Krisp Background Voice Cancellation（BVC）をエージェント側の音声入力に
     # 適用する。雑音・PC 内蔵マイク・別話者の被り由来の誤認識/言語ドリフトを抑える。
     # プラグイン（livekit-plugins-noise-cancellation）未導入や self-host では自動で無効化して
@@ -68,7 +78,7 @@ class Settings(BaseSettings):
     elasticsearch_api_key: str = ""
     gemini_embed_model: str = "gemini-embedding-001"
 
-    # Data governance (issue #10)
+    # Data governance
     mask_pii_before_index: bool = True
     data_retention_days: int = 30
 
@@ -82,7 +92,7 @@ class Settings(BaseSettings):
     langfuse_public_key: str = ""
     langfuse_secret_key: str = ""
 
-    # External connectors (issue #7). OFF by default — never affects the demo path.
+    # External connectors. OFF by default — never affects the demo path.
     github_connector_enabled: bool = False
     github_token: str = ""
     github_repo: str = ""  # "owner/name"

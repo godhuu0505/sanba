@@ -139,7 +139,7 @@ def test_missing_sub_is_rejected(mint, verifier) -> None:
         verify_google_id_token(token, CLIENT_ID, verifier=verifier)
 
 
-# ── nonce claim の取り出し (ADR-0046) ─────────────────────────────────────────
+# ── nonce claim の取り出し (ADR-0047) ─────────────────────────────────────────
 
 
 def test_nonce_claim_is_extracted(mint, verifier) -> None:

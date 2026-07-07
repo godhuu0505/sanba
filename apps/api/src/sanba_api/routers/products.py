@@ -314,7 +314,7 @@ def create_product(
     """アプリを登録する（FR-1.1 / ADR-0031）。owner は呼び出しユーザー。
 
     slug は必須（ADR-0045）。形式・予約語は 400、使用済みは 409。
-    ルーム作成 allowlist（ADR-0046 §3）はここにも掛ける: product の owner は自分で
+    ルーム作成 allowlist（ADR-0047 §3）はここにも掛ける: product の owner は自分で
     深掘りリンクを発行して join_product でルームを量産できるため、create_session
     だけ縛っても product 経由で全バイパスできてしまう。
     """
@@ -615,7 +615,7 @@ class ProductInviteResponse(BaseModel):
 
 class ProductJoinRequest(BaseModel):
     token: str
-    # 録音・AI 処理への同意（issue #10）。セッション作成を伴うため create_session と同じゲート。
+    # 録音・AI 処理への同意。セッション作成を伴うため create_session と同じゲート。
     consent_acknowledged: bool = False
 
 
@@ -734,7 +734,7 @@ def join_product(
 ) -> ProductJoinResponse:
     """深掘りリンクからセッションを自動作成する（FR-1.6 / FR-2.1 / ADR-0031 決定3）。
 
-    ログイン済みの ID トークンは create/join と同じく nonce 束縛する（ADR-0046 §2 /
+    ログイン済みの ID トークンは create/join と同じく nonce 束縛する（ADR-0047 §2 /
     maybe_user_bound）。依存性なので束縛違反の 401 は invite 消費より前に返り、
     max_uses を無駄に減らさない。
     認証は原則ログイン必須。唯一の例外（ADR-0032 決定1）: `guest_join_enabled` かつ

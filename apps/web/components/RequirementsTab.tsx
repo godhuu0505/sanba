@@ -26,7 +26,7 @@ export interface RequirementsTabProps {
    */
   onJump?: (detectionId: string) => void;
   /**
-   * ミニ状況「未確定」からの遷移時に true（#195）。深掘り（未解消）対象の見出しへスクロールして
+   * ミニ状況「未確定」からの遷移時に true。深掘り（未解消）対象の見出しへスクロールして
    * 視線を誘導する。要件タブを開いただけ（要件タップ）では false。タブ再マウントで誤発火しない
    * よう、消費後は親が onUnresolvedFocusConsumed で false に戻す（ワンショット）。
    */
@@ -45,7 +45,7 @@ export function RequirementsTab({
   // end_user モードでは MoSCoW 等の開発語彙を見出しから外す（FR-2.4 / ADR-0032）。
   const endUser = useInterviewMode() === "end_user";
   const deepDiveRef = useRef<HTMLHeadingElement>(null);
-  // 「未確定」からの遷移時のみ深掘り対象へスクロールし、ワンショットで消費する（#195）。
+  // 「未確定」からの遷移時のみ深掘り対象へスクロールし、ワンショットで消費する。
   // 要件タップ（focusUnresolved=false）や通常のタブ再マウントでは発火しない。
   // jsdom は scrollIntoView 未実装のため optional 呼び出しで安全に no-op になる。
   useEffect(() => {

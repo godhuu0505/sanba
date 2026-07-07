@@ -2,9 +2,9 @@
 
 // ホーム/管理画面の右上アカウントメニュー（Figma 正本 13 `104:2` / 14 `106:2`）。
 // アバター押下で scrim 付きドロップダウンを開き、ログイン後の導線（管理者画面・ログアウト）を
-// ここに集約する（監査 docs/design/figma-implementation-audit.md B-1 #1/#5）。
+// ここに集約する（監査 docs/design/figma-implementation-audit.md B-1）。
 // scrim は ChoicePin と同じ暗幕パターンを踏襲。認可（管理者判定）は API 側 ADMIN_EMAILS が源泉で、
-// ここは導線のみ。項目順は Figma 正本（106:45）に合わせ ⚙ アカウント設定 → 🛠 管理者画面 → ⎋ ログアウト（#227）。
+// ここは導線のみ。項目順は Figma 正本（106:45）に合わせ ⚙ アカウント設定 → 🛠 管理者画面 → ⎋ ログアウト。
 
 import { CircleCheck, LogOut, Settings, Wrench } from "lucide-react";
 import Link from "next/link";
@@ -46,7 +46,7 @@ export function AccountMenu({ profile, hideAdmin, hideSettings }: AccountMenuPro
 
   // ログアウトは /login?loggedOut=1 への遷移に一本化する。実際の signOut は遷移先 /login が行い、
   // 元ページでは signOut しない。こうすることで元ページの authGate が次描画で /login?next= へ
-  // リダイレクトして本遷移を上書きするレースを避ける（Codex P2）。
+  // リダイレクトして本遷移を上書きするレースを避ける。
   function handleLogout() {
     setOpen(false);
     router.push("/login?loggedOut=1");

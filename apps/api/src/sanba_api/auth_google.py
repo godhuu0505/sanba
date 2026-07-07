@@ -3,7 +3,7 @@
 本人確認 (identity) を司る層。ブラウザ (Next.js) が Google Identity Services で
 取得した OIDC の ID トークンを `Authorization: Bearer <id_token>` で受け取り、
 **サーバ側で** 署名・`aud`(client_id)・`iss`・`exp`・`email_verified` を検証する
-(ADR-0012)。検証済み identity をセッション作成/参加 (LiveKit トークン発行) に束ねる。
+検証済み identity をセッション作成/参加 (LiveKit トークン発行) に束ねる。
 
 設計メモ:
   - クライアント任せにしない。検証は必ずこのサーバで行う (セキュリティ必須事項)。
@@ -48,7 +48,7 @@ class AuthUser:
     email_verified: bool
     name: str
     dev: bool = False
-    # ID トークンの `nonce` claim（ADR-0046）。GIS に渡した nonce が入る。未設定のトークンや
+    # ID トークンの `nonce` claim（ADR-0047）。GIS に渡した nonce が入る。未設定のトークンや
     # dev bypass では None。create/join の nonce 束縛（require_user_bound）でのみ照合する。
     nonce: str | None = None
 
@@ -164,7 +164,7 @@ CurrentUser = Annotated[AuthUser, Depends(require_user)]
 
 
 def enforce_login_nonce(user: AuthUser, x_auth_nonce: str | None) -> None:
-    """ログイン nonce の束縛を検証する（ADR-0046 §2 の検証本体）。
+    """ログイン nonce の束縛を検証する（ADR-0047 §2 の検証本体）。
 
     ID トークンの `nonce` claim が、サーバが発行した nonce（`X-Auth-Nonce` の署名
     エンベロープ）と一致することを要求し、別文脈で得た ID トークンの注入を弾く。
@@ -203,7 +203,7 @@ def require_user_bound(
     user: Annotated[AuthUser, Depends(require_user)],
     x_auth_nonce: Annotated[str | None, Header()] = None,
 ) -> AuthUser:
-    """`require_user` + ログイン nonce の束縛（ADR-0046 §2）。create/join が結線する。"""
+    """`require_user` + ログイン nonce の束縛（ADR-0047 §2）。create/join が結線する。"""
     enforce_login_nonce(user, x_auth_nonce)
     return user
 
@@ -239,7 +239,7 @@ def ensure_room_creator(user: AuthUser, operation: str) -> None:
     （product は自分で深掘りリンクを発行してルームを量産できる入り口なので、
     create_session だけ縛っても product 経由で全バイパスできてしまう）。
     深掘りリンクからの join_product は縛らない: 入場者は owner が発行した招待の
-    権限で入るのであって、自発的な開設ではない（ADR-0046 §3）。
+    権限で入るのであって、自発的な開設ではない（ADR-0047 §3）。
     """
     if can_create_room(user):
         return
@@ -251,7 +251,7 @@ def ensure_room_creator(user: AuthUser, operation: str) -> None:
 def maybe_user(
     authorization: Annotated[str | None, Header()] = None,
 ) -> AuthUser | None:
-    """FastAPI 依存性: ゲスト候補を許す本人確認（ADR-0032 決定1 の 1 経路専用）。
+    """FastAPI 依存性: ゲスト候補を許す本人確認（1 経路専用）。
 
     Authorization ヘッダが無ければ None（＝ゲスト候補。許可するかはエンドポイント側が
     `guest_join_enabled` と invite の scope で判定する）。ヘッダが有れば `require_user` と
@@ -272,7 +272,7 @@ def maybe_user_bound(
     user: Annotated[AuthUser | None, Depends(maybe_user)],
     x_auth_nonce: Annotated[str | None, Header()] = None,
 ) -> AuthUser | None:
-    """`maybe_user` + ログイン nonce の束縛（ADR-0046 §2）。join_product 専用。
+    """`maybe_user` + ログイン nonce の束縛（ADR-0047 §2）。join_product 専用。
 
     ゲスト候補（None）は素通し（束縛すべきトークンが無い）。ログイン済みは
     create/join と同じ束縛を掛ける: join_product はセッション作成と LiveKit 入場
@@ -286,22 +286,22 @@ def maybe_user_bound(
 
 
 def is_admin(user: AuthUser) -> bool:
-    """ADMIN_EMAILS 許可リストに含まれるか (ADR-0014 §2)。
+    """ADMIN_EMAILS 許可リストに含まれるか。
 
     `require_admin`（依存性・403/503 を返す）と違い、任意箇所での認可判定に使う
-    真偽値ヘルパー（例: product の owner or admin 判定 / ADR-0031）。
+    真偽値ヘルパー（例: product の owner or admin 判定）。
     未設定（空リスト）は False = フェイルクローズ。
     """
     return user.email.lower() in settings.admin_email_set
 
 
 def require_admin(user: Annotated[AuthUser, Depends(require_user_bound)]) -> AuthUser:
-    """FastAPI 依存性: 管理者 (ADMIN_EMAILS 許可リスト) のみ通す。それ以外は 403 (ADR-0014 §2)。
+    """FastAPI 依存性: 管理者 (ADMIN_EMAILS 許可リスト) のみ通す。それ以外は 403。
 
-    `auth_dev_bypass` でも許可リストを照合する (§13): dev identity (dev@sanba.local) を
+    `auth_dev_bypass` でも許可リストを照合する: dev identity (dev@sanba.local) を
     `ADMIN_EMAILS` に入れておけば `just up` で管理画面が開く。本人確認は require_user
     が済ませており、ここは認可 (誰が管理者か) だけを見る。全セッションの閲覧に至る
-    管理経路も identity クリティカルなため nonce 束縛（require_user_bound / ADR-0046 §2）
+    管理経路も identity クリティカルなため nonce 束縛（require_user_bound / ADR-0047 §2）
     の内側に置く。
     """
     allow = settings.admin_email_set

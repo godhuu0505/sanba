@@ -1,4 +1,4 @@
-"""Tests for multimodal asset upload (issue #103 / ADR-0004).
+"""Tests for multimodal asset upload.
 
 画像/動画アップロードの分類・安定 ID・保存・エンドポイント契約（asset_id 返却・
 動画は準備中・非対応は 415）を検証する。Gemini 解析は creds 依存なので、整形ロジック
@@ -31,7 +31,7 @@ client = TestClient(app)
 
 @pytest.fixture(autouse=True)
 def _assume_logged_in() -> Iterator[None]:
-    """セッション作成に必要な検証済みユーザーをスタブする (ADR-0012)。"""
+    """セッション作成に必要な検証済みユーザーをスタブする。"""
     app.dependency_overrides[require_user] = lambda: AuthUser(
         sub="owner-123456789", email="owner@example.com", email_verified=True, name="Owner"
     )
@@ -187,7 +187,7 @@ def test_upload_unsupported_type_rejected() -> None:
     assert res.status_code == 415
 
 
-# ── 素材一覧ハイドレーション（GET context/files / #184）──────────────────────
+# ── 素材一覧ハイドレーション（GET context/files）──────────────────────
 def test_context_files_requires_session_token() -> None:
     res = client.get("/api/sessions/sess-nofiles/context/files")
     assert res.status_code == 401
@@ -225,7 +225,7 @@ def test_context_files_empty_for_new_session() -> None:
     assert res.json()["items"] == []
 
 
-# ── 真の破棄（DELETE context/file / #245）──────────────────────────────────
+# ── 真の破棄（DELETE context/file）──────────────────────────────────
 def test_delete_context_file_requires_session_token() -> None:
     res = client.delete("/api/sessions/sess-x/context/file/asset-deadbeef")
     assert res.status_code == 401
@@ -376,7 +376,7 @@ def test_upload_docx_indexes_extracted_text() -> None:
 
 
 def test_delete_context_file_discards_doc_material() -> None:
-    """資料も DELETE で素材メタ・grounding 索引をまとめて破棄できる（#245 と同じ契約）。"""
+    """資料も DELETE で素材メタ・grounding 索引をまとめて破棄できる。"""
     from sanba_api.main import _indexer
 
     sid = _new_session()

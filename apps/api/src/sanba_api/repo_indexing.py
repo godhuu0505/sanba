@@ -113,7 +113,7 @@ def fetch_and_index_repo(
     meta = fetcher.repo_meta(installation_id, repo)
     raw_readme = fetcher.fetch_readme(installation_id, repo, commit_sha)
     # README 先頭にも秘匿が混じり得る（API_KEY=… / PEM 等）。要約へ渡す前にレダクトする
-    # （Codex P1: _summary も ES に保存・検索可能になるため）。
+    # （_summary も ES に保存・検索可能になるため）。
     readme = redact_secrets(raw_readme) if raw_readme else None
     summary = build_repo_summary(
         repo=repo,
@@ -167,7 +167,7 @@ def fetch_and_index_repo(
         chunks = chunk_text(safe)
         if not chunks:
             continue
-        # repo 名/path をクエリで引けるよう、各 chunk 先頭にメタ行を付す（Codex P2: search は
+        # repo 名/path をクエリで引けるよう、各 chunk 先頭にメタ行を付す（search は
         # source ではなく text を対象にするため、{repo} 検索で本文を拾えるように）。
         tagged = [f"[{repo} {f.path}]\n{c}" for c in chunks]
         indexed_chunks += indexer.index_context(

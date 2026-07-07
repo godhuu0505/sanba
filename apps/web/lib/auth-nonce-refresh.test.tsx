@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// ADR-0046: ログイン nonce のペアリング（§2）と exp 先読みリフレッシュ（§1）。
+// ADR-0047: ログイン nonce のペアリング（§2）と exp 先読みリフレッシュ（§1）。
 // - X-Auth-Nonce は「エンベロープと一致する nonce claim を持つ credential が到着したとき」
 //   だけ有効化される（片側だけの差し替えで自作の不一致 401 を作らない）。
 // - 不成立時は 1 回だけ nonce を採り直して静かに再取得する（無限 prompt ループにしない）。
@@ -72,7 +72,7 @@ afterEach(() => {
 
 const FUTURE_EXP = () => Math.floor(Date.now() / 1000) + 3900;
 
-describe("ログイン nonce のペアリング（ADR-0046 §2）", () => {
+describe("ログイン nonce のペアリング（ADR-0047 §2）", () => {
   it("claim がエンベロープと一致する credential の到着で X-Auth-Nonce が有効化される", async () => {
     const apiCalls = stubFetch({ nonce: "raw-1", token: "env-1", expires_at: FUTURE_EXP() });
     const { useGoogleAuth } = await import("./auth");
@@ -134,7 +134,7 @@ describe("ログイン nonce のペアリング（ADR-0046 §2）", () => {
   });
 });
 
-describe("exp 先読みリフレッシュ（ADR-0046 §1）", () => {
+describe("exp 先読みリフレッシュ（ADR-0047 §1）", () => {
   it("失効 5 分前に静かな再取得（initialize + prompt）が走る", async () => {
     stubFetch({ nonce: "raw-1", token: "env-1", expires_at: FUTURE_EXP() });
     const { useGoogleAuth } = await import("./auth");
@@ -182,7 +182,7 @@ describe("exp 先読みリフレッシュ（ADR-0046 §1）", () => {
   });
 });
 
-describe("decodeExpiryMs（ADR-0046 §1）", () => {
+describe("decodeExpiryMs（ADR-0047 §1）", () => {
   it("exp claim をミリ秒で返し、壊れたトークンは null", async () => {
     const { decodeExpiryMs } = await import("./auth");
     expect(decodeExpiryMs(makeJwt({ exp: 1234 }))).toBe(1_234_000);

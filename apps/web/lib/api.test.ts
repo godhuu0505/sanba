@@ -11,16 +11,16 @@ import {
   setAuthNonce,
 } from "./api";
 
-// 素材の観測テレメトリ送信（#232/#243）とサーバ破棄（#245）の API シーム。
+// 素材の観測テレメトリ送信とサーバ破棄の API シーム。
 // fetch をスタブし、送信先・列挙属性・失敗の握りつぶし・冪等 DELETE の契約を検証する。
 
 afterEach(() => {
   vi.restoreAllMocks();
-  // モジュールレベルの ambient 状態（ADR-0046 §2）をテスト間で持ち越さない。
+  // モジュールレベルの ambient 状態（ADR-0047 §2）をテスト間で持ち越さない。
   setAuthNonce(null);
 });
 
-describe("setAuthNonce / X-Auth-Nonce（ADR-0046 §2）", () => {
+describe("setAuthNonce / X-Auth-Nonce（ADR-0047 §2）", () => {
   it("有効化中は authorized リクエストに X-Auth-Nonce が載る", async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve([]) });
     vi.stubGlobal("fetch", fetchMock);

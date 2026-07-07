@@ -1,17 +1,17 @@
 "use client";
 
-// サイドメニュー。トップ（ホーム）・セッション準備・セッション結果の各画面から
-// アプリ管理（/products）などへ横断遷移する導線を 1 か所に集約する。
-// ハンバーガー押下で scrim 付きの左ドロワーを開く（scrim・Escape 閉じは AccountMenu 踏襲）。
-// 認可（アプリ管理の owner 判定等）は遷移先の API が源泉で、ここは導線のみ。
+// 会話セッション内（08 結果 / ResultView）から、ホーム・過去の要件一覧・アプリ管理へ
+// 抜けるためのドロワー。通常画面の恒常サイドメニューは AppShell が担うが、ライブ会話は
+// 全画面の音声文脈で AppShell を敷かないため、ここはハンバーガー＋左ドロワーで導線を出す。
+// scrim・Escape 閉じは AccountMenu 踏襲。認可は遷移先 API が源泉で、ここは導線のみ。
 
-import { AppWindow, ClipboardList, Home, Menu, X } from "lucide-react";
+import { Home, Menu, Package, ScrollText, X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import type { LucideIcon } from "lucide-react";
 
 /** 現在地。自己リンクは aria-current を付け、押しても混乱しないよう強調表示にする。 */
-export type SideMenuCurrent = "home" | "prepare" | "products";
+export type SideMenuCurrent = "home" | "results" | "products";
 
 export interface SideMenuProps {
   /** 表示中の画面（該当項目を現在地として強調する）。結果画面などは未指定でよい。 */
@@ -20,8 +20,8 @@ export interface SideMenuProps {
 
 const ITEMS: { key: SideMenuCurrent; href: string; label: string; Icon: LucideIcon }[] = [
   { key: "home", href: "/", label: "ホーム", Icon: Home },
-  { key: "prepare", href: "/prepare", label: "セッション準備", Icon: ClipboardList },
-  { key: "products", href: "/products", label: "アプリ管理", Icon: AppWindow },
+  { key: "results", href: "/results", label: "過去の要件一覧", Icon: ScrollText },
+  { key: "products", href: "/products", label: "アプリ管理", Icon: Package },
 ];
 
 export function SideMenu({ current }: SideMenuProps) {

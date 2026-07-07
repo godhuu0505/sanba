@@ -1,6 +1,6 @@
-// 契約準拠のモックイベント列（Issue #101）。
+// 契約準拠のモックイベント列。
 //
-// backend（#94 publish / #100 GET）未完でも 3画面（05/06/08/09）が UI を組めるようにする、
+// backend（publish / GET）未完でも 3画面（05/06/08/09）が UI を組めるようにする、
 // フロント先行着手の鍵。realtime-contract.md §3 の各種別を網羅し、05-detection /
 // 08-analysis / 09-scroll の要件票にある実例コピーをそのまま使う。
 //
@@ -26,7 +26,7 @@ function ev(
  * 05/08/09 を一通り再現するイベント列。検索機能リニューアルの壁打ちを題材にする
  * （09-scroll.md「検索機能リニューアル · 確定12 · 検知6」のミニ版）。
  */
-// 注（#122・ADR-0021）: reliable イベントは seq を 1 から連続で採る。lossy（status）は reliable
+// 注（ADR-0021）: reliable イベントは seq を 1 から連続で採る。lossy（status）は reliable
 // seq を消費せず**現在値を echo**し（reliable:false）、独立の lossy_seq で順序付ける。これにより
 // lossy が落ちても reliable seq に穴が空かない（誤ギャップを出さない）。
 export const contractEventFixture: ServerEvent[] = [

@@ -32,6 +32,18 @@ class WorkerSettings(BaseSettings):
 
     data_retention_days: int = 30
 
+    # LiveKit realtime publish（解析完了を analysis.visual で会話ルームへ / ADR-0040 §4）。
+    # 未設定なら publish は no-op（grounding 投入と素材状態更新は成立するので落とさない）。
+    enable_realtime_publish: bool = True
+    livekit_url: str = ""
+    livekit_server_url: str = ""
+    livekit_api_key: str = ""
+    livekit_api_secret: str = ""
+
+    @property
+    def livekit_publish_url(self) -> str:
+        return self.livekit_server_url or self.livekit_url
+
     def grounding_config(self) -> GroundingConfig:
         return GroundingConfig(
             elasticsearch_url=self.elasticsearch_url,

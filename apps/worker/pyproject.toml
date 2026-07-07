@@ -12,6 +12,7 @@ dependencies = [
     "google-cloud-storage>=2.16.0",
     "elasticsearch>=8.14,<10",
     "google-genai>=1.0.0",
+    "livekit-api>=0.7",
     "structlog>=24.1",
     "opentelemetry-instrumentation-fastapi>=0.46b0",
     "opentelemetry-sdk>=1.25",

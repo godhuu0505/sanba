@@ -1,4 +1,4 @@
-"""Tests for the data channel publisher (Issue #94).
+"""Tests for the data channel publisher.
 
 LiveKit ランタイム無しで、契約 §2/§3 のエンベロープ・種別・seq 単調増加・観測性カウンタを検証する。
 """
@@ -16,6 +16,7 @@ from sanba_agent.events import (
     EventPublisher,
     EventPublishError,
     RecordingTransport,
+    decode_analysis_visual,
     decode_user_answered,
     decode_user_selection,
     decode_user_text,
@@ -40,7 +41,7 @@ async def test_envelope_has_required_fields() -> None:
 @pytest.mark.asyncio
 async def test_reliable_seq_is_monotonic_and_lossy_does_not_consume_it() -> None:
     # reliable イベントは連続した seq を採る。lossy（status）は reliable seq を消費せず現在値を
-    # echo し、独立の lossy_seq で順序付ける（#122・ADR-0021）。
+    # echo し、独立の lossy_seq で順序付ける。
     t = RecordingTransport()
     pub = EventPublisher("s1", t)
     await pub.transcript_final("顧客", "customer", "u1", "検索したい")  # reliable seq=1
@@ -55,7 +56,7 @@ async def test_reliable_seq_is_monotonic_and_lossy_does_not_consume_it() -> None
 
 @pytest.mark.asyncio
 async def test_lossy_seq_increments_independently() -> None:
-    # 連続する lossy イベントは reliable seq を進めず lossy_seq だけ進める（#122）。
+    # 連続する lossy イベントは reliable seq を進めず lossy_seq だけ進める。
     t = RecordingTransport()
     pub = EventPublisher("s1", t)
     a = await pub.status("listening")
@@ -68,7 +69,7 @@ async def test_lossy_seq_increments_independently() -> None:
 
 @pytest.mark.asyncio
 async def test_start_lossy_seq_seeds_lossy_across_restart() -> None:
-    # 再起動シミュレーション（#270）: epoch ブロック基底からシードすると lossy_seq が前回を上回り、
+    # 再起動シミュレーション: epoch ブロック基底からシードすると lossy_seq が前回を上回り、
     # 接続維持中の web が再起動後の status を黙殺しない（lossy_seq の大域単調性）。
     t = RecordingTransport()
     pub = EventPublisher("s1", t, start_lossy_seq=1_000_000_000)
@@ -78,8 +79,8 @@ async def test_start_lossy_seq_seeds_lossy_across_restart() -> None:
 
 @pytest.mark.asyncio
 async def test_analysis_progress_is_reliable_with_distinct_seq() -> None:
-    # analysis.* は reliable（ADR-0021 §1）。連続 progress は別々の reliable seq を採り、web の
-    # upsert（seq 版管理）で 2 件目が重複破棄されない（Codex P2）。
+    # analysis.* は reliable。連続 progress は別々の reliable seq を採り、web の
+    # upsert（seq 版管理）で 2 件目が重複破棄されない。
     t = RecordingTransport()
     pub = EventPublisher("s1", t)
     a = await pub.analysis_progress("a1", 10, "received")
@@ -92,7 +93,7 @@ async def test_analysis_progress_is_reliable_with_distinct_seq() -> None:
 
 @pytest.mark.asyncio
 async def test_start_seq_seeds_monotonic_continuation() -> None:
-    # 再起動シミュレーション（#123）: 保存済み last_seq=5 からシードすると次の reliable は seq=6。
+    # 再起動シミュレーション: 保存済み last_seq=5 からシードすると次の reliable は seq=6。
     # 0 から振り直さないことで web の seq ガードが再起動後イベントを黙殺しない。
     t = RecordingTransport()
     pub = EventPublisher("s1", t, start_seq=5)
@@ -151,7 +152,7 @@ async def test_question_asked_payload() -> None:
     assert pub.questions_published == 1
 
 
-# ── 現在質問の保存→送信順序・クリア（#212 / ADR-0020 §5-1/§5-5/§5-9）──────────────
+# ── 現在質問の保存→送信順序・クリア──────────────
 @pytest.mark.asyncio
 async def test_question_asked_persists_before_send() -> None:
     # §5-1: 採番 → 保存 → 送信。on_persist は publish の前に呼ばれ、asked_seq = envelope seq。
@@ -305,7 +306,7 @@ async def test_requirement_upserted_matches_contract_schema() -> None:
 
 @pytest.mark.asyncio
 async def test_requirement_citations_map_to_contract() -> None:
-    """citations（根拠発話 id）が契約 §3 の [{kind, ref}] 形へ整形される（#133）。"""
+    """citations（根拠発話 id）が契約 §3 の [{kind, ref}] 形へ整形される。"""
     t = RecordingTransport()
     pub = EventPublisher("s1", t)
     req = Requirement(
@@ -407,7 +408,7 @@ def test_decode_user_selection_accepts_matching_session() -> None:
 
 
 def test_decode_user_selection_rejects_other_session() -> None:
-    """別セッション向け selection の混入を弾く（#132）。"""
+    """別セッション向け selection の混入を弾く。"""
     payload = json.dumps(
         {
             "v": 1,
@@ -420,7 +421,7 @@ def test_decode_user_selection_rejects_other_session() -> None:
     assert decode_user_selection(payload, expected_session_id="s1") is None
 
 
-# ── user.text（#185）─────────────────────────────────────────────────────────
+# ── user.text ─────────────────────────────────────────────────────────────
 def test_decode_user_text_valid() -> None:
     payload = json.dumps(
         {"v": 1, "type": "user.text", "session_id": "s1", "text": "  新着順で  "}
@@ -445,7 +446,7 @@ def test_decode_user_text_rejects_other_session() -> None:
 
 
 def test_decode_user_text_truncates_oversized_input() -> None:
-    # 長大入力はサーバ受信境界で切り詰める（メモリ/LLM コンテキスト保護 / Codex P2）。
+    # 長大入力はサーバ受信境界で切り詰める（メモリ/LLM コンテキスト保護）。
     from sanba_agent.events import MAX_USER_TEXT_CHARS
 
     payload = json.dumps({"type": "user.text", "text": "あ" * (MAX_USER_TEXT_CHARS + 500)}).encode()
@@ -454,7 +455,7 @@ def test_decode_user_text_truncates_oversized_input() -> None:
     assert len(decoded) == MAX_USER_TEXT_CHARS
 
 
-# ── user.answered（#181）─────────────────────────────────────────────────────
+# ── user.answered ─────────────────────────────────────────────────────────
 def test_decode_user_answered_prefers_selected_value() -> None:
     payload = json.dumps(
         {
@@ -482,7 +483,7 @@ def test_decode_user_answered_rejects_missing_answer() -> None:
 
 
 def test_decode_user_answered_truncates_oversized_text() -> None:
-    # 自由記述回答も user.text と同じ上限で切り詰める（防御の迂回を防ぐ / Codex P2）。
+    # 自由記述回答も user.text と同じ上限で切り詰める（防御の迂回を防ぐ）。
     from sanba_agent.events import MAX_USER_TEXT_CHARS
 
     payload = json.dumps(
@@ -503,3 +504,43 @@ def test_requirement_to_contract_handles_missing_speaker() -> None:
     out = requirement_to_contract(req, "draft")
     assert out["source_speaker"] == ""
     assert out["status"] == "draft"
+
+
+# ── decode_analysis_visual（worker/api → agent の解析完了 / ADR-0040 §4）────
+def _visual_payload(**over: object) -> bytes:
+    base = {
+        "v": 1,
+        "type": "analysis.visual",
+        "seq": 1,
+        "ts": "2026-07-06T00:00:00Z",
+        "session_id": "s1",
+        "asset_id": "asset-abc",
+        "extracted": ["[00:01] ログイン画面", "[00:05] 保存ボタン"],
+        "conflicts": [],
+    }
+    base.update(over)
+    return json.dumps(base).encode()
+
+
+def test_decode_analysis_visual_valid() -> None:
+    got = decode_analysis_visual(_visual_payload(), expected_session_id="s1")
+    assert got == ("asset-abc", ["[00:01] ログイン画面", "[00:05] 保存ボタン"])
+
+
+def test_decode_analysis_visual_rejects_screen_share_echo() -> None:
+    # agent 自身の画面共有由来（visual: 始まり）はエコーなので弾く。
+    assert decode_analysis_visual(_visual_payload(asset_id="visual:1")) is None
+
+
+def test_decode_analysis_visual_rejects_empty_extracted() -> None:
+    assert decode_analysis_visual(_visual_payload(extracted=[])) is None
+
+
+def test_decode_analysis_visual_rejects_other_session() -> None:
+    assert decode_analysis_visual(_visual_payload(), expected_session_id="other") is None
+
+
+def test_decode_analysis_visual_truncates_observations() -> None:
+    many = [f"[00:0{i}] obs{i}" for i in range(30)]
+    got = decode_analysis_visual(_visual_payload(extracted=many), expected_session_id="s1")
+    assert got is not None and len(got[1]) == 12  # MAX_INJECTED_OBSERVATIONS

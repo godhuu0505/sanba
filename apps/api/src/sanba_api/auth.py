@@ -90,7 +90,7 @@ def verify_invite(token: str, secret: str) -> Invite:
     return Invite(session_id=payload["sid"], role=payload.get("role", "participant"))
 
 
-# ── Product-invite tokens（深掘りリンク / ADR-0031 決定3）───────────────────────
+# ── Product-invite tokens（深掘りリンク）───────────────────────
 # product の再利用可能な入場リンク。セッション invite（1 セッション・短命）と違い、
 # 失効・使用回数・期限の「正」は Firestore の invite 文書側にあり、このトークンは
 # 「owner が発行した本物のリンクである」ことだけを証明する（二段検証の 1 段目）。
@@ -132,7 +132,7 @@ def verify_product_invite_token(token: str, secret: str) -> ProductInviteClaim:
     """Validate signature + scope (+ expiry when set) and return the claim.
 
     ここを通っても入場可否はまだ確定しない: 失効・使用回数・期限の正は
-    Firestore の invite 文書（consume_invite）が持つ（ADR-0031 決定3 の二段検証）。
+    Firestore の invite 文書（consume_invite）が持つ（二段検証）。
     """
     try:
         payload_b64, sig = token.split(".", 1)
@@ -160,7 +160,7 @@ def verify_product_invite_token(token: str, secret: str) -> ProductInviteClaim:
     return ProductInviteClaim(product_id=product_id, invite_id=invite_id)
 
 
-# ── Member-invite tokens（メンバー招待 / ADR-0036）──────────────────────────────
+# ── Member-invite tokens（メンバー招待）──────────────────────────────
 # メールで配る招待 URL のトークン。product invite（深掘りリンク）と同じ二段検証:
 # このトークンは「owner が発行した本物の招待である」ことだけを証明し、状態
 # （pending/accepted/declined/revoked・期限）の正は Firestore の member_invites 文書側。
@@ -202,7 +202,7 @@ def verify_member_invite_token(token: str, secret: str) -> MemberInviteClaim:
     """Validate signature + scope (+ expiry when set) and return the claim.
 
     ここを通っても承諾可否はまだ確定しない: 状態・宛先の正は Firestore の
-    member_invites 文書と検証済み identity の email 照合が持つ（ADR-0036 決定2）。
+    member_invites 文書と検証済み identity の email 照合が持つ。
     """
     try:
         payload_b64, sig = token.split(".", 1)
@@ -230,7 +230,7 @@ def verify_member_invite_token(token: str, secret: str) -> MemberInviteClaim:
     return MemberInviteClaim(product_id=product_id, invite_id=invite_id)
 
 
-# ── Session-access tokens（契約 §4 / Issue #100）─────────────────────────────
+# ── Session-access tokens（契約 §4）─────────────────────────────
 # ハイドレーション・起票 API は「join 済みトークン」で保護する。join 時に発行し、
 # web は Bearer として GET /requirements 等に付与する。`session_id` をパスに含むだけ
 # では参加者以外に要件・検知が漏洩するため、必ずこの署名トークンを検証する。
@@ -279,7 +279,7 @@ def verify_session_token(token: str, secret: str) -> SessionAccess:
     )
 
 
-# ── ログイン nonce チャレンジ（ADR-0046）──────────────────────────────────────
+# ── ログイン nonce チャレンジ（ADR-0047）──────────────────────────────────────
 # ID トークン注入（aud だけ合う、別文脈で得た Google ID トークンの使い回し）を防ぐ。
 # サーバが nonce を発行 → web が GIS の initialize({nonce}) に渡す → Google が ID トークンの
 # `nonce` claim に埋める → create/join でサーバが claim と照合する。invite/session token と

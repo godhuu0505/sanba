@@ -1,4 +1,4 @@
-"""ログイン nonce チャレンジの発行（ADR-0046）。
+"""ログイン nonce チャレンジの発行（ADR-0047）。
 
 GIS の `id.initialize({nonce})` に渡す nonce をサーバが発行し、web はその署名エンベロープを
 `X-Auth-Nonce` として create/join に添える。サーバは ID トークンの `nonce` claim と照合して
@@ -30,7 +30,7 @@ class AuthNonceResponse(BaseModel):
     # X-Auth-Nonce として create/join に返す HMAC 署名エンベロープ。
     token: str
     # エンベロープの失効時刻（UNIX 秒）。web はこれを見て、期限切れの nonce で GIS を
-    # 初期化しない・期限切れエンベロープをヘッダに載せない（ADR-0046 §2。/login を
+    # 初期化しない・期限切れエンベロープをヘッダに載せない（ADR-0047 §2。/login を
     # 長時間開いたまま署名した credential が「新規ログインなのに 401」になる事故を防ぐ）。
     expires_at: int
 

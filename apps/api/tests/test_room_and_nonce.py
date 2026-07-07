@@ -1,4 +1,4 @@
-"""ルーム作成 allowlist（ADR-0046 §3）とログイン nonce 束縛（ADR-0046 §2）の結線テスト。
+"""ルーム作成 allowlist（ADR-0047 §3）とログイン nonce 束縛（ADR-0047 §2）の結線テスト。
 
 `require_user` / `maybe_user` を override して本人確認を固定し、`settings` を monkeypatch して
 allowlist / nonce フラグの各経路（許可・拒否・欠落・不一致）を検証する。束縛（nonce 照合）は
@@ -44,7 +44,7 @@ def _login_as(user: AuthUser) -> None:
     app.dependency_overrides[maybe_user] = lambda: user
 
 
-# ── ルーム作成 allowlist (ADR-0046 §3) ─────────────────────────────────────────
+# ── ルーム作成 allowlist (ADR-0047 §3) ─────────────────────────────────────────
 
 
 def test_create_denied_for_non_allowlisted(monkeypatch) -> None:
@@ -80,7 +80,7 @@ def test_create_product_denied_for_non_allowlisted(monkeypatch) -> None:
     assert res.status_code == 403
 
 
-# ── ログイン nonce 束縛 (ADR-0046 §2) ─────────────────────────────────────────
+# ── ログイン nonce 束縛 (ADR-0047 §2) ─────────────────────────────────────────
 
 
 def test_create_off_by_default_ignores_nonce() -> None:

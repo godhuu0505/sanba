@@ -1,9 +1,8 @@
-"""横断依存: シングルトン（repo / indexer / asset store）と認可・共有ヘルパ（main.py から分割）。
+"""横断依存: シングルトン（repo / indexer / asset store）と認可・共有ヘルパ。
 
-純粋なモジュール分割（挙動不変）。routers/* はここから import する（routers → deps →
-リーフモジュールの一方向。deps は main / routers を import しない）。main.py は tests の
-後方互換のため、ここで生成するシングルトン（`_repo` 等）を同一オブジェクトのまま再
-エクスポートする。
+routers/* はここから import する（routers → deps → リーフモジュールの一方向。
+deps は main / routers を import しない）。main.py は tests の後方互換のため、
+ここで生成するシングルトン（`_repo` 等）を同一オブジェクトのまま再エクスポートする。
 """
 
 from __future__ import annotations
@@ -57,7 +56,7 @@ _join_hits: dict[str, deque[float]] = defaultdict(deque)
 def _over_rate_limit(client_ip: str) -> bool:
     """sliding-window で join が上限超過なら True（上限内なら副作用でヒットを記録）。
 
-    判定を関数に切り出し、body 解析より前のミドルウェア層から呼ぶ（#258）。
+    判定を関数に切り出し、body 解析より前のミドルウェア層から呼ぶ。
     """
     window_start = time.time() - 60
     hits = _join_hits[client_ip]
@@ -69,10 +68,10 @@ def _over_rate_limit(client_ip: str) -> bool:
     return False
 
 
-# Context indexer shares the agent's Elasticsearch grounding index (issue #6).
+# Context indexer shares the agent's Elasticsearch grounding index.
 _indexer = ContextIndexer()
 
-# 画像/動画アセットの保存層（issue #103）。GCS 未設定なら in-memory にフォールバック。
+# 画像/動画アセットの保存層。GCS 未設定なら in-memory にフォールバック。
 _asset_store = AssetStore()
 
 # Firestore SDK は OS 環境変数 FIRESTORE_EMULATOR_HOST を直接読む。config 経由で指定された
@@ -81,13 +80,13 @@ _asset_store = AssetStore()
 if settings.firestore_emulator_host:
     os.environ.setdefault("FIRESTORE_EMULATOR_HOST", settings.firestore_emulator_host)
 
-# セッション/要件の永続化境界 (ADR-0014)。agent と同じ sanba_shared を使う。
+# セッション/要件の永続化境界。agent と同じ sanba_shared を使う。
 _repo = SessionRepository(
     data_retention_days=settings.data_retention_days,
     mask_pii_before_persist=settings.mask_pii_before_index,
 )
 
-# Read-side store for hydration APIs（契約 §4 / #100）。agent が書いた要件・検知を読む。
+# Read-side store for hydration APIs（契約 §4）。agent が書いた要件・検知を読む。
 _read_repo = ReadRepository()
 
 
@@ -112,13 +111,13 @@ def require_session_access(
     return access
 
 
-# ゲスト identity の接頭辞（ADR-0032 決定2）。Google の sub は数値文字列でこの形を
+# ゲスト identity の接頭辞。Google の sub は数値文字列でこの形を
 # 取り得ないため、署名済み session_token の sub がこれで始まる = ゲスト、は偽装できない。
 _GUEST_SUB_PREFIX = "guest:"
 
 
 def forbid_guest_writes(access: SessionAccess, operation: str) -> None:
-    """ゲスト session_token の権限最小性を強制する（ADR-0032 決定4 / #320）。
+    """ゲスト session_token の権限最小性を強制する。
 
     ゲスト token に許すのは当該セッションの読取（ハイドレーション）と telemetry・
     realtime の client event のみ。素材投入（grounding 汚染）・確定・起票（owner の
@@ -135,17 +134,17 @@ def forbid_guest_writes(access: SessionAccess, operation: str) -> None:
         raise HTTPException(status_code=403, detail="guests cannot perform this operation")
 
 
-# "owner/name" 形式（ADR-0027）。GitHub の実際の命名規則より緩いが、パス注入
+# "owner/name" 形式。GitHub の実際の命名規則より緩いが、パス注入
 # （`/` の追加や空文字）を弾ければ十分（トークン権限外のリポは GitHub 側が 404 を返す）。
 _GITHUB_REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 
 
 def _github_repo_allowed(repo: str) -> bool:
-    """許可リスト（GITHUB_REPO_ALLOWLIST / ADR-0027）に照らして選択可否を返す。
+    """許可リスト（GITHUB_REPO_ALLOWLIST）に照らして選択可否を返す。
 
     エントリは "owner"（配下すべて）または "owner/name"。リスト空 = 制限なし。
     候補一覧（GET /api/github/repos）と保存（POST /api/sessions）の両方が同じ判定を使い、
-    一覧に出ないリポジトリを直接 POST で保存する抜け道を塞ぐ（Codex P1）。
+    一覧に出ないリポジトリを直接 POST で保存する抜け道を塞ぐ。
     """
     entries = [e.strip() for e in settings.github_repo_allowlist.split(",") if e.strip()]
     if not entries:
@@ -155,7 +154,7 @@ def _github_repo_allowed(repo: str) -> bool:
 
 
 def _confirmed_requirements(session_id: str) -> list[dict[str, Any]]:
-    """会話確定軸（contract: confirmed）の要件のみを返す（確定判定の単一の定義 / #213）。
+    """会話確定軸（contract: confirmed）の要件のみを返す（確定判定の単一の定義）。
 
     `requirement_doc_to_contract` が管理軸 rejected を draft に落とすため、却下要件はここで
     除外される。確定判定はこの 1 箇所に集約し finalize のスナップショット算出だけが使う。
@@ -166,13 +165,13 @@ def _confirmed_requirements(session_id: str) -> list[dict[str, Any]]:
 
 
 def _finalized_snapshot_requirements(session: SessionMeta) -> list[dict[str, Any]]:
-    """finalize 時に凍結した要件集合を契約形で返す（#213 凍結保証の単一定義）。
+    """finalize 時に凍結した要件集合を契約形で返す（凍結保証の単一定義）。
 
     export と過去要件閲覧（GET /api/sessions/mine/{id}/requirements）が共有する。確定後に
     遅延 agent が要件を追加したり管理画面 API で却下されても、確定時集合を再計算せず固定する
-    （Codex P2 / discussion_r3481706919）。未 finalize ならスナップショットは空。
+    未 finalize ならスナップショットは空。
 
-    後方互換（Codex P1）: 本機能デプロイ前に finalized になった旧文書は ID スナップショットを
+    後方互換: 本機能デプロイ前に finalized になった旧文書は ID スナップショットを
     持たない（既定 []）。`status==finalized` かつ確定件数 > 0 で ID 集合だけ欠落しているケースは
     旧挙動（確定要件の再計算）にフォールバックし、確定済みセッションを空にしない。
     """
@@ -200,7 +199,7 @@ def _github_app_client() -> GitHubAppClient | None:
 
 
 def _require_product_access(product_id: str, user: AuthUser, *, manage: bool = False) -> Product:
-    """product 認可の一点集約（ADR-0031 決定5 / 要件 NFR-6 / ADR-0036 決定1）。
+    """product 認可の一点集約（要件 NFR-6）。
 
     manage=False（既定）: owner / admin / メンバー。閲覧と要件サンバの実施
     （product 従属セッションの作成）に足りる権限。
@@ -238,8 +237,8 @@ def _mint_join_tokens(
 ) -> JoinResponse:
     """LiveKit トークンと「join 済み」session token を発行する（発行ロジックの単一定義）。
 
-    `join_session`（ログイン済み）とゲスト join（`join_product` / ADR-0032 決定1）が共用し、
-    トークン発行の二重化を防ぐ。metadata の sub は出所メタ（ADR-0008）の正: ログイン済みは
+    `join_session`（ログイン済み）とゲスト join（`join_product`）が共用し、
+    トークン発行の二重化を防ぐ。metadata の sub は出所メタの正: ログイン済みは
     検証済み Google sub、ゲストは発番した `guest:{random}`（users/{sub} は作らない / 決定2）。
     """
     metadata = json.dumps({"role": role, "sub": sub, "email": email})
@@ -284,7 +283,7 @@ def _mint_join_tokens(
 
 class SelectRepoRequest(BaseModel):
     repo: str  # "owner/name"
-    # 省略時はデフォルトブランチを使う（ADR-0028: branch 既定=デフォルト）。
+    # 省略時はデフォルトブランチを使う（branch 既定=デフォルト）。
     branch: str | None = None
 
 

@@ -37,7 +37,7 @@ locals {
     GOOGLE_OAUTH_CLIENT_ID = var.google_oauth_client_id
     # 管理画面の許可リスト (ADR-0014 §2)。email 集合で秘匿物ではないため平文 env。
     ADMIN_EMAILS = var.admin_emails
-    # ログイン nonce チャレンジ (ADR-0046)。ID トークン注入対策。段階リリース用フラグ。
+    # ログイン nonce チャレンジ (ADR-0047)。ID トークン注入対策。段階リリース用フラグ。
     REQUIRE_LOGIN_NONCE = tostring(var.require_login_nonce)
     # ルーム作成の許可リスト (ADR-0012 §3)。email/ドメイン集合。空=制限なし。平文 env。
     ROOM_CREATOR_ALLOWLIST = var.room_creator_allowlist

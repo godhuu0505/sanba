@@ -57,7 +57,7 @@ def test_dev_bypass_allows_local_flow(monkeypatch) -> None:
 
 
 def test_unauthenticated_join_spam_is_rate_limited(monkeypatch) -> None:
-    """未認証スパムは認証検証より先にレートリミットされる (#80 / #258)。
+    """未認証スパムは認証検証より先にレートリミットされる。
 
     レートリミットを HTTP ミドルウェア層（body 解析前）に置いたため、Authorization
     無し/壊れた Bearer でも上限到達後は 401 ではなく 429 を返す（壊れた Bearer 連打で
@@ -77,7 +77,7 @@ def test_unauthenticated_join_spam_is_rate_limited(monkeypatch) -> None:
 
 
 def test_rate_limit_emits_observability(monkeypatch) -> None:
-    """429 短絡時に観測メトリクスを必ず通す (#257 Codex / CLAUDE.md 原則3)。
+    """429 短絡時に観測メトリクスを必ず通す (CLAUDE.md 原則3)。
 
     認証より前にレートリミットが発動すると `record_auth_event` には現れないため、
     DoS 緩和の発火を `record_rate_limited` で計測できることを固定する。
@@ -99,9 +99,9 @@ def test_rate_limit_emits_observability(monkeypatch) -> None:
 
 
 def test_rate_limit_fires_before_body_parsing(monkeypatch) -> None:
-    """上限超過後は壊れた/巨大 body でも body 解析前に 429 で短絡する (#258)。
+    """上限超過後は壊れた/巨大 body でも body 解析前に 429 で短絡する。
 
-    FastAPI は body の読み取り・JSON 解析を依存性解決より先に行うため、依存性版 (#80) では
+    FastAPI は body の読み取り・JSON 解析を依存性解決より先に行うため、依存性層の実装では
     壊れた JSON が 422（解析エラー）になり解析コストを先に発生させられた。レートリミットを
     ミドルウェア層へ移したことで、上限超過後は不正な JSON でも解析へ進まず 429 を返す。
     """

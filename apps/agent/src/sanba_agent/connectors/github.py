@@ -1,4 +1,4 @@
-"""Read-only GitHub context + requirement write-back (issue #7).
+"""Read-only GitHub context + requirement write-back.
 
 The pure mapping function (issues_to_passages) is unit-tested without any
 network. GitHubConnector performs the actual REST calls and is exercised only

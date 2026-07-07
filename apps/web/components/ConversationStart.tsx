@@ -22,7 +22,7 @@ import { SessionView } from "./SessionView";
 // エコー除去・ノイズ抑制・自動ゲインを明示することで、雑音・PC 内蔵マイク由来の誤認識
 // （韓国語/中国語化・変な文字）を入口で減らす。ノイズの主対策はエージェント側の Krisp BVC に
 // 集約し、ブラウザ側の voiceIsolation（強いノイズ分離）は重ねない: BVC と二重にかけると
-// 対応ブラウザで音声が過処理され単語落ち・発話検出悪化を招くため（LiveKit 推奨・Codex 指摘）。
+// 対応ブラウザで音声が過処理され単語落ち・発話検出悪化を招くため（LiveKit 推奨）。
 const ROOM_OPTIONS: RoomOptions = {
   audioCaptureDefaults: {
     autoGainControl: true,
@@ -42,9 +42,9 @@ export interface ConversationStartProps {
   goal: string;
   /** 02 で選んだ役割の表示名。 */
   roleLabel: string;
-  /** 02 で添付し「実際に投入できた」参考資料のファイル名（開始前サマリに引き継ぐ / 監査 B-2 #11）。 */
+  /** 02 で添付し「実際に投入できた」参考資料のファイル名（開始前サマリに引き継ぐ）。 */
   materialNames?: string[];
-  /** 投入に失敗した参考資料の件数（>0 なら注意書きを出す / Codex P2）。 */
+  /** 投入に失敗した参考資料の件数（>0 なら注意書きを出す）。 */
   materialFailedCount?: number;
   /**
    * ゲスト入場（読取専用 session_token / ADR-0032 決定4）。素材投入・確定・起票など
@@ -135,7 +135,7 @@ function RoomGate({
   const state = useConnectionState();
   // 一度でも接続が成立したか。初回接続前のみ全面ローディングを出し、以後の一時的な再接続では
   // SessionView をアンマウントしない（store・回答済み質問・投入素材・判定/結果フェーズなどの
-  // ローカル状態を失わないため / Codex P2）。
+  // ローカル状態を失わないため）。
   const [hasConnected, setHasConnected] = useState(false);
   useEffect(() => {
     if (state === ConnectionState.Connected) setHasConnected(true);
@@ -196,7 +196,7 @@ export interface StartIntroProps {
   onBack: () => void;
 }
 
-/** 添付名のサマリ表示。Figma 89:132 の `PRD_検索改善.pdf ・ 他1件` に倣う（監査 B-2 #11）。 */
+/** 添付名のサマリ表示。Figma 89:132 の `PRD_検索改善.pdf ・ 他1件` に倣う。 */
 function summarizeMaterials(names: string[]): string {
   if (names.length === 1) return names[0];
   return `${names[0]} ・ 他${names.length - 1}件`;

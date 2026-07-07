@@ -71,6 +71,7 @@ from ..storage import (
     material_record,
     resolve_content_type,
 )
+from ..tasks import build_payload, enqueue_video_analysis
 from ..vision import analyze_image
 
 log = structlog.get_logger(__name__)
@@ -83,11 +84,11 @@ class CreateSessionRequest(BaseModel):
     title: str = "要件インタビュー"
     # Roles to mint invites for (owner shares these links with participants).
     roles: list[str] = ["pm", "engineer", "customer"]
-    # Explicit consent to recording + AI processing (issue #10).
+    # Explicit consent to recording + AI processing.
     consent_acknowledged: bool = False
     # セッション単位の連携リポジトリ（任意 / ADR-0027）。
     #  - 未指定（None）: 従来挙動 = 環境変数 GITHUB_REPO へフォールバック。
-    #  - 空文字: 明示的な「連携しない」（既定リポジトリにも送らない / Codex P2）。
+    #  - 空文字: 明示的な「連携しない」（既定リポジトリにも送らない）。
     #  - "owner/name": このセッションの起票・grounding 先。
     github_repo: str | None = None
     # 対象のプロダクト・アプリ（ADR-0031）。指定するとセッションを product に従属させ、
@@ -113,7 +114,7 @@ class ContextRequest(BaseModel):
 
 class ContextResponse(BaseModel):
     indexed_chunks: int
-    # 画像/動画アップロード時のみ付与（issue #103 / 契約 §3）。web は asset_id で
+    # 画像/動画アップロード時のみ付与（契約 §3）。web は asset_id で
     # analysis.progress / analysis.visual をファイル行へ対応付ける。
     asset_id: str | None = None
     asset_kind: str | None = None  # "image" | "video" | "doc"
@@ -138,14 +139,14 @@ class DetectionsResponse(BaseModel):
 
 
 class CurrentQuestionResponse(BaseModel):
-    # 現在の未回答質問（金枠 / 契約 §4 #212）。未提示・回答済みなら question=null。
+    # 現在の未回答質問（金枠 / 契約 §4）。未提示・回答済みなら question=null。
     # question=null でも seq（=cleared_seq）を返し、web は遅延 null が新しい問いを消すのを防ぐ。
     question: dict[str, Any] | None = None
     seq: int = 0
 
 
 class ContextFilesResponse(BaseModel):
-    # 投入済み素材のメタ一覧（契約 §4 #184）。web は asset_id で realtime の analysis 行と
+    # 投入済み素材のメタ一覧（契約 §4）。web は asset_id で realtime の analysis 行と
     # 突き合わせ、リロード/再接続時に実ファイル名・状態（解析中/完了）を復元する。
     items: list[dict[str, Any]]
 
@@ -159,17 +160,17 @@ class ExportResponse(BaseModel):
 
 
 class FinalizeResponse(BaseModel):
-    # 07 判定の「確定」結果（#186）。確定スナップショットの件数を返す。
+    # 07 判定の「確定」結果。確定スナップショットの件数を返す。
     finalized: bool
     confirmed_count: int = 0
 
 
-# web UI 由来テレメトリの許可リスト（#232/#243）。第三者分析 SDK を使わず既存 OTLP 基盤に
+# web UI 由来テレメトリの許可リスト。第三者分析 SDK を使わず既存 OTLP 基盤に
 # 集約する（observability.py）。PII/自由記述は受けず、列挙値のみを受ける。未知 event は 422、
 # 未知の属性値は other へ丸めて高カーディナリティ/PII 流入を防ぐ（観測は UX を止めない）。
 # material.discard は含めない: 破棄結果はサーバ（DELETE エンドポイント）が直接 record_material_event
 # で計上する内部イベントで、クライアントからの受領は想定しない（送ってきても 422 で弾く）。
-# join.abort（PR9 / FR-2.1）: リンク入場でセッション作成後に会話開始へ至らず離脱した事象。
+# join.abort（FR-2.1）: リンク入場でセッション作成後に会話開始へ至らず離脱した事象。
 # ゲスト経路の join 成立（sanba_guest_join_total）と会話成立の間の離脱点を埋める。
 _TELEMETRY_EVENTS = {"material.source_selected", "material.cancel", "join.abort"}
 _TELEMETRY_SOURCES = {"camera", "screen", "upload", "drive"}
@@ -190,7 +191,7 @@ class TelemetryResponse(BaseModel):
 
 
 class DeleteContextFileResponse(BaseModel):
-    # 真の破棄（#245）。deleted は常に True（冪等）、existed は実体を消したかを示す。
+    # 真の破棄。deleted は常に True（冪等）、existed は実体を消したかを示す。
     deleted: bool
     existed: bool
 
@@ -210,9 +211,9 @@ def create_session(
 
     Requires a verified Google identity (ADR-0012): only a logged-in owner can
     open a room. The invite still scopes which room/role a guest may join.
-    ID トークンは nonce 束縛される（ADR-0046 §2 / require_user_bound）。
+    ID トークンは nonce 束縛される（ADR-0047 §2 / require_user_bound）。
     """
-    # ルーム作成の許可リスト（ADR-0012 §3 / ADR-0046 §3）。空なら誰でも可。
+    # ルーム作成の許可リスト（ADR-0012 §3 / ADR-0047 §3）。空なら誰でも可。
     ensure_room_creator(user, operation="create_session")
     if settings.require_consent and not req.consent_acknowledged:
         raise HTTPException(
@@ -220,7 +221,7 @@ def create_session(
             detail="consent required: recording and AI processing must be acknowledged",
         )
     # 連携リポジトリ（任意 / ADR-0027）。未指定（None）はフォールバック、空文字は明示的な
-    # 「連携しない」としてそのまま保存する（Codex P2: 既定リポとオプトアウトを区別）。
+    # 「連携しない」としてそのまま保存する（既定リポとオプトアウトを区別）。
     # 形式不正・許可リスト外は黙って落とさず 400 で返す（起票時の失敗より早く気づける）。
     github_repo: str | None = None
     if req.github_repo is not None:
@@ -281,7 +282,7 @@ def create_session(
 
 
 class MySession(BaseModel):
-    """`GET /api/sessions/mine` の 1 行 (#250)。本人の履歴一覧 UI (#215) に供給する。
+    """`GET /api/sessions/mine` の 1 行。本人の履歴一覧 UI に供給する。
 
     PII (owner_email/owner_sub) は載せない: 本人だけが見る一覧でも不要な PII は返さない
     (最小権限 / CLAUDE.md セキュリティ)。一覧に要る最小項目 (標題・作成時刻・確定状態) だけ。
@@ -292,17 +293,17 @@ class MySession(BaseModel):
     title: str
     created_at: datetime
     status: str
-    # 07 判定で確定済みか (#186)。一覧でバッジ等に使えるよう真偽で平す。
+    # 07 判定で確定済みか。一覧でバッジ等に使えるよう真偽で平す。
     finalized: bool
 
 
 @router.get("/api/sessions/mine", response_model=list[MySession])
 def list_my_sessions(user: AuthUser = Depends(require_user)) -> list[MySession]:
-    """ログインユーザー本人 (owner_sub) のセッション一覧を新しい順で返す (#250)。
+    """ログインユーザー本人 (owner_sub) のセッション一覧を新しい順で返す。
 
     `require_user` (idToken をサーバ検証 / ADR-0012) で本人確認し、owner_sub が一致する
     ものだけを返す。他人のセッションは一切返さない (認可は本人限定)。ホームの
-    「過去の要件を見る」履歴リスト (#215) のデータ源。
+    「過去の要件を見る」履歴リストのデータ源。
     """
     sessions = _repo.list_sessions_by_owner(user.sub)
     record_my_sessions_listed(len(sessions))
@@ -344,7 +345,7 @@ def get_my_session_requirements(
 ) -> MySessionRequirementsResponse:
     """本人 (owner_sub) の過去セッションの要件絵巻を返す。
 
-    ホーム「過去の要件を見る」(#215/#250) からの詳細閲覧。join 済みトークンは会話終了後には
+    ホーム「過去の要件を見る」からの詳細閲覧。join 済みトークンは会話終了後には
     残らないため、`require_session_access` ではなく idToken (ADR-0012) で本人確認し、
     owner_sub 一致で認可する。非所有・不存在はどちらも 404 に平す (他人のセッション ID の
     存在を応答差で漏らさない)。
@@ -352,7 +353,7 @@ def get_my_session_requirements(
     session = _repo.get_session(session_id)
     if session is None or session.owner_sub != user.sub:
         raise HTTPException(status_code=404, detail="session not found")
-    # 確定済みは finalize 時の凍結スナップショットだけを見せる（Codex P1）。確定後に遅延 agent
+    # 確定済みは finalize 時の凍結スナップショットだけを見せる。確定後に遅延 agent
     # が追加した要件や管理画面 API での却下を混ぜず、export と同じ成果物を表示する。
     # 未確定（進行中）は現在の全要件を出す（会話中の絵巻タブと同じ見え方）。
     if session.status == "finalized":
@@ -470,7 +471,7 @@ async def add_context_file(
     資料（txt/md/html/csv/json/pdf/docx/xlsx/pptx）はテキスト抽出して grounding 索引へ入れ、
     画像/動画と同じく安定 `asset_id`（content hash）と素材メタを残す（リロード後の素材一覧・
     DELETE での破棄に対応 / ADR-0044）。画像/動画は Cloud Storage に保存し、安定 `asset_id` を
-    返す（issue #103 / ADR-0004）。画像は Gemini で観察を抽出して grounding に流し、agent が
+    返す（ADR-0004）。画像は Gemini で観察を抽出して grounding に流し、agent が
     問いの根拠にできるようにする。非対応形式は 415 で弾く。
 
     観測性: アップロード〜解析を span/log で追い、素材数を kind/result で計測する（契約 §5）。
@@ -521,7 +522,7 @@ async def add_context_file(
             _indexer.delete_context(session_id, f"asset:{doc_asset_id}")
             n = _indexer.index_context(session_id, chunks, f"asset:{doc_asset_id}")
             record_asset_upload("doc", "extract_failed" if extract_failed else "indexed")
-            # 素材一覧（GET context/files / #184）へ永続化。リロード後も一覧に残り、DELETE
+            # 素材一覧（GET context/files）へ永続化。リロード後も一覧に残り、DELETE
             # /context/file/{asset_id} で索引ごと破棄できる（binary は無く meta+索引のみ）。
             _repo.save_material(
                 session_id,
@@ -565,7 +566,7 @@ async def add_context_file(
         if span is not None:
             span.set_attribute("sanba.asset.id", asset.asset_id)
 
-        # 解析の境界を web へ live 配信する（#145 / ADR-0023）。publish は付加価値なので
+        # 解析の境界を web へ live 配信する（ADR-0023）。publish は付加価値なので
         # 失敗してもアップロードを止めない（GET context/files でも状態を復元できる）。
         sender = (
             build_sender(
@@ -581,20 +582,30 @@ async def add_context_file(
         with contextlib.suppress(Exception):
             await publisher.progress(asset.asset_id, STAGE_RECEIVED)
 
-        # 動画解析は未実装: 保存のみ済ませ、web には「準備中」を返す。
-        if kind == "video" and not settings.enable_video_analysis:
-            record_asset_upload("video", "pending")
-            # 素材一覧（GET context/files / #184）へ永続化。動画は解析未実装のため analyzing。
-            _repo.save_material(
-                session_id, material_record(asset.asset_id, filename, kind, status="analyzing")
+        # 動画: 非同期解析パイプライン（ADR-0040）。無効時は従来どおり保存のみ「準備中」。
+        # multipart 経由は max_asset_bytes（25MB）以内の小さめ動画のみ（大きい動画は直送
+        # エンドポイント経由。Cloud Run の HTTP/1 32MiB 制限のため）。
+        if kind == "video":
+            if not settings.enable_video_analysis:
+                record_asset_upload("video", "pending")
+                _repo.save_material(
+                    session_id, material_record(asset.asset_id, filename, kind, status="analyzing")
+                )
+                log.info("asset_pending", session=session_id, asset_id=asset.asset_id, kind=kind)
+                return ContextResponse(
+                    indexed_chunks=0,
+                    asset_id=asset.asset_id,
+                    asset_kind=kind,
+                    analysis_pending=True,
+                )
+            _mark_analyzing(session_id, asset.asset_id, filename)
+            with contextlib.suppress(Exception):
+                await publisher.progress(asset.asset_id, STAGE_ANALYZING)
+            enqueue_video_analysis(
+                build_payload(session_id, asset.asset_id, asset.uri, content_type, filename, None)
             )
-            log.info(
-                "asset_pending",
-                session=session_id,
-                asset_id=asset.asset_id,
-                kind=kind,
-                sub=access.sub,
-            )
+            record_asset_upload("video", "enqueued")
+            log.info("video_enqueued_multipart", session=session_id, asset_id=asset.asset_id)
             return ContextResponse(
                 indexed_chunks=0,
                 asset_id=asset.asset_id,
@@ -617,7 +628,7 @@ async def add_context_file(
         if observations:
             indexed = _indexer.index_context(session_id, observations, f"asset:{asset.asset_id}")
         record_asset_upload(kind, "analyzed")
-        # 素材一覧（GET context/files / #184）へ永続化。画像は同期解析済みなので done。
+        # 素材一覧（GET context/files）へ永続化。画像は同期解析済みなので done。
         _repo.save_material(
             session_id,
             material_record(
@@ -642,13 +653,155 @@ async def add_context_file(
         )
 
 
+# ---- 動画の直送アップロード（ADR-0040 §2） --------------------------------
+# 200MB の動画は Cloud Run の HTTP/1 request 上限（32MiB）を超えるため multipart で受けられない。
+# ブラウザから GCS へ署名付き URL で直送し、api はバイト列を経由しない。
+class UploadInitRequest(BaseModel):
+    filename: str = Field(min_length=1, max_length=512)
+    content_type: str = ""
+    size: int = Field(ge=1)
+
+
+class UploadInitResponse(BaseModel):
+    asset_id: str
+    upload_url: str
+    method: str = "PUT"
+    # PUT 時にブラウザが付ける必須ヘッダ（署名対象）。web はこれをそのまま送る。
+    headers: dict[str, str]
+
+
+class UploadCompleteRequest(BaseModel):
+    asset_id: str
+    content_type: str = ""
+    filename: str = Field(default="", max_length=512)
+    duration_seconds: float | None = Field(default=None, ge=0)
+
+
+def _analysis_publisher(session_id: str) -> AnalysisPublisher:
+    sender = (
+        build_sender(
+            settings.livekit_publish_url,
+            settings.livekit_api_key,
+            settings.livekit_api_secret,
+            session_id,
+        )
+        if settings.enable_realtime_publish
+        else NullSender()
+    )
+    return AnalysisPublisher(session_id, sender, _repo)
+
+
+def _mark_analyzing(session_id: str, asset_id: str, filename: str) -> None:
+    """素材を analyzing にし、reconcile 用の開始時刻（epoch）を残す（ADR-0040 §3）。"""
+    rec = material_record(asset_id, filename, "video", status="analyzing")
+    rec["analyzing_since"] = datetime.now(UTC).timestamp()
+    _repo.save_material(session_id, rec)
+
+
+@router.post(
+    "/api/sessions/{session_id}/context/file/upload-init", response_model=UploadInitResponse
+)
+def context_file_upload_init(
+    session_id: str,
+    body: UploadInitRequest,
+    access: SessionAccess = Depends(require_session_access),
+) -> UploadInitResponse:
+    """動画の直送用に署名付き PUT URL を発行し、素材を uploading で仮登録する（ADR-0040 §2）。
+
+    認可: join 済みトークン必須（add_context_file と同じ）。ゲストは読取専用のため不可。
+    動画のみ受け付ける（画像は multipart のまま）。上限は max_video_asset_bytes（200MB）。
+    """
+    forbid_guest_writes(access, "context_file")
+    if not settings.enable_video_analysis:
+        raise HTTPException(status_code=409, detail="video analysis is disabled")
+    kind = asset_kind(body.filename, body.content_type)
+    if kind != "video":
+        raise HTTPException(status_code=415, detail="direct upload is for video only")
+    if body.size > settings.max_video_asset_bytes:
+        record_asset_upload("video", "rejected")
+        raise HTTPException(
+            status_code=413,
+            detail=f"video too large (max {settings.max_video_asset_bytes} bytes)",
+        )
+    content_type = resolve_content_type(body.filename, body.content_type, kind)
+    # 直送では api がバイト列を経由しないため content hash を作れない。upload 単位の一意 ID を振る。
+    asset_id = f"asset-{uuid.uuid4().hex[:16]}"
+    upload_url = _asset_store.generate_upload_url(
+        session_id,
+        asset_id,
+        content_type,
+        ttl_seconds=settings.signed_url_ttl_seconds,
+        max_bytes=settings.max_video_asset_bytes,
+    )
+    _repo.save_material(
+        session_id, material_record(asset_id, body.filename, "video", status="uploading")
+    )
+    record_asset_upload("video", "upload_init")
+    log.info("video_upload_init", session=session_id, asset_id=asset_id, size=body.size)
+    return UploadInitResponse(
+        asset_id=asset_id,
+        upload_url=upload_url,
+        headers={
+            "Content-Type": content_type,
+            "x-goog-content-length-range": f"0,{settings.max_video_asset_bytes}",
+        },
+    )
+
+
+@router.post(
+    "/api/sessions/{session_id}/context/file/upload-complete", response_model=ContextResponse
+)
+async def context_file_upload_complete(
+    session_id: str,
+    body: UploadCompleteRequest,
+    access: SessionAccess = Depends(require_session_access),
+) -> ContextResponse:
+    """直送完了を受け、オブジェクトを検証して解析を enqueue する（ADR-0040 §2）。"""
+    forbid_guest_writes(access, "context_file")
+    if not settings.enable_video_analysis:
+        raise HTTPException(status_code=409, detail="video analysis is disabled")
+    content_type = resolve_content_type(body.filename, body.content_type, "video")
+    size = _asset_store.object_size(session_id, body.asset_id, content_type)
+    if size is None:
+        # ブラウザが実際に PUT し終えていない（直送失敗）。素材メタを掃除する。
+        _repo.delete_material(session_id, body.asset_id)
+        raise HTTPException(status_code=409, detail="uploaded object not found")
+    if size > settings.max_video_asset_bytes:
+        _asset_store.delete(session_id, body.asset_id)
+        _repo.delete_material(session_id, body.asset_id)
+        record_asset_upload("video", "rejected")
+        raise HTTPException(status_code=413, detail="uploaded video too large")
+
+    _mark_analyzing(session_id, body.asset_id, body.filename)
+    publisher = _analysis_publisher(session_id)
+    with contextlib.suppress(Exception):
+        await publisher.progress(body.asset_id, STAGE_RECEIVED)
+        await publisher.progress(body.asset_id, STAGE_ANALYZING)
+    gcs_uri = _asset_store.gcs_uri(session_id, body.asset_id, content_type)
+    enqueue_video_analysis(
+        build_payload(
+            session_id,
+            body.asset_id,
+            gcs_uri,
+            content_type,
+            body.filename,
+            body.duration_seconds,
+        )
+    )
+    record_asset_upload("video", "enqueued")
+    log.info("video_upload_complete", session=session_id, asset_id=body.asset_id, size=size)
+    return ContextResponse(
+        indexed_chunks=0, asset_id=body.asset_id, asset_kind="video", analysis_pending=True
+    )
+
+
 @router.post("/api/sessions/{session_id}/telemetry", response_model=TelemetryResponse)
 def post_telemetry(
     session_id: str,
     body: TelemetryRequest,
     access: SessionAccess = Depends(require_session_access),
 ) -> TelemetryResponse:
-    """web UI 由来の素材イベント（投入種別 #232 / 中断 #243）を OTLP カウンタへ集約する。
+    """web UI 由来の素材イベント（投入種別・中断）を OTLP カウンタへ集約する。
 
     認可（契約 §4）: join 済みセッショントークン必須（匿名のメトリクス汚染を塞ぐ）。
     第三者クライアント分析 SDK は導入せず、既存 metrics 基盤（observability.py）に載せる
@@ -662,7 +815,7 @@ def post_telemetry(
     status = _enum_or_other(body.status, _TELEMETRY_STATUSES)
     result = _enum_or_other(body.result, _TELEMETRY_RESULTS)
     if body.event.startswith("join."):
-        # リンク入場の離脱（PR9 / FR-2.1）。素材カウンタと混ぜず専用カウンタへ計上する。
+        # リンク入場の離脱（FR-2.1）。素材カウンタと混ぜず専用カウンタへ計上する。
         record_join_ui_event(body.event, result=result)
         log.info(
             "join_ui_event",
@@ -694,10 +847,10 @@ def delete_context_file(
     asset_id: str,
     access: SessionAccess = Depends(require_session_access),
 ) -> DeleteContextFileResponse:
-    """投入済み素材の「真の破棄」（#245）。binary・material メタ・grounding 索引をまとめて消す。
+    """投入済み素材の「真の破棄」。binary・material メタ・grounding 索引をまとめて消す。
 
     認可（契約 §4）: join 済みセッショントークン必須（参加者以外の削除を塞ぐ）。
-    #219/#241 のクライアント破棄だけでは、画像はレスポンス前に grounding 索引と material(done)
+    クライアント破棄だけでは、画像はレスポンス前に grounding 索引と material(done)
     まで完了するため素材由来の観察が会話に残り、リロードで GET context/files から復活する。
     本 API で (1) 保存 binary、(2) material メタ、(3) 出所 `asset:{asset_id}` の grounding chunk
     をまとめて取り消し、以後の会話・ハイドレーションから外す。冪等: 存在しない asset でも 200 を
@@ -720,7 +873,7 @@ def delete_context_file(
         if span is not None:
             span.set_attribute("sanba.asset.existed", existed)
             span.set_attribute("sanba.asset.index_removed", removed_index)
-    # 破棄結果を #243 の telemetry 基盤へ計上する（中断率・破棄結果を運用で追う / 原則3）。
+    # 破棄結果を telemetry 基盤へ計上する（中断率・破棄結果を運用で追う / 原則3）。
     record_material_event("material.discard", result="deleted" if existed else "not_found")
     log.info(
         "asset_discarded",
@@ -746,7 +899,7 @@ def join_session(
     the verified Google identity proves *who*. Both must hold. The LiveKit
     participant identity is derived from the verified `sub` (not a self-reported
     name) so the provenance metadata on captured requirements is trustworthy.
-    ID トークンは nonce 束縛される（ADR-0046 §2 / require_user_bound）。
+    ID トークンは nonce 束縛される（ADR-0047 §2 / require_user_bound）。
     """
     if settings.auth_dev_bypass and req.invite.startswith("dev:"):
         # Local-dev only: "dev:<session_id>:<role>" bypasses signing. Never in prod.
@@ -767,7 +920,7 @@ def join_session(
     return joined
 
 
-# ── ハイドレーション & 起票 API（契約 §4 / Issue #100）─────────────────────────
+# ── ハイドレーション & 起票 API（契約 §4）─────────────────────────
 
 
 @router.get("/api/sessions/{session_id}/requirements", response_model=RequirementsResponse)
@@ -800,7 +953,7 @@ def get_detections(
 def get_current_question(
     session_id: str, access: SessionAccess = Depends(require_session_access)
 ) -> CurrentQuestionResponse:
-    """現在の未回答質問（金枠ピン）のスナップショット（契約 §4 / #212 / ADR-0020）。
+    """現在の未回答質問（金枠ピン）のスナップショット（契約 §4 / ADR-0020）。
 
     リロード/途中参加で未回答の問いピンを復元する。回答済み（tombstone）/未提示なら
     `question=null` を返すが、その場合も `seq`（クリア時点の `cleared_seq`）を返すことで、
@@ -824,37 +977,66 @@ def get_current_question(
 def get_context_files(
     session_id: str, access: SessionAccess = Depends(require_session_access)
 ) -> ContextFilesResponse:
-    """投入済み素材のメタ一覧（契約 §4 #184）。05 参考資料のハイドレーション。
+    """投入済み素材のメタ一覧（契約 §4）。05 参考資料のハイドレーション。
 
     リロード/再接続でローカル行（uploading/failed）が消えても、サーバ保持の実ファイル名と
     解析状態を復元する。realtime の analysis.progress/visual はライブ差分で重ねる。
     """
     items = _repo.list_materials(session_id)
+    items = _reconcile_stuck_materials(session_id, items)
     log.info("context_files_hydrated", session=session_id, count=len(items), sub=access.sub)
     return ContextFilesResponse(items=items)
+
+
+def _reconcile_stuck_materials(
+    session_id: str, items: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """analyzing のまま閾値を超えて滞留した動画素材を failed 化する（ADR-0040 §3 の保険）。
+
+    worker のリトライ枯渇時 failed 化が主経路だが、enqueue 自体の取りこぼしや worker 全滅に
+    備えた reaper。`analyzing_since`（upload/enqueue 時に記録）から閾値超過を判定する。
+    タイムスタンプが無い素材（旧 pending 動画など）は対象外（掃除しすぎない）。
+    """
+    threshold = settings.analysis_stuck_after_seconds
+    if threshold <= 0:
+        return items
+    now = datetime.now(UTC).timestamp()
+    reconciled: list[dict[str, Any]] = []
+    for item in items:
+        since = item.get("analyzing_since")
+        if (
+            item.get("status") == "analyzing"
+            and isinstance(since, int | float)
+            and (now - since > threshold)
+        ):
+            _repo.save_material(session_id, {"id": item["id"], "status": "failed"})
+            log.info("material_reconciled_failed", session=session_id, asset_id=item["id"])
+            item = {**item, "status": "failed"}
+        reconciled.append(item)
+    return reconciled
 
 
 @router.post("/api/sessions/{session_id}/finalize", response_model=FinalizeResponse)
 def finalize_session_requirements(
     session_id: str, access: SessionAccess = Depends(require_session_access)
 ) -> FinalizeResponse:
-    """07 判定の「確定」を永続化する（#186）。
+    """07 判定の「確定」を永続化する。
 
     会話を締めて要件を確定したとき、確定した要件件数のスナップショットを刻み、セッションを
     finalized にする（不可逆マーカ）。確定後の export（GitHub Issue）はこの件数と一致する。
 
-    確定時集合は approved にして TTL（expireAt）を解除する（Codex P1）: 管理画面の承認 UI
+    確定時集合は approved にして TTL（expireAt）を解除する: 管理画面の承認 UI
     廃止に伴い、draft のまま 30 日 TTL で消えると過去要件閲覧（/sessions/{id}）と export が
     欠落するため、参加者の「確定」を成果物保全の起点にする。TTL 解除は既存の
     set_requirement_status（approved で expireAt 削除）に集約済みのものを再利用する。
 
-    ガード（Codex P2）:
+    ガード:
       - 既に finalized なら open 検知に関係なく保存済みスナップショット件数を返す（冪等）。
         確定後に遅延 agent が open 検知を保存しても、再送/リロードの再 POST が 409 にならない。
       - 未確定セッションは、未解消検知が 1 件でも残るなら 409 で拒否する（07 判定の
         「未解消 0 件で確定可」をサーバ側でも担保。直接 POST や古いクライアント状態を防ぐ）。
 
-    ゲスト token（ADR-0032 決定4 / #320）は確定不可: ゲストセッションの要件の承認・保全は
+    ゲスト token（ADR-0032 決定4）は確定不可: ゲストセッションの要件の承認・保全は
     owner が管理画面で行う（承認 = TTL 解除は owner の意思に限る）。
     """
     forbid_guest_writes(access, "finalize")
@@ -877,7 +1059,7 @@ def finalize_session_requirements(
     if meta is None:
         raise HTTPException(status_code=404, detail="session not found")
     # 確定時集合を成果物として保全する: 通常は approved で expireAt が外れ 30 日 TTL の
-    # 対象外になる（Codex P1）。ゲストセッション（owner_email == ""）は例外: セッション文書
+    # 対象外になる。ゲストセッション（owner_email == ""）は例外: セッション文書
     # 自体が 30 日 TTL で消えるため要件 TTL を外すと orphan になる（ADR-0032 / FR-2.7）。
     # approved_by は確定操作の主体（join 済みトークンの sub）。
     is_guest_session = existing.owner_email == ""
@@ -908,13 +1090,13 @@ def finalize_session_requirements(
 def export_requirements(
     session_id: str, access: SessionAccess = Depends(require_session_access)
 ) -> ExportResponse:
-    """確定要件を GitHub Issue として起票する（契約 §4 P1 / #39 ループ / #213）。
+    """確定要件を GitHub Issue として起票する（契約 §4 P1）。
 
     finalize 時に凍結した要件 ID スナップショット（`finalized_requirement_ids`）の集合だけを
     起票する。凍結の定義（旧データのフォールバック含む）は _finalized_snapshot_requirements
     に一元化し、過去要件閲覧と共有する。
 
-    ゲスト token（ADR-0032 決定4 / #320）は起票不可: 匿名の URL 保持者が owner の
+    ゲスト token（ADR-0032 決定4）は起票不可: 匿名の URL 保持者が owner の
     リポジトリへ Issue を作れてしまうため（connector 有効時）、コネクタ判定より前に拒む。
     """
     forbid_guest_writes(access, "export")
@@ -925,16 +1107,16 @@ def export_requirements(
     if session is None:
         raise HTTPException(status_code=404, detail="session not found")
     # 起票先の解決（ADR-0027）: セッション値が None のときだけ環境変数へフォールバックする。
-    # 空文字は明示的な「連携しない」なのでフォールバックしない（Codex P2）。
+    # 空文字は明示的な「連携しない」なのでフォールバックしない。
     export_repo = session.github_repo if session.github_repo is not None else settings.github_repo
     if not export_repo:
         return ExportResponse(exported=False, reason="github connector disabled")
-    # 解決後の値にも許可リストを掛ける（Codex P2: 一覧・保存で絞っても、フォールバック先の
+    # 解決後の値にも許可リストを掛ける（一覧・保存で絞っても、フォールバック先の
     # 既定リポや allowlist 導入前に保存された値が許可外なら起票しない = fail-closed）。
     if not _github_repo_allowed(export_repo):
         log.warning("export_repo_not_allowed", session=session_id, repo=export_repo)
         return ExportResponse(exported=False, reason="github repo not allowed")
-    # 確定時の要件 ID 集合だけを取得して起票する（再計算しない / #213）。
+    # 確定時の要件 ID 集合だけを取得して起票する（再計算しない）。
     confirmed = _finalized_snapshot_requirements(session)
     # Issue 本文は開発者向け出力フォーマットで整形する（閲覧ドキュメントと同じレンダラに
     # 一本化 / ADR-0043 決定3。アプリ管理でフォーマットを登録すれば Issue の体裁も変わる）。
