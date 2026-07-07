@@ -1274,6 +1274,7 @@ class SANBAAgent(Agent):
         from sanba_shared.result_document import (
             issue_title,
             render_result_document,
+            requirements_to_issue_labels,
             requirements_to_render_dicts,
         )
 
@@ -1282,6 +1283,7 @@ class SANBAAgent(Agent):
         # Issue 本文は開発者向け出力フォーマットで整形する（api の /export と同じレンダラに
         # 一本化。どちらの経路で起票しても同じ体裁になる）。
         requirements = self._repo.list_requirements(self._session_id)
+        render_dicts = requirements_to_render_dicts(requirements)
         meta: SessionMeta | None = None
         try:
             meta = self._repo.get_session(self._session_id)
@@ -1295,7 +1297,7 @@ class SANBAAgent(Agent):
             app_name=product.name if product is not None else None,
             goal=meta.goal if meta is not None else None,
             date=datetime.now(UTC).strftime("%Y-%m-%d"),
-            requirements=requirements_to_render_dicts(requirements),
+            requirements=render_dicts,
             check_items=(
                 check_items_for_audience(product.check_items, Audience.DEVELOPER)
                 if product is not None
@@ -1303,7 +1305,9 @@ class SANBAAgent(Agent):
             ),
         )
         url = GitHubConnector(settings.github_token, gh_repo).create_issue(
-            issue_title(self._session_id), body
+            issue_title(self._session_id),
+            body,
+            labels=requirements_to_issue_labels(render_dicts),
         )
         log.info("requirements_exported", session=self._session_id, repo=gh_repo, url=url)
         if self._publisher is not None and url is not None:

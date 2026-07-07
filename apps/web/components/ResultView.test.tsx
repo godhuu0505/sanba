@@ -165,4 +165,34 @@ describe("ResultView（要件産婆結果）", () => {
     );
     expect(screen.queryByText(/evil を開く/)).toBeNull();
   });
+
+  it("起票中は Issue ボタンを無効化し『起票中…』を出す", () => {
+    setup({ issueExport: { status: "pending" } });
+    const btn = screen.getByRole("button", { name: /起票中…/ });
+    expect((btn as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("起票成功なら Issue へのリンクを出す（安全な https のみ）", () => {
+    setup({
+      issueExport: { status: "done", url: "https://github.com/o/r/issues/1" },
+    });
+    const link = screen.getByRole("link", { name: /起票した Issue を開く/ });
+    expect(link.getAttribute("href")).toBe("https://github.com/o/r/issues/1");
+  });
+
+  it("起票成功でも危険な URL はリンク化しない（フォールバック文言）", () => {
+    setup({ issueExport: { status: "done", url: "javascript:alert(1)" } });
+    expect(screen.queryByRole("link", { name: /起票した Issue/ })).toBeNull();
+    expect(screen.getByText(/Issue を起票しました/)).toBeTruthy();
+  });
+
+  it("起票失敗は reason を日本語に言い換えて表示する", () => {
+    setup({ issueExport: { status: "error", reason: "github repo not allowed" } });
+    expect(screen.getByText(/許可されていないリポジトリ/)).toBeTruthy();
+  });
+
+  it("Issue ハンドラ未指定なら起票結果は表示しない", () => {
+    setup({ onExportIssue: undefined, issueExport: { status: "done", url: "https://x/1" } });
+    expect(screen.queryByText(/Issue を開く/)).toBeNull();
+  });
 });

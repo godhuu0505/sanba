@@ -23,7 +23,11 @@ from sanba_shared.models import (
 )
 from sanba_shared.output_formats import resolve_output_format
 from sanba_shared.repository import RequirementNotFound
-from sanba_shared.result_document import issue_title, render_result_document
+from sanba_shared.result_document import (
+    issue_title,
+    render_result_document,
+    requirements_to_issue_labels,
+)
 
 from .. import github_export
 from ..auth import InvalidInvite, SessionAccess, create_invite, verify_invite
@@ -1136,7 +1140,11 @@ def export_requirements(
         ),
     )
     url = github_export.create_issue(
-        settings.github_token, export_repo, issue_title(session_id), body
+        settings.github_token,
+        export_repo,
+        issue_title(session_id),
+        body,
+        labels=requirements_to_issue_labels(confirmed),
     )
     if url is None:
         return ExportResponse(exported=False, reason="issue creation failed")

@@ -355,9 +355,12 @@ def _enable_github(monkeypatch: pytest.MonkeyPatch) -> dict[str, object]:
     monkeypatch.setattr(settings, "github_repo", "o/r")
     captured: dict[str, object] = {}
 
-    def fake_create_issue(token: str, repo: str, title: str, body: str) -> str:
+    def fake_create_issue(
+        token: str, repo: str, title: str, body: str, labels: list[str] | None = None
+    ) -> str:
         captured["repo"] = repo
         captured["body"] = body
+        captured["labels"] = labels
         return "https://github.com/o/r/issues/1"
 
     monkeypatch.setattr(github_export, "create_issue", fake_create_issue)
@@ -382,6 +385,8 @@ def test_export_uses_session_selected_repo(monkeypatch: pytest.MonkeyPatch) -> N
     res = client.post(f"/api/sessions/{sid}/export", headers=_auth(_token(sid)))
     assert res.json()["exported"] is True
     assert captured["repo"] == "acme/product-a"
+    # 確定要件の priority / category からラベルが機械的に付く（sanba は常に付与）。
+    assert captured["labels"] == ["sanba", "priority:must", "functional"]
 
 
 def test_export_respects_explicit_opt_out(monkeypatch: pytest.MonkeyPatch) -> None:

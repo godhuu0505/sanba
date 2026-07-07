@@ -10,6 +10,7 @@ from typing import Any
 
 from sanba_shared.result_document import (
     render_result_document,
+    requirements_to_issue_labels,
 )
 
 
@@ -165,3 +166,31 @@ def test_requirements_to_render_dicts_maps_models_to_contract_shape() -> None:
     )
     assert "CSV を出力できる" in out
     assert "却下済み" not in out
+
+
+def test_issue_labels_derive_from_priority_and_category() -> None:
+    # 決定的な順序（sanba → priority は MoSCoW 順 → category は名前順）で重複は除く。
+    labels = requirements_to_issue_labels(
+        [
+            _req("A", priority="should", category="functional"),
+            _req("B", priority="must", category="non_functional"),
+            _req("C", priority="must", category="functional"),
+        ]
+    )
+    assert labels == [
+        "sanba",
+        "priority:must",
+        "priority:should",
+        "functional",
+        "non_functional",
+    ]
+
+
+def test_issue_labels_ignore_non_confirmed_but_keep_base() -> None:
+    # 非確定（rejected→draft）は集計から外す。確定が無くても sanba だけは残す。
+    labels = requirements_to_issue_labels(
+        [
+            _req("A", priority="must", category="functional", status="draft"),
+        ]
+    )
+    assert labels == ["sanba"]
