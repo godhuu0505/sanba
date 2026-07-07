@@ -88,6 +88,10 @@ class Settings(BaseSettings):
     # OTLP 転送の TLS。localhost collector sidecar 構成では true（平文 gRPC）、
     # TLS 終端された外部 OTLP（Cloud Trace / Grafana Cloud 直送）では false（既定）。
     otel_exporter_insecure: bool = False
+    # トレースの Cloud Trace 直送（ADR-0051）。OTEL_EXPORTER_OTLP_ENDPOINT 明示時はそちらを
+    # 優先し、未指定でも Vertex 実行（＝GCP 上・ADC あり）なら Cloud Trace へ直送する
+    # （インフラ増ゼロ）。ローカル/テスト（use_vertexai=false）は直送しない（ADC 無しで失敗）。
+    otel_traces_to_cloud_trace: bool = True
     langfuse_host: str = ""
     langfuse_public_key: str = ""
     langfuse_secret_key: str = ""

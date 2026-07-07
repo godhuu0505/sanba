@@ -18,6 +18,8 @@ dependencies = [
     "pydantic-settings>=2.3",
     "opentelemetry-sdk>=1.25",
     "opentelemetry-exporter-otlp>=1.25",
+    # Cloud Trace 直送（ADR-0051）。ADC で実行 SA から Cloud Trace へスパンをエクスポートする。
+    "opentelemetry-exporter-gcp-trace>=1.7",
     "langfuse>=2.40",
     "structlog>=24.1",
     "sanba-shared",

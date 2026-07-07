@@ -30,38 +30,58 @@ def get_tracer(name: str) -> Any:
         return None
 
 
+def select_exporter_kind() -> str:
+    """どのスパンエクスポータを使うかを設定から決める（純関数・ネットワーク不要 / ADR-0051）。
+
+    優先順位:
+      1. ``OTEL_EXPORTER_OTLP_ENDPOINT`` 明示時 → "otlp"（Collector サイドカー等へ）。
+      2. 未指定でも Cloud Trace 直送が有効かつ Vertex 実行（＝GCP 上・ADC あり）→ "cloud_trace"。
+      3. それ以外（ローカル/テスト）→ "disabled"。
+    """
+    if settings.otel_exporter_otlp_endpoint:
+        return "otlp"
+    if settings.otel_traces_to_cloud_trace and settings.google_genai_use_vertexai:
+        return "cloud_trace"
+    return "disabled"
+
+
 def setup_observability() -> None:
-    """Configure OTel tracing exporter. Safe to call multiple times."""
+    """Configure the OTel tracing exporter (Cloud Trace 直送 / OTLP / 無効)。Safe to call once."""
     global _initialised
     if _initialised:
         return
     _initialised = True
 
-    if not settings.otel_exporter_otlp_endpoint:
-        log.info("otel_disabled", reason="no endpoint configured")
+    kind = select_exporter_kind()
+    if kind == "disabled":
+        log.info("otel_disabled", reason="no exporter selected")
         return
 
     try:
         from opentelemetry import trace
-        from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
         from opentelemetry.sdk.resources import Resource
         from opentelemetry.sdk.trace import TracerProvider
         from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
+        if kind == "otlp":
+            from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+
+            exporter: object = OTLPSpanExporter(
+                endpoint=settings.otel_exporter_otlp_endpoint,
+                insecure=settings.otel_exporter_insecure,
+            )
+        else:  # cloud_trace: ADC（実行 SA の roles/cloudtrace.agent）で Cloud Trace へ直送。
+            from opentelemetry.exporter.cloud_trace import CloudTraceSpanExporter
+
+            exporter = CloudTraceSpanExporter(project_id=settings.google_cloud_project or None)
+
         resource = Resource.create({"service.name": settings.otel_service_name})
         provider = TracerProvider(resource=resource)
-        provider.add_span_processor(
-            BatchSpanProcessor(
-                OTLPSpanExporter(
-                    endpoint=settings.otel_exporter_otlp_endpoint,
-                    insecure=settings.otel_exporter_insecure,
-                )
-            )
-        )
+        provider.add_span_processor(BatchSpanProcessor(exporter))  # type: ignore[arg-type]
         trace.set_tracer_provider(provider)
-        log.info("otel_initialised", endpoint=settings.otel_exporter_otlp_endpoint)
+        log.info("otel_initialised", exporter=kind)
     except Exception as exc:  # pragma: no cover
-        log.warning("otel_init_failed", error=str(exc))
+        log.warning("otel_init_failed", exporter=kind, error=str(exc))
 
 
 def get_langfuse():  # type: ignore[no-untyped-def]
