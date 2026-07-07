@@ -78,19 +78,27 @@ class GitHubConnector:
         log.info("github_context_fetched", repo=self.repo, passages=len(passages))
         return passages
 
-    def create_issue(self, title: str, body: str) -> str | None:  # pragma: no cover - network
-        """Create an issue and return its html_url (or None on failure)."""
+    def create_issue(
+        self, title: str, body: str, labels: list[str] | None = None
+    ) -> str | None:  # pragma: no cover - network
+        """Create an issue and return its html_url (or None on failure).
+
+        labels を渡すと Issue に付与する（リポジトリに無いラベルは GitHub が自動作成する）。
+        """
         import httpx
 
+        payload: dict[str, object] = {"title": title, "body": body}
+        if labels:
+            payload["labels"] = labels
         with httpx.Client(timeout=15) as client:
             res = client.post(
                 f"{_API}/repos/{self.repo}/issues",
                 headers=self._headers,
-                json={"title": title, "body": body},
+                json=payload,
             )
         if res.status_code in (200, 201):
             url = res.json().get("html_url")
-            log.info("github_issue_created", repo=self.repo, url=url)
+            log.info("github_issue_created", repo=self.repo, url=url, labels=labels or [])
             return url
         log.warning("github_issue_failed", repo=self.repo, status=res.status_code)
         return None

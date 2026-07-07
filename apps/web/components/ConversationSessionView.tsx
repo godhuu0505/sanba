@@ -39,7 +39,7 @@ import { JudgmentGate } from "./JudgmentGate";
 import { MaterialDetailSheet } from "./MaterialDetailSheet";
 import { MaterialsList } from "./MaterialsList";
 import { RequirementsTab } from "./RequirementsTab";
-import { ResultView } from "./ResultView";
+import { ResultView, type IssueExportStatus } from "./ResultView";
 import { VoiceStatusIndicator } from "./VoiceStatusIndicator";
 
 export interface ConversationSessionViewProps {
@@ -169,6 +169,8 @@ export function ConversationSessionView({
   const [answeredQuestions, setAnsweredQuestions] = useState<ReadonlySet<string>>(new Set());
   // Issue 起票の二重送信を同期的に防ぐ（export は毎回 GitHub Issue を作るため連打で重複起票になる）。
   const exportingRef = useRef(false);
+  // Issue 起票の進行状態（送信中/成功 URL/失敗理由）。結果画面へ返して無反応を防ぐ。
+  const [issueExport, setIssueExport] = useState<IssueExportStatus>({ status: "idle" });
   // 確定（finalize）の二重送信を同期的に防ぐ。
   const finalizingRef = useRef(false);
 
@@ -321,17 +323,29 @@ export function ConversationSessionView({
           setTab("scroll");
         }}
         onRestart={() => onRestart?.()}
+        issueExport={issueExport}
         onExportIssue={
           // confirmed が 0 件のときはボタン自体を出さない（空 Issue 起票防止）。
           // 読取専用（ゲスト）は起票 UI を出さない（サーバも 403 / ADR-0032 決定4）。
           !readOnly && confirmed.length > 0
             ? () => {
-                // 連打による重複起票を防ぐ（ref で同期ガード）。失敗は握りつぶさずログに残す。
-                // success URL / 失敗理由 / busy 表示は finalize と併せた seam（follow-up）。
+                // 連打による重複起票を防ぐ（ref で同期ガード）。成功 URL・失敗理由・送信中は
+                // issueExport で結果画面へ返す（起票したのに無反応に見える状態を防ぐ）。
                 if (exportingRef.current) return;
                 exportingRef.current = true;
+                setIssueExport({ status: "pending" });
                 void onExport()
-                  .catch((e) => console.error("export failed", e))
+                  .then((r) =>
+                    setIssueExport(
+                      r.exported
+                        ? { status: "done", url: r.issue_url }
+                        : { status: "error", reason: r.reason },
+                    ),
+                  )
+                  .catch((e) => {
+                    console.error("export failed", e);
+                    setIssueExport({ status: "error" });
+                  })
                   .finally(() => {
                     exportingRef.current = false;
                   });

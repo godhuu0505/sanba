@@ -26,6 +26,28 @@ function isSafeHttpUrl(url: string): boolean {
   }
 }
 
+/**
+ * Issue 起票（POST /export）の進行状態。fire-and-forget をやめ、成功 URL・失敗理由・
+ * 送信中を利用者に返す（起票したのに何も起きないように見える無反応を防ぐ）。
+ */
+export type IssueExportStatus =
+  | { status: "idle" }
+  | { status: "pending" }
+  | { status: "done"; url?: string }
+  | { status: "error"; reason?: string };
+
+/** api の failure reason（英語）を利用者向けの日本語に言い換える。未知は汎用文言へ。 */
+function issueExportReasonText(reason?: string): string {
+  switch (reason) {
+    case "github connector disabled":
+      return "GitHub 連携が無効のため起票できませんでした。";
+    case "github repo not allowed":
+      return "許可されていないリポジトリのため起票できませんでした。";
+    default:
+      return "起票に失敗しました。時間をおいて再度お試しください。";
+  }
+}
+
 /** プレビューで先に出す優先度（Figma 08：Must/Should を優先表示）。 */
 const PREVIEW_PRIORITIES: readonly Priority[] = ["must", "should"];
 /** 各優先度セクションでプレビューに出す最大件数。超過は「ほか N 件 ›」へ畳む。 */
@@ -58,6 +80,8 @@ export interface ResultViewProps {
   onExportPdf?: () => void;
   onExportDrive?: () => void;
   onExportIssue?: () => void;
+  /** Issue 起票の進行状態（未指定は idle 扱い）。送信中は Issue ボタンを無効化し結果を表示する。 */
+  issueExport?: IssueExportStatus;
 }
 
 export function ResultView({
@@ -72,6 +96,7 @@ export function ResultView({
   onExportPdf,
   onExportDrive,
   onExportIssue,
+  issueExport = { status: "idle" },
 }: ResultViewProps) {
   // end_user モード（FR-2.4 / ADR-0032）: MoSCoW の内訳文字列（Must n ・ Should n ...）は
   // 内部分類の露出になるため出さない。セクション見出しは priorityLabel(mode) が利用者の
@@ -224,18 +249,46 @@ export function ResultView({
           <div className="mt-[6px] flex w-full gap-2">
             {available.map((o) => {
               const Icon = o.icon;
+              // Issue は起票中だけ無効化（連打による重複起票を UI 側でも止める）。
+              const busy = o.label === "Issue" && issueExport.status === "pending";
               return (
                 <button
                   key={o.label}
                   type="button"
                   onClick={o.handler}
-                  className="flex flex-1 items-center justify-center gap-1.5 rounded-[11px] border border-sanba-border bg-sanba-surface py-[11px] text-[11.5px] font-bold text-sanba-muted"
+                  disabled={busy}
+                  aria-busy={busy}
+                  className="flex flex-1 items-center justify-center gap-1.5 rounded-[11px] border border-sanba-border bg-sanba-surface py-[11px] text-[11.5px] font-bold text-sanba-muted disabled:opacity-60"
                 >
-                  <Icon size={14} aria-hidden /> {o.label}
+                  <Icon size={14} aria-hidden /> {busy ? "起票中…" : o.label}
                 </button>
               );
             })}
           </div>
+          {onExportIssue && issueExport.status !== "idle" && issueExport.status !== "pending" && (
+            <div className="mt-[6px] w-full" role="status" aria-live="polite">
+              {issueExport.status === "done" ? (
+                issueExport.url && isSafeHttpUrl(issueExport.url) ? (
+                  <a
+                    href={issueExport.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block rounded-[11px] border border-sanba-border bg-sanba-surface px-3 py-[10px] text-center text-[11.5px] font-bold text-sanba-gold-text"
+                  >
+                    起票した Issue を開く ↗
+                  </a>
+                ) : (
+                  <p className="text-center text-[11px] font-bold text-sanba-gold-text">
+                    Issue を起票しました
+                  </p>
+                )
+              ) : (
+                <p className="text-center text-[11px] font-bold text-red-500">
+                  {issueExportReasonText(issueExport.reason)}
+                </p>
+              )}
+            </div>
+          )}
         </>
       )}
 

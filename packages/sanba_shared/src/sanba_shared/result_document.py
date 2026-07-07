@@ -60,6 +60,32 @@ def _confirmed(requirements: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [r for r in requirements if r.get("status") == "confirmed"]
 
 
+ISSUE_BASE_LABEL = "sanba"
+
+
+def requirements_to_issue_labels(requirements: list[dict[str, Any]]) -> list[str]:
+    """確定要件から GitHub Issue に付けるラベルを機械的に導く（api / agent 共通）。
+
+    ラベルは決め打ちにせず、載っている要件の priority / category から算出する:
+    - 常に `sanba`（この Issue が SANBA の起票であることの目印。運用側の絞り込み・自動化の起点）。
+    - 出現した priority ごとに `priority:{must|should|could|wont}`。
+    - 出現した category ごとにその値（`functional` 等の機械タグ。ダッシュボード集計と同じ語彙）。
+
+    順序は決定的（`sanba` → priority は MoSCoW 順 → category は名前順）で重複は除く。
+    リポジトリに存在しないラベルは GitHub が起票時に自動作成する。確定要件が無い場合でも
+    `sanba` だけは返す（空 Issue でも起票元をたどれるようにする）。
+    """
+    confirmed = _confirmed(requirements)
+    labels = [ISSUE_BASE_LABEL]
+    labels.extend(
+        f"priority:{pr}"
+        for pr in _PRIORITY_ORDER
+        if any(r.get("priority") == pr for r in confirmed)
+    )
+    labels.extend(sorted({str(r["category"]) for r in confirmed if r.get("category")}))
+    return labels
+
+
 def _requirements_grouped(requirements: list[dict[str, Any]]) -> str:
     """確定要件を MoSCoW 見出しでグループ化した Markdown（企画者/開発者向け）。
 
