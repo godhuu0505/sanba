@@ -65,3 +65,17 @@ session_signing_secret = ""
 # app_secret_ids        = ["livekit-api-key", "livekit-api-secret", "elasticsearch-api-key"]
 # 値を SM に投入したら、その id をここへ足して apply すると Cloud Run に注入される。
 # active_app_secret_ids = ["livekit-api-key", "livekit-api-secret"]
+
+# ---- GitHub App 連携 (ADR-0028) ----
+# 手順: (1) GitHub App を作成し App ID / slug / client id を控える。
+#   (2) 秘匿値を Secret Manager へ投入:
+#       gcloud secrets versions add sanba-github-app-private-key   --data-file=private-key.pem
+#       printf %s "<client secret>" | gcloud secrets versions add sanba-github-app-client-secret --data-file=-
+#   (3) active_app_secret_ids に 2 つの id を足す。
+#   (4) 下の平文設定を埋めて apply。callback/return URL は空なら domain から自動導出
+#       (https://api.<web_host>/api/github/link/callback と https://<web_host>/settings)。
+# github_app_enabled   = true
+# github_app_id        = "1234567"
+# github_app_slug      = "sanba-repo-linker"
+# github_app_client_id = "Iv1.a1b2c3d4e5f6"
+# active_app_secret_ids = ["github-app-private-key", "github-app-client-secret"]  # 既存 active に追記

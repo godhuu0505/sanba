@@ -25,11 +25,13 @@ locals {
 
   # 各サービスが参照する ENV名 => シークレットキー (active なものだけ注入する)。
   api_secret_env = { for env, key in {
-    SESSION_SIGNING_SECRET = "session-signing-secret"
-    LIVEKIT_API_KEY        = "livekit-api-key"
-    LIVEKIT_API_SECRET     = "livekit-api-secret"
-    GOOGLE_API_KEY         = "google-api-key"
-    ELASTICSEARCH_API_KEY  = "elasticsearch-api-key"
+    SESSION_SIGNING_SECRET   = "session-signing-secret"
+    LIVEKIT_API_KEY          = "livekit-api-key"
+    LIVEKIT_API_SECRET       = "livekit-api-secret"
+    GOOGLE_API_KEY           = "google-api-key"
+    ELASTICSEARCH_API_KEY    = "elasticsearch-api-key"
+    GITHUB_APP_PRIVATE_KEY   = "github-app-private-key"
+    GITHUB_APP_CLIENT_SECRET = "github-app-client-secret"
   } : env => key if contains(local.active_secret_ids, key) }
 
   agent_secret_env = { for env, key in {

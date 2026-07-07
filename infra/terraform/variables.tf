@@ -238,7 +238,7 @@ variable "session_signing_secret" {
 # Secret Manager に作成する「箱」の集合。値は terraform 管理外 (gcloud で投入)。
 variable "app_secret_ids" {
   type        = list(string)
-  default     = ["livekit-api-key", "livekit-api-secret", "elasticsearch-api-key", "google-api-key"]
+  default     = ["livekit-api-key", "livekit-api-secret", "elasticsearch-api-key", "google-api-key", "github-app-private-key", "github-app-client-secret"]
   description = "Secret Manager に作成する app secret の id (sanba- 接頭辞は自動付与)。値は管理しない。"
 }
 
@@ -248,4 +248,46 @@ variable "active_app_secret_ids" {
   type        = list(string)
   default     = []
   description = "値投入済みで Cloud Run に注入する app secret id。app_secret_ids の部分集合。"
+}
+
+# ---- GitHub App: per-user repo linking (ADR-0028) ----
+# 秘匿値 (private key / client secret) は app_secret_ids の箱 (github-app-private-key /
+# github-app-client-secret) に gcloud で投入し、active_app_secret_ids に足すと api に注入される。
+# 以下は秘匿物でない平文設定 (api の env に直接入る)。
+variable "github_app_enabled" {
+  type        = bool
+  default     = false
+  description = "GitHub App 連携を有効化するか。true でも秘匿値 (private key / client secret) が active でないと api 側でフェイルクローズする。"
+}
+
+variable "github_app_id" {
+  type        = string
+  default     = ""
+  description = "GitHub App の数値 ID (App 認証 JWT の iss)。秘匿物ではない。"
+}
+
+variable "github_app_slug" {
+  type        = string
+  default     = ""
+  description = "GitHub App の slug (install URL github.com/apps/<slug>/installations/new に使う)。"
+}
+
+variable "github_app_client_id" {
+  type        = string
+  default     = ""
+  description = "GitHub App の OAuth client id (user-to-server)。秘匿物ではない。secret は github-app-client-secret 箱で渡す。"
+}
+
+# 空なら domain 有効時に api ホストから自動導出する (https://api.<host>/api/github/link/callback)。
+variable "github_app_callback_url" {
+  type        = string
+  default     = ""
+  description = "install 完了後に GitHub が戻す api の絶対 URL (App 登録側の Setup/Callback URL と一致させる)。空=domain から自動導出。"
+}
+
+# 空なら domain 有効時に web ホストの /settings へ導出する。
+variable "github_app_web_return_url" {
+  type        = string
+  default     = ""
+  description = "連携保存後にユーザーを戻す web 設定画面の URL。空=domain から web の /settings を導出。"
 }
