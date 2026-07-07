@@ -60,6 +60,6 @@
 | [0049](0049-upload-types-and-google-drive-import.md) | 資料アップロードの形式拡張と Google ドライブ取り込み | Accepted |
 | [0050](0050-documentation-placement-and-lifecycle.md) | ドキュメントの配置方針とライフサイクル（AI 駆動開発前提） | Accepted |
 | [0051](0051-google-native-observability-and-llmops.md) | 観測性・LLMOps を Google Cloud ネイティブに統一する（Cloud Trace / Cloud Monitoring / Vertex・ADK eval、Langfuse 廃止） | Proposed |
-| [0052](0052-ui-copy-terminology-unification-and-help.md) | UIコピーの用語統一・平易化とヘルプ補足（機能名への統一・Radix Popover ヘルプ） | Proposed |
+| [0053](0053-ui-copy-terminology-unification-and-help.md) | UIコピーの用語統一・平易化とヘルプ補足（機能名への統一・Radix Popover ヘルプ） | Proposed |
 
 付随資料は [`supplements/`](supplements/) に置く（特定 ADR の実測・検証データ）。

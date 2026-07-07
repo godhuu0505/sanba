@@ -1,4 +1,4 @@
-# ADR-0052: UIコピーの用語統一・平易化とヘルプ補足（機能名への統一・Radix Popover ヘルプ）
+# ADR-0053: UIコピーの用語統一・平易化とヘルプ補足（機能名への統一・Radix Popover ヘルプ）
 
 - ステータス: Proposed（提案中）
 - 日付: 2026-07-07
@@ -7,7 +7,7 @@
   [ADR-0050](0050-documentation-placement-and-lifecycle.md)（ユビキタス言語＝用語の単一の正）/
   [`docs/reference/ubiquitous-language.md`](../reference/ubiquitous-language.md) /
   [`docs/notes/ui-copy-inventory.md`](../notes/ui-copy-inventory.md)（画面文言の洗い出し）/ #405 /
-  付録B（詳細対応表）: [`supplements/0052-copy-and-help-map.md`](supplements/0052-copy-and-help-map.md)
+  付録B（詳細対応表）: [`supplements/0053-copy-and-help-map.md`](supplements/0053-copy-and-help-map.md)
 
 ## コンテキスト
 
@@ -102,7 +102,7 @@ SANBA は 2 トーン設計（**通常**＝企画/開発者向け ↔ **end_user
 - **用語表を ADR に載せず glossary だけで管理**: 却下。決定の経緯・却下案・移行計画は ADR に残すのが本リポジトリの規律
   （ADR-0050）。glossary は「現行の正」を保持し、ADR は「なぜそう決めたか」を保持する二層で運用する。
 - **詳細対応表を ADR 本文に内包**: 却下。量が多く可読性を損なうため、ADR-0050 原則5 に従い付随資料を
-  `supplements/0052-copy-and-help-map.md` に分離し、本 ADR から参照する。
+  `supplements/0053-copy-and-help-map.md` に分離し、本 ADR から参照する。
 
 ## 付録A — 横断用語辞書（正語）
 
@@ -131,7 +131,7 @@ SANBA は 2 トーン設計（**通常**＝企画/開発者向け ↔ **end_user
 ## 付録B — 画面セグメント別 確定コピー＆ヘルプ
 
 量が多いため別ファイルに分離した（ADR-0050 原則5）。
-**→ [`supplements/0052-copy-and-help-map.md`](supplements/0052-copy-and-help-map.md)**
+**→ [`supplements/0053-copy-and-help-map.md`](supplements/0053-copy-and-help-map.md)**
 
 S1 入口フロー / S2 会話・選択肢・検知 / S3 参考資料 / S4 要件一覧・深掘り・判定 /
 S5 結果・過去の要件一覧 / S6 アプリ管理 / S7 招待・参加・システム画面・設定・ナビ の各セグメントについて、

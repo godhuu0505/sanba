@@ -1,6 +1,6 @@
-# ADR-0052 付録B — UIコピー正語＆ヘルプ 詳細対応表
+# ADR-0053 付録B — UIコピー正語＆ヘルプ 詳細対応表
 
-> [ADR-0052](../0052-ui-copy-terminology-unification-and-help.md) の付随資料（ADR-0050 原則5）。
+> [ADR-0053](../0053-ui-copy-terminology-unification-and-help.md) の付随資料（ADR-0050 原則5）。
 > 決定・方針・横断辞書（付録A）は ADR 本体。ここは画面セグメント別の**確定コピー**と**ヘルプ本文**。
 > 用語の現行の正は `docs/reference/ubiquitous-language.md` の「UI 用語統一表」に反映して運用する。
 >
