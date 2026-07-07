@@ -295,7 +295,7 @@ for ROLE in roles/run.admin roles/compute.admin roles/dns.admin \
             roles/secretmanager.admin roles/datastore.owner \
             roles/artifactregistry.admin roles/iam.serviceAccountAdmin \
             roles/resourcemanager.projectIamAdmin roles/serviceusage.serviceUsageAdmin \
-            roles/storage.admin; do
+            roles/storage.admin roles/cloudtasks.queueAdmin; do
   gcloud projects add-iam-policy-binding "$PROJECT_ID" --member="serviceAccount:$TF_SA" --role="$ROLE"
 done
 # 予算アラート (google_billing_budget) を CI で管理する場合のみ。billing 系ロールは
