@@ -8,7 +8,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
 // 常に対で動かす。片方だけ差し替えると不一致 401 を自分で作ってしまう）。nonce は「今ログイン
 // しているクライアントの ambient な認証状態」で業務引数ではないため、長い createSession の
 // 引数に増やさず authHeaders の単一経路で全 authorized リクエストに載せる（サーバが照合する
-// のは束縛エンドポイントのみ: create/join・products/join・admin / enforce_login_nonce）。
+// のは束縛エンドポイントのみ: create/join・products/join / enforce_login_nonce）。
 let currentAuthNonce: string | null = null;
 
 /** 現在のログイン nonce エンベロープを差し替える（null で消す）。AuthProvider が呼ぶ。 */
@@ -626,11 +626,9 @@ export async function joinSession(params: {
   return res.json();
 }
 
-// ---- Admin (ADR-0014) ------------------------------------------------------
-// 認可の源泉は常に API 側 (ADMIN_EMAILS 照合)。クライアントは 401/403 を受けて再認証や
-// アクセス不可表示に遷移するだけ (§7)。
+// ---- API エラー ------------------------------------------------------------
 
-/** API エラー。status を持たせ、401/403 をクライアントで分岐できるようにする。 */
+/** API エラー。status を持たせ、401/403/404 をクライアントで分岐できるようにする。 */
 export class ApiError extends Error {
   constructor(
     public readonly status: number,
@@ -639,34 +637,6 @@ export class ApiError extends Error {
     super(message);
     this.name = "ApiError";
   }
-}
-
-export interface AdminSession {
-  id: string;
-  title: string;
-  owner_sub: string;
-  owner_email: string;
-  roles: string[];
-  status: string;
-  created_at: string;
-}
-
-async function adminFetch<T>(path: string, idToken: string | null, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_URL}${path}`, {
-    ...init,
-    headers: { ...authHeaders(idToken), ...(init?.headers ?? {}) },
-  });
-  if (!res.ok) {
-    // 401/403 は呼び出し側 (admin ページ) がガード/再認証に使うため status を保持する。
-    throw new ApiError(res.status, `${init?.method ?? "GET"} ${path} failed: ${res.status}`);
-  }
-  return res.json() as Promise<T>;
-}
-
-// 旧「93 要件を検める」の listSessionRequirements / updateRequirement は管理画面の
-// 要件確認廃止に伴い削除した。要件の閲覧は本人限定の fetchMySessionRequirements が担う。
-export function listAdminSessions(idToken: string | null): Promise<AdminSession[]> {
-  return adminFetch<AdminSession[]>("/api/admin/sessions", idToken);
 }
 
 // ===== GitHub repo linking (ADR-0028) =======================================

@@ -1,12 +1,11 @@
 "use client";
 
-// ホーム/管理画面の右上アカウントメニュー（Figma 正本 13 `104:2` / 14 `106:2`）。
-// アバター押下で scrim 付きドロップダウンを開き、ログイン後の導線（管理者画面・ログアウト）を
+// ホーム右上のアカウントメニュー（Figma 正本 13 `104:2` / 14 `106:2`）。
+// アバター押下で scrim 付きドロップダウンを開き、ログイン後の導線（アカウント設定・ログアウト）を
 // ここに集約する（監査 docs/notes/figma-implementation-audit.md B-1）。
-// scrim は ChoicePin と同じ暗幕パターンを踏襲。認可（管理者判定）は API 側 ADMIN_EMAILS が源泉で、
-// ここは導線のみ。項目順は Figma 正本（106:45）に合わせ ⚙ アカウント設定 → 🛠 管理者画面 → ⎋ ログアウト。
+// scrim は ChoicePin と同じ暗幕パターンを踏襲。ここは導線のみで認可判定は持たない。
 
-import { CircleCheck, LogOut, Settings, Wrench } from "lucide-react";
+import { CircleCheck, LogOut, Settings } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -20,13 +19,11 @@ export interface AccountMenuProps {
    * ここで認証 hook を直接呼ばないことで、共有インスタンスと分断された状態を作らない。
    */
   profile: GoogleProfile | null;
-  /** 管理画面では「管理者画面」項目を畳む（現在地への自己リンクを避ける）。 */
-  hideAdmin?: boolean;
   /** 設定画面では「アカウント設定」項目を畳む（現在地への自己リンクを避ける）。 */
   hideSettings?: boolean;
 }
 
-export function AccountMenu({ profile, hideAdmin, hideSettings }: AccountMenuProps) {
+export function AccountMenu({ profile, hideSettings }: AccountMenuProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
 
@@ -102,16 +99,6 @@ export function AccountMenu({ profile, hideAdmin, hideSettings }: AccountMenuPro
                 className="flex items-center gap-[8px] rounded-[10px] px-[10px] py-[10px] text-[14px] text-sanba-cream transition-colors hover:bg-sanba-bg"
               >
                 <Settings size={16} aria-hidden /> アカウント設定
-              </Link>
-            )}
-            {!hideAdmin && (
-              <Link
-                href="/admin"
-                role="menuitem"
-                onClick={() => setOpen(false)}
-                className="flex items-center gap-[8px] rounded-[10px] px-[10px] py-[10px] text-[14px] text-sanba-cream transition-colors hover:bg-sanba-bg"
-              >
-                <Wrench size={16} aria-hidden /> 管理者画面
               </Link>
             )}
             <button

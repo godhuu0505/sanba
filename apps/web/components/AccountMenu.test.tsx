@@ -26,15 +26,13 @@ describe("AccountMenu", () => {
     expect(screen.queryByRole("menu")).toBeNull();
   });
 
-  it("アバター押下でメニューを開き、アカウント設定/管理者画面/ログアウトの3項目を出す（Figma 106:45 の順）", () => {
+  it("アバター押下でメニューを開き、アカウント設定/ログアウトの2項目を出す", () => {
     render(<AccountMenu profile={profile} />);
     open();
     expect(screen.getByRole("menu")).toBeTruthy();
     const items = screen.getAllByRole("menuitem").map((el) => el.textContent ?? "");
-    // 並びは Figma 正本 106:45 に合わせ ⚙ 設定 → 🛠 管理者 → ⎋ ログアウト。
     expect(items[0]).toMatch(/アカウント設定/);
-    expect(items[1]).toMatch(/管理者画面/);
-    expect(items[2]).toMatch(/ログアウト/);
+    expect(items[1]).toMatch(/ログアウト/);
     // ページ側で解決済みの profile をそのまま表示する（別 hook インスタンスを作らない）。
     expect(screen.getByText(/go@sanba\.local/)).toBeTruthy();
   });
@@ -50,13 +48,6 @@ describe("AccountMenu", () => {
     render(<AccountMenu profile={profile} hideSettings />);
     open();
     expect(screen.queryByRole("menuitem", { name: /アカウント設定/ })).toBeNull();
-    expect(screen.getByRole("menuitem", { name: /管理者画面/ })).toBeTruthy();
-  });
-
-  it("hideAdmin で管理者画面項目を畳む", () => {
-    render(<AccountMenu profile={profile} hideAdmin />);
-    open();
-    expect(screen.queryByRole("menuitem", { name: /管理者画面/ })).toBeNull();
     expect(screen.getByRole("menuitem", { name: /ログアウト/ })).toBeTruthy();
   });
 

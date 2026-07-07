@@ -11,7 +11,7 @@ agent worker is dispatched to the same room name automatically.
 
 本モジュールは薄い組み立て層のみを持つ: app 生成・join レートリミット middleware・
 CORS・observability・ドメイン別ルータ（routers/*）の登録。各エンドポイントは
-routers/{sessions,github_link,products,members,admin}.py、シングルトンと横断ヘルパは
+routers/{sessions,github_link,products,members}.py、シングルトンと横断ヘルパは
 deps.py に住む。
 """
 
@@ -41,7 +41,7 @@ from .deps import (
     require_session_access,
 )
 from .observability import record_rate_limited, setup_observability
-from .routers import admin, auth, github_link, members, products, sessions
+from .routers import auth, github_link, members, products, sessions
 from .routers.products import MAX_CHECK_ITEM_CHARS, MAX_OUTPUT_FORMAT_CHARS
 
 # tests の後方互換の再エクスポート: 従来 `sanba_api.main` に住んでいた公開名を、同一
@@ -125,4 +125,3 @@ app.include_router(sessions.router)
 app.include_router(github_link.router)
 app.include_router(products.router)
 app.include_router(members.router)
-app.include_router(admin.router)

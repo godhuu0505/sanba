@@ -177,9 +177,9 @@ describe("SANBA design system", () => {
 // SANBA ブランドは全画面で常時表示する（2026-07 要望「どの画面でも SANBA ヘッダー」）。
 describe("AppHeader（SANBA ブランド常時表示）", () => {
   it("タイトル画面でもロゴ（SANBA）を併記する", () => {
-    render(<AppHeader title="管理の間" />);
+    render(<AppHeader title="問答" />);
     expect(screen.getByText("SANBA")).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "管理の間" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "問答" })).toBeTruthy();
   });
 
   it("タイトル無しでもロゴを出す。deprecated な brand 指定は無指定と同義（DOM へ流出しない）", () => {
