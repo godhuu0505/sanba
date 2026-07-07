@@ -60,6 +60,20 @@ locals {
     # count=0（未作成）のとき空文字にする（[0] 参照だと plan が落ちるため）。
     WORKER_URL        = join("", google_cloud_run_v2_service.worker[*].uri)
     WORKER_INVOKER_SA = google_service_account.worker.email
+    # GitHub App 連携 (ADR-0028)。秘匿物でない設定は平文 env。秘匿値 (private key /
+    # client secret) は api_secret_env 経由で SM から注入する。callback/return URL は
+    # 明示指定が無ければ domain の api/web ホストから導出する（GitHub App は実在の公開 URL
+    # を要求するため、domain 無効時は空 = 導出不能で連携はフェイルクローズ）。
+    GITHUB_APP_ENABLED   = tostring(var.github_app_enabled)
+    GITHUB_APP_ID        = var.github_app_id
+    GITHUB_APP_SLUG      = var.github_app_slug
+    GITHUB_APP_CLIENT_ID = var.github_app_client_id
+    GITHUB_APP_CALLBACK_URL = var.github_app_callback_url != "" ? var.github_app_callback_url : (
+      local.domain_enabled ? "https://${local.api_host}/api/github/link/callback" : ""
+    )
+    GITHUB_APP_WEB_RETURN_URL = var.github_app_web_return_url != "" ? var.github_app_web_return_url : (
+      local.domain_enabled ? "https://${local.web_host}/settings" : "${google_cloud_run_v2_service.web.uri}/settings"
+    )
   })
 }
 
