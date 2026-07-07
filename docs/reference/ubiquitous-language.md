@@ -102,7 +102,7 @@
 | 選択肢 | options / `DetectionOption` | 矛盾カードのボタン（`label` / `value`）。タップで `user.selection` を返す。 | [types.ts](../../apps/web/lib/realtime/types.ts) |
 | 解消 | resolution / `detection.resolved` | 検知が片付いた状態遷移。`user_selected`（ユーザー選択）／`agent_resolved`（自動解消）。 | [events.py](../../apps/agent/src/sanba_agent/events.py) |
 | 検知ボトムシート | detection sheet | 検知時だけ peek→展開でせり上がる最小割り込み UI（`hidden→peek→expanded→dismissed/resolved`）。 | [screens/04-conversation.md](screens/04-conversation.md) / [DetectionPin.tsx](../../apps/web/components/DetectionPin.tsx) |
-| 検知率 | detection rate | 抜け漏れ／矛盾を捉えた割合。製品価値＝主指標（言葉×言葉に限定、Before/After + Langfuse 回帰）。 | [ADR-0008](../adr/0008-product-concept.md) #6 / [ADR-0005](../adr/0005-llm-judge-eval-loop.md) |
+| 検知率 | detection rate | 抜け漏れ／矛盾を捉えた割合。製品価値＝主指標（言葉×言葉に限定、Before/After + CI 回帰）。 | [ADR-0008](../adr/0008-product-concept.md) #6 / [ADR-0005](../adr/0005-llm-judge-eval-loop.md) |
 
 ---
 
@@ -190,7 +190,7 @@
 | アクセスゲート状態 | access gate | ログイン／認可の許可状態（許可・要再認証・アクセス不可）。 | [ADR-0014](../adr/0014-admin-and-login-screens.md) / [design/README.md](../explanation/design-overview.md) |
 | PII マスク | `mask_pii` | 永続化・索引化の前に個人情報を伏せる処理。`mask_pii_before_index` で制御。 | [pii.py](../../packages/sanba_shared/src/sanba_shared/pii.py) / [security.md](security.md) |
 | 保持期間 | retention / TTL | 下書き要件は 30 日 TTL、`approved` は TTL 解除で保全（ADR-0014 §10/§11）。 | [ADR-0014](../adr/0014-admin-and-login-screens.md) |
-| 観測性 | observability | OTel で全処理を計測し、LLM 入出力は Langfuse にトレース（CLAUDE.md 原則3）。 | [architecture.md §1](architecture.md) / [events.py](../../apps/agent/src/sanba_agent/events.py) |
+| 観測性 | observability | OTel で全処理を計測しトレースは Cloud Trace へ、LLM 品質は構造化ログ→Cloud Monitoring（CLAUDE.md 原則3, ADR-0051）。 | [architecture.md §1](architecture.md) / [events.py](../../apps/agent/src/sanba_agent/events.py) |
 | LLM-as-a-judge | LLM-judge | セッションを LLM で採点（オンライン）＋ CI 回帰評価。検知率の回帰に使う。 | [ADR-0005](../adr/0005-llm-judge-eval-loop.md) |
 
 ---

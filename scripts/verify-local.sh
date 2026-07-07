@@ -60,7 +60,6 @@ if $FULL; then
   check "grafana"              "http://localhost:3001/api/health"        '"database"'
   check "loki"                 "http://localhost:3100/ready"
   check "tempo"                "http://localhost:3200/ready"
-  check "langfuse"             "http://localhost:3030/api/public/health"
   check "four-keys /metrics"   "http://localhost:9301/metrics"
 fi
 

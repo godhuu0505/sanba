@@ -8,7 +8,7 @@
    - 会話の即応性 → **Gemini Live (speech-to-speech)**。STT→LLM→TTS のパイプラインを介さず往復遅延を最小化。
    - 抜け漏れ検知・矛盾検知・専門深掘り → **ADK マルチエージェント**（多少のレイテンシ許容、品質重視）。
 2. 状態（セッション・確定要件）は**外部に永続化**し、ワーカーはステートレスに保つ（Cloud Run でスケール可能に）。
-3. すべての処理を **OpenTelemetry** で計測し、LLM 入出力は **Langfuse** にトレースする。
+3. すべての処理を **OpenTelemetry** で計測し、本番トレースは **Cloud Trace** へ直送する（ADR-0051）。
 4. 実行基盤は **Cloud Run**（GKE は見送り）、リアルタイム音声は **LiveKit Cloud**（自前 SFU を回避）。判断根拠は ADR-0006。
 
 ## 2. コンポーネント
@@ -19,12 +19,12 @@
 | **API** | LiveKit 参加トークン発行・セッション CRUD・成果物書き出し | FastAPI |
 | **Voice Agent Worker** | LiveKit ルームに「参加」し、Gemini Live で対話する司会者。画面共有/モック映像も受け取る（マルチモーダル, ADR-0004） | LiveKit Agents + `google.beta.realtime` |
 | **Video Analysis Worker** | アップロード動画を Cloud Tasks 経由で非同期解析し、grounding 索引に投入（ADR-0040） | FastAPI（Cloud Tasks push 受け口） |
-| **Evaluation** | セッションを LLM-as-a-judge で採点（オンライン）＋ CI 回帰（ADR-0005） | Gemini + Langfuse |
+| **Evaluation** | セッションを LLM-as-a-judge で採点（オンライン）＋ CI 回帰（ADR-0005） | Gemini（判定）+ 構造化ログ→Cloud Monitoring（ADR-0051） |
 | **ADK Agent Team** | 要件の構造化・矛盾検知・専門深掘り | Google ADK |
 | **Firestore** | セッション状態・確定要件・発話ログ | Firestore (emulator in dev) |
 | **Elasticsearch** | RAG 根拠付け・過去セッション検索（BM25 + kNN ハイブリッド） | Elasticsearch 8.x |
 | **Observability** | トレース（**現状 OTLP で送るのはこれのみ**）／メトリクス・ログ（下記） | トレース→OTel Collector→Tempo（ローカル）/ Cloud Trace（本番）。メトリクスは MeterProvider 未設定で現状 no-op、ログは structlog→stdout→Cloud Logging（Collector の Prometheus/Loki 受け口は用意済みだが未配線）。実態の詳細は [architecture-analysis.md §10](architecture-analysis.md) |
-| **Langfuse** | プロンプト管理・LLM評価・回帰テスト | Langfuse |
+| **品質可視化** | 採点スコアのログベースメトリクス + ダッシュボード（ADR-0051） | Cloud Logging → Cloud Monitoring |
 
 > 本章はコンポーネントの**設計上の役割**を述べる。実装で「いまどこまで配線されているか（AS-IS）」と
 > 利用中の Google Cloud / 外部サービスの配置・タイミングは [`architecture-analysis.md`](architecture-analysis.md) に
@@ -106,7 +106,7 @@ artifacts/{sessionId}           # 生成された要件ドキュメント (Cloud
 
 - **レイテンシ**: 音声往復 < 1.5s (P95)。Live API の barge-in 対応。
 - **可用性**: Cloud Run マルチリージョン想定。ワーカーはステートレス。
-- **コスト**: トークン/分課金を Langfuse + Cloud Billing で可視化。
+- **コスト**: トークン/分課金を Cloud Billing（予算アラート）+ Cloud Monitoring で可視化。
 - **セキュリティ**: 会話に PII が含まれうるため、Secret Manager・最小権限 SA・保存時暗号化。
 
 詳細な DevOps サイクルは [`devops.md`](../how-to/devops.md)。

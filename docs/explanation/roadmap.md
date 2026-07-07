@@ -8,7 +8,7 @@
 
 ## Phase 0 — 基盤
 - [x] モノレポ構成・設計ドキュメント・ADR
-- [x] docker compose（agent/api/web/observability/langfuse）
+- [x] docker compose（agent/api/web/observability）
 - [x] CI/CD・Terraform・可観測性スタックの雛形
 - [x] `.env.local` を設定して `just up` / `just up-full` が通ることを確認
 
@@ -19,7 +19,7 @@
 - [x] 確定要件を Firestore に保存し、Web に可視化
 - [x] 発話の出所メタ（participant identity）を最小配線し、確定要件に source として保持（ADR-0008。1:1 でも N:M 設計を示す）
 - [x] 要件ドキュメント（Markdown）の自動生成（ADR-0042 出力フォーマット）
-- [x] OTel トレース + Langfuse トレースが通る（メトリクス配線は一部 no-op。詳細は architecture-analysis §10）
+- [x] OTel トレースが Cloud Trace へ通る（品質スコアは構造化ログ→Cloud Monitoring。メトリクス配線は一部 no-op。詳細は architecture-analysis §10, ADR-0051）
 - [x] Cloud Run へデプロイ（最初の「とどける」）
 
 ## Phase 2 — 多人数（N:1）

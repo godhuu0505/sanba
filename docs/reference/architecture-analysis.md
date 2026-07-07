@@ -21,7 +21,7 @@
 - **AI は二経路切替**: 本番は **Vertex AI（キーレス・実行 SA の `aiplatform.user`）**、ローカルは **AI Studio（`GOOGLE_API_KEY`）**。
 - **公開は Global 外部 Application Load Balancer + Serverless NEG + Google 管理 SSL + Cloud DNS**（`https://youken.sanba.net`）。
 - **CI/CD は GitHub Actions + Workload Identity Federation（鍵レス）→ Artifact Registry → `gcloud run deploy`**。env/secret/scale は Terraform 管理。
-- **可観測性は OpenTelemetry を方針**とする。現状アプリが OTLP で送るのは**トレースのみ**（本番→Cloud Trace、ローカル→Collector→Tempo→Grafana）。メトリクスは MeterProvider 未設定で no-op、ログは stdout→Cloud Logging。**LLMOps は Langfuse**。
+- **可観測性は OpenTelemetry を方針**とする。現状アプリが OTLP で送るのは**トレースのみ**（本番→Cloud Trace、ローカル→Collector→Tempo→Grafana）。メトリクスは MeterProvider 未設定で no-op、ログは stdout→Cloud Logging。**LLMOps も Google Cloud ネイティブ**（品質スコアは構造化ログ→Cloud Logging/Cloud Monitoring、回帰評価は Gemini judge の CI データセット。ADR-0051）。
 - **外部コネクタ（GitHub 起票）は既定 OFF**。デモ経路に影響しない。
 
 ---
@@ -70,7 +70,6 @@ flowchart LR
   subgraph ext["🟩 外部連携 (任意/運用)"]
     GIS["Google Identity Services<br/>OIDC ログイン"]
     GH["GitHub Issues<br/>(コネクタ・既定OFF)"]
-    LF["Langfuse (LLMOps)"]
   end
 
   PM -->|HTTPS| LB
@@ -101,7 +100,6 @@ flowchart LR
   API --> ES
   API -. "確定要件起票" .-> GH
   AGENT -. "起票/根拠取得" .-> GH
-  AGENT -. "セッション採点" .-> LF
   API -->|id_token 検証| GIS
 ```
 
@@ -217,7 +215,7 @@ sequenceDiagram
         VA->>FS: 確定要件・発話・検知を upsert
         VA-->>LK: data channel で web へ差分 publish
     end
-    Note over VA,FS: room close 時に LLM-as-a-judge で採点 → Langfuse
+    Note over VA,FS: room close 時に LLM-as-a-judge で採点 → session_scored 構造化ログ（Cloud Logging→Cloud Monitoring, ADR-0051）
 ```
 
 **ポイント**: API は「トークン発行と認可の門番」。実際の音声ストリームは**ブラウザ ↔ LiveKit ↔ agent** で直接流れ、API は経由しない（低遅延の要）。
@@ -340,7 +338,7 @@ sequenceDiagram
 | **Cloud Storage** | 🟦 素材 | api | 画像/動画アップロード・削除時（`GCS_BUCKET` 設定時のみ） | ADC / 実行 SA（※現 Terraform にバケット・env・Storage 権限とも未定義） | in-memory dict フォールバック（＝既定挙動） |
 | **Google Identity** | 🟩 認証 | api（検証）/ web（取得） | セッション作成・join・/admin・/mine の各 API 入口 | OIDC id_token をサーバ検証 | `AUTH_DEV_BYPASS=true` で固定 dev identity |
 | **GitHub Issues** | 🟩 連携 | api(`/export`) / agent(grounding) | 確定要件の起票、README/Issue の根拠取り込み | PAT（`GITHUB_TOKEN`） | **既定 OFF**（デモ経路に無影響） |
-| **Langfuse** | 🟩 LLMOps | agent(evaluation) | room close 時のスコア記録 / プロンプト管理 | host + public/secret key | `get_langfuse()=None` でスキップ |
+| **Cloud Logging / Cloud Monitoring（LLM 品質）** | 🟦 LLMOps | agent(evaluation) | room close 時に `session_scored` 構造化ログを出力 → ログベースメトリクスで集計（ADR-0051） | ADC / 実行 SA（`logging.logWriter` / `monitoring.metricWriter`） | LLM 採点はヒューリスティックにフォールバック（ログ自体は常時出力） |
 | **OTel Collector → Cloud Ops** | 🟦/🟩 可観測 | agent / api | **現状は span（トレース）のみ**を OTLP 送信（設定時）。メトリクスは MeterProvider 未設定で no-op、ログは stdout→Cloud Logging 経由 | OTLP endpoint | endpoint 空なら送信スキップ |
 
 ### 7-2. 「会話 1 セッション」の時系列での外部サービス発火
@@ -356,10 +354,10 @@ sequenceDiagram
     Note over Setup: Google Identity(id_token検証) → LiveKit(token発行) → Firestore(session作成)
     Note over Conv: LiveKit(音声/映像/data) ⇄ Gemini Live(S2S) ⇄ ADK+Gemini推論<br/>Firestore(要件/発話/検知 upsert) / Elasticsearch(grounding) / Gemini Embedding
     Note over Asset: Gemini Vision(解析) → Elasticsearch(索引) → Firestore(メタ)<br/>[任意] Cloud Storage(保存) / LiveKit(進捗 publish)
-    Note over Fin: GitHub Issues(起票・既定OFF) / Langfuse(採点記録・任意) / OTel(span 送信・設定時)
+    Note over Fin: GitHub Issues(起票・既定OFF) / session_scored 構造化ログ(採点→Cloud Logging/Monitoring) / OTel span(Cloud Trace)
 ```
 
-**読み筋**: 外部サービスは「入口で認証（Google）」「会話中は常時リアルタイム（LiveKit + Gemini Live + Firestore + ES）」「素材投入時に同期解析（Vision + ES + Firestore。GCS 保存と LiveKit 進捗 publish は任意）」「締めで非同期連携（GitHub + Langfuse）」という**4 つのタイミング帯**に明確に分かれる。**Gemini Live を唯一の例外として**、外部依存はおおむね未設定時フォールバックを持ち、最小構成（`just up`）が鍵なしで**起動**する（ただし音声会話を実際に通すには Gemini の認証情報が必須）。
+**読み筋**: 外部サービスは「入口で認証（Google）」「会話中は常時リアルタイム（LiveKit + Gemini Live + Firestore + ES）」「素材投入時に同期解析（Vision + ES + Firestore。GCS 保存と LiveKit 進捗 publish は任意）」「締めで外部連携（GitHub 起票）と品質スコアの構造化ログ出力」という**4 つのタイミング帯**に明確に分かれる。**Gemini Live を唯一の例外として**、外部依存はおおむね未設定時フォールバックを持ち、最小構成（`just up`）が鍵なしで**起動**する（ただし音声会話を実際に通すには Gemini の認証情報が必須）。
 
 ---
 
@@ -401,7 +399,7 @@ flowchart LR
   DEV --> SEC["security.yml<br/>pip-audit / npm audit<br/>gitleaks / Trivy"]
   DEV --> CQL["codeql.yml"]
   DEV --> TF["terraform.yml<br/>fmt / validate / plan"]
-  DEV --> EVAL["llm-eval.yml<br/>ADK 回帰評価 (Langfuse データセット)"]
+  DEV --> EVAL["llm-eval.yml<br/>Gemini judge 回帰評価 (シナリオデータセット)"]
 
   MAIN["main へ merge"] --> DEPLOY["deploy.yml"]
   subgraph deploy["deploy.yml (鍵レス)"]
@@ -453,10 +451,10 @@ flowchart LR
   ROUTE -->|"本番(traces)"| CT
   app -.->|"stdout ログ"| CL
 
-  subgraph llmops["LLMOps"]
-    LF["🟩 Langfuse :3030<br/>(+ Postgres)"]
+  subgraph llmops["LLM 品質 (ADR-0051)"]
+    LBM["session_scored 構造化ログ<br/>→ ログベースメトリクス"] --> CMON["🟦 Cloud Monitoring<br/>品質ダッシュボード"]
   end
-  app -. "LLM 採点/プロンプト" .-> LF
+  app -. "LLM 採点 (session_scored)" .-> LBM
 
   subgraph dora["DORA (まわす)"]
     FK["four-keys collector :9301"] --> GRAF
@@ -468,7 +466,7 @@ flowchart LR
 | トレース | ✅ アプリ→OTLP span | OTel Collector → Tempo → Grafana | Cloud Trace |
 | メトリクス | ⚠️ カウンタ定義のみ（MeterProvider 未設定で no-op） | Collector に Prometheus 受け口はあるが未送信 | `metricWriter` 権限はあるが未送信（将来） |
 | ログ | ✅ structlog→stdout | docker logs（Collector の Loki 受け口は未送信） | Cloud Logging（自動収集）+ LB アクセスログ |
-| LLM 品質 | ✅（鍵設定時） | Langfuse（self-host v2 + Postgres） | Langfuse |
+| LLM 品質 | ✅ `session_scored` 構造化ログ | docker logs（stdout） | Cloud Logging→ログベースメトリクス→Cloud Monitoring |
 | DORA | ✅ | four-keys collector → Grafana | four-keys（GitHub API 読み） |
 
 > つまり「OpenTelemetry 一本化」は**方針**であり、現状の実装で OTLP を通っているのはトレースのみ。メトリクス/ログの OTLP 配線は今後の課題（Collector・IAM 側の受け皿は先に用意してある）。
@@ -554,7 +552,7 @@ flowchart LR
     DA --> DES["elasticsearch :9200"]
     DAG --> DES
     DA -. "GOOGLE_API_KEY (AI Studio)" .-> GEML["Gemini API"]
-    DTOOLS["overlay: otel/prom/loki/tempo/grafana<br/>langfuse/four-keys"]
+    DTOOLS["overlay: otel/prom/loki/tempo/grafana<br/>four-keys"]
   end
 
   subgraph prod["☁️ 本番 (Cloud Run + Terraform)"]
@@ -597,7 +595,7 @@ flowchart LR
 | 音声 worker / function tools | `apps/agent/src/sanba_agent/main.py` |
 | ADK チーム呼び出し / ヒューリスティック | `apps/agent/src/sanba_agent/tools/analysis.py`, `agent_team.py` |
 | RAG grounding（ES + embedding） | `apps/agent/src/sanba_agent/retrieval.py` |
-| LLM 採点（Langfuse） | `apps/agent/src/sanba_agent/evaluation.py` |
+| LLM 採点（session_scored ログ） | `apps/agent/src/sanba_agent/evaluation.py` |
 | API 全エンドポイント | `apps/api/src/sanba_api/main.py` |
 | 画像解析（Gemini Vision） | `apps/api/src/sanba_api/vision.py` |
 | 素材保存（Cloud Storage） | `apps/api/src/sanba_api/storage.py` |
