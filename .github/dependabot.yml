@@ -23,11 +23,6 @@ updates:
     groups:
       npm-deps:
         patterns: ["*"]
-    ignore:
-      # ESLint 10 は eslint-config-next が依存する typescript-eslint v8 系と非互換
-      # （scopeManager.addGlobals 未実装でクラッシュ）。対応版リリース後に手動で更新する。
-      - dependency-name: eslint
-        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: github-actions
     directory: /

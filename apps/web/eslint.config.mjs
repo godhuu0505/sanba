@@ -1,7 +1,16 @@
 import next from "eslint-config-next";
+import * as espree from "espree";
 
 const eslintConfig = [
   ...next,
+  {
+    // eslint-config-next は非 TS ファイルに Next 同梱の babel eslint-parser を割り当てるが、
+    // その parser が返す ScopeManager には ESLint 10 が要求する addGlobals が無く、
+    // JS/MJS 設定ファイルの lint で TypeError になる。これらは Next 固有の解析が不要なので
+    // 既定の espree に差し戻す（ESLint 10 互換の ScopeManager が使われる）。
+    files: ["**/*.{js,mjs,cjs}"],
+    languageOptions: { parser: espree },
+  },
   {
     // eslint-plugin-react の React バージョン自動検出を避けるため明示する（検出経路は
     // ESLint のバージョン差でクラッシュしやすい）。使用中の React に固定。
