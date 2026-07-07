@@ -23,13 +23,35 @@ import { SessionView } from "./SessionView";
 // （韓国語/中国語化・変な文字）を入口で減らす。ノイズの主対策はエージェント側の Krisp BVC に
 // 集約し、ブラウザ側の voiceIsolation（強いノイズ分離）は重ねない: BVC と二重にかけると
 // 対応ブラウザで音声が過処理され単語落ち・発話検出悪化を招くため（LiveKit 推奨）。
+const MIC_CONSTRAINTS = {
+  autoGainControl: true,
+  echoCancellation: true,
+  noiseSuppression: true,
+} satisfies MediaTrackConstraints;
+
 const ROOM_OPTIONS: RoomOptions = {
-  audioCaptureDefaults: {
-    autoGainControl: true,
-    echoCancellation: true,
-    noiseSuppression: true,
-  },
+  audioCaptureDefaults: MIC_CONSTRAINTS,
 };
+
+// LiveKitRoom の onError には接続失敗もマイク取得失敗も流れてくる（audio prop の
+// setMicrophoneEnabled が SignalConnected 後に getUserMedia を呼び、失敗すると再スローされ
+// onError に届く）。しかも onError は onMediaDeviceFailure の後に発火して failKind を上書きする
+// ため、マイク拒否が「接続失敗」に化けていた。エラー名で取得系を判別し、正しい復帰導線
+// （マイク設定 or 再接続）へ振り分ける。
+const MIC_ERROR_NAMES = new Set([
+  "NotAllowedError",
+  "PermissionDeniedError",
+  "NotFoundError",
+  "NotReadableError",
+  "OverconstrainedError",
+  "SecurityError",
+  "AbortError",
+]);
+
+function classifyStartError(error: unknown): StartFailKind {
+  const name = (error as { name?: unknown } | null)?.name;
+  return typeof name === "string" && MIC_ERROR_NAMES.has(name) ? "mic" : "connect";
+}
 
 type StartPhase = "intro" | "permission" | "entering" | "failed";
 
@@ -67,6 +89,25 @@ export function ConversationStart({
   const [phase, setPhase] = useState<StartPhase>("intro");
   const [failKind, setFailKind] = useState<StartFailKind>("connect");
 
+  // 03-2 の「マイクを許可する」タップ（＝ユーザー操作）の中で getUserMedia を呼び、OS 許可を
+  // 先に確定してから接続フェーズへ進む。iOS Safari は getUserMedia を transient activation 内で
+  // 呼ぶことを要求するが、LiveKit の音声取得はシグナル接続後（非同期）に走るため操作文脈を外れて
+  // 拒否され、スマホで開始できず「接続失敗」に見えていた。ここで取得したストリームは即解放する:
+  // 許可はページ存続中は保持され、LiveKit の再取得はプロンプト無しで通る。
+  async function requestMicAndEnter() {
+    try {
+      const media = navigator.mediaDevices;
+      if (!media?.getUserMedia) throw new Error("mediaDevices unavailable");
+      const stream = await media.getUserMedia({ audio: MIC_CONSTRAINTS });
+      for (const track of stream.getTracks()) track.stop();
+      setPhase("entering");
+    } catch (e) {
+      console.error("mic permission request failed", e);
+      setFailKind("mic");
+      setPhase("failed");
+    }
+  }
+
   if (phase === "intro") {
     return (
       <StartIntro
@@ -84,7 +125,7 @@ export function ConversationStart({
   if (phase === "permission") {
     return (
       <MicPermissionModal
-        onAllow={() => setPhase("entering")}
+        onAllow={requestMicAndEnter}
         onDismiss={() => setPhase("intro")}
       />
     );
@@ -107,8 +148,10 @@ export function ConversationStart({
       options={ROOM_OPTIONS}
       style={{ height: "100dvh" }}
       onError={(e) => {
-        console.error("livekit connect failed", e);
-        setFailKind("connect");
+        console.error("livekit start failed", e);
+        // 接続失敗と、接続後のマイク取得失敗（NotAllowedError 等）が同じ onError に届く。
+        // 誤って「接続失敗」に化けさせず、原因に応じた復帰導線を出す。
+        setFailKind(classifyStartError(e));
         setPhase("failed");
       }}
       onMediaDeviceFailure={() => {
@@ -273,8 +316,12 @@ export function StartIntro({
 }
 
 export interface MicPermissionModalProps {
-  /** マイク許可へ（OS プロンプトを呼ぶ＝音声で接続）。 */
-  onAllow: () => void;
+  /**
+   * マイク許可へ。OS の許可プロンプト（getUserMedia）はこのタップ＝ユーザー操作の中で
+   * 呼ぶ必要がある（iOS Safari の transient activation 要件）。非同期を許容し、解決までは
+   * 二重タップを抑止する。
+   */
+  onAllow: () => void | Promise<void>;
   /** 暗幕タップ等で閉じ、03-0 へ戻す。 */
   onDismiss: () => void;
 }
@@ -284,6 +331,18 @@ export interface MicPermissionModalProps {
  * （Figma `139:156`）。暗幕＋中央モーダル。表示は古語、操作の aria-label は現代語（ADR-0017）。
  */
 export function MicPermissionModal({ onAllow, onDismiss }: MicPermissionModalProps) {
+  const [requesting, setRequesting] = useState(false);
+  // 許可タップの中で OS プロンプトを待つ間は再タップを抑止する。成功/失敗のいずれでも
+  // 呼び出し側がフェーズを遷移させモーダルを畳むため、通常は解除するまでもなく消える。
+  async function handleAllow() {
+    if (requesting) return;
+    setRequesting(true);
+    try {
+      await onAllow();
+    } finally {
+      setRequesting(false);
+    }
+  }
   return (
     <Screen className="relative px-4 py-3">
       {/* 暗幕（scrim）。タップで閉じて 03-0 へ戻る。 */}
@@ -315,8 +374,15 @@ export function MicPermissionModal({ onAllow, onDismiss }: MicPermissionModalPro
             問答には端末のマイクを用います。使用を許可してください。
           </p>
           <div className="mt-1 flex w-full flex-col gap-[8px]">
-            <Button variant="gold" size="lg" block onClick={onAllow} aria-label="マイクの使用を許可する">
-              マイクを許可する
+            <Button
+              variant="gold"
+              size="lg"
+              block
+              onClick={handleAllow}
+              disabled={requesting}
+              aria-label="マイクの使用を許可する"
+            >
+              {requesting ? "許可を確認しています…" : "マイクを許可する"}
             </Button>
           </div>
         </div>
