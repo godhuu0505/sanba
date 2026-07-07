@@ -225,3 +225,37 @@ class TestGuardedGenerateReply:
         session = _FakeSession(raises=TimeoutError("generation_created timed out"))
         ok = await guarded_generate_reply(session, session_id="s1", kind="opening")
         assert ok is False
+
+
+class TestSelectExporterKind:
+    # ADR-0051: トレースのエクスポータ選択（純関数・ネットワーク不要）。
+    def test_otlp_endpoint_takes_precedence(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from sanba_agent.observability import select_exporter_kind
+
+        monkeypatch.setattr(settings, "otel_exporter_otlp_endpoint", "http://collector:4317")
+        monkeypatch.setattr(settings, "google_genai_use_vertexai", True)
+        assert select_exporter_kind() == "otlp"
+
+    def test_cloud_trace_when_vertex_and_no_endpoint(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from sanba_agent.observability import select_exporter_kind
+
+        monkeypatch.setattr(settings, "otel_exporter_otlp_endpoint", "")
+        monkeypatch.setattr(settings, "otel_traces_to_cloud_trace", True)
+        monkeypatch.setattr(settings, "google_genai_use_vertexai", True)
+        assert select_exporter_kind() == "cloud_trace"
+
+    def test_disabled_locally_without_vertex(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # ローカル/テスト（use_vertexai=false）は直送しない（ADC が無く失敗するため）。
+        from sanba_agent.observability import select_exporter_kind
+
+        monkeypatch.setattr(settings, "otel_exporter_otlp_endpoint", "")
+        monkeypatch.setattr(settings, "google_genai_use_vertexai", False)
+        assert select_exporter_kind() == "disabled"
+
+    def test_cloud_trace_can_be_disabled_by_flag(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from sanba_agent.observability import select_exporter_kind
+
+        monkeypatch.setattr(settings, "otel_exporter_otlp_endpoint", "")
+        monkeypatch.setattr(settings, "otel_traces_to_cloud_trace", False)
+        monkeypatch.setattr(settings, "google_genai_use_vertexai", True)
+        assert select_exporter_kind() == "disabled"

@@ -1131,6 +1131,29 @@ class SANBAAgent(Agent):
         )
 
     def _grounded_search(self, query: str) -> dict[str, Any]:
+        """grounding 検索を span で計測して返す（ADR-0051）。
+
+        属性は非 PII（session/hits/filtered）のみで、クエリ本文は Cloud Trace に載せない。
+        to_thread 越し（ワーカースレッド）に呼ばれるため独立スパンになる（会話ターンには入れ子で
+        ぶら下がらないが、session 属性で絞り込める）。
+        """
+        tracer = get_tracer("sanba.voice")
+        span_cm = (
+            tracer.start_as_current_span("sanba.grounding.search")
+            if tracer is not None
+            else contextlib.nullcontext()
+        )
+        with span_cm as span:
+            result = self._grounded_search_inner(query)
+            if span is not None:
+                span.set_attribute("sanba.session_id", self._session_id)
+                span.set_attribute("sanba.grounding.hits", len(result["passages"]))
+                span.set_attribute(
+                    "sanba.grounding.output_filtered", not self._allow_repo_grounding
+                )
+            return result
+
+    def _grounded_search_inner(self, query: str) -> dict[str, Any]:
         """検索と出力制御の一体経路（同期）。ツールと先読みの両方が必ずここを通る。
 
         ADR-0037 決定2: 先読み用の別経路を作らないことで、キャッシュには出力制御
