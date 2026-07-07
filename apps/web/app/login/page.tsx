@@ -59,7 +59,13 @@ export default function LoginPage() {
     // （共有 credential を clear＋auto_select 無効化）。元ページ側で signOut しないことで
     // authGate の誤リダイレクトと競合しない。明示ログアウトなので他タブへも伝播する
     // （既定 broadcast:true / 要件⑤ / ADR-0030）。
-    if (loggedOutRef.current) signOut();
+    if (loggedOutRef.current) {
+      signOut();
+      // ?loggedOut=1 を URL から剥がす。剥がさないと、同一タブが後からフル再読み込み（モバイルの
+      // タブ復元・リロード・共有リンク）されるたびに signOut のウィンドウへ再入する（ADR-0052 の
+      // auto_select 抑止と合わせた二重の防御）。remount を避けるため History API のみで書き換える。
+      window.history.replaceState(window.history.state, "", "/login");
+    }
   }, [signOut]);
 
   // ログイン後はホーム（or ?next）へ即送る（本人確認の中間画面は廃止 / ADR-0052）。
@@ -87,9 +93,14 @@ export default function LoginPage() {
   if (!ready || loggedIn) return <BrandSplash />;
 
   // ── 未認証: サインイン（Google のみ＝メール/パスワード欄は持たない）──────────────
+  // main ランドマークに "ログイン" と名前を付け、見出しがブランド名「SANBA」でも支援技術から
+  // 画面の目的が分かるようにする（他画面と同じく main を持たせる / ADR-0052）。
   return (
     <Screen className="items-center justify-center px-6 py-10">
-      <div className="flex w-full max-w-xs flex-col items-center gap-9 text-center">
+      <main
+        aria-label="ログイン"
+        className="flex w-full max-w-xs flex-col items-center gap-9 text-center"
+      >
         <div className="flex flex-col items-center gap-4">
           {/* SANBA マーク（大）。隣の見出しがブランド名を担うため装飾扱い。 */}
           <BrandMark className="h-24 w-auto" aria-hidden />
@@ -119,7 +130,7 @@ export default function LoginPage() {
               : "Google アカウントで本人確認します。メールアドレスとパスワードの入力は不要です。"}
           </p>
         </div>
-      </div>
+      </main>
     </Screen>
   );
 }

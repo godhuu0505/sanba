@@ -268,6 +268,13 @@ export function useGoogleAuth(): GoogleAuth {
   // upgradeNonce は initializeGis → onCredential に依存するため、直接参照すると循環する。
   const upgradeNonceRef = useRef<() => Promise<void>>(async () => {});
 
+  // auto_select（静かな再取得）を抑止する意図を保持するフラグ（ADR-0030 / ADR-0052）。
+  // ログアウト時、GIS 未ロードだと resetLocalAuth の disableAutoSelect() が空振りするため
+  // （cold/フルロードの /login?loggedOut=1）、意図だけをここに残し、GIS が後から利用可能に
+  // なった初期化でも auto_select:false で立ち上げて「ログアウトしたのに静かに再ログイン」する
+  // レースを断つ。明示サインイン（credential 到着）で false に戻す。
+  const suppressAutoSelectRef = useRef(false);
+
   // ── Google ドライブ（drive.file）の同意・アクセストークン ─────────────────
   // ADR-0014 §7 の方針どおりメモリのみ（localStorage に置かない）。expiry を控え、
   // 失効後の取り込みでは requestDriveAccess が静かに再取得（同意済みなら即時）する。
@@ -325,6 +332,9 @@ export function useGoogleAuth(): GoogleAuth {
 
   const onCredential = useCallback((res: CredentialResponse) => {
     if (res.credential) {
+      // 認証が成立したので auto_select 抑止（ログアウト意図）は解除する。以後のリロード復元・
+      // 能動リフレッシュは通常どおり auto_select を使う（ADR-0052）。
+      suppressAutoSelectRef.current = false;
       setCredential(res.credential);
       // 次回のフルロードで「復元を待つ価値がある」ことを残す（トークンは含めない）。
       writeAuthHint(true);
@@ -361,7 +371,14 @@ export function useGoogleAuth(): GoogleAuth {
   // 分岐ごとに複製すると設定が食い違い「初回とリフレッシュ後で挙動が違う」バグの温床になる）。
   const initializeGis = useCallback(
     (id: GoogleIdentity, nonce?: string) => {
-      id.initialize({ client_id: CLIENT_ID, callback: onCredential, auto_select: true, nonce });
+      // ログアウト直後（suppressAutoSelectRef）は auto_select を切る。GIS 未ロード中の signOut で
+      // disableAutoSelect() が空振りしても、この初期化で静かな再取得が走らないようにする（ADR-0052）。
+      id.initialize({
+        client_id: CLIENT_ID,
+        callback: onCredential,
+        auto_select: !suppressAutoSelectRef.current,
+        nonce,
+      });
     },
     [onCredential],
   );
@@ -468,6 +485,10 @@ export function useGoogleAuth(): GoogleAuth {
       // へ戻った際、Home は buttonRef を描画しないが One Tap の auto_select で
       // 直前セッションの credential を再取得できる必要がある (ADR-0014 §7)。
       initializeGis(id, nonce);
+      // ログアウト意図が残っている場合は、この初期化のタイミングで disableAutoSelect() を確実に
+      // 発火させ、g_state（GIS 側のログアウト痕跡）を残す。cold load で signOut が空振りしても、
+      // 以後のリロードで GIS 自身が auto_select を抑止する（ADR-0052 / P0 レース対策）。
+      if (suppressAutoSelectRef.current) id.disableAutoSelect();
       if (buttonRef.current) {
         // 意匠は ADR-0052（ADR-0019 のボタン意匠を置換）: 白い紙面（ADR-0025）に馴染む
         // Google 承認バリアント outline（白系）をそのまま中央に置く。金彩フレームは廃止した
@@ -551,6 +572,10 @@ export function useGoogleAuth(): GoogleAuth {
     // 復活する経路は無い。upgrade の単発ガードは次のログインのために倒し直す。
     setAuthNonce(null);
     upgradeAttemptedRef.current = false;
+    // auto_select 抑止の意図を残す。GIS がロード済みなら即 disableAutoSelect()、未ロードなら
+    // 空振りするが、次の初期化（setup / initializeGis）が suppressAutoSelectRef を見て確実に
+    // 無効化する（cold load の /login?loggedOut=1 で静かに再ログインするレースを断つ / ADR-0052）。
+    suppressAutoSelectRef.current = true;
     if (!devMode) window.google?.accounts.id.disableAutoSelect();
   }, [devMode]);
 
