@@ -10,10 +10,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 
-import { AppHeader, Button, Chip, Screen } from "@/components/sanba";
+import { Button, Chip } from "@/components/sanba";
+import { AccountMenu } from "@/components/AccountMenu";
+import { AppShell } from "@/components/AppShell";
 import { RequirementsScrollList } from "@/components/RequirementsScrollList";
 import { authGate } from "@/components/RequireAuth";
-import { SideMenu } from "@/components/SideMenu";
 import {
   ApiError,
   fetchMySessionRequirements,
@@ -102,9 +103,13 @@ export default function PastRequirementsPage() {
   if (gate) return gate;
 
   return (
-    <Screen className="sanba-scroll">
-      <AppHeader back onBack={() => router.push("/")} title="要件絵巻" right={<SideMenu />} />
-      <main className="mx-auto flex w-full max-w-md flex-col gap-3 px-4 pb-10 pt-1">
+    <AppShell
+      current="results"
+      title="要件絵巻"
+      onBack={() => router.push("/results")}
+      headerRight={<AccountMenu profile={auth.profile} />}
+    >
+      <div className="mx-auto flex w-full max-w-md flex-col gap-3 px-4 pb-10 pt-3">
         {load.state === "loading" && (
           <p className="px-1 py-3 text-[13px] text-sanba-muted">読み込み中…</p>
         )}
@@ -216,7 +221,7 @@ export default function PastRequirementsPage() {
             </div>
           </>
         )}
-      </main>
-    </Screen>
+      </div>
+    </AppShell>
   );
 }

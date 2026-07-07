@@ -206,6 +206,32 @@ body {
   border-radius: 999px;
 }
 
+/* ページ遷移のさりげない導入（AppShell 本文）。フェードイン＋僅かな上げで、
+   サイドメニューからの遷移に連続感を与える。動きを抑える設定は尊重する。 */
+@keyframes sanba-page-enter {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.sanba-page-enter {
+  animation: sanba-page-enter 0.22s ease-out both;
+}
+
+/* スマホのサイドメニュー（オフキャンバス・ドロワー）の滑り込み。 */
+@keyframes sanba-drawer-in {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(0); }
+}
+.sanba-drawer-in {
+  animation: sanba-drawer-in 0.2s ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sanba-page-enter,
+  .sanba-drawer-in {
+    animation: none;
+  }
+}
+
 /* 集音中の波形バーの息づかい。各バーに animation-delay をずらして当てる。 */
 @keyframes sanba-wave {
   0%, 100% { transform: scaleY(0.45); }

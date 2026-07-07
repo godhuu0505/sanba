@@ -27,18 +27,13 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
 import {
-  AppHeader,
   Button,
   Card,
   Chip,
   Field,
   Figure,
   Input,
-  ListRow,
-  Screen,
   Select,
-  SessionHistoryList,
-  type SessionHistoryItem,
   Textarea,
 } from "@/components/sanba";
 import {
@@ -51,7 +46,6 @@ import {
   createSession,
   fetchGithubRepos,
   fetchMyProducts,
-  fetchMySessions,
   type GithubRepos,
   joinSession,
   listGithubBranches,
@@ -64,8 +58,8 @@ import { AUDIENCE_LABELS } from "../lib/audience";
 import { useAuth } from "../lib/auth";
 import { importDriveFile, isDriveConfigured, openDrivePicker } from "../lib/googleDrive";
 import { AccountMenu } from "./AccountMenu";
+import { AppShell } from "./AppShell";
 import { ConversationStart } from "./ConversationStart";
-import { SideMenu } from "./SideMenu";
 import { MemberInviteNotices } from "./MemberInviteNotices";
 import {
   MaterialSourceSheet,
@@ -142,17 +136,6 @@ function FieldBadge({ required }: { required?: boolean }) {
   );
 }
 
-// ISO 8601 の作成時刻を履歴リスト表示用の日付（YYYY/MM/DD）へ整形する。
-// パースできない値は空文字にし、行は出すが日付欄は空にする（壊れた値で落とさない）。
-function formatSessionDate(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}/${m}/${day}`;
-}
-
 type Step = "home" | "prepare";
 
 // 入口フロー本体。初期ステップはマウント元のルートが決める（"/" = home /
@@ -193,8 +176,6 @@ export default function EntryFlow({
   const [uploadedNames, setUploadedNames] = useState<string[]>([]);
   const [uploadFailedCount, setUploadFailedCount] = useState(0);
   const fileInput = useRef<HTMLInputElement>(null);
-  // ホーム「過去の要件を見る」履歴リストの中身。取得できるまでは空 = 空状態。
-  const [history, setHistory] = useState<SessionHistoryItem[]>([]);
   // 連携リポジトリ（任意 / ADR-0027）。空文字 = 連携しない。
   const [githubRepo, setGithubRepo] = useState("");
   // リポジトリ候補（GET /api/github/repos）。null = 「未取得」（取得前・取得中）で、
@@ -273,35 +254,6 @@ export default function EntryFlow({
   const selectedProduct = productId
     ? (products ?? []).find((p) => p.id === productId)
     : undefined;
-
-  // 本人のセッション履歴を取得して履歴リストへ供給する。ログイン済みのときだけ叩き、
-  // 失敗時は空状態を維持する（履歴は補助情報なので本流＝壁打ち開始は止めない）。idToken が
-  // 変わったら取り直す。アンマウント/再取得時の遅延解決は cancelled で握りつぶす。
-  useEffect(() => {
-    if (!auth.loggedIn) {
-      setHistory([]);
-      return;
-    }
-    let cancelled = false;
-    fetchMySessions(auth.credential)
-      .then((sessions) => {
-        if (cancelled) return;
-        setHistory(
-          sessions.map((s) => ({
-            id: s.id,
-            title: s.title,
-            date: formatSessionDate(s.created_at),
-          })),
-        );
-      })
-      .catch(() => {
-        // 取得失敗（ネットワーク/401 等）は空状態のまま据え置く（UX を止めない）。
-        if (!cancelled) setHistory([]);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [auth.loggedIn, auth.credential]);
 
   // 連携リポジトリの候補を取得する（ADR-0027）。02 準備に入るまで叩かない（// ホーム/履歴閲覧だけで共有トークンの /user/repos 全ページ取得を発火させ、GitHub
   // レート制限と API ワーカー時間を浪費しない）。取得済みなら再取得しない。
@@ -770,13 +722,13 @@ export default function EntryFlow({
       !driveBusy &&
       repoChoices !== null;
     return (
-      <Screen className="px-4 py-3">
-        <AppHeader
-          title="セッション準備"
-          onBack={() => navigateStep("home")}
-          right={<SideMenu current="prepare" />}
-        />
-        <main className="mx-auto flex w-full max-w-[480px] flex-1 flex-col gap-[18px] pt-2">
+      <AppShell
+        current="home"
+        title="セッション準備"
+        onBack={() => navigateStep("home")}
+        headerRight={<AccountMenu profile={auth.profile} />}
+      >
+        <div className="mx-auto flex w-full max-w-[480px] flex-col gap-[18px] px-4 py-4">
           {/* どのアプリでセッション準備を進めているかを常に示す（ADR-0044）。選択は 01 ホームで
               済ませてくる（選択 UI はここに置かない）。候補取得前（直リンク直後）は確認中を出し、
               settle 後も未確定なら上の effect が 01 へ戻す。 */}
@@ -1068,7 +1020,7 @@ export default function EntryFlow({
             )}
             {error && <p className="text-[12px] text-sanba-rec-text">{error}</p>}
           </div>
-        </main>
+        </div>
 
         {/* 資料の追加方法シート（再利用）。準備画面は LiveKit ルーム外のため
             カメラ/画面共有ハンドラは渡さない＝アップロード/Drive のみ。Drive は drive.file +
@@ -1087,28 +1039,19 @@ export default function EntryFlow({
             error={attachError}
           />
         )}
-      </Screen>
+      </AppShell>
     );
   }
 
   // ── 01 ホーム ─────────────────────────────────────────────────────────
-  // Figma 正本（40:2）に *実績(stat)カード* は無い。ヒーロー＋一語 CTA に加え、
-  // 正本 99:3「過去の要件を見る」履歴リスト（stat カードとは別物）を下に置く。
-  // 中身は本人のセッション一覧 API（GET /api/sessions/mine）から供給する。0 件や
-  // 未ログイン・取得失敗時は SessionHistoryList が空状態の文言を出す。
-  // 対象アプリの選択はここが正本（ADR-0044）: 選べるまで CTA は活性化しない。
+  // Figma 正本（40:2）を踏まえつつ、遷移導線はサイドメニューへ集約した（要望 2026-07）。
+  // ホームは「壁打ちを始める」枠だけを上下中央に据える。過去の要件一覧・アプリ管理は
+  // サイドメニュー（AppShell）から辿る。対象アプリの選択はここが正本（ADR-0044）:
+  // 選べるまで CTA は活性化しない。
   return (
-    <Screen className="px-4 py-3">
-      <AppHeader
-        brand
-        right={
-          <div className="flex items-center gap-[2px]">
-            <SideMenu current="home" />
-            <AccountMenu profile={auth.profile} />
-          </div>
-        }
-      />
-      <main className="mx-auto flex w-full max-w-[480px] flex-1 flex-col gap-[18px] pt-3">
+    <AppShell current="home" headerRight={<AccountMenu profile={auth.profile} />}>
+      {/* 「壁打ちを始める」枠を上下中央に据える（要望 2026-07）。m-auto で縦横中央寄せ。 */}
+      <div className="m-auto flex w-full max-w-[480px] flex-col gap-[18px] px-4 py-6">
         {/* 自分宛のメンバー招待の通知（ADR-0036 決定3）。無ければ何も出ない。 */}
         <MemberInviteNotices />
         <Card>
@@ -1183,17 +1126,7 @@ export default function EntryFlow({
             </p>
           )}
         </Card>
-        <SessionHistoryList items={history} />
-        {/* アプリ管理（ADR-0031）への導線。深掘りリンクの発行・repo 紐づけの入口。 */}
-        <ListRow
-          asChild
-          icon={<Package size={17} aria-hidden />}
-          title="アプリ管理"
-          subtitle="深掘りリンクの発行・リポジトリの紐づけ"
-        >
-          <Link href="/products" aria-label="アプリ管理へ" />
-        </ListRow>
-      </main>
-    </Screen>
+      </div>
+    </AppShell>
   );
 }

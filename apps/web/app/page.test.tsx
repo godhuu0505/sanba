@@ -262,59 +262,21 @@ describe("入口フロー（#140）", () => {
     ).toBeTruthy();
   });
 
-  it("01 ホームはヒーロー下に「過去の要件を見る」見出しと空状態の文言を出す（#215）", () => {
+  it("01 ホームは過去の要件一覧をページ内に持たない（サイドメニューへ移設 / 2026-07）", () => {
+    authState.loggedIn = true;
+    authState.credential = "idtok";
     render(<Home />);
-    expect(screen.getByRole("heading", { name: "過去の要件を見る" })).toBeTruthy();
-    // 未ログインなので履歴は取得しない＝空状態。遷移リンクは出さない。
-    expect(screen.getByText(/過去の要件はまだございません/)).toBeTruthy();
+    // 履歴リストはホームから外し、専用画面 /results（サイドメニュー導線）へ移した。
+    expect(screen.queryByRole("heading", { name: "過去の要件を見る" })).toBeNull();
+    // ホームでは履歴 API を叩かない（一覧は /results が担う）。
     expect(fetchMySessions).not.toHaveBeenCalled();
-  });
-
-  // ── 01 履歴リスト結線 ─────────────────────────────
-  it("ログイン済みなら本人のセッション履歴を取得し、標題と日付を一覧表示する（#250）", async () => {
-    authState.loggedIn = true;
-    authState.credential = "idtok";
-    fetchMySessions.mockResolvedValueOnce([
-      {
-        id: "sess-1",
-        title: "新機能要件定義",
-        created_at: "2024-06-20T03:00:00Z",
-        status: "active",
-        finalized: false,
-      },
-    ]);
-    render(<Home />);
-    // idToken を渡して取得する（ADR-0012）。
-    await waitFor(() => expect(fetchMySessions).toHaveBeenCalledWith("idtok"));
-    expect(await screen.findByText("新機能要件定義")).toBeTruthy();
-    // 日付は YYYY/MM/DD へ整形して表示する（タイムゾーン差を避け書式のみ検証）。
-    expect(screen.getByText(/^\d{4}\/\d{2}\/\d{2}$/)).toBeTruthy();
-    // 行は過去要件の絵巻閲覧画面（/results/{id} / ADR-0045）への遷移リンクになる。
-    expect(screen.getByRole("link", { name: /新機能要件定義/ }).getAttribute("href")).toBe(
-      "/results/sess-1",
+    // サイドメニューから過去の要件一覧・アプリ管理へ辿れる。
+    expect(screen.getByRole("link", { name: "過去の要件一覧" }).getAttribute("href")).toBe(
+      "/results",
     );
-    // 空状態の文言は出ない。
-    expect(screen.queryByText(/過去の要件はまだございません/)).toBeNull();
-  });
-
-  it("履歴が 0 件なら空状態の文言を維持する（#250）", async () => {
-    authState.loggedIn = true;
-    authState.credential = "idtok";
-    fetchMySessions.mockResolvedValueOnce([]);
-    render(<Home />);
-    await waitFor(() => expect(fetchMySessions).toHaveBeenCalled());
-    expect(screen.getByText(/過去の要件はまだございません/)).toBeTruthy();
-  });
-
-  it("履歴取得が失敗しても空状態を維持し、ホームは壊れない（#250）", async () => {
-    authState.loggedIn = true;
-    authState.credential = "idtok";
-    fetchMySessions.mockRejectedValueOnce(new Error("fetch my sessions failed: 500"));
-    render(<Home />);
-    await waitFor(() => expect(fetchMySessions).toHaveBeenCalled());
-    expect(screen.getByText(/過去の要件はまだございません/)).toBeTruthy();
-    // 本流（壁打ち開始 CTA）は出続ける。
-    expect(screen.getByText("＋ 壁打ちを始める")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "アプリ管理" }).getAttribute("href")).toBe(
+      "/products",
+    );
   });
 
   it("CTA で 02 準備へ遷移し、役割の既定が利用者", async () => {
@@ -499,7 +461,7 @@ describe("入口フロー（#140）", () => {
     authState.loggedIn = true;
     render(<Home />);
     // ホーム（01）では叩かない = /user/repos 全ページ取得を無駄に発火させない。
-    await waitFor(() => expect(fetchMySessions).toHaveBeenCalled());
+    await waitFor(() => expect(fetchMyProducts).toHaveBeenCalled());
     expect(fetchGithubRepos).not.toHaveBeenCalled();
     await clickStartCta();
     await waitFor(() => expect(fetchGithubRepos).toHaveBeenCalledTimes(1));

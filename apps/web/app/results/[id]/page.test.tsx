@@ -135,10 +135,10 @@ describe("過去要件の絵巻閲覧画面（/results/[id]）", () => {
     await waitFor(() => expect(screen.getByText("新機能要件定義")).toBeTruthy());
   });
 
-  it("戻るはホーム / へ送る", async () => {
+  it("戻るは過去の要件一覧 /results へ送る", async () => {
     render(<PastRequirementsPage />);
     await waitFor(() => expect(screen.getByText("新機能要件定義")).toBeTruthy());
     fireEvent.click(screen.getByRole("button", { name: "戻る" }));
-    expect(push).toHaveBeenCalledWith("/");
+    expect(push).toHaveBeenCalledWith("/results");
   });
 });

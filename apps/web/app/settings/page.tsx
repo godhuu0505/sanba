@@ -10,16 +10,15 @@
 import { useRouter } from "next/navigation";
 
 import { AccountMenu } from "@/components/AccountMenu";
+import { AppShell } from "@/components/AppShell";
 import { GitHubLinkCard } from "@/components/GitHubLinkCard";
 import { authGate } from "@/components/RequireAuth";
 import {
-  AppHeader,
   Avatar,
   Button,
   Card,
   CardTitle,
   Divider,
-  Screen,
 } from "@/components/sanba";
 import { useAuth } from "@/lib/auth";
 
@@ -48,13 +47,12 @@ export default function SettingsPage() {
   }
 
   return (
-    <Screen className="px-4 py-3 sanba-scroll">
-      <AppHeader
-        title="アカウント設定"
-        onBack={() => router.push("/")}
-        right={<AccountMenu profile={profile} hideSettings />}
-      />
-      <main className="mx-auto flex w-full max-w-[480px] flex-1 flex-col gap-[18px] pt-2">
+    <AppShell
+      title="アカウント設定"
+      onBack={() => router.push("/")}
+      headerRight={<AccountMenu profile={profile} hideSettings />}
+    >
+      <div className="mx-auto flex w-full max-w-[480px] flex-col gap-[18px] px-4 py-4">
         {/* プロフィール表示（装飾目的。認証の真偽は API 側が源泉）。 */}
         <Card>
           <CardTitle>プロフィール</CardTitle>
@@ -106,7 +104,7 @@ export default function SettingsPage() {
             ⎋ ログアウト
           </Button>
         </Card>
-      </main>
-    </Screen>
+      </div>
+    </AppShell>
   );
 }
