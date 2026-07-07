@@ -20,11 +20,6 @@ const ROOM_OPTIONS: RoomOptions = {
   audioCaptureDefaults: MIC_CONSTRAINTS,
 };
 
-// LiveKitRoom の onError には接続失敗もマイク取得失敗も流れてくる（audio prop の
-// setMicrophoneEnabled が SignalConnected 後に getUserMedia を呼び、失敗すると再スローされ
-// onError に届く）。しかも onError は onMediaDeviceFailure の後に発火して failKind を上書きする
-// ため、マイク拒否が「接続失敗」に化けていた。エラー名で取得系を判別し、正しい復帰導線
-// （マイク設定 or 再接続）へ振り分ける。
 const MIC_ERROR_NAMES = new Set([
   "NotAllowedError",
   "PermissionDeniedError",
@@ -66,11 +61,6 @@ export function ConversationStart({
   const [phase, setPhase] = useState<StartPhase>("intro");
   const [failKind, setFailKind] = useState<StartFailKind>("connect");
 
-  // 03-2 の「マイクを許可する」タップ（＝ユーザー操作）の中で getUserMedia を呼び、OS 許可を
-  // 先に確定してから接続フェーズへ進む。iOS Safari は getUserMedia を transient activation 内で
-  // 呼ぶことを要求するが、LiveKit の音声取得はシグナル接続後（非同期）に走るため操作文脈を外れて
-  // 拒否され、スマホで開始できず「接続失敗」に見えていた。ここで取得したストリームは即解放する:
-  // 許可はページ存続中は保持され、LiveKit の再取得はプロンプト無しで通る。
   async function requestMicAndEnter() {
     try {
       const media = navigator.mediaDevices;
@@ -124,8 +114,6 @@ export function ConversationStart({
       style={{ height: "100dvh" }}
       onError={(e) => {
         console.error("livekit start failed", e);
-        // 接続失敗と、接続後のマイク取得失敗（NotAllowedError 等）が同じ onError に届く。
-        // 誤って「接続失敗」に化けさせず、原因に応じた復帰導線を出す。
         setFailKind(classifyStartError(e));
         setPhase("failed");
       }}
@@ -274,8 +262,6 @@ export interface MicPermissionModalProps {
 
 export function MicPermissionModal({ onAllow, onDismiss }: MicPermissionModalProps) {
   const [requesting, setRequesting] = useState(false);
-  // 許可タップの中で OS プロンプトを待つ間は再タップを抑止する。成功/失敗のいずれでも
-  // 呼び出し側がフェーズを遷移させモーダルを畳むため、通常は解除するまでもなく消える。
   async function handleAllow() {
     if (requesting) return;
     setRequesting(true);

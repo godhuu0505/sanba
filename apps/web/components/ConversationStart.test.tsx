@@ -89,8 +89,6 @@ describe("MicPermissionModal（03-2 録音許可）", () => {
   });
 
   it("許可タップ（ユーザー操作）の中で onAllow を呼び、確認中は表示を変え再タップを抑止する", async () => {
-    // iOS Safari は getUserMedia を transient activation 内で呼ぶ必要があるため、許可は
-    // タップの中で要求する。非同期解決までは表示を変え、二重タップを弾く。
     let resolve!: () => void;
     const onAllow = vi.fn(() => new Promise<void>((r) => (resolve = r)));
     render(<MicPermissionModal onAllow={onAllow} onDismiss={vi.fn()} />);
