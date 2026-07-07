@@ -21,6 +21,9 @@ export type { AppHeaderProps } from "./AppHeader";
 // 基本プリミティブ
 export { Logo } from "./Logo";
 export type { LogoProps } from "./Logo";
+export { BrandMark } from "./BrandMark";
+export { BrandSplash } from "./BrandSplash";
+export type { BrandSplashProps } from "./BrandSplash";
 export { Button, sanbaButtonVariants } from "./Button";
 export type { SanbaButtonProps } from "./Button";
 export { Card, CardTitle, CardDescription } from "./Card";

@@ -1,6 +1,8 @@
 # ADR-0019: ログイン画面 Google ボタンの意匠（純正維持 + 金彩フレーム）
 
-- ステータス: Accepted（方針確定。実装は WAVE2 / issue #218 フォローアップ）
+- ステータス: Superseded by ADR-0052（ボタン意匠は ADR-0052 が置換。「純正維持」という大枠—GIS
+  `renderButton` を使い独自トリガ・金地・emoji は採らない—は不変だが、暗色基調前提の `filled_black`
+  ＋金彩フレームは明色刷新（ADR-0025/0033）で前提が失効し、白系 `outline` へ戻した）
 - 日付: 2026-06-28
 - 関連: ADR-0012（Google ログイン）、ADR-0014（ログイン/管理画面）、ADR-0008（製品コンセプト / 出所メタ）、issue #218、親エピック #157、監査 `docs/notes/figma-implementation-audit.md` B-1 #2
 

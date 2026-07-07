@@ -10,7 +10,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 
-import { Screen } from "@/components/sanba";
+import { BrandSplash } from "@/components/sanba";
 
 export interface RequireAuthProps {
   /** 認証状態が解決済みか（GIS の再取得待ちなどが終わったか）。false の間はリダイレクトしない。 */
@@ -50,22 +50,11 @@ export function RequireAuth({ ready, loggedIn, next, children }: RequireAuthProp
     }
   }, [ready, loggedIn, next, router]);
 
-  // 解決前は保護コンテンツを出さず「確認中」を見せる（/login の確認中表示と同じ意匠）。
-  // 復元が済めばこのままアクセス先の画面を描画し、/login への往復を挟まない。
-  if (!ready) {
-    return (
-      <Screen className="items-center justify-center gap-4 text-center">
-        <div
-          role="status"
-          aria-label="ログイン状態を確認中"
-          className="size-16 animate-spin rounded-full border-4 border-sanba-border border-t-sanba-gold"
-        />
-        <p className="text-[13px] leading-relaxed text-sanba-muted">
-          ログイン状態を確認しています…
-        </p>
-      </Screen>
-    );
-  }
+  // 解決前は保護コンテンツを出さず、中立のブランドスプラッシュを見せる（/login と同じ意匠 /
+  // ADR-0052）。復元はほぼ成功する前提なので「ログインし直している」ように見せず、アプリの
+  // 立ち上がりとして見せてそのまま画面へ入れる。復元できればこのままアクセス先を描画し、
+  // /login への往復を挟まない。
+  if (!ready) return <BrandSplash />;
   // 未ログイン確定（リダイレクト中）は何も出さない。
   if (!loggedIn) return null;
   return <>{children}</>;
