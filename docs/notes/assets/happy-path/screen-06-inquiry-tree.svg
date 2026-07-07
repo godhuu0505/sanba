@@ -1,0 +1,128 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 780 760" font-family="'Hiragino Sans','Noto Sans JP',sans-serif">
+  <rect width="780" height="760" fill="#ffffff"/>
+  <text x="24" y="36" font-size="18" font-weight="700" fill="#221e1a">06 要件一覧タブ — 確認事項ロジックツリー（Phase 2）</text>
+
+  <rect x="30" y="66" width="390" height="660" rx="24" fill="#fcfbf7" stroke="#221e1a" stroke-width="2"/>
+
+  <g font-size="12" font-weight="600">
+    <rect x="54" y="90" width="96" height="30" rx="15" fill="#ffffff" stroke="#ede8dc"/>
+    <text x="82" y="110" fill="#706a5d">会話</text>
+    <rect x="156" y="90" width="110" height="30" rx="15" fill="#ffffff" stroke="#ede8dc"/>
+    <text x="176" y="110" fill="#706a5d">参考資料</text>
+    <rect x="272" y="90" width="110" height="30" rx="15" fill="#221e1a"/>
+    <text x="292" y="110" fill="#ffffff">要件一覧</text>
+  </g>
+
+  <g>
+    <rect x="54" y="136" width="342" height="40" rx="12" fill="#ffffff" stroke="#ede8dc"/>
+    <text x="68" y="161" font-size="12" font-weight="600" fill="#221e1a">確定した要件 2 件</text>
+    <text x="330" y="161" font-size="12" fill="#706a5d">開く ▾</text>
+  </g>
+
+  <text x="54" y="204" font-size="12" font-weight="700" fill="#706a5d">確認事項ツリー</text>
+  <rect x="238" y="190" width="158" height="20" rx="10" fill="#f4f1e8" stroke="#ede8dc"/>
+  <text x="248" y="204" font-size="10.5" fill="#706a5d">未解消 3 · 解消済 2 · 深さ 2/5</text>
+
+  <g>
+    <rect x="54" y="216" width="342" height="42" rx="12" fill="#ffffff" stroke="#221e1a" stroke-width="1.5"/>
+    <text x="68" y="242" font-size="12.5" font-weight="700" fill="#221e1a">🎯 アカウント設定画面を作りたい</text>
+  </g>
+
+  <line x1="72" y1="258" x2="72" y2="660" stroke="#d6cfbe" stroke-width="2"/>
+
+  <g>
+    <line x1="72" y1="288" x2="90" y2="288" stroke="#d6cfbe" stroke-width="2"/>
+    <rect x="90" y="268" width="306" height="40" rx="12" fill="#ffffff" stroke="#7fa83c"/>
+    <circle cx="108" cy="288" r="8" fill="#7fa83c"/>
+    <path d="M104 288 l3 3 l6 -6" stroke="#ffffff" stroke-width="2" fill="none"/>
+    <text x="124" y="284" font-size="11.5" font-weight="600" fill="#221e1a">対象ユーザーの範囲</text>
+    <text x="124" y="300" font-size="10" fill="#4a6619">解消済 · 「ログイン済み利用者のみ」(12:05)</text>
+  </g>
+
+  <g>
+    <line x1="72" y1="342" x2="90" y2="342" stroke="#d6cfbe" stroke-width="2"/>
+    <rect x="90" y="322" width="306" height="40" rx="12" fill="#fdf3dc" stroke="#c08a10"/>
+    <circle cx="108" cy="342" r="8" fill="#f0a814"/>
+    <text x="105" y="346.5" font-size="11" fill="#ffffff" font-weight="700">?</text>
+    <text x="124" y="338" font-size="11.5" font-weight="600" fill="#221e1a">通知設定の保存タイミング</text>
+    <text x="124" y="354" font-size="10" fill="#985c06">未確認（gap）· いま深掘り中</text>
+  </g>
+
+  <line x1="110" y1="362" x2="110" y2="452" stroke="#d6cfbe" stroke-width="2"/>
+  <g>
+    <line x1="110" y1="392" x2="126" y2="392" stroke="#d6cfbe" stroke-width="2"/>
+    <rect x="126" y="374" width="270" height="36" rx="12" fill="#fdf3dc" stroke="#c08a10"/>
+    <circle cx="142" cy="392" r="7" fill="#f0a814"/>
+    <text x="139.5" y="396" font-size="10" fill="#ffffff" font-weight="700">?</text>
+    <text x="156" y="388" font-size="11" font-weight="600" fill="#221e1a">即時保存か一括保存か</text>
+    <text x="156" y="403" font-size="9.5" fill="#985c06">未確認</text>
+  </g>
+  <g>
+    <line x1="110" y1="452" x2="126" y2="452" stroke="#d6cfbe" stroke-width="2"/>
+    <rect x="126" y="434" width="270" height="36" rx="12" fill="#ffffff" stroke="#5e6b85"/>
+    <circle cx="142" cy="452" r="7" fill="#5e6b85"/>
+    <text x="139" y="456" font-size="10" fill="#ffffff" font-weight="700">〜</text>
+    <text x="156" y="448" font-size="11" font-weight="600" fill="#221e1a">保存失敗時の再試行方針</text>
+    <text x="156" y="463" font-size="9.5" fill="#5e6b85">不明瞭（ambiguous）· 「いい感じに」のみ</text>
+  </g>
+
+  <g>
+    <line x1="72" y1="512" x2="90" y2="512" stroke="#d6cfbe" stroke-width="2"/>
+    <rect x="90" y="492" width="306" height="44" rx="12" fill="#fbeae6" stroke="#c43a20"/>
+    <circle cx="108" cy="512" r="8" fill="#e0402a"/>
+    <text x="104.5" y="516.5" font-size="11" fill="#ffffff" font-weight="700">!</text>
+    <text x="124" y="507" font-size="11.5" font-weight="600" fill="#221e1a">「退会ボタン」の有無が発言とキャプチャで不一致</text>
+    <text x="124" y="524" font-size="10" fill="#c43a20">矛盾（contradiction）· capture-02.png の解析より</text>
+  </g>
+
+  <g>
+    <line x1="72" y1="576" x2="90" y2="576" stroke="#d6cfbe" stroke-width="2"/>
+    <rect x="90" y="556" width="306" height="40" rx="12" fill="#ffffff" stroke="#7fa83c"/>
+    <circle cx="108" cy="576" r="8" fill="#7fa83c"/>
+    <path d="M104 576 l3 3 l6 -6" stroke="#ffffff" stroke-width="2" fill="none"/>
+    <text x="124" y="572" font-size="11.5" font-weight="600" fill="#221e1a">既存の認証方式との整合（確認項目）</text>
+    <text x="124" y="588" font-size="10" fill="#4a6619">解消済 · Product の確認項目からシード</text>
+  </g>
+
+  <g>
+    <line x1="72" y1="636" x2="90" y2="636" stroke="#d6cfbe" stroke-width="2"/>
+    <rect x="90" y="620" width="306" height="32" rx="12" fill="#fcfbf7" stroke="#ede8dc" stroke-dasharray="5 4"/>
+    <text x="106" y="640" font-size="10.5" fill="#706a5d">解析の進行・会話で枝は増減します（枝 4/5）</text>
+  </g>
+
+  <g font-size="12.5" fill="#221e1a">
+    <circle cx="466" cy="238" r="12" fill="#221e1a"/>
+    <text x="461.5" y="242.5" fill="#ffffff" font-weight="700">1</text>
+    <text x="488" y="230" font-weight="700">ノードの種別と色（kind）</text>
+    <text x="488" y="248">check=確認項目シード（萌黄✓で解消）、gap=未確認</text>
+    <text x="488" y="264">（山吹?）、ambiguous=不明瞭（藍鼠〜）、</text>
+    <text x="488" y="280">contradiction=矛盾（朱!）。色のみ非依存で</text>
+    <text x="488" y="296">アイコン＋ラベル併記（Issue #101 の規律）。</text>
+
+    <circle cx="466" cy="360" r="12" fill="#221e1a"/>
+    <text x="461.5" y="364.5" fill="#ffffff" font-weight="700">2</text>
+    <text x="488" y="352" font-weight="700">構造制約（サーバ強制）</text>
+    <text x="488" y="370">深さ最大 5・同一親の枝最大 5。超過時は agent が</text>
+    <text x="488" y="386">類似ノードへ統合。sessions/{id}/inquiry_nodes に</text>
+    <text x="488" y="402">永続化、realtime は inquiry.node (upsert/resolve)。</text>
+
+    <circle cx="466" cy="470" r="12" fill="#221e1a"/>
+    <text x="461.5" y="474.5" fill="#ffffff" font-weight="700">3</text>
+    <text x="488" y="462" font-weight="700">解消の記録</text>
+    <text x="488" y="480">会話で確認できたら resolved（根拠発話の時刻を保持）。</text>
+    <text x="488" y="496">解析完了で新ノードが「枝分かれ」として追加され、</text>
+    <text x="488" y="512">深掘り中の話題を止めずに後追い確認へ回す。</text>
+
+    <circle cx="466" cy="580" r="12" fill="#221e1a"/>
+    <text x="461.5" y="584.5" fill="#ffffff" font-weight="700">4</text>
+    <text x="488" y="572" font-weight="700">終了条件との接続</text>
+    <text x="488" y="590">未解消（open な gap/ambiguous/contradiction）0 件が</text>
+    <text x="488" y="606">AI の終了提案（07）と JudgmentGate の確定可否の</text>
+    <text x="488" y="622">共通条件になる。Phase 2 までは検知リストで代用。</text>
+  </g>
+
+  <line x1="400" y1="288" x2="452" y2="250" stroke="#706a5d" stroke-dasharray="4 3"/>
+  <line x1="400" y1="392" x2="452" y2="368" stroke="#706a5d" stroke-dasharray="4 3"/>
+  <line x1="400" y1="512" x2="452" y2="478" stroke="#706a5d" stroke-dasharray="4 3"/>
+  <line x1="400" y1="576" x2="452" y2="580" stroke="#706a5d" stroke-dasharray="4 3"/>
+</svg>
