@@ -40,6 +40,32 @@ locals {
 
   # 採点ログの母集合。agent の session_scored のみ（他サービス/他ログを混ぜない）。
   session_scored_filter = "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"sanba-agent\" AND textPayload:\"session_scored\""
+
+  # terraform apply を実行する CI SA。空なら命名規約から導出する（#388: この SA に
+  # ログメトリクス/ダッシュボード作成権限を付与しないと apply が 403 で落ちる）。
+  tf_deployer_sa = var.terraform_deployer_sa != "" ? var.terraform_deployer_sa : "tf-deployer@${var.project_id}.iam.gserviceaccount.com"
+}
+
+# CI SA(tf-deployer) にログベースメトリクス/ダッシュボード作成権限を付与する（#388）。
+# tf-deployer は roles/resourcemanager.projectIamAdmin を持つため自己付与できる。これが無いと
+# `logging.logMetrics.create` / `monitoring.dashboards.create` が 403 になり CD の terraform
+# apply が全て失敗する（bootstrap で付け忘れていた権限の穴を IaC 側で塞ぐ）。
+resource "google_project_iam_member" "tf_deployer_observability" {
+  for_each = toset([
+    "roles/logging.configWriter",       # logging.logMetrics.create
+    "roles/monitoring.dashboardEditor", # monitoring.dashboards.create
+  ])
+  project    = var.project_id
+  role       = each.value
+  member     = "serviceAccount:${local.tf_deployer_sa}"
+  depends_on = [google_project_service.services] # cloudresourcemanager API 有効化を待つ
+}
+
+# 自己付与した権限の IAM 伝搬待ち。初回 apply で「binding 作成直後にメトリクス作成 → まだ
+# 権限が効かず 403」というレースを避ける（create 時のみ待つ。以後 binding 不変なら再待機しない）。
+resource "time_sleep" "observability_iam_propagation" {
+  depends_on      = [google_project_iam_member.tf_deployer_observability]
+  create_duration = "60s"
 }
 
 # 観点別スコアの分布メトリクス（0.0〜1.0 を 0.1 刻みで分布化）。
@@ -48,6 +74,9 @@ resource "google_logging_metric" "session_quality" {
 
   name   = "sanba/session_quality_${each.key}"
   filter = local.session_scored_filter
+
+  # 権限付与 + 伝搬を待ってから作成する（#388）。
+  depends_on = [time_sleep.observability_iam_propagation]
 
   metric_descriptor {
     metric_kind  = "DELTA"
@@ -72,6 +101,8 @@ resource "google_logging_metric" "sessions_scored_count" {
   name   = "sanba/sessions_scored_count"
   filter = local.session_scored_filter
 
+  depends_on = [time_sleep.observability_iam_propagation]
+
   metric_descriptor {
     metric_kind  = "DELTA"
     value_type   = "INT64"
@@ -84,6 +115,9 @@ resource "google_logging_metric" "sessions_scored_count" {
 # NOTE: dashboard_json の内部構造は terraform のスキーマ検証対象外（不透明文字列）。
 #       初回 apply 後に Cloud Monitoring 上で表示を確認すること。
 resource "google_monitoring_dashboard" "sanba_quality" {
+  # monitoring.dashboards.create の権限付与 + 伝搬を待ってから作成する（#388）。
+  depends_on = [time_sleep.observability_iam_propagation]
+
   dashboard_json = jsonencode({
     displayName = "SANBA — インタビュー品質 (LLMOps)"
     mosaicLayout = {
