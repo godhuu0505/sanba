@@ -20,11 +20,11 @@ _MONTH = 30 * _DAY
 
 
 def _deploy_frequency_level(per_day: float) -> str:
-    if per_day >= 1:  # on-demand / multiple per day
+    if per_day >= 1:
         return "elite"
-    if per_day >= 1 / 7:  # at least weekly
+    if per_day >= 1 / 7:
         return "high"
-    if per_day >= 1 / 30:  # at least monthly
+    if per_day >= 1 / 30:
         return "medium"
     return "low"
 
@@ -73,7 +73,7 @@ def compute(
 ) -> FourKeys:
     """Compute the four keys over ``window_days`` of history."""
 
-    window_days = max(window_days, 1e-9)  # guard against divide-by-zero
+    window_days = max(window_days, 1e-9)
     total = len(deployments)
     failed = sum(1 for d in deployments if not d.success)
 
@@ -86,9 +86,7 @@ def compute(
 
     change_failure_rate = (failed / total) if total else 0.0
 
-    recovery_samples = [
-        i.recovery_seconds for i in incidents if i.recovery_seconds is not None
-    ]
+    recovery_samples = [i.recovery_seconds for i in incidents if i.recovery_seconds is not None]
     mttr_hours = median(recovery_samples) / _HOUR if recovery_samples else None
 
     levels = {

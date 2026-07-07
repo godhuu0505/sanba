@@ -24,7 +24,6 @@ def render_prometheus(m: FourKeys) -> str:
     def metric(name: str, help_text: str, mtype: str, value: float | None) -> None:
         out.append(f"# HELP {name} {help_text}")
         out.append(f"# TYPE {name} {mtype}")
-        # NaN keeps the series present while signalling "no data" to Grafana.
         out.append(_line(name, value if value is not None else float("nan")))
 
     metric(
@@ -67,14 +66,12 @@ def render_prometheus(m: FourKeys) -> str:
         time.time(),
     )
 
-    # Data provenance: 1 for the active source so dashboards can warn on "sample".
     out.append("# HELP fourkeys_data_source Active data source (1 = active).")
     out.append("# TYPE fourkeys_data_source gauge")
     for src in ("github", "sample"):
         active = 1 if m.source == src else 0
         out.append(_line("fourkeys_data_source", active, f'{{source="{src}"}}'))
 
-    # Per-metric DORA performance level as a one-hot gauge.
     out.append("# HELP fourkeys_performance_level DORA band per metric (1 = active).")
     out.append("# TYPE fourkeys_performance_level gauge")
     for metric_name, active_level in m.levels.items():
@@ -106,7 +103,7 @@ def serve(port: int = 9301, window_days: float = 30.0) -> None:
             self.end_headers()
             self.wfile.write(body)
 
-        def log_message(self, *args: object) -> None:  # silence access log
+        def log_message(self, *args: object) -> None:
             return
 
     httpd = ThreadingHTTPServer(("0.0.0.0", port), Handler)  # noqa: S104 - container service
