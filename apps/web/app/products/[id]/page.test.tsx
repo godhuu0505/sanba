@@ -36,6 +36,8 @@ vi.mock("@/lib/api", async (importOriginal) => {
     deleteProduct: (...args: unknown[]) => deleteProduct(...args),
     fetchGithubRepos: () => Promise.resolve({ enabled: false, repos: [], default: null }),
     listProductInvites: () => Promise.resolve([]),
+    fetchProductMembers: () => Promise.resolve([]),
+    listMemberInvites: () => Promise.resolve([]),
   };
 });
 

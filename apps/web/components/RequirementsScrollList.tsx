@@ -1,5 +1,6 @@
 "use client";
 
+import { HelpIcon } from "@/components/sanba";
 import { PRIORITY_ORDER, priorityLabel } from "@/lib/realtime/mapping";
 import type { Requirement } from "@/lib/realtime/types";
 
@@ -16,13 +17,24 @@ export interface RequirementsScrollListProps {
 
 export function RequirementsScrollList({
   requirements,
-  emptyText = "まだ要件はありません。問答が進むと、ここに育っていきます。",
+  emptyText = "まだ要件はありません。会話が進むと、ここに整理されていきます。",
 }: RequirementsScrollListProps) {
   if (requirements.length === 0) {
     return <p className="px-1 py-3 text-[12.5px] text-sanba-muted">{emptyText}</p>;
   }
   return (
     <>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-1">
+        <span className="inline-flex items-center gap-[2px] text-[10px] text-sanba-muted">
+          優先度 <HelpIcon term="優先度" />
+        </span>
+        <span className="inline-flex items-center gap-[2px] text-[10px] text-sanba-muted">
+          確信度 <HelpIcon term="確信度" />
+        </span>
+        <span className="inline-flex items-center gap-[2px] text-[10px] text-sanba-muted">
+          発言者 <HelpIcon term="発言者" />
+        </span>
+      </div>
       {PRIORITY_ORDER.map((pr) => {
         const group = requirements.filter((r) => r.priority === pr);
         if (group.length === 0) return null;
@@ -42,7 +54,7 @@ export function RequirementsScrollList({
               >
                 <p className="text-[13px] font-bold text-sanba-cream">{r.statement}</p>
                 <span className="text-[10.5px] text-sanba-muted">
-                  確信 {confidenceLabel(r.confidence)}　・　出所 {r.source_speaker}
+                  確信度 {confidenceLabel(r.confidence)}　・　発言者 {r.source_speaker}
                 </span>
               </div>
             ))}

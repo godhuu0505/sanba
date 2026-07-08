@@ -702,7 +702,7 @@ export default function EntryFlow({
                 会議の前に、五分の会話を
               </h1>
               <p className="text-[13px] leading-relaxed text-sanba-muted">
-                一問ずつ問いかけ、抜けと矛盾をその場で取り上げます。
+                一問ずつ問いかけ、食い違いや確認したい点をその場で取り上げます。
               </p>
             </div>
             {}

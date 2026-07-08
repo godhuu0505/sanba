@@ -27,7 +27,7 @@ export const SessionHistoryList = React.forwardRef<HTMLElement, SessionHistoryLi
       className,
       items,
       hrefFor = (id) => `/results/${encodeURIComponent(id)}`,
-      emptyText = "過去の要件はまだございません。壁打ちを始めると、ここに残ります。",
+      emptyText = "過去の要件はまだありません。会話を始めると、ここに残ります。",
       ...props
     },
     ref,
@@ -40,7 +40,7 @@ export const SessionHistoryList = React.forwardRef<HTMLElement, SessionHistoryLi
         {...props}
       >
         <h2 id={HEADING_ID} className="text-[13px] font-bold text-sanba-muted">
-          過去の要件を見る
+          要件一覧
         </h2>
         {items.length === 0 ? (
           <div className="flex items-center rounded-[16px] border-[1.5px] border-dashed border-sanba-border-strong bg-sanba-surface px-[14px] py-[12px]">

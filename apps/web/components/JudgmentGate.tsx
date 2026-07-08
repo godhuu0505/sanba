@@ -2,10 +2,9 @@
 
 import { Scale, TriangleAlert } from "lucide-react";
 
-import { useInterviewMode } from "@/lib/interviewMode";
 import type { Detection } from "@/lib/realtime/types";
 
-import { Button } from "@/components/sanba";
+import { Button, HelpIcon } from "@/components/sanba";
 import { DeepDiveList } from "./DeepDiveList";
 
 export interface JudgmentGateProps {
@@ -28,7 +27,6 @@ export function JudgmentGate({
   onJump,
 }: JudgmentGateProps) {
   const resolved = unresolved === 0;
-  const endUser = useInterviewMode() === "end_user";
 
   return (
     <div className="flex h-full flex-col items-center px-4 pb-6 pt-12">
@@ -46,14 +44,15 @@ export function JudgmentGate({
       >
         {resolved ? <Scale size={32} aria-hidden /> : <TriangleAlert size={32} aria-hidden />}
       </div>
-      <p className="mt-3 text-[18px] font-bold text-sanba-gold-text">見極めの刻にございます</p>
+      <div className="mt-3 flex items-center gap-1">
+        <p className="text-[18px] font-bold text-sanba-gold-text">内容の確認</p>
+        <HelpIcon term="内容の確認" />
+      </div>
 
       {resolved ? (
         <>
           <p className="mt-1 text-center text-[12.5px] text-sanba-muted">
-            {endUser
-              ? "確認したいことは残っていません。この内容でお伝えできます。"
-              : "すべて解けました。要件を確定できます。"}
+            すべて確認できました。要件を確定できます。
           </p>
           <div className="flex-1" />
           {error && (
@@ -62,19 +61,17 @@ export function JudgmentGate({
             </p>
           )}
           <Button variant="gold" size="lg" block onClick={onConfirm}>
-            {endUser ? "この内容で伝える" : "要件を確定する"}
+            要件を確定する
           </Button>
         </>
       ) : (
         <>
           <div className="mt-4 w-full rounded-[14px] border-[1.5px] border-sanba-rec bg-sanba-rec-pale p-[14px]">
             <p className="text-[16px] font-bold text-sanba-rec-text">
-              {endUser ? `確認したいことが ${unresolved} 件残っています` : `未解消 ${unresolved} 件 ・ 確定不可`}
+              {`未解消が ${unresolved} 件あります`}
             </p>
             <p className="mt-1 text-[11.5px] text-sanba-muted">
-              {endUser
-                ? "会話に戻ってお答えいただくと、より正確に伝わります。"
-                : "ひとつでも残れば、要件は確定できませぬ。"}
+              未解消が残っていると、要件を確定できません。
             </p>
           </div>
           {detections && detections.length > 0 && onJump && (
@@ -84,14 +81,14 @@ export function JudgmentGate({
           )}
           <div className="flex-1" />
           <Button variant="gold" size="lg" block onClick={onBack}>
-            {endUser ? "会話に戻って答える" : "問答に戻って解く"}
+            会話に戻って確認する
           </Button>
           <button
             type="button"
             onClick={onForceEnd}
             className="mt-2 w-full rounded-[12px] border border-sanba-rec/40 py-3 text-[12.5px] font-bold text-sanba-rec-text"
           >
-            {endUser ? "このまま終える" : "未解消のまま終う"}
+            未解消のまま終える
           </button>
         </>
       )}

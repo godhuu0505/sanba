@@ -69,20 +69,20 @@ describe("SANBA design system", () => {
       </RequirementCard>,
     );
     expect(screen.getByText("承認済み")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "認める" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "退ける" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "承認する" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "却下する" })).toBeTruthy();
   });
 
-  it("SessionRow は既定の操作ピル「検める ›」を出す", () => {
+  it("SessionRow は既定の操作ピル「確認する ›」を出す", () => {
     render(<SessionRow title="検索機能" meta="pm@example.com" />);
     expect(screen.getByText("検索機能")).toBeTruthy();
-    expect(screen.getByText("検める ›")).toBeTruthy();
+    expect(screen.getByText("確認する ›")).toBeTruthy();
   });
 
   it("SessionRow action=null は操作ピルを出さない（閲覧専用の行 / Codex P2）", () => {
     render(<SessionRow title="検索機能" meta="pm@example.com" action={null} />);
     expect(screen.getByText("検索機能")).toBeTruthy();
-    expect(screen.queryByText("検める ›")).toBeNull();
+    expect(screen.queryByText("確認する ›")).toBeNull();
   });
 
   it("ListRow asChild は複数子のままアンカー化し内容を内包する（Slot 複数子クラッシュ回避）", () => {
@@ -110,7 +110,7 @@ describe("SANBA design system", () => {
     expect(link).toHaveProperty("tagName", "A");
     expect(link.getAttribute("href")).toBe("/sessions/1");
     expect(link.textContent).toContain("検索機能");
-    expect(link.textContent).toContain("検める ›");
+    expect(link.textContent).toContain("確認する ›");
   });
 
   it("ListRow 非 asChild は div で描画し children を要求しない（既定経路）", () => {
@@ -134,9 +134,9 @@ describe("SANBA design system", () => {
     expect(dot?.getAttribute("aria-hidden")).not.toBeNull();
   });
 
-  it("InsightCard は既定見出し「ひらめき」＋山吹淡・破線の札（ADR-0033 §7）", () => {
+  it("InsightCard は既定見出し「気づき」＋山吹淡・破線の札（ADR-0033 §7）", () => {
     const { container } = render(<InsightCard>結果の並びは関連度順が要でした。</InsightCard>);
-    expect(screen.getByText("ひらめき")).toBeTruthy();
+    expect(screen.getByText("気づき")).toBeTruthy();
     expect(screen.getByText("結果の並びは関連度順が要でした。")).toBeTruthy();
     expect(container.firstElementChild?.className).toContain("bg-sanba-gold-pale");
     expect(container.firstElementChild?.className).toContain("border-dashed");

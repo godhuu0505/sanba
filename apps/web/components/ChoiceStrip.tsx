@@ -3,7 +3,8 @@
 import { ChevronRight, Maximize2, Minimize2 } from "lucide-react";
 import { useEffect, useRef } from "react";
 
-import { detectionPresentation } from "@/lib/realtime/mapping";
+import { HelpIcon } from "@/components/sanba";
+import { detectionHelpTerm, detectionPresentation } from "@/lib/realtime/mapping";
 import type { DetectionKind } from "@/lib/realtime/types";
 
 const LONG_PRESS_MS = 450;
@@ -74,6 +75,7 @@ export function ChoiceStrip({
             <presentation.Icon size={11} aria-hidden /> {presentation.label}
           </span>
         )}
+        {detectionKind && <HelpIcon term={detectionHelpTerm(detectionKind)} />}
         <span className="text-[12px] font-bold text-sanba-gold-text">{question}</span>
         <span className="flex-1" />
         <button

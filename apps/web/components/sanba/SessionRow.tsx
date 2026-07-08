@@ -12,7 +12,7 @@ export interface SessionRowProps extends Omit<React.HTMLAttributes<HTMLElement>,
 }
 
 export const SessionRow = React.forwardRef<HTMLElement, SessionRowProps>(
-  ({ className, title, meta, action = "検める ›", asChild, children, ...props }, ref) => {
+  ({ className, title, meta, action = "確認する ›", asChild, children, ...props }, ref) => {
     const Comp: React.ElementType = asChild ? Slot : "div";
     return (
       <Comp

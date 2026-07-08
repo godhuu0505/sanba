@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-import { Button, Card, CardTitle, Chip, Input, Select } from "@/components/sanba";
+import { Button, Card, CardTitle, Chip, HelpIcon, Input, Select } from "@/components/sanba";
 import { updateProduct, type Audience, type CheckItem, type Product } from "@/lib/api";
 import { AUDIENCE_LABELS, AUDIENCES } from "@/lib/audience";
 import { useAuth } from "@/lib/auth";
@@ -69,10 +69,13 @@ export function ProductCheckItemsCard({
 
   return (
     <Card>
-      <CardTitle>要件サンバ中の確認項目</CardTitle>
+      <CardTitle className="inline-flex items-center gap-[6px]">
+        会話中の確認項目
+        <HelpIcon term="確認項目" />
+      </CardTitle>
       <p className="text-[12px] leading-relaxed text-sanba-muted">
-        セッション中に必ず確認したい項目です（最大 {limit} 個）。対象を選ぶと、その相手との
-        セッションでだけ確認します（全員 = どのセッションでも確認）。産婆さんが会話の流れの
+        会話中に必ず確認したい項目です（最大 {limit} 個）。対象を選ぶと、その相手との
+        会話でだけ確認します（全員 = どの会話でも確認）。会話の流れの
         中で一つずつ確認し、要件結果の文書にも一覧が載ります。
       </p>
       <p className="text-[11px] font-bold text-sanba-muted" aria-label="確認項目の登録数">

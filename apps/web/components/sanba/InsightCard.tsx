@@ -7,7 +7,7 @@ export interface InsightCardProps extends Omit<React.HTMLAttributes<HTMLDivEleme
   title?: React.ReactNode;
 }
 
-export function InsightCard({ className, title = "ひらめき", children, ...props }: InsightCardProps) {
+export function InsightCard({ className, title = "気づき", children, ...props }: InsightCardProps) {
   return (
     <div
       className={cn(

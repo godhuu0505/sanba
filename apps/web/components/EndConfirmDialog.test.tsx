@@ -9,7 +9,7 @@ describe("EndConfirmDialog（終了確認）", () => {
 
   it("未解消ありのときは件数と注意を出し、続ける/終了するを出す", () => {
     render(<EndConfirmDialog unresolved={2} onContinue={vi.fn()} onEnd={vi.fn()} />);
-    expect(screen.getByText(/問答を終えますか/)).toBeTruthy();
+    expect(screen.getByText(/会話を終えますか/)).toBeTruthy();
     expect(screen.getByText(/2 件/)).toBeTruthy();
     expect(screen.getByText(/確定されません/)).toBeTruthy();
     expect(screen.getByRole("button", { name: /続ける/ })).toBeTruthy();

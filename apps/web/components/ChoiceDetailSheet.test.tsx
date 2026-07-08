@@ -27,7 +27,7 @@ function setup(over: Partial<React.ComponentProps<typeof ChoiceDetailSheet>> = {
 describe("ChoiceDetailSheet（選択肢の詳細確認）", () => {
   afterEach(() => cleanup());
 
-  it("選択肢名と各観点（どう並ぶ/効き目/留意/出所）を出す", () => {
+  it("選択肢名と各観点（位置づけ/効き目/留意/根拠）を出す", () => {
     setup();
     expect(screen.getByText("新しき順")).toBeTruthy();
     expect(screen.getByText(/更新日時の新しい順/)).toBeTruthy();

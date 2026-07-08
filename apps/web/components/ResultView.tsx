@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Check, ChevronRight, CircleDot, Cloud, FileText, type LucideIcon } from "lucide-react";
 
-import { Button, Figure } from "@/components/sanba";
+import { Button, Figure, HelpIcon } from "@/components/sanba";
 import { issueExportReasonText } from "../lib/issueExport";
 import { useInterviewMode } from "../lib/interviewMode";
 import { SideMenu } from "./SideMenu";
@@ -96,34 +96,31 @@ export function ResultView({
       )}
       <Figure state={provisional ? "writing" : "insight"} className="w-[84px]" />
       <p className="mt-[10px] text-center text-[18px] font-bold text-sanba-gold-text">
-        {endUser
-          ? provisional
-            ? "ここまでのお話を書き留めました"
-            : "お話の内容を整理できました"
-          : provisional
-            ? "暫定で書き留めました"
-            : "オーレ！ 要件、産まれました"}
+        {provisional ? "途中まで整理しました" : "要件がまとまりました"}
       </p>
-      <p className="mt-1 text-center text-[12px] text-sanba-muted">
-        {endUser ? "うかがった内容 " : provisional ? "暫定要件 " : "確定要件 "}
-        {confirmedCount} 件
-        {!endUser && breakdown
-          ? `（Must ${breakdown.must} ・ Should ${breakdown.should} ・ Could ${breakdown.could}）`
-          : ""}
-        {provisional && !endUser ? " ・ 未確定を残したまま終了" : ""}
-      </p>
+      <div className="mt-1 flex items-center justify-center gap-1">
+        <p className="text-center text-[12px] text-sanba-muted">
+          {provisional ? "未確定の要件 " : "確定した要件 "}
+          {confirmedCount} 件
+          {!endUser && breakdown
+            ? `（Must ${breakdown.must} ・ Should ${breakdown.should} ・ Could ${breakdown.could}）`
+            : ""}
+          {provisional && !endUser ? " ・ 未確定を残したまま終了" : ""}
+        </p>
+        <HelpIcon term="確定した要件と未確定の要件" />
+      </div>
 
       {summary && !endUser && (
         <p className="mt-[6px] text-center text-[11px] text-sanba-muted">
-          矛盾解消 {summary.contradictions_resolved} ・ 抜け検知 {summary.gaps_found} ・ Issue 起票{" "}
-          {summary.issues_created}
+          食い違いの解消 {summary.contradictions_resolved} ・ 確認したい点 {summary.gaps_found} ・
+          Issue 起票 {summary.issues_created}
         </p>
       )}
 
       {(previewGroups.length > 0 || overflowCount > 0) && (
         <div
           role="group"
-          aria-label="確定要件のプレビュー"
+          aria-label="確定した要件のプレビュー"
           className="mt-3 w-full space-y-3 overflow-y-auto"
         >
           {previewGroups.map((g) => (
@@ -195,10 +192,10 @@ export function ResultView({
         size="lg"
         block
         onClick={onView}
-        aria-label="この絵巻を画面で確認する（確定要件の全文）"
+        aria-label="確定した要件の全文を確認する"
       >
         <span className="inline-flex items-center justify-center gap-1">
-          この絵巻を画面で確認する <ChevronRight size={15} aria-hidden />
+          全文を確認する <ChevronRight size={15} aria-hidden />
         </span>
       </Button>
 
@@ -207,7 +204,10 @@ export function ResultView({
           <p className="mt-2 self-start text-[10.5px] font-bold text-sanba-muted">書き出す（任意）</p>
           {onExportIssue && !endUser && (
             <div className="mt-[6px] flex w-full flex-col gap-[6px] rounded-[11px] border border-sanba-border bg-sanba-surface px-3 py-[9px]">
-              <p className="text-[10.5px] font-bold text-sanba-muted">Issue 本文に含める（任意）</p>
+              <div className="flex items-center gap-1">
+                <p className="text-[10.5px] font-bold text-sanba-muted">Issue 本文に含める（任意）</p>
+                <HelpIcon term="GitHub Issue に起票" />
+              </div>
               <label className="flex items-center gap-2 text-[11.5px] text-sanba-ink">
                 <input
                   type="checkbox"
@@ -283,7 +283,7 @@ export function ResultView({
         onClick={onRestart}
         className="mt-[10px] text-[12px] font-bold text-sanba-gold-text"
       >
-        新しい問答を始める
+        新しい会話を始める
       </button>
     </div>
   );
