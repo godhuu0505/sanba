@@ -101,6 +101,7 @@ export function ConversationSessionView({
   const exportingRef = useRef(false);
   const [issueExport, setIssueExport] = useState<IssueExportStatus>({ status: "idle" });
   const [issueDisabledReason, setIssueDisabledReason] = useState<string | null>(null);
+  const eligibilityRequestedRef = useRef(false);
   const finalizingRef = useRef(false);
 
   const baseMini = selectMiniStatus(state);
@@ -108,9 +109,16 @@ export function ConversationSessionView({
   const confirmed = selectConfirmedRequirements(state);
 
   useEffect(() => {
-    if (readOnly || phase !== "result" || confirmed.length === 0 || !onCheckExportEligibility) {
+    if (
+      readOnly ||
+      phase !== "result" ||
+      confirmed.length === 0 ||
+      !onCheckExportEligibility ||
+      eligibilityRequestedRef.current
+    ) {
       return;
     }
+    eligibilityRequestedRef.current = true;
     let cancelled = false;
     void onCheckExportEligibility()
       .then((e) => {
