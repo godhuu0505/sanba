@@ -25,6 +25,50 @@ def test_memory_mode_does_not_call_embeddings(monkeypatch) -> None:
     assert store._mem[0].embedding is None
 
 
+def test_transient_elasticsearch_error_falls_back_to_memory(monkeypatch) -> None:
+    class _Indices:
+        def exists(self, index):  # type: ignore[no-untyped-def]
+            raise RuntimeError("NotFoundError(404, 'Unknown resource.')")
+
+    class _FlakyClient:
+        indices = _Indices()
+
+    monkeypatch.setattr(GroundingStore, "_init_client", staticmethod(lambda: _FlakyClient()))
+    store = GroundingStore()
+    assert store.is_memory is True
+    store.index_passage("非機能要件を確認する。", "guide:nfr", "knowledge")
+    results = store.search("非機能 要件", k=1)
+    assert results and results[0].source == "guide:nfr"
+
+
+def test_runtime_index_error_degrades_to_memory() -> None:
+    class _Boom:
+        def index(self, **kwargs):  # type: ignore[no-untyped-def]
+            raise RuntimeError("connection reset by peer")
+
+    store = GroundingStore()
+    store._client = _Boom()
+    assert store.is_memory is False
+    store.index_passage("非機能要件を確認する。", "guide:nfr", "knowledge")
+    assert store.is_memory is True
+    results = store.search("非機能 要件", k=1)
+    assert results and results[0].source == "guide:nfr"
+
+
+def test_runtime_search_error_degrades_to_memory() -> None:
+    store = GroundingStore()
+    store.index_passage("非機能要件を確認する。", "guide:nfr", "knowledge")
+
+    class _Boom:
+        def search(self, **kwargs):  # type: ignore[no-untyped-def]
+            raise RuntimeError("connection reset by peer")
+
+    store._client = _Boom()
+    results = store.search("非機能 要件", k=1)
+    assert store.is_memory is True
+    assert results and results[0].source == "guide:nfr"
+
+
 def test_index_and_search_returns_relevant_passage() -> None:
     store = GroundingStore()
     store.index_passage("非機能要件はセキュリティと可用性を確認する。", "guide:nfr", "knowledge")
