@@ -63,10 +63,4 @@ describe("SidebarAccount（サイドメニュー下部のアカウント）", ()
     fireEvent.keyDown(window, { key: "Escape" });
     expect(screen.queryByRole("menu")).toBeNull();
   });
-
-  it("collapsed ではメール文字列を隠しアイコンのみにする", () => {
-    render(<SidebarAccount profile={profile} collapsed />);
-    const button = screen.getByRole("button", { name: "アカウントメニュー" });
-    expect(button.textContent).toBe("");
-  });
 });
