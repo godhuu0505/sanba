@@ -36,6 +36,37 @@ def test_analyze_returns_empty_without_creds() -> None:
     assert isinstance(result, VideoAnalysis) and result.extracted == 0
 
 
+def test_analyze_image_keeps_client_alive_during_call(monkeypatch) -> None:
+    import gc
+    import weakref
+
+    import sanba_shared.media as media
+
+    state = {"collected": False}
+
+    class _Resp:
+        text = "- 観察A\n- 観察B"
+
+    class _Models:
+        def generate_content(self, **kwargs: object) -> _Resp:
+            gc.collect()
+            assert not state["collected"], "genai client was GC'd mid-call (use-after-close 回帰)"
+            return _Resp()
+
+    class _Client:
+        def __init__(self) -> None:
+            self.models = _Models()
+
+    def _make(config: MediaConfig) -> _Client:
+        client = _Client()
+        weakref.finalize(client, lambda: state.__setitem__("collected", True))
+        return client
+
+    monkeypatch.setattr(media, "_client", _make)
+    cfg = MediaConfig(use_vertexai=True)
+    assert analyze_image(b"x", "image/png", cfg) == ["観察A", "観察B"]
+
+
 def test_analyze_video_requires_source() -> None:
     cfg = MediaConfig(use_vertexai=True)
     try:

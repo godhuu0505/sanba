@@ -76,6 +76,32 @@ def test_context_passages_are_scoped_to_session() -> None:
     assert src_b not in sources
 
 
+def test_product_scoped_context_is_reachable_with_product_id() -> None:
+    store = GroundingStore()
+    repo_src = "github:o/r@main@sha:src/app.py"
+    other_src = "github:x/y@main@sha:src/other.py"
+    store.index_passage("紐づけ repo の実装コード本文", repo_src, "context", "prod-1")
+    store.index_passage("別 product の実装コード本文", other_src, "context", "prod-2")
+
+    with_product = store.search("実装 コード", k=5, session_id="sess-A", product_id="prod-1")
+    sources = {p.source for p in with_product}
+    assert repo_src in sources
+    assert other_src not in sources
+
+    without_product = store.search("実装 コード", k=5, session_id="sess-A")
+    assert repo_src not in {p.source for p in without_product}
+
+
+def test_build_search_params_context_scope_includes_product() -> None:
+    params = GroundingStore._build_search_params(
+        "x", k=3, kinds=None, embedding=None, session_id="sess-A", product_id="prod-1"
+    )
+    filters = params["query"]["bool"]["filter"]
+    should = next(f["bool"]["should"] for f in filters if "bool" in f)
+    terms = next(clause["terms"]["session_id"] for clause in should if "terms" in clause)
+    assert terms == ["sess-A", "prod-1"]
+
+
 def test_non_context_kinds_still_recall_across_sessions() -> None:
     store = GroundingStore()
     store.index_passage("非機能要件は可用性99.9%", "req-1", "requirement", "other-session")
