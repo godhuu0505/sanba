@@ -33,6 +33,8 @@
 | `https://api.youken.sanba.net/healthz` | 200 `{"status":"ok"}` | 公開 API が LB 経由で生存 |
 | `https://sanba-api-...-uc.a.run.app/healthz`（直） | 404 | ingress を LB 経由に制限（run.app 直アクセスは遮断）＝想定どおりの姿勢 |
 
+> 公開境界（ADR-0050 原則8）: run.app のサービスホスト名は `gcloud run services list` で誰でも得られる**非秘匿の公開エンドポイント**であり、かつ ingress 制限で直アクセスは 404 に遮断済みのため、PUBLIC リポジトリへの記載を許容する（秘匿情報・PII ではない）。再現手順ではプロジェクト固有ホストを実値で示すが、本文の表では `...` で伏せている。
+
 ### 3. 認可ゲート（無トークン GET → 401 期待）
 
 | URL | HTTP | body |
