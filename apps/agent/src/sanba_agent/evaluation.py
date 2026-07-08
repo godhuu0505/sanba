@@ -15,9 +15,11 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 import structlog
+from sanba_shared.models import InviteScope
 
 from .config import settings
 
@@ -212,25 +214,55 @@ async def _llm_judge(transcript: str) -> JudgeResult:  # pragma: no cover - need
     )
 
 
-async def score_session(session_id: str, transcript: str) -> JudgeResult:
+async def score_session(
+    session_id: str,
+    transcript: str,
+    *,
+    mode: InviteScope = InviteScope.DEVELOPER,
+    glossary: Sequence[str] = (),
+) -> JudgeResult:
     """Online evaluation: score a finished session and emit it as a structured log.
 
     スコアは `session_scored` 構造化ログとして Cloud Logging に残り、ログベースメトリクス
     → Cloud Monitoring ダッシュボードで可視化する（ADR-0051）。外部 sink は持たない。
+
+    採点ルーブリックは mode で切り替える: end_user は `judge_end_user_interview`
+    （no_jargon / single_question / glossary_usage）、それ以外は `judge_interview`
+    （nfr_coverage / question_specificity / contradiction_handling）。タイムアウト時の決定的
+    フォールバックも対称に倒す（end_user は `_heuristic_end_user_scores`）。`interview_mode` を
+    `session_scored` ログに載せてダッシュボードでモード別に分ける（ADR-0056 の既知の制約を解消）。
 
     シャットダウン後始末（entrypoint の close callback）から呼ぶため、LLM judge を
     `session_score_timeout_seconds` で制限する。制限超過なら即時の決定的ヒューリスティック採点へ
     フォールバックし、離脱直後の新規 genai 呼び出しがプロセス退出の猶予（LiveKit ~10s）を超えて
     SIGKILL を招くのを防ぐ（毎セッション終了時の ERROR / #435 🟡）。
     """
+    end_user = mode == InviteScope.END_USER
+    glossary_list = [g for g in glossary if g and g.strip()]
     try:
-        result = await asyncio.wait_for(
-            judge_interview(transcript), timeout=settings.session_score_timeout_seconds
-        )
+        if end_user:
+            result = await asyncio.wait_for(
+                judge_end_user_interview(transcript, glossary_list),
+                timeout=settings.session_score_timeout_seconds,
+            )
+        else:
+            result = await asyncio.wait_for(
+                judge_interview(transcript), timeout=settings.session_score_timeout_seconds
+            )
     except TimeoutError:
-        log.warning("session_score_timeout", session=session_id)
-        result = _heuristic_scores(transcript)
-    log.info("session_scored", session=session_id, overall=result.overall, scores=result.scores)
+        log.warning("session_score_timeout", session=session_id, interview_mode=mode.value)
+        result = (
+            _heuristic_end_user_scores(transcript, glossary_list)
+            if end_user
+            else _heuristic_scores(transcript)
+        )
+    log.info(
+        "session_scored",
+        session=session_id,
+        interview_mode=mode.value,
+        overall=result.overall,
+        scores=result.scores,
+    )
     return result
 
 

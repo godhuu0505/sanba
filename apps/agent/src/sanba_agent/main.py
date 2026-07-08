@@ -610,7 +610,9 @@ class SANBAAgent(Agent):
     async def analyze_requirements(self, _ctx: RunContext) -> dict:
         """これまでの会話から確定要件を点検し、次に聞くべき1問を返す。
 
-        会話が一区切りついたとき、または論点が曖昧なときに呼び出す。
+        会話が一区切りついたとき、または論点が曖昧なときに呼び出す。返り値の
+        `uncovered_check_points` はこのセッションでまだ十分に触れられていない観点（advisory /
+        ADR-0057）。あれば次の一問を寄せる材料にする。
         """
         task = self._analysis_task
         if task is not None and not task.done():
@@ -629,8 +631,8 @@ class SANBAAgent(Agent):
                 )
                 last = self._last_analysis
                 if last is not None:
-                    return last.model_dump(mode="json")
-                return heuristic_result("\n".join(self._transcript)).model_dump(mode="json")
+                    return self._analysis_tool_payload(last)
+                return self._analysis_tool_payload(heuristic_result("\n".join(self._transcript)))
         last = self._last_analysis
         if (
             last is not None
@@ -642,7 +644,7 @@ class SANBAAgent(Agent):
                 covered_turn=self._analysis_covered_turn,
                 turn=self._user_turn,
             )
-            return last.model_dump(mode="json")
+            return self._analysis_tool_payload(last)
         self._analysis_scheduler.start()
         try:
             if self._publisher is not None:
@@ -652,7 +654,18 @@ class SANBAAgent(Agent):
             self._analysis_scheduler.finish()
         if self._publisher is not None:
             await self._publisher.status("listening")
-        return result.model_dump(mode="json")
+        return self._analysis_tool_payload(result)
+
+    @staticmethod
+    def _analysis_tool_payload(result: AnalysisResult) -> dict:
+        """分析結果を live LLM 向けツール返り値に整形する（ADR-0057 増分2b）。
+
+        直近の未カバー観点（`coverage_open`）を `uncovered_check_points` として additive に載せ、
+        live LLM が次の一問を未カバー観点へ寄せられるようにする。creds 無し/観点 0 件では空。
+        """
+        payload = result.model_dump(mode="json")
+        payload["uncovered_check_points"] = list(result.coverage_open)
+        return payload
 
     async def _run_analysis(
         self, *, trigger: str, timeout_seconds: float | None = None
@@ -851,6 +864,7 @@ class SANBAAgent(Agent):
                     await self._publisher.detection_resolved(
                         amb_id, resolution=RESOLUTION_AGENT_RESOLVED
                     )
+            await self._publish_check_point_coverage(result)
             self._repo.set_session_seq(self._session_id, self._publisher.seq)
 
     def begin_shutdown(self) -> None:
@@ -860,6 +874,23 @@ class SANBAAgent(Agent):
         タスクを畳む前に呼ぶ。冪等。
         """
         self._closing = True
+
+    async def _publish_check_point_coverage(self, result: AnalysisResult) -> None:
+        """観点カバレッジ（済/未）を ``checkpoint.coverage`` で publish（ADR-0057 増分2a）。
+
+        `detection.gap` には流さない専用チャネル（未解消件数・終了ゲートに算入しない）。creds 無し
+        では `assess_check_point_coverage` が失敗と全カバー済みを区別できず一律 `[]` を返すため、
+        `covered=True` を全観点に出すと誤誘導になる。よって creds が真のときだけ publish する
+        （`assess_check_point_coverage` の creds 判定と対称）。観点 0 件でも publish しない。
+        永続化はしない（live-only）。
+        """
+        if self._publisher is None or not self._check_points:
+            return
+        if not (settings.google_api_key or settings.google_genai_use_vertexai):
+            return
+        uncovered = set(result.coverage_open)
+        points = [{"label": p, "covered": p not in uncovered} for p in self._check_points]
+        await self._publisher.checkpoint_coverage(points)
 
     async def drain_background_tasks(self, grace_seconds: float = DRAIN_GRACE_SECONDS) -> None:
         """セッション終了時に背景タスクを猶予付きで送り切り、残りはキャンセルする（ADR-0037）。
@@ -2032,7 +2063,18 @@ async def entrypoint(ctx: JobContext) -> None:
             log.warning("auto_finalize_failed", session=session_id, error=str(exc))
         from .evaluation import score_session
 
-        await score_session(session_id=session_id, transcript="\n".join(agent.transcript))
+        mode = agent.interview_mode
+        glossary: list[str] = []
+        if mode == InviteScope.END_USER:
+            product = _session_product(agent._repo, agent._repo.get_session(session_id))
+            if product is not None:
+                glossary = list(product.glossary)
+        await score_session(
+            session_id=session_id,
+            transcript="\n".join(agent.transcript),
+            mode=mode,
+            glossary=glossary,
+        )
 
     ctx.add_shutdown_callback(_on_close)
 

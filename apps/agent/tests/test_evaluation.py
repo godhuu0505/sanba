@@ -104,3 +104,62 @@ async def test_end_user_empty_transcript_scores_zero() -> None:
 
     res = await judge_end_user_interview("  ", ["請求書一覧"])
     assert res.overall == 0.0
+
+
+@pytest.mark.asyncio
+async def test_score_session_uses_end_user_rubric_for_end_user_mode() -> None:
+    """end_user モードは end_user ルーブリックのキーで採点する（ADR-0056 制約解消 / F）。"""
+    from sanba_shared.models import InviteScope
+
+    from sanba_agent import evaluation
+
+    result = await evaluation.score_session(
+        session_id="s1",
+        transcript="参加者: 送信で止まりました。\nSANBA: そのときの様子を教えてください。",
+        mode=InviteScope.END_USER,
+        glossary=["送信ボタン"],
+    )
+    assert set(result.scores) == {"no_jargon", "single_question", "glossary_usage"}
+
+
+@pytest.mark.asyncio
+async def test_score_session_developer_mode_unchanged() -> None:
+    """developer（既定）は従来の nfr ルーブリックで採点する（回帰なし）。"""
+    from sanba_agent import evaluation
+
+    result = await evaluation.score_session(
+        session_id="s1", transcript="レイテンシ5秒以内。セキュリティは認証必須。"
+    )
+    assert set(result.scores) == {
+        "nfr_coverage",
+        "question_specificity",
+        "contradiction_handling",
+    }
+
+
+@pytest.mark.asyncio
+async def test_score_session_end_user_timeout_falls_to_end_user_heuristic(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """end_user のタイムアウトは end_user ヒューリスティックへ倒す（対称 fallback / F）。"""
+    import asyncio
+
+    from sanba_shared.models import InviteScope
+
+    from sanba_agent import evaluation
+    from sanba_agent.config import settings
+
+    async def _hang(transcript: str, glossary: list[str]) -> JudgeResult:
+        await asyncio.sleep(60)
+        raise AssertionError("unreachable")
+
+    monkeypatch.setattr(evaluation, "judge_end_user_interview", _hang)
+    monkeypatch.setattr(settings, "session_score_timeout_seconds", 0.05)
+    result = await evaluation.score_session(
+        session_id="s1",
+        transcript="参加者: 送信で止まりました。\nSANBA: どの画面でしたか？",
+        mode=InviteScope.END_USER,
+        glossary=["送信ボタン"],
+    )
+    assert set(result.scores) == {"no_jargon", "single_question", "glossary_usage"}
+    assert result.rationale.startswith("heuristic")
