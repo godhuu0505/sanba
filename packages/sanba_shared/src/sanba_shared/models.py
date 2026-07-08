@@ -375,3 +375,55 @@ class AnalysisResult(BaseModel):
     coverage_open: list[str] = Field(default_factory=list)
     next_question: str
     suggested_answer: str
+
+
+class InquiryKind(StrEnum):
+    """確認事項ロジックツリーのノード種別（ADR-0059）。
+
+    check=事前確認項目/確認観点カバレッジ、gap=機能面の抜け、contradiction=矛盾、
+    ambiguous=曖昧。終了ゲートは kind で挙動が変わる（ambiguous は advisory）。
+    """
+
+    CHECK = "check"
+    GAP = "gap"
+    CONTRADICTION = "contradiction"
+    AMBIGUOUS = "ambiguous"
+
+
+class InquiryStatus(StrEnum):
+    OPEN = "open"
+    RESOLVED = "resolved"
+    DROPPED = "dropped"
+
+
+class InquiryOrigin(StrEnum):
+    """ノードの出所。後追い確認（analysis 由来を会話ノードの子に生やす）に使う。"""
+
+    CONVERSATION = "conversation"
+    ANALYSIS = "analysis"
+    PREP = "prep"
+    MATERIAL = "material"
+
+
+MAX_INQUIRY_DEPTH = 5
+MAX_INQUIRY_CHILDREN = 5
+
+
+class InquiryNode(BaseModel):
+    """確認事項ロジックツリーの1ノード（ADR-0059）。`sessions/{id}/inquiry_nodes/{id}`。
+
+    深さ・枝の上限はサーバ（`InquiryTree`）が強制する。`confidence` は枝/深さ超過時の
+    剪定順に使う。`refs` は根拠発話/grounding 参照で HP9 出力・トレーサビリティに使う。
+    """
+
+    id: str
+    parent_id: str | None = None
+    kind: InquiryKind
+    text: str
+    status: InquiryStatus = InquiryStatus.OPEN
+    confidence: float = 1.0
+    depth: int = 1
+    origin: InquiryOrigin = InquiryOrigin.ANALYSIS
+    refs: list[str] = Field(default_factory=list)
+    created_seq: int = 0
+    resolved_seq: int | None = None

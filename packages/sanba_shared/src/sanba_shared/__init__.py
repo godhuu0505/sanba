@@ -6,8 +6,13 @@
 
 from __future__ import annotations
 
+from .inquiry import InquiryTree, make_inquiry_id, normalize_text
 from .models import (
     AnalysisResult,
+    InquiryKind,
+    InquiryNode,
+    InquiryOrigin,
+    InquiryStatus,
     Priority,
     Requirement,
     RequirementCategory,
@@ -19,6 +24,11 @@ from .repository import SessionRepository
 
 __all__ = [
     "AnalysisResult",
+    "InquiryKind",
+    "InquiryNode",
+    "InquiryOrigin",
+    "InquiryStatus",
+    "InquiryTree",
     "Priority",
     "Requirement",
     "RequirementCategory",
@@ -26,4 +36,6 @@ __all__ = [
     "SessionMeta",
     "SessionRepository",
     "Utterance",
+    "make_inquiry_id",
+    "normalize_text",
 ]
