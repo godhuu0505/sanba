@@ -609,3 +609,87 @@ async def test_coverage_open_is_not_published_as_blocking_detection() -> None:
     assert not any(t["event"]["type"] == "detection.gap" for t in transport.sent)
     assert agent._open_detection_count() == 0
     assert agent._repo._mem_detections.get("s1", {}) == {}
+
+
+@pytest.mark.asyncio
+async def test_checkpoint_coverage_published_with_creds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """creds 有り+観点ありで checkpoint.coverage をスナップショット publish（ADR-0057 増分2a）。"""
+    from sanba_agent.config import settings
+
+    monkeypatch.setattr(settings, "google_api_key", "k")
+    transport = RecordingTransport()
+    agent = _agent(transport)
+    agent._check_points = ["性能・レスポンスの要件", "セキュリティ・権限・データ保護"]
+    result = AnalysisResult(
+        summary="s",
+        coverage_open=["セキュリティ・権限・データ保護"],
+        next_question="q?",
+        suggested_answer="a",
+    )
+
+    await agent._publish_analysis_detections(result)
+
+    coverage = [t["event"] for t in transport.sent if t["event"]["type"] == "checkpoint.coverage"]
+    assert len(coverage) == 1
+    points = {p["label"]: p["covered"] for p in coverage[0]["points"]}
+    assert points == {"性能・レスポンスの要件": True, "セキュリティ・権限・データ保護": False}
+    assert not any(t["event"]["type"] == "detection.gap" for t in transport.sent)
+    assert agent._open_detection_count() == 0
+
+
+@pytest.mark.asyncio
+async def test_checkpoint_coverage_not_published_without_creds() -> None:
+    """creds 無しでは coverage を publish しない（全カバー済みの誤誘導を避ける / ADR-0057）。"""
+    transport = RecordingTransport()
+    agent = _agent(transport)
+    agent._check_points = ["性能・レスポンスの要件"]
+    result = AnalysisResult(summary="s", next_question="q?", suggested_answer="a")
+
+    await agent._publish_analysis_detections(result)
+
+    assert not any(t["event"]["type"] == "checkpoint.coverage" for t in transport.sent)
+
+
+@pytest.mark.asyncio
+async def test_checkpoint_coverage_not_published_without_check_points(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """観点 0 件では creds があっても publish しない（旧セッション/未設定）。"""
+    from sanba_agent.config import settings
+
+    monkeypatch.setattr(settings, "google_api_key", "k")
+    transport = RecordingTransport()
+    agent = _agent(transport)
+    assert not agent._check_points
+    result = AnalysisResult(summary="s", next_question="q?", suggested_answer="a")
+
+    await agent._publish_analysis_detections(result)
+
+    assert not any(t["event"]["type"] == "checkpoint.coverage" for t in transport.sent)
+
+
+@pytest.mark.asyncio
+async def test_analyze_tool_payload_carries_uncovered_check_points(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """analyze_requirements の返り値に uncovered_check_points が載る（増分2b）。"""
+
+    async def _stub(transcript: str, check_points: object = ()) -> AnalysisResult:
+        return AnalysisResult(
+            summary="s",
+            coverage_open=["セキュリティ・権限・データ保護"],
+            next_question="q?",
+            suggested_answer="a",
+        )
+
+    monkeypatch.setattr("sanba_agent.main.analyze_transcript", _stub)
+    agent = _agent()
+    agent._check_points = ["セキュリティ・権限・データ保護"]
+
+    tool = type(agent).analyze_requirements.__wrapped__
+    result = await tool(agent, None)
+
+    assert result["uncovered_check_points"] == ["セキュリティ・権限・データ保護"]
+    await agent.drain_background_tasks()

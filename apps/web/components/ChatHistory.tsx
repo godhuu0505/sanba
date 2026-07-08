@@ -1,7 +1,8 @@
 "use client";
 
-import { AlertTriangle, Check, FileText, LoaderCircle, Mic, Package } from "lucide-react";
+import { AlertTriangle, Check, FileText, LoaderCircle, Mic, Package, Slash } from "lucide-react";
 
+import { useInterviewMode } from "@/lib/interviewMode";
 import type { ContextProgressState, TranscriptLine } from "@/lib/realtime/store";
 import type { MaterialItem } from "@/lib/realtime/selectors";
 
@@ -127,11 +128,12 @@ function MaterialBubble({ item }: { item: MaterialItem }) {
 }
 
 export function ChatHistory({ transcript, contextProgress = [], materials = [] }: ChatHistoryProps) {
+  const endUser = useInterviewMode() === "end_user";
   const setupItems = [...contextProgress];
   const materialBubbles = materials.filter(
     (m) => m.status !== "cancelled" && m.status !== "uploading",
   );
-  const hasSetup = setupItems.length > 0 || materialBubbles.length > 0;
+  const hasSetup = setupItems.length > 0 || materialBubbles.length > 0 || endUser;
 
   if (transcript.length === 0 && !hasSetup) {
     return (
@@ -145,6 +147,19 @@ export function ChatHistory({ transcript, contextProgress = [], materials = [] }
 
   return (
     <div className="flex flex-col gap-3 px-4 py-3">
+      {endUser && (
+        <SetupBubble
+          icon={
+            <span className="inline-flex items-center gap-1">
+              <Package size={13} />
+              <Slash size={13} />
+            </span>
+          }
+          tone="done"
+          title="資料/リポジトリ解析：対象外"
+          detail="利用者向けセッションのため、内部資料/リポジトリの解析は行いません。"
+        />
+      )}
       {setupItems.map((c) => (
         <ContextBubble key={`ctx:${c.source}`} item={c} />
       ))}

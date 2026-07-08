@@ -2,6 +2,8 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
+import { InterviewModeProvider } from "@/lib/interviewMode";
+
 import { ChatHistory } from "./ChatHistory";
 
 const line = (over: Partial<Record<string, unknown>>) => ({
@@ -96,5 +98,23 @@ describe("ChatHistory（会話履歴タブ）", () => {
     expect(screen.getByText(/話しかけてください/)).toBeTruthy();
     expect(screen.queryByText("up.png")).toBeNull();
     expect(screen.queryByText("cx.png")).toBeNull();
+  });
+
+  it("end_user では資料/リポジトリ解析が対象外であることを明示する（#434 task3）", () => {
+    render(
+      <InterviewModeProvider value="end_user">
+        <ChatHistory transcript={[]} />
+      </InterviewModeProvider>,
+    );
+    expect(screen.getByText("資料/リポジトリ解析：対象外")).toBeTruthy();
+  });
+
+  it("developer では対象外表示を出さない（回帰なし）", () => {
+    render(
+      <InterviewModeProvider value="developer">
+        <ChatHistory transcript={[line({ utterance_id: "u1", text: "はい" })]} />
+      </InterviewModeProvider>,
+    );
+    expect(screen.queryByText("資料/リポジトリ解析：対象外")).toBeNull();
   });
 });
