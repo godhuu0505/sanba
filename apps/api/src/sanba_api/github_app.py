@@ -519,9 +519,19 @@ class GitHubAppClient:  # pragma: no cover - network
                 page += 1
         return repos
 
-    def repo_full_names(self, installation_id: int) -> set[str]:
-        """インストールがアクセスを許可した repo の full_name 集合（起票権限判定に使う）。"""
-        return {r.full_name for r in self.list_repos(installation_id)}
+    def can_access_repo(
+        self, installation_id: int, repo: str
+    ) -> bool:  # pragma: no cover - network
+        """installation が対象 repo を読めるか（起票権限判定）。単一 `GET /repos/{repo}` で判定し、
+        全 repo 列挙を避ける（大規模 installation でも軽量）。200=可、403/404=不可。"""
+        import httpx
+
+        with httpx.Client(timeout=15) as client:
+            res = client.get(
+                f"{_API}/repos/{repo}",
+                headers=self._inst_headers(installation_id),
+            )
+        return res.status_code == 200
 
     def create_issue(
         self,

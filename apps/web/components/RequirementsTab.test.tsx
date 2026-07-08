@@ -33,7 +33,7 @@ describe("RequirementsTab（要件絵巻タブ・閲覧のみ＋深掘り）", (
 
   it("MoSCoW 区分で要件を閲覧表示する（statement・確信・出所）", () => {
     render(<RequirementsTab requirements={[req({})]} deepDive={[]} onJump={vi.fn()} />);
-    expect(screen.getByText(/Must/)).toBeTruthy();
+    expect(screen.getByText(/ぜひ必要/)).toBeTruthy();
     expect(screen.getByText("検索バーを新設する")).toBeTruthy();
     expect(screen.getByText(/確信 高/)).toBeTruthy();
     expect(screen.getByText(/発話×画面/)).toBeTruthy();
@@ -53,7 +53,7 @@ describe("RequirementsTab（要件絵巻タブ・閲覧のみ＋深掘り）", (
         onJump={onJump}
       />,
     );
-    expect(screen.getByText(/矛盾/)).toBeTruthy();
+    expect(screen.getByText(/食い違い/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /会話で確認/ }));
     expect(onJump).toHaveBeenCalledWith("d9");
   });

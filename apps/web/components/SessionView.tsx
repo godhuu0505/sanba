@@ -22,6 +22,7 @@ import {
   sendTelemetry,
   uploadContextFile,
   type ExportEligibility,
+  type ExportOptions,
   type ExportResult,
   type FinalizeResult,
 } from "../lib/api";
@@ -284,8 +285,8 @@ export function SessionView({
     }
   }
 
-  function handleExport(): Promise<ExportResult> {
-    return exportRequirements(sessionId, sessionToken);
+  function handleExport(options?: ExportOptions): Promise<ExportResult> {
+    return exportRequirements(sessionId, sessionToken, options);
   }
 
   function handleCheckExportEligibility(): Promise<ExportEligibility> {

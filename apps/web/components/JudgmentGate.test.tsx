@@ -61,7 +61,7 @@ describe("JudgmentGate（確定ゲート）", () => {
         onConfirm={vi.fn()}
       />,
     );
-    expect(screen.getByText(/矛盾/)).toBeTruthy();
+    expect(screen.getByText(/食い違い/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /会話で確認/ }));
     expect(onJump).toHaveBeenCalledWith("d3");
   });

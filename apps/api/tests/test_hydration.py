@@ -334,8 +334,8 @@ class _FakeAppClient:
         self._captured = captured
         self._repos = repos
 
-    def repo_full_names(self, installation_id: int) -> set[str]:
-        return self._repos
+    def can_access_repo(self, installation_id: int, repo: str) -> bool:
+        return repo in self._repos
 
     def create_issue(
         self,
@@ -409,6 +409,74 @@ def test_export_uses_session_selected_repo(monkeypatch: pytest.MonkeyPatch) -> N
     assert res.json()["exported"] is True
     assert captured["repo"] == "acme/product-a"
     assert captured["labels"] == ["sanba", "priority:must", "functional"]
+
+
+def test_export_omits_summary_and_materials_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """opt-in なしなら会話要約・参考資料を Issue 本文に含めない（P3・Q4 既定 off）。"""
+    created = client.post(
+        "/api/sessions",
+        json={"roles": ["pm"], "consent_acknowledged": True, "github_repo": "acme/product-a"},
+    )
+    sid = created.json()["session_id"]
+    _read_repo._seed_requirement(
+        sid,
+        {"id": "c1", "statement": "確定", "category": "functional", "priority": "must"},
+    )
+    _repo.save_material(
+        sid,
+        {"id": "a1", "name": "cap.png", "status": "done", "extracted_texts": ["検索ボタンがある"]},
+    )
+    _repo.set_session_summary(sid, "経理担当者向けの請求管理を作る。")
+    captured = _enable_github(monkeypatch)
+    client.post(f"/api/sessions/{sid}/finalize", headers=_auth(_token(sid)))
+
+    res = client.post(f"/api/sessions/{sid}/export", headers=_auth(_token(sid)))
+    assert res.json()["exported"] is True
+    body = str(captured["body"])
+    assert "会話の要約" not in body
+    assert "参考資料" not in body
+
+
+def test_export_includes_summary_and_materials_when_opted_in(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """opt-in で会話要約とファイル名＋観察＋結果画面リンクを Issue 本文へ付す（P3・Q4）。"""
+    monkeypatch.setattr(settings, "web_base_url", "https://youken.example")
+    created = client.post(
+        "/api/sessions",
+        json={"roles": ["pm"], "consent_acknowledged": True, "github_repo": "acme/product-a"},
+    )
+    sid = created.json()["session_id"]
+    _read_repo._seed_requirement(
+        sid,
+        {"id": "c1", "statement": "確定", "category": "functional", "priority": "must"},
+    )
+    _repo.save_material(
+        sid,
+        {
+            "id": "a1",
+            "name": "cap.png",
+            "status": "done",
+            "extracted_texts": ["検索ボタンがある", "設定リンクが無い"],
+        },
+    )
+    _repo.set_session_summary(sid, "経理担当者向けの請求管理を作る。")
+    captured = _enable_github(monkeypatch)
+    client.post(f"/api/sessions/{sid}/finalize", headers=_auth(_token(sid)))
+
+    res = client.post(
+        f"/api/sessions/{sid}/export",
+        headers=_auth(_token(sid)),
+        json={"include_summary": True, "include_materials": True},
+    )
+    assert res.json()["exported"] is True
+    body = str(captured["body"])
+    assert "## 会話の要約" in body
+    assert "経理担当者向けの請求管理を作る。" in body
+    assert "## 参考資料" in body
+    assert "cap.png" in body
+    assert "検索ボタンがある" in body
+    assert f"https://youken.example/results/{sid}" in body
 
 
 def test_export_respects_explicit_opt_out(monkeypatch: pytest.MonkeyPatch) -> None:

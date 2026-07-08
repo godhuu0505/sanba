@@ -2,47 +2,49 @@ import { describe, expect, it } from "vitest";
 
 import { categoryPresentation, detectionPresentation, priorityLabel } from "./mapping";
 
-
-describe("detectionPresentation（モード別語彙）", () => {
-  it("developer（既定）は従来の開発語彙", () => {
-    expect(detectionPresentation("contradiction").label).toBe("矛盾");
-    expect(detectionPresentation("gap").label).toBe("抜け");
-    expect(detectionPresentation("ambiguous").label).toBe("不明瞭");
+describe("detectionPresentation（単一文言・平易）", () => {
+  it("検知は平易な単一文言で出す", () => {
+    expect(detectionPresentation("contradiction").label).toBe("食い違い");
+    expect(detectionPresentation("gap").label).toBe("確認したい点");
+    expect(detectionPresentation("ambiguous").label).toBe("あいまい");
   });
 
-  it("end_user は利用者向け文言に切替わる（色・アイコンは共有）", () => {
-    const dev = detectionPresentation("contradiction");
-    const eu = detectionPresentation("contradiction", "end_user");
-    expect(eu.label).toBe("食い違い");
-    expect(eu.ariaLabel).toContain("食い違い");
-    expect(eu.color).toBe(dev.color);
-    expect(eu.Icon).toBe(dev.Icon);
-    expect(detectionPresentation("gap", "end_user").label).toBe("確認");
-    expect(detectionPresentation("ambiguous", "end_user").label).toBe("あいまい");
+  it("色・アイコン・aria を伴う（色のみに依存しない）", () => {
+    const p = detectionPresentation("contradiction");
+    expect(p.ariaLabel).toContain("食い違い");
+    expect(p.color).toBeTruthy();
+    expect(p.Icon).toBeTruthy();
   });
 });
 
-describe("categoryPresentation（モード別語彙）", () => {
-  it("end_user は『非機能』等の技術用語を出さない", () => {
-    expect(categoryPresentation("non_functional").label).toBe("非機能");
-    expect(categoryPresentation("non_functional", "end_user").label).toBe("使い心地");
-    expect(categoryPresentation("scope", "end_user").label).toBe("範囲");
-    expect(categoryPresentation("unknown_cat", "end_user").label).toBe("要望");
+describe("categoryPresentation（単一文言・開発語彙を出さない）", () => {
+  it("分類は平易語で、『非機能』等の技術用語を出さない", () => {
+    expect(categoryPresentation("functional").label).toBe("機能");
+    expect(categoryPresentation("non_functional").label).toBe("使い心地");
+    expect(categoryPresentation("constraint").label).toBe("前提");
+    expect(categoryPresentation("scope").label).toBe("範囲");
+    expect(categoryPresentation("open_question").label).toBe("確認中");
+    expect(categoryPresentation("unknown_cat").label).toBe("その他");
+    for (const c of ["functional", "non_functional", "constraint", "scope", "open_question"]) {
+      expect(categoryPresentation(c).label).not.toMatch(/非機能|制約|境界|未解決/);
+    }
   });
 });
 
-describe("priorityLabel（モード別語彙）", () => {
-  it("developer（既定）は MoSCoW 表記", () => {
-    expect(priorityLabel("must")).toBe("Must 必須");
+describe("priorityLabel（単一文言・MoSCoW を出さない）", () => {
+  it("優先度は平易語で出す", () => {
+    expect(priorityLabel("must")).toBe("ぜひ必要");
+    expect(priorityLabel("should")).toBe("あると助かる");
+    expect(priorityLabel("could")).toBe("できれば");
+    expect(priorityLabel("wont")).toBe("今回は見送り");
+    expect(priorityLabel("unknown")).toBe("その他");
   });
 
-  it("end_user は MoSCoW（Must/Should/...）を露出させない", () => {
+  it("MoSCoW（Must/Should/...）をラベルに露出させない", () => {
     for (const p of ["must", "should", "could", "wont"]) {
-      const label = priorityLabel(p, "end_user");
+      const label = priorityLabel(p);
       expect(label).not.toMatch(/must|should|could|won/i);
       expect(label).not.toMatch(/MoSCoW/i);
     }
-    expect(priorityLabel("must", "end_user")).toBe("ぜひ必要");
-    expect(priorityLabel("unknown", "end_user")).toBe("その他");
   });
 });

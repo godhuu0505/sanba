@@ -1,6 +1,5 @@
 "use client";
 
-import { useInterviewMode } from "@/lib/interviewMode";
 import { detectionPresentation } from "@/lib/realtime/mapping";
 import type { DetectionKind } from "@/lib/realtime/types";
 
@@ -10,7 +9,7 @@ export interface DetectionPinProps {
 }
 
 export function DetectionPin({ summary, kind }: DetectionPinProps) {
-  const presentation = detectionPresentation(kind, useInterviewMode());
+  const presentation = detectionPresentation(kind);
   return (
     <div
       role="status"

@@ -83,8 +83,8 @@ describe("ResultView（要件産婆結果）", () => {
     expect(preview).toBeTruthy();
     expect(screen.getByText("ログインできること")).toBeTruthy();
     expect(screen.getByText("パスワード再設定ができること")).toBeTruthy();
-    expect(screen.getByText(/Must/)).toBeTruthy();
-    expect(screen.getByText(/Should/)).toBeTruthy();
+    expect(screen.getByText(/ぜひ必要/)).toBeTruthy();
+    expect(screen.getByText(/あると助かる/)).toBeTruthy();
     expect(screen.queryByText(/ほか/)).toBeNull();
   });
 
@@ -115,12 +115,12 @@ describe("ResultView（要件産婆結果）", () => {
       confirmedCount: 1,
       requirements: [req("m1", "must", "唯一の必須要件")],
     });
-    expect(screen.getByText(/Must/)).toBeTruthy();
-    expect(screen.queryByText(/Should/)).toBeNull();
+    expect(screen.getByText(/ぜひ必要/)).toBeTruthy();
+    expect(screen.queryByText(/あると助かる/)).toBeNull();
     cleanup();
     setup({ confirmedCount: 2, requirements: [req("c1", "could", "C1"), req("w1", "wont", "W1")] });
-    expect(screen.queryByText(/Must/)).toBeNull();
-    expect(screen.queryByText(/Should/)).toBeNull();
+    expect(screen.queryByText(/ぜひ必要/)).toBeNull();
+    expect(screen.queryByText(/あると助かる/)).toBeNull();
     expect(screen.getByText(/ほか 2 件/)).toBeTruthy();
   });
 
@@ -186,6 +186,23 @@ describe("ResultView（要件産婆結果）", () => {
   it("Issue ハンドラ未指定なら起票結果は表示しない", () => {
     setup({ onExportIssue: undefined, issueExport: { status: "done", url: "https://x/1" } });
     expect(screen.queryByText(/Issue を開く/)).toBeNull();
+  });
+
+  it("Issue 起票は既定で要約・素材を含めず、チェックした opt-in を choice で渡す（P3）", () => {
+    const cb = setup();
+    fireEvent.click(screen.getByRole("button", { name: /Issue/ }));
+    expect(cb.onExportIssue).toHaveBeenLastCalledWith({
+      includeSummary: false,
+      includeMaterials: false,
+    });
+
+    fireEvent.click(screen.getByLabelText(/会話の要約/));
+    fireEvent.click(screen.getByLabelText(/参考資料のサマリ/));
+    fireEvent.click(screen.getByRole("button", { name: /Issue/ }));
+    expect(cb.onExportIssue).toHaveBeenLastCalledWith({
+      includeSummary: true,
+      includeMaterials: true,
+    });
   });
 
   it("起票権限が無いとき Issue ボタンを無効化し理由を出す（ADR-0053）", () => {

@@ -216,14 +216,14 @@ def export_eligibility(access_sub: str, session: SessionMeta) -> ExportEligibili
     if link is None:
         return ExportEligibility(can_export=False, reason="github not linked", repo=repo)
     try:
-        allowed_repos = client.repo_full_names(link.installation_id)
+        has_access = client.can_access_repo(link.installation_id, repo)
     except Exception as exc:  # pragma: no cover - network
         log.warning("github_export_repo_check_failed", error=str(exc))
         return ExportEligibility(can_export=False, reason="no repo access", repo=repo)
     finally:
         with contextlib.suppress(Exception):
             client.close()
-    if repo not in allowed_repos:
+    if not has_access:
         return ExportEligibility(can_export=False, reason="no repo access", repo=repo)
     return ExportEligibility(can_export=True, reason=None, repo=repo)
 

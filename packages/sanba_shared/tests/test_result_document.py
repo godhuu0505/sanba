@@ -9,6 +9,8 @@ from __future__ import annotations
 from typing import Any
 
 from sanba_shared.result_document import (
+    build_materials_block,
+    build_summary_prompt,
     render_result_document,
     requirements_to_issue_labels,
 )
@@ -216,3 +218,36 @@ def test_issue_labels_ignore_non_confirmed_but_keep_base() -> None:
         ]
     )
     assert labels == ["sanba"]
+
+
+def test_build_materials_block_lists_solved_with_link() -> None:
+    block = build_materials_block(
+        [
+            {
+                "id": "a1",
+                "name": "cap.png",
+                "extracted_texts": ["観察1", "観察2", "観察3", "四番目の観察"],
+            },
+            {"id": "a2", "name": "wip.mp4", "status": "analyzing"},
+        ],
+        "https://youken.example/results/sess-1",
+    )
+    assert "**cap.png**" in block
+    assert "観察1" in block
+    assert "四番目の観察" not in block, "観察は先頭3件までで本文肥大を防ぐ"
+    assert "wip.mp4" not in block, "解析未了（extracted_texts 無し）の素材は載せない"
+    assert "https://youken.example/results/sess-1" in block
+
+
+def test_build_materials_block_empty_when_nothing_solved() -> None:
+    assert build_materials_block([{"id": "a2", "status": "analyzing"}], "u") == ""
+    assert build_materials_block([], "u") == ""
+
+
+def test_build_summary_prompt_includes_masked_utterances() -> None:
+    prompt = build_summary_prompt(
+        [{"speaker": "participant", "text": "請求管理を作りたい"}, {"speaker": "", "text": ""}]
+    )
+    assert "請求管理を作りたい" in prompt
+    assert "400字以内" in prompt
+    assert "創作しない" in prompt

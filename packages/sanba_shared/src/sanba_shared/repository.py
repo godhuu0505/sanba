@@ -1104,6 +1104,41 @@ class SessionRepository:
             return
         self._mem_utterances.setdefault(session_id, []).append(stored)
 
+    def list_utterances(self, session_id: str) -> list[Utterance]:
+        """セッションの発話ログを時刻順で返す（会話要約の生成元 / P3）。
+
+        text は保存時に mask_pii 済み。Firestore は ts で整列（複合インデックス不要な
+        単一フィールド order）、in-memory は挿入順（= 時系列）をそのまま返す。
+        """
+        if self._client is not None:
+            docs = (
+                self._client.collection("sessions")
+                .document(session_id)
+                .collection("utterances")
+                .order_by("ts")
+                .stream()
+            )
+            return [Utterance.model_validate(d.to_dict()) for d in docs]
+        return list(self._mem_utterances.get(session_id, []))
+
+    def set_session_summary(self, session_id: str, summary: str) -> SessionMeta | None:
+        """確定時に生成した会話要約を保存する（Issue 起票の opt-in 同梱に使う / P3）。
+
+        merge 保存で確定スナップショット等を温存する。存在しなければ None。
+        """
+        summary = summary.strip()
+        meta = self.get_session(session_id)
+        if meta is None:
+            return None
+        updated = meta.model_copy(update={"conversation_summary": summary})
+        if self._client is not None:
+            self._client.collection("sessions").document(session_id).set(
+                {"conversation_summary": summary}, merge=True
+            )
+        else:
+            self._mem_sessions[session_id] = updated
+        return updated
+
     def save_requirement(self, session_id: str, requirement: Requirement) -> None:
         if self._client is not None:
             doc = requirement.model_dump(mode="json")
