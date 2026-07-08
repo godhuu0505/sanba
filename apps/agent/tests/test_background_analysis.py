@@ -191,6 +191,58 @@ async def test_background_analysis_timeout_is_fail_soft(
 
 
 @pytest.mark.asyncio
+async def test_propose_session_end_gated_on_open_detections() -> None:
+    transport = RecordingTransport()
+    agent = _agent(transport)
+    propose = type(agent).propose_session_end.__wrapped__
+
+    agent._published_gaps.add("g1")
+    declined = await propose(agent, None)
+    assert declined == {"proposed": False, "open_count": 1}
+    assert not any(t["event"]["type"] == "session.end_proposed" for t in transport.sent)
+
+    agent._published_gaps.clear()
+    proposed = await propose(agent, None)
+    assert proposed["proposed"] is True
+    assert any(t["event"]["type"] == "session.end_proposed" for t in transport.sent)
+
+
+@pytest.mark.asyncio
+async def test_complete_session_publishes_completed_and_shuts_down() -> None:
+    import asyncio
+
+    from sanba_agent.config import settings
+
+    transport = RecordingTransport()
+    agent = _agent(transport)
+    reasons: list[str] = []
+    agent.set_shutdown_hook(lambda reason: reasons.append(reason))
+    monkeypatch_delay = settings.voice_completion_shutdown_delay_s
+    settings.voice_completion_shutdown_delay_s = 0.01
+    try:
+        complete = type(agent).complete_session.__wrapped__
+        result = await complete(agent, None)
+        assert result["completed"] is True
+        assert any(t["event"]["type"] == "session.completed" for t in transport.sent)
+        await asyncio.sleep(0.05)
+        assert reasons, "同意後にシャットダウンフックが起動する"
+    finally:
+        settings.voice_completion_shutdown_delay_s = monkeypatch_delay
+
+
+@pytest.mark.asyncio
+async def test_complete_session_refuses_when_open_remains() -> None:
+    transport = RecordingTransport()
+    agent = _agent(transport)
+    agent.set_shutdown_hook(lambda reason: None)
+    agent._published_ambiguous.add("a1")
+    complete = type(agent).complete_session.__wrapped__
+    result = await complete(agent, None)
+    assert result == {"completed": False, "open_count": 1}
+    assert not any(t["event"]["type"] == "session.completed" for t in transport.sent)
+
+
+@pytest.mark.asyncio
 async def test_emit_context_progress_publishes_prep_and_repo() -> None:
     from sanba_shared.models import GitHubIndexStatus
 

@@ -193,6 +193,34 @@ describe("decodeServerEvent ペイロードの enum/配列/範囲 検証 (#120)"
     ).toBe("bad-payload");
   });
 
+  it("session.end_proposed は 3 つの件数が数値なら ok（P1-b）", () => {
+    const { reason, event } = decodeServerEvent(
+      bytes({
+        ...env,
+        type: "session.end_proposed",
+        open_count: 0,
+        requirement_count: 5,
+        material_count: 2,
+      }),
+    );
+    expect(reason).toBe("ok");
+    expect(event?.type).toBe("session.end_proposed");
+  });
+
+  it("session.end_proposed の件数が数値でないなら bad-payload", () => {
+    expect(
+      decodeServerEvent(
+        bytes({
+          ...env,
+          type: "session.end_proposed",
+          open_count: "0",
+          requirement_count: 5,
+          material_count: 2,
+        }),
+      ).reason,
+    ).toBe("bad-payload");
+  });
+
   it("detection.ambiguous は refs 配列が妥当なら ok (#182)", () => {
     const { reason, event } = decodeServerEvent(
       bytes({ ...env, type: "detection.ambiguous", id: "a1", summary: "曖昧", refs: ["u1"], detector: "x" }),

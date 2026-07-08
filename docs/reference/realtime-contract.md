@@ -62,7 +62,8 @@ web 側の適用規則: **`(type, id)` で冪等**（同じ要件/検知は upse
 | `analysis.progress` | 07 | `asset_id`, `pct`(0–100), `stage`（人間可読ラベル）。アップロード素材の解析は **API（サーバ identity）が直接 publish**（#145 / ADR-0023）。実体に正直な粗ステージ `received`(10)→`analyzing`(50)→`done`(100)/`failed` を出し、フェイクの中間 pct は作らない。会話中の画面共有由来は従来どおり agent が送る |
 | `analysis.visual` | 08 | `asset_id`, `extracted`:[string...], `conflicts`:[{`summary`,`refs`}]。アップロード解析の完了は API が publish（#145）。`conflicts`（言葉×画の矛盾 / ADR-0004）は突合実装まで空配列可 |
 | `context.progress` | 04 | `source`(`prep`\|`repo`), `stage`(`running`\|`done`\|`reused`\|`partial`\|`failed`), `label?`, `detail?`（P1-a）。会話開始時の前提読み込み（ゴール/ゴール詳細=prep・ソースコード索引=repo）の状態を **agent が publish** し、会話履歴のシステム吹き出しへ写像する。素材の進捗は `analysis.progress` が担うので重複させない。実体に正直な段階のみ（`reused`=既存索引利用・進捗バーなし / `running`=索引中）。end_user モードでは repo は送らない（private repo 情報を利用者会話に出さない多層防御） |
-| `session.completed` | 09/10 | `summary`:{`contradictions_resolved`,`gaps_found`,`issues_created`}, `artifacts`:[{`kind`,`url`}] |
+| `session.end_proposed` | 07 | `open_count`(=0), `requirement_count`, `material_count`（P1-b）。未解消（矛盾・抜け・不明瞭）が 0 件になったとき **agent が `propose_session_end` で publish**。web は終了提案カードを出し、ユーザーが同意（音声=agent が `complete_session`／タップ=web が直接 finalize）すると確定へ進む。「まだ続ける」は web ローカルでカードを閉じるだけ |
+| `session.completed` | 09/10 | `summary`:{`contradictions_resolved`,`gaps_found`,`issues_created`}, `artifacts`:[{`kind`,`url`}]。agent の `complete_session`（ユーザー同意後）または Issue 起票で publish。web は受信で自動的に finalize→結果画面へ遷移する（P1-b） |
 
 > エージェント識別子（`detector` / `source_speaker`）は **機能名**で送る。UI 上の色（緋=矛盾/黄土=抜け）は
 > web 側のデザイントークンへのマッピングであり、ペイロードには持たせない。

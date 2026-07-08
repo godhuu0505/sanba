@@ -165,6 +165,12 @@ export type QuestionClearedEvent = Envelope<"question.cleared"> & {
   question_id: string;
 };
 
+export type SessionEndProposedEvent = Envelope<"session.end_proposed"> & {
+  open_count: number;
+  requirement_count: number;
+  material_count: number;
+};
+
 export type SessionCompletedEvent = Envelope<"session.completed"> & {
   summary: {
     contradictions_resolved: number;
@@ -188,6 +194,7 @@ export type ServerEvent =
   | AnalysisProgressEvent
   | AnalysisVisualEvent
   | ContextProgressEvent
+  | SessionEndProposedEvent
   | SessionCompletedEvent;
 
 export type ServerEventType = ServerEvent["type"];
