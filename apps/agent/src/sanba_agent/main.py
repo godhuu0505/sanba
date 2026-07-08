@@ -864,10 +864,11 @@ class SANBAAgent(Agent):
 
         退出猶予（LiveKit ~10s）を圧迫しないよう LLM 生成（タイトル・要約）は行わない: それらは
         会話を締めた通常 finalize（API）が担う付加価値で、欠けてもデータ保全・export 整合には
-        影響しない。確定集合の算出（却下以外）とラベルは api の finalize と同じ共有ヘルパを使う。
+        影響しない。確定集合の算出（却下以外）とラベルは api の finalize と同じ共有ヘルパを使い、
+        確定マーカと承認は `finalize_and_approve` の 1 バッチにまとめて部分書き込みを避ける
+        （`_on_close` は背景タスクのドレン後に呼び、直前に確定した要件も取りこぼさない）。
         """
         from sanba_shared.models import RequirementStatus
-        from sanba_shared.repository import RequirementNotFound
         from sanba_shared.result_document import (
             requirements_to_issue_labels,
             requirements_to_render_dicts,
@@ -885,24 +886,13 @@ class SANBAAgent(Agent):
             return
         confirmed_ids = [r.id for r in confirmed]
         labels = requirements_to_issue_labels(requirements_to_render_dicts(confirmed))
-        self._repo.finalize_session(
+        self._repo.finalize_and_approve(
             self._session_id,
-            confirmed_count=len(confirmed),
             finalized_requirement_ids=confirmed_ids,
             labels=labels,
+            approved_by="agent:auto_finalize",
+            keep_expiry=session.owner_email == "",
         )
-        is_guest_session = session.owner_email == ""
-        for rid in confirmed_ids:
-            try:
-                self._repo.set_requirement_status(
-                    self._session_id,
-                    rid,
-                    RequirementStatus.APPROVED,
-                    approved_by="agent:auto_finalize",
-                    keep_expiry=is_guest_session,
-                )
-            except RequirementNotFound:
-                log.warning("auto_finalize_missing_requirement", session=self._session_id, rid=rid)
         log.info("session_auto_finalized", session=self._session_id, confirmed=len(confirmed))
 
     @function_tool
@@ -1991,12 +1981,12 @@ async def entrypoint(ctx: JobContext) -> None:
     )
 
     async def _on_close() -> None:
+        await _drain_tasks(set(_bg_tasks), DRAIN_GRACE_SECONDS)
+        await agent.drain_background_tasks()
         try:
             await agent.auto_finalize_if_needed()
         except Exception as exc:  # noqa: BLE001
             log.warning("auto_finalize_failed", session=session_id, error=str(exc))
-        await _drain_tasks(set(_bg_tasks), DRAIN_GRACE_SECONDS)
-        await agent.drain_background_tasks()
         from .evaluation import score_session
 
         await score_session(session_id=session_id, transcript="\n".join(agent.transcript))

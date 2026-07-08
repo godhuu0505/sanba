@@ -235,6 +235,65 @@ class SessionRepository:
             self._mem_sessions[session_id] = updated
         return updated
 
+    def finalize_and_approve(
+        self,
+        session_id: str,
+        *,
+        finalized_requirement_ids: list[str],
+        labels: list[str],
+        approved_by: str,
+        keep_expiry: bool,
+    ) -> SessionMeta | None:
+        """確定マーカと確定集合の承認を 1 バッチでアトミックに書く（自動確定用 / ADR-0056）。
+
+        離脱後始末（agent の close callback）はシャットダウン猶予（LiveKit ~10s）下で走るため、
+        `finalize_session` + 要件ごとの `set_requirement_status`（get+write の逐次往復）だと中断時に
+        「finalized 済みなのに一部要件は draft のまま」という部分書き込みが残りうる。ここでは確定
+        フィールドと確定集合の approved 化（承認は TTL 解除、ゲストは `keep_expiry` で据え置き）を
+        Firestore batch で 1 コミットにまとめ、部分書き込みと往復数を避ける。会話を締める通常
+        finalize（api）は title/summary 生成を挟むため逐次経路のまま。既に finalized なら no-op。
+        """
+        meta = self.get_session(session_id)
+        if meta is None or meta.status == "finalized":
+            return meta
+        now = datetime.now(UTC)
+        reqs = {r.id: r for r in self.list_requirements(session_id)}
+        approved_ids = [rid for rid in finalized_requirement_ids if rid in reqs]
+        finalize_fields: dict[str, Any] = {
+            "status": "finalized",
+            "finalized_at": now,
+            "finalized_count": len(finalized_requirement_ids),
+            "finalized_requirement_ids": list(finalized_requirement_ids),
+            "labels": list(labels),
+        }
+        approve_update = {
+            "status": RequirementStatus.APPROVED,
+            "approved_by": approved_by,
+            "approved_at": now,
+        }
+        if self._client is not None:
+            from google.cloud import firestore
+
+            batch = self._client.batch()
+            batch.set(
+                self._client.collection("sessions").document(session_id),
+                finalize_fields,
+                merge=True,
+            )
+            for rid in approved_ids:
+                doc = reqs[rid].model_copy(update=approve_update).model_dump(mode="json")
+                if not keep_expiry:
+                    doc["expireAt"] = firestore.DELETE_FIELD
+                batch.set(self._req_doc(session_id, rid), doc, merge=True)
+            batch.commit()
+        else:
+            self._mem_sessions[session_id] = meta.model_copy(update=finalize_fields)
+            for rid in approved_ids:
+                self._mem_requirements[session_id][rid] = reqs[rid].model_copy(
+                    update=approve_update
+                )
+        return self.get_session(session_id)
+
     def set_session_title(self, session_id: str, title: str) -> SessionMeta | None:
         """セッションのタイトルを差し替える（要件確定時の Vertex AI 生成タイトル）。
 

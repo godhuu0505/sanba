@@ -30,9 +30,11 @@ voice agent の `entrypoint` 終了コールバック（`_on_close`）で `auto_
 
 - 確定集合 = **却下（rejected）以外**の要件（`requirements_to_render_dicts` / `requirement_doc_to_contract`
   と同じ倒し方）。ラベルは `requirements_to_issue_labels`（api / agent 共通）。
-- `SessionRepository.finalize_session` で確定スナップショット（`finalized_requirement_ids` / 件数 /
-  ラベル）を刻み、`set_requirement_status(APPROVED)` で TTL を解除する（ゲストは `keep_expiry=True`
-  を踏襲＝セッション文書自体の TTL に従う / ADR-0032）。
+- 確定マーカ（`finalized_requirement_ids` / 件数 / ラベル）と確定集合の approved 化（TTL 解除。
+  ゲストは `keep_expiry=True` を踏襲＝セッション文書自体の TTL に従う / ADR-0032）を、
+  `SessionRepository.finalize_and_approve` の **1 バッチ（Firestore batch）でアトミックに**書く。
+  逐次の `finalize_session` + 要件ごとの `set_requirement_status`（get+write の往復）だと、時間制約
+  下の中断で「finalized 済みなのに一部要件は draft のまま」という部分書き込みが残りうるため。
 - `approved_by="agent:auto_finalize"` で自動確定を監査上区別する。`session_auto_finalized` を構造化
   ログに残す。
 
@@ -41,8 +43,9 @@ voice agent の `entrypoint` 終了コールバック（`_on_close`）で `auto_
 退出猶予（LiveKit ~10s。score_session の SIGKILL 対策と同じ制約）を圧迫しないため、通常 finalize が
 行う会話タイトル・要約の LLM 生成は**しない**。これらは表示上の付加価値で、欠けてもデータ保全・
 export 整合には影響しない（会話を締めた通常 finalize では従来どおり生成される）。確定処理は
-Firestore への軽量な書き込みだけなので猶予内に収まる。データ保全を最優先するため、`_on_close` では
-ドレン・採点より**前**に自動確定を実行する。
+Firestore の 1 バッチ書き込みだけなので猶予内に収まる。`_on_close` は背景タスク（要件の永続化を含む）を
+**ドレンした後**に自動確定を呼ぶ: 直前に確定した要件も Firestore に反映されてから確定集合を固定する
+ためで、採点（best-effort）より前に実行してデータ保全を優先する。
 
 ### 未解消検知は確定を妨げない
 
@@ -68,11 +71,15 @@ api の finalize エンドポイントは未解消検知 0 件を要求する（
 - 既に finalized なら冪等に no-op（happy path と二重確定しない）。
 - タイトル・要約は自動確定では付かない（表示上の差。データには影響しない）。
 - ゲストセッションは従来どおり `keep_expiry=True`（セッション文書の TTL に従う）。
-- 部分書き込み耐性: スナップショット（`finalize_session`、1 write）を承認ループの**前**に置くため、
-  仮に多数の要件で承認ループ中にプロセスが kill されても、確定マーカと export スナップショットは
-  残る（未承認の末尾要件は draft のまま TTL に従う）。書き込みは `set_requirement_status` が
-  要件ごとに get+write する分、件数に比例するので、退出猶予を守るためデータ保全を最優先に配置する。
+- 部分書き込み耐性: 確定マーカと承認を 1 バッチにまとめたため、途中中断で「finalized なのに一部
+  要件は draft」という不整合は起きない（バッチはアトミック）。往復数も件数によらず一定で、退出猶予
+  への圧迫が小さい。
 - 失敗は握りつぶさず `auto_finalize_failed` を残す（`_on_close` は例外でシャットダウンを止めない）。
-- 後続: web の強制終了/離脱導線でも確定を促す UX（サーバ自動確定の上乗せ）。
-- 既知の制約: `score_session` は end_user でも developer ルーブリックで採点する既存の課題があり
-  本 ADR では触れない（別途 mode 別採点の導入で解消する）。
+- 後続 / 既知の制約:
+  - web finalize（api）と agent 自動確定は別プロセスから同一セッションへ書きうる新しい並行経路。
+    バッチ前の `status=="finalized"` チェックで多重確定の窓は小さいが、完全な排他は Firestore
+    トランザクション化が必要（本 ADR ではバッチ + 事前チェックに留める。両者の確定集合はほぼ同一で
+    lost update の実害は小さい）。
+  - `score_session` は end_user でも developer ルーブリックで採点する既存の課題があり本 ADR では
+    触れない（別途 mode 別採点の導入で解消する）。
+  - web の強制終了/離脱導線でも確定を促す UX（サーバ自動確定の上乗せ）。
