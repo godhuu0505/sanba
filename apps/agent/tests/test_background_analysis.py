@@ -477,3 +477,66 @@ async def test_tool_ride_along_timeout_returns_without_competing_run(
 
     gate.set()
     await agent.drain_background_tasks()
+
+
+def _seed_req(agent: SANBAAgent, rid: str, *, rejected: bool = False) -> None:
+    from sanba_shared.models import Priority, Requirement, RequirementCategory, RequirementStatus
+
+    agent._repo.save_requirement(
+        agent._session_id,
+        Requirement(
+            id=rid,
+            statement=f"要件 {rid}",
+            category=RequirementCategory.FUNCTIONAL,
+            priority=Priority.MUST,
+            status=RequirementStatus.REJECTED if rejected else RequirementStatus.DRAFT,
+        ),
+    )
+
+
+@pytest.mark.asyncio
+async def test_auto_finalize_snapshots_and_approves_confirmed() -> None:
+    """未確定で離脱したら確定集合（却下以外）を snapshot し approved 化する（ADR-0056）。"""
+    from sanba_shared.models import RequirementStatus
+
+    agent = _agent()
+    sid = agent._session_id
+    _seed_req(agent, "c1")
+    _seed_req(agent, "r1", rejected=True)
+
+    await agent.auto_finalize_if_needed()
+
+    meta = agent._repo.get_session(sid)
+    assert meta is not None
+    assert meta.status == "finalized"
+    assert meta.finalized_requirement_ids == ["c1"]
+    assert meta.finalized_count == 1
+    assert agent._repo.get_requirement(sid, "c1").status is RequirementStatus.APPROVED
+
+
+@pytest.mark.asyncio
+async def test_auto_finalize_is_noop_when_already_finalized() -> None:
+    """既に finalized なら遅延要件を混ぜず冪等（通常 finalize と二重確定しない）。"""
+    agent = _agent()
+    sid = agent._session_id
+    _seed_req(agent, "c1")
+    agent._repo.finalize_session(
+        sid, confirmed_count=1, finalized_requirement_ids=["c1"], labels=["sanba"]
+    )
+    _seed_req(agent, "c2")
+
+    await agent.auto_finalize_if_needed()
+
+    meta = agent._repo.get_session(sid)
+    assert meta is not None
+    assert meta.finalized_requirement_ids == ["c1"]
+
+
+@pytest.mark.asyncio
+async def test_auto_finalize_skips_when_no_requirements() -> None:
+    """要件が 1 件も無ければ確定しない（空の確定を作らない）。"""
+    agent = _agent()
+    await agent.auto_finalize_if_needed()
+    meta = agent._repo.get_session(agent._session_id)
+    assert meta is not None
+    assert meta.status != "finalized"
