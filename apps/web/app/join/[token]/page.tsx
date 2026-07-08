@@ -4,7 +4,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { ConversationStart } from "@/components/ConversationStart";
-import { AppHeader, Button, Card, CardTitle, Screen } from "@/components/sanba";
+import { AppHeader, Button, Card, CardTitle, HelpIcon, Screen } from "@/components/sanba";
 import {
   ApiError,
   joinProduct,
@@ -19,8 +19,8 @@ import { InterviewModeProvider, type InterviewMode } from "@/lib/interviewMode";
 const RETENTION_DAYS = process.env.NEXT_PUBLIC_RETENTION_DAYS ?? "30";
 
 const MODE_ROLE_LABEL: Record<string, string> = {
-  developer: "企画(PdM)",
-  end_user: "顧客",
+  developer: "企画者",
+  end_user: "利用者",
 };
 
 interface JoinError {
@@ -160,7 +160,7 @@ export default function JoinPage() {
       <InterviewModeProvider value={interviewMode}>
         <ConversationStart
           conn={conn}
-          goal={productName ? `「${productName}」の深掘り` : ""}
+          goal={productName ? `「${productName}」の会話` : ""}
           roleLabel={roleLabel}
           readOnly={isGuest}
           onCancel={leave}
@@ -171,7 +171,7 @@ export default function JoinPage() {
 
   return (
     <Screen className="px-4 py-3 sanba-scroll">
-      <AppHeader title="深掘りに参加" onBack={() => router.push("/")} />
+      <AppHeader title="会話に参加" onBack={() => router.push("/")} />
       <main className="mx-auto flex w-full max-w-[480px] flex-1 flex-col gap-[18px] pt-2">
         {error && !error.retryable ? (
           <Card>
@@ -194,13 +194,19 @@ export default function JoinPage() {
           </Card>
         ) : (
           <Card>
-            <CardTitle>リンクから会話に参加します</CardTitle>
+            <div className="flex items-center gap-[6px]">
+              <CardTitle>リンクから会話に参加します</CardTitle>
+              <HelpIcon term="会話リンク" />
+            </div>
             <p className="text-[13px] leading-relaxed text-sanba-cream">
               このリンクの発行者が、対象のアプリを準備済みです。開始すると、声で一問ずつ
               おたずねする会話が始まります（事前の入力は不要です）。
             </p>
             <div className="rounded-[12px] border border-sanba-border bg-sanba-surface p-[12px]">
-              <p className="text-[12.5px] font-bold text-sanba-cream">はじめる前にご確認ください</p>
+              <p className="flex items-center gap-[4px] text-[12.5px] font-bold text-sanba-cream">
+                はじめる前にご確認ください
+                <HelpIcon term="録音とデータの扱い" />
+              </p>
               <ul className="mt-[6px] list-disc space-y-[4px] pl-4 text-[12px] leading-relaxed text-sanba-muted">
                 <li>この会話は録音され、内容の整理に AI を使います。</li>
                 <li>録音と会話の記録は、{RETENTION_DAYS} 日たつと自動で削除されます。</li>
@@ -231,7 +237,7 @@ export default function JoinPage() {
               block
               disabled={busy || !consent || authSettling}
               onClick={handleStart}
-              aria-label="深掘りを開始する"
+              aria-label="会話を始める"
             >
               {busy ? "準備しています…" : "開始する"}
             </Button>

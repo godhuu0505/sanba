@@ -7,13 +7,13 @@ export default function NotFound() {
     <Screen>
       <AppHeader />
       <div className="mx-auto flex w-full max-w-90 flex-1 flex-col items-center justify-center gap-3.5 px-6 py-10 text-center">
-        <Figure state="asking" className="w-[84px]" label="頁が見つからず首をかしげる棒人間" />
+        <Figure state="asking" className="w-[84px]" label="ページが見つからないことを表すイラスト" />
         <p className="text-[13px] font-bold tracking-[0.3em] text-sanba-muted">404</p>
         <h1 className="sanba-display text-[22px] font-bold text-sanba-cream">
-          この頁は見当たりませぬ
+          ページが見つかりません
         </h1>
         <p className="text-[13px] leading-relaxed text-sanba-muted">
-          お探しの頁は移されたか、はじめから無かったのかもしれません。
+          お探しのページは、移動または削除された可能性があります。
         </p>
         <Button asChild variant="gold" size="lg" block className="mt-2">
           <Link href="/">ホームへ戻る</Link>

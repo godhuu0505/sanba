@@ -11,6 +11,7 @@ import {
   Chip,
   Field,
   Figure,
+  HelpIcon,
   Select,
   Textarea,
 } from "@/components/sanba";
@@ -506,7 +507,7 @@ export default function EntryFlow({
               onChange={(e) => setGoal(e.target.value)}
               rows={3}
               aria-required="true"
-              placeholder="ゴールを入力・・・"
+              placeholder="ゴールを入力…"
               className="resize-y"
               maxLength={2000}
             />
@@ -529,7 +530,7 @@ export default function EntryFlow({
               value={goalDetail}
               onChange={(e) => setGoalDetail(e.target.value)}
               rows={4}
-              placeholder="背景・現状・制約・期待する成果などを自由に入力・・・"
+              placeholder="背景・現状・制約・期待する成果などを自由に入力…"
               className="resize-y"
               maxLength={8000}
             />
@@ -616,19 +617,22 @@ export default function EntryFlow({
           />
 
           {}
-          <label className="flex items-start gap-[10px] text-[13px] leading-relaxed text-sanba-cream">
-            <input
-              type="checkbox"
-              checked={consent}
-              onChange={(e) => setConsent(e.target.checked)}
-              aria-required="true"
-              className="mt-[3px] size-[16px] accent-sanba-gold"
-            />
-            <span>
-              録音と AI 処理に同意します（最大 {RETENTION_DAYS} 日保持）。
-              <FieldBadge required />
-            </span>
-          </label>
+          <div className="flex items-start gap-[6px]">
+            <label className="flex items-start gap-[10px] text-[13px] leading-relaxed text-sanba-cream">
+              <input
+                type="checkbox"
+                checked={consent}
+                onChange={(e) => setConsent(e.target.checked)}
+                aria-required="true"
+                className="mt-[3px] size-[16px] accent-sanba-gold"
+              />
+              <span>
+                録音と AI 処理に同意します（最大 {RETENTION_DAYS} 日保持）。
+                <FieldBadge required />
+              </span>
+            </label>
+            <HelpIcon term="録音とデータの扱い" className="mt-[2px] shrink-0" />
+          </div>
 
           <div className="mt-1 flex flex-col gap-[8px]">
             <Button
@@ -637,13 +641,13 @@ export default function EntryFlow({
               block
               onClick={handleStart}
               disabled={!canStart}
-              aria-label="要件サンバを始める"
+              aria-label="会話を始める"
             >
               {busy ? (
                 "準備しています…"
               ) : (
                 <span className="inline-flex items-center justify-center gap-1.5">
-                  <Mic size={16} aria-hidden /> 要件サンバを始める
+                  <Mic size={16} aria-hidden /> 会話を始める
                 </span>
               )}
             </Button>
@@ -695,7 +699,7 @@ export default function EntryFlow({
           <div className="flex items-start justify-between gap-[12px]">
             <div className="flex flex-col gap-[8px]">
               <h1 className="sanba-display text-[23px] font-bold leading-snug text-sanba-cream">
-                会議の前に、五分の問答を
+                会議の前に、五分の会話を
               </h1>
               <p className="text-[13px] leading-relaxed text-sanba-muted">
                 一問ずつ問いかけ、抜けと矛盾をその場で取り上げます。
@@ -706,14 +710,19 @@ export default function EntryFlow({
           </div>
           {}
           <Field
-            label="対象のプロダクト・アプリ"
-            marker={<FieldBadge required />}
+            label="対象のアプリ"
+            marker={
+              <>
+                <FieldBadge required />
+                <HelpIcon term="対象のアプリ" className="ml-[6px]" />
+              </>
+            }
             htmlFor="product"
             hint={
               products === null
                 ? "登録済みのアプリを確認しています…"
                 : products.length > 0
-                  ? "対象のアプリを選ぶと、その用語や前提コードを問いの背景に取り込みます。"
+                  ? "対象のアプリを選ぶと、その用語や前提リポジトリのコードを会話の質問の背景に取り込みます。"
                   : "登録済みのアプリがありません。アプリ管理から登録すると選べます。"
             }
           >
@@ -740,17 +749,17 @@ export default function EntryFlow({
             onClick={() => navigateStep("prepare")}
             disabled={!selectedProduct?.slug}
           >
-            ＋ 壁打ちを始める
+            ＋ 会話を始める
           </Button>
           {(products?.length ?? 0) > 0 && !selectedProduct && (
             <p className="text-[12px] text-sanba-muted">
-              対象のアプリを選ぶと壁打ちを始められます。
+              対象のアプリを選ぶと会話を始められます。
             </p>
           )}
           {}
           {selectedProduct && !selectedProduct.slug && (
             <p className="text-[12px] text-sanba-muted">
-              このアプリは URL キーワードが未設定のため、壁打ちを始められません。
+              このアプリは URL キーワードが未設定のため、会話を始められません。
               <Link
                 href={`/products/${encodeURIComponent(selectedProduct.id)}`}
                 className="ml-1 text-sanba-gold-text underline"

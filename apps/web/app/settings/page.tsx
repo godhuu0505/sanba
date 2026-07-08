@@ -12,6 +12,7 @@ import {
   Card,
   CardTitle,
   Divider,
+  HelpIcon,
 } from "@/components/sanba";
 import { useAuth } from "@/lib/auth";
 
@@ -66,24 +67,27 @@ export default function SettingsPage() {
           <CardTitle>データの取り扱い</CardTitle>
           <dl className="flex flex-col gap-[6px]">
             <div className="flex items-baseline justify-between gap-[12px]">
-              <dt className="text-[13px] text-sanba-muted">保持日数</dt>
+              <dt className="flex items-center gap-[4px] text-[13px] text-sanba-muted">
+                保持日数
+                <HelpIcon term="データの保持" />
+              </dt>
               <dd className="text-[14px] font-bold text-sanba-gold-text">
                 最大 {RETENTION_DAYS} 日
               </dd>
             </div>
           </dl>
           <p className="text-[12px] leading-relaxed text-sanba-muted">
-            録音と要件は最大 {RETENTION_DAYS} 日保持し、保存前に個人情報をマスクします。
+            録音と要件は最大 {RETENTION_DAYS} 日保持し、保存前に個人情報を伏せ字にします。
           </p>
         </Card>
 
         <GitHubLinkCard />
 
         <Card>
-          <CardTitle>セッション</CardTitle>
+          <CardTitle>ログイン状態</CardTitle>
           <Divider />
           <Button variant="outline" block onClick={handleLogout} aria-label="ログアウト">
-            ⎋ ログアウト
+            ログアウト
           </Button>
         </Card>
       </div>

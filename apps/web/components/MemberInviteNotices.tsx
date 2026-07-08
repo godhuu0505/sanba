@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-import { Button, Card, CardTitle } from "@/components/sanba";
+import { Button, Card, CardTitle, HelpIcon } from "@/components/sanba";
 import { fetchMyMemberInvites, type MyMemberInvite, respondMemberInvite } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 
@@ -49,9 +49,12 @@ export function MemberInviteNotices({
 
   return (
     <Card>
-      <CardTitle>招待が届いています</CardTitle>
+      <div className="flex items-center gap-[6px]">
+        <CardTitle>招待が届いています</CardTitle>
+        <HelpIcon term="メンバー招待" />
+      </div>
       <p className="text-[12px] leading-relaxed text-sanba-muted">
-        承諾すると、そのアプリで要件サンバ（深掘りセッション）ができるようになります。
+        承諾すると、そのアプリで会話（音声で要件を整理する時間）ができるようになります。
       </p>
       {error && (
         <p role="alert" className="text-[12px] text-sanba-rec-text">

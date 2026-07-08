@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-import { Button, Card, CardTitle, Divider } from "@/components/sanba";
+import { Button, Card, CardTitle, Divider, HelpIcon } from "@/components/sanba";
 import {
   getGithubLinkStatus,
   startGithubLink,
@@ -54,9 +54,12 @@ export function GitHubLinkCard() {
 
   return (
     <Card>
-      <CardTitle>GitHub 連携</CardTitle>
+      <div className="flex items-center gap-[6px]">
+        <CardTitle>GitHub 連携</CardTitle>
+        <HelpIcon term="前提リポジトリ" />
+      </div>
       <p className="text-[12px] leading-relaxed text-sanba-muted">
-        リポジトリを 1 つ紐づけると、要件サンバの深掘り時に前提情報として扱えます。
+        リポジトリを 1 つ紐づけると、会話の前提として使えます。
       </p>
       <Divider />
       {status?.linked ? (

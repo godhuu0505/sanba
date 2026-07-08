@@ -166,12 +166,12 @@ describe("入口フロー（#140）", () => {
   });
 
   function selectProduct(id = "p0") {
-    fireEvent.change(screen.getByLabelText("対象のプロダクト・アプリ"), { target: { value: id } });
+    fireEvent.change(screen.getByLabelText("対象のアプリ"), { target: { value: id } });
   }
 
   async function clickStartCta() {
     await act(async () => {});
-    fireEvent.click(screen.getByRole("button", { name: "＋ 壁打ちを始める" }));
+    fireEvent.click(screen.getByRole("button", { name: "＋ 会話を始める" }));
   }
 
   it("real モードで未ログインなら /login?next=/ へリダイレクトしホームを描画しない", () => {
@@ -180,7 +180,7 @@ describe("入口フロー（#140）", () => {
     authState.loggedIn = false;
     render(<Home />);
     expect(replace).toHaveBeenCalledWith(`/login?next=${encodeURIComponent("/")}`);
-    expect(screen.queryByText("会議の前に、五分の問答を")).toBeNull();
+    expect(screen.queryByText("会議の前に、五分の会話を")).toBeNull();
   });
 
   it("real モードで認証解決前（ready=false）はリダイレクトせず何も描かない", () => {
@@ -189,13 +189,13 @@ describe("入口フロー（#140）", () => {
     authState.loggedIn = false;
     render(<Home />);
     expect(replace).not.toHaveBeenCalled();
-    expect(screen.queryByText("会議の前に、五分の問答を")).toBeNull();
+    expect(screen.queryByText("会議の前に、五分の会話を")).toBeNull();
   });
 
   it("01 ホームはヒーローと一語 CTA を出し、実績カードを持たない", () => {
     render(<Home />);
-    expect(screen.getByText("会議の前に、五分の問答を")).toBeTruthy();
-    expect(screen.getByText("＋ 壁打ちを始める")).toBeTruthy();
+    expect(screen.getByText("会議の前に、五分の会話を")).toBeTruthy();
+    expect(screen.getByText("＋ 会話を始める")).toBeTruthy();
     expect(screen.queryByText(/取り上げた抜け・矛盾/)).toBeNull();
   });
 
@@ -207,21 +207,21 @@ describe("入口フロー（#140）", () => {
     ]);
     render(<Home />);
     await act(async () => {});
-    const cta = screen.getByText("＋ 壁打ちを始める") as HTMLButtonElement;
+    const cta = screen.getByText("＋ 会話を始める") as HTMLButtonElement;
     expect(cta.disabled).toBe(true);
-    expect(screen.getByText("対象のアプリを選ぶと壁打ちを始められます。")).toBeTruthy();
+    expect(screen.getByText("対象のアプリを選ぶと会話を始められます。")).toBeTruthy();
     selectProduct("p1");
     expect(cta.disabled).toBe(false);
-    expect(screen.queryByText("対象のアプリを選ぶと壁打ちを始められます。")).toBeNull();
+    expect(screen.queryByText("対象のアプリを選ぶと会話を始められます。")).toBeNull();
   });
 
   it("候補が 1 件なら自動選択され、そのまま CTA が活性化する（ADR-0044）", async () => {
     authState.loggedIn = true;
     render(<Home />);
     await act(async () => {});
-    const select = screen.getByLabelText("対象のプロダクト・アプリ") as HTMLSelectElement;
+    const select = screen.getByLabelText("対象のアプリ") as HTMLSelectElement;
     expect(select.value).toBe("p0");
-    expect((screen.getByText("＋ 壁打ちを始める") as HTMLButtonElement).disabled).toBe(false);
+    expect((screen.getByText("＋ 会話を始める") as HTMLButtonElement).disabled).toBe(false);
   });
 
   it("登録済みアプリが 0 件ならセレクトを無効化し、CTA も塞いで登録導線を案内する（ADR-0044）", async () => {
@@ -229,9 +229,9 @@ describe("入口フロー（#140）", () => {
     fetchMyProducts.mockResolvedValueOnce([]);
     render(<Home />);
     await act(async () => {});
-    const select = screen.getByLabelText("対象のプロダクト・アプリ") as HTMLSelectElement;
+    const select = screen.getByLabelText("対象のアプリ") as HTMLSelectElement;
     expect(select.disabled).toBe(true);
-    expect((screen.getByText("＋ 壁打ちを始める") as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByText("＋ 会話を始める") as HTMLButtonElement).disabled).toBe(true);
     expect(
       screen.getByText("登録済みのアプリがありません。アプリ管理から登録すると選べます。"),
     ).toBeTruthy();
@@ -267,7 +267,7 @@ describe("入口フロー（#140）", () => {
     render(<Home />);
     await clickStartCta();
     expect(screen.getByText("セッション準備")).toBeTruthy();
-    expect(screen.queryByLabelText("対象のプロダクト・アプリ")).toBeNull();
+    expect(screen.queryByLabelText("対象のアプリ")).toBeNull();
     expect(screen.getByText("対象のアプリ")).toBeTruthy();
     expect(screen.getByText("既定アプリ")).toBeTruthy();
   });
@@ -280,7 +280,7 @@ describe("入口フロー（#140）", () => {
     expect(screen.getByText("セッション準備")).toBeTruthy();
     expect(window.location.pathname).toBe("/default-app/prepare");
     fireEvent.click(screen.getByRole("button", { name: "戻る" }));
-    expect(screen.getByText("会議の前に、五分の問答を")).toBeTruthy();
+    expect(screen.getByText("会議の前に、五分の会話を")).toBeTruthy();
     expect(window.location.pathname).toBe("/");
   });
 
@@ -289,7 +289,7 @@ describe("入口フロー（#140）", () => {
     window.history.replaceState(null, "", "/default-app/prepare");
     render(<EntryFlow initialStep="prepare" initialSlug="default-app" />);
     expect(screen.getByText("セッション準備")).toBeTruthy();
-    expect(screen.queryByText("会議の前に、五分の問答を")).toBeNull();
+    expect(screen.queryByText("会議の前に、五分の会話を")).toBeNull();
     await act(async () => {});
     expect(screen.getByText("セッション準備")).toBeTruthy();
     expect(screen.getByText("既定アプリ")).toBeTruthy();
@@ -315,7 +315,7 @@ describe("入口フロー（#140）", () => {
     render(<EntryFlow initialStep="prepare" />);
     expect(screen.getByText("セッション準備")).toBeTruthy();
     await act(async () => {});
-    expect(screen.getByText("会議の前に、五分の問答を")).toBeTruthy();
+    expect(screen.getByText("会議の前に、五分の会話を")).toBeTruthy();
     expect(window.location.pathname).toBe("/");
   });
 
@@ -333,7 +333,7 @@ describe("入口フロー（#140）", () => {
       window.history.replaceState(null, "", "/");
       window.dispatchEvent(new PopStateEvent("popstate"));
     });
-    expect(screen.getByText("会議の前に、五分の問答を")).toBeTruthy();
+    expect(screen.getByText("会議の前に、五分の会話を")).toBeTruthy();
   });
 
   it("未ログインで /{slug}/prepare 直リンクは /login?next=/{slug}/prepare へ戻す", () => {
@@ -364,7 +364,7 @@ describe("入口フロー（#140）", () => {
   it("未ログインでは開始が無効でログイン導線を示す", () => {
     window.history.replaceState(null, "", "/default-app/prepare");
     render(<EntryFlow initialStep="prepare" initialSlug="default-app" />);
-    const cta = screen.getByRole("button", { name: "要件サンバを始める" });
+    const cta = screen.getByRole("button", { name: "会話を始める" });
     expect((cta as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByText("ログインへ").getAttribute("href")).toBe("/login");
   });
@@ -373,7 +373,7 @@ describe("入口フロー（#140）", () => {
     authState.loggedIn = true;
     render(<Home />);
     await clickStartCta();
-    const cta = screen.getByRole("button", { name: "要件サンバを始める" });
+    const cta = screen.getByRole("button", { name: "会話を始める" });
     expect((cta as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByText("録音と AI 処理への同意が必要です。")).toBeTruthy();
   });
@@ -386,11 +386,11 @@ describe("入口フロー（#140）", () => {
     fireEvent.click(screen.getByRole("radio", { name: "開発者" }));
     fireEvent.change(screen.getByLabelText("ゴール"), { target: { value: "テストゴール" } });
     fireEvent.click(screen.getByRole("checkbox"));
-    fireEvent.click(screen.getByRole("button", { name: "要件サンバを始める" }));
+    fireEvent.click(screen.getByRole("button", { name: "会話を始める" }));
     await waitFor(() => expect(createSession).toHaveBeenCalledTimes(1));
     expect(createSession.mock.calls[0][0]).toEqual(["engineer"]);
     expect(createSession.mock.calls[0][1]).toBe(true);
-    await waitFor(() => expect(screen.getByText("支度、相整いまして")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText("準備ができました")).toBeTruthy());
     expect(window.location.pathname).toBe("/default-app/sessions/s1");
   });
 
@@ -400,7 +400,7 @@ describe("入口フロー（#140）", () => {
     render(<Home />);
     await act(async () => {});
     expect(
-      (screen.getByRole("button", { name: "＋ 壁打ちを始める" }) as HTMLButtonElement).disabled,
+      (screen.getByRole("button", { name: "＋ 会話を始める" }) as HTMLButtonElement).disabled,
     ).toBe(true);
     expect(screen.getByText(/URL キーワードが未設定のため/)).toBeTruthy();
     expect(screen.getByRole("link", { name: "アプリ管理で設定する" }).getAttribute("href")).toBe(
@@ -425,7 +425,7 @@ describe("入口フロー（#140）", () => {
   it("「＋ ファイルを追加」で手段選択シートが開き、アップロード/Drive のみ（カメラ/画面共有は出さない）", async () => {
     await gotoPrepare();
     fireEvent.click(screen.getByRole("button", { name: "ファイルを追加" }));
-    expect(screen.getByRole("dialog", { name: "資料の追加方法" })).toBeTruthy();
+    expect(screen.getByRole("dialog", { name: "参考資料の追加方法" })).toBeTruthy();
     expect(screen.getByText("ファイルをアップロード")).toBeTruthy();
     expect(screen.getByText("Google ドライブから選ぶ")).toBeTruthy();
     expect(screen.queryByText("カメラで撮影")).toBeNull();
@@ -473,11 +473,11 @@ describe("入口フロー（#140）", () => {
       new File(["x"], "PRD.png", { type: "image/png" }),
       new File(["y"], "demo.mp4", { type: "video/mp4" }),
     ]);
-    fireEvent.click(screen.getByRole("button", { name: "要件サンバを始める" }));
+    fireEvent.click(screen.getByRole("button", { name: "会話を始める" }));
     await waitFor(() => expect(uploadContextFile).toHaveBeenCalledTimes(2));
     expect(uploadContextFile.mock.calls[0][2]).toBe("st");
     expect((uploadContextFile.mock.calls[0][1] as File).name).toBe("PRD.png");
-    await waitFor(() => expect(screen.getByText("支度、相整いまして")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText("準備ができました")).toBeTruthy());
     expect(screen.getByText(/PRD\.png ・ 他1件/)).toBeTruthy();
     expect(screen.getByText(/（計2件）/)).toBeTruthy();
   });
@@ -487,8 +487,8 @@ describe("入口フロー（#140）", () => {
     fireEvent.click(screen.getByRole("checkbox"));
     uploadContextFile.mockRejectedValueOnce(new Error("upload failed: 500"));
     pickFiles(container, [new File(["x"], "ng.png", { type: "image/png" })]);
-    fireEvent.click(screen.getByRole("button", { name: "要件サンバを始める" }));
-    await waitFor(() => expect(screen.getByText("支度、相整いまして")).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "会話を始める" }));
+    await waitFor(() => expect(screen.getByText("準備ができました")).toBeTruthy());
     expect(screen.queryByText(/ng\.png/)).toBeNull();
     expect(screen.getByText("会話中に追加できます")).toBeTruthy();
     expect(screen.getByText(/1件は投入できませんでした/)).toBeTruthy();
@@ -513,7 +513,7 @@ describe("入口フロー（#140）", () => {
     fireEvent.change(screen.getByLabelText("ゴール"), { target: { value: "テストゴール" } });
     fireEvent.click(screen.getByRole("checkbox"));
     pickFiles(container, [new File(["x"], "a.png", { type: "image/png" })]);
-    fireEvent.click(screen.getByRole("button", { name: "要件サンバを始める" }));
+    fireEvent.click(screen.getByRole("button", { name: "会話を始める" }));
     expect(
       (screen.getByRole("button", { name: "ファイルを追加" }) as HTMLButtonElement).disabled,
     ).toBe(true);
@@ -539,7 +539,7 @@ describe("入口フロー（#140）", () => {
     fireEvent.click(screen.getByRole("button", { name: /Google ドライブから選ぶ/ }));
     await waitFor(() => expect(importDriveFile).toHaveBeenCalled());
     expect(
-      (screen.getByRole("button", { name: "要件サンバを始める" }) as HTMLButtonElement).disabled,
+      (screen.getByRole("button", { name: "会話を始める" }) as HTMLButtonElement).disabled,
     ).toBe(true);
     expect(
       (screen.getByRole("button", { name: "ファイルを追加" }) as HTMLButtonElement).disabled,
@@ -553,7 +553,7 @@ describe("入口フロー（#140）", () => {
       ).toContain("要件メモ.md"),
     );
     expect(
-      (screen.getByRole("button", { name: "要件サンバを始める" }) as HTMLButtonElement).disabled,
+      (screen.getByRole("button", { name: "会話を始める" }) as HTMLButtonElement).disabled,
     ).toBe(false);
   });
 
@@ -585,7 +585,7 @@ describe("入口フロー（#140）", () => {
     await act(async () => {});
     fireEvent.change(screen.getByLabelText("ゴール"), { target: { value: "テストゴール" } });
     fireEvent.click(screen.getByRole("checkbox"));
-    const cta = screen.getByRole("button", { name: "要件サンバを始める" });
+    const cta = screen.getByRole("button", { name: "会話を始める" });
     fireEvent.click(cta);
     fireEvent.click(cta);
     expect((cta as HTMLButtonElement).disabled).toBe(true);
@@ -599,7 +599,7 @@ describe("入口フロー（#140）", () => {
   it("ゴールのプレースホルダが更新され、例は役割で切り替わる表示専用テキスト（#222）", async () => {
     await gotoPrepare();
     const goal = screen.getByLabelText("ゴール") as HTMLTextAreaElement;
-    expect(goal.getAttribute("placeholder")).toBe("ゴールを入力・・・");
+    expect(goal.getAttribute("placeholder")).toBe("ゴールを入力…");
     expect(screen.getByText("例：ボタンを押しても動かない状況を改善したい")).toBeTruthy();
     expect(
       screen.queryByRole("button", { name: /ボタンを押しても動かない状況を改善したい/ }),
@@ -616,12 +616,12 @@ describe("入口フロー（#140）", () => {
     await act(async () => {});
     fireEvent.click(screen.getByRole("checkbox"));
     expect(
-      (screen.getByRole("button", { name: "要件サンバを始める" }) as HTMLButtonElement).disabled,
+      (screen.getByRole("button", { name: "会話を始める" }) as HTMLButtonElement).disabled,
     ).toBe(true);
     expect(screen.getByText("ゴールの入力が必要です。")).toBeTruthy();
     fireEvent.change(screen.getByLabelText("ゴール"), { target: { value: "テストゴール" } });
     expect(
-      (screen.getByRole("button", { name: "要件サンバを始める" }) as HTMLButtonElement).disabled,
+      (screen.getByRole("button", { name: "会話を始める" }) as HTMLButtonElement).disabled,
     ).toBe(false);
   });
 
@@ -631,7 +631,7 @@ describe("入口フロー（#140）", () => {
       target: { value: "現状は検索が遅い。範囲と優先度を整理したい。" },
     });
     fireEvent.click(screen.getByRole("checkbox"));
-    fireEvent.click(screen.getByRole("button", { name: "要件サンバを始める" }));
+    fireEvent.click(screen.getByRole("button", { name: "会話を始める" }));
     await waitFor(() => expect(createSession).toHaveBeenCalledTimes(1));
     await waitFor(() =>
       expect(
@@ -648,7 +648,7 @@ describe("入口フロー（#140）", () => {
       target: { value: "現状は検索が遅い。範囲と優先度を整理したい。" },
     });
     fireEvent.click(screen.getByRole("checkbox"));
-    fireEvent.click(screen.getByRole("button", { name: "要件サンバを始める" }));
+    fireEvent.click(screen.getByRole("button", { name: "会話を始める" }));
     await waitFor(() => expect(createSession).toHaveBeenCalledTimes(1));
     expect(createSession.mock.calls[0][6]).toBe("テストゴール");
     expect(createSession.mock.calls[0][7]).toBe("現状は検索が遅い。範囲と優先度を整理したい。");
@@ -657,7 +657,7 @@ describe("入口フロー（#140）", () => {
   it("同意文言と開始ボタン文言が更新されている（#222）", async () => {
     await gotoPrepare();
     expect(screen.getByText("録音と AI 処理に同意します（最大 30 日保持）。")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "要件サンバを始める" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "会話を始める" })).toBeTruthy();
   });
 
   it("登録済みプロダクトを選ぶと product_id を渡し用語文脈を投入する（repo は API 継承 / ADR-0031）", async () => {
@@ -681,7 +681,7 @@ describe("入口フロー（#140）", () => {
     expect(screen.getByText("検索アプリ")).toBeTruthy();
     fireEvent.change(screen.getByLabelText("ゴール"), { target: { value: "テストゴール" } });
     fireEvent.click(screen.getByRole("checkbox"));
-    fireEvent.click(screen.getByRole("button", { name: "要件サンバを始める" }));
+    fireEvent.click(screen.getByRole("button", { name: "会話を始める" }));
     await waitFor(() => expect(createSession).toHaveBeenCalledTimes(1));
     expect(createSession.mock.calls[0][5]).toBe("p1");
     expect(createSession.mock.calls[0][4]).toBeUndefined();
@@ -723,14 +723,14 @@ describe("入口フロー（#140）", () => {
       },
     ]);
     render(<Home />);
-    const select = (await screen.findByLabelText("対象のプロダクト・アプリ")) as HTMLSelectElement;
+    const select = (await screen.findByLabelText("対象のアプリ")) as HTMLSelectElement;
     await waitFor(() => expect(select.value).toBe(""));
     expect(
-      (screen.getByRole("button", { name: "＋ 壁打ちを始める" }) as HTMLButtonElement).disabled,
+      (screen.getByRole("button", { name: "＋ 会話を始める" }) as HTMLButtonElement).disabled,
     ).toBe(true);
     selectProduct("p2");
     expect(
-      (screen.getByRole("button", { name: "＋ 壁打ちを始める" }) as HTMLButtonElement).disabled,
+      (screen.getByRole("button", { name: "＋ 会話を始める" }) as HTMLButtonElement).disabled,
     ).toBe(false);
   });
 });
