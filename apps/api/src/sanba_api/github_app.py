@@ -406,6 +406,7 @@ class GitHubAppClient:  # pragma: no cover - network
         self.oauth_client_id = oauth_client_id
         self.oauth_client_secret = oauth_client_secret
         self._token_cache: dict[int, tuple[str, float]] = {}
+        self._perm_cache: dict[int, dict[str, str]] = {}
         self._http: object | None = None
 
     @property
@@ -481,6 +482,9 @@ class GitHubAppClient:  # pragma: no cover - network
         token = str(body["token"])
         expiry = _parse_iso_epoch(body.get("expires_at"))
         self._token_cache[installation_id] = (token, expiry)
+        perms = body.get("permissions")
+        if isinstance(perms, dict):
+            self._perm_cache[installation_id] = {str(k): str(v) for k, v in perms.items()}
         return token
 
     def _inst_headers(self, installation_id: int) -> dict[str, str]:
@@ -532,6 +536,15 @@ class GitHubAppClient:  # pragma: no cover - network
                 headers=self._inst_headers(installation_id),
             )
         return res.status_code == 200
+
+    def can_write_issues(self, installation_id: int) -> bool:  # pragma: no cover - network
+        """この installation が Issues: write 権限を持つか（#434 タスク2）。
+
+        installation token 発行レスポンスの `permissions` を見る（read 権限だけの App では
+        起票が 403 になるため、eligibility 段階で弾いてボタンを非活性化する）。トークンは
+        `_installation_token` がキャッシュし、その際に権限も `_perm_cache` へ取り込む。"""
+        self._installation_token(installation_id)
+        return self._perm_cache.get(installation_id, {}).get("issues") == "write"
 
     def create_issue(
         self,

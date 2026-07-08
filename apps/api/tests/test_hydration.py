@@ -330,12 +330,18 @@ def test_export_disabled_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
 class _FakeAppClient:
     """操作者本人の installation を模した App クライアント（起票捕捉つき）。"""
 
-    def __init__(self, captured: dict[str, object], repos: set[str]) -> None:
+    def __init__(
+        self, captured: dict[str, object], repos: set[str], *, issue_write: bool = True
+    ) -> None:
         self._captured = captured
         self._repos = repos
+        self._issue_write = issue_write
 
     def can_access_repo(self, installation_id: int, repo: str) -> bool:
         return repo in self._repos
+
+    def can_write_issues(self, installation_id: int) -> bool:
+        return self._issue_write
 
     def create_issue(
         self,
@@ -360,11 +366,13 @@ def _enable_github(
     *,
     linked: bool = True,
     repos: set[str] | None = None,
+    issue_write: bool = True,
 ) -> dict[str, object]:
     """操作者本人の GitHub App installation を有効化し、create_issue を捕捉する（ADR-0053）。
 
     共有 PAT ではなく App installation token 経由の起票を模す。`linked=False` で未連携、
     `repos` で installation がアクセスできる repo 集合を差し替える（権限ゲートの検証用）。
+    `issue_write=False` で Issues: write 無しの installation を模す（#434 タスク2）。
     """
     from sanba_shared.models import GitHubLink
 
@@ -376,7 +384,7 @@ def _enable_github(
     allowed = repos if repos is not None else {"o/r", "acme/product-a"}
 
     def _client() -> _FakeAppClient:
-        return _FakeAppClient(captured, allowed)
+        return _FakeAppClient(captured, allowed, issue_write=issue_write)
 
     monkeypatch.setattr(deps, "_github_app_client", _client)
     monkeypatch.setattr(sessions_router, "_github_app_client", _client)
@@ -586,6 +594,7 @@ def test_export_eligibility_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
     created = client.post("/api/sessions", json={"roles": ["pm"], "consent_acknowledged": True})
     sid = created.json()["session_id"]
     _enable_github(monkeypatch)
+    client.post(f"/api/sessions/{sid}/finalize", headers=_auth(_token(sid)))
     ok = client.get(f"/api/sessions/{sid}/export/eligibility", headers=_auth(_token(sid)))
     assert ok.status_code == 200
     body = ok.json()
@@ -598,10 +607,50 @@ def test_export_eligibility_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
     assert ng.json()["reason"] == "github not linked"
 
 
+def test_export_eligibility_requires_finalize(monkeypatch: pytest.MonkeyPatch) -> None:
+    """未 finalize では起票不可（#435: 空 Issue を作らせない）。GitHub 往復もしない。"""
+    created = client.post("/api/sessions", json={"roles": ["pm"], "consent_acknowledged": True})
+    sid = created.json()["session_id"]
+    _enable_github(monkeypatch)
+    res = client.get(f"/api/sessions/{sid}/export/eligibility", headers=_auth(_token(sid)))
+    assert res.json()["can_export"] is False
+    assert res.json()["reason"] == "not finalized"
+
+
+def test_export_eligibility_requires_issue_write(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Issues: write を持たない installation は起票不可（#434 タスク2: 403 を未然に弾く）。"""
+    created = client.post("/api/sessions", json={"roles": ["pm"], "consent_acknowledged": True})
+    sid = created.json()["session_id"]
+    _enable_github(monkeypatch, issue_write=False)
+    client.post(f"/api/sessions/{sid}/finalize", headers=_auth(_token(sid)))
+    res = client.get(f"/api/sessions/{sid}/export/eligibility", headers=_auth(_token(sid)))
+    assert res.json()["can_export"] is False
+    assert res.json()["reason"] == "no issue permission"
+
+
+def test_export_blocked_when_not_finalized(monkeypatch: pytest.MonkeyPatch) -> None:
+    """未 finalize セッションへの POST /export は空 Issue を作らず拒否する（#435 の中核回帰）。"""
+    created = client.post(
+        "/api/sessions",
+        json={"roles": ["pm"], "consent_acknowledged": True, "github_repo": "acme/product-a"},
+    )
+    sid = created.json()["session_id"]
+    _read_repo._seed_requirement(
+        sid, {"id": "c1", "statement": "確定", "category": "functional", "priority": "must"}
+    )
+    captured = _enable_github(monkeypatch)
+    res = client.post(f"/api/sessions/{sid}/export", headers=_auth(_token(sid)))
+    body = res.json()
+    assert body["exported"] is False
+    assert body["reason"] == "not finalized"
+    assert "repo" not in captured, "Issue は作成されない"
+
+
 def test_my_export_eligibility_uses_login_auth(monkeypatch: pytest.MonkeyPatch) -> None:
     created = client.post("/api/sessions", json={"roles": ["pm"], "consent_acknowledged": True})
     sid = created.json()["session_id"]
     _enable_github(monkeypatch)
+    client.post(f"/api/sessions/{sid}/finalize", headers=_auth(_token(sid)))
     ok = client.get(f"/api/sessions/mine/{sid}/export/eligibility")
     assert ok.status_code == 200
     assert ok.json()["can_export"] is True
