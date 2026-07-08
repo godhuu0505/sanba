@@ -126,7 +126,7 @@ export function ProductMembersCard({
     <Card>
       <CardTitle>メンバー</CardTitle>
       <p className="text-[12px] leading-relaxed text-sanba-muted">
-        このアプリで要件サンバをできる人です。
+        このアプリで会話ができる人です。
         {canManage &&
           "メールアドレスで招待すると、招待メールと SANBA 内の通知が届き、承諾するとメンバーになります。"}
       </p>

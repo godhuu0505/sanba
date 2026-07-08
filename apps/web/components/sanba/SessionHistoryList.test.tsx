@@ -9,17 +9,17 @@ const ITEMS: SessionHistoryItem[] = [
   { id: "s2", title: "決済フロー見直し", date: "2024/06/18" },
 ];
 
-describe("SessionHistoryList（過去の要件を見る）", () => {
+describe("SessionHistoryList（要件一覧）", () => {
   afterEach(() => cleanup());
 
-  it("見出し「過去の要件を見る」を常に出す", () => {
+  it("見出し「要件一覧」を常に出す", () => {
     render(<SessionHistoryList items={[]} />);
-    expect(screen.getByRole("heading", { name: "過去の要件を見る" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "要件一覧" })).toBeTruthy();
   });
 
   it("空配列のときは空状態の文言を出し、遷移リンクは出さない", () => {
     render(<SessionHistoryList items={[]} />);
-    expect(screen.getByText(/過去の要件はまだございません/)).toBeTruthy();
+    expect(screen.getByText(/過去の要件はまだありません/)).toBeTruthy();
     expect(screen.queryAllByRole("link")).toHaveLength(0);
   });
 

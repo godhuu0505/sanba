@@ -60,17 +60,17 @@ export function RequirementCard({
         <div className="flex gap-[8px] pt-[2px]">
           {(showActions || onRevise) && (
             <Button variant="outline" size="sm" onClick={onRevise}>
-              改める
+              修正する
             </Button>
           )}
           {(showActions || onApprove) && (
             <Button variant="gold" size="sm" onClick={onApprove}>
-              認める
+              承認する
             </Button>
           )}
           {(showActions || onReject) && (
             <Button variant="ghost" size="sm" onClick={onReject}>
-              退ける
+              却下する
             </Button>
           )}
         </div>

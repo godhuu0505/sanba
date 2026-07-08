@@ -28,14 +28,14 @@ const det = (over: Partial<Detection>): Detection => ({
   ...over,
 });
 
-describe("RequirementsTab（要件絵巻タブ・閲覧のみ＋深掘り）", () => {
+describe("RequirementsTab（要件一覧タブ・閲覧のみ＋確認したいこと）", () => {
   afterEach(() => cleanup());
 
-  it("MoSCoW 区分で要件を閲覧表示する（statement・確信・出所）", () => {
+  it("MoSCoW 区分で要件を閲覧表示する（statement・確信度・発言者）", () => {
     render(<RequirementsTab requirements={[req({})]} deepDive={[]} onJump={vi.fn()} />);
     expect(screen.getByText(/ぜひ必要/)).toBeTruthy();
     expect(screen.getByText("検索バーを新設する")).toBeTruthy();
-    expect(screen.getByText(/確信 高/)).toBeTruthy();
+    expect(screen.getByText(/確信度 高/)).toBeTruthy();
     expect(screen.getByText(/発話×画面/)).toBeTruthy();
   });
 
@@ -44,7 +44,7 @@ describe("RequirementsTab（要件絵巻タブ・閲覧のみ＋深掘り）", (
     expect(screen.getByText(/まだ要件はありません/)).toBeTruthy();
   });
 
-  it("深掘り対象を統合表示し、会話で確認で onJump(検知id) が呼ばれる", () => {
+  it("確認したいことを統合表示し、会話で確認で onJump(検知id) が呼ばれる", () => {
     const onJump = vi.fn();
     render(
       <RequirementsTab

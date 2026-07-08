@@ -48,7 +48,7 @@ const PRESENTATION: Record<
   },
   muted: {
     icon: VolumeX,
-    label: "消音中",
+    label: "スピーカー消音中",
     tone: "border-sanba-rec text-sanba-rec-text",
     pulse: false,
   },

@@ -33,17 +33,17 @@ function setup(over: Partial<React.ComponentProps<typeof ResultView>> = {}) {
 describe("ResultView（要件産婆結果）", () => {
   afterEach(() => cleanup());
 
-  it("祝祭メッセージと確定件数を出す", () => {
+  it("完了メッセージと確定件数を出す", () => {
     setup();
-    expect(screen.getByText(/産まれました/)).toBeTruthy();
+    expect(screen.getByText(/要件がまとまりました/)).toBeTruthy();
     expect(screen.getByText(/8/)).toBeTruthy();
   });
 
-  it("『画面で確認』(必須)で onView、『新しい問答』で onRestart", () => {
+  it("『全文を確認する』(必須)で onView、『新しい会話』で onRestart", () => {
     const cb = setup();
-    fireEvent.click(screen.getByRole("button", { name: /画面で確認/ }));
+    fireEvent.click(screen.getByRole("button", { name: /全文を確認する/ }));
     expect(cb.onView).toHaveBeenCalledTimes(1);
-    fireEvent.click(screen.getByRole("button", { name: /新しい問答/ }));
+    fireEvent.click(screen.getByRole("button", { name: /新しい会話/ }));
     expect(cb.onRestart).toHaveBeenCalledTimes(1);
   });
 
@@ -59,16 +59,17 @@ describe("ResultView（要件産婆結果）", () => {
     expect(screen.getByRole("button", { name: /PDF/ })).toBeTruthy();
   });
 
-  it("provisional（未確定のまま終了）のときは確定でなく暫定の表記にする", () => {
+  it("provisional（未確定のまま終了）のときは確定でなく未確定の表記にする", () => {
     setup({ provisional: true });
-    expect(screen.queryByText(/産まれました/)).toBeNull();
-    expect(screen.getAllByText(/暫定/).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/要件がまとまりました/)).toBeNull();
+    expect(screen.getByText(/途中まで整理しました/)).toBeTruthy();
+    expect(screen.getAllByText(/未確定の要件/).length).toBeGreaterThan(0);
     expect(screen.getByText(/未確定を残したまま/)).toBeTruthy();
   });
 
   it("requirements 未指定ならプレビューリストは出さない（件数サマリのみ）", () => {
     setup();
-    expect(screen.queryByLabelText("確定要件のプレビュー")).toBeNull();
+    expect(screen.queryByLabelText("確定した要件のプレビュー")).toBeNull();
   });
 
   it("Must/Should の要件行をプレビュー表示する", () => {
@@ -79,7 +80,7 @@ describe("ResultView（要件産婆結果）", () => {
         req("s1", "should", "パスワード再設定ができること"),
       ],
     });
-    const preview = screen.getByRole("group", { name: "確定要件のプレビュー" });
+    const preview = screen.getByRole("group", { name: "確定した要件のプレビュー" });
     expect(preview).toBeTruthy();
     expect(screen.getByText("ログインできること")).toBeTruthy();
     expect(screen.getByText("パスワード再設定ができること")).toBeTruthy();
@@ -124,14 +125,14 @@ describe("ResultView（要件産婆結果）", () => {
     expect(screen.getByText(/ほか 2 件/)).toBeTruthy();
   });
 
-  it("session.completed のサーバ集計（矛盾解消/抜け/Issue）を再集計せず表示する (#144)", () => {
+  it("session.completed のサーバ集計（食い違い/確認したい点/Issue）を再集計せず表示する (#144)", () => {
     setup({ summary: { contradictions_resolved: 3, gaps_found: 2, issues_created: 1 } });
-    expect(screen.getByText(/矛盾解消 3 ・ 抜け検知 2 ・ Issue 起票 1/)).toBeTruthy();
+    expect(screen.getByText(/食い違いの解消 3 ・ 確認したい点 2 ・ Issue 起票 1/)).toBeTruthy();
   });
 
   it("summary 未提供（session.completed 未受信）なら集計行を出さない (#144)", () => {
     setup();
-    expect(screen.queryByText(/矛盾解消/)).toBeNull();
+    expect(screen.queryByText(/食い違いの解消/)).toBeNull();
   });
 
   it("artifacts のリンクを新規タブで開ける形で出す (#144)", () => {
@@ -190,7 +191,7 @@ describe("ResultView（要件産婆結果）", () => {
 
   it("Issue 起票は既定で要約・素材を含めず、チェックした opt-in を choice で渡す（P3）", () => {
     const cb = setup();
-    fireEvent.click(screen.getByRole("button", { name: /Issue/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Issue" }));
     expect(cb.onExportIssue).toHaveBeenLastCalledWith({
       includeSummary: false,
       includeMaterials: false,
@@ -198,7 +199,7 @@ describe("ResultView（要件産婆結果）", () => {
 
     fireEvent.click(screen.getByLabelText(/会話の要約/));
     fireEvent.click(screen.getByLabelText(/参考資料のサマリ/));
-    fireEvent.click(screen.getByRole("button", { name: /Issue/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Issue" }));
     expect(cb.onExportIssue).toHaveBeenLastCalledWith({
       includeSummary: true,
       includeMaterials: true,
@@ -207,7 +208,7 @@ describe("ResultView（要件産婆結果）", () => {
 
   it("起票権限が無いとき Issue ボタンを無効化し理由を出す（ADR-0053）", () => {
     setup({ issueDisabledReason: "github not linked" });
-    const btn = screen.getByRole("button", { name: /Issue/ });
+    const btn = screen.getByRole("button", { name: "Issue" });
     expect((btn as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByText(/GitHub と連携すると起票できます/)).toBeTruthy();
   });

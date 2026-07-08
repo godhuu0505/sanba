@@ -95,13 +95,13 @@ describe("過去要件の絵巻閲覧画面（/results/[id]）", () => {
     authState.loggedIn = false;
     render(<PastRequirementsPage />);
     expect(replace).toHaveBeenCalledWith(`/login?next=${encodeURIComponent("/results/sess-1")}`);
-    expect(screen.queryByText("要件絵巻")).toBeNull();
+    expect(screen.queryByText("要件一覧")).toBeNull();
   });
 
   it("標題・日付・確定状態と、MoSCoW 区分の要件絵巻だけを出す（管理操作は無い）", async () => {
     render(<PastRequirementsPage />);
     await waitFor(() => expect(screen.getByText("新機能要件定義")).toBeTruthy());
-    expect(screen.getByText("要件絵巻")).toBeTruthy();
+    expect(screen.getByText("要件一覧")).toBeTruthy();
     expect(screen.getByText(/2024\/06\/20/)).toBeTruthy();
     expect(screen.getByText(/確定済み/)).toBeTruthy();
     expect(screen.getByText("キーワード検索を新設する")).toBeTruthy();
@@ -113,7 +113,7 @@ describe("過去要件の絵巻閲覧画面（/results/[id]）", () => {
     vi.mocked(fetchMySessionRequirements).mockResolvedValue({ ...SCROLL, items: [] });
     render(<PastRequirementsPage />);
     await waitFor(() =>
-      expect(screen.getByText(/このセッションの要件はまだ生まれておりませぬ/)).toBeTruthy(),
+      expect(screen.getByText(/この会話の要件はまだありません/)).toBeTruthy(),
     );
   });
 
@@ -136,8 +136,8 @@ describe("過去要件の絵巻閲覧画面（/results/[id]）", () => {
       .mockRejectedValueOnce(new Error("network"))
       .mockResolvedValueOnce(SCROLL);
     render(<PastRequirementsPage />);
-    await waitFor(() => expect(screen.getByText("再び試みる")).toBeTruthy());
-    fireEvent.click(screen.getByText("再び試みる"));
+    await waitFor(() => expect(screen.getByText("もう一度試す")).toBeTruthy());
+    fireEvent.click(screen.getByText("もう一度試す"));
     await waitFor(() => expect(screen.getByText("新機能要件定義")).toBeTruthy());
   });
 

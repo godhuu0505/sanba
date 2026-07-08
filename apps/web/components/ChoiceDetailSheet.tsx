@@ -2,6 +2,9 @@
 
 import { ChevronLeft, ChevronRight, Mic, X } from "lucide-react";
 
+import { HelpIcon } from "@/components/sanba";
+import type { HelpTerm } from "@/lib/help";
+
 export interface ChoiceOptionDetail {
   label: string;
   how?: string;
@@ -21,12 +24,23 @@ export interface ChoiceDetailSheetProps {
   onCompare: () => void;
 }
 
-function Section({ label, color, value }: { label: string; color: string; value?: string }) {
+function Section({
+  label,
+  color,
+  value,
+  term,
+}: {
+  label: string;
+  color: string;
+  value?: string;
+  term?: HelpTerm;
+}) {
   if (!value) return null;
   return (
     <div className="flex flex-col gap-[2px]">
-      <span className="text-[11px] font-bold" style={{ color }}>
+      <span className="inline-flex items-center gap-1 text-[11px] font-bold" style={{ color }}>
         {label}
+        {term && <HelpIcon term={term} />}
       </span>
       <span className="text-[12.5px] text-sanba-muted">{value}</span>
     </div>
@@ -63,10 +77,10 @@ export function ChoiceDetailSheet({
 
       <div className="flex flex-col gap-[11px] rounded-[14px] border border-sanba-border bg-sanba-surface-strong p-[14px]">
         <span className="text-[16px] font-bold text-sanba-cream">{option.label}</span>
-        <Section label="どう並ぶ？" color="var(--sanba-gold-text)" value={option.how} />
-        <Section label="効き目" color="var(--sanba-speak-text)" value={option.effect} />
-        <Section label="留意" color="var(--sanba-caution)" value={option.caution} />
-        <Section label="関連・出所" color="var(--sanba-muted)" value={option.source} />
+        <Section label="位置づけ" color="var(--sanba-gold-text)" value={option.how} term="位置づけ" />
+        <Section label="効き目" color="var(--sanba-speak-text)" value={option.effect} term="効き目" />
+        <Section label="留意" color="var(--sanba-caution)" value={option.caution} term="留意" />
+        <Section label="根拠" color="var(--sanba-muted)" value={option.source} term="根拠" />
       </div>
 
       <button

@@ -2,7 +2,17 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-import { Button, Card, CardTitle, Chip, Divider, Field, Input, Select } from "@/components/sanba";
+import {
+  Button,
+  Card,
+  CardTitle,
+  Chip,
+  Divider,
+  Field,
+  HelpIcon,
+  Input,
+  Select,
+} from "@/components/sanba";
 import {
   createProductInvite,
   listProductInvites,
@@ -47,7 +57,7 @@ export function ProductInvitesCard({ productId }: { productId: string }) {
   const reload = useCallback(() => {
     listProductInvites(productId, idToken)
       .then(setInvites)
-      .catch(() => setError("深掘りリンクの取得に失敗しました"));
+      .catch(() => setError("会話リンクの取得に失敗しました"));
   }, [productId, idToken]);
 
   useEffect(() => {
@@ -102,19 +112,23 @@ export function ProductInvitesCard({ productId }: { productId: string }) {
 
   return (
     <Card>
-      <CardTitle>深掘りリンク</CardTitle>
+      <CardTitle>会話リンク</CardTitle>
       <p className="text-[12px] leading-relaxed text-sanba-muted">
-        URL を開くだけでこのアプリの深掘りセッションを始められるリンクです。
+        URL を開くだけでこのアプリの会話を始められるリンクです。
         現在はログインした人のみ開けます（利用者向けのゲスト入場は準備中）。
       </p>
       <div className="flex flex-col gap-[10px]">
-        <Field label="対象" htmlFor="invite-scope">
+        <Field
+          label="対象"
+          htmlFor="invite-scope"
+          marker={<HelpIcon term="対象（開発者向け／利用者向け）" className="ml-[4px]" />}
+        >
           <Select
             id="invite-scope"
             value={scope}
             onChange={(e) => setScope(e.target.value as ProductInvite["scope"])}
           >
-            <option value="developer">開発者向け（技術の深掘り）</option>
+            <option value="developer">開発者向け（技術面をくわしく確認）</option>
             <option value="end_user">利用者向け（困りごとの聞き取り）</option>
           </Select>
         </Field>

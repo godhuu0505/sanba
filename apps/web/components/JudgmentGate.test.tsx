@@ -25,10 +25,10 @@ function setup(over: Partial<React.ComponentProps<typeof JudgmentGate>> = {}) {
 describe("JudgmentGate（確定ゲート）", () => {
   afterEach(() => cleanup());
 
-  it("未解消ありは確定不可。戻る/終うを出し、確定ボタンは出さない", () => {
+  it("未解消ありは確定不可。戻る/終えるを出し、確定ボタンは出さない", () => {
     setup({ unresolved: 2 });
-    expect(screen.getByText(/未解消 2/)).toBeTruthy();
-    expect(screen.getByRole("button", { name: /問答に戻/ })).toBeTruthy();
+    expect(screen.getByText(/未解消が 2 件あります/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: /会話に戻って確認/ })).toBeTruthy();
     expect(screen.getByRole("button", { name: /未解消のまま/ })).toBeTruthy();
     expect(screen.queryByRole("button", { name: /要件を確定/ })).toBeNull();
   });
@@ -41,9 +41,9 @@ describe("JudgmentGate（確定ゲート）", () => {
     expect(screen.queryByRole("button", { name: /未解消のまま/ })).toBeNull();
   });
 
-  it("戻る/終う が各コールバックを呼ぶ", () => {
+  it("戻る/終える が各コールバックを呼ぶ", () => {
     const cb = setup({ unresolved: 1 });
-    fireEvent.click(screen.getByRole("button", { name: /問答に戻/ }));
+    fireEvent.click(screen.getByRole("button", { name: /会話に戻って確認/ }));
     expect(cb.onBack).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole("button", { name: /未解消のまま/ }));
     expect(cb.onForceEnd).toHaveBeenCalledTimes(1);

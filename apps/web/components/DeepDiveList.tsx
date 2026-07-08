@@ -14,7 +14,7 @@ export function DeepDiveList({ detections, onJump }: DeepDiveListProps) {
   if (detections.length === 0) {
     return (
       <p className="px-1 py-3 text-[12px] text-sanba-muted">
-        未解消はありません（すべて解けました）。
+        未解消はありません（すべて確認できました）。
       </p>
     );
   }
@@ -26,7 +26,7 @@ export function DeepDiveList({ detections, onJump }: DeepDiveListProps) {
         return (
           <div
             key={d.id}
-            aria-label={`深掘り ${k.ariaLabel}`}
+            aria-label={`確認したいこと ${k.ariaLabel}`}
             className="flex flex-col gap-[6px] rounded-[12px] border bg-sanba-surface px-3 py-[11px]"
             style={{ borderColor: k.color }}
           >

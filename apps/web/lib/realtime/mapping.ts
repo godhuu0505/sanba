@@ -12,6 +12,8 @@ import {
   Waves,
 } from "lucide-react";
 
+import type { HelpTerm } from "@/lib/help";
+
 import type { DetectionKind } from "./types";
 
 export interface KindPresentation {
@@ -44,6 +46,16 @@ const DETECTION_PRESENTATION: Record<DetectionKind, KindPresentation> = {
 
 export function detectionPresentation(kind: DetectionKind): KindPresentation {
   return DETECTION_PRESENTATION[kind];
+}
+
+const DETECTION_HELP_TERM: Record<DetectionKind, HelpTerm> = {
+  contradiction: "食い違い",
+  gap: "確認したい点",
+  ambiguous: "あいまい",
+};
+
+export function detectionHelpTerm(kind: DetectionKind): HelpTerm {
+  return DETECTION_HELP_TERM[kind];
 }
 
 const CATEGORY_PRESENTATION: Record<string, KindPresentation> = {

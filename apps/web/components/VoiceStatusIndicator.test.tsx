@@ -84,11 +84,11 @@ describe("VoiceStatusIndicator（ラベル＋アイコン・色非依存）", ()
     expect(el.textContent).toContain("聞き取り中");
   });
 
-  it("消音時は「消音中」を表示する（最優先）", () => {
+  it("消音時は「スピーカー消音中」を表示する（最優先）", () => {
     render(<VoiceStatusIndicator phase="listening" micOn muted agentSpeaking />);
     const el = screen.getByRole("status");
     expect(el.getAttribute("data-status")).toBe("muted");
-    expect(el.textContent).toContain("消音中");
+    expect(el.textContent).toContain("スピーカー消音中");
   });
 
   it("該当なしは「待機中」を表示する", () => {

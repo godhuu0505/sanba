@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 
-import { Button, Chip } from "@/components/sanba";
+import { Button, Chip, HelpIcon } from "@/components/sanba";
 import { AccountMenu } from "@/components/AccountMenu";
 import { AppShell } from "@/components/AppShell";
 import { RequirementsScrollList } from "@/components/RequirementsScrollList";
@@ -139,7 +139,7 @@ export default function PastRequirementsPage() {
   return (
     <AppShell
       current="results"
-      title="要件絵巻"
+      title="要件一覧"
       onBack={() => router.push("/results")}
       headerRight={<AccountMenu profile={auth.profile} />}
     >
@@ -150,7 +150,7 @@ export default function PastRequirementsPage() {
 
         {load.state === "notfound" && (
           <p className="px-1 py-3 text-[13px] leading-relaxed text-sanba-muted">
-            この要件は見つかりませんでした。ご本人のセッションのみ閲覧できます。
+            この要件は見つかりませんでした。ご本人の会話のみ閲覧できます。
           </p>
         )}
 
@@ -169,7 +169,7 @@ export default function PastRequirementsPage() {
           <div className="flex flex-col gap-3 px-1 py-3">
             <p className="text-[13px] text-sanba-muted">読み込みに失敗しました。</p>
             <Button variant="gold" block onClick={() => void fetchScroll()}>
-              再び試みる
+              もう一度試す
             </Button>
           </div>
         )}
@@ -180,18 +180,24 @@ export default function PastRequirementsPage() {
               <h2 className="text-[18px] font-bold text-sanba-cream">
                 {load.data.title}
               </h2>
-              <p className="text-[12px] text-sanba-muted">
-                {formatSessionDate(load.data.created_at)}
-                {load.data.finalized ? " ・ 確定済み" : " ・ 未確定"}
-              </p>
+              <div className="flex items-center gap-1">
+                <p className="text-[12px] text-sanba-muted">
+                  {formatSessionDate(load.data.created_at)}
+                  {load.data.finalized ? " ・ 確定済み" : " ・ 未確定"}
+                </p>
+                <HelpIcon term="確定した要件と未確定の要件" />
+              </div>
             </div>
             <RequirementsScrollList
               requirements={load.data.items}
-              emptyText="このセッションの要件はまだ生まれておりませぬ。"
+              emptyText="この会話の要件はまだありません。"
             />
 
             <div className="flex flex-col gap-[8px] px-1 pt-2">
-              <h3 className="text-[14px] font-bold text-sanba-cream">結果ドキュメントを出力</h3>
+              <div className="flex items-center gap-1">
+                <h3 className="text-[14px] font-bold text-sanba-cream">結果ドキュメントを出力</h3>
+                <HelpIcon term="出力フォーマット" />
+              </div>
               <p className="text-[12px] leading-relaxed text-sanba-muted">
                 読み手に合わせたフォーマットで要件結果を文書化します。フォーマットは
                 アプリ管理画面で登録でき、未登録の場合はデフォルトが使われます。

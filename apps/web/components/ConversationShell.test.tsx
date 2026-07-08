@@ -27,14 +27,14 @@ function renderShell(onEnd = vi.fn()) {
 describe("ConversationShell（共通シェル）", () => {
   afterEach(() => cleanup());
 
-  it("固定ヘッダ（問答・REC・終了）とミニ状況を表示する", () => {
+  it("固定ヘッダ（会話・REC・終了）とミニ状況を表示する", () => {
     renderShell();
-    expect(screen.getByRole("heading", { name: "問答" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "会話" })).toBeTruthy();
     expect(screen.getByText(/REC 12:46/)).toBeTruthy();
     expect(screen.getByRole("button", { name: "会話を終了" })).toBeTruthy();
     expect(screen.getByText(/要件 8/)).toBeTruthy();
-    expect(screen.getByText(/未確定 2/)).toBeTruthy();
-    expect(screen.getByText(/資料 3/)).toBeTruthy();
+    expect(screen.getByText(/未解消 2/)).toBeTruthy();
+    expect(screen.getByText(/参考資料 3/)).toBeTruthy();
     expect(screen.getByText(/解析中/)).toBeTruthy();
   });
 
@@ -73,15 +73,15 @@ describe("ConversationShell（共通シェル）", () => {
     expect((screen.getByRole("button", { name: "会話を終了" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it("ミニ状況の『資料』タップで参考資料、『要件』タップで要件絵巻タブへ移動", () => {
+  it("ミニ状況の『参考資料』タップで参考資料、『要件』タップで要件一覧タブへ移動", () => {
     renderShell();
-    fireEvent.click(screen.getByRole("button", { name: /資料/ }));
+    fireEvent.click(screen.getByRole("button", { name: /参考資料/ }));
     expect(screen.getByText("ファイル本文")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /要件 8/ }));
     expect(screen.getByText("絵巻本文")).toBeTruthy();
   });
 
-  it("『未確定』タップは要件絵巻へ移動し onUnresolvedJump を発火する (#195)", () => {
+  it("『未解消』タップは要件一覧へ移動し onUnresolvedJump を発火する (#195)", () => {
     const onTabChange = vi.fn();
     const onUnresolvedJump = vi.fn();
     render(
@@ -94,7 +94,7 @@ describe("ConversationShell（共通シェル）", () => {
         bottomBar={<div>bar</div>}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: /未確定 2/ }));
+    fireEvent.click(screen.getByRole("button", { name: /未解消 2/ }));
     expect(onTabChange).toHaveBeenCalledWith("scroll");
     expect(onUnresolvedJump).toHaveBeenCalledTimes(1);
   });
