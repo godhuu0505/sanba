@@ -149,7 +149,8 @@ def github_unlink(user: AuthUser = Depends(require_user)) -> GitHubLinkStatus:
 
 
 class GithubReposResponse(BaseModel):
-    """`GET /api/github/repos`（ADR-0027）。02 準備「連携リポジトリ」の候補一覧。"""
+    """`GET /api/github/repos`。アプリ管理画面の repo 紐づけ候補一覧（ADR-0053 で
+    準備画面からは撤去し、product への紐づけ〔ProductRepoCard〕用途に限定）。"""
 
     enabled: bool
     repos: list[str]
@@ -160,7 +161,8 @@ class GithubReposResponse(BaseModel):
 
 @router.get("/api/github/repos", response_model=GithubReposResponse)
 def list_github_repos(user: AuthUser = Depends(require_user)) -> GithubReposResponse:
-    """セッション実施前に選べる GitHub リポジトリの候補を返す（ADR-0027 / ADR-0028）。
+    """アプリ管理画面で product に紐づける GitHub リポジトリの候補を返す（ADR-0028 /
+    ADR-0053 で準備画面からは撤去）。
 
     1 本のエンドポイントに統一し、次の順で解決する:
       1. 本人が GitHub App 連携済み → 連携アカウントの installation が読める一覧（ADR-0028）。
@@ -296,8 +298,10 @@ def select_session_repo(
     background: BackgroundTasks,
     access: SessionAccess = Depends(require_session_access),
 ) -> SessionGitHubResponse:
-    """準備画面で repo+branch を選び、非同期索引をキックする（ADR-0028）。
+    """セッション単位で repo+branch を選び、非同期索引をキックする（ADR-0028）。
 
+    ADR-0053 で準備画面からのセッション単位 repo 選択は撤去され、repo 紐づけは product に
+    一本化した（このエンドポイントは新規導線を持たない後方互換として残置）。
     連携主体は owner 固定: owner の installation でのみ索引する。branch 省略時は
     デフォルトブランチを使い、選択時の HEAD sha にピン留めする。
     """

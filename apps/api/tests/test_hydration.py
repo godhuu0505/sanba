@@ -334,8 +334,8 @@ class _FakeAppClient:
         self._captured = captured
         self._repos = repos
 
-    def repo_full_names(self, installation_id: int) -> set[str]:
-        return self._repos
+    def can_access_repo(self, installation_id: int, repo: str) -> bool:
+        return repo in self._repos
 
     def create_issue(
         self,
