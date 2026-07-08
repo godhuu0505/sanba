@@ -16,8 +16,32 @@ const TARGET_LABELS: Record<TargetChoice, string> = {
   developer: AUDIENCE_LABELS.developer,
 };
 
+type CheckPointScope = "developer" | "end_user";
+
+const SCOPE_ORDER: CheckPointScope[] = ["developer", "end_user"];
+
+const SCOPE_LABELS: Record<CheckPointScope, string> = {
+  developer: AUDIENCE_LABELS.developer,
+  end_user: AUDIENCE_LABELS.end_user,
+};
+
+const SCOPE_ALLOWED_TARGETS: Record<CheckPointScope, (Audience | null)[]> = {
+  end_user: [null, "end_user"],
+  developer: [null, "planner", "developer"],
+};
+
+const SCOPE_DUPLICATE_TARGET: Record<CheckPointScope, Audience> = {
+  end_user: "end_user",
+  developer: "developer",
+};
+
 function sameItem(a: CheckItem, b: CheckItem): boolean {
   return a.text === b.text && a.target === b.target;
+}
+
+function scopeConfigured(items: CheckItem[], scope: CheckPointScope): boolean {
+  const allowed = SCOPE_ALLOWED_TARGETS[scope];
+  return items.some((i) => allowed.includes(i.target));
 }
 
 export function ProductCheckItemsCard({
@@ -65,6 +89,26 @@ export function ProductCheckItemsCard({
     }
     setNewItem("");
     void save([...items, item]);
+  }
+
+  const defaults = product.check_point_defaults ?? {};
+  const unsetScopes = SCOPE_ORDER.filter(
+    (scope) => (defaults[scope]?.length ?? 0) > 0 && !scopeConfigured(items, scope),
+  );
+
+  function handleDuplicate(scope: CheckPointScope) {
+    const target = SCOPE_DUPLICATE_TARGET[scope];
+    const additions = (defaults[scope] ?? [])
+      .map((text) => ({ text, target }))
+      .filter((cand) => !items.some((i) => sameItem(i, cand)));
+    if (additions.length === 0) return;
+    const room = limit - items.length;
+    if (room <= 0) {
+      setError(`確認項目は最大 ${limit} 個までです`);
+      return;
+    }
+    setError(null);
+    void save([...items, ...additions.slice(0, room)]);
   }
 
   return (
@@ -148,6 +192,41 @@ export function ProductCheckItemsCard({
         <p role="alert" className="text-[12px] text-sanba-rec-text">
           {error}
         </p>
+      )}
+      {unsetScopes.length > 0 && (
+        <div className="flex flex-col gap-[10px] rounded-[10px] border border-dashed border-sanba-border bg-sanba-bg px-[10px] py-[10px]">
+          <p className="text-[12px] leading-relaxed text-sanba-muted">
+            未設定のモードでは、以下のデフォルト観点で会話を進めます。必要なら複製して編集できます。
+          </p>
+          {unsetScopes.map((scope) => (
+            <section key={scope} aria-label={`${SCOPE_LABELS[scope]}のデフォルト観点`}>
+              <div className="flex items-center justify-between gap-[8px]">
+                <p className="inline-flex items-center gap-[6px] text-[12px] font-bold text-sanba-cream">
+                  <Chip tone="neutral" size="sm">
+                    {SCOPE_LABELS[scope]}
+                  </Chip>
+                  デフォルト観点
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={full}
+                  aria-label={`${SCOPE_LABELS[scope]}のデフォルト観点を複製`}
+                  onClick={() => handleDuplicate(scope)}
+                >
+                  デフォルトを複製
+                </Button>
+              </div>
+              <ul className="mt-[6px] flex flex-col gap-[3px]">
+                {(defaults[scope] ?? []).map((text) => (
+                  <li key={text} className="text-[12px] leading-relaxed text-sanba-muted">
+                    ・{text}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ))}
+        </div>
       )}
     </Card>
   );

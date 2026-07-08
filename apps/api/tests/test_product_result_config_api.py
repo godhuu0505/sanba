@@ -304,6 +304,19 @@ def test_get_product_returns_check_items_limit() -> None:
     assert client.get("/api/products/prod-1").json()["check_items_limit"] == 10
 
 
+def test_get_product_returns_check_point_defaults_matching_shared_constants() -> None:
+    """API が返す観点デフォルトは sanba_shared の DEFAULT_CHECK_POINTS と一致する（H）。"""
+    from sanba_shared.models import DEFAULT_CHECK_POINTS
+
+    _seed_product()
+    _login(OWNER)
+    body = client.get("/api/products/prod-1").json()
+    defaults = body["check_point_defaults"]
+    assert set(defaults) == {"developer", "end_user"}
+    for scope, points in DEFAULT_CHECK_POINTS.items():
+        assert defaults[scope.value] == list(points)
+
+
 def test_result_document_filters_check_items_by_audience() -> None:
     """確認項目は読み手に合わせて絞る（全員 + 対象一致 / ADR-0043）。"""
     _seed_product()

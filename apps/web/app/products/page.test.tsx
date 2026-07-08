@@ -57,6 +57,7 @@ function product(overrides: Partial<Product> = {}): Product {
     },
     check_items: [],
     check_items_limit: 10,
+    check_point_defaults: {},
     ...overrides,
   };
 }
