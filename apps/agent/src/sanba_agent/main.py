@@ -2093,9 +2093,12 @@ async def entrypoint(ctx: JobContext) -> None:
         mode = agent.interview_mode
         glossary: list[str] = []
         if mode == InviteScope.END_USER:
-            product = _session_product(agent._repo, agent._repo.get_session(session_id))
-            if product is not None:
-                glossary = list(product.glossary)
+            try:
+                product = _session_product(agent._repo, agent._repo.get_session(session_id))
+                if product is not None:
+                    glossary = list(product.glossary)
+            except Exception as exc:  # noqa: BLE001
+                log.warning("session_score_glossary_failed", session=session_id, error=str(exc))
         await score_session(
             session_id=session_id,
             transcript="\n".join(agent.transcript),
