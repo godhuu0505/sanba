@@ -56,7 +56,19 @@ publish しない**。理由:
   できる（LLMOps / ADR-0051）。既存の終了・確定フローには一切影響しない（gating に絡めない）。
 - `AnalysisResult.coverage_open` は増分2 以降（UI 表示・動的な観点の出し入れ）が再利用する土台。
 - 後続（増分2 以降）:
-  - **可視化**: ブロッキング検知と分離した「観点の進捗」UI（covered/uncovered をライブ更新）。web の
-    `unresolved`/`EndProposalCard` gating と混ざらないよう専用チャネル/セレクタで出す。
-  - **動的な出し入れ**: カバレッジを分析にフィードバックして未カバー観点を優先的に深掘りさせる。
-  - **品質**: 代表シナリオでカバレッジ判定を CI 回帰評価（ADR-0051）。精度が固まれば gating への昇格を検討。
+  - **可視化（増分2a・実装済み）**: ブロッキング検知と分離した「観点の進捗」UI（covered/uncovered を
+    ライブ更新）。専用イベント種別 `checkpoint.coverage` を新設し、agent は分析ごとに全量スナップショット
+    `{"points": [{"label": str, "covered": bool}]}` を publish する（reliable / seq は進めるが live-only で
+    永続化・ハイドレーションはしない＝リロードで消える）。`detection.gap` には**流さない**ため
+    `unresolved`/`EndProposalCard` gating には一切算入されない。creds 無し（`google_api_key` /
+    `google_genai_use_vertexai` いずれも偽）では `assess_check_point_coverage` が失敗と全カバー済みを区別
+    できず一律 `[]` を返すため、`covered=True` の誤誘導を避けて **publish しない**。観点 0 件でも publish
+    しない。web は `context.progress → contextProgress` と同じ「別スライス・非ブロッキング・専用
+    コンポーネント」パターン（`coverage` スライス + `selectCheckpointCoverage` + `CoverageProgress`）で
+    受け, `detections`/`unresolved`/`selectOpenDetections`/`EndProposalCard` には触れない。
+  - **動的な出し入れ（増分2b・実装済み）**: `analyze_requirements` ツールの返り値に
+    `uncovered_check_points`（直近の `coverage_open`）を additive に載せ、live LLM が次の一問を未カバー
+    観点へ寄せられるようにする。ADK の `next_question` 生成そのものは coverage で条件づけない（serialize
+    による遅延増を避け、coverage は ADK と並行実行のまま）。creds 無し/観点 0 件では空。
+  - **品質（増分2c）**: 代表シナリオでカバレッジ判定を CI 回帰評価（ADR-0051）。精度が固まれば gating への
+    昇格を検討。
