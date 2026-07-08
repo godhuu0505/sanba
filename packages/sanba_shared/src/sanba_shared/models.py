@@ -370,5 +370,6 @@ class AnalysisResult(BaseModel):
     summary: str
     open_topics: list[str] = Field(default_factory=list)
     ambiguous_topics: list[str] = Field(default_factory=list)
+    coverage_open: list[str] = Field(default_factory=list)
     next_question: str
     suggested_answer: str
