@@ -20,9 +20,24 @@ from dataclasses import dataclass
 import structlog
 
 from .config import settings
-from .tools.analysis import heuristic_open_topics
 
 log = structlog.get_logger(__name__)
+
+_NFR_KEYWORD_GROUPS: tuple[tuple[str, ...], ...] = (
+    ("レイテンシ", "性能", "速", "latency", "performance"),
+    ("可用性", "slo", "稼働", "ダウンタイム"),
+    ("セキュリティ", "個人情報", "pii", "認証", "権限"),
+    ("コスト", "予算", "料金", "費用"),
+    ("ユーザー", "規模", "同時", "人数"),
+)
+
+
+def _nfr_coverage_fallback(transcript: str) -> float:
+    """LLM judge が無いときの nfr_coverage 決定的スコア（会話ゲートではなく回帰採点用）。"""
+    text = transcript.lower()
+    covered = sum(1 for group in _NFR_KEYWORD_GROUPS if any(kw in text for kw in group))
+    return covered / len(_NFR_KEYWORD_GROUPS)
+
 
 RUBRIC = [
     ("nfr_coverage", "非機能要件(性能/可用性/セキュリティ/コスト/規模)を十分に確認したか"),
@@ -147,9 +162,7 @@ class JudgeResult:
 
 def _heuristic_scores(transcript: str) -> JudgeResult:
     """Dependency-free scoring used as a fallback and as a deterministic test anchor."""
-    total_nfr = 5
-    covered = total_nfr - len(heuristic_open_topics(transcript))
-    nfr = covered / total_nfr
+    nfr = _nfr_coverage_fallback(transcript)
     specificity = min(1.0, (transcript.count("？") + transcript.count("?")) / 5)
     contradiction = 1.0 if ("矛盾" in transcript or "確認" in transcript) else 0.4
     return JudgeResult.from_scores(

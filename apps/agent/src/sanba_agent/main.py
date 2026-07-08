@@ -53,7 +53,7 @@ from sanba_shared.models import (
     RequirementCategory,
     SessionMeta,
     Utterance,
-    check_items_for_scope,
+    check_points_for_scope,
 )
 from sanba_shared.repository import SessionRepository
 
@@ -212,7 +212,7 @@ def build_agent_instructions(repo: SessionRepository, session_id: str) -> AgentS
     prep_note = ""
     product = _session_product(repo, meta)
     seeded_check_items = (
-        check_items_for_scope(product.check_items, mode) if product is not None else []
+        check_points_for_scope(product.check_items, mode) if product is not None else []
     )
     check_items_seed = build_check_items_seed(
         seeded_check_items, end_user=mode is InviteScope.END_USER
@@ -754,14 +754,13 @@ class SANBAAgent(Agent):
         呼び出し側（_run_analysis）が _analysis_lock で直列化している前提。status は
         触らない（背景実行は不可視・deliberating/listening はツール経路だけが出す）。
 
-        end_user モードでは NFR gap（heuristic_open_topics の企業向け固定5論点）を出さない
-        （ADR-0055）。使用感インタビューには該当キーワードが出ず5件が恒久 open となり、
-        終了提案（open=0 が条件）を永久ブロックするため。ambiguous 検知は言い回し由来で
-        モード非依存なので従来どおり出す。
+        gap（`result.open_topics`）は汎用の検知チャネルとして残すが、ハードコードの企業向け
+        NFR ヒューリスティックは廃止したため現状は供給されない（ADR-0055）。会話でカバーすべき
+        観点はモード別の check-points で instruction 側にシードし、終了/確定を gap でブロック
+        しない。将来の動的観点検知はこのチャネルを再利用して open_topics を埋める。
         """
         if self._publisher is not None:
-            gap_topics = [] if self._interview_mode is InviteScope.END_USER else result.open_topics
-            current = {make_requirement_id(f"gap:{t}"): t for t in gap_topics}
+            current = {make_requirement_id(f"gap:{t}"): t for t in result.open_topics}
             for gap_id, topic in current.items():
                 if gap_id in self._published_gaps:
                     continue

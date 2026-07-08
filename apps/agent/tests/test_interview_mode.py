@@ -201,13 +201,30 @@ def test_check_items_target_filters_by_interview_mode() -> None:
     assert "利用者向け項目" not in instructions2
 
 
-def test_no_check_items_leaves_instructions_unchanged() -> None:
-    """確認項目が未登録なら instructions にセクション自体を足さない。"""
+def test_unconfigured_product_seeds_mode_default_check_points() -> None:
+    """確認項目が未設定の product は、モード別デフォルト観点をシードする（ADR-0055）。"""
     repo = _repo()
     repo.create_product(Product(id="prod-1", name="請求アプリ", owner_sub="owner"))
     _seed_session(repo, mode=InviteScope.DEVELOPER, product_id="prod-1")
+    dev_instructions, _, _, *_ = build_agent_instructions(repo, "s1")
+    assert "このセッションで必ず確認する項目" in dev_instructions
+    assert "性能・レスポンスの要件" in dev_instructions
+    assert "運用での回避策（ワークアラウンド）の有無" in dev_instructions
+
+    repo2 = _repo()
+    repo2.create_product(Product(id="prod-2", name="請求アプリ", owner_sub="owner"))
+    _seed_session(repo2, mode=InviteScope.END_USER, product_id="prod-2")
+    eu_instructions, _, _, *_ = build_agent_instructions(repo2, "s1")
+    assert "どんな場面で使うか（ユースケース）" in eu_instructions
+    assert "性能・レスポンスの要件" not in eu_instructions
+
+
+def test_product_without_target_app_stays_plain() -> None:
+    """product が無い旧 1:1 セッションはデフォルト観点を載せず素のまま（ADR-0055）。"""
+    repo = _repo()
+    _seed_session(repo, mode=InviteScope.DEVELOPER, product_id=None)
     instructions, _, _, *_ = build_agent_instructions(repo, "s1")
-    assert "必ず確認する項目" not in instructions
+    assert "このセッションで必ず確認する項目" not in instructions
 
 
 def test_missing_session_falls_back_to_developer() -> None:

@@ -63,6 +63,6 @@
 | [0052](0052-login-redesign-nashi-gen-alignment.md) | ログイン画面の刷新（NASHI GEN 準拠のクリーン化）と復元中の中立スプラッシュ | Accepted |
 | [0053](0053-github-permission-split-and-issue-export-gate.md) | GitHub 連携の権限分離 — 読みは App 索引・書きは操作者権限ゲート付き Issues:write | Accepted |
 | [0054](0054-ui-copy-terminology-unification-and-help.md) | UIコピーの用語統一・平易化とヘルプ補足（単一文言への統一・Radix Popover ヘルプ） | Proposed |
-| [0055](0055-end-user-detection-handling.md) | end_user モードの検知（gap/ambiguous）の扱い — 企業向け NFR gap を出さない | Accepted |
+| [0055](0055-end-user-detection-handling.md) | 会話でカバーする観点をモード別・設定可能にし、ハードコード NFR gap 検知を廃止する | Accepted |
 
 付随資料は [`supplements/`](supplements/) に置く（特定 ADR の実測・検証データ）。
