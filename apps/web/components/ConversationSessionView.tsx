@@ -190,10 +190,10 @@ export function ConversationSessionView({
   }, [readOnly, onFinalize, onEndSession]);
 
   useEffect(() => {
-    if (state.completed && phase === "shell" && !ended) {
+    if (state.completed && state.endProposal && phase === "shell" && !ended) {
       void finalizeAndFinish();
     }
-  }, [state.completed, phase, ended, finalizeAndFinish]);
+  }, [state.completed, state.endProposal, phase, ended, finalizeAndFinish]);
 
   useEffect(() => {
     setEndProposalDismissed(false);
@@ -413,7 +413,8 @@ export function ConversationSessionView({
         !readOnly &&
         state.endProposal &&
         !endProposalDismissed &&
-        !state.completed && (
+        !state.completed &&
+        openDetections.length === 0 && (
           <div className="fixed inset-x-0 bottom-[92px] z-40 mx-auto w-full max-w-[420px] px-4">
             <EndProposalCard
               requirementCount={state.endProposal.requirement_count}

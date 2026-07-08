@@ -352,6 +352,34 @@ describe("ConversationSessionView（会話シェル結線）", () => {
     expect(await screen.findByText(/要件、産まれました/)).toBeTruthy();
   });
 
+  it("終了提案中に未解消の検知が残る/現れた場合はカードを出さない（レビュー指摘）", () => {
+    renderView({
+      state: baseState({
+        endProposal: { open_count: 0, requirement_count: 1, material_count: 0 },
+      }),
+    });
+    expect(screen.queryByRole("region", { name: "終了の提案" })).toBeNull();
+  });
+
+  it("提案を経ていない session.completed（起票由来など）では自動確定しない（レビュー指摘）", () => {
+    const onFinalize = vi.fn(async () => ({ finalized: true, confirmed_count: 1 }));
+    renderView({
+      state: baseState({
+        detections: [],
+        endProposal: null,
+        completed: {
+          contradictions_resolved: 0,
+          gaps_found: 0,
+          issues_created: 1,
+          artifacts: [{ kind: "issue", url: "https://example.com/1" }],
+        },
+      }),
+      onFinalize,
+    });
+    expect(onFinalize).not.toHaveBeenCalled();
+    expect(screen.queryByText(/要件、産まれました/)).toBeNull();
+  });
+
   it("終了提案の「まだ続ける」でカードを閉じ、確定しない（P1-b）", () => {
     const onFinalize = vi.fn(async () => ({ finalized: true, confirmed_count: 1 }));
     renderView({
@@ -371,6 +399,7 @@ describe("ConversationSessionView（会話シェル結線）", () => {
     renderView({
       state: baseState({
         detections: [],
+        endProposal: { open_count: 0, requirement_count: 1, material_count: 0 },
         completed: {
           contradictions_resolved: 0,
           gaps_found: 0,

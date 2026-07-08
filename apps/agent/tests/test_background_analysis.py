@@ -190,21 +190,63 @@ async def test_background_analysis_timeout_is_fail_soft(
     assert len(calls) == 2
 
 
+def _seed_requirement(agent: SANBAAgent, statement: str = "検索を新設する") -> None:
+    from sanba_shared.models import Priority, Requirement, RequirementCategory
+
+    agent._repo.save_requirement(
+        agent._session_id,
+        Requirement(
+            id=f"req-{statement}",
+            statement=statement,
+            category=RequirementCategory.FUNCTIONAL,
+            priority=Priority.MUST,
+        ),
+    )
+
+
 @pytest.mark.asyncio
 async def test_propose_session_end_gated_on_open_detections() -> None:
     transport = RecordingTransport()
     agent = _agent(transport)
+    _seed_requirement(agent)
     propose = type(agent).propose_session_end.__wrapped__
 
     agent._published_gaps.add("g1")
     declined = await propose(agent, None)
-    assert declined == {"proposed": False, "open_count": 1}
+    assert declined["proposed"] is False
+    assert declined["reason"] == "open_detections"
     assert not any(t["event"]["type"] == "session.end_proposed" for t in transport.sent)
 
     agent._published_gaps.clear()
     proposed = await propose(agent, None)
     assert proposed["proposed"] is True
     assert any(t["event"]["type"] == "session.end_proposed" for t in transport.sent)
+
+
+@pytest.mark.asyncio
+async def test_propose_session_end_refused_before_any_requirement() -> None:
+    """会話冒頭など要件が 1 件も無い段階では終了を提案しない（誤発火防止 / レビュー指摘）。"""
+    transport = RecordingTransport()
+    agent = _agent(transport)
+    propose = type(agent).propose_session_end.__wrapped__
+    result = await propose(agent, None)
+    assert result["proposed"] is False
+    assert result["reason"] == "no_requirements"
+    assert not any(t["event"]["type"] == "session.end_proposed" for t in transport.sent)
+
+
+@pytest.mark.asyncio
+async def test_complete_session_requires_prior_proposal() -> None:
+    """提案（同意フロー）を経ずに直接 complete_session を呼んでも終了しない（レビュー指摘）。"""
+    transport = RecordingTransport()
+    agent = _agent(transport)
+    _seed_requirement(agent)
+    agent.set_shutdown_hook(lambda reason: None)
+    complete = type(agent).complete_session.__wrapped__
+    result = await complete(agent, None)
+    assert result["completed"] is False
+    assert result["reason"] == "not_proposed"
+    assert not any(t["event"]["type"] == "session.completed" for t in transport.sent)
 
 
 @pytest.mark.asyncio
@@ -215,6 +257,8 @@ async def test_complete_session_publishes_completed_and_shuts_down() -> None:
 
     transport = RecordingTransport()
     agent = _agent(transport)
+    _seed_requirement(agent)
+    agent._end_proposed = True
     reasons: list[str] = []
     agent.set_shutdown_hook(lambda reason: reasons.append(reason))
     monkeypatch_delay = settings.voice_completion_shutdown_delay_s
@@ -234,12 +278,30 @@ async def test_complete_session_publishes_completed_and_shuts_down() -> None:
 async def test_complete_session_refuses_when_open_remains() -> None:
     transport = RecordingTransport()
     agent = _agent(transport)
+    _seed_requirement(agent)
+    agent._end_proposed = True
     agent.set_shutdown_hook(lambda reason: None)
     agent._published_ambiguous.add("a1")
     complete = type(agent).complete_session.__wrapped__
     result = await complete(agent, None)
-    assert result == {"completed": False, "open_count": 1}
+    assert result["completed"] is False
+    assert result["open_count"] == 1
+    assert result["reason"] == "open_detections"
     assert not any(t["event"]["type"] == "session.completed" for t in transport.sent)
+
+
+@pytest.mark.asyncio
+async def test_new_gap_retracts_prior_end_proposal() -> None:
+    """終了提案後に新しい抜けが検知されたら提案は取り下げられ、再提案が要る（レビュー指摘）。"""
+    transport = RecordingTransport()
+    agent = _agent(transport)
+    _seed_requirement(agent)
+    agent._end_proposed = True
+    result = AnalysisResult(
+        summary="s", open_topics=["性能要件"], next_question="q?", suggested_answer="a"
+    )
+    await agent._publish_analysis_detections(result)
+    assert agent._end_proposed is False, "新しい未解消が出たら終了提案は無効化される"
 
 
 @pytest.mark.asyncio

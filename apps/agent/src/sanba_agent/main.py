@@ -757,6 +757,7 @@ class SANBAAgent(Agent):
                 if gap_id in self._published_gaps:
                     continue
                 self._published_gaps.add(gap_id)
+                self._end_proposed = False
                 summary = f"{topic}が未確認です。"
                 self._repo.save_detection(
                     self._session_id,
@@ -793,6 +794,7 @@ class SANBAAgent(Agent):
                 if amb_id in self._published_ambiguous:
                     continue
                 self._published_ambiguous.add(amb_id)
+                self._end_proposed = False
                 summary = f"「{snippet}」は具体的な基準が不明瞭です。"
                 self._repo.save_detection(
                     self._session_id,
@@ -1237,9 +1239,12 @@ class SANBAAgent(Agent):
         open_count = self._open_detection_count()
         if open_count > 0:
             log.info("session_end_declined_open", session=self._session_id, open=open_count)
-            return {"proposed": False, "open_count": open_count}
-        self._end_proposed = True
+            return {"proposed": False, "open_count": open_count, "reason": "open_detections"}
         requirements = len(self._repo.list_requirements(self._session_id))
+        if requirements == 0:
+            log.info("session_end_declined_no_requirements", session=self._session_id)
+            return {"proposed": False, "open_count": 0, "reason": "no_requirements"}
+        self._end_proposed = True
         materials = len(self._repo.list_materials(self._session_id))
         if self._publisher is not None:
             await self._publisher.session_end_proposed(
@@ -1257,12 +1262,15 @@ class SANBAAgent(Agent):
         未解消の論点が残っていれば completed=false を返す（同意より整合性を優先）。
         締めの一言を告げてから、少し間をおいて自動的に退出する。
         """
+        if self._completed:
+            return {"completed": True, "open_count": 0}
+        if not self._end_proposed:
+            log.info("session_complete_declined_not_proposed", session=self._session_id)
+            return {"completed": False, "open_count": 0, "reason": "not_proposed"}
         open_count = self._open_detection_count()
         if open_count > 0:
             log.info("session_complete_declined_open", session=self._session_id, open=open_count)
-            return {"completed": False, "open_count": open_count}
-        if self._completed:
-            return {"completed": True, "open_count": 0}
+            return {"completed": False, "open_count": open_count, "reason": "open_detections"}
         self._completed = True
         if self._publisher is not None:
             await self._publisher.session_completed(
