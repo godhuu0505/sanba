@@ -1,10 +1,20 @@
 
 import { PRIORITY_ORDER } from "./mapping";
 import type { AnalysisState, SessionState } from "./store";
-import type { AnalysisVisualConflict, Detection, Priority, Requirement } from "./types";
+import type {
+  AnalysisVisualConflict,
+  CoveragePoint,
+  Detection,
+  Priority,
+  Requirement,
+} from "./types";
 
 export function selectOpenDetections(state: SessionState): Detection[] {
   return state.detections.filter((d) => !d.resolved && d.summary !== "").reverse();
+}
+
+export function selectCheckpointCoverage(state: SessionState): CoveragePoint[] {
+  return state.coverage;
 }
 
 export function selectActiveQuestion(state: SessionState): SessionState["question"] {

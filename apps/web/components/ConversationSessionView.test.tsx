@@ -50,6 +50,7 @@ const baseState = (over: Partial<SessionState> = {}): SessionState => ({
   ],
   analysis: [{ asset_id: "a1", pct: 40, stage: "OCR", extracted: [], conflicts: [] }],
   contextProgress: [],
+  coverage: [],
   endProposal: null,
   question: null,
   completed: null,

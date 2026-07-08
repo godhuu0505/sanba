@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   mergeMaterials,
   selectActiveQuestion,
+  selectCheckpointCoverage,
   selectConfirmedRequirements,
   selectMaterialDetail,
   selectMaterials,
@@ -21,6 +22,7 @@ import { BottomBar } from "./BottomBar";
 import { ChatHistory } from "./ChatHistory";
 import { ChoicePin } from "./ChoicePin";
 import { ConversationShell, type ShellTab } from "./ConversationShell";
+import { CoverageProgress } from "./CoverageProgress";
 import { DetectionPin } from "./DetectionPin";
 import { EndConfirmDialog } from "./EndConfirmDialog";
 import { EndProposalCard } from "./EndProposalCard";
@@ -109,6 +111,7 @@ export function ConversationSessionView({
 
   const baseMini = selectMiniStatus(state);
   const openDetections = selectOpenDetections(state);
+  const coverage = selectCheckpointCoverage(state);
   const confirmed = selectConfirmedRequirements(state);
 
   useEffect(() => {
@@ -388,11 +391,18 @@ export function ConversationSessionView({
         }
         tabs={{
           history: (
-            <ChatHistory
-              transcript={state.transcript}
-              contextProgress={state.contextProgress}
-              materials={materials}
-            />
+            <div className="flex flex-col gap-3">
+              {coverage.length > 0 && (
+                <div className="px-4 pt-3">
+                  <CoverageProgress coverage={coverage} />
+                </div>
+              )}
+              <ChatHistory
+                transcript={state.transcript}
+                contextProgress={state.contextProgress}
+                materials={materials}
+              />
+            </div>
           ),
           files: readOnly ? null : (
             <MaterialsList
