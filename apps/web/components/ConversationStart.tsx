@@ -167,7 +167,7 @@ function RoomGate({
           aria-live="polite"
           className="fixed inset-x-0 top-0 z-50 bg-sanba-rec-text/90 py-1 text-center text-[12px] font-bold text-white"
         >
-          繋ぎ直しております… しばらくお待ちください
+          再接続しています… しばらくお待ちください
         </div>
       )}
     </Screen>
@@ -200,11 +200,11 @@ export function StartIntro({
   const failedCount = materialFailedCount ?? 0;
   return (
     <Screen className="px-4 py-3">
-      <AppHeader title="支度、相整いまして" onBack={onBack} />
+      <AppHeader title="準備ができました" onBack={onBack} />
       <main className="mx-auto flex w-full max-w-[480px] flex-1 flex-col gap-[18px] pt-2">
         <div className="flex flex-col items-center gap-2 pt-4">
           <Figure state="walking" className="w-[64px]" />
-          <p className="text-[13px] text-sanba-muted">問答を始める支度が整いました。</p>
+          <p className="text-[13px] text-sanba-muted">会話を始める準備ができました。</p>
         </div>
 
         <Card>
@@ -240,13 +240,13 @@ export function StartIntro({
 
         <p className="flex items-start gap-1.5 text-[12px] leading-relaxed text-sanba-muted">
           <Mic size={14} aria-hidden className="mt-0.5 shrink-0" />
-          <span>音声で問答するためマイクを使用します。次の画面で許可を求めます。</span>
+          <span>音声で会話するためマイクを使用します。次の画面で許可を求めます。</span>
         </p>
 
         <div className="mt-1 flex flex-col gap-[8px]">
           <Button variant="gold" size="lg" block onClick={onStartVoice} aria-label="音声で会話を始める">
             <span className="inline-flex items-center justify-center gap-1.5">
-              <Mic size={16} aria-hidden /> 問答を始める
+              <Mic size={16} aria-hidden /> 会話を始める
             </span>
           </Button>
         </div>
@@ -293,10 +293,10 @@ export function MicPermissionModal({ onAllow, onDismiss }: MicPermissionModalPro
             <Mic size={26} aria-hidden />
           </div>
           <p className="text-center text-[16px] font-bold text-sanba-gold-text">
-            声を聞かせてくださいませ
+            マイクの使用を許可してください
           </p>
           <p className="text-center text-[12px] leading-relaxed text-sanba-muted">
-            問答には端末のマイクを用います。使用を許可してください。
+            会話には端末のマイクを使います。使用を許可してください。
           </p>
           <div className="mt-1 flex w-full flex-col gap-[8px]">
             <Button
@@ -326,16 +326,16 @@ export function ConnectingOverlay({ state, onCancel }: ConnectingOverlayProps) {
   const reconnecting = state === ConnectionState.Reconnecting;
   return (
     <Screen className="px-4 py-3">
-      <AppHeader title="繋いでおります" />
+      <AppHeader title="接続しています" />
       <main className="mx-auto flex w-full max-w-[420px] flex-1 flex-col items-center gap-6 pt-12">
         <Figure state="walking" className="w-[64px]" />
         <p className="text-[14px] font-bold text-sanba-gold-text" aria-live="polite">
-          {reconnecting ? "繋ぎ直しております…" : "繋いでおります…"}
+          {reconnecting ? "再接続しています…" : "接続しています…"}
         </p>
         <ul className="flex w-full flex-col gap-2 text-[13px]">
-          <Step done={joined} label="ルームに参加" />
-          <Step done={false} active label="音声を確立中" />
-          <Step done={false} label="SANBA の起動を待機" />
+          <Step done={joined} label="通話に参加" />
+          <Step done={false} active label="音声を準備中" />
+          <Step done={false} label="SANBA の準備を待っています" />
         </ul>
         <div className="flex-1" />
         <Button variant="ghost" block onClick={onCancel} aria-label="接続を中断して戻る">
@@ -386,7 +386,7 @@ export function StartFailed({ kind, onRetry, onBack }: StartFailedProps) {
           <TriangleAlert size={32} aria-hidden />
         </div>
         <p className="text-[16px] font-bold text-sanba-rec-text">
-          {isMic ? "声を捉えられませなんだ" : "繋ぐことが叶いませなんだ"}
+          {isMic ? "マイクを認識できませんでした" : "接続できませんでした"}
         </p>
         <div className="w-full rounded-[14px] border border-sanba-rec/40 bg-sanba-rec-pale p-[14px] text-[12.5px] leading-relaxed text-sanba-muted">
           {isMic ? (

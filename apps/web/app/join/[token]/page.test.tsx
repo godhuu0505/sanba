@@ -84,7 +84,7 @@ function joined(overrides: Record<string, unknown> = {}) {
 
 async function startWithConsent() {
   fireEvent.click(screen.getByRole("checkbox"));
-  fireEvent.click(screen.getByRole("button", { name: "深掘りを開始する" }));
+  fireEvent.click(screen.getByRole("button", { name: "会話を始める" }));
 }
 
 describe("深掘りリンク入場画面（ADR-0031 / ADR-0032 / FR-1.6 / FR-2.1）", () => {
@@ -131,7 +131,7 @@ describe("深掘りリンク入場画面（ADR-0031 / ADR-0032 / FR-1.6 / FR-2.1
 
   it("同意チェックなしでは開始ボタンが無効で join を呼べない", () => {
     render(<JoinPage />);
-    const button = screen.getByRole("button", { name: "深掘りを開始する" });
+    const button = screen.getByRole("button", { name: "会話を始める" });
     expect((button as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(button);
     expect(joinProduct).not.toHaveBeenCalled();
@@ -143,7 +143,7 @@ describe("深掘りリンク入場画面（ADR-0031 / ADR-0032 / FR-1.6 / FR-2.1
     authState.credential = null;
     render(<JoinPage />);
     fireEvent.click(screen.getByRole("checkbox"));
-    const button = screen.getByRole("button", { name: "深掘りを開始する" });
+    const button = screen.getByRole("button", { name: "会話を始める" });
     expect((button as HTMLButtonElement).disabled).toBe(true);
   });
 
@@ -159,7 +159,7 @@ describe("深掘りリンク入場画面（ADR-0031 / ADR-0032 / FR-1.6 / FR-2.1
       idToken: "id-token",
     });
     expect(screen.getByTestId("conversation-start").textContent).toContain("経費精算アプリ");
-    expect(screen.getByTestId("conversation-start").textContent).toContain("顧客");
+    expect(screen.getByTestId("conversation-start").textContent).toContain("利用者");
     expect(screen.getByTestId("conversation-start").dataset.readonly).toBe("0");
   });
 
@@ -200,7 +200,7 @@ describe("深掘りリンク入場画面（ADR-0031 / ADR-0032 / FR-1.6 / FR-2.1
     render(<JoinPage />);
     await startWithConsent();
     expect(await screen.findByText("参加にはログインが必要です")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "深掘りを開始する" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "会話を始める" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "ログインして参加する" }));
     expect(push).toHaveBeenCalledWith(`/login?next=${encodeURIComponent("/join/tok.sig")}`);
   });
@@ -215,7 +215,7 @@ describe("深掘りリンク入場画面（ADR-0031 / ADR-0032 / FR-1.6 / FR-2.1
       render(<JoinPage />);
       await startWithConsent();
       expect(await screen.findByText(title)).toBeTruthy();
-      expect(screen.queryByRole("button", { name: "深掘りを開始する" })).toBeNull();
+      expect(screen.queryByRole("button", { name: "会話を始める" })).toBeNull();
       cleanup();
     }
   });
@@ -231,7 +231,7 @@ describe("深掘りリンク入場画面（ADR-0031 / ADR-0032 / FR-1.6 / FR-2.1
     render(<JoinPage />);
     await startWithConsent();
     expect(await screen.findByRole("alert")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "深掘りを開始する" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "会話を始める" })).toBeTruthy();
     expect(joinProduct).toHaveBeenCalledTimes(2);
   });
 
@@ -242,7 +242,7 @@ describe("深掘りリンク入場画面（ADR-0031 / ADR-0032 / FR-1.6 / FR-2.1
     expect(await screen.findByRole("alert")).toBeTruthy();
     expect(joinProduct).toHaveBeenCalledTimes(1);
 
-    fireEvent.click(screen.getByRole("button", { name: "深掘りを開始する" }));
+    fireEvent.click(screen.getByRole("button", { name: "会話を始める" }));
     await waitFor(() => expect(screen.getByTestId("conversation-start")).toBeTruthy());
     expect(joinProduct).toHaveBeenCalledTimes(1);
     expect(joinSession).toHaveBeenCalledTimes(2);

@@ -74,8 +74,8 @@ describe("MicPermissionModal（03-2 録音許可）", () => {
     const onAllow = vi.fn();
     render(<MicPermissionModal onAllow={onAllow} onDismiss={vi.fn()} />);
     expect(screen.getByRole("dialog", { name: "マイクの使用許可" })).toBeTruthy();
-    expect(screen.getByText("声を聞かせてくださいませ")).toBeTruthy();
-    expect(screen.getByText(/端末のマイクを用います/)).toBeTruthy();
+    expect(screen.getByText("マイクの使用を許可してください")).toBeTruthy();
+    expect(screen.getByText(/端末のマイクを使います/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "マイクの使用を許可する" }));
     expect(onAllow).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole("button", { name: "音声を使わずテキストで進める" })).toBeNull();
@@ -109,12 +109,12 @@ describe("ConnectingOverlay（03-1 接続中）", () => {
     const { rerender } = render(
       <ConnectingOverlay state={ConnectionState.Connecting} onCancel={onCancel} />,
     );
-    expect(screen.getByText("繋いでおります…")).toBeTruthy();
+    expect(screen.getByText("接続しています…")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "接続を中断して戻る" }));
     expect(onCancel).toHaveBeenCalledTimes(1);
 
     rerender(<ConnectingOverlay state={ConnectionState.Reconnecting} onCancel={onCancel} />);
-    expect(screen.getByText("繋ぎ直しております…")).toBeTruthy();
+    expect(screen.getByText("再接続しています…")).toBeTruthy();
   });
 });
 
@@ -124,7 +124,7 @@ describe("StartFailed（03-3 失敗系）", () => {
   it("マイク拒否は設定導線＋再試行を出す（テキスト代替は出さない）", () => {
     const onRetry = vi.fn();
     render(<StartFailed kind="mic" onRetry={onRetry} onBack={vi.fn()} />);
-    expect(screen.getByText("声を捉えられませなんだ")).toBeTruthy();
+    expect(screen.getByText("マイクを認識できませんでした")).toBeTruthy();
     expect(screen.getByRole("button", { name: "ブラウザのマイク設定を開く手順を表示" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "もう一度接続を試す" }));
     expect(onRetry).toHaveBeenCalledTimes(1);
@@ -144,7 +144,7 @@ describe("StartFailed（03-3 失敗系）", () => {
 
   it("接続失敗はネットワーク原因を提示し、設定導線は出さない", () => {
     render(<StartFailed kind="connect" onRetry={vi.fn()} onBack={vi.fn()} />);
-    expect(screen.getByText("繋ぐことが叶いませなんだ")).toBeTruthy();
+    expect(screen.getByText("接続できませんでした")).toBeTruthy();
     expect(screen.getByText(/ネットワークが不安定/)).toBeTruthy();
     expect(screen.queryByRole("button", { name: "ブラウザのマイク設定を開く手順を表示" })).toBeNull();
   });

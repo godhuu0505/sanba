@@ -24,16 +24,16 @@ export default function Error({
       <AppHeader />
       <div className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center px-6 py-10">
         <p className="mb-2 text-[12px] tracking-[0.2em] text-sanba-gold-text">
-          ✦ しくじり ✦
+          エラー
         </p>
         <Card>
           <CardTitle>
-            {isChunkError ? "新しい版が出ております" : "問答の間で支障が生じました"}
+            {isChunkError ? "新しいバージョンがあります" : "問題が発生しました"}
           </CardTitle>
           <p className="text-[13px] leading-relaxed text-sanba-muted">
             {isChunkError
-              ? "画面の版が更新されました。再読込でお直りいたします。"
-              : "予期せぬ支障が生じました。お手数ですが再度お試しください。"}
+              ? "新しいバージョンに更新されました。再読み込みしてください。"
+              : "予期しないエラーが発生しました。お手数ですが、もう一度お試しください。"}
           </p>
           {error.message && (
             <p className="break-all rounded-[10px] border border-sanba-border bg-sanba-bg/40 px-[12px] py-[10px] text-[12px] text-sanba-cream">
@@ -43,10 +43,10 @@ export default function Error({
           )}
           <div className="flex gap-[8px]">
             <Button variant="gold" onClick={() => reset()}>
-              再び試みる
+              もう一度試す
             </Button>
             <Button variant="outline" onClick={() => window.location.reload()}>
-              再読込する
+              再読み込み
             </Button>
           </div>
         </Card>

@@ -15,10 +15,10 @@ const item = (over: Partial<MaterialItem>): MaterialItem => ({
 describe("MaterialsList（参考資料タブ・解析進捗つき）", () => {
   afterEach(() => cleanup());
 
-  it("空のときは未投入メッセージと『素材を追加』を出す", () => {
+  it("空のときは未投入メッセージと『参考資料を追加』を出す", () => {
     render(<MaterialsList items={[]} onAdd={vi.fn()} />);
     expect(screen.getByText(/まだありません/)).toBeTruthy();
-    expect(screen.getByRole("button", { name: /素材を追加/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /参考資料を追加/ })).toBeTruthy();
   });
 
   it("解析中はファイル名・進捗バー(aria-valuenow)・% を出す", () => {
@@ -63,7 +63,7 @@ describe("MaterialsList（参考資料タブ・解析進捗つき）", () => {
         onOpenDetail={onOpenDetail}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "資料 一覧_モック.png の詳細を開く" }));
+    fireEvent.click(screen.getByRole("button", { name: "参考資料 一覧_モック.png の詳細を開く" }));
     expect(onOpenDetail).toHaveBeenCalledWith("a1");
   });
 
@@ -89,10 +89,10 @@ describe("MaterialsList（参考資料タブ・解析進捗つき）", () => {
     expect(screen.queryByRole("button", { name: /詳細を開く/ })).toBeNull();
   });
 
-  it("『素材を追加』で onAdd が呼ばれる", () => {
+  it("『参考資料を追加』で onAdd が呼ばれる", () => {
     const onAdd = vi.fn();
     render(<MaterialsList items={[]} onAdd={onAdd} />);
-    fireEvent.click(screen.getByRole("button", { name: /素材を追加/ }));
+    fireEvent.click(screen.getByRole("button", { name: /参考資料を追加/ }));
     expect(onAdd).toHaveBeenCalledTimes(1);
   });
 
