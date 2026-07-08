@@ -16,6 +16,13 @@
 > 統一し、App 連携済みのときは additive な `linked` / `items`（default_branch 付き）を
 > 加えて App 由来の一覧を返す。
 
+> **改訂注記（2026-07-08）**: product スコープのセッション（`SessionMeta.product_id` あり）では、
+> repo passage の鮮度判定（`_is_stale_repo_passage`）の基準を「セッション作成時にコピーした
+> `github_commit_sha` のスナップショット」から「product 文書の現在の `github_commit_sha`」に変更した
+> （#440）。product が session 開始後に再索引されるとスナップショットが陳腐化し、新しく索引された
+> passage が全件 stale 判定されて repo grounding が0件に落ちる latent バグを修正。per-session の
+> repo 選択（`product_id` なし・本 ADR 本来のスコープ）の据え置きピン留め方針は変更なし。
+
 ## コンテキスト
 要件サンバの深掘りは、対象プロダクトの「いま在るコード・ドキュメント・課題」を前提に
 できると解像度が一段上がる。これまで GitHub 連携は環境単一 PAT の

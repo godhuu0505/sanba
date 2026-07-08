@@ -189,12 +189,20 @@ def test_unlinked_owner_blocks_repo_passages(monkeypatch) -> None:
 
 
 def test_agent_threads_product_id_into_grounding_search() -> None:
-    from sanba_shared.models import GitHubIndexStatus, GitHubLink, SessionMeta
+    from sanba_shared.models import GitHubIndexStatus, GitHubLink, Product, SessionMeta
     from sanba_shared.repository import SessionRepository
 
     from sanba_agent.main import SANBAAgent
 
     repo = SessionRepository()
+    repo.create_product(Product(id="prod-1", name="p", owner_sub="owner"))
+    repo.set_product_github(
+        "prod-1",
+        repo="octo/r",
+        branch="main",
+        commit_sha="sha1",
+        index_status=GitHubIndexStatus.READY,
+    )
     repo.create_session_doc(
         SessionMeta(
             id="sess-x",
@@ -224,3 +232,137 @@ def test_agent_threads_product_id_into_grounding_search() -> None:
     result = agent._grounded_search_inner("実装 コード")
     sources = {p["source"] for p in result["passages"]}
     assert "github:octo/r@main@sha1:app.py" in sources
+
+
+def test_repo_access_uses_product_current_sha_not_stale_session_snapshot() -> None:
+    from sanba_shared.models import GitHubIndexStatus, GitHubLink, Product, SessionMeta
+    from sanba_shared.repository import SessionRepository
+
+    from sanba_agent.main import SANBAAgent
+
+    repo = SessionRepository()
+    repo.create_product(Product(id="prod-1", name="p", owner_sub="owner"))
+    repo.set_product_github(
+        "prod-1",
+        repo="octo/r",
+        branch="main",
+        commit_sha="sha1",
+        index_status=GitHubIndexStatus.READY,
+    )
+    repo.create_session_doc(
+        SessionMeta(
+            id="sess-x",
+            title="t",
+            owner_sub="owner",
+            owner_email="o@example.com",
+            product_id="prod-1",
+        )
+    )
+    repo.set_session_github(
+        "sess-x",
+        repo="octo/r",
+        branch="main",
+        commit_sha="sha1",
+        index_status=GitHubIndexStatus.READY,
+    )
+    repo.set_github_link(GitHubLink(sub="owner", installation_id=1, github_login="octo"))
+
+    grounding = GroundingStore()
+    agent = SANBAAgent("sess-x", repo, grounding)
+
+    assert agent._repo_access() == ("sha1", False)
+
+    repo.set_product_github(
+        "prod-1",
+        repo="octo/r",
+        branch="main",
+        commit_sha="sha2",
+        index_status=GitHubIndexStatus.READY,
+    )
+
+    assert agent._repo_access() == ("sha2", False)
+
+
+def test_grounded_search_recovers_after_product_reindex_commit_sha_change() -> None:
+    from sanba_shared.models import GitHubIndexStatus, GitHubLink, Product, SessionMeta
+    from sanba_shared.repository import SessionRepository
+
+    from sanba_agent.main import SANBAAgent
+
+    repo = SessionRepository()
+    repo.create_product(Product(id="prod-1", name="p", owner_sub="owner"))
+    repo.set_product_github(
+        "prod-1",
+        repo="octo/r",
+        branch="main",
+        commit_sha="sha1",
+        index_status=GitHubIndexStatus.READY,
+    )
+    repo.create_session_doc(
+        SessionMeta(
+            id="sess-x",
+            title="t",
+            owner_sub="owner",
+            owner_email="o@example.com",
+            product_id="prod-1",
+        )
+    )
+    repo.set_session_github(
+        "sess-x",
+        repo="octo/r",
+        branch="main",
+        commit_sha="sha1",
+        index_status=GitHubIndexStatus.READY,
+    )
+    repo.set_github_link(GitHubLink(sub="owner", installation_id=1, github_login="octo"))
+
+    repo.set_product_github(
+        "prod-1",
+        repo="octo/r",
+        branch="main",
+        commit_sha="sha2",
+        index_status=GitHubIndexStatus.READY,
+    )
+    grounding = GroundingStore()
+    grounding.index_passage(
+        "紐づけ repo の実装コード本文（再索引後）",
+        "github:octo/r@main@sha2:app.py",
+        "context",
+        "prod-1",
+    )
+
+    agent = SANBAAgent("sess-x", repo, grounding)
+    result = agent._grounded_search_inner("実装 コード")
+    sources = {p["source"] for p in result["passages"]}
+    assert "github:octo/r@main@sha2:app.py" in sources
+
+
+def test_repo_access_falls_back_to_revoked_when_product_missing() -> None:
+    from sanba_shared.models import GitHubIndexStatus, GitHubLink, SessionMeta
+    from sanba_shared.repository import SessionRepository
+
+    from sanba_agent.main import SANBAAgent
+
+    repo = SessionRepository()
+    repo.create_session_doc(
+        SessionMeta(
+            id="sess-x",
+            title="t",
+            owner_sub="owner",
+            owner_email="o@example.com",
+            product_id="prod-missing",
+        )
+    )
+    repo.set_session_github(
+        "sess-x",
+        repo="octo/r",
+        branch="main",
+        commit_sha="sha1",
+        index_status=GitHubIndexStatus.READY,
+    )
+    repo.set_github_link(GitHubLink(sub="owner", installation_id=1, github_login="octo"))
+
+    grounding = GroundingStore()
+    agent = SANBAAgent("sess-x", repo, grounding)
+
+    assert agent._repo_access() == ("sha1", True)

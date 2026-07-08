@@ -1281,6 +1281,13 @@ class SANBAAgent(Agent):
         Firestore 不通時は安全側に倒し、repo 紐づけがあるなら revoked 扱いにする。
         対象は GitHub App の ES 索引フローのみ（index_status=none は connector 選択 / env
         フォールバック＝ADR-0027 の seed 経路で、遮断すると正当な seed まで落ちる）。
+
+        product スコープのセッション（`meta.product_id` あり）では、セッション作成時に
+        コピーされた `SessionMeta.github_commit_sha` のスナップショットではなく、product
+        文書の最新 `github_commit_sha` を参照する。product が session 開始後に再索引されると
+        session 側のスナップショットは更新されないため、放置すると新しく索引された repo
+        passage が全件 stale 判定されて grounding が0件に落ちる（#440）。product が見つから
+        ない（削除済み等）場合は安全側に倒し revoked=True とする。
         """
         try:
             meta = self._repo.get_session(self._session_id)
@@ -1296,6 +1303,11 @@ class SANBAAgent(Agent):
             return meta.github_commit_sha, True
         if link is None:
             return meta.github_commit_sha, True
+        if meta.product_id:
+            product = _session_product(self._repo, meta)
+            if product is None:
+                return meta.github_commit_sha, True
+            return product.github_commit_sha, False
         return meta.github_commit_sha, False
 
     @function_tool
