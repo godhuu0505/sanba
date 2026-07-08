@@ -89,7 +89,7 @@ web 側の適用規則: **`(type, id)` で冪等**（同じ要件/検知は upse
 | GET | `/api/sessions/{id}/context/files` | `{items:[{id,name,kind,status,extracted?,extracted_texts?}]}` 投入済み素材のメタ（#184）。リロード/再接続で実ファイル名・解析状態を復元。`extracted_texts`（解析済み素材の観察テキスト / #355）で `analysis.visual` 相当の詳細も復元し、web は realtime の analysis 行と `id`(=asset_id) で統合（ライブイベントが常に優先） | 同上 | P1（05 参考資料の復元） |
 | GET | `/api/sessions/{id}/questions/current` | `{question:{id,prompt,options}\|null, seq}` 現在の未回答質問（金枠ピン / #212・ADR-0020）。回答済み/未提示なら `question=null`。**`null` でも `seq`（クリア時点の `cleared_seq`）を返す**ことで、遅延 null が新しい live 質問を消す逆転を防ぐ。`seq` は active なら `asked_seq` | 同上 | P1（04 問いピンの復元） |
 | POST | `/api/sessions/{id}/finalize` | `{finalized:true, confirmed_count}`（#186）。07 判定の「確定」を永続化（session=finalized・確定件数を刻む不可逆マーカ）。要件の draft→approved 承認は管理画面の責務（ADR-0014）なので触れない | 同上 | P1（07→08） |
-| POST | `/api/sessions/{id}/export` | 成功: `{exported:true, issue_url, count}` + `doc_url?`（Markdown 生成が有れば追加）、失敗: `{exported:false, reason}` — agent ツール `export_requirements_to_github` を起動し `{exported, url, count}` を受け取り、web 向けに `issue_url=url` へリネームして返す | 同上 | P1（09→10） |
+| POST | `/api/sessions/{id}/export` | リクエスト（任意）: `{include_summary?, include_materials?}`（既定 false / P3・Q4）。成功: `{exported:true, issue_url, count}` + `doc_url?`（Markdown 生成が有れば追加）、失敗: `{exported:false, reason}`。opt-in で本文末尾に会話の要約（確定時に生成・保存済み `conversation_summary`）と参考資料サマリ（ファイル名＋解析観察＋`web_base_url/results/{id}` リンク・画像実体は載せない）を付す。起票成功時は Issue URL を `SessionMeta.exported_issue_url` に保存（過去要件一覧の「起票済み」表示） | 同上 | P1（09→10）/ P3 |
 
 - `seq` を併せて返すことで、スナップショット取得とライブ差分の**境界**が分かる（取得 seq 以下のイベントは破棄）。
 - 認可: 既存の署名付き招待トークンと同等の条件を適用する。`session_id` をパスに含むだけでは参加者以外に要件・検知が漏洩するため、実装時は必ずトークン検証を入れること。

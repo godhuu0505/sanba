@@ -13,13 +13,14 @@ from __future__ import annotations
 from typing import Any
 
 import structlog
-from sanba_shared.result_document import build_title_prompt
+from sanba_shared.result_document import build_summary_prompt, build_title_prompt
 
 from .config import settings
 
 log = structlog.get_logger(__name__)
 
 _MAX_TITLE_CHARS = 60
+_MAX_SUMMARY_CHARS = 1200
 
 
 def _clean_title(text: str) -> str:
@@ -48,3 +49,29 @@ def generate_requirement_title(requirements: list[dict[str, Any]]) -> str | None
         log.warning("title_generation_failed", error=str(exc))
         return None
     return _clean_title(resp.text or "") or None
+
+
+def generate_conversation_summary(utterances: list[dict[str, Any]]) -> str | None:
+    """会話ログから Issue 用の要約を生成する（P3・Q2 ハイブリッド）。生成不可なら None。
+
+    確定時に 1 回だけ生成して保存し、起票時は保存値を使う（起票のたびに LLM を呼ばない）。
+    認証情報なし / 発話なし / 失敗時は None を返し、呼び出し側は要約なしで続行する
+    （fail-open。タイトル生成と同じ倒し方）。
+    """
+    if not (settings.google_api_key or settings.google_genai_use_vertexai):
+        return None
+    if not any(str(u.get("text", "")).strip() for u in utterances):
+        return None
+    try:  # pragma: no cover - needs network/credentials
+        from google import genai
+
+        client = genai.Client(api_key=settings.google_api_key or None)
+        resp = client.models.generate_content(
+            model=settings.gemini_reasoning_model,
+            contents=build_summary_prompt(utterances),
+        )
+    except Exception as exc:  # pragma: no cover
+        log.warning("summary_generation_failed", error=str(exc))
+        return None
+    text = (resp.text or "").strip()
+    return text[:_MAX_SUMMARY_CHARS] or None

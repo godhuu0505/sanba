@@ -188,6 +188,23 @@ describe("ResultView（要件産婆結果）", () => {
     expect(screen.queryByText(/Issue を開く/)).toBeNull();
   });
 
+  it("Issue 起票は既定で要約・素材を含めず、チェックした opt-in を choice で渡す（P3）", () => {
+    const cb = setup();
+    fireEvent.click(screen.getByRole("button", { name: /Issue/ }));
+    expect(cb.onExportIssue).toHaveBeenLastCalledWith({
+      includeSummary: false,
+      includeMaterials: false,
+    });
+
+    fireEvent.click(screen.getByLabelText(/会話の要約/));
+    fireEvent.click(screen.getByLabelText(/参考資料のサマリ/));
+    fireEvent.click(screen.getByRole("button", { name: /Issue/ }));
+    expect(cb.onExportIssue).toHaveBeenLastCalledWith({
+      includeSummary: true,
+      includeMaterials: true,
+    });
+  });
+
   it("起票権限が無いとき Issue ボタンを無効化し理由を出す（ADR-0053）", () => {
     setup({ issueDisabledReason: "github not linked" });
     const btn = screen.getByRole("button", { name: /Issue/ });

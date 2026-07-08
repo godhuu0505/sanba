@@ -60,6 +60,32 @@ def test_set_session_title_updates_and_ignores_blank() -> None:
     assert repo.set_session_title("missing", "x") is None
 
 
+def test_list_utterances_returns_insertion_order() -> None:
+    from sanba_shared.models import Utterance
+
+    repo = _repo()
+    repo.create_session_doc(
+        SessionMeta(id="sess-u", title="t", owner_sub="sub", owner_email="o@e.com")
+    )
+    repo.add_utterance("sess-u", Utterance(speaker="participant", text="請求管理を作りたい"))
+    repo.add_utterance("sess-u", Utterance(speaker="assistant", text="対象は誰ですか"))
+    lines = repo.list_utterances("sess-u")
+    assert [u.text for u in lines] == ["請求管理を作りたい", "対象は誰ですか"]
+    assert repo.list_utterances("missing") == []
+
+
+def test_set_session_summary_persists_and_ignores_missing() -> None:
+    repo = _repo()
+    repo.create_session_doc(
+        SessionMeta(id="sess-s", title="t", owner_sub="sub", owner_email="o@e.com")
+    )
+    updated = repo.set_session_summary("sess-s", "  経理向けの請求管理を作る。  ")
+    assert updated is not None
+    assert updated.conversation_summary == "経理向けの請求管理を作る。"
+    assert repo.get_session("sess-s").conversation_summary == "経理向けの請求管理を作る。"
+    assert repo.set_session_summary("missing", "x") is None
+
+
 def test_list_sessions_by_owner_filters_and_sorts() -> None:
     from datetime import UTC, datetime
 

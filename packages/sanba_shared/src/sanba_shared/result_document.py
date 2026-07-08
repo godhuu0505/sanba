@@ -60,6 +60,49 @@ def build_title_prompt(requirements: list[dict[str, Any]]) -> str:
     )
 
 
+def build_summary_prompt(utterances: list[dict[str, Any]]) -> str:
+    """会話ログから Issue 用の短い要約を作らせるプロンプト（純粋関数 / P3・Q2 ハイブリッド）。
+
+    LLM 呼び出しは呼び出し側（api）が行う。ここは整形のみ。発話は PII マスク済みの
+    text を前提にする（保存時に mask_pii 済み）。長すぎる会話は末尾側を優先して詰める。
+    """
+    lines: list[str] = []
+    for u in utterances:
+        speaker = str(u.get("speaker", "")).strip() or "?"
+        text = str(u.get("text", "")).strip()
+        if text:
+            lines.append(f"{speaker}: {text}")
+    body = "\n".join(lines[-200:]) or "（発話なし）"
+    return (
+        "あなたは要件ヒアリングの議事をまとめる編集者です。以下の会話ログを読み、"
+        "決まったこと・背景・保留点を第三者が把握できる日本語の要約にしてください。\n"
+        "制約: 400字以内、箇条書き可、固有名詞や個人情報を新たに補わない、"
+        "ログに無い事実を創作しない、要約本文のみを出力する。\n"
+        f"---\n{body}\n---"
+    )
+
+
+def build_materials_block(materials: list[dict[str, Any]], results_url: str) -> str:
+    """投入素材を Issue 本文向けに整形する（P3・Q4）。
+
+    GitHub Issue は画像アップロード非対応のため、画像実体は載せず「ファイル名＋解析観察の
+    サマリ＋SANBA 結果画面へのリンク」を記す。解析済み（extracted_texts のある）素材を対象に、
+    観察は先頭数件だけ載せる（本文の肥大を防ぐ）。対象素材が無ければ空文字（節ごと省く）。
+    """
+    solved = [m for m in materials if m.get("extracted_texts")]
+    if not solved:
+        return ""
+    lines: list[str] = []
+    for m in solved:
+        name = str(m.get("name") or m.get("id") or "素材").strip()
+        obs = [str(t).strip() for t in m.get("extracted_texts", []) if str(t).strip()][:3]
+        lines.append(f"- **{name}**")
+        lines.extend(f"  - {o}" for o in obs)
+    if results_url:
+        lines.append(f"\n詳細: {results_url}")
+    return "\n".join(lines).strip()
+
+
 def requirements_to_render_dicts(requirements: list[Requirement]) -> list[dict[str, Any]]:
     """agent の `Requirement` モデルを契約 §3 相当のレンダラ入力へ変換する。
 
