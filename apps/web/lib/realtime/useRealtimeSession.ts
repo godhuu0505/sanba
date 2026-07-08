@@ -10,7 +10,12 @@ import {
   useRef,
   useSyncExternalStore,
 } from "react";
-import { fetchCurrentQuestion, fetchDetections, fetchRequirements } from "../api";
+import {
+  fetchContextFiles,
+  fetchCurrentQuestion,
+  fetchDetections,
+  fetchRequirements,
+} from "../api";
 import { contractEventFixture } from "./fixtures";
 import { RealtimeMetrics, type RealtimeMetricsSnapshot } from "./metrics";
 import {
@@ -44,6 +49,7 @@ interface LiveOptions {
   sessionId: string;
   sessionToken: string | null;
   hydrateDetections?: boolean;
+  hydrateAnalysis?: boolean;
 }
 
 function useStore(): {
@@ -68,7 +74,7 @@ function useStore(): {
 
 export function useRealtimeSession(opts: LiveOptions): UseRealtimeSessionResult {
   const { store, state, metrics } = useStore();
-  const { sessionId, sessionToken, hydrateDetections } = opts;
+  const { sessionId, sessionToken, hydrateDetections, hydrateAnalysis } = opts;
 
   const onMessage = useCallback(
     (msg: { payload: Uint8Array }) => {
@@ -149,7 +155,14 @@ export function useRealtimeSession(opts: LiveOptions): UseRealtimeSessionResult 
       store.hydrateQuestion(snap.question, snap.seq, requirementsOk && detectionsOk);
     } catch {
     }
-  }, [sessionId, sessionToken, hydrateDetections, store]);
+    if (hydrateAnalysis) {
+      try {
+        const snap = await fetchContextFiles(sessionId, sessionToken);
+        store.hydrateAnalysis(snap.items);
+      } catch {
+      }
+    }
+  }, [sessionId, sessionToken, hydrateDetections, hydrateAnalysis, store]);
 
   useEffect(() => {
     if (!sessionId) return;

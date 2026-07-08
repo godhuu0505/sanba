@@ -295,6 +295,7 @@ export interface ContextFileItem {
   kind: UploadKind;
   status: "uploading" | "analyzing" | "done" | "failed";
   extracted?: number;
+  extracted_texts?: string[];
 }
 
 export interface ContextFilesSnapshot {

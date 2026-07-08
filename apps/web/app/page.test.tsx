@@ -394,6 +394,26 @@ describe("入口フロー（#140）", () => {
     expect(window.location.pathname).toBe("/default-app/sessions/s1");
   });
 
+  it("「連携しない」を明示選択したら github_repo に空文字を送り opt-out を保つ（ADR-0027）", async () => {
+    authState.loggedIn = true;
+    fetchGithubRepos.mockResolvedValueOnce({
+      enabled: true,
+      repos: ["acme/app"],
+      default: null,
+    });
+    render(<Home />);
+    await clickStartCta();
+    await act(async () => {});
+    const select = screen.getByLabelText("連携リポジトリ（任意）");
+    fireEvent.change(select, { target: { value: "acme/app" } });
+    fireEvent.change(select, { target: { value: "" } });
+    fireEvent.change(screen.getByLabelText("ゴール"), { target: { value: "テストゴール" } });
+    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(screen.getByRole("button", { name: "要件サンバを始める" }));
+    await waitFor(() => expect(createSession).toHaveBeenCalledTimes(1));
+    expect(createSession.mock.calls[0][4]).toBe("");
+  });
+
   it("slug 未設定のアプリを選ぶと CTA は無効のまま、アプリ管理への設定導線を出す（ADR-0045）", async () => {
     authState.loggedIn = true;
     fetchMyProducts.mockResolvedValueOnce([{ ...DEFAULT_PRODUCT, slug: null }]);
@@ -443,7 +463,7 @@ describe("入口フロー（#140）", () => {
     expect(createSession.mock.calls[0][4]).toBe("acme/product-a");
   });
 
-  it("「連携しない」は空文字（明示的オプトアウト）として createSession に渡る", async () => {
+  it("未タッチの空選択は github_repo を送らず product 継承に委ねる（ADR-0031）", async () => {
     authState.loggedIn = true;
     fetchGithubRepos.mockResolvedValueOnce({
       enabled: true,
@@ -457,7 +477,7 @@ describe("入口フロー（#140）", () => {
     fireEvent.click(screen.getByRole("checkbox"));
     fireEvent.click(screen.getByRole("button", { name: "要件サンバを始める" }));
     await waitFor(() => expect(createSession).toHaveBeenCalledTimes(1));
-    expect(createSession.mock.calls[0][4]).toBe("");
+    expect(createSession.mock.calls[0][4]).toBeUndefined();
   });
 
   it("既定リポジトリは初期選択に反映され、そのまま開始すると既定が渡る", async () => {

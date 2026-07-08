@@ -115,9 +115,14 @@ def process_video(
     if result.observations:
         indexed = indexer.index_context(session_id, result.observations, f"asset:{asset_id}")
 
-    repo.save_material(
-        session_id, {"id": asset_id, "status": "done", "extracted": result.extracted}
-    )
+    done_record: dict[str, object] = {
+        "id": asset_id,
+        "status": "done",
+        "extracted": result.extracted,
+    }
+    if result.observations:
+        done_record["extracted_texts"] = list(result.observations)
+    repo.save_material(session_id, done_record)
     log.info(
         "video_analyzed",
         session=session_id,

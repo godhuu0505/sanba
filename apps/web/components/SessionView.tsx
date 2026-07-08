@@ -53,6 +53,7 @@ export function SessionView({
     sessionId,
     sessionToken,
     hydrateDetections: true,
+    hydrateAnalysis: true,
   });
   const auth = useAuth();
 

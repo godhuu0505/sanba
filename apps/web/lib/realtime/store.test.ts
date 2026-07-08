@@ -155,6 +155,38 @@ describe("RealtimeStore — analysis.visual = 完了 (#209 案A)", () => {
   });
 });
 
+describe("RealtimeStore — hydrateAnalysis（#355 再接続時の解析詳細復元）", () => {
+  it("done 素材の観察テキストを seq 0 で seed し、詳細セレクタが復元できる", () => {
+    const s = new RealtimeStore();
+    s.hydrateAnalysis([
+      { id: "a1", status: "done", extracted_texts: ["要件X", "要件Y"] },
+      { id: "a2", status: "failed" },
+      { id: "a3", status: "analyzing" },
+    ]);
+    const snap = s.getSnapshot();
+    expect(snap.analysis).toHaveLength(2);
+    const a1 = snap.analysis.find((a) => a.asset_id === "a1");
+    expect(a1?.pct).toBe(100);
+    expect(a1?.extracted).toEqual(["要件X", "要件Y"]);
+    const a2 = snap.analysis.find((a) => a.asset_id === "a2");
+    expect(a2?.stage).toBe("failed");
+  });
+
+  it("ライブイベント既着の素材は上書きしない（ライブが常に新しい）", () => {
+    const s = new RealtimeStore();
+    s.apply(visual(3, "a1", ["ライブの要件"]));
+    s.hydrateAnalysis([{ id: "a1", status: "done", extracted_texts: ["古い要件"] }]);
+    expect(s.getSnapshot().analysis[0].extracted).toEqual(["ライブの要件"]);
+  });
+
+  it("seed 後に届くライブイベント（seq > 0）は seed を上書きする", () => {
+    const s = new RealtimeStore();
+    s.hydrateAnalysis([{ id: "a1", status: "done", extracted_texts: ["古い要件"] }]);
+    s.apply(visual(1, "a1", ["新しい要件"]));
+    expect(s.getSnapshot().analysis[0].extracted).toEqual(["新しい要件"]);
+  });
+});
+
 describe("RealtimeStore — gap detection", () => {
   it("records a gap when a seq is skipped", () => {
     const s = new RealtimeStore();
