@@ -70,5 +70,11 @@ publish しない**。理由:
     `uncovered_check_points`（直近の `coverage_open`）を additive に載せ、live LLM が次の一問を未カバー
     観点へ寄せられるようにする。ADK の `next_question` 生成そのものは coverage で条件づけない（serialize
     による遅延増を避け、coverage は ADK と並行実行のまま）。creds 無し/観点 0 件では空。
-  - **品質（増分2c）**: 代表シナリオでカバレッジ判定を CI 回帰評価（ADR-0051）。精度が固まれば gating への
-    昇格を検討。
+  - **品質（増分2c・評価追加済み）**: `evaluation.py` に `COVERAGE_SCENARIOS` と `run_coverage_eval`
+    を足し、`run_dataset_eval`（CI `llm-eval.yml`）から呼ぶ。judge と違い
+    `assess_check_point_coverage` は creds 無しで一律 `[]`（決定的 fallback を持たない advisory 設計）
+    のため、**creds があるとき（`GOOGLE_API_KEY` secret）だけアサートし、無ければ skip して 0** を返す。
+    アサートは「明らかに未カバーな観点が返り集合に含まれる」「返りが check_points の部分集合（未知の
+    文言を surface しない）」の 2 点。**終了ゲートへの昇格はこの項目の範囲外**。昇格時は②で消した
+    「終われない」の再来を防ぐため、(1) 精度閾値、(2) force-end 逃げ道、(3) end_user/developer 別の
+    扱い、を別 ADR で定義する。

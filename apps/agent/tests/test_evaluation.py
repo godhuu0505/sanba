@@ -63,6 +63,53 @@ async def test_regression_dataset_passes() -> None:
 
 
 @pytest.mark.asyncio
+async def test_coverage_eval_skips_without_creds(monkeypatch: pytest.MonkeyPatch) -> None:
+    """creds 無しでは coverage 判定を skip して 0 を返す（決定的 fallback 無し / 増分2c）。"""
+    from sanba_agent import evaluation
+    from sanba_agent.config import settings
+
+    monkeypatch.setattr(settings, "google_api_key", "")
+    monkeypatch.setattr(settings, "google_genai_use_vertexai", False)
+    assert await evaluation.run_coverage_eval() == 0
+
+
+@pytest.mark.asyncio
+async def test_coverage_eval_passes_when_uncovered_flagged(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """creds 有りで、期待どおり未カバー観点が返れば 0（正しく検知）。"""
+    from sanba_agent import evaluation
+    from sanba_agent.config import settings
+
+    monkeypatch.setattr(settings, "google_api_key", "k")
+
+    async def _stub(transcript: str, check_points: object) -> list[str]:
+        return list(evaluation.COVERAGE_SCENARIOS[0]["expected_uncovered"])
+
+    monkeypatch.setattr("sanba_agent.tools.analysis.assess_check_point_coverage", _stub)
+    monkeypatch.setattr(evaluation, "COVERAGE_SCENARIOS", [evaluation.COVERAGE_SCENARIOS[0]])
+    assert await evaluation.run_coverage_eval() == 0
+
+
+@pytest.mark.asyncio
+async def test_coverage_eval_fails_when_uncovered_missed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """明らかに未カバーな観点を返せなければ回帰（exit 1）。"""
+    from sanba_agent import evaluation
+    from sanba_agent.config import settings
+
+    monkeypatch.setattr(settings, "google_api_key", "k")
+
+    async def _stub(transcript: str, check_points: object) -> list[str]:
+        return []
+
+    monkeypatch.setattr("sanba_agent.tools.analysis.assess_check_point_coverage", _stub)
+    monkeypatch.setattr(evaluation, "COVERAGE_SCENARIOS", [evaluation.COVERAGE_SCENARIOS[0]])
+    assert await evaluation.run_coverage_eval() == 1
+
+
+@pytest.mark.asyncio
 async def test_end_user_grounded_outscores_jargon_leak() -> None:
     from sanba_agent.evaluation import (
         END_USER_QUALITY_THRESHOLD,
