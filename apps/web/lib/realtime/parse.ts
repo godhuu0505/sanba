@@ -26,6 +26,7 @@ const KNOWN_TYPES: ReadonlySet<string> = new Set<ServerEventType>([
   "analysis.progress",
   "analysis.visual",
   "context.progress",
+  "session.end_proposed",
   "session.completed",
 ]);
 
@@ -54,6 +55,7 @@ const REQUIRED_FIELDS: Record<ServerEventType, readonly string[]> = {
   "analysis.progress": ["asset_id", "pct", "stage"],
   "analysis.visual": ["asset_id", "extracted", "conflicts"],
   "context.progress": ["source", "stage"],
+  "session.end_proposed": ["open_count", "requirement_count", "material_count"],
   "session.completed": ["summary", "artifacts"],
 };
 
@@ -119,6 +121,12 @@ function validatePayload(type: ServerEventType, obj: Record<string, unknown>): b
       return (
         (obj.source === "prep" || obj.source === "repo") &&
         CONTEXT_STAGES.has(obj.stage as string)
+      );
+    case "session.end_proposed":
+      return (
+        typeof obj.open_count === "number" &&
+        typeof obj.requirement_count === "number" &&
+        typeof obj.material_count === "number"
       );
     case "analysis.visual":
       return Array.isArray(obj.extracted) && Array.isArray(obj.conflicts);

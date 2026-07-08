@@ -41,6 +41,12 @@ export interface SessionCompletion {
   artifacts: { kind: string; url: string }[];
 }
 
+export interface EndProposal {
+  open_count: number;
+  requirement_count: number;
+  material_count: number;
+}
+
 export interface SessionState {
   phase: SessionPhase;
   agentsActive: number;
@@ -50,6 +56,7 @@ export interface SessionState {
   analysis: AnalysisState[];
   contextProgress: ContextProgressState[];
   question: Question | null;
+  endProposal: EndProposal | null;
   completed: SessionCompletion | null;
   seq: number;
 }
@@ -68,6 +75,7 @@ const EMPTY_STATE: SessionState = {
   analysis: [],
   contextProgress: [],
   question: null,
+  endProposal: null,
   completed: null,
   seq: 0,
 };
@@ -81,6 +89,8 @@ export class RealtimeStore {
   private phase: SessionPhase = "idle";
   private agentsActive = 0;
   private question: Question | null = null;
+  private endProposal: EndProposal | null = null;
+  private lastEndProposedSeq = 0;
   private completed: SessionCompletion | null = null;
 
   private requirementsHydrationSeq = 0;
@@ -419,6 +429,16 @@ export class RealtimeStore {
           detail: event.detail ?? "",
         });
 
+      case "session.end_proposed":
+        if (event.seq <= this.lastEndProposedSeq) return false;
+        this.lastEndProposedSeq = event.seq;
+        this.endProposal = {
+          open_count: event.open_count,
+          requirement_count: event.requirement_count,
+          material_count: event.material_count,
+        };
+        return true;
+
       case "session.completed":
         if (event.seq <= this.lastCompletedSeq) return false;
         this.lastCompletedSeq = event.seq;
@@ -454,6 +474,7 @@ export class RealtimeStore {
       analysis: this.sortedValues(this.analysis),
       contextProgress: this.sortedValues(this.contextProgress),
       question: this.question,
+      endProposal: this.endProposal,
       completed: this.completed,
       seq: this.maxSeq,
     };
@@ -481,6 +502,8 @@ export class RealtimeStore {
     this.phase = "idle";
     this.agentsActive = 0;
     this.question = null;
+    this.endProposal = null;
+    this.lastEndProposedSeq = 0;
     this.completed = null;
     this.requirementsHydrationSeq = 0;
     this.detectionsHydrationSeq = 0;

@@ -229,6 +229,40 @@ describe("RealtimeStore — context.progress（P1-a 前提読み込み）", () =
   });
 });
 
+describe("RealtimeStore — session.end_proposed（P1-b）", () => {
+  function endProposed(seq: number, open: number, reqs: number, mats: number): ServerEvent {
+    return {
+      v: 1,
+      type: "session.end_proposed",
+      seq,
+      ts: "2026-06-24T00:00:00Z",
+      session_id: SESSION,
+      open_count: open,
+      requirement_count: reqs,
+      material_count: mats,
+    } as ServerEvent;
+  }
+
+  it("終了提案を保持し、新しい seq で上書きする", () => {
+    const s = new RealtimeStore();
+    s.apply(endProposed(1, 0, 3, 1));
+    expect(s.getSnapshot().endProposal).toEqual({
+      open_count: 0,
+      requirement_count: 3,
+      material_count: 1,
+    });
+    s.apply(endProposed(2, 0, 5, 2));
+    expect(s.getSnapshot().endProposal?.requirement_count).toBe(5);
+  });
+
+  it("古い seq の再配信は弾く", () => {
+    const s = new RealtimeStore();
+    s.apply(endProposed(3, 0, 5, 0));
+    s.apply(endProposed(1, 0, 1, 0));
+    expect(s.getSnapshot().endProposal?.requirement_count).toBe(5);
+  });
+});
+
 describe("RealtimeStore — gap detection", () => {
   it("records a gap when a seq is skipped", () => {
     const s = new RealtimeStore();
