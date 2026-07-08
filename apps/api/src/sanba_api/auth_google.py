@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from typing import Annotated
 
 import structlog
-from fastapi import Depends, Header, HTTPException
+from fastapi import Cookie, Depends, Header, HTTPException
 
 from .auth import InvalidAuthNonce, verify_auth_nonce
 from .config import settings
@@ -39,7 +39,13 @@ class GoogleTokenError(Exception):
 
 @dataclass(frozen=True)
 class AuthUser:
-    """検証済みの本人。`dev=True` はローカル bypass 由来 (本番では出現しない)。"""
+    """検証済みの本人。
+
+    - `dev=True` はローカル bypass 由来 (本番では出現しない)。
+    - `via_cookie=True` は ADR-0060 の `sanba_sid` Cookie 由来 (Bearer ではなく)。
+      Cookie 由来のときは exchange 時に nonce 検証済みのため、以降の
+      require_user_bound では nonce を要求しない。
+    """
 
     sub: str
     email: str
@@ -47,6 +53,7 @@ class AuthUser:
     name: str
     dev: bool = False
     nonce: str | None = None
+    via_cookie: bool = False
 
 
 def _default_verifier(token: str, client_id: str) -> dict[str, object]:
@@ -112,14 +119,60 @@ def verify_google_id_token(
     return _validate_claims(claims)
 
 
+def _cookie_auth_user(sid: str | None) -> AuthUser | None:
+    """`sanba_sid` Cookie を解決し、生きたセッションから AuthUser を組み立てる（ADR-0060）。
+
+    `routers.session` を import すると FastAPI 依存グラフの循環を招くため、モジュール読み込み時
+    ではなく関数内で遅延 import する。Cookie が無い / 期限切れ / revoked のときは None を返す。
+    """
+    if not sid:
+        return None
+    from .routers.session import resolve_cookie_user
+
+    session = resolve_cookie_user(sid)
+    if session is None:
+        return None
+    return AuthUser(
+        sub=session.google_sub,
+        email=session.email,
+        email_verified=session.email_verified,
+        name=session.name,
+        via_cookie=True,
+    )
+
+
+def _resolve_bearer_user(authorization: str | None) -> AuthUser:
+    """Authorization ヘッダの Bearer から検証済み AuthUser を返す。無効なら 401。"""
+    if not authorization or not authorization.startswith("Bearer "):
+        record_auth_event("missing_bearer")
+        raise HTTPException(status_code=401, detail="missing bearer token")
+
+    token = authorization[len("Bearer ") :].strip()
+    try:
+        user = verify_google_id_token(token, settings.google_oauth_client_id)
+    except GoogleTokenError as exc:
+        log.warning("auth_rejected", reason=str(exc))
+        record_auth_event("rejected")
+        raise HTTPException(status_code=401, detail="invalid id token") from exc
+
+    log.info("auth_verified", sub=user.sub)
+    record_auth_event("verified")
+    return user
+
+
 def require_user(
     authorization: Annotated[str | None, Header()] = None,
+    sanba_sid: Annotated[str | None, Cookie()] = None,
 ) -> AuthUser:
     """FastAPI 依存性: 検証済みの本人を返す。無効/未提示なら 401。
 
-    - `auth_dev_bypass` (ローカル限定): 固定 dev identity を返し検証を素通し。
-    - `google_oauth_client_id` 未設定 (本番で設定漏れ): フェイルクローズ (503)。
-      「設定漏れで無検証に開く」事故を防ぐ。
+    解決の優先順位:
+      1. `auth_dev_bypass` (ローカル限定): 固定 dev identity を返す。
+      2. `sanba_sid` Cookie (ADR-0060): 生きたサーバサイドセッションが有れば identity を返す。
+      3. `Authorization: Bearer <id_token>`: ID トークン検証で identity を返す。
+
+    `google_oauth_client_id` 未設定 (本番で設定漏れ) はフェイルクローズ (503)。
+    「設定漏れで無検証に開く」事故を防ぐ。
     """
     if settings.auth_dev_bypass:
         record_auth_event("dev_bypass")
@@ -136,21 +189,12 @@ def require_user(
         record_auth_event("misconfigured")
         raise HTTPException(status_code=503, detail="authentication not configured")
 
-    if not authorization or not authorization.startswith("Bearer "):
-        record_auth_event("missing_bearer")
-        raise HTTPException(status_code=401, detail="missing bearer token")
+    cookie_user = _cookie_auth_user(sanba_sid)
+    if cookie_user is not None:
+        record_auth_event("cookie_verified")
+        return cookie_user
 
-    token = authorization[len("Bearer ") :].strip()
-    try:
-        user = verify_google_id_token(token, settings.google_oauth_client_id)
-    except GoogleTokenError as exc:
-        log.warning("auth_rejected", reason=str(exc))
-        record_auth_event("rejected")
-        raise HTTPException(status_code=401, detail="invalid id token") from exc
-
-    log.info("auth_verified", sub=user.sub)
-    record_auth_event("verified")
-    return user
+    return _resolve_bearer_user(authorization)
 
 
 CurrentUser = Annotated[AuthUser, Depends(require_user)]
@@ -196,7 +240,13 @@ def require_user_bound(
     user: Annotated[AuthUser, Depends(require_user)],
     x_auth_nonce: Annotated[str | None, Header()] = None,
 ) -> AuthUser:
-    """`require_user` + ログイン nonce の束縛（ADR-0047 §2）。create/join が結線する。"""
+    """`require_user` + ログイン nonce の束縛（ADR-0047 §2）。create/join が結線する。
+
+    Cookie 経路（`via_cookie=True`, ADR-0060）は exchange 時に nonce 束縛済みのため
+    ここで再検証しない。Bearer 経路のときだけ nonce を要求する。
+    """
+    if user.via_cookie:
+        return user
     enforce_login_nonce(user, x_auth_nonce)
     return user
 
@@ -242,22 +292,23 @@ def ensure_room_creator(user: AuthUser, operation: str) -> None:
 
 def maybe_user(
     authorization: Annotated[str | None, Header()] = None,
+    sanba_sid: Annotated[str | None, Cookie()] = None,
 ) -> AuthUser | None:
     """FastAPI 依存性: ゲスト候補を許す本人確認（1 経路専用）。
 
-    Authorization ヘッダが無ければ None（＝ゲスト候補。許可するかはエンドポイント側が
-    `guest_join_enabled` と invite の scope で判定する）。ヘッダが有れば `require_user` と
-    完全に同じ検証（フェイルクローズ / 401 を含む）: 「無効なトークンを付けたら
-    ゲスト扱いに落ちる」という認可のすり抜けを作らない。
+    Authorization ヘッダも `sanba_sid` Cookie も無ければ None（＝ゲスト候補。許可するかは
+    エンドポイント側が `guest_join_enabled` と invite の scope で判定する）。どちらか有れば
+    `require_user` と完全に同じ検証（フェイルクローズ / 401 を含む）: 「無効なトークンを
+    付けたらゲスト扱いに落ちる」という認可のすり抜けを作らない。
     例外: `auth_dev_bypass`（ローカル限定）はヘッダ無しでも dev identity を返す。
     dev モードの web は Authorization を付けず bypass に委ねるため（lib/api.ts）、
     ここで None にするとローカルのログイン経路が壊れる。ローカルでゲスト経路を通したい
     ときは AUTH_DEV_BYPASS=false + GUEST_JOIN_ENABLED=true にする（Google 設定は不要）。
     ここ以外のエンドポイントで使わないこと（例外面を 1 経路に閉じる）。
     """
-    if authorization is None and not settings.auth_dev_bypass:
+    if authorization is None and not sanba_sid and not settings.auth_dev_bypass:
         return None
-    return require_user(authorization)
+    return require_user(authorization, sanba_sid)
 
 
 def maybe_user_bound(
@@ -271,8 +322,10 @@ def maybe_user_bound(
     invite の発行に直結するため、ここだけ未束縛だと注入トークンの抜け道になる。
     依存性の内側で `maybe_user` を Depends 解決するのは、テストの
     dependency_overrides[maybe_user] を束縛ごしにも効かせるため。
+
+    Cookie 経路（ADR-0060）は exchange 時に nonce 束縛済みのためここで再検証しない。
     """
-    if user is not None:
+    if user is not None and not user.via_cookie:
         enforce_login_nonce(user, x_auth_nonce)
     return user
 

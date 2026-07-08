@@ -3,7 +3,7 @@
 > このファイルは `just docs-index`（`scripts/gen-docs-index.py`）で生成する。
 > 手で編集しない。ADR を追加・改訂したら再生成する。
 
-設計判断記録（Architecture Decision Record）の一覧。全 60 件。
+設計判断記録（Architecture Decision Record）の一覧。全 61 件。
 書き方・ステータス制御語彙は [`/adr` 雛形](../../.claude/commands/adr.md) を参照。
 
 | # | タイトル | ステータス |
@@ -68,5 +68,6 @@
 | [0057](0057-dynamic-check-point-coverage.md) | 会話の観点（check-points）カバレッジを LLM で動的に判定する（増分1: パイプライン + 観測） | Accepted |
 | [0058](0058-voice-recovery-question-supersede-guard.md) | 音声リカバリが選択肢付きの問いを消さないよう supersede をガードし、深掘りの選択肢方針を定める | Accepted |
 | [0059](0059-inquiry-logic-tree.md) | 確認事項ロジックツリー（HP7）— 会話/解析で増減するノードの木を一級の状態にする | Proposed |
+| [0060](0060-server-side-session-and-cookie.md) | サーバサイドセッション（不透明 SID + HttpOnly Cookie）と Next.js 同一オリジン化 | Accepted |
 
 付随資料は [`supplements/`](supplements/) に置く（特定 ADR の実測・検証データ）。

@@ -9,7 +9,12 @@ vi.mock("next/navigation", () => ({
 
 import { AccountMenu } from "./AccountMenu";
 
-const profile = { email: "go@sanba.local", name: "産婆" };
+const profile = {
+  sub: "google-sub-1",
+  email: "go@sanba.local",
+  email_verified: true,
+  name: "産婆",
+};
 
 describe("AccountMenu", () => {
   beforeEach(() => {

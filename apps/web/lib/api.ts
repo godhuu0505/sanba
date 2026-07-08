@@ -1,6 +1,6 @@
 import type { Detection, Question, Requirement } from "./realtime/types";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 
 let currentAuthNonce: string | null = null;
 
@@ -16,9 +16,58 @@ export interface AuthNonce {
 
 export async function fetchAuthNonce(): Promise<AuthNonce | null> {
   try {
-    const res = await fetch(`${API_URL}/api/auth/nonce`);
+    const res = await fetch(`${API_URL}/api/auth/nonce`, { credentials: "include" });
     if (!res.ok) return null;
     return (await res.json()) as AuthNonce;
+  } catch {
+    return null;
+  }
+}
+
+export interface SessionProfile {
+  sub: string;
+  email: string;
+  email_verified: boolean;
+  name: string;
+  expires_at: number;
+  idle_expires_at: number;
+}
+
+export async function fetchSessionMe(): Promise<SessionProfile | null> {
+  try {
+    const res = await fetch(`${API_URL}/api/session/me`, { credentials: "include" });
+    if (!res.ok) return null;
+    return (await res.json()) as SessionProfile;
+  } catch {
+    return null;
+  }
+}
+
+export async function revokeSession(): Promise<void> {
+  try {
+    await fetch(`${API_URL}/api/session`, {
+      method: "DELETE",
+      credentials: "include",
+    });
+  } catch {
+  }
+}
+
+export async function exchangeIdToken(
+  idToken: string,
+  nonceEnvelope: string | null,
+): Promise<SessionProfile | null> {
+  try {
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (nonceEnvelope) headers["X-Auth-Nonce"] = nonceEnvelope;
+    const res = await fetch(`${API_URL}/api/session/exchange`, {
+      method: "POST",
+      credentials: "include",
+      headers,
+      body: JSON.stringify({ id_token: idToken }),
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as SessionProfile;
   } catch {
     return null;
   }

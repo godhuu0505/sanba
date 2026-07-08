@@ -42,6 +42,7 @@ from .deps import (
 )
 from .observability import record_rate_limited, setup_observability
 from .routers import auth, github_link, members, products, sessions
+from .routers import session as auth_session
 from .routers.products import MAX_CHECK_ITEM_CHARS, MAX_OUTPUT_FORMAT_CHARS
 
 __all__ = [
@@ -101,6 +102,7 @@ app.add_middleware(
     allow_origins=[o.strip() for o in settings.allowed_origins.split(",")],
     allow_methods=["*"],
     allow_headers=["*"],
+    allow_credentials=True,
 )
 setup_observability(app)
 
@@ -111,6 +113,7 @@ def healthz() -> dict[str, str]:
 
 
 app.include_router(auth.router)
+app.include_router(auth_session.router)
 app.include_router(sessions.router)
 app.include_router(github_link.router)
 app.include_router(products.router)
