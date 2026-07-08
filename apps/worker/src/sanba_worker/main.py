@@ -69,12 +69,12 @@ async def analyze_video_task(req: Request) -> dict[str, str]:
         raise HTTPException(status_code=400, detail=f"bad payload: {exc}") from exc
 
     retry_count = int(req.headers.get("X-CloudTasks-TaskRetryCount", "0"))
-    span_cm = (
-        _tracer.start_as_current_span("sanba.worker.analyze_video")
-        if _tracer
-        else contextlib.nullcontext(None)
-    )
     try:
+        span_cm = (
+            _tracer.start_as_current_span("sanba.worker.analyze_video")
+            if _tracer
+            else contextlib.nullcontext(None)
+        )
         with span_cm as span:
             if span is not None:
                 span.set_attribute("sanba.session_id", payload.session_id)

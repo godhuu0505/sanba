@@ -33,6 +33,7 @@ from .auth_google import AuthUser, is_admin
 from .config import settings
 from .github_app import GitHubAppClient
 from .ingestion import ContextIndexer
+from .observability import get_tracer
 from .repository import ReadRepository
 from .storage import AssetStore
 
@@ -41,12 +42,7 @@ log = structlog.get_logger(__name__)
 
 def _get_tracer() -> Any:
     """OTel トレーサ（未設定なら None で no-op）。アップロード〜解析を span 化する。"""
-    try:
-        from opentelemetry import trace
-
-        return trace.get_tracer("sanba_api.assets")
-    except Exception:  # pragma: no cover - otel optional
-        return None
+    return get_tracer("sanba_api.assets")
 
 
 _join_hits: dict[str, deque[float]] = defaultdict(deque)

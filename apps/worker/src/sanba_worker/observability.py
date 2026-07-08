@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import Any
 
 import structlog
+from fastapi import FastAPI
 
 from .config import settings
 
@@ -70,7 +71,7 @@ def select_exporter_kind() -> str:
     return "disabled"
 
 
-def setup_observability(app: Any) -> None:
+def setup_observability(app: FastAPI) -> None:
     """Configure OTel tracing (Cloud Trace 直送 / OTLP / 無効) + FastAPI instrumentation.
 
     Safe to call once。Cloud Tasks push 受け口（ADR-0040）を span 化し、
