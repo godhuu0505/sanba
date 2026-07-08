@@ -129,11 +129,11 @@ export function ResultView({
           {previewGroups.map((g) => (
             <div key={g.priority}>
               <h3 className="text-[10.5px] font-bold text-sanba-muted">
-                {priorityLabel(g.priority, interviewMode)}
+                {priorityLabel(g.priority)}
               </h3>
               <ul className="mt-[6px] space-y-[6px]">
                 {g.items.map((r) => {
-                  const cat = categoryPresentation(r.category, interviewMode);
+                  const cat = categoryPresentation(r.category);
                   return (
                     <li
                       key={r.id}

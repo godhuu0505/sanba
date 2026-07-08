@@ -95,9 +95,9 @@ describe("ChoiceStrip（問いピン・最小/一覧）", () => {
     }
   });
 
-  it("検知（矛盾）のときは検知バッジを出す", () => {
+  it("検知（食い違い）のときは検知バッジを出す", () => {
     setup({ detectionKind: "contradiction" });
-    expect(screen.getByText(/矛盾/)).toBeTruthy();
+    expect(screen.getByText(/食い違い/)).toBeTruthy();
   });
 
   it("選択肢が空なら何も描画しない", () => {

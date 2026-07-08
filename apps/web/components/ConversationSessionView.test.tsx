@@ -198,7 +198,7 @@ describe("ConversationSessionView（会話シェル結線）", () => {
       }),
     });
     expect(screen.getByText("『該当なし』の空状態が未定義。")).toBeTruthy();
-    expect(screen.getByLabelText("抜け（未定義）を検知")).toBeTruthy();
+    expect(screen.getByLabelText("確認したい点")).toBeTruthy();
     expect(screen.queryByText("古い矛盾の問い")).toBeNull();
     expect(screen.queryByRole("button", { name: "選ぶA" })).toBeNull();
     expect(sendSelection).not.toHaveBeenCalled();

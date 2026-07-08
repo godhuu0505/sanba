@@ -50,3 +50,5 @@ export { InsightCard } from "./InsightCard";
 export type { InsightCardProps } from "./InsightCard";
 export { StatTile } from "./StatTile";
 export type { StatTileProps } from "./StatTile";
+export { HelpIcon } from "./HelpIcon";
+export type { HelpIconProps } from "./HelpIcon";

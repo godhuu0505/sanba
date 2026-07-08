@@ -1,6 +1,5 @@
 "use client";
 
-import { useInterviewMode } from "@/lib/interviewMode";
 import { PRIORITY_ORDER, priorityLabel } from "@/lib/realtime/mapping";
 import type { Requirement } from "@/lib/realtime/types";
 
@@ -19,7 +18,6 @@ export function RequirementsScrollList({
   requirements,
   emptyText = "まだ要件はありません。問答が進むと、ここに育っていきます。",
 }: RequirementsScrollListProps) {
-  const interviewMode = useInterviewMode();
   if (requirements.length === 0) {
     return <p className="px-1 py-3 text-[12.5px] text-sanba-muted">{emptyText}</p>;
   }
@@ -31,11 +29,11 @@ export function RequirementsScrollList({
         return (
           <section
             key={pr}
-            aria-label={priorityLabel(pr, interviewMode)}
+            aria-label={priorityLabel(pr)}
             className="flex flex-col gap-[6px]"
           >
             <h3 className="text-[12px] font-bold text-sanba-gold-text">
-              {priorityLabel(pr, interviewMode)}
+              {priorityLabel(pr)}
             </h3>
             {group.map((r) => (
               <div
