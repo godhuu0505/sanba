@@ -233,7 +233,11 @@ export default function EntryFlow({
   }, [auth.loggedIn, auth.credential, products]);
 
   useEffect(() => {
-    if (step !== "home" || !auth.loggedIn) return;
+    if (!auth.loggedIn) {
+      setPastResults([]);
+      return;
+    }
+    if (step !== "home") return;
     let cancelled = false;
     fetchMySessions(auth.credential)
       .then((sessions) => {
