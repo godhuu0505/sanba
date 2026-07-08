@@ -331,12 +331,14 @@ export default function EntryFlow({
     try {
       setBusy(true);
       setError(null);
+      const explicitRepoChoice =
+        repoChoices?.enabled && (githubRepoTouched.current || githubRepo.trim() !== "");
       const session = await createSession(
         [role],
         consent,
         auth.credential,
         undefined,
-        repoChoices?.enabled ? githubRepo.trim() : undefined,
+        explicitRepoChoice ? githubRepo.trim() : undefined,
         selectedProduct?.id,
         goal,
         goalDetail,

@@ -569,12 +569,12 @@ async def add_context_file(
         if observations:
             indexed = _indexer.index_context(session_id, observations, f"asset:{asset.asset_id}")
         record_asset_upload(kind, "analyzed")
-        _repo.save_material(
-            session_id,
-            material_record(
-                asset.asset_id, filename, kind, status="done", extracted=len(observations)
-            ),
+        analyzed = material_record(
+            asset.asset_id, filename, kind, status="done", extracted=len(observations)
         )
+        if observations:
+            analyzed["extracted_texts"] = observations
+        _repo.save_material(session_id, analyzed)
         with contextlib.suppress(Exception):
             await publisher.visual(asset.asset_id, observations)
         log.info(

@@ -205,6 +205,27 @@ def test_context_files_lists_uploaded_materials() -> None:
     assert by_name["rec.mp4"]["status"] == "analyzing"
 
 
+def test_context_files_include_analysis_details(monkeypatch: pytest.MonkeyPatch) -> None:
+    """解析済み素材は観察テキストを返す（#355: 再接続後も解析詳細を復元できる）。"""
+    observations = ["検索ボタンがある", "設定画面へのリンクが無い"]
+    monkeypatch.setattr(
+        "sanba_api.routers.sessions.analyze_image",
+        lambda raw, content_type: observations,
+    )
+    sid = _new_session()
+    client.post(
+        f"/api/sessions/{sid}/context/file",
+        files={"file": ("mock.png", b"\x89PNG\r\n\x1a\n#355-details", "image/png")},
+        headers=_session_auth(sid),
+    )
+    res = client.get(f"/api/sessions/{sid}/context/files", headers=_session_auth(sid))
+    assert res.status_code == 200
+    item = next(it for it in res.json()["items"] if it["name"] == "mock.png")
+    assert item["status"] == "done"
+    assert item["extracted"] == 2
+    assert item["extracted_texts"] == observations
+
+
 def test_context_files_empty_for_new_session() -> None:
     sid = _new_session()
     res = client.get(f"/api/sessions/{sid}/context/files", headers=_session_auth(sid))

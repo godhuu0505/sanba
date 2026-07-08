@@ -130,6 +130,28 @@ export class RealtimeStore {
     this.invalidate();
   }
 
+  hydrateAnalysis(
+    items: readonly { id: string; status: string; extracted_texts?: string[] }[],
+  ): void {
+    let changed = false;
+    for (const f of items) {
+      if (f.status !== "done" && f.status !== "failed") continue;
+      if (this.analysis.has(f.id)) continue;
+      this.analysis.set(f.id, {
+        seq: 0,
+        value: {
+          asset_id: f.id,
+          pct: 100,
+          stage: f.status,
+          extracted: f.extracted_texts ?? [],
+          conflicts: [],
+        },
+      });
+      changed = true;
+    }
+    if (changed) this.invalidate();
+  }
+
   hydrateDetections(items: Detection[], seq: number): void {
     const freshIds = new Set(items.map((d) => d.id));
     for (const d of items) {

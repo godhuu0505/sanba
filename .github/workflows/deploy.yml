@@ -204,8 +204,18 @@ jobs:
             ${{ vars.NEXT_PUBLIC_GOOGLE_CLIENT_ID != '' && format('NEXT_PUBLIC_GOOGLE_CLIENT_ID={0}', vars.NEXT_PUBLIC_GOOGLE_CLIENT_ID) || '' }}
             ${{ steps.picker_key.outputs.value != '' && format('NEXT_PUBLIC_GOOGLE_API_KEY={0}', steps.picker_key.outputs.value) || '' }}
 
+      # worker は enable_video_analysis=false の間 Cloud Run サービスが未プロビジョニング
+      # (ADR-0040・media.tf の count)。その状態で deploy すると「サービス不在」で必ず失敗し
+      # CD が赤くなるため、サービスの存在を確認してから deploy する。イメージの
+      # build & push・attestation は上で常に実行済みなので、フラグを立てて terraform apply
+      # したときに参照するイメージは既に AR にある (ブートストラップ制約の解消)。
       - name: Deploy to Cloud Run (image only; env/secret は Terraform 管理)
         run: |
+          if ! gcloud run services describe "sanba-${{ matrix.app }}" \
+              --region "$REGION" --format='value(name)' >/dev/null 2>&1; then
+            echo "::notice::Cloud Run サービス sanba-${{ matrix.app }} は未プロビジョニングのため deploy をスキップします (イメージは push 済み。有効化は enable-video-analysis runbook を参照)"
+            exit 0
+          fi
           gcloud run deploy sanba-${{ matrix.app }} \
             --image "${REGION}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${REPO}/${{ matrix.app }}:${GITHUB_SHA}" \
             --region "$REGION" \

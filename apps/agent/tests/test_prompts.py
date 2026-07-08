@@ -27,6 +27,14 @@ def test_voice_agent_keeps_grill_me_core_principles() -> None:
         assert marker in VOICE_AGENT_INSTRUCTIONS, f"missing grill-me marker: {marker}"
 
 
+def test_voice_agent_limits_ask_question_to_one_per_turn() -> None:
+    """1ターン1問の明示（#374 の連発抑制）が両モードのプロンプトに残っている。"""
+    from sanba_agent.prompts.interview import END_USER_VOICE_AGENT_INSTRUCTIONS as EU
+
+    for instructions in (VOICE_AGENT_INSTRUCTIONS, EU):
+        assert "`ask_question` を呼ぶのは1回だけ" in instructions
+
+
 def test_voice_agent_digs_into_tradeoffs_and_contradictions() -> None:
     for marker in ("失敗モード", "矛盾", "トレードオフ"):
         assert marker in VOICE_AGENT_INSTRUCTIONS, f"missing dig-in marker: {marker}"

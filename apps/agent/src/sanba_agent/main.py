@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import os
+import threading
 import time
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -586,9 +587,9 @@ class SANBAAgent(Agent):
             if span is not None:
                 span.set_attribute("sanba.analysis.trigger", trigger)
             if timeout_seconds is not None:
-                result = await asyncio.wait_for(analyze_transcript(transcript), timeout_seconds)
+                result = await asyncio.wait_for(self._analyze_off_loop(transcript), timeout_seconds)
             else:
-                result = await analyze_transcript(transcript)
+                result = await self._analyze_off_loop(transcript)
         duration_ms = int((time.monotonic() - started) * 1000)
         log.info(
             "analysis",
@@ -603,6 +604,41 @@ class SANBAAgent(Agent):
         self._last_analysis = result
         self._analysis_covered_turn = covered_turn
         return result
+
+    async def _analyze_off_loop(self, transcript: str) -> AnalysisResult:
+        """ADK 分析を専用スレッドの独立イベントループで実行する（ADR-0046 段階1・#375）。
+
+        逐次 LLM 往復（interview_lead + サブエージェント）を音声 worker のイベントループから
+        隔離し、分析の遅延・失敗が音声ターンのジッタ・破綻へ波及しないようにする。
+        grounding 検索（to_thread 済み）と同じ規律で、分析経路だけ残っていた非対称を解消する。
+        スレッドは daemon にする: タイムアウト後に走り続けても SIGTERM 時のプロセス退出を
+        塞がない（結果は future 側のガードで破棄される）。
+        """
+        loop = asyncio.get_running_loop()
+        future: asyncio.Future[AnalysisResult] = loop.create_future()
+
+        def _worker() -> None:
+            outcome: AnalysisResult | BaseException
+            try:
+                outcome = asyncio.run(analyze_transcript(transcript))
+            except Exception as exc:  # noqa: BLE001
+                outcome = exc
+
+            def _deliver() -> None:
+                if future.done():
+                    return
+                if isinstance(outcome, BaseException):
+                    future.set_exception(outcome)
+                else:
+                    future.set_result(outcome)
+
+            with contextlib.suppress(RuntimeError):
+                loop.call_soon_threadsafe(_deliver)
+
+        threading.Thread(
+            target=_worker, name=f"sanba-analysis-{self._session_id}", daemon=True
+        ).start()
+        return await future
 
     def _start_background_analysis(self) -> None:
         """debounce 判定を通った背景分析タスクを起動する（ADR-0037 段階B）。
@@ -746,8 +782,12 @@ class SANBAAgent(Agent):
             options: 選択肢ラベル（2〜4個。例 ["関連度順","新着順"]）。
                 自由に答えてほしい問いでは省略する（音声/テキストで回答）。
         """
-        if self._current_question_id is not None and self._question_asked_turn == self._user_turn:
+        superseded_in_turn = (
+            self._current_question_id is not None and self._question_asked_turn == self._user_turn
+        )
+        if superseded_in_turn:
             superseded = self._current_question_id
+            assert superseded is not None
             log.info(
                 "question_superseded",
                 session=self._session_id,
@@ -783,7 +823,13 @@ class SANBAAgent(Agent):
                     error=str(exc),
                 )
         log.info("question_asked", session=self._session_id, id=question_id, options=len(opts))
-        return {"asked": question_id}
+        result: dict[str, Any] = {"asked": question_id}
+        if superseded_in_turn:
+            result["note"] = (
+                "同一ターンで複数の問いを立てました。前の問いは差し替えました。"
+                "1ターンにつき問いは1つだけにし、質問を畳みかけないでください。"
+            )
+        return result
 
     async def clear_current_question(self, question_id: str) -> None:
         """回答を受けて現在質問をクリアし、``question.cleared`` を全参加者へ伝播する。
