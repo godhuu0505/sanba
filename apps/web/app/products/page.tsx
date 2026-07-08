@@ -3,7 +3,6 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
-import { AccountMenu } from "@/components/AccountMenu";
 import { AppShell } from "@/components/AppShell";
 import { MemberInviteNotices } from "@/components/MemberInviteNotices";
 import { authGate } from "@/components/RequireAuth";
@@ -83,7 +82,6 @@ export default function ProductsPage() {
     <AppShell
       current="products"
       title="アプリ管理"
-      headerRight={<AccountMenu profile={auth.profile} />}
     >
       <div className="mx-auto flex w-full max-w-[480px] flex-col gap-[18px] px-4 py-4">
         <MemberInviteNotices onAccepted={reload} />

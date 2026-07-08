@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { AccountMenu } from "@/components/AccountMenu";
 import { AppShell } from "@/components/AppShell";
 import { authGate } from "@/components/RequireAuth";
 import { SessionHistoryList, type SessionHistoryItem } from "@/components/sanba";
@@ -58,7 +57,6 @@ export default function ResultsListPage() {
     <AppShell
       current="results"
       title="過去の要件一覧"
-      headerRight={<AccountMenu profile={auth.profile} />}
     >
       <div className="mx-auto flex w-full max-w-[480px] flex-col gap-[18px] px-4 py-4">
         <SessionHistoryList items={history} />

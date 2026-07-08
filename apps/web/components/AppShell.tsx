@@ -15,7 +15,10 @@ import * as React from "react";
 import type { LucideIcon } from "lucide-react";
 
 import { Logo } from "@/components/sanba";
+import { useAuthOptional } from "@/lib/auth";
 import { cn } from "@/lib/utils";
+
+import { SidebarAccount } from "./SidebarAccount";
 
 export type AppNavKey = "home" | "results" | "products";
 
@@ -89,6 +92,7 @@ export function AppShell({
   mainClassName,
   children,
 }: AppShellProps) {
+  const auth = useAuthOptional();
   const [collapsed, setCollapsed] = React.useState(false);
   const [mobileOpen, setMobileOpen] = React.useState(false);
 
@@ -136,6 +140,7 @@ export function AppShell({
           </Link>
         </div>
         <SidebarBody current={current} collapsed={collapsed} />
+        {auth && <SidebarAccount profile={auth.profile} collapsed={collapsed} />}
         <button
           type="button"
           onClick={toggleCollapsed}
@@ -186,6 +191,7 @@ export function AppShell({
               collapsed={false}
               onNavigate={() => setMobileOpen(false)}
             />
+            {auth && <SidebarAccount profile={auth.profile} collapsed={false} />}
           </aside>
         </div>
       )}
