@@ -191,6 +191,29 @@ async def test_background_analysis_timeout_is_fail_soft(
 
 
 @pytest.mark.asyncio
+async def test_analysis_runs_off_event_loop_thread(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import threading
+
+    seen: list[int] = []
+
+    async def _stub(transcript: str) -> AnalysisResult:
+        seen.append(threading.get_ident())
+        return AnalysisResult(summary="s", next_question="q?", suggested_answer="a")
+
+    monkeypatch.setattr("sanba_agent.main.analyze_transcript", _stub)
+    agent = _agent()
+    agent.record_utterance("participant", "請求管理のアプリを作りたい")
+    agent.record_utterance("participant", "対象は経理担当者です")
+    task = agent._analysis_task
+    assert task is not None
+    await task
+    assert seen, "背景分析が実行される"
+    assert seen[0] != threading.get_ident(), "分析は音声ループと別スレッドで実行される（#375）"
+
+
+@pytest.mark.asyncio
 async def test_drain_tasks_cancels_overdue() -> None:
     import asyncio
 
@@ -215,13 +238,15 @@ async def test_tool_rides_on_inflight_background_run(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import asyncio
+    import threading
 
     calls: list[str] = []
-    gate: asyncio.Event = asyncio.Event()
+    gate = threading.Event()
 
     async def _slow(transcript: str) -> AnalysisResult:
         calls.append(transcript)
-        await gate.wait()
+        while not gate.is_set():
+            await asyncio.sleep(0.005)
         return AnalysisResult(summary="s", next_question="q?", suggested_answer="a")
 
     monkeypatch.setattr("sanba_agent.main.analyze_transcript", _slow)
@@ -245,15 +270,17 @@ async def test_tool_ride_along_timeout_returns_without_competing_run(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import asyncio
+    import threading
 
     from sanba_agent.config import settings
 
     calls: list[str] = []
-    gate: asyncio.Event = asyncio.Event()
+    gate = threading.Event()
 
     async def _hang(transcript: str) -> AnalysisResult:
         calls.append(transcript)
-        await gate.wait()
+        while not gate.is_set():
+            await asyncio.sleep(0.005)
         return AnalysisResult(summary="s", next_question="q?", suggested_answer="a")
 
     monkeypatch.setattr("sanba_agent.main.analyze_transcript", _hang)
