@@ -8,6 +8,8 @@ export interface SessionHistoryItem {
   id: string;
   title: string;
   date: string;
+  labels?: string[];
+  exported?: boolean;
 }
 
 export interface SessionHistoryListProps extends React.HTMLAttributes<HTMLElement> {
@@ -17,6 +19,7 @@ export interface SessionHistoryListProps extends React.HTMLAttributes<HTMLElemen
 }
 
 const HEADING_ID = "session-history-heading";
+const MAX_LABELS = 3;
 
 export const SessionHistoryList = React.forwardRef<HTMLElement, SessionHistoryListProps>(
   (
@@ -45,21 +48,44 @@ export const SessionHistoryList = React.forwardRef<HTMLElement, SessionHistoryLi
           </div>
         ) : (
           <ul className="flex flex-col gap-[8px]">
-            {items.map((item) => (
-              <li key={item.id}>
-                <Link
-                  href={hrefFor(item.id)}
-                  aria-label={`${item.title}（${item.date}・${item.id}）`}
-                  className="block rounded-[12px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sanba-gold"
-                >
-                  <ListRow
-                    className="min-h-[44px]"
-                    title={item.title}
-                    subtitle={item.date ? `${item.date} ・ ${item.id}` : item.id}
-                  />
-                </Link>
-              </li>
-            ))}
+            {items.map((item) => {
+              const labels = item.labels ?? [];
+              const shown = labels.slice(0, MAX_LABELS);
+              const overflow = labels.length - shown.length;
+              const subtitle =
+                (item.date ? `${item.date} ・ ${item.id}` : item.id) +
+                (item.exported ? " ・ 起票済み ✓" : "");
+              return (
+                <li key={item.id}>
+                  <Link
+                    href={hrefFor(item.id)}
+                    aria-label={`${item.title}（${item.date}・${item.id}）`}
+                    className="block rounded-[16px] border-[1.5px] border-sanba-frame bg-sanba-surface transition-[box-shadow,transform] hover:shadow-[3px_3px_0_var(--sanba-shadow)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sanba-gold"
+                  >
+                    <ListRow
+                      className="min-h-[44px] rounded-none border-0 bg-transparent hover:shadow-none"
+                      title={item.title}
+                      subtitle={subtitle}
+                    />
+                    {shown.length > 0 && (
+                      <div className="flex flex-wrap gap-[4px] px-[14px] pb-[10px]">
+                        {shown.map((l) => (
+                          <span
+                            key={l}
+                            className="rounded-full border border-sanba-border bg-sanba-surface-strong px-[7px] py-[1px] text-[10px] text-sanba-muted"
+                          >
+                            {l}
+                          </span>
+                        ))}
+                        {overflow > 0 && (
+                          <span className="text-[10px] text-sanba-muted">+{overflow}</span>
+                        )}
+                      </div>
+                    )}
+                  </Link>
+                </li>
+              );
+            })}
           </ul>
         )}
       </section>

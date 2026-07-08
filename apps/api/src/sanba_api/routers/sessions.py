@@ -258,6 +258,8 @@ class MySession(BaseModel):
     created_at: datetime
     status: str
     finalized: bool
+    labels: list[str] = []
+    issue_url: str | None = None
 
 
 @router.get("/api/sessions/mine", response_model=list[MySession])
@@ -278,6 +280,8 @@ def list_my_sessions(user: AuthUser = Depends(require_user)) -> list[MySession]:
             created_at=s.created_at,
             status=s.status,
             finalized=s.status == "finalized",
+            labels=s.labels,
+            issue_url=s.exported_issue_url,
         )
         for s in sessions
     ]
@@ -974,10 +978,12 @@ def finalize_session_requirements(
         raise HTTPException(status_code=409, detail="unresolved detections remain")
     confirmed = _confirmed_requirements(session_id)
     confirmed_ids = [r["id"] for r in confirmed]
+    labels = requirements_to_issue_labels(confirmed)
     meta = _repo.finalize_session(
         session_id,
         confirmed_count=len(confirmed),
         finalized_requirement_ids=confirmed_ids,
+        labels=labels,
     )
     if meta is None:
         raise HTTPException(status_code=404, detail="session not found")
@@ -1058,6 +1064,7 @@ def export_requirements(
     )
     if url is None:
         return ExportResponse(exported=False, reason="issue creation failed")
+    _repo.set_exported_issue_url(session_id, url)
     log.info(
         "requirements_exported",
         session=session_id,

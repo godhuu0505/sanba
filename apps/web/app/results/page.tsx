@@ -38,6 +38,8 @@ export default function ResultsListPage() {
             id: s.id,
             title: s.title,
             date: formatSessionDate(s.created_at),
+            labels: s.labels,
+            exported: Boolean(s.issue_url),
           })),
         );
       })
