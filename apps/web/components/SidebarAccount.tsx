@@ -7,14 +7,12 @@ import { useEffect, useState } from "react";
 
 import { Avatar, Divider } from "@/components/sanba";
 import type { GoogleProfile } from "@/lib/auth";
-import { cn } from "@/lib/utils";
 
 export interface SidebarAccountProps {
   profile: GoogleProfile | null;
-  collapsed?: boolean;
 }
 
-export function SidebarAccount({ profile, collapsed = false }: SidebarAccountProps) {
+export function SidebarAccount({ profile }: SidebarAccountProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
 
@@ -43,26 +41,14 @@ export function SidebarAccount({ profile, collapsed = false }: SidebarAccountPro
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label="アカウントメニュー"
-        title={collapsed ? name : undefined}
         onClick={() => setOpen((v) => !v)}
-        className={cn(
-          "flex w-full items-center gap-[10px] rounded-[10px] px-[10px] py-[8px] text-left transition-colors hover:bg-sanba-bg",
-          collapsed && "justify-center px-0",
-        )}
+        className="flex w-full items-center gap-[10px] rounded-[10px] px-[10px] py-[8px] text-left transition-colors hover:bg-sanba-bg"
       >
-        <Avatar
-          tone="user"
-          glyph={glyph}
-          size={32}
-          imageUrl={profile?.picture}
-          alt=""
-        />
-        {!collapsed && (
-          <span className="min-w-0 flex-1">
-            <span className="block truncate text-[13px] font-bold text-sanba-cream">{name}</span>
-            <span className="block truncate text-[11px] text-sanba-muted">{email}</span>
-          </span>
-        )}
+        <Avatar tone="user" glyph={glyph} size={32} imageUrl={profile?.picture} alt="" />
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-[13px] font-bold text-sanba-cream">{name}</span>
+          <span className="block truncate text-[11px] text-sanba-muted">{email}</span>
+        </span>
       </button>
 
       {open && (
