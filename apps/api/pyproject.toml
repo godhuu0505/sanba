@@ -25,6 +25,7 @@ dependencies = [
     "opentelemetry-instrumentation-fastapi>=0.46b0",
     "opentelemetry-sdk>=1.25",
     "opentelemetry-exporter-otlp>=1.25",
+    "opentelemetry-exporter-gcp-trace>=1.7",
     "sanba-shared",
 ]
 

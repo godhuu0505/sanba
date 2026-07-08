@@ -18,12 +18,14 @@ from sanba_shared.repository import SessionRepository
 
 from .analysis import TaskResult, VideoTaskPayload, _mark_failed, process_video
 from .config import settings
-from .observability import record_analysis
+from .observability import get_tracer, record_analysis, setup_observability
 from .storage import gcs_fetch_bytes
 
 log = structlog.get_logger(__name__)
 
 app = FastAPI(title="sanba-worker")
+setup_observability(app)
+_tracer = get_tracer(__name__)
 
 _repo = SessionRepository()
 _indexer = ContextIndexer(settings.grounding_config(), masker=mask_pii)
@@ -67,14 +69,26 @@ async def analyze_video_task(req: Request) -> dict[str, str]:
         raise HTTPException(status_code=400, detail=f"bad payload: {exc}") from exc
 
     retry_count = int(req.headers.get("X-CloudTasks-TaskRetryCount", "0"))
+    span_cm = (
+        _tracer.start_as_current_span("sanba.worker.analyze_video")
+        if _tracer
+        else contextlib.nullcontext(None)
+    )
     try:
-        result = process_video(
-            payload,
-            repo=_repo,
-            indexer=_indexer,
-            settings=settings,
-            fetch_bytes=gcs_fetch_bytes,
-        )
+        with span_cm as span:
+            if span is not None:
+                span.set_attribute("sanba.session_id", payload.session_id)
+                span.set_attribute("sanba.asset_id", payload.asset_id)
+                span.set_attribute("sanba.retry_count", retry_count)
+            result = process_video(
+                payload,
+                repo=_repo,
+                indexer=_indexer,
+                settings=settings,
+                fetch_bytes=gcs_fetch_bytes,
+            )
+            if span is not None:
+                span.set_attribute("sanba.result", result.status)
         record_analysis(result.status)
         if result.status == "done":
             await _publish_visual(payload.session_id, payload.asset_id, result)
