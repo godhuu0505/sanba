@@ -1182,11 +1182,13 @@ class SANBAAgent(Agent):
                     p for p in passages if not _is_stale_repo_passage(p.source, current_sha)
                 ]
             passages = passages[:want]
+        repo_hits = sum(1 for p in passages if p.source.startswith("github:"))
         log.info(
             "grounding_search",
             session=self._session_id,
             query=query,
             hits=len(passages),
+            repo_hits=repo_hits,
             interview_mode=self._interview_mode.value,
             output_filtered=output_filtered,
         )

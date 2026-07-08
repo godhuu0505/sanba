@@ -186,3 +186,41 @@ def test_unlinked_owner_blocks_repo_passages(monkeypatch) -> None:
     assert agent._repo_access() == ("sha1", False)
     repo.delete_github_link("owner")
     assert agent._repo_access() == ("sha1", True)
+
+
+def test_agent_threads_product_id_into_grounding_search() -> None:
+    from sanba_shared.models import GitHubIndexStatus, GitHubLink, SessionMeta
+    from sanba_shared.repository import SessionRepository
+
+    from sanba_agent.main import SANBAAgent
+
+    repo = SessionRepository()
+    repo.create_session_doc(
+        SessionMeta(
+            id="sess-x",
+            title="t",
+            owner_sub="owner",
+            owner_email="o@example.com",
+            product_id="prod-1",
+        )
+    )
+    repo.set_session_github(
+        "sess-x",
+        repo="octo/r",
+        branch="main",
+        commit_sha="sha1",
+        index_status=GitHubIndexStatus.READY,
+    )
+    repo.set_github_link(GitHubLink(sub="owner", installation_id=1, github_login="octo"))
+
+    grounding = GroundingStore()
+    grounding.index_passage(
+        "紐づけ repo の実装コード本文", "github:octo/r@main@sha1:app.py", "context", "prod-1"
+    )
+
+    agent = SANBAAgent("sess-x", repo, grounding)
+    assert agent._product_id == "prod-1"
+
+    result = agent._grounded_search_inner("実装 コード")
+    sources = {p["source"] for p in result["passages"]}
+    assert "github:octo/r@main@sha1:app.py" in sources
