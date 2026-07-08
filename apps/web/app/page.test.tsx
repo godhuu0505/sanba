@@ -237,18 +237,37 @@ describe("入口フロー（#140）", () => {
     ).toBeTruthy();
   });
 
-  it("01 ホームは過去の要件一覧をページ内に持たない（サイドメニューへ移設 / 2026-07）", () => {
+  it("01 ホームは直近の過去要件をラベル付きで出し「すべて見る」で一覧へ導く（P1-c）", async () => {
     authState.loggedIn = true;
     authState.credential = "idtok";
+    fetchMySessions.mockResolvedValueOnce([
+      {
+        id: "sess-1",
+        title: "アカウント設定画面の新設",
+        created_at: "2026-07-07T00:00:00Z",
+        status: "finalized",
+        finalized: true,
+        labels: ["sanba", "priority:must", "category:screen"],
+        issue_url: "https://github.com/acme/app/issues/7",
+      },
+    ]);
     render(<Home />);
-    expect(screen.queryByRole("heading", { name: "過去の要件を見る" })).toBeNull();
-    expect(fetchMySessions).not.toHaveBeenCalled();
-    expect(screen.getByRole("link", { name: "過去の要件一覧" }).getAttribute("href")).toBe(
-      "/results",
-    );
+    await waitFor(() => expect(fetchMySessions).toHaveBeenCalled());
+    expect(await screen.findByText("アカウント設定画面の新設")).toBeTruthy();
+    expect(screen.getByText("priority:must")).toBeTruthy();
+    expect(screen.getByText(/起票済み/)).toBeTruthy();
+    expect(screen.getByRole("link", { name: /すべて見る/ }).getAttribute("href")).toBe("/results");
     expect(screen.getByRole("link", { name: "アプリ管理" }).getAttribute("href")).toBe(
       "/products",
     );
+  });
+
+  it("過去要件が無いときはホームに過去要件セクションを出さない（P1-c）", async () => {
+    authState.loggedIn = true;
+    authState.credential = "idtok";
+    render(<Home />);
+    await waitFor(() => expect(fetchMySessions).toHaveBeenCalled());
+    expect(screen.queryByRole("heading", { name: "過去の要件" })).toBeNull();
   });
 
   it("CTA で 02 準備へ遷移し、役割の既定が利用者", async () => {

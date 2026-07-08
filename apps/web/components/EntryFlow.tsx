@@ -13,6 +13,8 @@ import {
   Figure,
   Input,
   Select,
+  SessionHistoryList,
+  type SessionHistoryItem,
   Textarea,
 } from "@/components/sanba";
 import {
@@ -25,6 +27,7 @@ import {
   createSession,
   fetchGithubRepos,
   fetchMyProducts,
+  fetchMySessions,
   type GithubRepos,
   joinSession,
   listGithubBranches,
@@ -57,6 +60,15 @@ const ROLES = [
 const DEFAULT_ROLE = "customer";
 
 const HOME_PATH = "/";
+
+function formatSessionDate(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}/${m}/${day}`;
+}
 const PREPARE_PATH_RE = /^\/([^/]+)\/prepare\/?$/;
 const SESSION_PATH_RE = /^\/([^/]+)\/sessions\/[^/]+\/?$/;
 
@@ -120,6 +132,7 @@ export default function EntryFlow({
   const [consent, setConsent] = useState(false);
   const [products, setProducts] = useState<Product[] | null>(null);
   const [productId, setProductId] = useState("");
+  const [pastResults, setPastResults] = useState<SessionHistoryItem[]>([]);
   const [busy, setBusy] = useState(false);
   const [conn, setConn] = useState<JoinResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -218,6 +231,30 @@ export default function EntryFlow({
       cancelled = true;
     };
   }, [auth.loggedIn, auth.credential, products]);
+
+  useEffect(() => {
+    if (step !== "home" || !auth.loggedIn) return;
+    let cancelled = false;
+    fetchMySessions(auth.credential)
+      .then((sessions) => {
+        if (cancelled) return;
+        setPastResults(
+          sessions.slice(0, 3).map((s) => ({
+            id: s.id,
+            title: s.title,
+            date: formatSessionDate(s.created_at),
+            labels: s.labels,
+            exported: Boolean(s.issue_url),
+          })),
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setPastResults([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [step, auth.loggedIn, auth.credential]);
 
   useEffect(() => {
     if (!products) return;
@@ -920,6 +957,17 @@ export default function EntryFlow({
             </p>
           )}
         </Card>
+        {pastResults.length > 0 && (
+          <SessionHistoryList
+            items={pastResults}
+            heading="過去の要件"
+            headingAction={
+              <Link href="/results" className="text-[12px] text-sanba-gold-text underline">
+                すべて見る →
+              </Link>
+            }
+          />
+        )}
       </div>
     </AppShell>
   );

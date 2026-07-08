@@ -53,4 +53,45 @@ describe("SessionHistoryList（過去の要件を見る）", () => {
     const links = screen.getAllByRole("link");
     expect(links[0].getAttribute("href")).toBe("/archive/s1");
   });
+
+  it("ラベルをチップで最大3件表示し、超過分は +N でまとめる（P1-c）", () => {
+    render(
+      <SessionHistoryList
+        items={[
+          {
+            id: "s1",
+            title: "設定画面",
+            date: "2024/06/20",
+            labels: ["sanba", "priority:must", "category:screen", "functional"],
+          },
+        ]}
+      />,
+    );
+    expect(screen.getByText("sanba")).toBeTruthy();
+    expect(screen.getByText("priority:must")).toBeTruthy();
+    expect(screen.getByText("category:screen")).toBeTruthy();
+    expect(screen.getByText("+1")).toBeTruthy();
+    expect(screen.queryByText("functional")).toBeNull();
+  });
+
+  it("起票済み（issue_url あり）は起票済みバッジを出す（P1-c）", () => {
+    render(
+      <SessionHistoryList
+        items={[{ id: "s1", title: "設定画面", date: "2024/06/20", exported: true }]}
+      />,
+    );
+    expect(screen.getByText(/起票済み/)).toBeTruthy();
+  });
+
+  it("heading と headingAction を差し替えられる（ホーム用）", () => {
+    render(
+      <SessionHistoryList
+        items={ITEMS}
+        heading="過去の要件"
+        headingAction={<a href="/results">すべて見る →</a>}
+      />,
+    );
+    expect(screen.getByRole("heading", { name: "過去の要件" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: /すべて見る/ }).getAttribute("href")).toBe("/results");
+  });
 });

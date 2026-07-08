@@ -8,15 +8,20 @@ export interface SessionHistoryItem {
   id: string;
   title: string;
   date: string;
+  labels?: string[];
+  exported?: boolean;
 }
 
 export interface SessionHistoryListProps extends React.HTMLAttributes<HTMLElement> {
   items: SessionHistoryItem[];
   hrefFor?: (id: string) => string;
   emptyText?: string;
+  heading?: string;
+  headingAction?: React.ReactNode;
 }
 
 const HEADING_ID = "session-history-heading";
+const MAX_LABELS = 3;
 
 export const SessionHistoryList = React.forwardRef<HTMLElement, SessionHistoryListProps>(
   (
@@ -25,6 +30,8 @@ export const SessionHistoryList = React.forwardRef<HTMLElement, SessionHistoryLi
       items,
       hrefFor = (id) => `/results/${encodeURIComponent(id)}`,
       emptyText = "過去の要件はまだございません。壁打ちを始めると、ここに残ります。",
+      heading = "過去の要件を見る",
+      headingAction,
       ...props
     },
     ref,
@@ -36,30 +43,52 @@ export const SessionHistoryList = React.forwardRef<HTMLElement, SessionHistoryLi
         className={cn("flex w-full flex-col gap-[10px]", className)}
         {...props}
       >
-        <h2 id={HEADING_ID} className="text-[13px] font-bold text-sanba-muted">
-          過去の要件を見る
-        </h2>
+        <div className="flex items-center justify-between">
+          <h2 id={HEADING_ID} className="text-[13px] font-bold text-sanba-muted">
+            {heading}
+          </h2>
+          {headingAction}
+        </div>
         {items.length === 0 ? (
           <div className="flex items-center rounded-[16px] border-[1.5px] border-dashed border-sanba-border-strong bg-sanba-surface px-[14px] py-[12px]">
             <p className="text-[13px] leading-relaxed text-sanba-muted">{emptyText}</p>
           </div>
         ) : (
           <ul className="flex flex-col gap-[8px]">
-            {items.map((item) => (
-              <li key={item.id}>
-                <Link
-                  href={hrefFor(item.id)}
-                  aria-label={`${item.title}（${item.date}・${item.id}）`}
-                  className="block rounded-[12px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sanba-gold"
-                >
-                  <ListRow
-                    className="min-h-[44px]"
-                    title={item.title}
-                    subtitle={item.date ? `${item.date} ・ ${item.id}` : item.id}
-                  />
-                </Link>
-              </li>
-            ))}
+            {items.map((item) => {
+              const labels = item.labels ?? [];
+              const shown = labels.slice(0, MAX_LABELS);
+              const overflow = labels.length - shown.length;
+              const subtitle =
+                (item.date ? `${item.date} ・ ${item.id}` : item.id) +
+                (item.exported ? " ・ 起票済み ✓" : "");
+              return (
+                <li key={item.id}>
+                  <Link
+                    href={hrefFor(item.id)}
+                    aria-label={`${item.title}（${item.date}・${item.id}）`}
+                    className="block rounded-[12px] border-[1.5px] border-sanba-border bg-sanba-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sanba-gold"
+                  >
+                    <ListRow className="min-h-[44px] border-0" title={item.title} subtitle={subtitle} />
+                    {shown.length > 0 && (
+                      <div className="flex flex-wrap gap-[4px] px-[14px] pb-[10px]">
+                        {shown.map((l) => (
+                          <span
+                            key={l}
+                            className="rounded-full border border-sanba-border bg-sanba-surface-strong px-[7px] py-[1px] text-[10px] text-sanba-muted"
+                          >
+                            {l}
+                          </span>
+                        ))}
+                        {overflow > 0 && (
+                          <span className="text-[10px] text-sanba-muted">+{overflow}</span>
+                        )}
+                      </div>
+                    )}
+                  </Link>
+                </li>
+              );
+            })}
           </ul>
         )}
       </section>
