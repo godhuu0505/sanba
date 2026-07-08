@@ -17,6 +17,7 @@ import type { RealtimeMetricsSnapshot } from "@/lib/realtime/metrics";
 import type { SessionState } from "@/lib/realtime/store";
 import type { SendAnswer, SendSelection } from "@/lib/realtime/useRealtimeSession";
 import type { ExportEligibility, ExportOptions, ExportResult } from "@/lib/api";
+import { useAuthOptional } from "@/lib/auth";
 
 import { BottomBar } from "./BottomBar";
 import { ChatHistory } from "./ChatHistory";
@@ -93,6 +94,7 @@ export function ConversationSessionView({
   recording = true,
   elapsed,
 }: ConversationSessionViewProps) {
+  const userPicture = useAuthOptional()?.profile?.picture;
   const [phase, setPhase] = useState<Phase>("shell");
   const [tab, setTab] = useState<ShellTab>("history");
   const [endOpen, setEndOpen] = useState(false);
@@ -462,6 +464,7 @@ export function ConversationSessionView({
                 transcript={state.transcript}
                 contextProgress={state.contextProgress}
                 materials={materials}
+                userPicture={userPicture}
               />
             </div>
           ),

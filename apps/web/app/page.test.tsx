@@ -16,7 +16,10 @@ const authState = {
   driveGranted: null as boolean | null,
   requestDriveAccess: vi.fn(async () => null as string | null),
 };
-vi.mock("../lib/auth", () => ({ useAuth: () => authState }));
+vi.mock("../lib/auth", () => ({
+  useAuth: () => authState,
+  useAuthOptional: () => authState,
+}));
 
 const replace = vi.fn();
 vi.mock("next/navigation", () => ({

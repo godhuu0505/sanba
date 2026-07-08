@@ -1,6 +1,7 @@
 "use client";
 
 import { AlertTriangle, Check, FileText, LoaderCircle, Mic, Package, Slash } from "lucide-react";
+import { useCallback, useEffect, useRef } from "react";
 
 import { useInterviewMode } from "@/lib/interviewMode";
 import type { ContextProgressState, TranscriptLine } from "@/lib/realtime/store";
@@ -10,10 +11,23 @@ import { ChatBubble } from "./sanba/ChatBubble";
 
 const AGENT_ROLES = new Set(["assistant", "agent", "sanba"]);
 
+const STICK_THRESHOLD_PX = 120;
+
+function getScrollParent(node: HTMLElement | null): HTMLElement | null {
+  let el = node?.parentElement ?? null;
+  while (el) {
+    const overflowY = getComputedStyle(el).overflowY;
+    if (overflowY === "auto" || overflowY === "scroll") return el;
+    el = el.parentElement;
+  }
+  return null;
+}
+
 export interface ChatHistoryProps {
   transcript: TranscriptLine[];
   contextProgress?: ContextProgressState[];
   materials?: MaterialItem[];
+  userPicture?: string;
 }
 
 function SetupBubble({
@@ -127,13 +141,45 @@ function MaterialBubble({ item }: { item: MaterialItem }) {
   );
 }
 
-export function ChatHistory({ transcript, contextProgress = [], materials = [] }: ChatHistoryProps) {
+export function ChatHistory({
+  transcript,
+  contextProgress = [],
+  materials = [],
+  userPicture,
+}: ChatHistoryProps) {
   const endUser = useInterviewMode() === "end_user";
   const setupItems = [...contextProgress];
   const materialBubbles = materials.filter(
     (m) => m.status !== "cancelled" && m.status !== "uploading",
   );
   const hasSetup = setupItems.length > 0 || materialBubbles.length > 0 || endUser;
+
+  const endRef = useRef<HTMLDivElement | null>(null);
+  const stickRef = useRef(true);
+  const detachRef = useRef<(() => void) | null>(null);
+  const lastLine = transcript[transcript.length - 1];
+
+  const setSentinel = useCallback((node: HTMLDivElement | null) => {
+    endRef.current = node;
+    detachRef.current?.();
+    detachRef.current = null;
+    const scroller = node ? getScrollParent(node) : null;
+    if (!scroller) return;
+    const onScroll = () => {
+      const distance = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
+      stickRef.current = distance <= STICK_THRESHOLD_PX;
+    };
+    scroller.addEventListener("scroll", onScroll, { passive: true });
+    detachRef.current = () => scroller.removeEventListener("scroll", onScroll);
+  }, []);
+
+  useEffect(() => () => detachRef.current?.(), []);
+
+  useEffect(() => {
+    if (stickRef.current) {
+      endRef.current?.scrollIntoView?.({ behavior: "smooth", block: "end" });
+    }
+  }, [transcript.length, lastLine?.text, lastLine?.final]);
 
   if (transcript.length === 0 && !hasSetup) {
     return (
@@ -169,7 +215,11 @@ export function ChatHistory({ transcript, contextProgress = [], materials = [] }
       {transcript.map((line) => {
         const author = AGENT_ROLES.has(line.role) ? "agent" : "user";
         return (
-          <ChatBubble key={line.utterance_id} author={author}>
+          <ChatBubble
+            key={line.utterance_id}
+            author={author}
+            avatarImageUrl={author === "user" ? userPicture : undefined}
+          >
             {line.text}
             {!line.final && (
               <span className="ml-1 inline-flex items-center gap-1 align-middle text-[11px] font-bold text-sanba-speak-text">
@@ -179,6 +229,7 @@ export function ChatHistory({ transcript, contextProgress = [], materials = [] }
           </ChatBubble>
         );
       })}
+      <div ref={setSentinel} aria-hidden />
     </div>
   );
 }

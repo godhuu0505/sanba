@@ -4,7 +4,6 @@ import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 
 import { Button, Chip, HelpIcon } from "@/components/sanba";
-import { AccountMenu } from "@/components/AccountMenu";
 import { AppShell } from "@/components/AppShell";
 import { RequirementsScrollList } from "@/components/RequirementsScrollList";
 import { authGate } from "@/components/RequireAuth";
@@ -141,7 +140,6 @@ export default function PastRequirementsPage() {
       current="results"
       title="要件一覧"
       onBack={() => router.push("/results")}
-      headerRight={<AccountMenu profile={auth.profile} />}
     >
       <div className="mx-auto flex w-full max-w-md flex-col gap-3 px-4 pb-10 pt-3">
         {load.state === "loading" && (

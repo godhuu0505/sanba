@@ -32,7 +32,6 @@ import {
 import { AUDIENCE_LABELS } from "../lib/audience";
 import { useAuth } from "../lib/auth";
 import { importDriveFile, isDriveConfigured, openDrivePicker } from "../lib/googleDrive";
-import { AccountMenu } from "./AccountMenu";
 import { AppShell } from "./AppShell";
 import { ConversationStart } from "./ConversationStart";
 import { MemberInviteNotices } from "./MemberInviteNotices";
@@ -453,7 +452,6 @@ export default function EntryFlow({
         current="home"
         title="セッション準備"
         onBack={() => navigateStep("home")}
-        headerRight={<AccountMenu profile={auth.profile} />}
       >
         <div className="mx-auto flex w-full max-w-[480px] flex-col gap-[18px] px-4 py-4">
           {}
@@ -690,7 +688,7 @@ export default function EntryFlow({
   }
 
   return (
-    <AppShell current="home" headerRight={<AccountMenu profile={auth.profile} />}>
+    <AppShell current="home">
       {}
       <div className="m-auto flex w-full max-w-[480px] flex-col gap-[18px] px-4 py-6">
         {}

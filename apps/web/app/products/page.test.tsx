@@ -15,7 +15,10 @@ const authState = {
   signOut: vi.fn(),
   resetButton: vi.fn(),
 };
-vi.mock("@/lib/auth", () => ({ useAuth: () => authState }));
+vi.mock("@/lib/auth", () => ({
+  useAuth: () => authState,
+  useAuthOptional: () => authState,
+}));
 
 const replace = vi.fn();
 const push = vi.fn();
