@@ -264,3 +264,82 @@ def test_create_session_doc_applies_ttl_only_when_requested() -> None:
     keep_forever._client = _Client()  # type: ignore[assignment]
     keep_forever.create_session_doc(_meta("s-keep"), apply_ttl=True)
     assert "expireAt" not in captured["s-keep"]
+
+
+def test_finalize_and_approve_snapshots_and_approves_atomically() -> None:
+    """自動確定用のバッチが確定マーカと確定集合の承認を一括で書く（ADR-0056）。"""
+    repo = _repo()
+    repo.create_session_doc(
+        SessionMeta(id="s-af", title="t", owner_sub="sub", owner_email="o@example.com")
+    )
+    repo.save_requirement(
+        "s-af",
+        Requirement(
+            id="c1",
+            statement="確定",
+            category=RequirementCategory.FUNCTIONAL,
+            priority=Priority.MUST,
+        ),
+    )
+    repo.save_requirement(
+        "s-af",
+        Requirement(
+            id="x1",
+            statement="却下",
+            category=RequirementCategory.SCOPE,
+            priority=Priority.SHOULD,
+            status=RequirementStatus.REJECTED,
+        ),
+    )
+
+    meta = repo.finalize_and_approve(
+        "s-af",
+        finalized_requirement_ids=["c1"],
+        labels=["sanba", "priority:must", "functional"],
+        approved_by="agent:auto_finalize",
+        keep_expiry=False,
+    )
+
+    assert meta is not None
+    assert meta.status == "finalized"
+    assert meta.finalized_requirement_ids == ["c1"]
+    assert meta.finalized_count == 1
+    assert meta.labels == ["sanba", "priority:must", "functional"]
+    c1 = repo.get_requirement("s-af", "c1")
+    assert c1 is not None
+    assert c1.status is RequirementStatus.APPROVED
+    assert c1.approved_by == "agent:auto_finalize"
+    x1 = repo.get_requirement("s-af", "x1")
+    assert x1 is not None
+    assert x1.status is RequirementStatus.REJECTED
+
+
+def test_finalize_and_approve_is_noop_when_already_finalized() -> None:
+    """既に finalized なら再確定せず既存スナップショットを返す（通常 finalize と冪等）。"""
+    repo = _repo()
+    repo.create_session_doc(
+        SessionMeta(id="s-af2", title="t", owner_sub="sub", owner_email="o@example.com")
+    )
+    repo.save_requirement(
+        "s-af2",
+        Requirement(
+            id="c1",
+            statement="確定",
+            category=RequirementCategory.FUNCTIONAL,
+            priority=Priority.MUST,
+        ),
+    )
+    repo.finalize_session(
+        "s-af2", confirmed_count=1, finalized_requirement_ids=["c1"], labels=["sanba"]
+    )
+
+    meta = repo.finalize_and_approve(
+        "s-af2",
+        finalized_requirement_ids=["c1", "late"],
+        labels=["sanba", "priority:must"],
+        approved_by="agent:auto_finalize",
+        keep_expiry=False,
+    )
+
+    assert meta is not None
+    assert meta.finalized_requirement_ids == ["c1"]

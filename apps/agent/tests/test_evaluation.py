@@ -37,6 +37,27 @@ async def test_empty_transcript_scores_zero() -> None:
 
 
 @pytest.mark.asyncio
+async def test_score_session_falls_back_on_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    """LLM judge が退出猶予を超えたら決定的ヒューリスティックへ即フォールバックする（#435）。"""
+    import asyncio
+
+    from sanba_agent import evaluation
+    from sanba_agent.config import settings
+
+    async def _hang(transcript: str) -> JudgeResult:
+        await asyncio.sleep(60)
+        raise AssertionError("unreachable")
+
+    monkeypatch.setattr(evaluation, "judge_interview", _hang)
+    monkeypatch.setattr(settings, "session_score_timeout_seconds", 0.05)
+    result = await evaluation.score_session(
+        session_id="s1", transcript="レイテンシ5秒以内。セキュリティは認証必須。"
+    )
+    assert result.rationale.startswith("heuristic")
+    assert 0.0 <= result.overall <= 1.0
+
+
+@pytest.mark.asyncio
 async def test_regression_dataset_passes() -> None:
     assert await run_dataset_eval() == 0
 

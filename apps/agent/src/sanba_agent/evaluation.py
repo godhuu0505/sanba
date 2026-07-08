@@ -217,8 +217,19 @@ async def score_session(session_id: str, transcript: str) -> JudgeResult:
 
     スコアは `session_scored` 構造化ログとして Cloud Logging に残り、ログベースメトリクス
     → Cloud Monitoring ダッシュボードで可視化する（ADR-0051）。外部 sink は持たない。
+
+    シャットダウン後始末（entrypoint の close callback）から呼ぶため、LLM judge を
+    `session_score_timeout_seconds` で制限する。制限超過なら即時の決定的ヒューリスティック採点へ
+    フォールバックし、離脱直後の新規 genai 呼び出しがプロセス退出の猶予（LiveKit ~10s）を超えて
+    SIGKILL を招くのを防ぐ（毎セッション終了時の ERROR / #435 🟡）。
     """
-    result = await judge_interview(transcript)
+    try:
+        result = await asyncio.wait_for(
+            judge_interview(transcript), timeout=settings.session_score_timeout_seconds
+        )
+    except TimeoutError:
+        log.warning("session_score_timeout", session=session_id)
+        result = _heuristic_scores(transcript)
     log.info("session_scored", session=session_id, overall=result.overall, scores=result.scores)
     return result
 

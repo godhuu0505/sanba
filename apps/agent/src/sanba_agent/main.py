@@ -853,6 +853,48 @@ class SANBAAgent(Agent):
                 cancelled=cancelled,
             )
 
+    async def auto_finalize_if_needed(self) -> None:
+        """未確定のまま離脱したセッションを最小構成で確定し、要件を保全する（#435 / ADR-0056）。
+
+        finalize は「確定＝保全（承認 + TTL 解除）と export の起点」（ADR-0053）。会話を締めずに
+        離脱すると確定要件は draft のまま 30 日 TTL で消え、export も未 finalize ゲートで塞がれる
+        （画面には見えるのに起票不可）。離脱後始末（entrypoint の close callback）で確定スナップ
+        ショットを刻み、確定集合（却下以外）を approved 化して TTL を解除する。既に finalized なら
+        何もしない（会話を締めた通常 finalize と冪等）。要件が 1 件も無ければ何もしない。
+
+        退出猶予（LiveKit ~10s）を圧迫しないよう LLM 生成（タイトル・要約）は行わない: それらは
+        会話を締めた通常 finalize（API）が担う付加価値で、欠けてもデータ保全・export 整合には
+        影響しない。確定集合の算出（却下以外）とラベルは api の finalize と同じ共有ヘルパを使い、
+        確定マーカと承認は `finalize_and_approve` の 1 バッチにまとめて部分書き込みを避ける
+        （`_on_close` は背景タスクのドレン後に呼び、直前に確定した要件も取りこぼさない）。
+        """
+        from sanba_shared.models import RequirementStatus
+        from sanba_shared.result_document import (
+            requirements_to_issue_labels,
+            requirements_to_render_dicts,
+        )
+
+        session = self._repo.get_session(self._session_id)
+        if session is None or session.status == "finalized":
+            return
+        confirmed = [
+            r
+            for r in self._repo.list_requirements(self._session_id)
+            if r.status is not RequirementStatus.REJECTED
+        ]
+        if not confirmed:
+            return
+        confirmed_ids = [r.id for r in confirmed]
+        labels = requirements_to_issue_labels(requirements_to_render_dicts(confirmed))
+        self._repo.finalize_and_approve(
+            self._session_id,
+            finalized_requirement_ids=confirmed_ids,
+            labels=labels,
+            approved_by="agent:auto_finalize",
+            keep_expiry=session.owner_email == "",
+        )
+        log.info("session_auto_finalized", session=self._session_id, confirmed=len(confirmed))
+
     @function_tool
     async def ask_question(
         self,
@@ -1941,6 +1983,10 @@ async def entrypoint(ctx: JobContext) -> None:
     async def _on_close() -> None:
         await _drain_tasks(set(_bg_tasks), DRAIN_GRACE_SECONDS)
         await agent.drain_background_tasks()
+        try:
+            await agent.auto_finalize_if_needed()
+        except Exception as exc:  # noqa: BLE001
+            log.warning("auto_finalize_failed", session=session_id, error=str(exc))
         from .evaluation import score_session
 
         await score_session(session_id=session_id, transcript="\n".join(agent.transcript))
