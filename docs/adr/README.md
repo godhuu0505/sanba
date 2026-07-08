@@ -61,6 +61,6 @@
 | [0050](0050-documentation-placement-and-lifecycle.md) | ドキュメントの配置方針とライフサイクル（AI 駆動開発前提） | Accepted |
 | [0051](0051-google-native-observability-and-llmops.md) | 観測性・LLMOps を Google Cloud ネイティブに統一する（Cloud Trace / Cloud Monitoring / Vertex・ADK eval、Langfuse 廃止） | Proposed |
 | [0052](0052-login-redesign-nashi-gen-alignment.md) | ログイン画面の刷新（NASHI GEN 準拠のクリーン化）と復元中の中立スプラッシュ | Accepted |
-| [0053](0053-ui-copy-terminology-unification-and-help.md) | UIコピーの用語統一・平易化とヘルプ補足（機能名への統一・Radix Popover ヘルプ） | Proposed |
+| [0054](0054-ui-copy-terminology-unification-and-help.md) | UIコピーの用語統一・平易化とヘルプ補足（単一文言への統一・Radix Popover ヘルプ） | Proposed |
 
 付随資料は [`supplements/`](supplements/) に置く（特定 ADR の実測・検証データ）。
