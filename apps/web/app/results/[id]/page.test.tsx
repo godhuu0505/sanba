@@ -98,7 +98,7 @@ describe("過去要件の絵巻閲覧画面（/results/[id]）", () => {
     expect(screen.queryByText("要件一覧")).toBeNull();
   });
 
-  it("標題・日付・確定状態と、MoSCoW 区分の要件絵巻だけを出す（管理操作は無い）", async () => {
+  it("標題・日付・確定状態と、MoSCoW 区分の要件一覧だけを出す（管理操作は無い）", async () => {
     render(<PastRequirementsPage />);
     await waitFor(() => expect(screen.getByText("新機能要件定義")).toBeTruthy());
     expect(screen.getByText("要件一覧")).toBeTruthy();

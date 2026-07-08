@@ -87,7 +87,7 @@ async function startWithConsent() {
   fireEvent.click(screen.getByRole("button", { name: "会話を始める" }));
 }
 
-describe("深掘りリンク入場画面（ADR-0031 / ADR-0032 / FR-1.6 / FR-2.1）", () => {
+describe("会話リンク入場画面（ADR-0031 / ADR-0032 / FR-1.6 / FR-2.1）", () => {
   beforeEach(() => {
     authState.credential = "id-token";
     authState.loggedIn = true;

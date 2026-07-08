@@ -33,7 +33,7 @@ describe("JudgmentGate（確定ゲート）", () => {
     expect(screen.queryByRole("button", { name: /要件を確定/ })).toBeNull();
   });
 
-  it("全解消は確定でき、確定で onConfirm。終うは出さない", () => {
+  it("全解消は確定でき、確定で onConfirm。終えるは出さない", () => {
     const cb = setup({ unresolved: 0 });
     const confirm = screen.getByRole("button", { name: /要件を確定/ });
     fireEvent.click(confirm);

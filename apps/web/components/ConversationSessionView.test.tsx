@@ -579,6 +579,7 @@ describe("ConversationSessionView（end_user モード語彙 / FR-2.4）", () =>
     fireEvent.click(screen.getByRole("button", { name: "終了する" }));
     expect(screen.getByRole("button", { name: "要件を確定する" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "要件を確定する" }));
+    expect(await screen.findByText(/要件がまとまりました/)).toBeTruthy();
     expect(screen.queryByText(/Must \d/)).toBeNull();
   });
 });
