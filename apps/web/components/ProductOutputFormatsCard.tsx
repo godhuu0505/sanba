@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-import { Button, Card, CardTitle, Chip, Textarea } from "@/components/sanba";
+import { Button, Card, CardTitle, Chip, HelpIcon, Textarea } from "@/components/sanba";
 import { updateProduct, type Audience, type Product } from "@/lib/api";
 import { AUDIENCE_LABELS, AUDIENCES } from "@/lib/audience";
 import { useAuth } from "@/lib/auth";
@@ -52,9 +52,12 @@ export function ProductOutputFormatsCard({
 
   return (
     <Card>
-      <CardTitle>要件結果の出力フォーマット</CardTitle>
+      <CardTitle className="inline-flex items-center gap-[6px]">
+        要件結果の出力フォーマット
+        <HelpIcon term="出力フォーマット" />
+      </CardTitle>
       <p className="text-[12px] leading-relaxed text-sanba-muted">
-        セッション結果の文書を、読み手（利用者・企画者・開発者）ごとの体裁で出力します。
+        会話結果の文書を、読み手（利用者・企画者・開発者）ごとの体裁で出力します。
         それぞれ 1 つ登録でき、登録しない場合はデフォルトのフォーマットが使われます。
       </p>
       <div className="flex flex-wrap gap-[8px]" role="tablist" aria-label="出力フォーマットの対象">
@@ -83,6 +86,10 @@ export function ProductOutputFormatsCard({
         {savedAt === audience && (
           <span className="text-[11px] text-sanba-gold-text">保存しました</span>
         )}
+      </div>
+      <div className="flex items-center gap-[6px]">
+        <span className="text-[12px] font-bold text-sanba-muted">差し込みタグ</span>
+        <HelpIcon term="差し込みタグ" />
       </div>
       <Textarea
         aria-label={`${AUDIENCE_LABELS[audience]}向け出力フォーマット`}

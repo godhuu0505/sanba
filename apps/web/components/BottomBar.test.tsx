@@ -19,7 +19,7 @@ describe("BottomBar（常時2行：消音/マイク・テキスト/送信）", (
 
   it("消音は muted を aria-pressed で表し、押下で onToggleMute", () => {
     const cb = setup({ muted: true });
-    const mute = screen.getByRole("button", { name: "消音" });
+    const mute = screen.getByRole("button", { name: "スピーカー消音" });
     expect(mute.getAttribute("aria-pressed")).toBe("true");
     fireEvent.click(mute);
     expect(cb.onToggleMute).toHaveBeenCalledTimes(1);

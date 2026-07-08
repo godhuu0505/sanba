@@ -3,6 +3,8 @@
 import { useEffect, useRef } from "react";
 import { Check, ChevronRight, Image as ImageIcon, X } from "lucide-react";
 
+import { HelpIcon } from "@/components/sanba";
+
 import { detectionPresentation } from "../lib/realtime/mapping";
 import type { MaterialDetail } from "../lib/realtime/selectors";
 
@@ -80,7 +82,7 @@ export function MaterialDetailSheet({
       >
         <div className="flex items-center gap-2">
           <span id={titleId} className="text-[15px] font-bold text-sanba-gold-text">
-            資料の詳細
+            参考資料の詳細
           </span>
           <span className="flex-1" />
           <button
@@ -110,6 +112,7 @@ export function MaterialDetailSheet({
           ) : (
             <div className="flex items-center gap-2">
               <span className="text-[11px] text-sanba-muted">解析中</span>
+              <HelpIcon term="解析" />
               <div
                 role="progressbar"
                 aria-valuenow={detail.pct}
@@ -126,7 +129,10 @@ export function MaterialDetailSheet({
         </div>
 
         <section aria-label="抽出した要件" className="flex flex-col gap-2">
-          <span className="text-[12px] font-bold text-sanba-gold-text">抽出した要件</span>
+          <div className="flex items-center gap-1">
+            <span className="text-[12px] font-bold text-sanba-gold-text">抽出した要件</span>
+            <HelpIcon term="抽出した要件" />
+          </div>
           {detail.extracted.length > 0 ? (
             <ul className="flex list-none flex-wrap gap-[6px] p-0">
               {detail.extracted.map((e, i) => (
@@ -145,10 +151,13 @@ export function MaterialDetailSheet({
           )}
         </section>
 
-        <section aria-label="言葉×画の矛盾" className="flex flex-col gap-2">
-          <span className="text-[12px] font-bold" style={{ color: CONFLICT.color }}>
-            言葉×画の矛盾
-          </span>
+        <section aria-label="言葉と画像の食い違い" className="flex flex-col gap-2">
+          <div className="flex items-center gap-1">
+            <span className="text-[12px] font-bold" style={{ color: CONFLICT.color }}>
+              言葉と画像の食い違い
+            </span>
+            <HelpIcon term="言葉と画像の食い違い" />
+          </div>
           {detail.conflicts.length > 0 ? (
             detail.conflicts.map((c, i) => (
               <div
@@ -163,7 +172,7 @@ export function MaterialDetailSheet({
                   style={{ background: CONFLICT.color }}
                 >
                   <CONFLICT.Icon size={11} aria-hidden />
-                  <span>言葉×画の矛盾</span>
+                  <span>言葉と画像の食い違い</span>
                 </span>
                 <span className="text-[12.5px] text-sanba-cream">{c.summary}</span>
                 {onConfirmInConversation && (
@@ -179,7 +188,7 @@ export function MaterialDetailSheet({
             ))
           ) : (
             <p className="text-[11.5px] text-sanba-muted">
-              {ready ? "言葉×画の矛盾は見つかっていません。" : waiting}
+              {ready ? "言葉と画像の食い違いは見つかっていません。" : waiting}
             </p>
           )}
         </section>

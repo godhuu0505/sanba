@@ -53,7 +53,7 @@ from sanba_shared.models import (
     RequirementCategory,
     SessionMeta,
     Utterance,
-    check_items_for_scope,
+    check_points_for_scope,
 )
 from sanba_shared.repository import SessionRepository
 
@@ -151,6 +151,8 @@ class AgentSetup(NamedTuple):
     allow_repo_grounding: bool
     prep_note: str
     context_signals: tuple[ContextSignal, ...] = ()
+    check_points: tuple[str, ...] = ()
+    product_id: str | None = None
 
 
 def _context_signals(
@@ -211,7 +213,7 @@ def build_agent_instructions(repo: SessionRepository, session_id: str) -> AgentS
     prep_note = ""
     product = _session_product(repo, meta)
     seeded_check_items = (
-        check_items_for_scope(product.check_items, mode) if product is not None else []
+        check_points_for_scope(product.check_items, mode) if product is not None else []
     )
     check_items_seed = build_check_items_seed(
         seeded_check_items, end_user=mode is InviteScope.END_USER
@@ -248,7 +250,16 @@ def build_agent_instructions(repo: SessionRepository, session_id: str) -> AgentS
         context_signals=len(signals),
         chars=len(instructions),
     )
-    return AgentSetup(instructions, mode, allow_repo_grounding, prep_note, signals)
+    product_id = meta.product_id if meta is not None else None
+    return AgentSetup(
+        instructions,
+        mode,
+        allow_repo_grounding,
+        prep_note,
+        signals,
+        tuple(seeded_check_items),
+        product_id,
+    )
 
 
 def opening_instructions(mode: InviteScope, has_prep_context: bool = False) -> str:
@@ -338,7 +349,9 @@ class SANBAAgent(Agent):
         self._allow_repo_grounding = setup.allow_repo_grounding
         self._prep_note = setup.prep_note
         self._context_signals = setup.context_signals
+        self._check_points = setup.check_points
         self._session_id = session_id
+        self._product_id = setup.product_id
         self._repo = repo
         self._grounding = grounding
         self._transcript: list[str] = []
@@ -676,6 +689,14 @@ class SANBAAgent(Agent):
             open_topics=result.open_topics,
             next_question=result.next_question,
         )
+        if self._check_points:
+            log.info(
+                "check_point_coverage",
+                session=self._session_id,
+                trigger=trigger,
+                total=len(self._check_points),
+                uncovered=result.coverage_open,
+            )
         async with self._analysis_lock:
             await self._publish_analysis_detections(result)
         self._last_analysis = result
@@ -697,7 +718,7 @@ class SANBAAgent(Agent):
         def _worker() -> None:
             outcome: AnalysisResult | BaseException
             try:
-                outcome = asyncio.run(analyze_transcript(transcript))
+                outcome = asyncio.run(analyze_transcript(transcript, self._check_points))
             except Exception as exc:  # noqa: BLE001
                 outcome = exc
 
@@ -750,6 +771,9 @@ class SANBAAgent(Agent):
 
         呼び出し側（_run_analysis）が _analysis_lock で直列化している前提。status は
         触らない（背景実行は不可視・deliberating/listening はツール経路だけが出す）。
+
+        gap（`result.open_topics`）は汎用の検知チャネルとして残すが、ハードコードの企業向け
+        NFR ヒューリスティックは廃止したため現状は供給されない（ADR-0055）。
         """
         if self._publisher is not None:
             current = {make_requirement_id(f"gap:{t}"): t for t in result.open_topics}
@@ -844,6 +868,48 @@ class SANBAAgent(Agent):
                 completed=completed,
                 cancelled=cancelled,
             )
+
+    async def auto_finalize_if_needed(self) -> None:
+        """未確定のまま離脱したセッションを最小構成で確定し、要件を保全する（#435 / ADR-0056）。
+
+        finalize は「確定＝保全（承認 + TTL 解除）と export の起点」（ADR-0053）。会話を締めずに
+        離脱すると確定要件は draft のまま 30 日 TTL で消え、export も未 finalize ゲートで塞がれる
+        （画面には見えるのに起票不可）。離脱後始末（entrypoint の close callback）で確定スナップ
+        ショットを刻み、確定集合（却下以外）を approved 化して TTL を解除する。既に finalized なら
+        何もしない（会話を締めた通常 finalize と冪等）。要件が 1 件も無ければ何もしない。
+
+        退出猶予（LiveKit ~10s）を圧迫しないよう LLM 生成（タイトル・要約）は行わない: それらは
+        会話を締めた通常 finalize（API）が担う付加価値で、欠けてもデータ保全・export 整合には
+        影響しない。確定集合の算出（却下以外）とラベルは api の finalize と同じ共有ヘルパを使い、
+        確定マーカと承認は `finalize_and_approve` の 1 バッチにまとめて部分書き込みを避ける
+        （`_on_close` は背景タスクのドレン後に呼び、直前に確定した要件も取りこぼさない）。
+        """
+        from sanba_shared.models import RequirementStatus
+        from sanba_shared.result_document import (
+            requirements_to_issue_labels,
+            requirements_to_render_dicts,
+        )
+
+        session = self._repo.get_session(self._session_id)
+        if session is None or session.status == "finalized":
+            return
+        confirmed = [
+            r
+            for r in self._repo.list_requirements(self._session_id)
+            if r.status is not RequirementStatus.REJECTED
+        ]
+        if not confirmed:
+            return
+        confirmed_ids = [r.id for r in confirmed]
+        labels = requirements_to_issue_labels(requirements_to_render_dicts(confirmed))
+        self._repo.finalize_and_approve(
+            self._session_id,
+            finalized_requirement_ids=confirmed_ids,
+            labels=labels,
+            approved_by="agent:auto_finalize",
+            keep_expiry=session.owner_email == "",
+        )
+        log.info("session_auto_finalized", session=self._session_id, confirmed=len(confirmed))
 
     @function_tool
     async def ask_question(
@@ -1153,7 +1219,9 @@ class SANBAAgent(Agent):
         current_sha, revoked = self._repo_access()
         output_filtered = not self._allow_repo_grounding
         fetch_k = want * 4 if (current_sha is not None or revoked or output_filtered) else want
-        passages = self._grounding.search(query, k=fetch_k, session_id=self._session_id)
+        passages = self._grounding.search(
+            query, k=fetch_k, session_id=self._session_id, product_id=self._product_id
+        )
         dropped_repo = dropped_other = 0
         if output_filtered:
             if revoked:
@@ -1177,11 +1245,13 @@ class SANBAAgent(Agent):
                     p for p in passages if not _is_stale_repo_passage(p.source, current_sha)
                 ]
             passages = passages[:want]
+        repo_hits = sum(1 for p in passages if p.source.startswith("github:"))
         log.info(
             "grounding_search",
             session=self._session_id,
             query=query,
             hits=len(passages),
+            repo_hits=repo_hits,
             interview_mode=self._interview_mode.value,
             output_filtered=output_filtered,
         )
@@ -1211,6 +1281,13 @@ class SANBAAgent(Agent):
         Firestore 不通時は安全側に倒し、repo 紐づけがあるなら revoked 扱いにする。
         対象は GitHub App の ES 索引フローのみ（index_status=none は connector 選択 / env
         フォールバック＝ADR-0027 の seed 経路で、遮断すると正当な seed まで落ちる）。
+
+        product スコープのセッション（`meta.product_id` あり）では、セッション作成時に
+        コピーされた `SessionMeta.github_commit_sha` のスナップショットではなく、product
+        文書の最新 `github_commit_sha` を参照する。product が session 開始後に再索引されると
+        session 側のスナップショットは更新されないため、放置すると新しく索引された repo
+        passage が全件 stale 判定されて grounding が0件に落ちる（#440）。product が見つから
+        ない（削除済み等）場合は安全側に倒し revoked=True とする。
         """
         try:
             meta = self._repo.get_session(self._session_id)
@@ -1226,6 +1303,11 @@ class SANBAAgent(Agent):
             return meta.github_commit_sha, True
         if link is None:
             return meta.github_commit_sha, True
+        if meta.product_id:
+            product = _session_product(self._repo, meta)
+            if product is None:
+                return meta.github_commit_sha, True
+            return product.github_commit_sha, False
         return meta.github_commit_sha, False
 
     @function_tool
@@ -1929,6 +2011,10 @@ async def entrypoint(ctx: JobContext) -> None:
     async def _on_close() -> None:
         await _drain_tasks(set(_bg_tasks), DRAIN_GRACE_SECONDS)
         await agent.drain_background_tasks()
+        try:
+            await agent.auto_finalize_if_needed()
+        except Exception as exc:  # noqa: BLE001
+            log.warning("auto_finalize_failed", session=session_id, error=str(exc))
         from .evaluation import score_session
 
         await score_session(session_id=session_id, transcript="\n".join(agent.transcript))

@@ -36,7 +36,7 @@ function invite(overrides: Partial<ProductInvite> = {}): ProductInvite {
   };
 }
 
-describe("ProductInvitesCard（深掘りリンク / FR-1.5）", () => {
+describe("ProductInvitesCard（会話リンク / FR-1.5）", () => {
   beforeEach(() => {
     createProductInvite.mockReset().mockResolvedValue(invite());
     listProductInvites.mockReset().mockResolvedValue([]);

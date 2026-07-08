@@ -26,7 +26,7 @@ export function EndConfirmDialog({ unresolved, onContinue, onEnd }: EndConfirmDi
       >
         {hasUnresolved ? <TriangleAlert size={22} aria-hidden /> : <Scale size={22} aria-hidden />}
       </div>
-      <p className="text-center text-[16px] font-bold text-sanba-gold-text">問答を終えますか？</p>
+      <p className="text-center text-[16px] font-bold text-sanba-gold-text">会話を終えますか？</p>
       <p className="text-center text-[12px] text-sanba-muted">
         {hasUnresolved
           ? `未解消が ${unresolved} 件 残っています。終えると、その分は確定されません。`
@@ -38,7 +38,7 @@ export function EndConfirmDialog({ unresolved, onContinue, onEnd }: EndConfirmDi
           onClick={onContinue}
           className="flex-1 rounded-[12px] border border-sanba-frame py-[13px] text-[13px] font-bold text-sanba-gold-text"
         >
-          問答を続ける
+          会話を続ける
         </button>
         <button
           type="button"

@@ -67,7 +67,7 @@ export function VoiceInputBar({
   ...props
 }: VoiceInputBarProps) {
   const muted = state === "muted";
-  const label = status ?? (muted ? "● ミュート中" : "● 認識中...（あなたが発話中）");
+  const label = status ?? (muted ? "● ミュート中" : "● 聞き取り中");
   return (
     <div
       className={cn(

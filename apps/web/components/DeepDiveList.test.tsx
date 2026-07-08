@@ -16,7 +16,7 @@ const det = (over: Partial<Detection>): Detection => ({
   ...over,
 });
 
-describe("DeepDiveList（深掘り対象＝未解消検知）", () => {
+describe("DeepDiveList（確認したいこと＝未解消検知）", () => {
   afterEach(() => cleanup());
 
   it("空のときは『未解消はありません』を出す", () => {

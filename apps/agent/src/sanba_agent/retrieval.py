@@ -134,18 +134,24 @@ class GroundingStore:
         k: int = 4,
         kinds: list[str] | None = None,
         session_id: str | None = None,
+        product_id: str | None = None,
     ) -> list[Passage]:
         """Retrieve grounding passages.
 
         ``session_id`` を渡すと、セッション固有の素材（``kind="context"``: ゴール文・
-        アップロード資料・紐づけ repo のコード本文 / ADR-0028）を **そのセッションに限定**する。
-        知識/過去要件 (knowledge/requirement/utterance) は ADR-0003 の通り横断的に呼び戻す。
+        アップロード資料）を **そのセッションに限定**する。知識/過去要件
+        (knowledge/requirement/utterance) は ADR-0003 の通り横断的に呼び戻す。
         これが無いと、別セッションの参加者が repo 名や実装語で検索したとき他者の private
         リポジトリ断片が返り得る（cross-tenant leak）。
+
+        ``product_id`` を併せて渡すと、product スコープで索引された前提素材（紐づけ repo の
+        コード本文 / ADR-0028・0053: `session_id=product_id` で保存）も context として
+        許可する。配下セッションが product の前提を共有するための可視範囲拡張で、許可対象は
+        「当該セッション ∪ 当該 product」に限る（他 product/他セッションの context は除外）。
         """
         if self._client is not None:  # pragma: no cover
-            return self._search_es(query, k, kinds, session_id)
-        return self._search_mem(query, k, kinds, session_id)
+            return self._search_es(query, k, kinds, session_id, product_id)
+        return self._search_mem(query, k, kinds, session_id, product_id)
 
     @staticmethod
     def _build_search_params(
@@ -154,6 +160,7 @@ class GroundingStore:
         kinds: list[str] | None,
         embedding: list[float] | None,
         session_id: str | None = None,
+        product_id: str | None = None,
     ) -> dict:
         """Build elasticsearch ``search`` keyword arguments.
 
@@ -162,13 +169,14 @@ class GroundingStore:
         """
         kind_filter: list[dict] = [{"terms": {"kind": kinds}}] if kinds else []
         if session_id is not None:
+            context_scope = [session_id] + ([product_id] if product_id else [])
             kind_filter.append(
                 {
                     "bool": {
                         "minimum_should_match": 1,
                         "should": [
                             {"bool": {"must_not": {"term": {"kind": "context"}}}},
-                            {"term": {"session_id": session_id}},
+                            {"terms": {"session_id": context_scope}},
                         ],
                     }
                 }
@@ -188,10 +196,15 @@ class GroundingStore:
         return params
 
     def _search_es(  # pragma: no cover
-        self, query: str, k: int, kinds: list[str] | None, session_id: str | None = None
+        self,
+        query: str,
+        k: int,
+        kinds: list[str] | None,
+        session_id: str | None = None,
+        product_id: str | None = None,
     ) -> list[Passage]:
         embedding = embed_text(query)
-        params = self._build_search_params(query, k, kinds, embedding, session_id)
+        params = self._build_search_params(query, k, kinds, embedding, session_id, product_id)
         res = self._client.search(index=INDEX, **params)
         return [
             Passage(
@@ -205,16 +218,26 @@ class GroundingStore:
         ]
 
     def _search_mem(
-        self, query: str, k: int, kinds: list[str] | None, session_id: str | None = None
+        self,
+        query: str,
+        k: int,
+        kinds: list[str] | None,
+        session_id: str | None = None,
+        product_id: str | None = None,
     ) -> list[Passage]:
         tokens = tokenize(query)
+        context_scope = {session_id} | ({product_id} if product_id else set())
         scored: list[Passage] = []
         with self._mem_lock:
             docs = list(self._mem)
         for doc in docs:
             if kinds and doc.kind not in kinds:
                 continue
-            if session_id is not None and doc.kind == "context" and doc.session_id != session_id:
+            if (
+                session_id is not None
+                and doc.kind == "context"
+                and doc.session_id not in context_scope
+            ):
                 continue
             overlap = len(tokens & tokenize(doc.text))
             if overlap == 0:

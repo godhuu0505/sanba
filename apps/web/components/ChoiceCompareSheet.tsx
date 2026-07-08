@@ -2,6 +2,8 @@
 
 import { Check, TriangleAlert, X } from "lucide-react";
 
+import { HelpIcon } from "@/components/sanba";
+
 export interface CompareRow {
   label: string;
   effect?: string;
@@ -34,9 +36,11 @@ export function ChoiceCompareSheet({ rows, onSelect, onClose, onDetail }: Choice
         <span className="inline-flex items-center gap-1 text-sanba-speak-text">
           <Check size={13} aria-hidden /> 効き目
         </span>
+        <HelpIcon term="効き目" />
         <span className="inline-flex items-center gap-1 text-sanba-caution">
           <TriangleAlert size={13} aria-hidden /> 留意
         </span>
+        <HelpIcon term="留意" />
       </div>
 
       {rows.map((r, i) => (

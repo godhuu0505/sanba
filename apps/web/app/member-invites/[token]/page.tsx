@@ -4,7 +4,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { authGate } from "@/components/RequireAuth";
-import { AppHeader, Button, Card, CardTitle, Screen } from "@/components/sanba";
+import { AppHeader, Button, Card, CardTitle, HelpIcon, Screen } from "@/components/sanba";
 import {
   ApiError,
   type MemberInviteResolution,
@@ -103,10 +103,13 @@ export default function MemberInvitePage() {
           </Card>
         ) : (
           <Card>
-            <CardTitle>「{resolved.product_name}」に招待されています</CardTitle>
+            <div className="flex items-center gap-[6px]">
+              <CardTitle>「{resolved.product_name}」に招待されています</CardTitle>
+              <HelpIcon term="メンバー招待" />
+            </div>
             <p className="text-[13px] leading-relaxed text-sanba-cream">
-              {resolved.invited_by_email} さんから、このアプリで要件サンバ
-              （音声での要件深掘り）をするメンバーに招待されています。
+              {resolved.invited_by_email} さんから、このアプリで会話
+              （音声で要件を整理していく時間）をするメンバーに招待されています。
             </p>
             {!pending ? (
               <p className="text-[12px] leading-relaxed text-sanba-muted">

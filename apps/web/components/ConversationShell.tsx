@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
 
-import { Logo, RecPill } from "@/components/sanba";
+import { HelpIcon, Logo, RecPill } from "@/components/sanba";
 import type { MiniStatus } from "@/lib/realtime/selectors";
 
 export type ShellTab = "history" | "files" | "scroll";
@@ -21,7 +21,7 @@ const TAB_ORDER: ShellTab[] = ["history", "files", "scroll"];
 const TAB_LABELS: Record<ShellTab, string> = {
   history: "会話履歴",
   files: "参考資料",
-  scroll: "要件絵巻",
+  scroll: "要件一覧",
 };
 
 export interface ConversationShellProps {
@@ -85,7 +85,7 @@ export function ConversationShell({
         <h1
           className={`font-bold text-sanba-cream ${minimized ? "text-[13px]" : "text-[15px]"}`}
         >
-          問答
+          会話
         </h1>
         <span className="flex-1" />
         {review ? (
@@ -144,8 +144,9 @@ export function ConversationShell({
             }}
             className="inline-flex items-center gap-1 font-bold text-sanba-caution"
           >
-            <TriangleAlert size={12} aria-hidden /> 未確定 {mini.unresolved}
+            <TriangleAlert size={12} aria-hidden /> 未解消 {mini.unresolved}
           </button>
+          <HelpIcon term="未解消" />
           {!hideMaterials && (
             <>
               <span className="text-sanba-border-strong">・</span>
@@ -154,7 +155,7 @@ export function ConversationShell({
                 onClick={() => setTab("files")}
                 className="inline-flex items-center gap-1 text-sanba-muted"
               >
-                <Paperclip size={12} aria-hidden /> 資料 {mini.materials}
+                <Paperclip size={12} aria-hidden /> 参考資料 {mini.materials}
                 {mini.analyzing ? "（解析中）" : ""}
               </button>
             </>

@@ -86,7 +86,7 @@ def _stub_analysis(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     """analyze_transcript を高速スタブに差し替え、呼び出し transcript を記録する。"""
     calls: list[str] = []
 
-    async def _stub(transcript: str) -> AnalysisResult:
+    async def _stub(transcript: str, check_points: object = ()) -> AnalysisResult:
         calls.append(transcript)
         return AnalysisResult(
             summary="s",
@@ -168,7 +168,7 @@ async def test_background_analysis_timeout_is_fail_soft(
 
     calls: list[str] = []
 
-    async def _hang(transcript: str) -> AnalysisResult:
+    async def _hang(transcript: str, check_points: object = ()) -> AnalysisResult:
         calls.append(transcript)
         if len(calls) == 1:
             await asyncio.sleep(60)
@@ -379,7 +379,7 @@ async def test_analysis_runs_off_event_loop_thread(
 
     seen: list[int] = []
 
-    async def _stub(transcript: str) -> AnalysisResult:
+    async def _stub(transcript: str, check_points: object = ()) -> AnalysisResult:
         seen.append(threading.get_ident())
         return AnalysisResult(summary="s", next_question="q?", suggested_answer="a")
 
@@ -424,7 +424,7 @@ async def test_tool_rides_on_inflight_background_run(
     calls: list[str] = []
     gate = threading.Event()
 
-    async def _slow(transcript: str) -> AnalysisResult:
+    async def _slow(transcript: str, check_points: object = ()) -> AnalysisResult:
         calls.append(transcript)
         await asyncio.to_thread(gate.wait)
         return AnalysisResult(summary="s", next_question="q?", suggested_answer="a")
@@ -457,7 +457,7 @@ async def test_tool_ride_along_timeout_returns_without_competing_run(
     calls: list[str] = []
     gate = threading.Event()
 
-    async def _hang(transcript: str) -> AnalysisResult:
+    async def _hang(transcript: str, check_points: object = ()) -> AnalysisResult:
         calls.append(transcript)
         await asyncio.to_thread(gate.wait)
         return AnalysisResult(summary="s", next_question="q?", suggested_answer="a")
@@ -477,3 +477,84 @@ async def test_tool_ride_along_timeout_returns_without_competing_run(
 
     gate.set()
     await agent.drain_background_tasks()
+
+
+def _seed_req(agent: SANBAAgent, rid: str, *, rejected: bool = False) -> None:
+    from sanba_shared.models import Priority, Requirement, RequirementCategory, RequirementStatus
+
+    agent._repo.save_requirement(
+        agent._session_id,
+        Requirement(
+            id=rid,
+            statement=f"要件 {rid}",
+            category=RequirementCategory.FUNCTIONAL,
+            priority=Priority.MUST,
+            status=RequirementStatus.REJECTED if rejected else RequirementStatus.DRAFT,
+        ),
+    )
+
+
+@pytest.mark.asyncio
+async def test_auto_finalize_snapshots_and_approves_confirmed() -> None:
+    """未確定で離脱したら確定集合（却下以外）を snapshot し approved 化する（ADR-0056）。"""
+    from sanba_shared.models import RequirementStatus
+
+    agent = _agent()
+    sid = agent._session_id
+    _seed_req(agent, "c1")
+    _seed_req(agent, "r1", rejected=True)
+
+    await agent.auto_finalize_if_needed()
+
+    meta = agent._repo.get_session(sid)
+    assert meta is not None
+    assert meta.status == "finalized"
+    assert meta.finalized_requirement_ids == ["c1"]
+    assert meta.finalized_count == 1
+    assert agent._repo.get_requirement(sid, "c1").status is RequirementStatus.APPROVED
+
+
+@pytest.mark.asyncio
+async def test_auto_finalize_is_noop_when_already_finalized() -> None:
+    """既に finalized なら遅延要件を混ぜず冪等（通常 finalize と二重確定しない）。"""
+    agent = _agent()
+    sid = agent._session_id
+    _seed_req(agent, "c1")
+    agent._repo.finalize_session(
+        sid, confirmed_count=1, finalized_requirement_ids=["c1"], labels=["sanba"]
+    )
+    _seed_req(agent, "c2")
+
+    await agent.auto_finalize_if_needed()
+
+    meta = agent._repo.get_session(sid)
+    assert meta is not None
+    assert meta.finalized_requirement_ids == ["c1"]
+
+
+@pytest.mark.asyncio
+async def test_auto_finalize_skips_when_no_requirements() -> None:
+    """要件が 1 件も無ければ確定しない（空の確定を作らない）。"""
+    agent = _agent()
+    await agent.auto_finalize_if_needed()
+    meta = agent._repo.get_session(agent._session_id)
+    assert meta is not None
+    assert meta.status != "finalized"
+
+
+@pytest.mark.asyncio
+async def test_coverage_open_is_not_published_as_blocking_detection() -> None:
+    """観点カバレッジ（advisory）は検知として publish・gate しない（ADR-0057）。"""
+    transport = RecordingTransport()
+    agent = _agent(transport)
+    result = AnalysisResult(
+        summary="s",
+        coverage_open=["性能・レスポンスの要件", "セキュリティ・権限・データ保護"],
+        next_question="q?",
+        suggested_answer="a",
+    )
+    await agent._publish_analysis_detections(result)
+
+    assert not any(t["event"]["type"] == "detection.gap" for t in transport.sent)
+    assert agent._open_detection_count() == 0
+    assert agent._repo._mem_detections.get("s1", {}) == {}

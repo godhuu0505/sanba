@@ -19,8 +19,9 @@ describe("DetectionPin（選択肢なし検知の読み取り専用ピン・#208
     expect(screen.getByLabelText("食い違いを検知").textContent).toContain("食い違い");
   });
 
-  it("読み取り専用: 回答ボタンを持たない", () => {
+  it("読み取り専用: 回答ボタンを持たない（説明アイコンは除く）", () => {
     render(<DetectionPin summary="抜けの要約" kind="gap" />);
-    expect(screen.queryByRole("button")).toBeNull();
+    const buttons = screen.queryAllByRole("button");
+    expect(buttons.every((b) => b.getAttribute("aria-label")?.endsWith("の説明"))).toBe(true);
   });
 });

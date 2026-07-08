@@ -22,7 +22,7 @@ describe("MaterialSourceSheet（05-2 手段選択シート）", () => {
 
   it("ダイアログとして各手段（カメラ/アップロード/画面共有/Drive）を出す", () => {
     setup();
-    expect(screen.getByRole("dialog", { name: "資料の追加方法" })).toBeTruthy();
+    expect(screen.getByRole("dialog", { name: "参考資料の追加方法" })).toBeTruthy();
     expect(screen.getByText("カメラで撮影")).toBeTruthy();
     expect(screen.getByText("ファイルをアップロード")).toBeTruthy();
     expect(screen.getByText("画面を共有")).toBeTruthy();

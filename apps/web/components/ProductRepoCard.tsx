@@ -2,7 +2,16 @@
 
 import { useEffect, useState } from "react";
 
-import { Button, Card, CardTitle, Chip, Divider, Field, Select } from "@/components/sanba";
+import {
+  Button,
+  Card,
+  CardTitle,
+  Chip,
+  Divider,
+  Field,
+  HelpIcon,
+  Select,
+} from "@/components/sanba";
 import {
   fetchGithubRepos,
   listGithubBranches,
@@ -89,9 +98,12 @@ export function ProductRepoCard({
 
   return (
     <Card>
-      <CardTitle>前提リポジトリ</CardTitle>
+      <CardTitle className="inline-flex items-center gap-[6px]">
+        前提リポジトリ
+        <HelpIcon term="前提リポジトリ" />
+      </CardTitle>
       <p className="text-[12px] leading-relaxed text-sanba-muted">
-        紐づけたリポジトリの内容を索引し、このアプリの深掘りセッションの前提として使います。
+        紐づけたリポジトリの内容を索引し、このアプリの会話の前提として使います。
       </p>
       <div className="flex items-center gap-[8px]">
         <span className="min-w-0 truncate text-[14px] font-bold text-sanba-gold-text">
@@ -102,6 +114,7 @@ export function ProductRepoCard({
         <Chip tone={status.tone} size="sm">
           {status.label}
         </Chip>
+        <HelpIcon term="索引" />
       </div>
       <Divider />
       {choices === null ? (

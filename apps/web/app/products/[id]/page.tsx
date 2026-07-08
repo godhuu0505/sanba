@@ -18,6 +18,7 @@ import {
   Chip,
   Divider,
   Field,
+  HelpIcon,
   Input,
   Screen,
 } from "@/components/sanba";
@@ -194,15 +195,15 @@ export default function ProductDetailPage() {
                 </p>
               )}
               <p className="text-[12px] leading-relaxed text-sanba-muted">
-                あなたはこのアプリのメンバーです。ホームの「壁打ちを始める」から
-                対象にこのアプリを選ぶと、要件サンバを始められます。
+                あなたはこのアプリのメンバーです。ホームの「会話を始める」から
+                対象にこのアプリを選ぶと、会話を始められます。
               </p>
               <Button
                 variant="gold"
                 block
                 onClick={() => router.push(product.slug ? `/${product.slug}/prepare` : "/")}
               >
-                要件サンバを始める
+                会話を始める
               </Button>
             </Card>
             <ProductMembersCard productId={productId} canManage={false} />
@@ -222,10 +223,11 @@ export default function ProductDetailPage() {
               <Field
                 label="URL キーワード（必須）"
                 htmlFor="product-slug"
+                marker={<HelpIcon term="URL キーワード" className="ml-[4px]" />}
                 hint={
                   product.slug
-                    ? `壁打ちの URL は /${product.slug}/prepare です。変更すると URL も変わります。`
-                    : "未設定です。設定するまでこのアプリでは壁打ちを始められません（/キーワード/prepare が壁打ちの URL になります）。"
+                    ? `会話を始める URL は /${product.slug}/prepare です。変更すると URL も変わります。`
+                    : "未設定です。設定するまでこのアプリでは会話を始められません（/キーワード/prepare が会話を始める URL になります）。"
                 }
               >
                 <Input
@@ -250,9 +252,12 @@ export default function ProductDetailPage() {
             </Card>
 
             <Card>
-              <CardTitle>利用者向け語彙</CardTitle>
+              <CardTitle className="inline-flex items-center gap-[6px]">
+                利用者向け語彙
+                <HelpIcon term="利用者向け語彙" />
+              </CardTitle>
               <p className="text-[12px] leading-relaxed text-sanba-muted">
-                利用者に見えている言葉（画面名・機能の呼び名）です。利用者向けの深掘りでは
+                利用者に見えている言葉（画面名・機能の呼び名）です。利用者向けの会話では
                 この語彙で質問し、技術用語を使いません。
               </p>
               {product.glossary.length > 0 && (
@@ -310,7 +315,7 @@ export default function ProductDetailPage() {
             <Card>
               <CardTitle>アプリの削除</CardTitle>
               <p className="text-[12px] leading-relaxed text-sanba-muted">
-                削除すると発行済みの深掘りリンクもすべて使えなくなります。
+                削除すると発行済みの会話リンクもすべて使えなくなります。
               </p>
               <Divider />
               {confirmDelete ? (

@@ -93,7 +93,8 @@ def analyze_image(raw: bytes, content_type: str, config: MediaConfig) -> list[st
     try:  # pragma: no cover
         from google.genai import types
 
-        resp = _client(config).models.generate_content(
+        client = _client(config)
+        resp = client.models.generate_content(
             model=config.vision_model,
             contents=[
                 types.Part.from_bytes(data=raw, mime_type=content_type),
@@ -131,7 +132,8 @@ def analyze_video(
         else:
             assert raw is not None
             part = types.Part.from_bytes(data=raw, mime_type=content_type)
-        resp = _client(config).models.generate_content(
+        client = _client(config)
+        resp = client.models.generate_content(
             model=config.vision_model,
             contents=[part, _VIDEO_PROMPT],
         )

@@ -198,10 +198,15 @@ def export_eligibility(access_sub: str, session: SessionMeta) -> ExportEligibili
     """起票資格を判定する（ADR-0053 決定3/4）。
 
     起票は操作者本人の GitHub App installation token（Issues: write）で行う。よって
-    「操作者が連携済み ∧ その installation が対象 repo を含む」ときだけ可とする。判定順は
-    repo 解決 → 許可リスト → App 構成 → 連携 → repo 権限。repo 解決は既存 export と同じ
-    （セッション明示 > 環境変数。空文字は明示的な非連携で `no repo`）。ゲスト判定は呼び出し側
-    （`forbid_guest_writes` / eligibility エンドポイント）が担う。
+    「セッション確定済み ∧ 操作者が連携済み ∧ その installation が対象 repo を含む ∧
+    Issues: write を持つ」ときだけ可とする。判定順は
+    repo 解決 → 許可リスト → finalize → App 構成 → 連携 → repo 権限 → Issue 書込権限。
+    finalize チェックはネットワーク往復（`can_access_repo`）より前に置き、未確定で無駄な
+    GitHub 呼び出しをしない（#435: 未 finalize は起票スナップショットが空で空 Issue になる）。
+    Issues: write 検証は read 権限だけの installation でボタンを活性化して 403 で失敗させない
+    ため（#434 タスク2）。repo 解決は既存 export と同じ（セッション明示 > 環境変数。空文字は
+    明示的な非連携で `no repo`）。ゲスト判定は呼び出し側（`forbid_guest_writes` /
+    eligibility エンドポイント）が担う。
     """
     raw = session.github_repo if session.github_repo is not None else settings.github_repo
     repo = raw or None
@@ -209,6 +214,8 @@ def export_eligibility(access_sub: str, session: SessionMeta) -> ExportEligibili
         return ExportEligibility(can_export=False, reason="no repo", repo=None)
     if not _github_repo_allowed(repo):
         return ExportEligibility(can_export=False, reason="github repo not allowed", repo=repo)
+    if session.status != "finalized":
+        return ExportEligibility(can_export=False, reason="not finalized", repo=repo)
     client = _github_app_client()
     if client is None:
         return ExportEligibility(can_export=False, reason="github app not configured", repo=repo)
@@ -217,6 +224,7 @@ def export_eligibility(access_sub: str, session: SessionMeta) -> ExportEligibili
         return ExportEligibility(can_export=False, reason="github not linked", repo=repo)
     try:
         has_access = client.can_access_repo(link.installation_id, repo)
+        can_write = client.can_write_issues(link.installation_id) if has_access else False
     except Exception as exc:  # pragma: no cover - network
         log.warning("github_export_repo_check_failed", error=str(exc))
         return ExportEligibility(can_export=False, reason="no repo access", repo=repo)
@@ -225,6 +233,8 @@ def export_eligibility(access_sub: str, session: SessionMeta) -> ExportEligibili
             client.close()
     if not has_access:
         return ExportEligibility(can_export=False, reason="no repo access", repo=repo)
+    if not can_write:
+        return ExportEligibility(can_export=False, reason="no issue permission", repo=repo)
     return ExportEligibility(can_export=True, reason=None, repo=repo)
 
 

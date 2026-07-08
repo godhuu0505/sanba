@@ -13,6 +13,7 @@ import {
   CardTitle,
   Divider,
   Field,
+  HelpIcon,
   Input,
   ListRow,
 } from "@/components/sanba";
@@ -89,8 +90,8 @@ export default function ProductsPage() {
         <Card>
           <CardTitle>アプリを登録</CardTitle>
           <p className="text-[12px] leading-relaxed text-sanba-muted">
-            深掘りの対象になるアプリです。登録すると、リポジトリの紐づけと
-            深掘りリンクの発行ができます。
+            会話の対象になるアプリです。登録すると、前提リポジトリの紐づけと
+            会話リンクの発行ができます。
           </p>
           <Field label="アプリ名（必須）" htmlFor="product-name">
             <Input
@@ -104,7 +105,8 @@ export default function ProductsPage() {
           <Field
             label="URL キーワード（必須）"
             htmlFor="product-slug"
-            hint="壁打ちの URL（/キーワード/prepare）になります。小文字英数とハイフン・2〜40 文字・全体で重複不可。"
+            marker={<HelpIcon term="URL キーワード" className="ml-[4px]" />}
+            hint="会話を始める URL（/キーワード/prepare）になります。小文字英数とハイフン・2〜40 文字・全体で重複不可。"
           >
             <Input
               id="product-slug"

@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 
-import { AppHeader, Button, Card, CardTitle, Screen } from "@/components/sanba";
+import { AppHeader, Button, Card, CardTitle, HelpIcon, Screen } from "@/components/sanba";
 
 export function AccessErrorScreen() {
   const router = useRouter();
@@ -16,8 +16,9 @@ export function AccessErrorScreen() {
             指定された URL が存在しないか、アクセスする権限がありません。
           </p>
           <p className="text-[12px] leading-relaxed text-sanba-muted">
-            URL に間違いがないかご確認ください。このアプリの壁打ちに参加するには、
-            アプリのオーナーからメンバー招待を受ける必要があります。
+            URL に間違いがないかご確認ください。このアプリの会話に参加するには、アプリのオーナーからメンバー招待
+            <HelpIcon term="メンバー招待" className="align-[-2px]" />
+            を受ける必要があります。
           </p>
           <Button variant="gold" block onClick={() => router.push("/")}>
             ホームへ戻る

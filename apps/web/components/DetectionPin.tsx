@@ -1,6 +1,7 @@
 "use client";
 
-import { detectionPresentation } from "@/lib/realtime/mapping";
+import { HelpIcon } from "@/components/sanba";
+import { detectionHelpTerm, detectionPresentation } from "@/lib/realtime/mapping";
 import type { DetectionKind } from "@/lib/realtime/types";
 
 export interface DetectionPinProps {
@@ -23,6 +24,7 @@ export function DetectionPin({ summary, kind }: DetectionPinProps) {
       >
         <presentation.Icon size={11} aria-hidden /> {presentation.label}
       </span>
+      <HelpIcon term={detectionHelpTerm(kind)} />
       <span className="text-[12px] font-bold text-sanba-gold-text">{summary}</span>
     </div>
   );

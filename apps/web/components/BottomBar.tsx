@@ -30,7 +30,7 @@ export function BottomBar({ micOn, muted, onToggleMic, onToggleMute, onSend }: B
       <div className="flex gap-2">
         <button
           type="button"
-          aria-label="消音"
+          aria-label="スピーカー消音"
           aria-pressed={muted}
           onClick={onToggleMute}
           className={`flex flex-1 items-center justify-center gap-1.5 rounded-[12px] border py-3 text-[13px] font-bold ${
@@ -41,11 +41,11 @@ export function BottomBar({ micOn, muted, onToggleMic, onToggleMute, onSend }: B
         >
           {muted ? (
             <>
-              <VolumeX size={15} aria-hidden /> 消音中
+              <VolumeX size={15} aria-hidden /> スピーカー消音中
             </>
           ) : (
             <>
-              <Volume2 size={15} aria-hidden /> 消音
+              <Volume2 size={15} aria-hidden /> スピーカー消音
             </>
           )}
         </button>
