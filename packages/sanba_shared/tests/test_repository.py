@@ -343,3 +343,42 @@ def test_finalize_and_approve_is_noop_when_already_finalized() -> None:
 
     assert meta is not None
     assert meta.finalized_requirement_ids == ["c1"]
+
+
+def test_finalize_and_approve_second_call_does_not_overwrite_snapshot() -> None:
+    """CAS で 2 度目の確定は最初のスナップショットを上書きしない（API–agent 競合の冪等性）。"""
+    repo = _repo()
+    repo.create_session_doc(
+        SessionMeta(id="s-af3", title="t", owner_sub="sub", owner_email="o@example.com")
+    )
+    repo.save_requirement(
+        "s-af3",
+        Requirement(
+            id="c1",
+            statement="確定",
+            category=RequirementCategory.FUNCTIONAL,
+            priority=Priority.MUST,
+        ),
+    )
+
+    first = repo.finalize_and_approve(
+        "s-af3",
+        finalized_requirement_ids=["c1"],
+        labels=["sanba", "functional"],
+        approved_by="api:owner",
+        keep_expiry=False,
+    )
+    second = repo.finalize_and_approve(
+        "s-af3",
+        finalized_requirement_ids=["c1"],
+        labels=["sanba", "override"],
+        approved_by="agent:auto_finalize",
+        keep_expiry=False,
+    )
+
+    assert first is not None
+    assert second is not None
+    assert second.labels == ["sanba", "functional"]
+    c1 = repo.get_requirement("s-af3", "c1")
+    assert c1 is not None
+    assert c1.approved_by == "api:owner"
