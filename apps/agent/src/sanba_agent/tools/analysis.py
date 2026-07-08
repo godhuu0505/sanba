@@ -9,6 +9,7 @@ import asyncio
 import hashlib
 import json
 import re
+import unicodedata
 from collections.abc import Sequence
 
 from sanba_shared.models import AnalysisResult
@@ -20,6 +21,27 @@ def make_requirement_id(statement: str) -> str:
     """Deterministic short id for a requirement statement (idempotent upserts)."""
     digest = hashlib.sha1(statement.strip().lower().encode()).hexdigest()
     return f"req_{digest[:10]}"
+
+
+_JP_CHAR = r"[぀-ヿ㐀-鿿々〆ヶ]"
+_JP_GAP = re.compile(rf"({_JP_CHAR})[ 　]+({_JP_CHAR})")
+
+
+def normalize_query(text: str) -> str:
+    """認識テキストを grounding クエリ向けに保守的に正規化する（#435 / ADR-0039 追補）。
+
+    STT（S2S）は日本語を分かち書き（語間に空白）＋全角/半角ゆらぎで返しがちで、これがそのまま
+    検索/分析クエリに載ると一致率が落ちる。ここでは意味を壊さない範囲でのみ整える:
+    NFKC で全角/半角のゆらぎを畳み、連続空白を 1 つに縮め、**日本語文字どうしに挟まれた空白**
+    （分かち書き由来）だけを除去する（英単語間の空白は保持）。過補正しないため誤変換辞書等は持たない。
+    """
+    normalized = unicodedata.normalize("NFKC", text)
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    while True:
+        collapsed = _JP_GAP.sub(r"\1\2", normalized)
+        if collapsed == normalized:
+            return collapsed
+        normalized = collapsed
 
 
 _AMBIGUITY_MARKERS = (

@@ -90,7 +90,12 @@ from .prompts.interview import (
     build_repo_premise,
 )
 from .retrieval import GroundingStore, Passage
-from .tools.analysis import analyze_transcript, heuristic_result, make_requirement_id
+from .tools.analysis import (
+    analyze_transcript,
+    heuristic_result,
+    make_requirement_id,
+    normalize_query,
+)
 
 log = structlog.get_logger(__name__)
 
@@ -1154,6 +1159,7 @@ class SANBAAgent(Agent):
         返り値に `background`（引用できない内部資料の関連ヒット件数のみ）が付くことがある。
         その場合は内容・出所に一切触れず、話題の関連が深い合図としてだけ扱うこと。
         """
+        query = normalize_query(query)
         entry, reason = self._prefetch.get(query, turn=self._user_turn)
         if entry is not None and await self._cached_repo_sources_invalid(entry.result):
             entry, reason = None, REASON_ACL_RECHECK
@@ -1176,9 +1182,11 @@ class SANBAAgent(Agent):
         同期コンテキストから呼ばれるためイベントループが無い環境（同期ユニットテスト等）
         では黙ってスキップする。先読みは付加価値であり、失敗してもツールの同期経路が守る。
         """
-        query = text.strip()
+        query = normalize_query(text)
         if not query:
             return
+        if query != text.strip():
+            log.info("query_normalized", session=self._session_id, before=text.strip(), after=query)
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
