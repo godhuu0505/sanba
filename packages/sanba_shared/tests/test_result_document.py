@@ -234,10 +234,8 @@ def test_build_materials_block_lists_solved_with_link() -> None:
     )
     assert "**cap.png**" in block
     assert "観察1" in block
-    # 観察は先頭3件まで（本文肥大を防ぐ）
-    assert "四番目の観察" not in block
-    # 解析未了（extracted_texts 無し）の素材は載せない
-    assert "wip.mp4" not in block
+    assert "四番目の観察" not in block, "観察は先頭3件までで本文肥大を防ぐ"
+    assert "wip.mp4" not in block, "解析未了（extracted_texts 無し）の素材は載せない"
     assert "https://youken.example/results/sess-1" in block
 
 
