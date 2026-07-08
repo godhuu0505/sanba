@@ -1675,21 +1675,23 @@ async def open_interview(
     max_attempts: int | None = None,
     reply_timeout_s: float | None = None,
 ) -> bool:
-    """開始一言（掴み）を、assistant 応答が観測できるまで最大 max_attempts 回試みる（#374）。
+    """開始一言（掴み）を、assistant 応答が観測できるまで最大 max_attempts 回試みる。
 
-    Gemini Live は接続直後に generation_created を返せず、開始一言が黙って落ちることがある
-    （sess-2d51da04 / sess-ae759ca3 で再現。livekit は RealtimeError を内部で握って listening に
-    戻すだけで、例外も error イベントも出ないため guarded_generate_reply では検知できない）。
-    ここでは各試行のあと ``reply_seen``（assistant の conversation_item が来たら set される
-    entrypoint 側イベント）を reply_timeout_s だけ待ち、来なければ voice_opening_no_response を
-    残して再試行する。再試行前に interrupt して、遅れて生成された一言との二重発話を避ける。
-    成功で True、上限まで応答が出なければ False（会話自体は生きており次の発話から前進できる）。
+    Gemini Live は接続直後に generation_created を返せず、開始一言が黙って落ちることがある。
+    livekit-agents は内部の RealtimeError を握って listening に戻すだけで例外も error イベントも
+    上に返さないため guarded_generate_reply では検知できない。各試行のあと ``reply_seen``
+    （assistant の conversation_item が来たら set される entrypoint 側イベント）を reply_timeout_s
+    だけ待ち、来なければ voice_opening_no_response を残して再試行する。タイムアウト後は必ず
+    interrupt を掛ける（最終試行も含む / 直後の enable_participant_audio で参加者マイクが開くため、
+    遅延した応答と重なる二重発話を防ぐ）。成功で True、上限まで応答が出なければ False を返し
+    voice_opening_exhausted を残す（会話は生きており次の発話から前進できる）。
     """
     attempts = max_attempts if max_attempts is not None else settings.voice_opening_max_attempts
     timeout_s = (
         reply_timeout_s if reply_timeout_s is not None else settings.voice_opening_reply_timeout_s
     )
-    for attempt in range(1, max(1, attempts) + 1):
+    total_attempts = max(1, attempts)
+    for attempt in range(1, total_attempts + 1):
         reply_seen.clear()
         await guarded_generate_reply(
             session, session_id=session_id, kind="opening", instructions=instructions
@@ -1697,14 +1699,24 @@ async def open_interview(
         try:
             await asyncio.wait_for(reply_seen.wait(), timeout=timeout_s)
         except TimeoutError:
-            log.warning("voice_opening_no_response", session=session_id, attempt=attempt)
-            if attempt < max(1, attempts):
-                with contextlib.suppress(Exception):
-                    await session.interrupt()
+            log.warning(
+                "voice_opening_no_response",
+                session=session_id,
+                attempt=attempt,
+                timeout_s=timeout_s,
+            )
+            with contextlib.suppress(Exception):
+                await session.interrupt()
             continue
         if attempt > 1:
             log.info("voice_opening_recovered", session=session_id, attempt=attempt)
         return True
+    log.warning(
+        "voice_opening_exhausted",
+        session=session_id,
+        attempts=total_attempts,
+        timeout_s=timeout_s,
+    )
     return False
 
 
