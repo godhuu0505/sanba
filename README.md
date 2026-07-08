@@ -156,8 +156,8 @@ flowchart LR
 | 実行基盤 | **Cloud Run**（必須・GKE は見送り） | スケーラブルな本番デプロイ（ADR-0006） |
 | IaC | **Terraform** | 再現可能なインフラ |
 | CI/CD | **GitHub Actions** + Cloud Build | 「まわす」軸 |
-| 可観測性 | **OpenTelemetry** → Cloud Trace/Logging + **Grafana / Prometheus / Loki / Tempo** | Observability |
-| LLMOps | **Cloud Monitoring**（品質スコアのダッシュボード）+ CI 回帰評価（Gemini judge） | プロンプト改善サイクル（ADR-0051） |
+| 可観測性 | **OpenTelemetry トレース → Cloud Trace 直送**（agent / api / worker 全サービス）＋ 構造化ログ → Cloud Logging（ログベースメトリクス）。ローカルは **Grafana / Prometheus / Loki / Tempo**（`docker-compose.tools.yml`） | Observability（本番は Google ネイティブ / ADR-0051） |
+| LLMOps | **CI 回帰評価（Gemini judge・`llm-eval.yml` ゲート）** + セッション品質スコアの構造化ログ → Cloud Monitoring | プロンプト改善サイクル（ADR-0051） |
 | 開発生産性 | **Four Keys / DORA メトリクス** | Findy ドメイン直撃 |
 
 選定理由・捨てた選択肢は [`docs/adr/`](docs/adr) に記録。

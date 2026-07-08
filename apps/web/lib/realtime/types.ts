@@ -149,6 +149,15 @@ export type ContextProgressEvent = Envelope<"context.progress"> & {
   detail?: string;
 };
 
+export interface CoveragePoint {
+  label: string;
+  covered: boolean;
+}
+
+export type CheckpointCoverageEvent = Envelope<"checkpoint.coverage"> & {
+  points: CoveragePoint[];
+};
+
 export type AnalysisVisualEvent = Envelope<"analysis.visual"> & {
   asset_id: string;
   extracted: string[];
@@ -194,6 +203,7 @@ export type ServerEvent =
   | AnalysisProgressEvent
   | AnalysisVisualEvent
   | ContextProgressEvent
+  | CheckpointCoverageEvent
   | SessionEndProposedEvent
   | SessionCompletedEvent;
 

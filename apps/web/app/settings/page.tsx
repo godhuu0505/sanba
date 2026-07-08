@@ -2,7 +2,6 @@
 
 import { useRouter } from "next/navigation";
 
-import { AccountMenu } from "@/components/AccountMenu";
 import { AppShell } from "@/components/AppShell";
 import { GitHubLinkCard } from "@/components/GitHubLinkCard";
 import { authGate } from "@/components/RequireAuth";
@@ -38,22 +37,12 @@ export default function SettingsPage() {
     <AppShell
       title="アカウント設定"
       onBack={() => router.push("/")}
-      headerRight={<AccountMenu profile={profile} hideSettings />}
     >
       <div className="mx-auto flex w-full max-w-[480px] flex-col gap-[18px] px-4 py-4">
         <Card>
           <CardTitle>プロフィール</CardTitle>
           <div className="flex items-center gap-[12px]">
-            {profile?.picture ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={profile.picture}
-                alt=""
-                className="size-[44px] shrink-0 rounded-full object-cover"
-              />
-            ) : (
-              <Avatar tone="user" glyph={glyph} size={44} />
-            )}
+            <Avatar tone="user" glyph={glyph} size={44} imageUrl={profile?.picture} alt="" />
             <div className="flex min-w-0 flex-col">
               <span className="truncate text-[15px] font-bold text-sanba-cream">
                 {name}

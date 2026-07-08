@@ -15,9 +15,11 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 import structlog
+from sanba_shared.models import InviteScope
 
 from .config import settings
 
@@ -212,25 +214,55 @@ async def _llm_judge(transcript: str) -> JudgeResult:  # pragma: no cover - need
     )
 
 
-async def score_session(session_id: str, transcript: str) -> JudgeResult:
+async def score_session(
+    session_id: str,
+    transcript: str,
+    *,
+    mode: InviteScope = InviteScope.DEVELOPER,
+    glossary: Sequence[str] = (),
+) -> JudgeResult:
     """Online evaluation: score a finished session and emit it as a structured log.
 
     スコアは `session_scored` 構造化ログとして Cloud Logging に残り、ログベースメトリクス
     → Cloud Monitoring ダッシュボードで可視化する（ADR-0051）。外部 sink は持たない。
+
+    採点ルーブリックは mode で切り替える: end_user は `judge_end_user_interview`
+    （no_jargon / single_question / glossary_usage）、それ以外は `judge_interview`
+    （nfr_coverage / question_specificity / contradiction_handling）。タイムアウト時の決定的
+    フォールバックも対称に倒す（end_user は `_heuristic_end_user_scores`）。`interview_mode` を
+    `session_scored` ログに載せてダッシュボードでモード別に分ける（ADR-0056 の既知の制約を解消）。
 
     シャットダウン後始末（entrypoint の close callback）から呼ぶため、LLM judge を
     `session_score_timeout_seconds` で制限する。制限超過なら即時の決定的ヒューリスティック採点へ
     フォールバックし、離脱直後の新規 genai 呼び出しがプロセス退出の猶予（LiveKit ~10s）を超えて
     SIGKILL を招くのを防ぐ（毎セッション終了時の ERROR / #435 🟡）。
     """
+    end_user = mode == InviteScope.END_USER
+    glossary_list = [g for g in glossary if g and g.strip()]
     try:
-        result = await asyncio.wait_for(
-            judge_interview(transcript), timeout=settings.session_score_timeout_seconds
-        )
+        if end_user:
+            result = await asyncio.wait_for(
+                judge_end_user_interview(transcript, glossary_list),
+                timeout=settings.session_score_timeout_seconds,
+            )
+        else:
+            result = await asyncio.wait_for(
+                judge_interview(transcript), timeout=settings.session_score_timeout_seconds
+            )
     except TimeoutError:
-        log.warning("session_score_timeout", session=session_id)
-        result = _heuristic_scores(transcript)
-    log.info("session_scored", session=session_id, overall=result.overall, scores=result.scores)
+        log.warning("session_score_timeout", session=session_id, interview_mode=mode.value)
+        result = (
+            _heuristic_end_user_scores(transcript, glossary_list)
+            if end_user
+            else _heuristic_scores(transcript)
+        )
+    log.info(
+        "session_scored",
+        session=session_id,
+        interview_mode=mode.value,
+        overall=result.overall,
+        scores=result.scores,
+    )
     return result
 
 
@@ -284,6 +316,70 @@ END_USER_SCENARIOS: list[dict] = [
 ]
 
 
+COVERAGE_SCENARIOS: list[dict] = [
+    {
+        "name": "cov_partial",
+        "check_points": [
+            "性能・レスポンスの要件",
+            "セキュリティ・権限・データ保護",
+            "コスト・予算",
+        ],
+        "transcript": (
+            "参加者: 一覧の表示は 500 ミリ秒以内に返してほしい。\n"
+            "SANBA: 認証やアクセス権限はどうしますか？\n"
+            "参加者: 社内のみ、ログイン必須で、閲覧権限も分けたいです。"
+        ),
+        "expected_uncovered": ["コスト・予算"],
+    },
+    {
+        "name": "cov_all_open",
+        "check_points": ["性能・レスポンスの要件", "コスト・予算"],
+        "transcript": (
+            "参加者: 議事録を要約したいです。\n"
+            "SANBA: どんな場面で使いますか？\n"
+            "参加者: 会議のあとです。"
+        ),
+        "expected_uncovered": ["性能・レスポンスの要件", "コスト・予算"],
+    },
+]
+
+
+async def run_coverage_eval() -> int:
+    """観点カバレッジ判定の CI 回帰評価（ADR-0057 増分2c）。
+
+    `assess_check_point_coverage` は creds 無しで一律 `[]`（決定的 fallback を持たない advisory
+    設計）のため、creds があるときだけアサートし、無ければ skip して 0 を返す（llm-eval.yml は
+    GOOGLE_API_KEY secret を渡す）。expected_uncovered は明らかに未カバーな観点で、返り（未カバー
+    集合）に含まれること、および返りが check_points の部分集合であること（未知の文言を surface
+    しない安全側）を検証する。
+    """
+    if not (settings.google_api_key or settings.google_genai_use_vertexai):
+        print("coverage_eval: skipped (no creds)")
+        return 0
+    from .tools.analysis import assess_check_point_coverage
+
+    exit_code = 0
+    for sc in COVERAGE_SCENARIOS:
+        returned = await assess_check_point_coverage(sc["transcript"], sc["check_points"])
+        returned_set = set(returned)
+        check_set = set(sc["check_points"])
+        expected = set(sc["expected_uncovered"])
+        print(f"[{sc['name']:>14}] uncovered={sorted(returned_set)} expected⊇={sorted(expected)}")
+        if not returned_set <= check_set:
+            print(
+                f"REGRESSION: coverage returned unknown points {sorted(returned_set - check_set)}",
+                file=sys.stderr,
+            )
+            exit_code = 1
+        if not expected <= returned_set:
+            print(
+                f"REGRESSION: coverage missed uncovered points {sorted(expected - returned_set)}",
+                file=sys.stderr,
+            )
+            exit_code = 1
+    return exit_code
+
+
 async def run_dataset_eval() -> int:
     """Run the regression datasets and return a process exit code (0 = pass)."""
     results = []
@@ -321,6 +417,9 @@ async def run_dataset_eval() -> int:
         exit_code = 1
     if eu_by_name.get("eu_grounded", 0) < END_USER_QUALITY_THRESHOLD:
         print("REGRESSION: end_user scenario below quality threshold", file=sys.stderr)
+        exit_code = 1
+
+    if await run_coverage_eval() != 0:
         exit_code = 1
     return exit_code
 

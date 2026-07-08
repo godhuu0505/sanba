@@ -239,6 +239,18 @@ class EventPublisher:
             payload["detail"] = detail
         return await self._emit("context.progress", payload, reliable=True)
 
+    async def checkpoint_coverage(self, points: list[dict[str, Any]]) -> dict[str, Any]:
+        """このセッションで確認する観点のカバレッジ（済/未）を ``checkpoint.coverage`` で通知する。
+
+        `context.progress` と同じ「別スライス・非ブロッキング・専用コンポーネント」パターン
+        （ADR-0057 増分2a）。``detection.gap`` には**流さない**（未解消件数・終了ゲートに算入
+        させないため）。payload は分析ごとの**スナップショット**（全量置換）で
+        ``{"points": [{"label", "covered"}]}``。reliable で送り seq は進める（呼び出し側が
+        set_session_seq で永続化）が、カバレッジ本体は live-only（ハイドレーションせずリロードで
+        消える。永続化は増分3 で必要になったら足す）。
+        """
+        return await self._emit("checkpoint.coverage", {"points": points}, reliable=True)
+
     async def transcript_partial(
         self, speaker: str, role: str, utterance_id: str, text: str
     ) -> dict[str, Any]:

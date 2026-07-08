@@ -4,6 +4,7 @@ import type {
   AnalysisVisualConflict,
   ContextProgressSource,
   ContextProgressStage,
+  CoveragePoint,
   Detection,
   Question,
   Requirement,
@@ -55,6 +56,7 @@ export interface SessionState {
   transcript: TranscriptLine[];
   analysis: AnalysisState[];
   contextProgress: ContextProgressState[];
+  coverage: CoveragePoint[];
   question: Question | null;
   endProposal: EndProposal | null;
   completed: SessionCompletion | null;
@@ -74,6 +76,7 @@ const EMPTY_STATE: SessionState = {
   transcript: [],
   analysis: [],
   contextProgress: [],
+  coverage: [],
   question: null,
   endProposal: null,
   completed: null,
@@ -86,6 +89,8 @@ export class RealtimeStore {
   private transcript = new Map<string, Versioned<TranscriptLine>>();
   private analysis = new Map<string, Versioned<AnalysisState>>();
   private contextProgress = new Map<string, Versioned<ContextProgressState>>();
+  private coverage: CoveragePoint[] = [];
+  private lastCoverageSeq = 0;
   private phase: SessionPhase = "idle";
   private agentsActive = 0;
   private question: Question | null = null;
@@ -429,6 +434,12 @@ export class RealtimeStore {
           detail: event.detail ?? "",
         });
 
+      case "checkpoint.coverage":
+        if (event.seq <= this.lastCoverageSeq) return false;
+        this.lastCoverageSeq = event.seq;
+        this.coverage = event.points.map((p) => ({ label: p.label, covered: p.covered }));
+        return true;
+
       case "session.end_proposed":
         if (event.seq <= this.lastEndProposedSeq) return false;
         this.lastEndProposedSeq = event.seq;
@@ -473,6 +484,7 @@ export class RealtimeStore {
       transcript: this.sortedTranscript(),
       analysis: this.sortedValues(this.analysis),
       contextProgress: this.sortedValues(this.contextProgress),
+      coverage: this.coverage,
       question: this.question,
       endProposal: this.endProposal,
       completed: this.completed,
@@ -499,6 +511,8 @@ export class RealtimeStore {
     this.transcript.clear();
     this.analysis.clear();
     this.contextProgress.clear();
+    this.coverage = [];
+    this.lastCoverageSeq = 0;
     this.phase = "idle";
     this.agentsActive = 0;
     this.question = null;

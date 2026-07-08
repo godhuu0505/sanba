@@ -27,6 +27,11 @@ class WorkerSettings(BaseSettings):
 
     data_retention_days: int = 30
 
+    otel_exporter_otlp_endpoint: str = ""
+    otel_service_name: str = "sanba-worker"
+    otel_exporter_insecure: bool = False
+    otel_traces_to_cloud_trace: bool = True
+
     enable_realtime_publish: bool = True
     livekit_url: str = ""
     livekit_server_url: str = ""

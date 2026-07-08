@@ -7,6 +7,7 @@ export interface ChatBubbleProps extends React.HTMLAttributes<HTMLDivElement> {
   author: "agent" | "user";
   glyph?: string;
   hideAvatar?: boolean;
+  avatarImageUrl?: string;
 }
 
 export function ChatBubble({
@@ -14,6 +15,7 @@ export function ChatBubble({
   author,
   glyph,
   hideAvatar,
+  avatarImageUrl,
   children,
   ...props
 }: ChatBubbleProps) {
@@ -21,7 +23,12 @@ export function ChatBubble({
   const avatar = hideAvatar ? (
     <span className="size-[32px] shrink-0" aria-hidden />
   ) : (
-    <Avatar tone={isAgent ? "agent" : "user"} glyph={glyph ?? (isAgent ? "産" : "企")} />
+    <Avatar
+      tone={isAgent ? "agent" : "user"}
+      glyph={glyph ?? (isAgent ? "産" : "企")}
+      imageUrl={isAgent ? undefined : avatarImageUrl}
+      alt={isAgent ? "" : "あなたのアイコン"}
+    />
   );
   const bubble = (
     <div

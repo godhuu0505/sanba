@@ -651,3 +651,58 @@ describe("RealtimeStore — fixture replay", () => {
     expect(s.metrics.read().duplicates).toBe(0);
   });
 });
+
+function coverage(
+  seq: number,
+  points: { label: string; covered: boolean }[],
+): ServerEvent {
+  return {
+    v: 1,
+    type: "checkpoint.coverage",
+    seq,
+    ts: "2026-07-08T00:00:00Z",
+    session_id: SESSION,
+    points,
+  } as ServerEvent;
+}
+
+describe("RealtimeStore — checkpoint.coverage (ADR-0057 増分2a)", () => {
+  it("スナップショットを coverage スライスに全量置換する", () => {
+    const s = new RealtimeStore();
+    s.apply(coverage(1, [{ label: "性能", covered: false }]));
+    s.apply(
+      coverage(2, [
+        { label: "性能", covered: true },
+        { label: "セキュリティ", covered: false },
+      ]),
+    );
+    const st = s.getSnapshot();
+    expect(st.coverage).toEqual([
+      { label: "性能", covered: true },
+      { label: "セキュリティ", covered: false },
+    ]);
+  });
+
+  it("seq 番兵で古いスナップショットを無視する（単調性）", () => {
+    const s = new RealtimeStore();
+    s.apply(coverage(5, [{ label: "性能", covered: true }]));
+    s.apply(coverage(3, [{ label: "性能", covered: false }]));
+    expect(s.getSnapshot().coverage).toEqual([{ label: "性能", covered: true }]);
+  });
+
+  it("detection として数えず未解消/検知に影響しない", () => {
+    const s = new RealtimeStore();
+    s.apply(coverage(1, [{ label: "性能", covered: false }]));
+    const st = s.getSnapshot();
+    expect(st.detections).toHaveLength(0);
+  });
+
+  it("clear で coverage スライスと番兵をリセットする", () => {
+    const s = new RealtimeStore();
+    s.apply(coverage(2, [{ label: "性能", covered: true }]));
+    s.clear();
+    expect(s.getSnapshot().coverage).toEqual([]);
+    s.apply(coverage(1, [{ label: "セキュリティ", covered: false }]));
+    expect(s.getSnapshot().coverage).toEqual([{ label: "セキュリティ", covered: false }]);
+  });
+});

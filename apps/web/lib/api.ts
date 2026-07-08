@@ -618,6 +618,7 @@ export interface Product {
   output_format_defaults: Record<Audience, string>;
   check_items: CheckItem[];
   check_items_limit: number;
+  check_point_defaults: Record<string, string[]>;
 }
 
 export interface CheckItem {

@@ -51,12 +51,19 @@ class GroundingStore:
         self._mem: list[_MemDoc] = []
         self._mem_lock = threading.Lock()
         if self._client is not None:
-            self._ensure_index()
+            try:
+                self._ensure_index()
+            except Exception as exc:
+                self._degrade_to_memory(exc)
 
     @property
     def is_memory(self) -> bool:
         """True when running on the in-memory fallback (no Elasticsearch)."""
         return self._client is None
+
+    def _degrade_to_memory(self, exc: Exception) -> None:
+        log.warning("elasticsearch_unavailable_using_memory", error=str(exc))
+        self._client = None
 
     @staticmethod
     def _init_client():  # type: ignore[no-untyped-def]
@@ -114,19 +121,24 @@ class GroundingStore:
             with self._mem_lock:
                 self._mem.append(_MemDoc(text, source, kind, session_id, None))
             return
-        embedding = embed_text(text)  # pragma: no cover
-        doc: dict[str, object] = {
-            "text": text,
-            "source": source,
-            "kind": kind,
-            "session_id": session_id,
-        }
-        if embedding is not None:
-            doc["embedding"] = embedding
-        if doc_id is not None:
-            self._client.index(index=INDEX, id=doc_id, document=doc)
-        else:
-            self._client.index(index=INDEX, document=doc)
+        try:
+            embedding = embed_text(text)
+            doc: dict[str, object] = {
+                "text": text,
+                "source": source,
+                "kind": kind,
+                "session_id": session_id,
+            }
+            if embedding is not None:  # pragma: no cover
+                doc["embedding"] = embedding
+            if doc_id is not None:
+                self._client.index(index=INDEX, id=doc_id, document=doc)
+            else:  # pragma: no cover
+                self._client.index(index=INDEX, document=doc)
+        except Exception as exc:
+            self._degrade_to_memory(exc)
+            with self._mem_lock:
+                self._mem.append(_MemDoc(text, source, kind, session_id, None))
 
     def search(
         self,
@@ -149,8 +161,11 @@ class GroundingStore:
         許可する。配下セッションが product の前提を共有するための可視範囲拡張で、許可対象は
         「当該セッション ∪ 当該 product」に限る（他 product/他セッションの context は除外）。
         """
-        if self._client is not None:  # pragma: no cover
-            return self._search_es(query, k, kinds, session_id, product_id)
+        if self._client is not None:
+            try:
+                return self._search_es(query, k, kinds, session_id, product_id)
+            except Exception as exc:
+                self._degrade_to_memory(exc)
         return self._search_mem(query, k, kinds, session_id, product_id)
 
     @staticmethod

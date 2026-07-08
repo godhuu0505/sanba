@@ -76,10 +76,21 @@ api の finalize エンドポイントは未解消検知 0 件を要求する（
   への圧迫が小さい。
 - 失敗は握りつぶさず `auto_finalize_failed` を残す（`_on_close` は例外でシャットダウンを止めない）。
 - 後続 / 既知の制約:
-  - web finalize（api）と agent 自動確定は別プロセスから同一セッションへ書きうる新しい並行経路。
-    バッチ前の `status=="finalized"` チェックで多重確定の窓は小さいが、完全な排他は Firestore
-    トランザクション化が必要（本 ADR ではバッチ + 事前チェックに留める。両者の確定集合はほぼ同一で
-    lost update の実害は小さい）。
+  - web finalize（api）と agent 自動確定は別プロセスから同一セッションへ書きうる並行経路。
+    **解決済み**: `finalize_and_approve` を `@firestore.transactional` の read-then-conditional-write
+    （CAS）に変更し、トランザクション内で session status を再読み込みして `!= "finalized"` の
+    ときだけ確定フィールドと確定集合の approved 化を書く（従来のバッチ + 事前チェックが持っていた
+    TOCTOU の窓を閉じた）。要件は `finalized_requirement_ids` 分だけ `transaction.get` で先読みする
+    （read 先行・write 後置の制約と Firestore txn の 500 write/回 上限に留意）。メモリ fallback は
+    トランザクションを持たないため status ガード付きの同期経路のまま。api の `finalize_session` +
+    approve ループは title/summary 生成を挟む別トランザクション群で、丸ごとのトランザクション化は
+    スコープ外（agent 経路をアトミックにすることで両者同時確定の lost update は解消。API 単体の
+    多段書き込みの TOCTOU は残るが、確定集合はほぼ同一で実害は小さい）。
   - `score_session` は end_user でも developer ルーブリックで採点する既存の課題があり本 ADR では
     触れない（別途 mode 別採点の導入で解消する）。
-  - web の強制終了/離脱導線でも確定を促す UX（サーバ自動確定の上乗せ）。
+  - web の強制終了/離脱導線でも確定を促す UX（サーバ自動確定の上乗せ）。**実装済み**: 判定ゲートの
+    「未解消のまま終える」を、いきなり provisional にせず「確定して締めますか？」の確認に変えた。
+    「確定して終える」は finalize を試み、成功なら確定して結果へ、未解消 409 で失敗したら「サーバ側で
+    保全されます」とフォールバック表示する（保全はサーバ自動確定が担保）。「確定せず終える」は従来の
+    provisional 終了。加えて未確定・未終了のあいだは `beforeunload` で離脱警告を出す（async finalize は
+    確実に await できないため警告のみ。データ保全はサーバ側に委ねる UX ナッジ）。

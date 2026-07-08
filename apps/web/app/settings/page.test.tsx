@@ -13,7 +13,10 @@ const authState = {
   signOut: vi.fn(),
   resetButton: vi.fn(),
 };
-vi.mock("@/lib/auth", () => ({ useAuth: () => authState }));
+vi.mock("@/lib/auth", () => ({
+  useAuth: () => authState,
+  useAuthOptional: () => authState,
+}));
 
 const replace = vi.fn();
 const push = vi.fn();
@@ -52,8 +55,8 @@ describe("アカウント設定画面（#227）", () => {
     authState.profile = { name: "産婆", email: "go@sanba.local" };
     render(<SettingsPage />);
     expect(screen.getByText("アカウント設定")).toBeTruthy();
-    expect(screen.getByText("産婆")).toBeTruthy();
-    expect(screen.getByText("go@sanba.local")).toBeTruthy();
+    expect(screen.getAllByText("産婆").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText("go@sanba.local").length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText(/最大 30 日/).length).toBeGreaterThanOrEqual(1);
   });
 

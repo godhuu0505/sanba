@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   mergeMaterials,
   selectActiveQuestion,
+  selectCheckpointCoverage,
   selectConfirmedRequirements,
   selectMaterialDetail,
   selectMaterials,
@@ -16,14 +17,17 @@ import type { RealtimeMetricsSnapshot } from "@/lib/realtime/metrics";
 import type { SessionState } from "@/lib/realtime/store";
 import type { SendAnswer, SendSelection } from "@/lib/realtime/useRealtimeSession";
 import type { ExportEligibility, ExportOptions, ExportResult } from "@/lib/api";
+import { useAuthOptional } from "@/lib/auth";
 
 import { BottomBar } from "./BottomBar";
 import { ChatHistory } from "./ChatHistory";
 import { ChoicePin } from "./ChoicePin";
 import { ConversationShell, type ShellTab } from "./ConversationShell";
+import { CoverageProgress } from "./CoverageProgress";
 import { DetectionPin } from "./DetectionPin";
 import { EndConfirmDialog } from "./EndConfirmDialog";
 import { EndProposalCard } from "./EndProposalCard";
+import { ForceEndConfirmDialog } from "./ForceEndConfirmDialog";
 import { JudgmentGate } from "./JudgmentGate";
 import { MaterialDetailSheet } from "./MaterialDetailSheet";
 import { MaterialsList } from "./MaterialsList";
@@ -90,6 +94,7 @@ export function ConversationSessionView({
   recording = true,
   elapsed,
 }: ConversationSessionViewProps) {
+  const userPicture = useAuthOptional()?.profile?.picture;
   const [phase, setPhase] = useState<Phase>("shell");
   const [tab, setTab] = useState<ShellTab>("history");
   const [endOpen, setEndOpen] = useState(false);
@@ -105,10 +110,13 @@ export function ConversationSessionView({
   const eligibilityRequestedRef = useRef(false);
   const [endProposalDismissed, setEndProposalDismissed] = useState(false);
   const [autoFinalizing, setAutoFinalizing] = useState(false);
+  const [forceEndConfirm, setForceEndConfirm] = useState(false);
+  const [forceEndNotice, setForceEndNotice] = useState<string | null>(null);
   const finalizingRef = useRef(false);
 
   const baseMini = selectMiniStatus(state);
   const openDetections = selectOpenDetections(state);
+  const coverage = selectCheckpointCoverage(state);
   const confirmed = selectConfirmedRequirements(state);
 
   useEffect(() => {
@@ -219,6 +227,42 @@ export function ConversationSessionView({
     }
   }, [readOnly, onFinalize, onEndSession]);
 
+  const endProvisional = useCallback(() => {
+    setForceEndConfirm(false);
+    setForceEndNotice(null);
+    setProvisional(true);
+    setEnded(true);
+    onEndSession?.();
+    setPhase("result");
+  }, [onEndSession]);
+
+  const finalizeFromForceEnd = useCallback(async () => {
+    if (readOnly) {
+      endProvisional();
+      return;
+    }
+    if (finalizingRef.current) return;
+    finalizingRef.current = true;
+    setAutoFinalizing(true);
+    setForceEndNotice(null);
+    try {
+      await Promise.resolve(onFinalize?.());
+      setForceEndConfirm(false);
+      setProvisional(false);
+      setEnded(true);
+      onEndSession?.();
+      setPhase("result");
+    } catch (e) {
+      console.error("finalize on force-end failed", e);
+      setForceEndNotice(
+        "未解消が残っているため確定できません。内容はサーバ側で保全されます。",
+      );
+    } finally {
+      finalizingRef.current = false;
+      setAutoFinalizing(false);
+    }
+  }, [readOnly, onFinalize, onEndSession, endProvisional]);
+
   useEffect(() => {
     if (state.completed && state.endProposal && phase === "shell" && !ended) {
       void finalizeAndFinish();
@@ -226,51 +270,73 @@ export function ConversationSessionView({
   }, [state.completed, state.endProposal, phase, ended, finalizeAndFinish]);
 
   useEffect(() => {
+    if (readOnly || ended) return;
+    const handler = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [readOnly, ended]);
+
+  useEffect(() => {
     setEndProposalDismissed(false);
   }, [state.endProposal]);
 
   if (phase === "judgment") {
     return (
-      <JudgmentGate
-        unresolved={mini.unresolved}
-        detections={openDetections}
-        error={finalizeError ?? undefined}
-        onBack={() => setPhase("shell")}
-        onForceEnd={() => {
-          setProvisional(true);
-          setEnded(true);
-          onEndSession?.();
-          setPhase("result");
-        }}
-        onConfirm={() => {
-          if (readOnly) {
-            setProvisional(false);
-            setEnded(true);
-            setPhase("result");
-            return;
-          }
-          if (finalizingRef.current) return;
-          finalizingRef.current = true;
-          setFinalizeError(null);
-          Promise.resolve(onFinalize?.())
-            .then(() => {
+      <>
+        <JudgmentGate
+          unresolved={mini.unresolved}
+          detections={openDetections}
+          error={finalizeError ?? undefined}
+          onBack={() => setPhase("shell")}
+          onForceEnd={() => {
+            setForceEndNotice(null);
+            setForceEndConfirm(true);
+          }}
+          onConfirm={() => {
+            if (readOnly) {
               setProvisional(false);
               setEnded(true);
-              onEndSession?.();
               setPhase("result");
-            })
-            .catch((e) => {
-              console.error("finalize failed", e);
-              setFinalizeError(
-                "確定できませんでした。未解消の項目が残っていないか確かめ、再度お試しください。",
-              );
-            })
-            .finally(() => {
-              finalizingRef.current = false;
-            });
-        }}
-        onJump={jumpToConversation}
-      />
+              return;
+            }
+            if (finalizingRef.current) return;
+            finalizingRef.current = true;
+            setFinalizeError(null);
+            Promise.resolve(onFinalize?.())
+              .then(() => {
+                setProvisional(false);
+                setEnded(true);
+                onEndSession?.();
+                setPhase("result");
+              })
+              .catch((e) => {
+                console.error("finalize failed", e);
+                setFinalizeError(
+                  "確定できませんでした。未解消の項目が残っていないか確かめ、再度お試しください。",
+                );
+              })
+              .finally(() => {
+                finalizingRef.current = false;
+              });
+          }}
+          onJump={jumpToConversation}
+        />
+        {forceEndConfirm && (
+          <ForceEndConfirmDialog
+            busy={autoFinalizing}
+            notice={forceEndNotice ?? undefined}
+            onFinalize={() => void finalizeFromForceEnd()}
+            onProvisional={endProvisional}
+            onCancel={() => {
+              setForceEndConfirm(false);
+              setForceEndNotice(null);
+            }}
+          />
+        )}
+      </>
     );
   }
 
@@ -388,11 +454,19 @@ export function ConversationSessionView({
         }
         tabs={{
           history: (
-            <ChatHistory
-              transcript={state.transcript}
-              contextProgress={state.contextProgress}
-              materials={materials}
-            />
+            <div className="flex flex-col gap-3">
+              {coverage.length > 0 && (
+                <div className="px-4 pt-3">
+                  <CoverageProgress coverage={coverage} />
+                </div>
+              )}
+              <ChatHistory
+                transcript={state.transcript}
+                contextProgress={state.contextProgress}
+                materials={materials}
+                userPicture={userPicture}
+              />
+            </div>
           ),
           files: readOnly ? null : (
             <MaterialsList

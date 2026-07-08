@@ -193,6 +193,37 @@ describe("decodeServerEvent ペイロードの enum/配列/範囲 検証 (#120)"
     ).toBe("bad-payload");
   });
 
+  it("checkpoint.coverage は points が {label,covered} 配列なら ok（ADR-0057 増分2a）", () => {
+    const { reason, event } = decodeServerEvent(
+      bytes({
+        ...env,
+        type: "checkpoint.coverage",
+        points: [
+          { label: "性能・レスポンスの要件", covered: true },
+          { label: "セキュリティ・権限・データ保護", covered: false },
+        ],
+      }),
+    );
+    expect(reason).toBe("ok");
+    expect(event?.type).toBe("checkpoint.coverage");
+  });
+
+  it("checkpoint.coverage の points が配列でなければ bad-payload", () => {
+    expect(
+      decodeServerEvent(
+        bytes({ ...env, type: "checkpoint.coverage", points: "nope" }),
+      ).reason,
+    ).toBe("bad-payload");
+  });
+
+  it("checkpoint.coverage の point に covered が無ければ bad-payload", () => {
+    expect(
+      decodeServerEvent(
+        bytes({ ...env, type: "checkpoint.coverage", points: [{ label: "x" }] }),
+      ).reason,
+    ).toBe("bad-payload");
+  });
+
   it("session.end_proposed は 3 つの件数が数値なら ok（P1-b）", () => {
     const { reason, event } = decodeServerEvent(
       bytes({

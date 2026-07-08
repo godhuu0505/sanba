@@ -7,7 +7,25 @@ import pytest
 from sanba_agent.tools.analysis import (
     heuristic_ambiguous_topics,
     make_requirement_id,
+    normalize_query,
 )
+
+
+def test_normalize_query_removes_wakachigaki_spaces() -> None:
+    """分かち書き（日本語文字間の空白）を畳んで一続きにする（#435）。"""
+    assert normalize_query("請求 書 を 送る") == "請求書を送る"
+    assert normalize_query("画面 の 遷移　を 確認") == "画面の遷移を確認"
+
+
+def test_normalize_query_preserves_english_word_boundaries() -> None:
+    """英単語/数字に隣接する空白は保持し、検索可能なトークンを壊さない（過補正しない）。"""
+    assert normalize_query("Cloud Run に デプロイ") == "Cloud Run にデプロイ"
+
+
+def test_normalize_query_folds_fullwidth_and_collapses_whitespace() -> None:
+    """NFKC で全角/半角ゆらぎを畳み、連続空白を 1 つに縮める。"""
+    assert normalize_query("ＡＰＩ　　の   設計") == "API の設計"
+    assert normalize_query("  余白  だけ  ") == "余白だけ"
 
 
 def test_requirement_id_is_deterministic_and_idempotent() -> None:

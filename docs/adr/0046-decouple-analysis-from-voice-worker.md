@@ -77,3 +77,18 @@
   影響しない**ことを計測で示す。目標値は段階1 のメトリクスを見てから確定する。
 - **セキュリティ / 隔離**: 分析に渡す transcript は PII マスク方針（issue #10）と
   セッション隔離（ADR-0028）を境界越えでも維持する。
+
+## 追補（#435 / ride-along timeout の調整と NFR 収束の確認）
+
+- **ride-along timeout**: `analyze_requirements`（tool）は in-flight 背景分析に相乗りするが、上限を
+  超えると `_last_analysis` / heuristic を返す（`analysis_ride_along_timeout`）。背景分析の
+  `duration_ms` は 8〜20s に達しうる一方で上限が 8s と短く相乗り失敗が起きていたため、
+  `analysis_ride_along_timeout_seconds` を **8.0 → 10.0** に上げる（音声ターンの体感遅延に直結する
+  ので、テスト不変条件 `ride_along <= 10` かつ `ride_along <= analysis_timeout(20)` を維持する上限
+  ぎりぎりの最小調整）。抜本策は分析レイテンシ低下（段階2 / ADK 逐次往復の削減）で、最終的な値は
+  本番の `analysis duration_ms` 分布を見て決める。
+- **NFR 収束の確認（#435 🟡）**: 「developer で 性能/可用性/コスト が open_topics に残って収束
+  しない」現象は、ハードコード NFR gap を廃した ②（ADR-0055）で解消済み（`heuristic_result` /
+  `_run_adk` は `open_topics=[]`）。NFR は check-points（`DEFAULT_CHECK_POINTS[DEVELOPER]`）＋
+  advisory な coverage（ADR-0057）で扱う。judge 側の `nfr_coverage` ルーブリック（evaluation.py）は
+  別物として残置する。

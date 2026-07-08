@@ -19,6 +19,18 @@ locals {
   picker_allowed_referrers = [for o in local.picker_web_origins : "${o}/*"]
 }
 
+resource "google_project_iam_member" "tf_deployer_apikeys" {
+  project    = var.project_id
+  role       = "roles/serviceusage.apiKeysAdmin"
+  member     = "serviceAccount:${local.tf_deployer_sa}"
+  depends_on = [google_project_service.services]
+}
+
+resource "time_sleep" "apikeys_iam_propagation" {
+  depends_on      = [google_project_iam_member.tf_deployer_apikeys]
+  create_duration = "60s"
+}
+
 resource "google_apikeys_key" "picker" {
   name         = "sanba-picker-browser-key"
   display_name = "SANBA Google Picker (browser)"
@@ -37,7 +49,7 @@ resource "google_apikeys_key" "picker" {
     }
   }
 
-  depends_on = [google_project_service.services]
+  depends_on = [google_project_service.services, time_sleep.apikeys_iam_propagation]
 }
 
 # 値の唯一の置き場は Secret Manager（GitHub Variables には置かない）。terraform が生成する

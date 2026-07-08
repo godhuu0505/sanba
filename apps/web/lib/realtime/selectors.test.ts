@@ -3,12 +3,27 @@ import { describe, expect, it } from "vitest";
 import {
   mergeMaterials,
   selectActiveQuestion,
+  selectCheckpointCoverage,
   selectMaterialDetail,
   selectMaterials,
   selectMiniStatus,
 } from "./selectors";
 import type { MaterialItem } from "./selectors";
 import type { AnalysisState, SessionState } from "./store";
+
+describe("selectCheckpointCoverage", () => {
+  it("coverage スライスをそのまま返す", () => {
+    const coverage = [
+      { label: "性能", covered: true },
+      { label: "セキュリティ", covered: false },
+    ];
+    expect(selectCheckpointCoverage({ coverage } as SessionState)).toEqual(coverage);
+  });
+
+  it("未受信なら空配列", () => {
+    expect(selectCheckpointCoverage({ coverage: [] } as unknown as SessionState)).toEqual([]);
+  });
+});
 
 describe("selectActiveQuestion", () => {
   const state = (question: SessionState["question"]): SessionState =>
