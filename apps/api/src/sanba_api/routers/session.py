@@ -79,8 +79,21 @@ class SessionMeResponse(BaseModel):
     email: str
     email_verified: bool
     name: str
+    picture: str = ""
     expires_at: int
     idle_expires_at: int
+
+
+def _to_me(session: AuthSession) -> SessionMeResponse:
+    return SessionMeResponse(
+        sub=session.google_sub,
+        email=session.email,
+        email_verified=session.email_verified,
+        name=session.name,
+        picture=session.picture,
+        expires_at=session.expires_at,
+        idle_expires_at=session.idle_expires_at,
+    )
 
 
 def _cookie_domain() -> str | None:
@@ -151,20 +164,14 @@ def exchange_session(
         expires_at=now + absolute_ttl,
         ua_hash=hash_metadata(request.headers.get("user-agent", "")),
         ip_hash=hash_metadata(request.client.host if request.client else ""),
+        picture=user.picture,
     )
     get_session_store().create(session)
 
     _issue_cookie(response, session.sid, idle_ttl)
     log.info("session_exchanged", sub=user.sub, sid_prefix=session.sid[:8])
     record_auth_event("session_exchanged")
-    return SessionMeResponse(
-        sub=session.google_sub,
-        email=session.email,
-        email_verified=session.email_verified,
-        name=session.name,
-        expires_at=session.expires_at,
-        idle_expires_at=session.idle_expires_at,
-    )
+    return _to_me(session)
 
 
 def _issue_dev_session(response: Response, request: Request) -> SessionMeResponse:
@@ -187,14 +194,7 @@ def _issue_dev_session(response: Response, request: Request) -> SessionMeRespons
     get_session_store().create(session)
     _issue_cookie(response, session.sid, idle_ttl)
     record_auth_event("session_exchanged_dev")
-    return SessionMeResponse(
-        sub=session.google_sub,
-        email=session.email,
-        email_verified=session.email_verified,
-        name=session.name,
-        expires_at=session.expires_at,
-        idle_expires_at=session.idle_expires_at,
-    )
+    return _to_me(session)
 
 
 @router.get("/api/session/me", response_model=SessionMeResponse)
@@ -207,7 +207,7 @@ def get_me(
         _record_and_raise(401, "no session", "session_me_missing")
 
     store = get_session_store()
-    session = store.get(sanba_sid or "")
+    session = store.get(sanba_sid)
     if session is None:
         _clear_cookie(response)
         record_auth_event("session_me_expired")
@@ -219,14 +219,7 @@ def get_me(
     touched = store.touch(session.sid, now, new_idle) or session
     _issue_cookie(response, touched.sid, max(1, touched.idle_expires_at - now))
     record_auth_event("session_me")
-    return SessionMeResponse(
-        sub=touched.google_sub,
-        email=touched.email,
-        email_verified=touched.email_verified,
-        name=touched.name,
-        expires_at=touched.expires_at,
-        idle_expires_at=touched.idle_expires_at,
-    )
+    return _to_me(touched)
 
 
 @router.delete("/api/session", status_code=204)

@@ -45,13 +45,14 @@ auth_sessions/{sid}
   email: string
   email_verified: bool
   name: string
+  picture: string           # Google のアバター URL（ID トークンの picture claim）
   created_at: timestamp
   last_seen_at: timestamp
   expires_at: timestamp     # Firestore TTL policy で自動削除（絶対上限 24h）
-  idle_expires_at: timestamp # 8h の idle TTL。アクセスごとに延長
+  idle_expires_at: timestamp # 8h の idle TTL。/api/session/me 到達で延長
   revoked_at: timestamp?    # 論理 revoke
-  ua_hash: string           # 監査（生 UA を持たない）
-  ip_hash: string           # 監査（生 IP を持たない）
+  ua_hash: string           # 監査（SHA-256 の先頭 16 桁 / 生 UA を持たない）
+  ip_hash: string           # 監査（SHA-256 の先頭 16 桁 / 生 IP を持たない）
 ```
 
 **ユーザーコレクションは作らない。** 認可は既存の email allowlist
@@ -111,8 +112,13 @@ Set-Cookie: sanba_sid=<opaque>;
   API 側に追加する。
 - 絶対上限は `expires_at` で 24h。それを超えると Firestore TTL が消し、client にも Cookie 期限が
   切れる。
-- リフレッシュ戦略: 各 authenticated リクエストで `idle_expires_at` を延長（+8h）、レスポンスに
-  同じ Cookie を再セット（rolling session）。`created_at` からの絶対 24h は延長しない。
+- リフレッシュ戦略: `GET /api/session/me` 到達時に `idle_expires_at` を延長（+8h）し、
+  レスポンスに同じ Cookie を再セット（pull-based rolling session）。他の endpoint 経由の
+  `resolve_cookie_user` からは `touch` で内部状態のみ延長する（レスポンス Cookie 再発行は
+  行わない — 全 endpoint に `Response` を注入する設計コストを避けたトレードオフ）。
+  実運用では `AuthProvider` が保護ページのマウント時に `/api/session/me` を叩くため、
+  タブを切り替える動作で idle TTL が自然に更新される。長時間放置タブに関しては
+  最悪 8h で idle 失効し、次のリクエスト時に再ログインが必要になる（絶対 24h は延長しない）。
 
 ### 5. Next.js `middleware.ts` で保護ルートを SSR ガード
 
@@ -136,8 +142,10 @@ Set-Cookie: sanba_sid=<opaque>;
 
 ### 7. Bearer 経路の互換維持と段階移行
 
-- `apps/web/lib/api.ts` の全 `fetch` に `credentials: "include"` を追加（同一オリジンなら暗黙で
-  含まれるが、明示することで挙動を確定させる）。`Authorization` ヘッダ付与は残す（Bearer と
+- `apps/web/lib/api.ts` の `fetch` は `apiFetch()` ヘルパー経由に統一し、常に
+  `credentials: "include"` を付ける（同一オリジンでも明示的に挙動を固定する / 将来別ドメイン
+  化した際にサイレント 401 に落ちないための保険）。GCS 署名 URL への直接 PUT のみ
+  `credentials` を含めない（例外の 1 箇所）。`Authorization` ヘッダ付与は残す（Bearer と
   Cookie が両方来た場合、Cookie を優先）。
 - `X-Auth-Nonce` の付与は当面残すが、exchange 以外の endpoint では検証しない実装へ切り替える
   （FastAPI 側 `require_user_bound` の nonce 検証を Cookie 経路では skip）。

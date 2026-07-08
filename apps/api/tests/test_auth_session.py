@@ -82,6 +82,37 @@ def test_exchange_issues_cookie_and_persists_session(_fake_verifier: None) -> No
     assert session.google_sub == "google-sub-123"
 
 
+def test_exchange_preserves_picture_claim(monkeypatch: pytest.MonkeyPatch) -> None:
+    prev_bypass = settings.auth_dev_bypass
+    prev_client = settings.google_oauth_client_id
+    settings.auth_dev_bypass = False
+    settings.google_oauth_client_id = "test-client-id"
+
+    def fake_verify(token: str, client_id: str) -> AuthUser:
+        return AuthUser(
+            sub="sub-with-picture",
+            email="picture@example.com",
+            email_verified=True,
+            name="Picture User",
+            picture="https://example.com/avatar.png",
+        )
+
+    monkeypatch.setattr("sanba_api.routers.session.verify_google_id_token", fake_verify)
+    try:
+        client = TestClient(app)
+        res = client.post("/api/session/exchange", json={"id_token": "valid"})
+        assert res.status_code == 200
+        assert res.json()["picture"] == "https://example.com/avatar.png"
+
+        cookie = res.cookies.get(SESSION_COOKIE_NAME)
+        assert cookie is not None
+        me = client.get("/api/session/me", cookies={SESSION_COOKIE_NAME: cookie})
+        assert me.json()["picture"] == "https://example.com/avatar.png"
+    finally:
+        settings.auth_dev_bypass = prev_bypass
+        settings.google_oauth_client_id = prev_client
+
+
 def test_exchange_rejects_invalid_id_token(_fake_verifier: None) -> None:
     client = TestClient(app)
     res = client.post("/api/session/exchange", json={"id_token": "invalid"})

@@ -54,6 +54,7 @@ class AuthUser:
     dev: bool = False
     nonce: str | None = None
     via_cookie: bool = False
+    picture: str = ""
 
 
 def _default_verifier(token: str, client_id: str) -> dict[str, object]:
@@ -90,12 +91,14 @@ def _validate_claims(claims: dict[str, object]) -> AuthUser:
         raise GoogleTokenError("email not verified")
 
     raw_nonce = claims.get("nonce")
+    raw_picture = claims.get("picture")
     return AuthUser(
         sub=str(sub),
         email=email,
         email_verified=True,
         name=str(claims.get("name", "") or email),
         nonce=str(raw_nonce) if raw_nonce else None,
+        picture=str(raw_picture) if raw_picture else "",
     )
 
 
@@ -138,6 +141,7 @@ def _cookie_auth_user(sid: str | None) -> AuthUser | None:
         email_verified=session.email_verified,
         name=session.name,
         via_cookie=True,
+        picture=session.picture,
     )
 
 

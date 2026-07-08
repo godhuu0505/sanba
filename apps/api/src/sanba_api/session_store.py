@@ -15,7 +15,7 @@ from __future__ import annotations
 import hashlib
 import secrets
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Protocol
 
 import structlog
@@ -42,6 +42,7 @@ class AuthSession:
     revoked_at: int | None = None
     ua_hash: str = ""
     ip_hash: str = ""
+    picture: str = ""
 
 
 def new_sid() -> str:
@@ -102,20 +103,7 @@ class InMemorySessionStore:
             return None
         if s.expires_at <= now:
             return None
-        updated = AuthSession(
-            sid=s.sid,
-            google_sub=s.google_sub,
-            email=s.email,
-            email_verified=s.email_verified,
-            name=s.name,
-            created_at=s.created_at,
-            last_seen_at=now,
-            idle_expires_at=idle_expires_at,
-            expires_at=s.expires_at,
-            revoked_at=s.revoked_at,
-            ua_hash=s.ua_hash,
-            ip_hash=s.ip_hash,
-        )
+        updated = replace(s, last_seen_at=now, idle_expires_at=idle_expires_at)
         self._by_sid[sid] = updated
         return updated
 
@@ -123,20 +111,7 @@ class InMemorySessionStore:
         s = self._by_sid.get(sid)
         if s is None or s.revoked_at is not None:
             return
-        self._by_sid[sid] = AuthSession(
-            sid=s.sid,
-            google_sub=s.google_sub,
-            email=s.email,
-            email_verified=s.email_verified,
-            name=s.name,
-            created_at=s.created_at,
-            last_seen_at=s.last_seen_at,
-            idle_expires_at=s.idle_expires_at,
-            expires_at=s.expires_at,
-            revoked_at=now,
-            ua_hash=s.ua_hash,
-            ip_hash=s.ip_hash,
-        )
+        self._by_sid[sid] = replace(s, revoked_at=now)
 
     def revoke_by_sub(self, google_sub: str, now: int) -> int:
         count = 0
@@ -161,6 +136,7 @@ def _to_doc(session: AuthSession) -> dict[str, Any]:
         "revoked_at": session.revoked_at,
         "ua_hash": session.ua_hash,
         "ip_hash": session.ip_hash,
+        "picture": session.picture,
     }
 
 
@@ -179,6 +155,7 @@ def _from_doc(doc: dict[str, Any]) -> AuthSession | None:
             revoked_at=int(doc["revoked_at"]) if doc.get("revoked_at") is not None else None,
             ua_hash=str(doc.get("ua_hash", "")),
             ip_hash=str(doc.get("ip_hash", "")),
+            picture=str(doc.get("picture", "")),
         )
     except (KeyError, ValueError, TypeError) as exc:
         log.warning("auth_session_doc_corrupt", error=str(exc))
@@ -219,20 +196,7 @@ class FirestoreSessionStore:
         if s.expires_at <= now:
             return None
         ref.update({"last_seen_at": now, "idle_expires_at": idle_expires_at})
-        return AuthSession(
-            sid=s.sid,
-            google_sub=s.google_sub,
-            email=s.email,
-            email_verified=s.email_verified,
-            name=s.name,
-            created_at=s.created_at,
-            last_seen_at=now,
-            idle_expires_at=idle_expires_at,
-            expires_at=s.expires_at,
-            revoked_at=s.revoked_at,
-            ua_hash=s.ua_hash,
-            ip_hash=s.ip_hash,
-        )
+        return replace(s, last_seen_at=now, idle_expires_at=idle_expires_at)
 
     def revoke(self, sid: str, now: int) -> None:
         ref = self._col.document(sid)
