@@ -409,6 +409,8 @@ export interface MySession {
   created_at: string;
   status: string;
   finalized: boolean;
+  labels?: string[];
+  issue_url?: string | null;
 }
 
 export async function fetchMySessions(idToken: string | null): Promise<MySession[]> {

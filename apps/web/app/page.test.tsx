@@ -237,7 +237,7 @@ describe("入口フロー（#140）", () => {
     ).toBeTruthy();
   });
 
-  it("01 ホームは過去の要件一覧をページ内に持たない（サイドメニューへ移設 / 2026-07）", () => {
+  it("01 ホームは過去の要件一覧をページ内に持たず、サイドメニュー(/results)へ導く", () => {
     authState.loggedIn = true;
     authState.credential = "idtok";
     render(<Home />);

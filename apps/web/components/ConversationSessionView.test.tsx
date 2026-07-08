@@ -50,6 +50,7 @@ const baseState = (over: Partial<SessionState> = {}): SessionState => ({
   ],
   analysis: [{ asset_id: "a1", pct: 40, stage: "OCR", extracted: [], conflicts: [] }],
   contextProgress: [],
+  endProposal: null,
   question: null,
   completed: null,
   seq: 9,
@@ -334,6 +335,82 @@ describe("ConversationSessionView（会話シェル結線）", () => {
     fireEvent.click(screen.getByRole("button", { name: "終了する" }));
     fireEvent.click(screen.getByRole("button", { name: "未解消のまま終う" }));
     expect(onFinalize).not.toHaveBeenCalled();
+  });
+
+  it("AI の終了提案（session.end_proposed）でカードを出し、同意で確定→結果へ進む（P1-b）", async () => {
+    const onFinalize = vi.fn(async () => ({ finalized: true, confirmed_count: 1 }));
+    renderView({
+      state: baseState({
+        detections: [],
+        endProposal: { open_count: 0, requirement_count: 1, material_count: 0 },
+      }),
+      onFinalize,
+    });
+    expect(screen.getByRole("region", { name: "終了の提案" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /同意して終了/ }));
+    expect(onFinalize).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText(/要件、産まれました/)).toBeTruthy();
+  });
+
+  it("終了提案中に未解消の検知が残る/現れた場合はカードを出さない（レビュー指摘）", () => {
+    renderView({
+      state: baseState({
+        endProposal: { open_count: 0, requirement_count: 1, material_count: 0 },
+      }),
+    });
+    expect(screen.queryByRole("region", { name: "終了の提案" })).toBeNull();
+  });
+
+  it("提案を経ていない session.completed（起票由来など）では自動確定しない（レビュー指摘）", () => {
+    const onFinalize = vi.fn(async () => ({ finalized: true, confirmed_count: 1 }));
+    renderView({
+      state: baseState({
+        detections: [],
+        endProposal: null,
+        completed: {
+          contradictions_resolved: 0,
+          gaps_found: 0,
+          issues_created: 1,
+          artifacts: [{ kind: "issue", url: "https://example.com/1" }],
+        },
+      }),
+      onFinalize,
+    });
+    expect(onFinalize).not.toHaveBeenCalled();
+    expect(screen.queryByText(/要件、産まれました/)).toBeNull();
+  });
+
+  it("終了提案の「まだ続ける」でカードを閉じ、確定しない（P1-b）", () => {
+    const onFinalize = vi.fn(async () => ({ finalized: true, confirmed_count: 1 }));
+    renderView({
+      state: baseState({
+        detections: [],
+        endProposal: { open_count: 0, requirement_count: 1, material_count: 0 },
+      }),
+      onFinalize,
+    });
+    fireEvent.click(screen.getByRole("button", { name: "まだ続ける" }));
+    expect(screen.queryByRole("region", { name: "終了の提案" })).toBeNull();
+    expect(onFinalize).not.toHaveBeenCalled();
+  });
+
+  it("AI が session.completed を出したら自動で確定して結果へ進む（P1-b 音声同意）", async () => {
+    const onFinalize = vi.fn(async () => ({ finalized: true, confirmed_count: 1 }));
+    renderView({
+      state: baseState({
+        detections: [],
+        endProposal: { open_count: 0, requirement_count: 1, material_count: 0 },
+        completed: {
+          contradictions_resolved: 0,
+          gaps_found: 0,
+          issues_created: 0,
+          artifacts: [],
+        },
+      }),
+      onFinalize,
+    });
+    expect(await screen.findByText(/要件、産まれました/)).toBeTruthy();
+    expect(onFinalize).toHaveBeenCalledTimes(1);
   });
 
   it("終了→終了するで onLeaveConversation を呼ぶ（マイク送信停止のフック）", () => {

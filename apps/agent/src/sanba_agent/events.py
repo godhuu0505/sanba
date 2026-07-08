@@ -423,6 +423,25 @@ class EventPublisher:
             {"asset_id": asset_id, "extracted": extracted, "conflicts": conflicts},
         )
 
+    async def session_end_proposed(
+        self,
+        open_count: int,
+        requirement_count: int,
+        material_count: int,
+    ) -> dict[str, Any]:
+        """全確認事項が解消したときの「終了の提案」を web へ伝える（P1-b）。
+
+        web は提案カードを出し、ユーザーが同意すれば会話で締めへ進む。reliable で送る。
+        """
+        return await self._emit(
+            "session.end_proposed",
+            {
+                "open_count": open_count,
+                "requirement_count": requirement_count,
+                "material_count": material_count,
+            },
+        )
+
     async def session_completed(
         self,
         contradictions_resolved: int,

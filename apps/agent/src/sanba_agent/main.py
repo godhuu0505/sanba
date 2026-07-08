@@ -364,6 +364,9 @@ class SANBAAgent(Agent):
         self._analysis_lock = asyncio.Lock()
         self._last_analysis: AnalysisResult | None = None
         self._analysis_covered_turn = -1
+        self._shutdown_hook: Callable[[str], None] | None = None
+        self._end_proposed = False
+        self._completed = False
 
     @property
     def transcript(self) -> list[str]:
@@ -418,6 +421,22 @@ class SANBAAgent(Agent):
                     sig.source, sig.stage, label=sig.label, detail=sig.detail
                 )
         self._repo.set_session_seq(self._session_id, self._publisher.seq)
+
+    def set_shutdown_hook(self, hook: Callable[[str], None]) -> None:
+        """セッションを終える手段（ctx.shutdown）を注入する（P1-b）。
+
+        complete_session ツールがユーザー同意後にこれを遅延起動し、締めの一言を
+        読み上げ終える猶予をおいてルームから退出する。
+        """
+        self._shutdown_hook = hook
+
+    def _open_detection_count(self) -> int:
+        """未解消の検知（gap/ambiguous）件数。終了提案・確定の可否判定に使う（P1-b）。
+
+        agent が publish し resolve で外す open 集合そのもの（web の「未解消 N」と一致）。
+        サーバ側 finalize も list_open_detections で二重にゲートするので、ここは good-faith。
+        """
+        return len(self._published_gaps) + len(self._published_ambiguous)
 
     @property
     def current_question_id(self) -> str | None:
@@ -738,6 +757,7 @@ class SANBAAgent(Agent):
                 if gap_id in self._published_gaps:
                     continue
                 self._published_gaps.add(gap_id)
+                self._end_proposed = False
                 summary = f"{topic}が未確認です。"
                 self._repo.save_detection(
                     self._session_id,
@@ -774,6 +794,7 @@ class SANBAAgent(Agent):
                 if amb_id in self._published_ambiguous:
                     continue
                 self._published_ambiguous.add(amb_id)
+                self._end_proposed = False
                 summary = f"「{snippet}」は具体的な基準が不明瞭です。"
                 self._repo.save_detection(
                     self._session_id,
@@ -1206,6 +1227,70 @@ class SANBAAgent(Agent):
         if link is None:
             return meta.github_commit_sha, True
         return meta.github_commit_sha, False
+
+    @function_tool
+    async def propose_session_end(self, _ctx: RunContext) -> dict:
+        """確認したい点がすべて解消できたとき、会話を終える提案を出す（P1-b）。
+
+        未解消の論点（矛盾・抜け・不明瞭）が 0 件になったと判断したら呼ぶ。まだ残って
+        いれば proposed=false と残数を返すので、深掘りを続ける。0 件なら画面に終了提案の
+        カードを出し、ユーザーの同意を音声で確認する（同意を得たら complete_session を呼ぶ）。
+        """
+        open_count = self._open_detection_count()
+        if open_count > 0:
+            log.info("session_end_declined_open", session=self._session_id, open=open_count)
+            return {"proposed": False, "open_count": open_count, "reason": "open_detections"}
+        requirements = len(self._repo.list_requirements(self._session_id))
+        if requirements == 0:
+            log.info("session_end_declined_no_requirements", session=self._session_id)
+            return {"proposed": False, "open_count": 0, "reason": "no_requirements"}
+        self._end_proposed = True
+        materials = len(self._repo.list_materials(self._session_id))
+        if self._publisher is not None:
+            await self._publisher.session_end_proposed(
+                open_count=0, requirement_count=requirements, material_count=materials
+            )
+            self._repo.set_session_seq(self._session_id, self._publisher.seq)
+        log.info("session_end_proposed", session=self._session_id, requirements=requirements)
+        return {"proposed": True, "open_count": 0, "requirement_count": requirements}
+
+    @function_tool
+    async def complete_session(self, _ctx: RunContext) -> dict:
+        """ユーザーが終了に同意したとき、会話を締めてセッションを終える（P1-b）。
+
+        propose_session_end で終了を提案し、ユーザーが「はい」と同意した後にだけ呼ぶ。
+        未解消の論点が残っていれば completed=false を返す（同意より整合性を優先）。
+        締めの一言を告げてから、少し間をおいて自動的に退出する。
+        """
+        if self._completed:
+            return {"completed": True, "open_count": 0}
+        if not self._end_proposed:
+            log.info("session_complete_declined_not_proposed", session=self._session_id)
+            return {"completed": False, "open_count": 0, "reason": "not_proposed"}
+        open_count = self._open_detection_count()
+        if open_count > 0:
+            log.info("session_complete_declined_open", session=self._session_id, open=open_count)
+            return {"completed": False, "open_count": open_count, "reason": "open_detections"}
+        self._completed = True
+        if self._publisher is not None:
+            await self._publisher.session_completed(
+                contradictions_resolved=self._publisher.contradictions_resolved,
+                gaps_found=self._publisher.gaps_published,
+                issues_created=0,
+                artifacts=[],
+            )
+            self._repo.set_session_seq(self._session_id, self._publisher.seq)
+        log.info("session_completed_by_agent", session=self._session_id)
+        if self._shutdown_hook is not None:
+            hook = self._shutdown_hook
+            delay = settings.voice_completion_shutdown_delay_s
+
+            async def _delayed_shutdown() -> None:
+                await asyncio.sleep(delay)
+                hook("session completed by agreement")
+
+            self._publish(_delayed_shutdown())
+        return {"completed": True, "open_count": 0}
 
     @function_tool
     async def export_requirements_to_github(self, _ctx: RunContext) -> dict:
@@ -1828,6 +1913,7 @@ async def entrypoint(ctx: JobContext) -> None:
                 error=str(exc),
             )
 
+    agent.set_shutdown_hook(lambda reason: ctx.shutdown(reason=reason))
     session = await _start_session()
     ctx.room.on("data_received", _on_data)
     await publisher.status("listening")

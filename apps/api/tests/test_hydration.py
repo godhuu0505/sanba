@@ -214,6 +214,9 @@ def test_finalize_marks_session_and_counts_confirmed() -> None:
     assert meta.finalized_count == 1
     assert meta.finalized_at is not None
     assert meta.finalized_requirement_ids == ["c1"]
+    assert meta.labels == ["sanba", "priority:must", "functional"], (
+        "確定時に AI ラベル（priority/category 由来）を永続化する（P1-c）"
+    )
 
 
 def test_finalize_approves_confirmed_requirements_for_preservation() -> None:
