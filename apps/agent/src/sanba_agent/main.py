@@ -375,6 +375,7 @@ class SANBAAgent(Agent):
         self._analysis_scheduler = AnalysisScheduler()
         self._analysis_task: asyncio.Task[None] | None = None
         self._analysis_lock = asyncio.Lock()
+        self._closing = False
         self._last_analysis: AnalysisResult | None = None
         self._analysis_covered_turn = -1
         self._shutdown_hook: Callable[[str], None] | None = None
@@ -743,7 +744,11 @@ class SANBAAgent(Agent):
 
         イベントループが無い環境（同期ユニットテスト等）では黙ってスキップする。
         背景分析は付加価値で、ツールの同期経路が常に最新化を保証する。
+        シャットダウン中（_closing）は新規発火しない: 離脱後に analyze_transcript の
+        genai 呼び出しを再起動すると 10 秒のドレン猶予を超えて worker が SIGKILL される（#435）。
         """
+        if self._closing:
+            return
         if self._analysis_task is not None and not self._analysis_task.done():
             return
         try:
@@ -762,7 +767,7 @@ class SANBAAgent(Agent):
             log.warning("background_analysis_failed", session=self._session_id, error=str(exc))
         finally:
             self._analysis_task = None
-            if self._analysis_scheduler.finish():
+            if not self._closing and self._analysis_scheduler.finish():
                 log.info("background_analysis_followup", session=self._session_id)
                 self._start_background_analysis()
 
@@ -848,12 +853,21 @@ class SANBAAgent(Agent):
                     )
             self._repo.set_session_seq(self._session_id, self._publisher.seq)
 
+    def begin_shutdown(self) -> None:
+        """シャットダウン開始を記録し、以後の背景分析の新規発火を止める（#435）。
+
+        ドレン中に in-flight の背景分析がキャンセル/完了しても追い掛け実行させないため、
+        タスクを畳む前に呼ぶ。冪等。
+        """
+        self._closing = True
+
     async def drain_background_tasks(self, grace_seconds: float = DRAIN_GRACE_SECONDS) -> None:
         """セッション終了時に背景タスクを猶予付きで送り切り、残りはキャンセルする（ADR-0037）。
 
         対象は先読み・背景分析・fire-and-forget publish・書き込み永続化。
         評価（score_session）より前に呼ぶ。
         """
+        self.begin_shutdown()
         tasks: set[asyncio.Task[Any]] = set(self._publish_tasks)
         tasks |= set(self._persist_tasks)
         if self._prefetch_task is not None:
@@ -2009,6 +2023,7 @@ async def entrypoint(ctx: JobContext) -> None:
     )
 
     async def _on_close() -> None:
+        agent.begin_shutdown()
         await _drain_tasks(set(_bg_tasks), DRAIN_GRACE_SECONDS)
         await agent.drain_background_tasks()
         try:

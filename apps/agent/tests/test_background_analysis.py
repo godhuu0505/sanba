@@ -415,6 +415,57 @@ async def test_drain_tasks_cancels_overdue() -> None:
 
 
 @pytest.mark.asyncio
+async def test_no_background_analysis_after_shutdown(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """シャットダウン後は新規の背景分析を発火しない（#435 worker SIGKILL 回避）。"""
+    calls = _stub_analysis(monkeypatch)
+    agent = _agent()
+    agent.begin_shutdown()
+    agent.record_utterance("participant", "請求管理のアプリを作りたい")
+    agent.record_utterance("participant", "対象は経理担当者です")
+    assert agent._analysis_task is None, "シャットダウン後は背景分析タスクを起動しない"
+    assert calls == [], "離脱後に新しい genai 呼び出しをしない"
+
+
+@pytest.mark.asyncio
+async def test_drain_stops_inflight_analysis_followup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ドレンで in-flight 分析を畳んだあと追い掛け分析を再起動しない（#435 回帰）。"""
+    import asyncio
+    import threading
+
+    calls: list[str] = []
+    gate = threading.Event()
+
+    async def _slow(transcript: str) -> AnalysisResult:
+        calls.append(transcript)
+        await asyncio.to_thread(gate.wait)
+        return AnalysisResult(summary="s", next_question="q?", suggested_answer="a")
+
+    monkeypatch.setattr("sanba_agent.main.analyze_transcript", _slow)
+    agent = _agent()
+    clock = FakeClock()
+    agent._analysis_scheduler = AnalysisScheduler(clock=clock)
+    agent.record_utterance("participant", "請求管理のアプリを作りたい")
+    agent.record_utterance("participant", "対象は経理担当者です")
+    task = agent._analysis_task
+    assert task is not None and not task.done()
+
+    agent._analysis_scheduler.note_utterance()
+    agent._analysis_scheduler.note_utterance()
+    clock.advance(20.0)
+
+    gate.set()
+    await agent.drain_background_tasks()
+
+    assert agent._closing is True
+    assert agent._analysis_task is None, "シャットダウン後は追い掛け分析を再起動しない"
+    assert len(calls) == 1, "離脱後に新しい genai 呼び出しをしない（SIGKILL 回避）"
+
+
+@pytest.mark.asyncio
 async def test_tool_rides_on_inflight_background_run(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
