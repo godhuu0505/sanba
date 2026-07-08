@@ -91,14 +91,14 @@ export function MaterialSourceSheet({
         ref={sheetRef}
         role="dialog"
         aria-modal="true"
-        aria-label="資料の追加方法"
+        aria-label="参考資料の追加方法"
         className={`relative z-10 flex w-full max-w-[420px] flex-col gap-2 border-sanba-frame bg-sanba-surface px-4 pb-[18px] pt-[14px] ${
           centered ? "rounded-[18px] border-2" : "rounded-t-[18px] border-t-2"
         }`}
       >
         <div className="flex items-center gap-2">
           <span className="text-[15px] font-bold text-sanba-gold-text">
-            資料の追加方法を選ぶ
+            参考資料の追加方法を選ぶ
           </span>
           <span className="flex-1" />
           <button
@@ -129,7 +129,7 @@ export function MaterialSourceSheet({
         <SourceRow
           icon={<Upload size={20} />}
           title="ファイルをアップロード"
-          sub="写真（PNG/JPG）・録画（MP4/MOV）・資料（PDF/Office/Markdown/HTML/CSV 等）"
+          sub="写真（PNG/JPG）・録画（MP4/MOV）・文書（PDF/Office/Markdown/HTML/CSV 等）"
           onClick={() => pick("upload", onUpload)}
         />
 

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Check, Plus, X } from "lucide-react";
 
+import { HelpIcon } from "@/components/sanba";
 import type { MaterialItem, MaterialStatus } from "@/lib/realtime/selectors";
 
 import { MaterialCancelDialog } from "./MaterialCancelDialog";
@@ -50,18 +51,21 @@ export function MaterialsList({
   return (
     <div className="flex flex-col gap-[10px] px-4 py-3">
       {onAdd && (
-        <button
-          type="button"
-          onClick={onAdd}
-          className="inline-flex items-center justify-center gap-1.5 rounded-[12px] border border-dashed border-sanba-gold-deep bg-sanba-surface px-3 py-[13px] text-[12.5px] font-bold text-sanba-gold-text"
-        >
-          <Plus size={14} aria-hidden /> 素材を追加（カメラ・アップロード・画面共有）
-        </button>
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={onAdd}
+            className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-[12px] border border-dashed border-sanba-gold-deep bg-sanba-surface px-3 py-[13px] text-[12.5px] font-bold text-sanba-gold-text"
+          >
+            <Plus size={14} aria-hidden /> 参考資料を追加（カメラ・アップロード・画面共有）
+          </button>
+          <HelpIcon term="参考資料" />
+        </div>
       )}
 
       {items.length === 0 ? (
         <p className="px-1 py-4 text-center text-[12.5px] text-sanba-muted">
-          まだありません。資料を追加すると、ここに解析状況が出ます。
+          まだありません。参考資料を追加すると、ここに解析状況が出ます。
         </p>
       ) : (
         items.map((it) => {
@@ -81,6 +85,7 @@ export function MaterialsList({
               {(it.status === "uploading" || it.status === "analyzing") && (
                 <div className="flex items-center gap-2">
                   <span className="text-[11px] text-sanba-muted">{STATUS_LABEL[it.status]}</span>
+                  {it.status === "analyzing" && <HelpIcon term="解析" />}
                   <div
                     role="progressbar"
                     aria-valuenow={it.pct}
@@ -111,7 +116,7 @@ export function MaterialsList({
               <button
                 key={it.id}
                 type="button"
-                aria-label={`資料 ${it.name} の詳細を開く`}
+                aria-label={`参考資料 ${it.name} の詳細を開く`}
                 onClick={() => onOpenDetail?.(it.id)}
                 className={`${ROW_CLASS} text-left`}
               >
@@ -121,7 +126,7 @@ export function MaterialsList({
           }
 
           return (
-            <div key={it.id} aria-label={`資料 ${it.name}`} className={ROW_CLASS}>
+            <div key={it.id} aria-label={`参考資料 ${it.name}`} className={ROW_CLASS}>
               {body}
 
               {it.status === "failed" && (

@@ -19,17 +19,17 @@ const detail = (over: Partial<MaterialDetail> = {}): MaterialDetail => ({
 describe("MaterialDetailSheet（05-1 資料詳細）", () => {
   afterEach(() => cleanup());
 
-  it("ダイアログとして開き、抽出要件チップと言葉×画の矛盾を種別別に出す", () => {
+  it("ダイアログとして開き、抽出要件チップと言葉と画像の食い違いを種別別に出す", () => {
     render(<MaterialDetailSheet detail={detail()} onClose={vi.fn()} />);
 
-    const dialog = screen.getByRole("dialog", { name: "資料の詳細" });
+    const dialog = screen.getByRole("dialog", { name: "参考資料の詳細" });
     expect(dialog).toBeTruthy();
 
     const extracted = within(dialog).getByRole("region", { name: "抽出した要件" });
     expect(within(extracted).getByText("3カラム一覧")).toBeTruthy();
     expect(within(extracted).getByText("フィルタUI")).toBeTruthy();
 
-    const conflicts = within(dialog).getByRole("region", { name: "言葉×画の矛盾" });
+    const conflicts = within(dialog).getByRole("region", { name: "言葉と画像の食い違い" });
     expect(within(conflicts).getByText(/検索バーが無いが/)).toBeTruthy();
     expect(screen.getByText("解析済")).toBeTruthy();
   });
@@ -51,7 +51,7 @@ describe("MaterialDetailSheet（05-1 資料詳細）", () => {
 
   it("解析完了で矛盾が無いときだけ『見つかっていません』と断定する", () => {
     render(<MaterialDetailSheet detail={detail({ conflicts: [] })} onClose={vi.fn()} />);
-    expect(screen.getByText(/矛盾は見つかっていません/)).toBeTruthy();
+    expect(screen.getByText(/食い違いは見つかっていません/)).toBeTruthy();
   });
 
   it("詳細未取得（再接続後の done 行など）は空を断定せず未取得を示す（Codex P2 #1）", () => {
