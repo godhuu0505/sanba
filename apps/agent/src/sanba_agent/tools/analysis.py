@@ -5,10 +5,15 @@ Kept free of LiveKit/ADK runtime objects so it can be tested without a live sess
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
+import json
 import re
+from collections.abc import Sequence
 
 from sanba_shared.models import AnalysisResult
+
+from ..config import settings
 
 
 def make_requirement_id(statement: str) -> str:
@@ -61,17 +66,71 @@ def heuristic_ambiguous_topics(transcript: str) -> list[str]:
     return found
 
 
-async def analyze_transcript(transcript: str) -> AnalysisResult:
+async def analyze_transcript(transcript: str, check_points: Sequence[str] = ()) -> AnalysisResult:
     """Run the ADK interview team over the transcript and return next steps.
 
     Falls back to a heuristic result if the ADK runtime is not available
     (keeps local/dev and unit tests working without credentials).
+
+    `check_points`（このセッションで確認する観点 / ADR-0057）が与えられたら、会話でまだ
+    触れられていないものを LLM で判定し `coverage_open` に載せる。gap/曖昧語とは別の advisory
+    シグナルで、ADK 本体と並行に走らせて遅延を足さない。
     """
     ambiguous_topics = heuristic_ambiguous_topics(transcript)
+    coverage_task = (
+        asyncio.ensure_future(assess_check_point_coverage(transcript, check_points))
+        if check_points
+        else None
+    )
     try:
-        return await _run_adk(transcript, ambiguous_topics)
+        result = await _run_adk(transcript, ambiguous_topics)
     except Exception:
-        return heuristic_result(transcript)
+        result = heuristic_result(transcript)
+    coverage_open = await coverage_task if coverage_task is not None else []
+    return result.model_copy(update={"coverage_open": coverage_open})
+
+
+async def assess_check_point_coverage(transcript: str, check_points: Sequence[str]) -> list[str]:
+    """与えた観点のうち、会話でまだ触れられていないものを LLM で返す（ADR-0057）。
+
+    キーワード一致だと ADR-0055 で廃したハードコード論点の誤検知が再来するため LLM で判定する。
+    返すのは与えた観点の部分集合のみ（未知の文言は surface しない安全側）。creds 無し・失敗・空
+    入力では空を返す（advisory なので「未カバー無し」に倒す）。
+    """
+    points = [p.strip() for p in check_points if p.strip()]
+    if not points or not transcript.strip():
+        return []
+    if not (settings.google_api_key or settings.google_genai_use_vertexai):
+        return []
+    try:
+        return await _llm_check_point_coverage(transcript, points)
+    except Exception:
+        return []
+
+
+async def _llm_check_point_coverage(
+    transcript: str, points: list[str]
+) -> list[str]:  # pragma: no cover - needs creds
+    from google import genai
+
+    listed = "\n".join(f"- {p}" for p in points)
+    prompt = (
+        "あなたは要件インタビューの進行を助ける観測者です。以下の書き起こしを読み、"
+        "リストの各観点が会話で『十分に触れられたか』を判定してください。"
+        "まだ触れられていない観点だけを JSON 配列で返します（触れられたものは含めない）。"
+        "観点はリストの文言そのままを使い、リストに無い文言は返さないでください。\n"
+        f"観点リスト:\n{listed}\n"
+        'フォーマット: {"uncovered": ["観点1", "観点2"]}\n'
+        f"---\n{transcript}\n---"
+    )
+    client = genai.Client(api_key=settings.google_api_key or None)
+    resp = await client.aio.models.generate_content(
+        model=settings.gemini_reasoning_model, contents=prompt
+    )
+    text = (resp.text or "").strip().removeprefix("```json").removesuffix("```").strip()
+    data = json.loads(text)
+    returned = {str(r) for r in data.get("uncovered", [])} if isinstance(data, dict) else set()
+    return [p for p in points if p in returned]
 
 
 def heuristic_result(transcript: str) -> AnalysisResult:

@@ -151,6 +151,7 @@ class AgentSetup(NamedTuple):
     allow_repo_grounding: bool
     prep_note: str
     context_signals: tuple[ContextSignal, ...] = ()
+    check_points: tuple[str, ...] = ()
     product_id: str | None = None
 
 
@@ -250,7 +251,15 @@ def build_agent_instructions(repo: SessionRepository, session_id: str) -> AgentS
         chars=len(instructions),
     )
     product_id = meta.product_id if meta is not None else None
-    return AgentSetup(instructions, mode, allow_repo_grounding, prep_note, signals, product_id)
+    return AgentSetup(
+        instructions,
+        mode,
+        allow_repo_grounding,
+        prep_note,
+        signals,
+        tuple(seeded_check_items),
+        product_id,
+    )
 
 
 def opening_instructions(mode: InviteScope, has_prep_context: bool = False) -> str:
@@ -340,6 +349,7 @@ class SANBAAgent(Agent):
         self._allow_repo_grounding = setup.allow_repo_grounding
         self._prep_note = setup.prep_note
         self._context_signals = setup.context_signals
+        self._check_points = setup.check_points
         self._session_id = session_id
         self._product_id = setup.product_id
         self._repo = repo
@@ -679,6 +689,14 @@ class SANBAAgent(Agent):
             open_topics=result.open_topics,
             next_question=result.next_question,
         )
+        if self._check_points:
+            log.info(
+                "check_point_coverage",
+                session=self._session_id,
+                trigger=trigger,
+                total=len(self._check_points),
+                uncovered=result.coverage_open,
+            )
         async with self._analysis_lock:
             await self._publish_analysis_detections(result)
         self._last_analysis = result
@@ -700,7 +718,7 @@ class SANBAAgent(Agent):
         def _worker() -> None:
             outcome: AnalysisResult | BaseException
             try:
-                outcome = asyncio.run(analyze_transcript(transcript))
+                outcome = asyncio.run(analyze_transcript(transcript, self._check_points))
             except Exception as exc:  # noqa: BLE001
                 outcome = exc
 
@@ -755,9 +773,7 @@ class SANBAAgent(Agent):
         触らない（背景実行は不可視・deliberating/listening はツール経路だけが出す）。
 
         gap（`result.open_topics`）は汎用の検知チャネルとして残すが、ハードコードの企業向け
-        NFR ヒューリスティックは廃止したため現状は供給されない（ADR-0055）。会話でカバーすべき
-        観点はモード別の check-points で instruction 側にシードし、終了/確定を gap でブロック
-        しない。将来の動的観点検知はこのチャネルを再利用して open_topics を埋める。
+        NFR ヒューリスティックは廃止したため現状は供給されない（ADR-0055）。
         """
         if self._publisher is not None:
             current = {make_requirement_id(f"gap:{t}"): t for t in result.open_topics}

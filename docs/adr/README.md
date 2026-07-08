@@ -3,7 +3,7 @@
 > このファイルは `just docs-index`（`scripts/gen-docs-index.py`）で生成する。
 > 手で編集しない。ADR を追加・改訂したら再生成する。
 
-設計判断記録（Architecture Decision Record）の一覧。全 57 件。
+設計判断記録（Architecture Decision Record）の一覧。全 58 件。
 書き方・ステータス制御語彙は [`/adr` 雛形](../../.claude/commands/adr.md) を参照。
 
 | # | タイトル | ステータス |
@@ -65,5 +65,6 @@
 | [0054](0054-ui-copy-terminology-unification-and-help.md) | UIコピーの用語統一・平易化とヘルプ補足（単一文言への統一・Radix Popover ヘルプ） | Proposed |
 | [0055](0055-end-user-detection-handling.md) | 会話でカバーする観点をモード別・設定可能にし、ハードコード NFR gap 検知を廃止する | Accepted |
 | [0056](0056-auto-finalize-on-disconnect.md) | 未確定のまま離脱したセッションを離脱後始末で自動確定し、要件を保全する | Accepted |
+| [0057](0057-dynamic-check-point-coverage.md) | 会話の観点（check-points）カバレッジを LLM で動的に判定する（増分1: パイプライン + 観測） | Accepted |
 
 付随資料は [`supplements/`](supplements/) に置く（特定 ADR の実測・検証データ）。
