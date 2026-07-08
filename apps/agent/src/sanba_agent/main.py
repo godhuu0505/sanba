@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import os
+import threading
 import time
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -133,6 +134,15 @@ def _session_product(repo: SessionRepository, meta: SessionMeta | None) -> Produ
     return product
 
 
+class ContextSignal(NamedTuple):
+    """会話開始時に会話履歴へ出す前提読み込みバブル 1 件（``context.progress`` の元 / P1-a）。"""
+
+    source: str
+    stage: str
+    label: str
+    detail: str
+
+
 class AgentSetup(NamedTuple):
     """build_agent_instructions の結果（初期 instructions と付随フラグの束）。"""
 
@@ -140,6 +150,36 @@ class AgentSetup(NamedTuple):
     mode: InviteScope
     allow_repo_grounding: bool
     prep_note: str
+    context_signals: tuple[ContextSignal, ...] = ()
+
+
+def _context_signals(
+    meta: SessionMeta | None, mode: InviteScope, confirmed: bool
+) -> tuple[ContextSignal, ...]:
+    """会話開始時に「読み込み済み/索引中」を会話履歴へ出すためのシグナルを組み立てる（P1-a）。
+
+    実体に正直な段階のみ（ADR-0023 §1）: prep は同期シードなので done、repo は索引状態を
+    そのまま写す（ready/partial=reused, indexing/pending=running, failed=failed, none=出さない）。
+    repo は end_user モードでは出さない（private repo 情報を利用者会話に出さない多層防御・
+    build_agent_instructions の allow_repo_grounding と揃える）。
+    """
+    signals: list[ContextSignal] = []
+    if meta is not None and (meta.goal or meta.goal_detail):
+        detail = "ゴールとゴール詳細を確認" if meta.goal_detail else "ゴールを確認"
+        signals.append(ContextSignal("prep", "done", "ゴールとゴール詳細", detail))
+    if confirmed and mode is not InviteScope.DEVELOPER:
+        return tuple(signals)
+    if meta is not None and meta.github_repo and confirmed:
+        branch = meta.github_branch or "default"
+        label = f"{meta.github_repo}@{branch}"
+        status = meta.github_index_status
+        if status in (GitHubIndexStatus.READY, GitHubIndexStatus.PARTIAL):
+            signals.append(ContextSignal("repo", "reused", label, "索引済みを利用"))
+        elif status in (GitHubIndexStatus.INDEXING, GitHubIndexStatus.PENDING):
+            signals.append(ContextSignal("repo", "running", label, "ソースコードを読み込み中"))
+        elif status is GitHubIndexStatus.FAILED:
+            signals.append(ContextSignal("repo", "failed", label, "索引に失敗しました"))
+    return tuple(signals)
 
 
 def build_agent_instructions(repo: SessionRepository, session_id: str) -> AgentSetup:
@@ -196,6 +236,7 @@ def build_agent_instructions(repo: SessionRepository, session_id: str) -> AgentS
         )
         allow_repo_grounding = confirmed and meta is not None
     instructions += build_language_directive(settings.gemini_language)
+    signals = _context_signals(meta, mode, confirmed)
     log.info(
         "agent_instructions_built",
         session=session_id,
@@ -204,9 +245,10 @@ def build_agent_instructions(repo: SessionRepository, session_id: str) -> AgentS
         allow_repo_grounding=allow_repo_grounding,
         has_prep_context=bool(prep_note),
         check_items_count=len(seeded_check_items),
+        context_signals=len(signals),
         chars=len(instructions),
     )
-    return AgentSetup(instructions, mode, allow_repo_grounding, prep_note)
+    return AgentSetup(instructions, mode, allow_repo_grounding, prep_note, signals)
 
 
 def opening_instructions(mode: InviteScope, has_prep_context: bool = False) -> str:
@@ -295,6 +337,7 @@ class SANBAAgent(Agent):
         self._interview_mode = setup.mode
         self._allow_repo_grounding = setup.allow_repo_grounding
         self._prep_note = setup.prep_note
+        self._context_signals = setup.context_signals
         self._session_id = session_id
         self._repo = repo
         self._grounding = grounding
@@ -321,6 +364,9 @@ class SANBAAgent(Agent):
         self._analysis_lock = asyncio.Lock()
         self._last_analysis: AnalysisResult | None = None
         self._analysis_covered_turn = -1
+        self._shutdown_hook: Callable[[str], None] | None = None
+        self._end_proposed = False
+        self._completed = False
 
     @property
     def transcript(self) -> list[str]:
@@ -359,6 +405,38 @@ class SANBAAgent(Agent):
             return False
         self._injected_assets.add(asset_id)
         return True
+
+    async def emit_context_progress(self) -> None:
+        """会話開始時に前提読み込み（prep/repo）の状態を会話履歴へ 1 回だけ流す（P1-a）。
+
+        build_agent_instructions が読んだ meta から算出したシグナルを ``context.progress``
+        として publish する。音声は止めない・フェイク進捗は出さない（ADR-0023 §1）。
+        publish は seq を消費するので、送信後に session_seq を保存して再起動後の単調性を保つ。
+        """
+        if self._publisher is None or not self._context_signals:
+            return
+        for sig in self._context_signals:
+            with contextlib.suppress(Exception):
+                await self._publisher.context_progress(
+                    sig.source, sig.stage, label=sig.label, detail=sig.detail
+                )
+        self._repo.set_session_seq(self._session_id, self._publisher.seq)
+
+    def set_shutdown_hook(self, hook: Callable[[str], None]) -> None:
+        """セッションを終える手段（ctx.shutdown）を注入する（P1-b）。
+
+        complete_session ツールがユーザー同意後にこれを遅延起動し、締めの一言を
+        読み上げ終える猶予をおいてルームから退出する。
+        """
+        self._shutdown_hook = hook
+
+    def _open_detection_count(self) -> int:
+        """未解消の検知（gap/ambiguous）件数。終了提案・確定の可否判定に使う（P1-b）。
+
+        agent が publish し resolve で外す open 集合そのもの（web の「未解消 N」と一致）。
+        サーバ側 finalize も list_open_detections で二重にゲートするので、ここは good-faith。
+        """
+        return len(self._published_gaps) + len(self._published_ambiguous)
 
     @property
     def current_question_id(self) -> str | None:
@@ -586,9 +664,9 @@ class SANBAAgent(Agent):
             if span is not None:
                 span.set_attribute("sanba.analysis.trigger", trigger)
             if timeout_seconds is not None:
-                result = await asyncio.wait_for(analyze_transcript(transcript), timeout_seconds)
+                result = await asyncio.wait_for(self._analyze_off_loop(transcript), timeout_seconds)
             else:
-                result = await analyze_transcript(transcript)
+                result = await self._analyze_off_loop(transcript)
         duration_ms = int((time.monotonic() - started) * 1000)
         log.info(
             "analysis",
@@ -603,6 +681,41 @@ class SANBAAgent(Agent):
         self._last_analysis = result
         self._analysis_covered_turn = covered_turn
         return result
+
+    async def _analyze_off_loop(self, transcript: str) -> AnalysisResult:
+        """ADK 分析を専用スレッドの独立イベントループで実行する（ADR-0046 段階1・#375）。
+
+        逐次 LLM 往復（interview_lead + サブエージェント）を音声 worker のイベントループから
+        隔離し、分析の遅延・失敗が音声ターンのジッタ・破綻へ波及しないようにする。
+        grounding 検索（to_thread 済み）と同じ規律で、分析経路だけ残っていた非対称を解消する。
+        スレッドは daemon にする: タイムアウト後に走り続けても SIGTERM 時のプロセス退出を
+        塞がない（結果は future 側のガードで破棄される）。
+        """
+        loop = asyncio.get_running_loop()
+        future: asyncio.Future[AnalysisResult] = loop.create_future()
+
+        def _worker() -> None:
+            outcome: AnalysisResult | BaseException
+            try:
+                outcome = asyncio.run(analyze_transcript(transcript))
+            except Exception as exc:  # noqa: BLE001
+                outcome = exc
+
+            def _deliver() -> None:
+                if future.done():
+                    return
+                if isinstance(outcome, BaseException):
+                    future.set_exception(outcome)
+                else:
+                    future.set_result(outcome)
+
+            with contextlib.suppress(RuntimeError):
+                loop.call_soon_threadsafe(_deliver)
+
+        threading.Thread(
+            target=_worker, name=f"sanba-analysis-{self._session_id}", daemon=True
+        ).start()
+        return await future
 
     def _start_background_analysis(self) -> None:
         """debounce 判定を通った背景分析タスクを起動する（ADR-0037 段階B）。
@@ -644,6 +757,7 @@ class SANBAAgent(Agent):
                 if gap_id in self._published_gaps:
                     continue
                 self._published_gaps.add(gap_id)
+                self._end_proposed = False
                 summary = f"{topic}が未確認です。"
                 self._repo.save_detection(
                     self._session_id,
@@ -680,6 +794,7 @@ class SANBAAgent(Agent):
                 if amb_id in self._published_ambiguous:
                     continue
                 self._published_ambiguous.add(amb_id)
+                self._end_proposed = False
                 summary = f"「{snippet}」は具体的な基準が不明瞭です。"
                 self._repo.save_detection(
                     self._session_id,
@@ -746,8 +861,12 @@ class SANBAAgent(Agent):
             options: 選択肢ラベル（2〜4個。例 ["関連度順","新着順"]）。
                 自由に答えてほしい問いでは省略する（音声/テキストで回答）。
         """
-        if self._current_question_id is not None and self._question_asked_turn == self._user_turn:
+        superseded_in_turn = (
+            self._current_question_id is not None and self._question_asked_turn == self._user_turn
+        )
+        if superseded_in_turn:
             superseded = self._current_question_id
+            assert superseded is not None
             log.info(
                 "question_superseded",
                 session=self._session_id,
@@ -783,7 +902,13 @@ class SANBAAgent(Agent):
                     error=str(exc),
                 )
         log.info("question_asked", session=self._session_id, id=question_id, options=len(opts))
-        return {"asked": question_id}
+        result: dict[str, Any] = {"asked": question_id}
+        if superseded_in_turn:
+            result["note"] = (
+                "同一ターンで複数の問いを立てました。前の問いは差し替えました。"
+                "1ターンにつき問いは1つだけにし、質問を畳みかけないでください。"
+            )
+        return result
 
     async def clear_current_question(self, question_id: str) -> None:
         """回答を受けて現在質問をクリアし、``question.cleared`` を全参加者へ伝播する。
@@ -1102,6 +1227,70 @@ class SANBAAgent(Agent):
         if link is None:
             return meta.github_commit_sha, True
         return meta.github_commit_sha, False
+
+    @function_tool
+    async def propose_session_end(self, _ctx: RunContext) -> dict:
+        """確認したい点がすべて解消できたとき、会話を終える提案を出す（P1-b）。
+
+        未解消の論点（矛盾・抜け・不明瞭）が 0 件になったと判断したら呼ぶ。まだ残って
+        いれば proposed=false と残数を返すので、深掘りを続ける。0 件なら画面に終了提案の
+        カードを出し、ユーザーの同意を音声で確認する（同意を得たら complete_session を呼ぶ）。
+        """
+        open_count = self._open_detection_count()
+        if open_count > 0:
+            log.info("session_end_declined_open", session=self._session_id, open=open_count)
+            return {"proposed": False, "open_count": open_count, "reason": "open_detections"}
+        requirements = len(self._repo.list_requirements(self._session_id))
+        if requirements == 0:
+            log.info("session_end_declined_no_requirements", session=self._session_id)
+            return {"proposed": False, "open_count": 0, "reason": "no_requirements"}
+        self._end_proposed = True
+        materials = len(self._repo.list_materials(self._session_id))
+        if self._publisher is not None:
+            await self._publisher.session_end_proposed(
+                open_count=0, requirement_count=requirements, material_count=materials
+            )
+            self._repo.set_session_seq(self._session_id, self._publisher.seq)
+        log.info("session_end_proposed", session=self._session_id, requirements=requirements)
+        return {"proposed": True, "open_count": 0, "requirement_count": requirements}
+
+    @function_tool
+    async def complete_session(self, _ctx: RunContext) -> dict:
+        """ユーザーが終了に同意したとき、会話を締めてセッションを終える（P1-b）。
+
+        propose_session_end で終了を提案し、ユーザーが「はい」と同意した後にだけ呼ぶ。
+        未解消の論点が残っていれば completed=false を返す（同意より整合性を優先）。
+        締めの一言を告げてから、少し間をおいて自動的に退出する。
+        """
+        if self._completed:
+            return {"completed": True, "open_count": 0}
+        if not self._end_proposed:
+            log.info("session_complete_declined_not_proposed", session=self._session_id)
+            return {"completed": False, "open_count": 0, "reason": "not_proposed"}
+        open_count = self._open_detection_count()
+        if open_count > 0:
+            log.info("session_complete_declined_open", session=self._session_id, open=open_count)
+            return {"completed": False, "open_count": open_count, "reason": "open_detections"}
+        self._completed = True
+        if self._publisher is not None:
+            await self._publisher.session_completed(
+                contradictions_resolved=self._publisher.contradictions_resolved,
+                gaps_found=self._publisher.gaps_published,
+                issues_created=0,
+                artifacts=[],
+            )
+            self._repo.set_session_seq(self._session_id, self._publisher.seq)
+        log.info("session_completed_by_agent", session=self._session_id)
+        if self._shutdown_hook is not None:
+            hook = self._shutdown_hook
+            delay = settings.voice_completion_shutdown_delay_s
+
+            async def _delayed_shutdown() -> None:
+                await asyncio.sleep(delay)
+                hook("session completed by agreement")
+
+            self._publish(_delayed_shutdown())
+        return {"completed": True, "open_count": 0}
 
     @function_tool
     async def export_requirements_to_github(self, _ctx: RunContext) -> dict:
@@ -1724,9 +1913,11 @@ async def entrypoint(ctx: JobContext) -> None:
                 error=str(exc),
             )
 
+    agent.set_shutdown_hook(lambda reason: ctx.shutdown(reason=reason))
     session = await _start_session()
     ctx.room.on("data_received", _on_data)
     await publisher.status("listening")
+    await agent.emit_context_progress()
 
     await open_interview(
         session,

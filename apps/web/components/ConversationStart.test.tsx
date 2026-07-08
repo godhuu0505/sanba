@@ -87,6 +87,18 @@ describe("MicPermissionModal（03-2 録音許可）", () => {
     fireEvent.click(screen.getByRole("button", { name: "閉じる" }));
     expect(onDismiss).toHaveBeenCalledTimes(1);
   });
+
+  it("許可タップ（ユーザー操作）の中で onAllow を呼び、確認中は表示を変え再タップを抑止する", async () => {
+    let resolve!: () => void;
+    const onAllow = vi.fn(() => new Promise<void>((r) => (resolve = r)));
+    render(<MicPermissionModal onAllow={onAllow} onDismiss={vi.fn()} />);
+    const allow = screen.getByRole("button", { name: "マイクの使用を許可する" });
+    fireEvent.click(allow);
+    fireEvent.click(allow);
+    expect(onAllow).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText("許可を確認しています…")).toBeTruthy();
+    resolve();
+  });
 });
 
 describe("ConnectingOverlay（03-1 接続中）", () => {

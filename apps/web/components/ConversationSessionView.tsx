@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   mergeMaterials,
@@ -15,7 +15,7 @@ import {
 import type { RealtimeMetricsSnapshot } from "@/lib/realtime/metrics";
 import type { SessionState } from "@/lib/realtime/store";
 import type { SendAnswer, SendSelection } from "@/lib/realtime/useRealtimeSession";
-import type { ExportResult } from "@/lib/api";
+import type { ExportEligibility, ExportResult } from "@/lib/api";
 
 import { BottomBar } from "./BottomBar";
 import { ChatHistory } from "./ChatHistory";
@@ -23,6 +23,7 @@ import { ChoicePin } from "./ChoicePin";
 import { ConversationShell, type ShellTab } from "./ConversationShell";
 import { DetectionPin } from "./DetectionPin";
 import { EndConfirmDialog } from "./EndConfirmDialog";
+import { EndProposalCard } from "./EndProposalCard";
 import { JudgmentGate } from "./JudgmentGate";
 import { MaterialDetailSheet } from "./MaterialDetailSheet";
 import { MaterialsList } from "./MaterialsList";
@@ -42,6 +43,7 @@ export interface ConversationSessionViewProps {
   onToggleMute: () => void;
   onSendText: (text: string) => void;
   onExport: () => Promise<ExportResult>;
+  onCheckExportEligibility?: () => Promise<ExportEligibility>;
   onFinalize?: () => Promise<unknown>;
   onAddMaterial: () => void;
   extraMaterials?: MaterialItem[];
@@ -72,6 +74,7 @@ export function ConversationSessionView({
   onToggleMute,
   onSendText,
   onExport,
+  onCheckExportEligibility,
   onFinalize,
   onAddMaterial,
   extraMaterials,
@@ -98,11 +101,41 @@ export function ConversationSessionView({
   const [answeredQuestions, setAnsweredQuestions] = useState<ReadonlySet<string>>(new Set());
   const exportingRef = useRef(false);
   const [issueExport, setIssueExport] = useState<IssueExportStatus>({ status: "idle" });
+  const [issueDisabledReason, setIssueDisabledReason] = useState<string | null>(null);
+  const eligibilityRequestedRef = useRef(false);
+  const [endProposalDismissed, setEndProposalDismissed] = useState(false);
+  const [autoFinalizing, setAutoFinalizing] = useState(false);
   const finalizingRef = useRef(false);
 
   const baseMini = selectMiniStatus(state);
   const openDetections = selectOpenDetections(state);
   const confirmed = selectConfirmedRequirements(state);
+
+  useEffect(() => {
+    if (
+      readOnly ||
+      phase !== "result" ||
+      confirmed.length === 0 ||
+      !onCheckExportEligibility ||
+      eligibilityRequestedRef.current
+    ) {
+      return;
+    }
+    eligibilityRequestedRef.current = true;
+    let cancelled = false;
+    void onCheckExportEligibility()
+      .then((e) => {
+        if (!cancelled) {
+          setIssueDisabledReason(e.can_export ? null : (e.reason ?? "issue creation failed"));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setIssueDisabledReason(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [readOnly, phase, confirmed.length, onCheckExportEligibility]);
 
   const realtimeMaterials = selectMaterials(state);
   const materials = mergeMaterials(
@@ -156,6 +189,45 @@ export function ConversationSessionView({
     setPhase("shell");
     setTab("history");
   }
+
+  const finalizeAndFinish = useCallback(async () => {
+    if (finalizingRef.current) return;
+    if (readOnly) {
+      setProvisional(false);
+      setEnded(true);
+      setPhase("result");
+      return;
+    }
+    finalizingRef.current = true;
+    setAutoFinalizing(true);
+    setFinalizeError(null);
+    try {
+      await Promise.resolve(onFinalize?.());
+      setProvisional(false);
+      setEnded(true);
+      onEndSession?.();
+      setPhase("result");
+    } catch (e) {
+      console.error("finalize failed", e);
+      setFinalizeError(
+        "確定できませんでした。未解消の項目が残っていないか確かめ、再度お試しください。",
+      );
+      setTab("scroll");
+    } finally {
+      finalizingRef.current = false;
+      setAutoFinalizing(false);
+    }
+  }, [readOnly, onFinalize, onEndSession]);
+
+  useEffect(() => {
+    if (state.completed && state.endProposal && phase === "shell" && !ended) {
+      void finalizeAndFinish();
+    }
+  }, [state.completed, state.endProposal, phase, ended, finalizeAndFinish]);
+
+  useEffect(() => {
+    setEndProposalDismissed(false);
+  }, [state.endProposal]);
 
   if (phase === "judgment") {
     return (
@@ -222,6 +294,7 @@ export function ConversationSessionView({
         }}
         onRestart={() => onRestart?.()}
         issueExport={issueExport}
+        issueDisabledReason={issueDisabledReason}
         onExportIssue={
           !readOnly && confirmed.length > 0
             ? () => {
@@ -314,7 +387,13 @@ export function ConversationSessionView({
           )
         }
         tabs={{
-          history: <ChatHistory transcript={state.transcript} />,
+          history: (
+            <ChatHistory
+              transcript={state.transcript}
+              contextProgress={state.contextProgress}
+              materials={materials}
+            />
+          ),
           files: readOnly ? null : (
             <MaterialsList
               items={materials}
@@ -360,6 +439,23 @@ export function ConversationSessionView({
           }
         />
       )}
+
+      {!ended &&
+        !readOnly &&
+        state.endProposal &&
+        !endProposalDismissed &&
+        !state.completed &&
+        openDetections.length === 0 && (
+          <div className="fixed inset-x-0 bottom-[92px] z-40 mx-auto w-full max-w-[420px] px-4">
+            <EndProposalCard
+              requirementCount={state.endProposal.requirement_count}
+              materialCount={state.endProposal.material_count}
+              busy={autoFinalizing}
+              onAgree={() => void finalizeAndFinish()}
+              onContinue={() => setEndProposalDismissed(true)}
+            />
+          </div>
+        )}
 
       {endOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-sanba-frame/55 px-4">

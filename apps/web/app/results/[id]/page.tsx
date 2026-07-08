@@ -10,14 +10,18 @@ import { RequirementsScrollList } from "@/components/RequirementsScrollList";
 import { authGate } from "@/components/RequireAuth";
 import {
   ApiError,
+  exportMyRequirements,
+  fetchMyExportEligibility,
   fetchMySessionRequirements,
   fetchMySessionResultDocument,
   type Audience,
+  type ExportEligibility,
   type MySessionRequirements,
   type ResultDocument,
 } from "@/lib/api";
 import { AUDIENCE_LABELS, AUDIENCES } from "@/lib/audience";
 import { useAuth } from "@/lib/auth";
+import { issueExportReasonText } from "@/lib/issueExport";
 
 function formatSessionDate(iso: string): string {
   const d = new Date(iso);
@@ -41,6 +45,21 @@ type DocLoad =
   | { state: "ok"; data: ResultDocument }
   | { state: "error" };
 
+type IssueState =
+  | { state: "idle" }
+  | { state: "pending" }
+  | { state: "done"; url?: string }
+  | { state: "error"; reason?: string };
+
+function isSafeHttpUrl(url: string): boolean {
+  try {
+    const u = new URL(url);
+    return u.protocol === "http:" || u.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 export default function PastRequirementsPage() {
   const auth = useAuth();
   const router = useRouter();
@@ -51,6 +70,8 @@ export default function PastRequirementsPage() {
   const [audience, setAudience] = useState<Audience>("developer");
   const [doc, setDoc] = useState<DocLoad>({ state: "idle" });
   const [copied, setCopied] = useState(false);
+  const [elig, setElig] = useState<ExportEligibility | null>(null);
+  const [issue, setIssue] = useState<IssueState>({ state: "idle" });
 
   const fetchDocument = useCallback(
     async (target: Audience) => {
@@ -83,6 +104,34 @@ export default function PastRequirementsPage() {
   useEffect(() => {
     void fetchScroll();
   }, [fetchScroll]);
+
+  useEffect(() => {
+    if (load.state !== "ok" || elig !== null) return;
+    let cancelled = false;
+    fetchMyExportEligibility(sessionId, auth.credential)
+      .then((e) => {
+        if (!cancelled) setElig(e);
+      })
+      .catch(() => {
+        if (!cancelled) setElig({ can_export: false });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [load.state, elig, sessionId, auth.credential]);
+
+  const onCreateIssue = useCallback(() => {
+    setIssue({ state: "pending" });
+    exportMyRequirements(sessionId, auth.credential)
+      .then((r) =>
+        setIssue(
+          r.exported
+            ? { state: "done", url: r.issue_url }
+            : { state: "error", reason: r.reason },
+        ),
+      )
+      .catch(() => setIssue({ state: "error" }));
+  }, [sessionId, auth.credential]);
 
   const gate = authGate(auth, `/results/${sessionId}`);
   if (gate) return gate;
@@ -196,6 +245,60 @@ export default function PastRequirementsPage() {
                     {copied ? "コピーしました" : "Markdown をコピー"}
                   </Button>
                 </>
+              )}
+            </div>
+
+            <div className="flex flex-col gap-[8px] px-1 pt-2">
+              <h3 className="text-[14px] font-bold text-sanba-cream">GitHub に Issue を作成</h3>
+              {elig === null ? (
+                <Button variant="gold" block disabled>
+                  権限を確認しています…
+                </Button>
+              ) : elig.can_export ? (
+                <>
+                  <p className="text-[12px] leading-relaxed text-sanba-muted">
+                    紐づくリポジトリ（{elig.repo}）に、この要件結果を Issue として起票します。
+                  </p>
+                  <Button
+                    variant="gold"
+                    block
+                    disabled={issue.state === "pending"}
+                    onClick={onCreateIssue}
+                  >
+                    {issue.state === "pending" ? "起票中…" : "Issue を作成"}
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Button variant="gold" block disabled>
+                    Issue を作成
+                  </Button>
+                  <p className="text-[12px] leading-relaxed text-sanba-muted">
+                    {issueExportReasonText(elig.reason)}
+                    上の「Markdown をコピー」で内容をコピーし、GitHub の Issue
+                    作成画面に貼り付けて作成できます。
+                  </p>
+                </>
+              )}
+              {issue.state === "done" &&
+                (issue.url && isSafeHttpUrl(issue.url) ? (
+                  <a
+                    href={issue.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block rounded-[12px] border border-sanba-border bg-sanba-surface px-3 py-[10px] text-center text-[12px] font-bold text-sanba-gold-text"
+                  >
+                    起票した Issue を開く ↗
+                  </a>
+                ) : (
+                  <p className="text-[12px] font-bold text-sanba-gold-text">
+                    Issue を起票しました。
+                  </p>
+                ))}
+              {issue.state === "error" && (
+                <p role="alert" className="text-[12px] text-sanba-rec-text">
+                  {issueExportReasonText(issue.reason)}
+                </p>
               )}
             </div>
           </>

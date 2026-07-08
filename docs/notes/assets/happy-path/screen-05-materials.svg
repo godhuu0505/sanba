@@ -1,0 +1,108 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 780 720" font-family="'Hiragino Sans','Noto Sans JP',sans-serif">
+  <rect width="780" height="720" fill="#ffffff"/>
+  <text x="24" y="36" font-size="18" font-weight="700" fill="#221e1a">05 参考資料タブ — 進捗は会話タブと同一ストアで同期</text>
+
+  <rect x="30" y="66" width="390" height="620" rx="24" fill="#fcfbf7" stroke="#221e1a" stroke-width="2"/>
+
+  <g font-size="12" font-weight="600">
+    <rect x="54" y="90" width="96" height="30" rx="15" fill="#ffffff" stroke="#ede8dc"/>
+    <text x="82" y="110" fill="#706a5d">会話</text>
+    <rect x="156" y="90" width="110" height="30" rx="15" fill="#221e1a"/>
+    <text x="176" y="110" fill="#ffffff">参考資料</text>
+    <rect x="272" y="90" width="110" height="30" rx="15" fill="#ffffff" stroke="#ede8dc"/>
+    <text x="292" y="110" fill="#706a5d">要件一覧</text>
+  </g>
+
+  <text x="54" y="152" font-size="12" font-weight="700" fill="#706a5d">セッションの前提</text>
+
+  <g>
+    <rect x="54" y="164" width="342" height="52" rx="14" fill="#ffffff" stroke="#ede8dc"/>
+    <rect x="66" y="176" width="28" height="28" rx="8" fill="#f4f1e8"/>
+    <text x="74" y="196" font-size="13">🎯</text>
+    <text x="104" y="184" font-size="12" font-weight="600" fill="#221e1a">ゴール・ゴール詳細</text>
+    <text x="104" y="202" font-size="10.5" fill="#4a6619">読み込み済み ✓ · 会話の前提に反映</text>
+  </g>
+
+  <g>
+    <rect x="54" y="224" width="342" height="52" rx="14" fill="#ffffff" stroke="#ede8dc"/>
+    <rect x="66" y="236" width="28" height="28" rx="8" fill="#f4f1e8"/>
+    <text x="74" y="256" font-size="13">📦</text>
+    <text x="104" y="244" font-size="12" font-weight="600" fill="#221e1a">godhuu0505/myapp @ main</text>
+    <text x="104" y="262" font-size="10.5" fill="#4a6619">索引済み ✓ · 214 ファイル · 直近 Issue 12 件</text>
+    <text x="330" y="248" font-size="10" fill="#706a5d">sha 9f2c…</text>
+  </g>
+
+  <text x="54" y="308" font-size="12" font-weight="700" fill="#706a5d">アップロードした資料</text>
+
+  <g>
+    <rect x="54" y="320" width="342" height="76" rx="14" fill="#ffffff" stroke="#c08a10"/>
+    <rect x="66" y="332" width="28" height="28" rx="8" fill="#fdf3dc"/>
+    <text x="74" y="352" font-size="13">🖼</text>
+    <text x="104" y="342" font-size="12" font-weight="600" fill="#221e1a">capture-01.png</text>
+    <text x="104" y="358" font-size="10.5" fill="#985c06">解析中… 65%</text>
+    <rect x="104" y="368" width="240" height="8" rx="4" fill="#f4f1e8"/>
+    <rect x="104" y="368" width="156" height="8" rx="4" fill="#f0a814"/>
+    <rect x="312" y="334" width="52" height="22" rx="11" fill="#ffffff" stroke="#ede8dc"/>
+    <text x="322" y="349" font-size="10.5" fill="#706a5d">中断</text>
+  </g>
+
+  <g>
+    <rect x="54" y="404" width="342" height="64" rx="14" fill="#ffffff" stroke="#ede8dc"/>
+    <rect x="66" y="416" width="28" height="28" rx="8" fill="#f4f1e8"/>
+    <text x="74" y="436" font-size="13">🖼</text>
+    <text x="104" y="426" font-size="12" font-weight="600" fill="#221e1a">capture-02.png</text>
+    <text x="104" y="444" font-size="10.5" fill="#4a6619">解析済 ✓ · 抽出要件 3</text>
+    <rect x="212" y="434" width="98" height="18" rx="9" fill="#fbeae6" stroke="#c43a20"/>
+    <text x="220" y="447" font-size="10" fill="#c43a20">言葉×画の矛盾 1</text>
+  </g>
+
+  <g>
+    <rect x="54" y="476" width="342" height="64" rx="14" fill="#ffffff" stroke="#ede8dc"/>
+    <rect x="66" y="488" width="28" height="28" rx="8" fill="#f4f1e8"/>
+    <text x="74" y="508" font-size="13">🎬</text>
+    <text x="104" y="498" font-size="12" font-weight="600" fill="#221e1a">operation-flow.mp4</text>
+    <text x="104" y="516" font-size="10.5" fill="#985c06">解析中… 50% · 非同期ワーカーで処理中</text>
+    <rect x="104" y="524" width="240" height="8" rx="4" fill="#f4f1e8"/>
+    <rect x="104" y="524" width="120" height="8" rx="4" fill="#f0a814"/>
+  </g>
+
+  <g>
+    <rect x="54" y="560" width="342" height="44" rx="14" fill="#ffffff" stroke="#ede8dc" stroke-dasharray="5 4"/>
+    <text x="150" y="587" font-size="12" fill="#2a5cdb" font-weight="600">＋ 資料を追加する</text>
+  </g>
+
+  <g font-size="12.5" fill="#221e1a">
+    <circle cx="466" cy="190" r="12" fill="#221e1a"/>
+    <text x="461.5" y="194.5" fill="#ffffff" font-weight="700">A</text>
+    <text x="488" y="182" font-weight="700">「セッションの前提」セクション（新規）</text>
+    <text x="488" y="200">prep / repo の読み込み状態を素材と同じ一覧に表示。</text>
+    <text x="488" y="216">ハイドレーションは新設 GET /context/status。</text>
+    <text x="488" y="232">repo 行は Product.github_index_status を写像</text>
+    <text x="488" y="248">（none/pending/indexing/ready/partial/failed）。</text>
+
+    <circle cx="466" cy="340" r="12" fill="#221e1a"/>
+    <text x="461.5" y="344.5" fill="#ffffff" font-weight="700">B</text>
+    <text x="488" y="332" font-weight="700">素材の進捗（既存 MaterialsList を維持）</text>
+    <text x="488" y="350">`analysis.progress` 由来。会話タブの解析バブルと</text>
+    <text x="488" y="366">同じ RealtimeStore.analysis を参照するため、</text>
+    <text x="488" y="382">両タブの %・状態は常に一致（二重管理しない）。</text>
+
+    <circle cx="466" cy="430" r="12" fill="#221e1a"/>
+    <text x="461.5" y="434.5" fill="#ffffff" font-weight="700">C</text>
+    <text x="488" y="422" font-weight="700">再接続時の詳細復元（#355 対応）</text>
+    <text x="488" y="440">GET /context/files に extracted_requirements と</text>
+    <text x="488" y="456">conflicts を含め、リロード直後でも解析済み内容を</text>
+    <text x="488" y="472">表示（analysisReady=false 問題の解消）。</text>
+
+    <circle cx="466" cy="520" r="12" fill="#221e1a"/>
+    <text x="461.5" y="524.5" fill="#ffffff" font-weight="700">D</text>
+    <text x="488" y="512" font-weight="700">動画は worker 非同期（ADR-0040）</text>
+    <text x="488" y="530">Cloud Tasks → apps/worker。CD 配線（Phase 0）</text>
+    <text x="488" y="546">が前提。失敗時は failed 表示＋再試行導線。</text>
+  </g>
+
+  <line x1="400" y1="190" x2="452" y2="190" stroke="#706a5d" stroke-dasharray="4 3"/>
+  <line x1="400" y1="356" x2="452" y2="340" stroke="#706a5d" stroke-dasharray="4 3"/>
+  <line x1="400" y1="436" x2="452" y2="430" stroke="#706a5d" stroke-dasharray="4 3"/>
+  <line x1="400" y1="508" x2="452" y2="520" stroke="#706a5d" stroke-dasharray="4 3"/>
+</svg>

@@ -190,6 +190,210 @@ async def test_background_analysis_timeout_is_fail_soft(
     assert len(calls) == 2
 
 
+def _seed_requirement(agent: SANBAAgent, statement: str = "検索を新設する") -> None:
+    from sanba_shared.models import Priority, Requirement, RequirementCategory
+
+    agent._repo.save_requirement(
+        agent._session_id,
+        Requirement(
+            id=f"req-{statement}",
+            statement=statement,
+            category=RequirementCategory.FUNCTIONAL,
+            priority=Priority.MUST,
+        ),
+    )
+
+
+@pytest.mark.asyncio
+async def test_propose_session_end_gated_on_open_detections() -> None:
+    transport = RecordingTransport()
+    agent = _agent(transport)
+    _seed_requirement(agent)
+    propose = type(agent).propose_session_end.__wrapped__
+
+    agent._published_gaps.add("g1")
+    declined = await propose(agent, None)
+    assert declined["proposed"] is False
+    assert declined["reason"] == "open_detections"
+    assert not any(t["event"]["type"] == "session.end_proposed" for t in transport.sent)
+
+    agent._published_gaps.clear()
+    proposed = await propose(agent, None)
+    assert proposed["proposed"] is True
+    assert any(t["event"]["type"] == "session.end_proposed" for t in transport.sent)
+
+
+@pytest.mark.asyncio
+async def test_propose_session_end_refused_before_any_requirement() -> None:
+    """会話冒頭など要件が 1 件も無い段階では終了を提案しない（誤発火防止 / レビュー指摘）。"""
+    transport = RecordingTransport()
+    agent = _agent(transport)
+    propose = type(agent).propose_session_end.__wrapped__
+    result = await propose(agent, None)
+    assert result["proposed"] is False
+    assert result["reason"] == "no_requirements"
+    assert not any(t["event"]["type"] == "session.end_proposed" for t in transport.sent)
+
+
+@pytest.mark.asyncio
+async def test_complete_session_requires_prior_proposal() -> None:
+    """提案（同意フロー）を経ずに直接 complete_session を呼んでも終了しない（レビュー指摘）。"""
+    transport = RecordingTransport()
+    agent = _agent(transport)
+    _seed_requirement(agent)
+    agent.set_shutdown_hook(lambda reason: None)
+    complete = type(agent).complete_session.__wrapped__
+    result = await complete(agent, None)
+    assert result["completed"] is False
+    assert result["reason"] == "not_proposed"
+    assert not any(t["event"]["type"] == "session.completed" for t in transport.sent)
+
+
+@pytest.mark.asyncio
+async def test_complete_session_publishes_completed_and_shuts_down() -> None:
+    import asyncio
+
+    from sanba_agent.config import settings
+
+    transport = RecordingTransport()
+    agent = _agent(transport)
+    _seed_requirement(agent)
+    agent._end_proposed = True
+    reasons: list[str] = []
+    agent.set_shutdown_hook(lambda reason: reasons.append(reason))
+    monkeypatch_delay = settings.voice_completion_shutdown_delay_s
+    settings.voice_completion_shutdown_delay_s = 0.01
+    try:
+        complete = type(agent).complete_session.__wrapped__
+        result = await complete(agent, None)
+        assert result["completed"] is True
+        assert any(t["event"]["type"] == "session.completed" for t in transport.sent)
+        await asyncio.sleep(0.05)
+        assert reasons, "同意後にシャットダウンフックが起動する"
+    finally:
+        settings.voice_completion_shutdown_delay_s = monkeypatch_delay
+
+
+@pytest.mark.asyncio
+async def test_complete_session_refuses_when_open_remains() -> None:
+    transport = RecordingTransport()
+    agent = _agent(transport)
+    _seed_requirement(agent)
+    agent._end_proposed = True
+    agent.set_shutdown_hook(lambda reason: None)
+    agent._published_ambiguous.add("a1")
+    complete = type(agent).complete_session.__wrapped__
+    result = await complete(agent, None)
+    assert result["completed"] is False
+    assert result["open_count"] == 1
+    assert result["reason"] == "open_detections"
+    assert not any(t["event"]["type"] == "session.completed" for t in transport.sent)
+
+
+@pytest.mark.asyncio
+async def test_new_gap_retracts_prior_end_proposal() -> None:
+    """終了提案後に新しい抜けが検知されたら提案は取り下げられ、再提案が要る（レビュー指摘）。"""
+    transport = RecordingTransport()
+    agent = _agent(transport)
+    _seed_requirement(agent)
+    agent._end_proposed = True
+    result = AnalysisResult(
+        summary="s", open_topics=["性能要件"], next_question="q?", suggested_answer="a"
+    )
+    await agent._publish_analysis_detections(result)
+    assert agent._end_proposed is False, "新しい未解消が出たら終了提案は無効化される"
+
+
+@pytest.mark.asyncio
+async def test_emit_context_progress_publishes_prep_and_repo() -> None:
+    from sanba_shared.models import GitHubIndexStatus
+
+    repo = SessionRepository()
+    repo.create_session_doc(
+        SessionMeta(
+            id="s2",
+            title="t",
+            owner_sub="owner",
+            owner_email="",
+            goal="アカウント設定画面を作りたい",
+            goal_detail="通知設定も統合したい",
+            github_repo="octo/app",
+            github_branch="main",
+            github_index_status=GitHubIndexStatus.READY,
+        )
+    )
+    transport = RecordingTransport()
+    publisher = EventPublisher("s2", transport)
+    agent = SANBAAgent("s2", repo, GroundingStore(), publisher=publisher)
+    await agent.emit_context_progress()
+
+    events = [t["event"] for t in transport.sent if t["event"]["type"] == "context.progress"]
+    by_source = {e["source"]: e for e in events}
+    assert by_source["prep"]["stage"] == "done"
+    assert by_source["repo"]["stage"] == "reused"
+    assert by_source["repo"]["label"] == "octo/app@main"
+
+
+@pytest.mark.asyncio
+async def test_emit_context_progress_repo_indexing_is_running() -> None:
+    from sanba_shared.models import GitHubIndexStatus
+
+    repo = SessionRepository()
+    repo.create_session_doc(
+        SessionMeta(
+            id="s3",
+            title="t",
+            owner_sub="owner",
+            owner_email="",
+            github_repo="octo/app",
+            github_index_status=GitHubIndexStatus.INDEXING,
+        )
+    )
+    transport = RecordingTransport()
+    agent = SANBAAgent("s3", repo, GroundingStore(), publisher=EventPublisher("s3", transport))
+    await agent.emit_context_progress()
+
+    repo_event = next(
+        t["event"]
+        for t in transport.sent
+        if t["event"]["type"] == "context.progress" and t["event"]["source"] == "repo"
+    )
+    assert repo_event["stage"] == "running"
+
+
+@pytest.mark.asyncio
+async def test_emit_context_progress_without_signals_is_noop() -> None:
+    repo = SessionRepository()
+    repo.create_session_doc(SessionMeta(id="s4", title="t", owner_sub="owner", owner_email=""))
+    transport = RecordingTransport()
+    agent = SANBAAgent("s4", repo, GroundingStore(), publisher=EventPublisher("s4", transport))
+    await agent.emit_context_progress()
+    assert [t for t in transport.sent if t["event"]["type"] == "context.progress"] == []
+
+
+@pytest.mark.asyncio
+async def test_analysis_runs_off_event_loop_thread(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import threading
+
+    seen: list[int] = []
+
+    async def _stub(transcript: str) -> AnalysisResult:
+        seen.append(threading.get_ident())
+        return AnalysisResult(summary="s", next_question="q?", suggested_answer="a")
+
+    monkeypatch.setattr("sanba_agent.main.analyze_transcript", _stub)
+    agent = _agent()
+    agent.record_utterance("participant", "請求管理のアプリを作りたい")
+    agent.record_utterance("participant", "対象は経理担当者です")
+    task = agent._analysis_task
+    assert task is not None
+    await task
+    assert seen, "背景分析が実行される"
+    assert seen[0] != threading.get_ident(), "分析は音声ループと別スレッドで実行される（#375）"
+
+
 @pytest.mark.asyncio
 async def test_drain_tasks_cancels_overdue() -> None:
     import asyncio
@@ -215,13 +419,14 @@ async def test_tool_rides_on_inflight_background_run(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import asyncio
+    import threading
 
     calls: list[str] = []
-    gate: asyncio.Event = asyncio.Event()
+    gate = threading.Event()
 
     async def _slow(transcript: str) -> AnalysisResult:
         calls.append(transcript)
-        await gate.wait()
+        await asyncio.to_thread(gate.wait)
         return AnalysisResult(summary="s", next_question="q?", suggested_answer="a")
 
     monkeypatch.setattr("sanba_agent.main.analyze_transcript", _slow)
@@ -245,15 +450,16 @@ async def test_tool_ride_along_timeout_returns_without_competing_run(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import asyncio
+    import threading
 
     from sanba_agent.config import settings
 
     calls: list[str] = []
-    gate: asyncio.Event = asyncio.Event()
+    gate = threading.Event()
 
     async def _hang(transcript: str) -> AnalysisResult:
         calls.append(transcript)
-        await gate.wait()
+        await asyncio.to_thread(gate.wait)
         return AnalysisResult(summary="s", next_question="q?", suggested_answer="a")
 
     monkeypatch.setattr("sanba_agent.main.analyze_transcript", _hang)

@@ -155,6 +155,114 @@ describe("RealtimeStore — analysis.visual = 完了 (#209 案A)", () => {
   });
 });
 
+describe("RealtimeStore — hydrateAnalysis（#355 再接続時の解析詳細復元）", () => {
+  it("done 素材の観察テキストを seq 0 で seed し、詳細セレクタが復元できる", () => {
+    const s = new RealtimeStore();
+    s.hydrateAnalysis([
+      { id: "a1", status: "done", extracted_texts: ["要件X", "要件Y"] },
+      { id: "a2", status: "failed" },
+      { id: "a3", status: "analyzing" },
+    ]);
+    const snap = s.getSnapshot();
+    expect(snap.analysis).toHaveLength(2);
+    const a1 = snap.analysis.find((a) => a.asset_id === "a1");
+    expect(a1?.pct).toBe(100);
+    expect(a1?.extracted).toEqual(["要件X", "要件Y"]);
+    const a2 = snap.analysis.find((a) => a.asset_id === "a2");
+    expect(a2?.stage).toBe("failed");
+  });
+
+  it("ライブイベント既着の素材は上書きしない（ライブが常に新しい）", () => {
+    const s = new RealtimeStore();
+    s.apply(visual(3, "a1", ["ライブの要件"]));
+    s.hydrateAnalysis([{ id: "a1", status: "done", extracted_texts: ["古い要件"] }]);
+    expect(s.getSnapshot().analysis[0].extracted).toEqual(["ライブの要件"]);
+  });
+
+  it("seed 後に届くライブイベント（seq > 0）は seed を上書きする", () => {
+    const s = new RealtimeStore();
+    s.hydrateAnalysis([{ id: "a1", status: "done", extracted_texts: ["古い要件"] }]);
+    s.apply(visual(1, "a1", ["新しい要件"]));
+    expect(s.getSnapshot().analysis[0].extracted).toEqual(["新しい要件"]);
+  });
+});
+
+function contextProgress(
+  seq: number,
+  source: "prep" | "repo",
+  stage: string,
+  label = "",
+  detail = "",
+): ServerEvent {
+  return {
+    v: 1,
+    type: "context.progress",
+    seq,
+    ts: "2026-06-24T00:00:00Z",
+    session_id: SESSION,
+    source,
+    stage,
+    label,
+    detail,
+  } as ServerEvent;
+}
+
+describe("RealtimeStore — context.progress（P1-a 前提読み込み）", () => {
+  it("prep/repo を source ごとに 1 行として保持し、後続イベントで上書きする", () => {
+    const s = new RealtimeStore();
+    s.apply(contextProgress(1, "prep", "done", "ゴールとゴール詳細"));
+    s.apply(contextProgress(2, "repo", "running", "octo/app@main"));
+    s.apply(contextProgress(3, "repo", "reused", "octo/app@main", "索引済みを利用"));
+
+    const cp = s.getSnapshot().contextProgress;
+    expect(cp).toHaveLength(2);
+    const repo = cp.find((c) => c.source === "repo");
+    expect(repo?.stage).toBe("reused");
+    expect(repo?.detail).toBe("索引済みを利用");
+  });
+
+  it("古い seq の再配信は単調性ガードで弾く", () => {
+    const s = new RealtimeStore();
+    s.apply(contextProgress(3, "repo", "reused", "octo/app@main"));
+    s.apply(contextProgress(1, "repo", "running", "octo/app@main"));
+    expect(s.getSnapshot().contextProgress[0].stage).toBe("reused");
+  });
+});
+
+describe("RealtimeStore — session.end_proposed（P1-b）", () => {
+  function endProposed(seq: number, open: number, reqs: number, mats: number): ServerEvent {
+    return {
+      v: 1,
+      type: "session.end_proposed",
+      seq,
+      ts: "2026-06-24T00:00:00Z",
+      session_id: SESSION,
+      open_count: open,
+      requirement_count: reqs,
+      material_count: mats,
+    } as ServerEvent;
+  }
+
+  it("終了提案を保持し、新しい seq で上書きする", () => {
+    const s = new RealtimeStore();
+    s.apply(endProposed(1, 0, 3, 1));
+    expect(s.getSnapshot().endProposal).toEqual({
+      open_count: 0,
+      requirement_count: 3,
+      material_count: 1,
+    });
+    s.apply(endProposed(2, 0, 5, 2));
+    expect(s.getSnapshot().endProposal?.requirement_count).toBe(5);
+  });
+
+  it("古い seq の再配信は弾く", () => {
+    const s = new RealtimeStore();
+    s.apply(endProposed(3, 0, 5, 0));
+    s.apply(endProposed(1, 0, 1, 0));
+    expect(s.getSnapshot().endProposal?.requirement_count).toBe(5);
+  });
+});
+
 describe("RealtimeStore — gap detection", () => {
   it("records a gap when a seq is skipped", () => {
     const s = new RealtimeStore();

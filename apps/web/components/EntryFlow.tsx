@@ -11,7 +11,6 @@ import {
   Chip,
   Field,
   Figure,
-  Input,
   Select,
   Textarea,
 } from "@/components/sanba";
@@ -23,13 +22,9 @@ import {
   addSessionContext,
   classifyFileUpload,
   createSession,
-  fetchGithubRepos,
   fetchMyProducts,
-  type GithubRepos,
   joinSession,
-  listGithubBranches,
   type Product,
-  selectSessionRepo,
   uploadContextFile,
   type JoinResponse,
 } from "../lib/api";
@@ -130,11 +125,6 @@ export default function EntryFlow({
   const [uploadedNames, setUploadedNames] = useState<string[]>([]);
   const [uploadFailedCount, setUploadFailedCount] = useState(0);
   const fileInput = useRef<HTMLInputElement>(null);
-  const [githubRepo, setGithubRepo] = useState("");
-  const [repoChoices, setRepoChoices] = useState<GithubRepos | null>(null);
-  const githubRepoTouched = useRef(false);
-  const [githubBranch, setGithubBranch] = useState("");
-  const [branchChoices, setBranchChoices] = useState<string[]>([]);
   const [prepHydrated, setPrepHydrated] = useState(false);
   const auth = useAuth();
 
@@ -174,35 +164,9 @@ export default function EntryFlow({
     return () => window.removeEventListener("popstate", onPopState);
   }, []);
 
-  const appRepoItem =
-    repoChoices?.linked && githubRepo
-      ? (repoChoices.items ?? []).find((i) => i.full_name === githubRepo)
-      : undefined;
-  const appDefaultBranch = appRepoItem?.default_branch ?? null;
-
   const selectedProduct = productId
     ? (products ?? []).find((p) => p.id === productId)
     : undefined;
-
-  useEffect(() => {
-    if (step !== "prepare" || !auth.loggedIn || repoChoices !== null) return;
-    let cancelled = false;
-    fetchGithubRepos(auth.credential)
-      .then((choices) => {
-        if (!cancelled) {
-          setRepoChoices(choices);
-          if (choices.default && !githubRepoTouched.current) {
-            setGithubRepo((cur) => cur || choices.default!);
-          }
-        }
-      })
-      .catch(() => {
-        if (!cancelled) setRepoChoices({ enabled: false, repos: [], default: null });
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [step, auth.loggedIn, auth.credential, repoChoices]);
 
   useEffect(() => {
     if (!auth.loggedIn || products !== null) return;
@@ -243,46 +207,12 @@ export default function EntryFlow({
   }, [products, productId, step, prepHydrated, urlSlug]);
 
   useEffect(() => {
-    if (!appDefaultBranch) {
-      setBranchChoices([]);
-      setGithubBranch("");
-      return;
-    }
-    let cancelled = false;
-    setGithubBranch(appDefaultBranch);
-    setBranchChoices([appDefaultBranch]);
-    listGithubBranches(githubRepo, auth.credential)
-      .then((items) => {
-        if (cancelled) return;
-        const names = items.map((b) => b.name);
-        if (names.length === 0) return;
-        setBranchChoices(names);
-        setGithubBranch((cur) =>
-          names.includes(cur)
-            ? cur
-            : names.includes(appDefaultBranch)
-              ? appDefaultBranch
-              : names[0],
-        );
-      })
-      .catch(() => {
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [githubRepo, appDefaultBranch, auth.credential]);
-
-  useEffect(() => {
     const saved = readPrep();
     if (saved.role && ROLES.some((r) => r.value === saved.role)) setRole(saved.role);
     if (typeof saved.goal === "string") setGoal(saved.goal);
     if (typeof saved.goalDetail === "string") setGoalDetail(saved.goalDetail);
     if (typeof saved.consent === "boolean") setConsent(saved.consent);
     if (typeof saved.productId === "string") setProductId(saved.productId);
-    if (typeof saved.githubRepo === "string") {
-      setGithubRepo(saved.githubRepo);
-      githubRepoTouched.current = true;
-    }
     setPrepHydrated(true);
   }, []);
   useEffect(() => {
@@ -293,9 +223,8 @@ export default function EntryFlow({
       goalDetail,
       consent,
       productId,
-      ...(githubRepoTouched.current ? { githubRepo } : {}),
     });
-  }, [prepHydrated, role, goal, goalDetail, consent, productId, githubRepo]);
+  }, [prepHydrated, role, goal, goalDetail, consent, productId]);
 
   const prevLoggedIn = useRef(auth.loggedIn);
   useEffect(() => {
@@ -307,9 +236,6 @@ export default function EntryFlow({
       setConsent(false);
       setProductId("");
       setProducts(null);
-      setGithubRepo("");
-      setRepoChoices(null);
-      githubRepoTouched.current = false;
     }
     prevLoggedIn.current = auth.loggedIn;
   }, [auth.loggedIn]);
@@ -336,7 +262,7 @@ export default function EntryFlow({
         consent,
         auth.credential,
         undefined,
-        repoChoices?.enabled ? githubRepo.trim() : undefined,
+        undefined,
         selectedProduct?.id,
         goal,
         goalDetail,
@@ -379,22 +305,6 @@ export default function EntryFlow({
           } catch (productErr) {
             console.error("seed product context failed", { error: productErr });
           }
-        }
-      }
-      if (appRepoItem) {
-        try {
-          await selectSessionRepo(
-            joined.session_id,
-            githubRepo,
-            githubBranch || null,
-            joined.session_token,
-          );
-        } catch (repoErr) {
-          console.error("select session repo failed", { error: repoErr });
-          setError(
-            `前提リポジトリ「${githubRepo}」の紐づけに失敗しました。時間をおいて再度お試しください。`,
-          );
-          return;
         }
       }
       const uploaded: string[] = [];
@@ -536,8 +446,7 @@ export default function EntryFlow({
       !!selectedProduct.slug &&
       auth.loggedIn &&
       !busy &&
-      !driveBusy &&
-      repoChoices !== null;
+      !driveBusy;
     return (
       <AppShell
         current="home"
@@ -625,73 +534,6 @@ export default function EntryFlow({
               maxLength={8000}
             />
           </Field>
-
-          {}
-          {repoChoices?.enabled &&
-            (repoChoices.repos.length > 0 ? (
-              <Field
-                label="連携リポジトリ（任意）"
-                htmlFor="github-repo"
-                hint="確定した要件を GitHub Issue として起票する先。Issue/README は問いの文脈にも使われます。"
-              >
-                <Select
-                  id="github-repo"
-                  value={githubRepo}
-                  onChange={(e) => {
-                    githubRepoTouched.current = true;
-                    setGithubRepo(e.target.value);
-                  }}
-                >
-                  <option value="">連携しない</option>
-                  {}
-                  {githubRepo && !repoChoices.repos.includes(githubRepo) && (
-                    <option value={githubRepo}>{githubRepo}</option>
-                  )}
-                  {repoChoices.repos.map((r) => (
-                    <option key={r} value={r}>
-                      {r}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
-            ) : (
-              <Field
-                label="連携リポジトリ（任意）"
-                htmlFor="github-repo"
-                hint="owner/name 形式で入力（候補一覧を取得できなかったため手入力）。空欄で連携しない。"
-              >
-                <Input
-                  id="github-repo"
-                  value={githubRepo}
-                  onChange={(e) => {
-                    githubRepoTouched.current = true;
-                    setGithubRepo(e.target.value);
-                  }}
-                  placeholder="owner/name"
-                />
-              </Field>
-            ))}
-
-          {}
-          {appRepoItem && (
-            <Field
-              label="ブランチ"
-              htmlFor="github-branch"
-              hint="開始時にこのブランチの内容を索引し、問いの前提として使います（既定はデフォルトブランチ）。"
-            >
-              <Select
-                id="github-branch"
-                value={githubBranch}
-                onChange={(e) => setGithubBranch(e.target.value)}
-              >
-                {branchChoices.map((b) => (
-                  <option key={b} value={b}>
-                    {b}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-          )}
 
           {}
           <div className="flex flex-col gap-[8px]">

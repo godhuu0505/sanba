@@ -100,6 +100,31 @@ def test_finalized_flag_reflects_status() -> None:
     assert row["finalized"] is True
 
 
+def test_exposes_labels_and_issue_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    """AI が付けたラベルと起票済み Issue URL を一覧に載せる（P1-c）。"""
+    _seed("sess-1", "alice", created=datetime(2024, 6, 20, tzinfo=UTC))
+    _repo.finalize_session(
+        "sess-1",
+        confirmed_count=1,
+        finalized_requirement_ids=["r1"],
+        labels=["sanba", "priority:must", "functional"],
+    )
+    _repo.set_exported_issue_url("sess-1", "https://github.com/acme/app/issues/7")
+    _login("alice")
+
+    row = client.get("/api/sessions/mine").json()[0]
+    assert row["labels"] == ["sanba", "priority:must", "functional"]
+    assert row["issue_url"] == "https://github.com/acme/app/issues/7"
+
+
+def test_labels_default_empty_when_not_finalized() -> None:
+    _seed("sess-1", "alice", created=datetime(2024, 6, 20, tzinfo=UTC))
+    _login("alice")
+    row = client.get("/api/sessions/mine").json()[0]
+    assert row["labels"] == []
+    assert row["issue_url"] is None
+
+
 def test_requires_login_when_configured(monkeypatch: pytest.MonkeyPatch) -> None:
     """client_id 設定済み・bypass off で未ログイン (Bearer 無し) なら 401。"""
     monkeypatch.setattr(auth_google.settings, "google_oauth_client_id", "cid", raising=True)

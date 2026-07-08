@@ -1,0 +1,101 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 560" font-family="'Hiragino Sans','Noto Sans JP',sans-serif">
+  <rect width="1120" height="560" fill="#ffffff"/>
+  <text x="24" y="36" font-size="18" font-weight="700" fill="#221e1a">07 AI 主導のセッション終了フロー（Phase 1 / P1-2）</text>
+
+  <rect x="30" y="70" width="320" height="380" rx="20" fill="#fcfbf7" stroke="#221e1a" stroke-width="2"/>
+  <text x="50" y="100" font-size="13" font-weight="700" fill="#221e1a">1. 終了の提案（会話タブ）</text>
+  <g>
+    <rect x="50" y="116" width="280" height="92" rx="14" fill="#ffffff" stroke="#221e1a" stroke-width="1.5"/>
+    <text x="64" y="138" font-size="11.5" fill="#221e1a">確認したかった点はすべて解消できました。</text>
+    <text x="64" y="156" font-size="11.5" fill="#221e1a">要件をまとめて、今日の会話を終えても</text>
+    <text x="64" y="174" font-size="11.5" fill="#221e1a">よろしいですか？</text>
+    <text x="64" y="196" font-size="10" fill="#706a5d">🗣 音声でも「はい」で同意できます</text>
+  </g>
+  <g>
+    <rect x="50" y="222" width="280" height="96" rx="14" fill="#fdf3dc" stroke="#c08a10"/>
+    <text x="66" y="246" font-size="11.5" font-weight="700" fill="#985c06">終了の提案が届いています</text>
+    <text x="66" y="263" font-size="10.5" fill="#706a5d">未解消 0 件 · 要件 5 件 · 資料 3 件</text>
+    <rect x="66" y="274" width="120" height="32" rx="12" fill="#e0402a" stroke="#221e1a" stroke-width="1.5"/>
+    <text x="88" y="295" font-size="12" font-weight="700" fill="#ffffff">同意して終了</text>
+    <rect x="196" y="274" width="118" height="32" rx="12" fill="#ffffff" stroke="#ede8dc"/>
+    <text x="222" y="295" font-size="12" fill="#706a5d">まだ続ける</text>
+  </g>
+  <text x="50" y="352" font-size="10.5" fill="#706a5d">・agent ツール propose_session_end が発火</text>
+  <text x="50" y="370" font-size="10.5" fill="#706a5d">・条件: 未解消検知 0 件（Phase 2 以降は全ノード解消）</text>
+  <text x="50" y="388" font-size="10.5" fill="#706a5d">・イベント session.end_proposed（reliable）</text>
+  <text x="50" y="406" font-size="10.5" fill="#706a5d">・「まだ続ける」で提案カードは閉じ、会話続行</text>
+
+  <g>
+    <path d="M360 260 h48" stroke="#221e1a" stroke-width="2.5" marker-end="url(#ar)"/>
+    <text x="362" y="244" font-size="10.5" fill="#706a5d">音声の同意 or タップ</text>
+    <text x="362" y="280" font-size="10" fill="#2a5cdb">user.answered(agree)</text>
+  </g>
+
+  <rect x="418" y="70" width="320" height="380" rx="20" fill="#fcfbf7" stroke="#221e1a" stroke-width="2"/>
+  <text x="438" y="100" font-size="13" font-weight="700" fill="#221e1a">2. 自動確定（遷移中）</text>
+  <g>
+    <rect x="438" y="116" width="280" height="88" rx="14" fill="#ffffff" stroke="#221e1a" stroke-width="1.5"/>
+    <text x="452" y="138" font-size="11.5" fill="#221e1a">ありがとうございました。要件をまとめます。</text>
+    <text x="452" y="156" font-size="11.5" fill="#221e1a">結果は「過去の要件一覧」からいつでも</text>
+    <text x="452" y="174" font-size="11.5" fill="#221e1a">確認できます。</text>
+  </g>
+  <g>
+    <rect x="438" y="220" width="280" height="110" rx="14" fill="#ffffff" stroke="#ede8dc"/>
+    <circle cx="578" cy="258" r="20" fill="none" stroke="#f0a814" stroke-width="4" stroke-dasharray="80 40"/>
+    <text x="512" y="304" font-size="12" font-weight="600" fill="#221e1a">要件をまとめています…</text>
+    <text x="486" y="322" font-size="10.5" fill="#706a5d">タイトルとラベルを AI が生成しています</text>
+  </g>
+  <text x="438" y="352" font-size="10.5" fill="#706a5d">・agent: complete_session → session.completed 発行</text>
+  <text x="438" y="370" font-size="10.5" fill="#706a5d">  → 別れの一言 → ctx.shutdown()（ルーム退出）</text>
+  <text x="438" y="388" font-size="10.5" fill="#706a5d">・web: completed 受信 → POST /finalize（冪等）</text>
+  <text x="438" y="406" font-size="10.5" fill="#706a5d">・finalize がタイトル生成＋labels 保存＋TTL 解除</text>
+  <text x="438" y="424" font-size="10.5" fill="#706a5d">・以後 /{slug}/sessions/{id} は /results/{id} へ redirect</text>
+
+  <g>
+    <path d="M748 260 h48" stroke="#221e1a" stroke-width="2.5" marker-end="url(#ar)"/>
+    <text x="752" y="244" font-size="10.5" fill="#706a5d">自動遷移</text>
+    <text x="750" y="280" font-size="10" fill="#2a5cdb">/results/{id}</text>
+  </g>
+
+  <rect x="806" y="70" width="290" height="380" rx="20" fill="#fcfbf7" stroke="#221e1a" stroke-width="2"/>
+  <text x="826" y="100" font-size="13" font-weight="700" fill="#221e1a">3. 結果画面（閲覧専用）</text>
+  <g>
+    <rect x="826" y="116" width="250" height="86 " rx="14" fill="#ffffff" stroke="#221e1a" stroke-width="1.5"/>
+    <text x="840" y="140" font-size="12.5" font-weight="700" fill="#221e1a">アカウント設定画面の新設と</text>
+    <text x="840" y="158" font-size="12.5" font-weight="700" fill="#221e1a">通知設定の統合</text>
+    <g font-size="9.5">
+      <rect x="840" y="168" width="44" height="18" rx="9" fill="#f4f1e8" stroke="#ede8dc"/>
+      <text x="849" y="181" fill="#221e1a">sanba</text>
+      <rect x="890" y="168" width="70" height="18" rx="9" fill="#fbeae6" stroke="#c43a20"/>
+      <text x="898" y="181" fill="#c43a20">priority:must</text>
+      <rect x="966" y="168" width="84" height="18" rx="9" fill="#eaf0ff" stroke="#2a5cdb"/>
+      <text x="974" y="181" fill="#2a5cdb">category:screen</text>
+    </g>
+  </g>
+  <g>
+    <rect x="826" y="212" width="250" height="70" rx="14" fill="#ffffff" stroke="#ede8dc"/>
+    <text x="840" y="234" font-size="11.5" font-weight="600" fill="#221e1a">確認できた要件 5 件</text>
+    <text x="840" y="252" font-size="10.5" fill="#706a5d">出力フォーマット: 開発者向け ▾</text>
+    <text x="840" y="270" font-size="10.5" fill="#706a5d">会話の要約 · 確認事項の記録つき</text>
+  </g>
+  <g>
+    <rect x="826" y="292" width="250" height="40" rx="12" fill="#221e1a"/>
+    <text x="866" y="317" font-size="12.5" font-weight="700" fill="#ffffff">GitHub Issue に起票する</text>
+  </g>
+  <text x="826" y="360" font-size="10.5" fill="#706a5d">・タイトル/ラベルは finalize 時に AI 生成・保存済み</text>
+  <text x="826" y="378" font-size="10.5" fill="#706a5d">・ホームの過去一覧（02）にも同じ表示</text>
+  <text x="826" y="396" font-size="10.5" fill="#706a5d">・結果ドキュメントは機械整形＋要約プレースホルダ</text>
+  <text x="826" y="414" font-size="10.5" fill="#706a5d">  （{{conversation_summary}} のみ LLM、Q2 決定）</text>
+
+  <defs>
+    <marker id="ar" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto">
+      <path d="M0 0 L8 4 L0 8 z" fill="#221e1a"/>
+    </marker>
+  </defs>
+
+  <g>
+    <rect x="30" y="474" width="1066" height="62" rx="12" fill="#f4f1e8" stroke="#ede8dc"/>
+    <text x="48" y="498" font-size="11.5" font-weight="700" fill="#221e1a">ガード（既存を維持）</text>
+    <text x="48" y="518" font-size="11" fill="#706a5d">終了後はセッション画面へ遷移不可（/{slug}/sessions/{id} → /results/{id} redirect 済）。未解消が 1 件でも残る場合、AI は終了を提案しない。ユーザー起点の「終了する」ボタン（JudgmentGate 経由）は従来どおり併存し、未解消が残る場合は「確定せず終了」のみ選べる。</text>
+  </g>
+</svg>

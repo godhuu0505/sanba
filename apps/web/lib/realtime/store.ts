@@ -2,6 +2,8 @@
 import { RealtimeMetrics } from "./metrics";
 import type {
   AnalysisVisualConflict,
+  ContextProgressSource,
+  ContextProgressStage,
   Detection,
   Question,
   Requirement,
@@ -15,6 +17,13 @@ export interface AnalysisState {
   stage: string;
   extracted: string[];
   conflicts: AnalysisVisualConflict[];
+}
+
+export interface ContextProgressState {
+  source: ContextProgressSource;
+  stage: ContextProgressStage;
+  label: string;
+  detail: string;
 }
 
 export interface TranscriptLine {
@@ -32,6 +41,12 @@ export interface SessionCompletion {
   artifacts: { kind: string; url: string }[];
 }
 
+export interface EndProposal {
+  open_count: number;
+  requirement_count: number;
+  material_count: number;
+}
+
 export interface SessionState {
   phase: SessionPhase;
   agentsActive: number;
@@ -39,7 +54,9 @@ export interface SessionState {
   detections: Detection[];
   transcript: TranscriptLine[];
   analysis: AnalysisState[];
+  contextProgress: ContextProgressState[];
   question: Question | null;
+  endProposal: EndProposal | null;
   completed: SessionCompletion | null;
   seq: number;
 }
@@ -56,7 +73,9 @@ const EMPTY_STATE: SessionState = {
   detections: [],
   transcript: [],
   analysis: [],
+  contextProgress: [],
   question: null,
+  endProposal: null,
   completed: null,
   seq: 0,
 };
@@ -66,9 +85,12 @@ export class RealtimeStore {
   private detections = new Map<string, Versioned<Detection>>();
   private transcript = new Map<string, Versioned<TranscriptLine>>();
   private analysis = new Map<string, Versioned<AnalysisState>>();
+  private contextProgress = new Map<string, Versioned<ContextProgressState>>();
   private phase: SessionPhase = "idle";
   private agentsActive = 0;
   private question: Question | null = null;
+  private endProposal: EndProposal | null = null;
+  private lastEndProposedSeq = 0;
   private completed: SessionCompletion | null = null;
 
   private requirementsHydrationSeq = 0;
@@ -128,6 +150,28 @@ export class RealtimeStore {
     }
     if (advanceMaxSeq) this.maxSeq = Math.max(this.maxSeq, seq);
     this.invalidate();
+  }
+
+  hydrateAnalysis(
+    items: readonly { id: string; status: string; extracted_texts?: string[] }[],
+  ): void {
+    let changed = false;
+    for (const f of items) {
+      if (f.status !== "done" && f.status !== "failed") continue;
+      if (this.analysis.has(f.id)) continue;
+      this.analysis.set(f.id, {
+        seq: 0,
+        value: {
+          asset_id: f.id,
+          pct: 100,
+          stage: f.status,
+          extracted: f.extracted_texts ?? [],
+          conflicts: [],
+        },
+      });
+      changed = true;
+    }
+    if (changed) this.invalidate();
   }
 
   hydrateDetections(items: Detection[], seq: number): void {
@@ -377,6 +421,24 @@ export class RealtimeStore {
         });
       }
 
+      case "context.progress":
+        return this.upsert(this.contextProgress, event.source, event.seq, {
+          source: event.source,
+          stage: event.stage,
+          label: event.label ?? "",
+          detail: event.detail ?? "",
+        });
+
+      case "session.end_proposed":
+        if (event.seq <= this.lastEndProposedSeq) return false;
+        this.lastEndProposedSeq = event.seq;
+        this.endProposal = {
+          open_count: event.open_count,
+          requirement_count: event.requirement_count,
+          material_count: event.material_count,
+        };
+        return true;
+
       case "session.completed":
         if (event.seq <= this.lastCompletedSeq) return false;
         this.lastCompletedSeq = event.seq;
@@ -410,7 +472,9 @@ export class RealtimeStore {
       detections: this.sortedValues(this.detections),
       transcript: this.sortedTranscript(),
       analysis: this.sortedValues(this.analysis),
+      contextProgress: this.sortedValues(this.contextProgress),
       question: this.question,
+      endProposal: this.endProposal,
       completed: this.completed,
       seq: this.maxSeq,
     };
@@ -434,9 +498,12 @@ export class RealtimeStore {
     this.detections.clear();
     this.transcript.clear();
     this.analysis.clear();
+    this.contextProgress.clear();
     this.phase = "idle";
     this.agentsActive = 0;
     this.question = null;
+    this.endProposal = null;
+    this.lastEndProposedSeq = 0;
     this.completed = null;
     this.requirementsHydrationSeq = 0;
     this.detectionsHydrationSeq = 0;

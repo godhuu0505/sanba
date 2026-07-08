@@ -10,13 +10,30 @@ import { AppHeader, Button, Card, Figure, Screen } from "@/components/sanba";
 import type { JoinResponse } from "../lib/api";
 import { SessionView } from "./SessionView";
 
+const MIC_CONSTRAINTS = {
+  autoGainControl: true,
+  echoCancellation: true,
+  noiseSuppression: true,
+} satisfies MediaTrackConstraints;
+
 const ROOM_OPTIONS: RoomOptions = {
-  audioCaptureDefaults: {
-    autoGainControl: true,
-    echoCancellation: true,
-    noiseSuppression: true,
-  },
+  audioCaptureDefaults: MIC_CONSTRAINTS,
 };
+
+const MIC_ERROR_NAMES = new Set([
+  "NotAllowedError",
+  "PermissionDeniedError",
+  "NotFoundError",
+  "NotReadableError",
+  "OverconstrainedError",
+  "SecurityError",
+  "AbortError",
+]);
+
+function classifyStartError(error: unknown): StartFailKind {
+  const name = (error as { name?: unknown } | null)?.name;
+  return typeof name === "string" && MIC_ERROR_NAMES.has(name) ? "mic" : "connect";
+}
 
 type StartPhase = "intro" | "permission" | "entering" | "failed";
 
@@ -44,6 +61,20 @@ export function ConversationStart({
   const [phase, setPhase] = useState<StartPhase>("intro");
   const [failKind, setFailKind] = useState<StartFailKind>("connect");
 
+  async function requestMicAndEnter() {
+    try {
+      const media = navigator.mediaDevices;
+      if (!media?.getUserMedia) throw new Error("mediaDevices unavailable");
+      const stream = await media.getUserMedia({ audio: MIC_CONSTRAINTS });
+      for (const track of stream.getTracks()) track.stop();
+      setPhase("entering");
+    } catch (e) {
+      console.error("mic permission request failed", e);
+      setFailKind("mic");
+      setPhase("failed");
+    }
+  }
+
   if (phase === "intro") {
     return (
       <StartIntro
@@ -60,7 +91,7 @@ export function ConversationStart({
   if (phase === "permission") {
     return (
       <MicPermissionModal
-        onAllow={() => setPhase("entering")}
+        onAllow={requestMicAndEnter}
         onDismiss={() => setPhase("intro")}
       />
     );
@@ -82,8 +113,8 @@ export function ConversationStart({
       options={ROOM_OPTIONS}
       style={{ height: "100dvh" }}
       onError={(e) => {
-        console.error("livekit connect failed", e);
-        setFailKind("connect");
+        console.error("livekit start failed", e);
+        setFailKind(classifyStartError(e));
         setPhase("failed");
       }}
       onMediaDeviceFailure={() => {
@@ -225,11 +256,21 @@ export function StartIntro({
 }
 
 export interface MicPermissionModalProps {
-  onAllow: () => void;
+  onAllow: () => void | Promise<void>;
   onDismiss: () => void;
 }
 
 export function MicPermissionModal({ onAllow, onDismiss }: MicPermissionModalProps) {
+  const [requesting, setRequesting] = useState(false);
+  async function handleAllow() {
+    if (requesting) return;
+    setRequesting(true);
+    try {
+      await onAllow();
+    } finally {
+      setRequesting(false);
+    }
+  }
   return (
     <Screen className="relative px-4 py-3">
       <button
@@ -258,8 +299,15 @@ export function MicPermissionModal({ onAllow, onDismiss }: MicPermissionModalPro
             問答には端末のマイクを用います。使用を許可してください。
           </p>
           <div className="mt-1 flex w-full flex-col gap-[8px]">
-            <Button variant="gold" size="lg" block onClick={onAllow} aria-label="マイクの使用を許可する">
-              マイクを許可する
+            <Button
+              variant="gold"
+              size="lg"
+              block
+              onClick={handleAllow}
+              disabled={requesting}
+              aria-label="マイクの使用を許可する"
+            >
+              {requesting ? "許可を確認しています…" : "マイクを許可する"}
             </Button>
           </div>
         </div>

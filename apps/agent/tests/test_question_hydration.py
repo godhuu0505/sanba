@@ -95,6 +95,8 @@ async def test_second_question_same_turn_supersedes_first() -> None:
     assert agent.current_question_id == r2["asked"]
     assert repo._mem_questions["s1"]["id"] == r2["asked"]
     assert repo._mem_questions["s1"]["cleared"] is False
+    assert "note" not in r1, "1問目は畳みかけ注意を返さない"
+    assert "note" in r2 and "1ターン" in r2["note"], "2問目は1ターン1問の注意を返す（#374）"
 
 
 @pytest.mark.asyncio
@@ -104,9 +106,10 @@ async def test_question_in_new_turn_is_not_superseded_by_guard() -> None:
     await ask(agent, None, "Q1?")
     agent._user_turn += 1
     transport.sent.clear()
-    await ask(agent, None, "Q2?")
+    r2 = await ask(agent, None, "Q2?")
     types = [t["event"]["type"] for t in transport.sent]
     assert types == ["question.asked"]
+    assert "note" not in r2, "別ターンの問いは畳みかけではないので注意を返さない"
 
 
 @pytest.mark.asyncio

@@ -56,6 +56,7 @@ def test_analyzes_and_marks_done() -> None:
     assert result.observations == ["[00:01] ログイン画面", "[00:05] 保存ボタン"]
     mat = repo.get_material("s1", "asset-abc")
     assert mat is not None and mat["status"] == "done" and mat["extracted"] == 2
+    assert mat["extracted_texts"] == ["[00:01] ログイン画面", "[00:05] 保存ボタン"]
     assert any(d["source"].startswith("asset:asset-abc") for d in indexer._mem)
 
 

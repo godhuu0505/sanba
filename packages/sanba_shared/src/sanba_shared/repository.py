@@ -194,6 +194,7 @@ class SessionRepository:
         *,
         confirmed_count: int,
         finalized_requirement_ids: list[str],
+        labels: list[str] | None = None,
     ) -> SessionMeta | None:
         """07 判定の「確定」を永続化する。
 
@@ -209,12 +210,14 @@ class SessionRepository:
         if meta.status == "finalized":
             return meta
         snapshot_ids = list(finalized_requirement_ids)
+        snapshot_labels = list(labels) if labels is not None else list(meta.labels)
         updated = meta.model_copy(
             update={
                 "status": "finalized",
                 "finalized_at": datetime.now(UTC),
                 "finalized_count": confirmed_count,
                 "finalized_requirement_ids": snapshot_ids,
+                "labels": snapshot_labels,
             }
         )
         if self._client is not None:
@@ -224,6 +227,7 @@ class SessionRepository:
                     "finalized_at": updated.finalized_at,
                     "finalized_count": confirmed_count,
                     "finalized_requirement_ids": snapshot_ids,
+                    "labels": snapshot_labels,
                 },
                 merge=True,
             )
@@ -247,6 +251,23 @@ class SessionRepository:
         if self._client is not None:
             self._client.collection("sessions").document(session_id).set(
                 {"title": title}, merge=True
+            )
+        else:
+            self._mem_sessions[session_id] = updated
+        return updated
+
+    def set_exported_issue_url(self, session_id: str, issue_url: str) -> SessionMeta | None:
+        """起票済み Issue の URL を保存する（過去要件一覧の「起票済み」表示に使う / P1-c）。
+
+        既存の確定スナップショット等を温存する merge 保存。存在しなければ None。
+        """
+        meta = self.get_session(session_id)
+        if meta is None:
+            return None
+        updated = meta.model_copy(update={"exported_issue_url": issue_url})
+        if self._client is not None:
+            self._client.collection("sessions").document(session_id).set(
+                {"exported_issue_url": issue_url}, merge=True
             )
         else:
             self._mem_sessions[session_id] = updated

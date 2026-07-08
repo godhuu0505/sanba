@@ -61,7 +61,9 @@ web 側の適用規則: **`(type, id)` で冪等**（同じ要件/検知は upse
 | `question.cleared` | 04 | `question_id`（クリア対象 `question.asked` の `id`）（#212 / ADR-0020）。回答（タップ/音声/テキスト）で現在質問が解消されたことを全参加者へ伝播し、重複回答を防ぐ。`cleared_seq` は本イベントの **envelope `seq` そのもの**。web は `question_id === current?.id` かつ `seq > lastQuestionSeq` のときだけピンを畳む。`question.asked` と対称に seq 境界（`last_seq`）は進めない |
 | `analysis.progress` | 07 | `asset_id`, `pct`(0–100), `stage`（人間可読ラベル）。アップロード素材の解析は **API（サーバ identity）が直接 publish**（#145 / ADR-0023）。実体に正直な粗ステージ `received`(10)→`analyzing`(50)→`done`(100)/`failed` を出し、フェイクの中間 pct は作らない。会話中の画面共有由来は従来どおり agent が送る |
 | `analysis.visual` | 08 | `asset_id`, `extracted`:[string...], `conflicts`:[{`summary`,`refs`}]。アップロード解析の完了は API が publish（#145）。`conflicts`（言葉×画の矛盾 / ADR-0004）は突合実装まで空配列可 |
-| `session.completed` | 09/10 | `summary`:{`contradictions_resolved`,`gaps_found`,`issues_created`}, `artifacts`:[{`kind`,`url`}] |
+| `context.progress` | 04 | `source`(`prep`\|`repo`), `stage`(`running`\|`done`\|`reused`\|`partial`\|`failed`), `label?`, `detail?`（P1-a）。会話開始時の前提読み込み（ゴール/ゴール詳細=prep・ソースコード索引=repo）の状態を **agent が publish** し、会話履歴のシステム吹き出しへ写像する。素材の進捗は `analysis.progress` が担うので重複させない。実体に正直な段階のみ（`reused`=既存索引利用・進捗バーなし / `running`=索引中）。end_user モードでは repo は送らない（private repo 情報を利用者会話に出さない多層防御） |
+| `session.end_proposed` | 07 | `open_count`(=0), `requirement_count`, `material_count`（P1-b）。未解消（矛盾・抜け・不明瞭）が 0 件になったとき **agent が `propose_session_end` で publish**。web は終了提案カードを出し、ユーザーが同意（音声=agent が `complete_session`／タップ=web が直接 finalize）すると確定へ進む。「まだ続ける」は web ローカルでカードを閉じるだけ |
+| `session.completed` | 09/10 | `summary`:{`contradictions_resolved`,`gaps_found`,`issues_created`}, `artifacts`:[{`kind`,`url`}]。agent の `complete_session`（ユーザー同意後）または Issue 起票で publish。web は受信で自動的に finalize→結果画面へ遷移する（P1-b） |
 
 > エージェント識別子（`detector` / `source_speaker`）は **機能名**で送る。UI 上の色（緋=矛盾/黄土=抜け）は
 > web 側のデザイントークンへのマッピングであり、ペイロードには持たせない。
@@ -84,7 +86,7 @@ web 側の適用規則: **`(type, id)` で冪等**（同じ要件/検知は upse
 |---|---|---|---|---|
 | GET | `/api/sessions/{id}/requirements` | `{items:[requirement...], seq}` 現在の要件一覧（`seq` は適用済み連番） | join 済みトークン（Bearer / Cookie）。`session_id` 単体では不可 | **P0**（08/09 の前提） |
 | GET | `/api/sessions/{id}/detections?open=1` | `{items:[detection...]}` 未解消検知 | 同上 | P1（08 の途中参加補強） |
-| GET | `/api/sessions/{id}/context/files` | `{items:[{id,name,kind,status,extracted?}]}` 投入済み素材のメタ（#184）。リロード/再接続で実ファイル名・解析状態を復元。web は realtime の analysis 行と `id`(=asset_id) で統合 | 同上 | P1（05 参考資料の復元） |
+| GET | `/api/sessions/{id}/context/files` | `{items:[{id,name,kind,status,extracted?,extracted_texts?}]}` 投入済み素材のメタ（#184）。リロード/再接続で実ファイル名・解析状態を復元。`extracted_texts`（解析済み素材の観察テキスト / #355）で `analysis.visual` 相当の詳細も復元し、web は realtime の analysis 行と `id`(=asset_id) で統合（ライブイベントが常に優先） | 同上 | P1（05 参考資料の復元） |
 | GET | `/api/sessions/{id}/questions/current` | `{question:{id,prompt,options}\|null, seq}` 現在の未回答質問（金枠ピン / #212・ADR-0020）。回答済み/未提示なら `question=null`。**`null` でも `seq`（クリア時点の `cleared_seq`）を返す**ことで、遅延 null が新しい live 質問を消す逆転を防ぐ。`seq` は active なら `asked_seq` | 同上 | P1（04 問いピンの復元） |
 | POST | `/api/sessions/{id}/finalize` | `{finalized:true, confirmed_count}`（#186）。07 判定の「確定」を永続化（session=finalized・確定件数を刻む不可逆マーカ）。要件の draft→approved 承認は管理画面の責務（ADR-0014）なので触れない | 同上 | P1（07→08） |
 | POST | `/api/sessions/{id}/export` | 成功: `{exported:true, issue_url, count}` + `doc_url?`（Markdown 生成が有れば追加）、失敗: `{exported:false, reason}` — agent ツール `export_requirements_to_github` を起動し `{exported, url, count}` を受け取り、web 向けに `issue_url=url` へリネームして返す | 同上 | P1（09→10） |

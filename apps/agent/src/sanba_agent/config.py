@@ -37,6 +37,8 @@ class Settings(BaseSettings):
     analysis_timeout_seconds: float = 20.0
     analysis_ride_along_timeout_seconds: float = 8.0
 
+    voice_completion_shutdown_delay_s: float = 6.0
+
     noise_cancellation_enabled: bool = True
 
     firestore_emulator_host: str = ""

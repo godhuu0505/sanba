@@ -1,0 +1,98 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 780 720" font-family="'Hiragino Sans','Noto Sans JP',sans-serif">
+  <rect width="780" height="720" fill="#ffffff"/>
+  <text x="24" y="36" font-size="18" font-weight="700" fill="#221e1a">08 GitHub Issue 起票シート（Phase 3・結果画面から）</text>
+
+  <rect x="30" y="66" width="390" height="620" rx="24" fill="#fcfbf7" stroke="#221e1a" stroke-width="2"/>
+  <rect x="30" y="66" width="390" height="620" rx="24" fill="#221e1a" opacity="0.28"/>
+
+  <rect x="46" y="140" width="358" height="530" rx="20" fill="#ffffff" stroke="#221e1a" stroke-width="2"/>
+  <rect x="188" y="152" width="74" height="5" rx="2.5" fill="#d6cfbe"/>
+
+  <text x="66" y="186" font-size="14" font-weight="700" fill="#221e1a">GitHub Issue に起票する</text>
+
+  <g>
+    <text x="66" y="214" font-size="11" fill="#706a5d">起票先</text>
+    <rect x="66" y="222" width="318" height="40" rx="12" fill="#f4f1e8" stroke="#ede8dc"/>
+    <text x="82" y="247" font-size="12" font-weight="600" fill="#221e1a">godhuu0505/myapp</text>
+    <text x="330" y="247" font-size="10.5" fill="#4a6619">連携済 ✓</text>
+  </g>
+
+  <g>
+    <text x="66" y="288" font-size="11" fill="#706a5d">タイトル・ラベル（AI 生成・編集可）</text>
+    <rect x="66" y="296" width="318" height="40" rx="12" fill="#ffffff" stroke="#d6cfbe"/>
+    <text x="82" y="321" font-size="11.5" fill="#221e1a">アカウント設定画面の新設と通知設定の統合</text>
+    <g font-size="9.5">
+      <rect x="66" y="344" width="44" height="18" rx="9" fill="#f4f1e8" stroke="#ede8dc"/>
+      <text x="75" y="357" fill="#221e1a">sanba</text>
+      <rect x="116" y="344" width="70" height="18" rx="9" fill="#fbeae6" stroke="#c43a20"/>
+      <text x="124" y="357" fill="#c43a20">priority:must</text>
+      <rect x="192" y="344" width="84" height="18" rx="9" fill="#eaf0ff" stroke="#2a5cdb"/>
+      <text x="200" y="357" fill="#2a5cdb">category:screen</text>
+    </g>
+  </g>
+
+  <g>
+    <text x="66" y="392" font-size="11" fill="#706a5d">本文に含める（既定はすべて off）</text>
+    <rect x="66" y="400" width="318" height="44" rx="12" fill="#ffffff" stroke="#d6cfbe"/>
+    <rect x="80" y="412" width="18" height="18" rx="4" fill="#2a5cdb"/>
+    <path d="M84 421 l4 4 l7 -8" stroke="#ffffff" stroke-width="2.5" fill="none"/>
+    <text x="108" y="420" font-size="11.5" font-weight="600" fill="#221e1a">会話の要約</text>
+    <text x="108" y="436" font-size="9.5" fill="#706a5d">発話全文は含めません（PII 配慮・AI 要約のみ）</text>
+
+    <rect x="66" y="452" width="318" height="44" rx="12" fill="#ffffff" stroke="#d6cfbe"/>
+    <rect x="80" y="464" width="18" height="18" rx="4" fill="#2a5cdb"/>
+    <path d="M84 473 l4 4 l7 -8" stroke="#ffffff" stroke-width="2.5" fill="none"/>
+    <text x="108" y="472" font-size="11.5" font-weight="600" fill="#221e1a">参考資料のサマリ</text>
+    <text x="108" y="488" font-size="9.5" fill="#706a5d">ファイル名＋解析観察＋結果画面リンク（画像実体は載せない）</text>
+  </g>
+
+  <g>
+    <text x="66" y="524" font-size="11" fill="#706a5d">プレビュー</text>
+    <rect x="66" y="532" width="318" height="80" rx="12" fill="#fcfbf7" stroke="#ede8dc"/>
+    <text x="80" y="552" font-size="10" fill="#221e1a">## ゴール / アカウント設定画面を作りたい…</text>
+    <text x="80" y="568" font-size="10" fill="#221e1a">## 確認できた要件（MoSCoW）/ Must 2 · Should 3</text>
+    <text x="80" y="584" font-size="10" fill="#221e1a">## 会話の要約 / ## 参考資料 (capture-01.png …)</text>
+    <text x="80" y="600" font-size="10" fill="#2a5cdb">🔗 詳細: youken.sanba.net/results/sess-xxxx</text>
+  </g>
+
+  <rect x="66" y="624" width="318" height="34" rx="12" fill="#221e1a"/>
+  <text x="190" y="646" font-size="12.5" font-weight="700" fill="#ffffff">起票する</text>
+
+  <g font-size="12.5" fill="#221e1a">
+    <circle cx="466" cy="240" r="12" fill="#221e1a"/>
+    <text x="461.5" y="244.5" fill="#ffffff" font-weight="700">1</text>
+    <text x="488" y="232" font-weight="700">API 変更</text>
+    <text x="488" y="250">POST /api/sessions/{id}/export に</text>
+    <text x="488" y="266">{ include_summary, include_materials } を追加。</text>
+    <text x="488" y="282">要約は finalize 時に生成・保存済みの</text>
+    <text x="488" y="298">conversation_summary を再利用（起票時に LLM を</text>
+    <text x="488" y="314">呼ばない＝決定的・低レイテンシ）。</text>
+
+    <circle cx="466" cy="380" r="12" fill="#221e1a"/>
+    <text x="461.5" y="384.5" fill="#ffffff" font-weight="700">2</text>
+    <text x="488" y="372" font-weight="700">画像はリンク方式（Q4 決定）</text>
+    <text x="488" y="390">GitHub Issues API は画像アップロード非対応。</text>
+    <text x="488" y="406">署名 URL 直貼りは期限切れ・漏えいリスクがあるため、</text>
+    <text x="488" y="422">「ファイル名＋解析観察サマリ＋SANBA 結果画面への</text>
+    <text x="488" y="438">リンク」を本文に記載する。</text>
+
+    <circle cx="466" cy="500" r="12" fill="#221e1a"/>
+    <text x="461.5" y="504.5" fill="#ffffff" font-weight="700">3</text>
+    <text x="488" y="492" font-weight="700">本文の整形は共有レンダラ（ADR-0043 維持）</text>
+    <text x="488" y="510">sanba_shared.result_document に</text>
+    <text x="488" y="526">{{conversation_summary}} / {{materials}} プレース</text>
+    <text x="488" y="542">ホルダを追加し、閲覧・起票で同一整形を維持。</text>
+    <text x="488" y="558">opt-in が off のときは該当セクションを出力しない。</text>
+
+    <circle cx="466" cy="620" r="12" fill="#221e1a"/>
+    <text x="461.5" y="624.5" fill="#ffffff" font-weight="700">4</text>
+    <text x="488" y="612" font-weight="700">結果画面・過去一覧の両方から起票可</text>
+    <text x="488" y="630">起票済みは Issue URL を保存し「起票済み ✓」表示。</text>
+    <text x="488" y="646">重複起票は確認ダイアログで抑止。</text>
+  </g>
+
+  <line x1="404" y1="240" x2="452" y2="240" stroke="#706a5d" stroke-dasharray="4 3"/>
+  <line x1="404" y1="474" x2="452" y2="390" stroke="#706a5d" stroke-dasharray="4 3"/>
+  <line x1="404" y1="560" x2="452" y2="510" stroke="#706a5d" stroke-dasharray="4 3"/>
+  <line x1="404" y1="641" x2="452" y2="622" stroke="#706a5d" stroke-dasharray="4 3"/>
+</svg>
