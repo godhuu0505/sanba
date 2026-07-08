@@ -29,7 +29,6 @@ def test_make_inquiry_id_is_idempotent_over_normalization() -> None:
     a = make_inquiry_id(InquiryKind.GAP, "  権限モデル  が  未確認 ")
     b = make_inquiry_id(InquiryKind.GAP, "権限モデル が 未確認")
     assert a == b
-    # kind が違えば別 id
     assert make_inquiry_id(InquiryKind.CHECK, "x") != make_inquiry_id(InquiryKind.GAP, "x")
 
 
@@ -89,7 +88,6 @@ def test_branch_cap_prunes_lowest_confidence_open_child() -> None:
         tree.upsert(
             kind=InquiryKind.GAP, text=f"child{i}", seq=seq(), confidence=c, parent_id=root.id
         )
-    # 6 個目（最高 confidence）を足すと最低 0.5 が drop される
     changed = tree.upsert(
         kind=InquiryKind.GAP, text="child5", seq=seq(), confidence=0.95, parent_id=root.id
     )
@@ -99,7 +97,8 @@ def test_branch_cap_prunes_lowest_confidence_open_child() -> None:
     assert len(open_children) == MAX_INQUIRY_CHILDREN
     dropped = [n for n in changed if n.status is InquiryStatus.DROPPED]
     assert len(dropped) == 1
-    assert dropped[0].text == "child4"  # confidence 0.5 が最小
+    assert dropped[0].text == "child4"
+    assert dropped[0].confidence == 0.5
 
 
 def test_depth_cap_clamps_parent_to_deepest_allowed_ancestor() -> None:
@@ -107,12 +106,10 @@ def test_depth_cap_clamps_parent_to_deepest_allowed_ancestor() -> None:
     seq = _seq()
     parent_id = None
     last = None
-    # 深さ MAX まで連鎖を作る
     for i in range(MAX_INQUIRY_DEPTH):
         last = tree.upsert(kind=InquiryKind.GAP, text=f"n{i}", seq=seq(), parent_id=parent_id)[0]
         parent_id = last.id
     assert last.depth == MAX_INQUIRY_DEPTH
-    # MAX の子を作ろうとすると深さ上限に丸められる（親は MAX 未満の祖先へ）
     deeper = tree.upsert(kind=InquiryKind.GAP, text="too-deep", seq=seq(), parent_id=last.id)[0]
     assert deeper.depth <= MAX_INQUIRY_DEPTH
 
@@ -123,9 +120,11 @@ def test_reconcile_absent_resolves_only_given_kind() -> None:
     g1 = tree.upsert(kind=InquiryKind.GAP, text="g1", seq=seq())[0]
     g2 = tree.upsert(kind=InquiryKind.GAP, text="g2", seq=seq())[0]
     conv = tree.upsert(
-        kind=InquiryKind.CONTRADICTION, text="c1", seq=seq(), origin=InquiryOrigin.CONVERSATION
+        kind=InquiryKind.CONTRADICTION,
+        text="c1",
+        seq=seq(),
+        origin=InquiryOrigin.CONVERSATION,
     )[0]
-    # 最新パスに g1 だけ現れた → g2 は自動 resolve、contradiction は触らない
     resolved = tree.reconcile_absent(InquiryKind.GAP, present_ids={g1.id}, seq=seq())
     assert [n.id for n in resolved] == [g2.id]
     assert tree.get(g1.id).status is InquiryStatus.OPEN
@@ -140,7 +139,6 @@ def test_gating_open_count_excludes_ambiguous_and_low_confidence() -> None:
     tree.upsert(kind=InquiryKind.CHECK, text="ck", seq=seq(), confidence=0.9)
     tree.upsert(kind=InquiryKind.AMBIGUOUS, text="amb", seq=seq(), confidence=0.9)
     tree.upsert(kind=InquiryKind.GAP, text="low", seq=seq(), confidence=0.2)
-    # ambiguous は advisory・confidence<τ は除外
     assert tree.gating_open_count(tau=0.5) == 3
 
 
@@ -152,7 +150,7 @@ def test_validated_returns_resolved_gating_kinds_only() -> None:
     tree.resolve(g.id, seq())
     tree.resolve(amb.id, seq())
     validated = tree.validated()
-    assert [n.id for n in validated] == [g.id]  # ambiguous は除外
+    assert [n.id for n in validated] == [g.id]
 
 
 def test_repository_persists_and_reloads_nodes_in_memory() -> None:
@@ -164,6 +162,5 @@ def test_repository_persists_and_reloads_nodes_in_memory() -> None:
     loaded = repo.list_inquiry_nodes("sess-1")
     assert len(loaded) == 1
     assert loaded[0].kind is InquiryKind.CHECK
-    # round-trip で InquiryTree を再構築できる
     rebuilt = InquiryTree.from_nodes(loaded)
     assert rebuilt.get(loaded[0].id) is not None
