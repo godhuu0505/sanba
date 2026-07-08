@@ -9,13 +9,20 @@ LiveKit ランタイム無しで検証する。
 from __future__ import annotations
 
 import pytest
-from sanba_shared.models import AnalysisResult, SessionMeta
+from sanba_shared.inquiry import make_inquiry_id
+from sanba_shared.models import AnalysisResult, InquiryKind, InquiryStatus, SessionMeta
 from sanba_shared.repository import SessionRepository
 
 from sanba_agent.background import AnalysisScheduler
 from sanba_agent.events import EventPublisher, RecordingTransport
 from sanba_agent.main import SANBAAgent
 from sanba_agent.retrieval import GroundingStore
+
+
+def _seed_gap(agent: SANBAAgent, text: str) -> str:
+    """未解消の gap ノード（gating 対象）を木に直接載せ、id を返す。"""
+    agent._inquiry.upsert(kind=InquiryKind.GAP, text=text, seq=agent._next_inquiry_seq())
+    return make_inquiry_id(InquiryKind.GAP, text)
 
 
 class FakeClock:
@@ -100,7 +107,7 @@ def _stub_analysis(monkeypatch: pytest.MonkeyPatch) -> list[str]:
 
 
 @pytest.mark.asyncio
-async def test_background_analysis_publishes_detections(
+async def test_background_analysis_publishes_inquiry_nodes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls = _stub_analysis(monkeypatch)
@@ -112,8 +119,10 @@ async def test_background_analysis_publishes_detections(
     assert task is not None, "2 件目の確定発話で背景分析が発火する"
     await task
     assert len(calls) == 1
-    types = [t["event"]["type"] for t in transport.sent]
-    assert "detection.gap" in types, "背景実行でも検知カードへ publish される"
+    nodes = [t["event"] for t in transport.sent if t["event"]["type"] == "inquiry.node"]
+    assert nodes, "背景実行でも確認事項ノードへ publish される"
+    assert nodes[0]["op"] == "upsert"
+    assert nodes[0]["node"]["kind"] == "gap"
     statuses = [
         t["event"]["payload"]["phase"] for t in transport.sent if t["event"]["type"] == "status"
     ]
@@ -205,19 +214,20 @@ def _seed_requirement(agent: SANBAAgent, statement: str = "検索を新設する
 
 
 @pytest.mark.asyncio
-async def test_propose_session_end_gated_on_open_detections() -> None:
+async def test_propose_session_end_gated_on_open_inquiries() -> None:
     transport = RecordingTransport()
     agent = _agent(transport)
     _seed_requirement(agent)
     propose = type(agent).propose_session_end.__wrapped__
 
-    agent._published_gaps.add("g1")
+    gap_id = _seed_gap(agent, "性能要件が未確認")
     declined = await propose(agent, None)
     assert declined["proposed"] is False
-    assert declined["reason"] == "open_detections"
+    assert declined["reason"] == "open_inquiries"
+    assert declined["open_count"] == 1
     assert not any(t["event"]["type"] == "session.end_proposed" for t in transport.sent)
 
-    agent._published_gaps.clear()
+    agent._inquiry.resolve(gap_id, agent._next_inquiry_seq())
     proposed = await propose(agent, None)
     assert proposed["proposed"] is True
     assert any(t["event"]["type"] == "session.end_proposed" for t in transport.sent)
@@ -281,12 +291,12 @@ async def test_complete_session_refuses_when_open_remains() -> None:
     _seed_requirement(agent)
     agent._end_proposed = True
     agent.set_shutdown_hook(lambda reason: None)
-    agent._published_ambiguous.add("a1")
+    _seed_gap(agent, "整合性の未確認")
     complete = type(agent).complete_session.__wrapped__
     result = await complete(agent, None)
     assert result["completed"] is False
     assert result["open_count"] == 1
-    assert result["reason"] == "open_detections"
+    assert result["reason"] == "open_inquiries"
     assert not any(t["event"]["type"] == "session.completed" for t in transport.sent)
 
 
@@ -300,7 +310,7 @@ async def test_new_gap_retracts_prior_end_proposal() -> None:
     result = AnalysisResult(
         summary="s", open_topics=["性能要件"], next_question="q?", suggested_answer="a"
     )
-    await agent._publish_analysis_detections(result)
+    await agent._reconcile_inquiry(result)
     assert agent._end_proposed is False, "新しい未解消が出たら終了提案は無効化される"
 
 
@@ -594,80 +604,146 @@ async def test_auto_finalize_skips_when_no_requirements() -> None:
 
 
 @pytest.mark.asyncio
-async def test_coverage_open_is_not_published_as_blocking_detection() -> None:
-    """観点カバレッジ（advisory）は検知として publish・gate しない（ADR-0057）。"""
+async def test_reconcile_inquiry_opens_uncovered_check_and_gates() -> None:
+    """未カバーの確認観点は open な check ノードになり終了ゲートに算入される（ADR-0059 決定⑤）。"""
     transport = RecordingTransport()
     agent = _agent(transport)
-    result = AnalysisResult(
-        summary="s",
-        coverage_open=["性能・レスポンスの要件", "セキュリティ・権限・データ保護"],
-        next_question="q?",
-        suggested_answer="a",
-    )
-    await agent._publish_analysis_detections(result)
-
-    assert not any(t["event"]["type"] == "detection.gap" for t in transport.sent)
-    assert agent._open_detection_count() == 0
-    assert agent._repo._mem_detections.get("s1", {}) == {}
-
-
-@pytest.mark.asyncio
-async def test_checkpoint_coverage_published_with_creds(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """creds 有り+観点ありで checkpoint.coverage をスナップショット publish（ADR-0057 増分2a）。"""
-    from sanba_agent.config import settings
-
-    monkeypatch.setattr(settings, "google_api_key", "k")
-    transport = RecordingTransport()
-    agent = _agent(transport)
-    agent._check_points = ["性能・レスポンスの要件", "セキュリティ・権限・データ保護"]
+    agent._check_points = ("性能・レスポンスの要件", "セキュリティ・権限・データ保護")
     result = AnalysisResult(
         summary="s",
         coverage_open=["セキュリティ・権限・データ保護"],
         next_question="q?",
         suggested_answer="a",
     )
+    await agent._reconcile_inquiry(result)
 
-    await agent._publish_analysis_detections(result)
-
-    coverage = [t["event"] for t in transport.sent if t["event"]["type"] == "checkpoint.coverage"]
-    assert len(coverage) == 1
-    points = {p["label"]: p["covered"] for p in coverage[0]["points"]}
-    assert points == {"性能・レスポンスの要件": True, "セキュリティ・権限・データ保護": False}
-    assert not any(t["event"]["type"] == "detection.gap" for t in transport.sent)
-    assert agent._open_detection_count() == 0
+    nodes = [t["event"] for t in transport.sent if t["event"]["type"] == "inquiry.node"]
+    check = next(n for n in nodes if n["node"]["kind"] == "check")
+    assert check["op"] == "upsert"
+    assert check["node"]["text"] == "セキュリティ・権限・データ保護"
+    assert agent._gating_open_count() == 1
 
 
 @pytest.mark.asyncio
-async def test_checkpoint_coverage_not_published_without_creds() -> None:
-    """creds 無しでは coverage を publish しない（全カバー済みの誤誘導を避ける / ADR-0057）。"""
+async def test_reconcile_inquiry_resolves_check_when_covered() -> None:
+    """open にした check 観点が次パスでカバー済みになれば resolve し gate が下がる（決定⑤）。"""
     transport = RecordingTransport()
     agent = _agent(transport)
-    agent._check_points = ["性能・レスポンスの要件"]
-    result = AnalysisResult(summary="s", next_question="q?", suggested_answer="a")
+    agent._check_points = ("セキュリティ・権限・データ保護",)
+    await agent._reconcile_inquiry(
+        AnalysisResult(
+            summary="s",
+            coverage_open=["セキュリティ・権限・データ保護"],
+            next_question="q?",
+            suggested_answer="a",
+        )
+    )
+    assert agent._gating_open_count() == 1
 
-    await agent._publish_analysis_detections(result)
-
-    assert not any(t["event"]["type"] == "checkpoint.coverage" for t in transport.sent)
+    await agent._reconcile_inquiry(
+        AnalysisResult(summary="s", coverage_open=[], next_question="q?", suggested_answer="a")
+    )
+    assert agent._gating_open_count() == 0
+    ops = [t["event"]["op"] for t in transport.sent if t["event"]["type"] == "inquiry.node"]
+    assert "resolve" in ops
 
 
 @pytest.mark.asyncio
-async def test_checkpoint_coverage_not_published_without_check_points(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """観点 0 件では creds があっても publish しない（旧セッション/未設定）。"""
-    from sanba_agent.config import settings
-
-    monkeypatch.setattr(settings, "google_api_key", "k")
+async def test_ambiguous_topic_does_not_gate_via_reconcile() -> None:
+    """ambiguous ノードは publish されるが終了ゲートに算入しない（advisory / 決定⑤）。"""
     transport = RecordingTransport()
     agent = _agent(transport)
-    assert not agent._check_points
-    result = AnalysisResult(summary="s", next_question="q?", suggested_answer="a")
+    await agent._reconcile_inquiry(
+        AnalysisResult(
+            summary="s",
+            ambiguous_topics=["いい感じにして"],
+            next_question="q?",
+            suggested_answer="a",
+        )
+    )
+    nodes = [t["event"] for t in transport.sent if t["event"]["type"] == "inquiry.node"]
+    assert any(n["node"]["kind"] == "ambiguous" for n in nodes)
+    assert agent._gating_open_count() == 0
 
-    await agent._publish_analysis_detections(result)
 
-    assert not any(t["event"]["type"] == "checkpoint.coverage" for t in transport.sent)
+@pytest.mark.asyncio
+async def test_add_inquiry_tool_adds_gap_and_sets_focus() -> None:
+    """add_inquiry は会話由来の gap を立て、フォーカスを更新し inquiry.node を出す（決定③）。"""
+    transport = RecordingTransport()
+    agent = _agent(transport)
+    add = type(agent).add_inquiry.__wrapped__
+    out = await add(agent, None, "ゲスト購入時の在庫引き当ての扱い")
+    assert out["added"] is True
+    node = agent._inquiry.get(out["id"])
+    assert node is not None
+    assert node.kind is InquiryKind.GAP
+    assert node.status is InquiryStatus.OPEN
+    assert agent._inquiry_focus_id == out["id"]
+    assert agent._gating_open_count() == 1
+    nodes = [t["event"] for t in transport.sent if t["event"]["type"] == "inquiry.node"]
+    assert nodes[-1]["op"] == "upsert"
+    assert nodes[-1]["node"]["origin"] == "conversation"
+
+
+@pytest.mark.asyncio
+async def test_resolve_inquiry_tool_resolves_matching_node() -> None:
+    """resolve_inquiry は本文一致のノードを解消し inquiry.node(op=resolve) を出す（決定③）。"""
+    transport = RecordingTransport()
+    agent = _agent(transport)
+    add = type(agent).add_inquiry.__wrapped__
+    added = await add(agent, None, "並び順の既定")
+    resolve = type(agent).resolve_inquiry.__wrapped__
+    out = await resolve(agent, None, "並び順の既定")
+    assert out["resolved"] is True
+    assert out["id"] == added["id"]
+    resolved = agent._inquiry.get(added["id"])
+    assert resolved is not None
+    assert resolved.status is InquiryStatus.RESOLVED
+    assert agent._gating_open_count() == 0
+    ops = [t["event"]["op"] for t in transport.sent if t["event"]["type"] == "inquiry.node"]
+    assert ops[-1] == "resolve"
+
+
+@pytest.mark.asyncio
+async def test_resolve_inquiry_tool_no_match_is_noop() -> None:
+    transport = RecordingTransport()
+    agent = _agent(transport)
+    resolve = type(agent).resolve_inquiry.__wrapped__
+    out = await resolve(agent, None, "存在しない論点")
+    assert out["resolved"] is False
+    assert not any(t["event"]["type"] == "inquiry.node" for t in transport.sent)
+
+
+@pytest.mark.asyncio
+async def test_resolve_inquiry_selection_resolves_and_emits() -> None:
+    """web の user.selection は該当ノードを解消し inquiry.node(op=resolve) を返す（決定④）。"""
+    transport = RecordingTransport()
+    agent = _agent(transport)
+    gap_id = _seed_gap(agent, "並び順")
+    await agent.resolve_inquiry_selection(gap_id, "関連度順")
+    resolved = agent._inquiry.get(gap_id)
+    assert resolved is not None
+    assert resolved.status is InquiryStatus.RESOLVED
+    ops = [t["event"]["op"] for t in transport.sent if t["event"]["type"] == "inquiry.node"]
+    assert ops == ["resolve"]
+    assert any("[選択]" in line for line in agent.transcript)
+
+
+@pytest.mark.asyncio
+async def test_inquiry_tree_hydrates_from_repo() -> None:
+    """新しい agent が既存の inquiry ノードを木に復元する（再接続 / ADR-0059 決定④）。"""
+    from sanba_shared.models import InquiryNode
+
+    repo = SessionRepository()
+    repo.create_session_doc(SessionMeta(id="sH", title="t", owner_sub="o", owner_email=""))
+    repo.save_inquiry_node(
+        "sH",
+        InquiryNode(id="inq_x", kind=InquiryKind.GAP, text="未確認", created_seq=7),
+    )
+    agent = SANBAAgent("sH", repo, GroundingStore())
+    assert agent._inquiry.get("inq_x") is not None
+    assert agent._gating_open_count() == 1
+    assert agent._inquiry_seq == 7
 
 
 @pytest.mark.asyncio
