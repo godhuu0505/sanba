@@ -1,0 +1,122 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 780 880" font-family="'Hiragino Sans','Noto Sans JP',sans-serif">
+  <rect width="780" height="880" fill="#ffffff"/>
+  <text x="24" y="36" font-size="18" font-weight="700" fill="#221e1a">04 会話（会話タブ）— 解析バブル付き会話履歴</text>
+
+  <rect x="30" y="66" width="390" height="790" rx="24" fill="#fcfbf7" stroke="#221e1a" stroke-width="2"/>
+
+  <text x="54" y="102" font-size="14" font-weight="700" fill="#221e1a">アカウント設定画面の改修</text>
+  <g font-size="10.5" fill="#706a5d">
+    <text x="54" y="120">myapp · 12:03 経過</text>
+  </g>
+  <g font-size="10.5">
+    <rect x="248" y="88" width="52" height="20" rx="10" fill="#ffffff" stroke="#ede8dc"/>
+    <text x="256" y="102" fill="#221e1a">要件 2</text>
+    <rect x="304" y="88" width="64" height="20" rx="10" fill="#fdf3dc" stroke="#c08a10"/>
+    <text x="312" y="102" fill="#985c06">未解消 3</text>
+  </g>
+
+  <g font-size="12" font-weight="600">
+    <rect x="54" y="136" width="96" height="30" rx="15" fill="#221e1a"/>
+    <text x="82" y="156" fill="#ffffff">会話</text>
+    <rect x="156" y="136" width="110" height="30" rx="15" fill="#ffffff" stroke="#ede8dc"/>
+    <text x="176" y="156" fill="#706a5d">参考資料</text>
+    <rect x="272" y="136" width="110" height="30" rx="15" fill="#ffffff" stroke="#ede8dc"/>
+    <text x="292" y="156" fill="#706a5d">要件一覧</text>
+  </g>
+
+  <g>
+    <rect x="54" y="184" width="300" height="76" rx="14" fill="#ffffff" stroke="#221e1a" stroke-width="1.5"/>
+    <text x="68" y="206" font-size="12" fill="#221e1a">こんにちは。今日のゴールは「アカウント設定</text>
+    <text x="68" y="224" font-size="12" fill="#221e1a">画面を作りたい」ですね。詳細も拝見しました。</text>
+    <text x="68" y="242" font-size="12" fill="#221e1a">まず認識合わせをさせてください。</text>
+  </g>
+
+  <g>
+    <rect x="54" y="272" width="300" height="34" rx="12" fill="#f4f1e8" stroke="#ede8dc"/>
+    <circle cx="72" cy="289" r="8" fill="#7fa83c"/>
+    <path d="M68 289 l3 3 l6 -6" stroke="#ffffff" stroke-width="2" fill="none"/>
+    <text x="88" y="293" font-size="11.5" fill="#4a6619" font-weight="600">ゴールとゴール詳細を読み込みました</text>
+  </g>
+
+  <g>
+    <rect x="54" y="314" width="300" height="48" rx="12" fill="#f4f1e8" stroke="#ede8dc"/>
+    <circle cx="72" cy="331" r="8" fill="#7fa83c"/>
+    <path d="M68 331 l3 3 l6 -6" stroke="#ffffff" stroke-width="2" fill="none"/>
+    <text x="88" y="330" font-size="11.5" fill="#4a6619" font-weight="600">ソースコードの索引を利用します</text>
+    <text x="88" y="348" font-size="10.5" fill="#706a5d">godhuu0505/myapp @ main · 索引済み（連携時に作成）</text>
+  </g>
+
+  <g>
+    <rect x="54" y="370" width="300" height="64" rx="12" fill="#fdf3dc" stroke="#c08a10"/>
+    <rect x="66" y="382" width="14" height="14" rx="3" fill="#f0a814"/>
+    <text x="88" y="394" font-size="11.5" fill="#985c06" font-weight="600">capture-01.png を解析中… 65%</text>
+    <rect x="66" y="406" width="264" height="8" rx="4" fill="#ffffff" stroke="#ede8dc"/>
+    <rect x="66" y="406" width="172" height="8" rx="4" fill="#f0a814"/>
+    <text x="66" y="428" font-size="10" fill="#706a5d">解析が終わり次第、会話に反映します</text>
+  </g>
+
+  <g>
+    <rect x="120" y="446" width="234" height="58" rx="14" fill="#eaf0ff" stroke="#2a5cdb" stroke-width="1.2"/>
+    <text x="134" y="468" font-size="12" fill="#221e1a">はい。プロフィール編集と通知設定を</text>
+    <text x="134" y="486" font-size="12" fill="#221e1a">1つの画面にまとめたいです。</text>
+  </g>
+
+  <g>
+    <rect x="54" y="516" width="300" height="76" rx="14" fill="#ffffff" stroke="#221e1a" stroke-width="1.5"/>
+    <text x="68" y="538" font-size="12" fill="#221e1a">承知しました。通知設定の保存はどのタイミング</text>
+    <text x="68" y="556" font-size="12" fill="#221e1a">を想定していますか？ 項目ごとに即時保存か、</text>
+    <text x="68" y="574" font-size="12" fill="#221e1a">「保存」ボタンでの一括保存かで作りが変わります。</text>
+  </g>
+
+  <g>
+    <rect x="54" y="700" width="342" height="120" rx="16" fill="#ffffff" stroke="#ede8dc"/>
+    <circle cx="120" cy="760" r="30" fill="#f0a814" stroke="#221e1a" stroke-width="2"/>
+    <rect x="112" y="746" width="16" height="20" rx="8" fill="#221e1a"/>
+    <path d="M108 760 a12 12 0 0 0 24 0" stroke="#221e1a" stroke-width="2.5" fill="none"/>
+    <g stroke="#7fa83c" stroke-width="3" stroke-linecap="round">
+      <line x1="176" y1="752" x2="176" y2="768"/>
+      <line x1="188" y1="744" x2="188" y2="776"/>
+      <line x1="200" y1="750" x2="200" y2="770"/>
+      <line x1="212" y1="756" x2="212" y2="764"/>
+    </g>
+    <rect x="280" y="742" width="92" height="36" rx="12" fill="#fbeae6" stroke="#c43a20"/>
+    <text x="300" y="765" font-size="12.5" font-weight="700" fill="#c43a20">終了する</text>
+  </g>
+
+  <g font-size="12.5" fill="#221e1a">
+    <circle cx="466" cy="290" r="12" fill="#221e1a"/>
+    <text x="461.5" y="294.5" fill="#ffffff" font-weight="700">1</text>
+    <text x="488" y="282" font-weight="700">コンテキストバブル（新規）</text>
+    <text x="488" y="300">source=prep / repo。`context.progress` イベントを</text>
+    <text x="488" y="316">ChatBubble kind="analysis" として時系列に描画。</text>
+    <text x="488" y="332">索引済みリポジトリは「利用します」と正直に表示</text>
+    <text x="488" y="348">（ADR-0023: フェイク進捗を出さない）。</text>
+
+    <circle cx="466" cy="400" r="12" fill="#221e1a"/>
+    <text x="461.5" y="404.5" fill="#ffffff" font-weight="700">2</text>
+    <text x="488" y="392" font-weight="700">素材解析バブル（新規）</text>
+    <text x="488" y="410">既存 `analysis.progress`（asset 単位・10/50/100）を</text>
+    <text x="488" y="426">チャットにも写像。ストアは RealtimeStore.analysis を</text>
+    <text x="488" y="442">共有し、参考資料タブと常に同値。done で ✓ に変化、</text>
+    <text x="488" y="458">failed は朱＋「参考資料タブから再試行」導線。</text>
+
+    <circle cx="466" cy="540" r="12" fill="#221e1a"/>
+    <text x="461.5" y="544.5" fill="#ffffff" font-weight="700">3</text>
+    <text x="488" y="532" font-weight="700">AI 主導のゴール確認（実装済みを維持）</text>
+    <text x="488" y="550">DEVELOPER_OPENING_WITH_PREP_INSTRUCTIONS。</text>
+    <text x="488" y="566">解析完了前は準備情報から深掘りを開始し、完了後に</text>
+    <text x="488" y="582">キャプチャ由来の論点を追加で確認する。</text>
+
+    <circle cx="466" cy="640" r="12" fill="#221e1a"/>
+    <text x="461.5" y="644.5" fill="#ffffff" font-weight="700">4</text>
+    <text x="488" y="632" font-weight="700">ミニ状況バー（既存）</text>
+    <text x="488" y="650">未解消 N はロジックツリー導入後、open ノード数に</text>
+    <text x="488" y="666">切り替え（Phase 2）。タップで要件一覧タブへ。</text>
+  </g>
+
+  <line x1="380" y1="290" x2="452" y2="290" stroke="#706a5d" stroke-dasharray="4 3"/>
+  <line x1="360" y1="400" x2="452" y2="400" stroke="#706a5d" stroke-dasharray="4 3"/>
+  <line x1="360" y1="554" x2="452" y2="540" stroke="#706a5d" stroke-dasharray="4 3"/>
+  <line x1="370" y1="98" x2="440" y2="98" stroke="#706a5d" stroke-dasharray="4 3"/>
+  <line x1="440" y1="98" x2="466" y2="628" stroke="#706a5d" stroke-dasharray="4 3"/>
+</svg>

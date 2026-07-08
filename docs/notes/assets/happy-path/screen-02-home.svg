@@ -1,0 +1,104 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 780 780" font-family="'Hiragino Sans','Noto Sans JP',sans-serif">
+  <rect width="780" height="780" fill="#ffffff"/>
+  <text x="24" y="36" font-size="18" font-weight="700" fill="#221e1a">02 ホーム — アプリ選択ゲート＋過去の要件一覧（Phase 1 / P1-3・P1-4）</text>
+
+  <rect x="30" y="66" width="390" height="690" rx="24" fill="#fcfbf7" stroke="#221e1a" stroke-width="2"/>
+
+  <text x="54" y="106" font-size="16" font-weight="700" fill="#221e1a">SANBA</text>
+  <circle cx="378" cy="100" r="14" fill="#f4f1e8" stroke="#ede8dc"/>
+  <text x="371" y="106" font-size="12">👤</text>
+
+  <g>
+    <rect x="54" y="126" width="342" height="196" rx="16" fill="#ffffff" stroke="#221e1a" stroke-width="2"/>
+    <rect x="60" y="132" width="342" height="196" rx="16" fill="#221e1a" opacity="0.10"/>
+    <rect x="54" y="126" width="342" height="196" rx="16" fill="#ffffff" stroke="#221e1a" stroke-width="2"/>
+    <text x="72" y="156" font-size="13.5" font-weight="700" fill="#221e1a">要件インタビューを始める</text>
+    <text x="72" y="178" font-size="11" fill="#706a5d">対象のアプリ</text>
+    <rect x="72" y="188" width="306" height="44" rx="12" fill="#ffffff" stroke="#d6cfbe"/>
+    <text x="88" y="208" font-size="12.5" font-weight="600" fill="#221e1a">myapp</text>
+    <g font-size="9.5">
+      <rect x="88" y="214" width="118" height="16" rx="8" fill="#eaf0ff" stroke="#2a5cdb"/>
+      <text x="96" y="226" fill="#2a5cdb">GitHub 連携済み ✓</text>
+    </g>
+    <text x="358" y="214" font-size="12" fill="#706a5d">▾</text>
+    <rect x="72" y="244" width="306" height="46" rx="14" fill="#e0402a" stroke="#221e1a" stroke-width="2"/>
+    <text x="164" y="273" font-size="14" font-weight="700" fill="#ffffff">会話を始める</text>
+    <text x="72" y="310" font-size="10" fill="#706a5d">GitHub 未連携のアプリは準備画面で連携を案内します</text>
+  </g>
+
+  <g>
+    <text x="54" y="366" font-size="13" font-weight="700" fill="#221e1a">過去の要件一覧</text>
+    <text x="330" y="366" font-size="11" fill="#2a5cdb">すべて見る →</text>
+  </g>
+
+  <g>
+    <rect x="54" y="380" width="342" height="88 " rx="14" fill="#ffffff" stroke="#ede8dc"/>
+    <text x="70" y="404" font-size="12" font-weight="700" fill="#221e1a">アカウント設定画面の新設と通知設定の統合</text>
+    <g font-size="9.5">
+      <rect x="70" y="414" width="44" height="18" rx="9" fill="#f4f1e8" stroke="#ede8dc"/>
+      <text x="79" y="427" fill="#221e1a">sanba</text>
+      <rect x="120" y="414" width="70" height="18" rx="9" fill="#fbeae6" stroke="#c43a20"/>
+      <text x="128" y="427" fill="#c43a20">priority:must</text>
+      <rect x="196" y="414" width="84" height="18" rx="9" fill="#eaf0ff" stroke="#2a5cdb"/>
+      <text x="204" y="427" fill="#2a5cdb">category:screen</text>
+    </g>
+    <text x="70" y="452" font-size="10.5" fill="#706a5d">myapp · 2026-07-07 · 要件 5 件 · Issue 起票済み ✓</text>
+  </g>
+
+  <g>
+    <rect x="54" y="476" width="342" height="88" rx="14" fill="#ffffff" stroke="#ede8dc"/>
+    <text x="70" y="500" font-size="12" font-weight="700" fill="#221e1a">検索結果の並び替えオプション追加</text>
+    <g font-size="9.5">
+      <rect x="70" y="510" width="44" height="18" rx="9" fill="#f4f1e8" stroke="#ede8dc"/>
+      <text x="79" y="523" fill="#221e1a">sanba</text>
+      <rect x="120" y="510" width="78" height="18" rx="9" fill="#fdf3dc" stroke="#c08a10"/>
+      <text x="128" y="523" fill="#985c06">priority:should</text>
+      <rect x="204" y="510" width="76" height="18" rx="9" fill="#eaf0ff" stroke="#2a5cdb"/>
+      <text x="212" y="523" fill="#2a5cdb">category:search</text>
+    </g>
+    <text x="70" y="548" font-size="10.5" fill="#706a5d">myapp · 2026-07-05 · 要件 3 件</text>
+  </g>
+
+  <g>
+    <rect x="54" y="572" width="342" height="60" rx="14" fill="#fcfbf7" stroke="#ede8dc" stroke-dasharray="5 4"/>
+    <text x="70" y="598" font-size="11" fill="#706a5d">進行中のセッションはありません。</text>
+    <text x="70" y="616" font-size="11" fill="#706a5d">終了済みの会話はここから結果だけ確認できます。</text>
+  </g>
+
+  <g font-size="12.5" fill="#221e1a">
+    <circle cx="466" cy="180" r="12" fill="#221e1a"/>
+    <text x="461.5" y="184.5" fill="#ffffff" font-weight="700">1</text>
+    <text x="488" y="172" font-weight="700">アプリ選択ゲート（ADR-0044 既存＋P1-4）</text>
+    <text x="488" y="190">GitHub 連携状態バッジを追加（Product.github_repo</text>
+    <text x="488" y="206">の有無で表示）。未連携でも開始は可能なまま、</text>
+    <text x="488" y="222">準備画面でリポジトリ連携を促す（絞り込みはしない）。</text>
+
+    <circle cx="466" cy="300" r="12" fill="#221e1a"/>
+    <text x="461.5" y="304.5" fill="#ffffff" font-weight="700">2</text>
+    <text x="488" y="292" font-weight="700">過去の要件一覧（P1-3・新規）</text>
+    <text x="488" y="310">GET /api/sessions/mine の直近 3 件をホームに表示。</text>
+    <text x="488" y="326">「すべて見る」で既存 /results へ。SessionHistoryList</text>
+    <text x="488" y="342">を共用し、表示は タイトル（AI 生成）＋ラベル＋</text>
+    <text x="488" y="358">メタ（アプリ名・日付・要件数・起票状態）。</text>
+
+    <circle cx="466" cy="420" r="12" fill="#221e1a"/>
+    <text x="461.5" y="424.5" fill="#ffffff" font-weight="700">3</text>
+    <text x="488" y="412" font-weight="700">ラベル（P1-3・新規）</text>
+    <text x="488" y="430">finalize 時に requirements_to_issue_labels の算出値を</text>
+    <text x="488" y="446">SessionMeta.labels へ保存し一覧 API に載せる。</text>
+    <text x="488" y="462">Issue 起票時と同一のラベル体系（sanba / priority:* /</text>
+    <text x="488" y="478">category:*）なので、そのまま Issue に写せる。</text>
+
+    <circle cx="466" cy="540" r="12" fill="#221e1a"/>
+    <text x="461.5" y="544.5" fill="#ffffff" font-weight="700">4</text>
+    <text x="488" y="532" font-weight="700">セッション画面への再入禁止（既存）</text>
+    <text x="488" y="550">会話終了後は一覧からも /results/{id} のみに遷移。</text>
+    <text x="488" y="566">ライブ URL は redirect 済みで、要件どおり</text>
+    <text x="488" y="582">「終了後はセッション画面へ遷移させない」。</text>
+  </g>
+
+  <line x1="400" y1="210" x2="452" y2="185" stroke="#706a5d" stroke-dasharray="4 3"/>
+  <line x1="400" y1="366" x2="452" y2="305" stroke="#706a5d" stroke-dasharray="4 3"/>
+  <line x1="290" y1="423" x2="452" y2="423" stroke="#706a5d" stroke-dasharray="4 3"/>
+  <line x1="400" y1="600" x2="452" y2="545" stroke="#706a5d" stroke-dasharray="4 3"/>
+</svg>
