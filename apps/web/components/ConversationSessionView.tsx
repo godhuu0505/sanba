@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   mergeMaterials,
@@ -15,7 +15,7 @@ import {
 import type { RealtimeMetricsSnapshot } from "@/lib/realtime/metrics";
 import type { SessionState } from "@/lib/realtime/store";
 import type { SendAnswer, SendSelection } from "@/lib/realtime/useRealtimeSession";
-import type { ExportResult } from "@/lib/api";
+import type { ExportEligibility, ExportResult } from "@/lib/api";
 
 import { BottomBar } from "./BottomBar";
 import { ChatHistory } from "./ChatHistory";
@@ -42,6 +42,7 @@ export interface ConversationSessionViewProps {
   onToggleMute: () => void;
   onSendText: (text: string) => void;
   onExport: () => Promise<ExportResult>;
+  onCheckExportEligibility?: () => Promise<ExportEligibility>;
   onFinalize?: () => Promise<unknown>;
   onAddMaterial: () => void;
   extraMaterials?: MaterialItem[];
@@ -72,6 +73,7 @@ export function ConversationSessionView({
   onToggleMute,
   onSendText,
   onExport,
+  onCheckExportEligibility,
   onFinalize,
   onAddMaterial,
   extraMaterials,
@@ -98,11 +100,31 @@ export function ConversationSessionView({
   const [answeredQuestions, setAnsweredQuestions] = useState<ReadonlySet<string>>(new Set());
   const exportingRef = useRef(false);
   const [issueExport, setIssueExport] = useState<IssueExportStatus>({ status: "idle" });
+  const [issueDisabledReason, setIssueDisabledReason] = useState<string | null>(null);
   const finalizingRef = useRef(false);
 
   const baseMini = selectMiniStatus(state);
   const openDetections = selectOpenDetections(state);
   const confirmed = selectConfirmedRequirements(state);
+
+  useEffect(() => {
+    if (readOnly || phase !== "result" || confirmed.length === 0 || !onCheckExportEligibility) {
+      return;
+    }
+    let cancelled = false;
+    void onCheckExportEligibility()
+      .then((e) => {
+        if (!cancelled) {
+          setIssueDisabledReason(e.can_export ? null : (e.reason ?? "issue creation failed"));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setIssueDisabledReason(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [readOnly, phase, confirmed.length, onCheckExportEligibility]);
 
   const realtimeMaterials = selectMaterials(state);
   const materials = mergeMaterials(
@@ -222,6 +244,7 @@ export function ConversationSessionView({
         }}
         onRestart={() => onRestart?.()}
         issueExport={issueExport}
+        issueDisabledReason={issueDisabledReason}
         onExportIssue={
           !readOnly && confirmed.length > 0
             ? () => {

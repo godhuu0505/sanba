@@ -1,6 +1,6 @@
 # ADR-0053: GitHub 連携の権限分離 — 読みは App 索引・書きは操作者権限ゲート付き Issues:write
 
-- ステータス: Proposed
+- ステータス: Accepted
 - 日付: 2026-07-08
 - 関連: [ADR-0007](0007-external-connectors.md)（外部コネクタ・共有トークン — 本 ADR が書き経路を置き換える）/
   [ADR-0027](0027-per-session-github-repo.md)（セッション単位 repo 選択 — 本 ADR が準備画面からの選択を撤去する）/
@@ -125,8 +125,12 @@ installation 解決も **API の単一ヘルパー経由**にする（現状 `ge
   - `EntryFlow.tsx`: 準備画面の repo/branch 欄と関連 state（`repoChoices` / `githubRepo` /
     `githubBranch` / `branchChoices`）を撤去。`prepFormStorage` の `githubRepo` も除去。
   - 結果画面: Issue 登録ボタンの活性/非活性と理由表示（決定 4）。
-- `apps/agent`: 起票ツール（`export_requirements_to_github`）は読み経路に影響なし。書き経路の
-  トークン供給元が変わるため、agent 側から起票する経路がある場合は api の権限ゲートに従わせる。
+- `apps/agent`: 読み経路に影響なし。agent の**自律起票ツール**（`export_requirements_to_github`）は
+  現状も共有 PAT 直書き（`GitHubConnector(settings.github_token, ...)`）で、本 ADR の
+  「操作者本人の installation」前提が自律実行には成り立たない（クリックした人がいない）。
+  この経路の移行は follow-up とする: (a) 自律起票をやめて人の結果閲覧フロー（決定5）に一本化するか、
+  (b) セッション owner の installation に解決するか、を別途決める。段2 では api `/export` の
+  共有 PAT 依存のみ退役し、agent 自律起票は据え置く（機能を壊さないため）。
 - インフラ / セキュリティ: GitHub App の権限に **Issues: write** を追加 →
   既存インストールの**再同意**が必要（リリースノート・案内が要る）。`GITHUB_TOKEN`（共有 PAT）
   の書き用途を退役（env コネクタの扱いは移行時に確認）。read-only 原則の緩和は本 ADR の

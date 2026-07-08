@@ -25,6 +25,16 @@ export type IssueExportStatus =
 
 function issueExportReasonText(reason?: string): string {
   switch (reason) {
+    case "github not linked":
+      return "GitHub と連携すると起票できます（アカウント設定から連携してください）。";
+    case "no repo access":
+      return "対象リポジトリへの権限がありません（アプリ管理者に確認してください）。";
+    case "no repo":
+      return "対象アプリにリポジトリが紐づいていないため起票できません。";
+    case "github app not configured":
+      return "GitHub App が未設定のため起票できません。";
+    case "guest":
+      return "この画面からは起票できません。";
     case "github connector disabled":
       return "GitHub 連携が無効のため起票できませんでした。";
     case "github repo not allowed":
@@ -50,6 +60,7 @@ export interface ResultViewProps {
   onExportDrive?: () => void;
   onExportIssue?: () => void;
   issueExport?: IssueExportStatus;
+  issueDisabledReason?: string | null;
 }
 
 export function ResultView({
@@ -65,6 +76,7 @@ export function ResultView({
   onExportDrive,
   onExportIssue,
   issueExport = { status: "idle" },
+  issueDisabledReason = null,
 }: ResultViewProps) {
   const interviewMode = useInterviewMode();
   const endUser = interviewMode === "end_user";
@@ -206,13 +218,15 @@ export function ResultView({
             {available.map((o) => {
               const Icon = o.icon;
               const busy = o.label === "Issue" && issueExport.status === "pending";
+              const blocked = o.label === "Issue" && !!issueDisabledReason;
               return (
                 <button
                   key={o.label}
                   type="button"
                   onClick={o.handler}
-                  disabled={busy}
+                  disabled={busy || blocked}
                   aria-busy={busy}
+                  title={blocked ? issueExportReasonText(issueDisabledReason ?? undefined) : undefined}
                   className="flex flex-1 items-center justify-center gap-1.5 rounded-[11px] border border-sanba-border bg-sanba-surface py-[11px] text-[11.5px] font-bold text-sanba-muted disabled:opacity-60"
                 >
                   <Icon size={14} aria-hidden /> {busy ? "起票中…" : o.label}
@@ -220,6 +234,11 @@ export function ResultView({
               );
             })}
           </div>
+          {onExportIssue && issueDisabledReason && issueExport.status === "idle" && (
+            <p className="mt-[6px] w-full text-center text-[11px] font-bold text-sanba-muted">
+              {issueExportReasonText(issueDisabledReason)}
+            </p>
+          )}
           {onExportIssue && issueExport.status !== "idle" && issueExport.status !== "pending" && (
             <div className="mt-[6px] w-full" role="status" aria-live="polite">
               {issueExport.status === "done" ? (

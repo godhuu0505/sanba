@@ -7,6 +7,7 @@ deps は main / routers を import しない）。main.py は tests の後方互
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import re
@@ -183,6 +184,48 @@ def _github_app_client() -> GitHubAppClient | None:
         oauth_client_id=settings.github_app_client_id,
         oauth_client_secret=settings.github_app_client_secret,
     )
+
+
+class ExportEligibility(BaseModel):
+    """Issue 起票の可否と理由（ADR-0053 決定4）。web はこれでボタンの活性/理由を出し分ける。"""
+
+    can_export: bool
+    reason: str | None = None
+    repo: str | None = None
+
+
+def export_eligibility(access_sub: str, session: SessionMeta) -> ExportEligibility:
+    """起票資格を判定する（ADR-0053 決定3/4）。
+
+    起票は操作者本人の GitHub App installation token（Issues: write）で行う。よって
+    「操作者が連携済み ∧ その installation が対象 repo を含む」ときだけ可とする。判定順は
+    repo 解決 → 許可リスト → App 構成 → 連携 → repo 権限。repo 解決は既存 export と同じ
+    （セッション明示 > 環境変数。空文字は明示的な非連携で `no repo`）。ゲスト判定は呼び出し側
+    （`forbid_guest_writes` / eligibility エンドポイント）が担う。
+    """
+    raw = session.github_repo if session.github_repo is not None else settings.github_repo
+    repo = raw or None
+    if not repo:
+        return ExportEligibility(can_export=False, reason="no repo", repo=None)
+    if not _github_repo_allowed(repo):
+        return ExportEligibility(can_export=False, reason="github repo not allowed", repo=repo)
+    client = _github_app_client()
+    if client is None:
+        return ExportEligibility(can_export=False, reason="github app not configured", repo=repo)
+    link = _repo.get_github_link(access_sub)
+    if link is None:
+        return ExportEligibility(can_export=False, reason="github not linked", repo=repo)
+    try:
+        allowed_repos = client.repo_full_names(link.installation_id)
+    except Exception as exc:  # pragma: no cover - network
+        log.warning("github_export_repo_check_failed", error=str(exc))
+        return ExportEligibility(can_export=False, reason="no repo access", repo=repo)
+    finally:
+        with contextlib.suppress(Exception):
+            client.close()
+    if repo not in allowed_repos:
+        return ExportEligibility(can_export=False, reason="no repo access", repo=repo)
+    return ExportEligibility(can_export=True, reason=None, repo=repo)
 
 
 def _require_product_access(product_id: str, user: AuthUser, *, manage: bool = False) -> Product:

@@ -385,6 +385,23 @@ export async function exportRequirements(
   return res.json();
 }
 
+export interface ExportEligibility {
+  can_export: boolean;
+  reason?: string;
+  repo?: string | null;
+}
+
+export async function fetchExportEligibility(
+  sessionId: string,
+  sessionToken: string | null,
+): Promise<ExportEligibility> {
+  const res = await fetch(`${API_URL}/api/sessions/${sessionId}/export/eligibility`, {
+    headers: authHeaders(sessionToken),
+  });
+  if (!res.ok) throw new Error(`export eligibility failed: ${res.status}`);
+  return res.json();
+}
+
 
 export interface MySession {
   id: string;

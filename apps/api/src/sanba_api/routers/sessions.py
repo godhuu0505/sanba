@@ -30,7 +30,6 @@ from sanba_shared.result_document import (
     requirements_to_issue_labels,
 )
 
-from .. import github_export
 from ..auth import InvalidInvite, SessionAccess, create_invite, verify_invite
 from ..auth_google import AuthUser, ensure_room_creator, require_user, require_user_bound
 from ..config import settings
@@ -41,12 +40,14 @@ from ..deps import (
     _confirmed_requirements,
     _finalized_snapshot_requirements,
     _get_tracer,
+    _github_app_client,
     _github_repo_allowed,
     _indexer,
     _mint_join_tokens,
     _read_repo,
     _repo,
     _require_product_access,
+    export_eligibility,
     forbid_guest_writes,
     require_session_access,
 )
@@ -1012,27 +1013,30 @@ def finalize_session_requirements(
 def export_requirements(
     session_id: str, access: SessionAccess = Depends(require_session_access)
 ) -> ExportResponse:
-    """確定要件を GitHub Issue として起票する（契約 §4 P1）。
+    """確定要件を GitHub Issue として起票する（契約 §4 P1 / ADR-0053）。
 
     finalize 時に凍結した要件 ID スナップショット（`finalized_requirement_ids`）の集合だけを
     起票する。凍結の定義（旧データのフォールバック含む）は _finalized_snapshot_requirements
     に一元化し、過去要件閲覧と共有する。
 
-    ゲスト token（ADR-0032 決定4）は起票不可: 匿名の URL 保持者が owner の
-    リポジトリへ Issue を作れてしまうため（connector 有効時）、コネクタ判定より前に拒む。
+    起票は**操作者本人の GitHub App installation token（Issues: write）**で行う（ADR-0053）。
+    共有 PAT は使わない。ゲスト token（ADR-0032 決定4）は起票不可: 匿名の URL 保持者が owner の
+    リポジトリへ Issue を作れてしまうため、資格判定より前に拒む。起票可否の判定は
+    `export_eligibility` に集約し、eligibility エンドポイント（ボタン活性判定）と共有する。
     """
     forbid_guest_writes(access, "export")
-    if not (settings.github_connector_enabled and settings.github_token):
-        return ExportResponse(exported=False, reason="github connector disabled")
     session = _repo.get_session(session_id)
     if session is None:
         raise HTTPException(status_code=404, detail="session not found")
-    export_repo = session.github_repo if session.github_repo is not None else settings.github_repo
-    if not export_repo:
-        return ExportResponse(exported=False, reason="github connector disabled")
-    if not _github_repo_allowed(export_repo):
-        log.warning("export_repo_not_allowed", session=session_id, repo=export_repo)
-        return ExportResponse(exported=False, reason="github repo not allowed")
+    elig = export_eligibility(access.sub, session)
+    if not elig.can_export or elig.repo is None:
+        log.info("export_not_eligible", session=session_id, reason=elig.reason, sub=access.sub)
+        return ExportResponse(exported=False, reason=elig.reason)
+    export_repo = elig.repo
+    client = _github_app_client()
+    link = _repo.get_github_link(access.sub)
+    if client is None or link is None:
+        return ExportResponse(exported=False, reason="github not linked")
     confirmed = _finalized_snapshot_requirements(session)
     product = _repo.get_product(session.product_id) if session.product_id else None
     template, _ = resolve_output_format(product, Audience.DEVELOPER)
@@ -1049,13 +1053,18 @@ def export_requirements(
             else []
         ),
     )
-    url = github_export.create_issue(
-        settings.github_token,
-        export_repo,
-        issue_title(session.title, session_id),
-        body,
-        labels=requirements_to_issue_labels(confirmed),
-    )
+    body = f"{body}\n\n---\nSANBA session {session_id} / export by {link.github_login}"
+    try:
+        url = client.create_issue(
+            link.installation_id,
+            export_repo,
+            issue_title(session.title, session_id),
+            body,
+            labels=requirements_to_issue_labels(confirmed),
+        )
+    finally:
+        with contextlib.suppress(Exception):
+            client.close()
     if url is None:
         return ExportResponse(exported=False, reason="issue creation failed")
     log.info(
@@ -1065,7 +1074,36 @@ def export_requirements(
         id_count=len(session.finalized_requirement_ids),
         repo=export_repo,
         session_selected=session.github_repo is not None,
+        installation_source="acting-user",
+        exporter=link.github_login,
         url=url,
         sub=access.sub,
     )
     return ExportResponse(exported=True, issue_url=url, count=len(confirmed))
+
+
+class ExportEligibilityResponse(BaseModel):
+    can_export: bool
+    reason: str | None = None
+    repo: str | None = None
+
+
+@router.get(
+    "/api/sessions/{session_id}/export/eligibility",
+    response_model=ExportEligibilityResponse,
+)
+def export_eligibility_status(
+    session_id: str, access: SessionAccess = Depends(require_session_access)
+) -> ExportEligibilityResponse:
+    """起票ボタンの活性/理由判定に使う（ADR-0053 決定4）。認可はセッショントークン。
+
+    ゲストは起票不可（`can_export=False, reason="guest"`）。それ以外は `export_eligibility` で
+    「連携済み ∧ 対象 repo 権限あり」を判定する（POST /export と同じ判定を共有）。
+    """
+    session = _repo.get_session(session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="session not found")
+    if access.sub.startswith("guest:"):
+        return ExportEligibilityResponse(can_export=False, reason="guest", repo=None)
+    elig = export_eligibility(access.sub, session)
+    return ExportEligibilityResponse(can_export=elig.can_export, reason=elig.reason, repo=elig.repo)
