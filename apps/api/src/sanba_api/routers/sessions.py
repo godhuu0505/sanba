@@ -1013,28 +1013,40 @@ def finalize_session_requirements(
 def export_requirements(
     session_id: str, access: SessionAccess = Depends(require_session_access)
 ) -> ExportResponse:
-    """確定要件を GitHub Issue として起票する（契約 §4 P1 / ADR-0053）。
-
-    finalize 時に凍結した要件 ID スナップショット（`finalized_requirement_ids`）の集合だけを
-    起票する。凍結の定義（旧データのフォールバック含む）は _finalized_snapshot_requirements
-    に一元化し、過去要件閲覧と共有する。
+    """確定要件を GitHub Issue として起票する（契約 §4 P1 / ADR-0053）。ライブ結果画面用。
 
     起票は**操作者本人の GitHub App installation token（Issues: write）**で行う（ADR-0053）。
     共有 PAT は使わない。ゲスト token（ADR-0032 決定4）は起票不可: 匿名の URL 保持者が owner の
-    リポジトリへ Issue を作れてしまうため、資格判定より前に拒む。起票可否の判定は
-    `export_eligibility` に集約し、eligibility エンドポイント（ボタン活性判定）と共有する。
+    リポジトリへ Issue を作れてしまうため、資格判定より前に拒む。起票の実処理は
+    `_perform_export` に集約し、ログイン資格の結果レビュー経路（`/mine/...`）と共有する。
     """
     forbid_guest_writes(access, "export")
     session = _repo.get_session(session_id)
     if session is None:
         raise HTTPException(status_code=404, detail="session not found")
-    elig = export_eligibility(access.sub, session)
+    return _perform_export(session, access.sub)
+
+
+class ExportEligibilityResponse(BaseModel):
+    can_export: bool
+    reason: str | None = None
+    repo: str | None = None
+
+
+def _perform_export(session: SessionMeta, actor_sub: str) -> ExportResponse:
+    """起票の実処理（資格判定 → 本文整形 → 操作者 installation で Issue 起票）。
+
+    finalize 時に凍結した要件 ID スナップショット（`finalized_requirement_ids`）の集合だけを
+    起票する。可否は `export_eligibility` に一元化し、eligibility エンドポイント（ボタン活性
+    判定）と同じ判定を共有する。起票アイデンティティは常に操作者本人の installation。
+    """
+    elig = export_eligibility(actor_sub, session)
     if not elig.can_export or elig.repo is None:
-        log.info("export_not_eligible", session=session_id, reason=elig.reason, sub=access.sub)
+        log.info("export_not_eligible", session=session.id, reason=elig.reason, sub=actor_sub)
         return ExportResponse(exported=False, reason=elig.reason)
     export_repo = elig.repo
     client = _github_app_client()
-    link = _repo.get_github_link(access.sub)
+    link = _repo.get_github_link(actor_sub)
     if client is None or link is None:
         return ExportResponse(exported=False, reason="github not linked")
     confirmed = _finalized_snapshot_requirements(session)
@@ -1053,12 +1065,12 @@ def export_requirements(
             else []
         ),
     )
-    body = f"{body}\n\n---\nSANBA session {session_id} / export by {link.github_login}"
+    body = f"{body}\n\n---\nSANBA session {session.id} / export by {link.github_login}"
     try:
         url = client.create_issue(
             link.installation_id,
             export_repo,
-            issue_title(session.title, session_id),
+            issue_title(session.title, session.id),
             body,
             labels=requirements_to_issue_labels(confirmed),
         )
@@ -1069,7 +1081,7 @@ def export_requirements(
         return ExportResponse(exported=False, reason="issue creation failed")
     log.info(
         "requirements_exported",
-        session=session_id,
+        session=session.id,
         count=len(confirmed),
         id_count=len(session.finalized_requirement_ids),
         repo=export_repo,
@@ -1077,15 +1089,9 @@ def export_requirements(
         installation_source="acting-user",
         exporter=link.github_login,
         url=url,
-        sub=access.sub,
+        sub=actor_sub,
     )
     return ExportResponse(exported=True, issue_url=url, count=len(confirmed))
-
-
-class ExportEligibilityResponse(BaseModel):
-    can_export: bool
-    reason: str | None = None
-    repo: str | None = None
 
 
 @router.get(
@@ -1107,3 +1113,38 @@ def export_eligibility_status(
         return ExportEligibilityResponse(can_export=False, reason="guest", repo=None)
     elig = export_eligibility(access.sub, session)
     return ExportEligibilityResponse(can_export=elig.can_export, reason=elig.reason, repo=elig.repo)
+
+
+@router.get(
+    "/api/sessions/mine/{session_id}/export/eligibility",
+    response_model=ExportEligibilityResponse,
+)
+def my_export_eligibility_status(
+    session_id: str, user: AuthUser = Depends(require_user)
+) -> ExportEligibilityResponse:
+    """結果レビュー画面（`/results/{id}`）の起票ボタン活性判定（ADR-0053 決定5）。
+
+    認可は `/mine/` 系と同じ owner_sub 一致（ゲストセッションの owner は product owner なので
+    開発者が後からレビューして判定できる）。非所有・不存在は 404 に平す。
+    """
+    session = _repo.get_session(session_id)
+    if session is None or session.owner_sub != user.sub:
+        raise HTTPException(status_code=404, detail="session not found")
+    elig = export_eligibility(user.sub, session)
+    return ExportEligibilityResponse(can_export=elig.can_export, reason=elig.reason, repo=elig.repo)
+
+
+@router.post("/api/sessions/mine/{session_id}/export", response_model=ExportResponse)
+def my_export_requirements(
+    session_id: str, user: AuthUser = Depends(require_user)
+) -> ExportResponse:
+    """結果レビュー画面から確定要件を Issue 起票する（ADR-0053 決定5）。
+
+    ログイン資格（idToken）で本人確認し、owner_sub 一致で認可する（`/mine/` 系と同一）。
+    起票は操作者本人の installation token で行い、権限が無ければ理由つきで拒む
+    （web はボタンを disable、手動起票用に Markdown コピーを併置する）。
+    """
+    session = _repo.get_session(session_id)
+    if session is None or session.owner_sub != user.sub:
+        raise HTTPException(status_code=404, detail="session not found")
+    return _perform_export(session, user.sub)

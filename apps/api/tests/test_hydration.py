@@ -527,6 +527,61 @@ def test_export_eligibility_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
     assert ng.json()["reason"] == "github not linked"
 
 
+def test_my_export_eligibility_uses_login_auth(monkeypatch: pytest.MonkeyPatch) -> None:
+    created = client.post("/api/sessions", json={"roles": ["pm"], "consent_acknowledged": True})
+    sid = created.json()["session_id"]
+    _enable_github(monkeypatch)
+    ok = client.get(f"/api/sessions/mine/{sid}/export/eligibility")
+    assert ok.status_code == 200
+    assert ok.json()["can_export"] is True
+    assert ok.json()["repo"] == "o/r"
+
+
+def test_my_export_creates_issue_via_login(monkeypatch: pytest.MonkeyPatch) -> None:
+    created = client.post("/api/sessions", json={"roles": ["pm"], "consent_acknowledged": True})
+    sid = created.json()["session_id"]
+    _read_repo._seed_requirement(
+        sid, {"id": "c1", "statement": "確定", "category": "functional", "priority": "must"}
+    )
+    captured = _enable_github(monkeypatch)
+    client.post(f"/api/sessions/{sid}/finalize", headers=_auth(_token(sid)))
+
+    res = client.post(f"/api/sessions/mine/{sid}/export")
+    assert res.json()["exported"] is True
+    assert captured["repo"] == "o/r"
+    assert "export by dev" in str(captured["body"])
+
+
+def test_my_export_blocked_when_not_linked(monkeypatch: pytest.MonkeyPatch) -> None:
+    created = client.post("/api/sessions", json={"roles": ["pm"], "consent_acknowledged": True})
+    sid = created.json()["session_id"]
+    _read_repo._seed_requirement(
+        sid, {"id": "c1", "statement": "確定", "category": "functional", "priority": "must"}
+    )
+    captured = _enable_github(monkeypatch, linked=False)
+    client.post(f"/api/sessions/{sid}/finalize", headers=_auth(_token(sid)))
+
+    res = client.post(f"/api/sessions/mine/{sid}/export")
+    assert res.json()["exported"] is False
+    assert res.json()["reason"] == "github not linked"
+    assert "repo" not in captured
+
+
+def test_my_export_hidden_from_non_owner(monkeypatch: pytest.MonkeyPatch) -> None:
+    created = client.post("/api/sessions", json={"roles": ["pm"], "consent_acknowledged": True})
+    sid = created.json()["session_id"]
+    app.dependency_overrides[require_user] = lambda: AuthUser(
+        sub="intruder-000", email="x@example.com", email_verified=True, name="X"
+    )
+    try:
+        elig = client.get(f"/api/sessions/mine/{sid}/export/eligibility")
+        exp = client.post(f"/api/sessions/mine/{sid}/export")
+    finally:
+        app.dependency_overrides[require_user] = _fake_user
+    assert elig.status_code == 404
+    assert exp.status_code == 404
+
+
 def test_export_uses_only_confirmed_requirements(monkeypatch: pytest.MonkeyPatch) -> None:
     created = client.post("/api/sessions", json={"roles": ["pm"], "consent_acknowledged": True})
     sid = created.json()["session_id"]
