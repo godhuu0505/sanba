@@ -4,7 +4,7 @@
 - 日付: 2026-07-08
 - 関連: [ADR-0032](0032-guest-join-and-enduser-mode.md)（end_user モード — 本 ADR がモード別の観点差を補う）/
   [ADR-0043](0043-audience-tagged-check-items-and-render-unification.md)（audience タグ付き確認項目 — 観点の設定・シードの正典。本 ADR がデフォルトとフォールバックを足す）/
-  [ADR-0037](0037-decouple-analysis-from-voice-worker.md)（背景分析 — gap/ambiguous を publish する経路）/
+  [ADR-0046](0046-decouple-analysis-from-voice-worker.md)（背景分析 — gap/ambiguous を publish する経路）/
   [ADR-0051](0051-google-native-observability-and-llmops.md)（LLMOps — 品質採点のルーブリック）
 - 起票 Issue: #434（end_user モードのインタビュー体験を production-ready にする）
 

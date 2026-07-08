@@ -1991,8 +1991,10 @@ async def entrypoint(ctx: JobContext) -> None:
     )
 
     async def _on_close() -> None:
-        with contextlib.suppress(Exception):
+        try:
             await agent.auto_finalize_if_needed()
+        except Exception as exc:  # noqa: BLE001
+            log.warning("auto_finalize_failed", session=session_id, error=str(exc))
         await _drain_tasks(set(_bg_tasks), DRAIN_GRACE_SECONDS)
         await agent.drain_background_tasks()
         from .evaluation import score_session

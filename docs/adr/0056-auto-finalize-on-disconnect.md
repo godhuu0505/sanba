@@ -3,9 +3,8 @@
 - ステータス: Accepted
 - 日付: 2026-07-08
 - 関連: [ADR-0053](0053-github-permission-split-and-issue-export-gate.md)（確定＝export の起点・起票ゲート。#435 の finalize ゲートを追加した ADR）/
-  [ADR-0037](0037-decouple-analysis-from-voice-worker.md)（背景タスクのドレン・離脱後始末）/
-  [ADR-0032](0032-guest-join-and-enduser-mode.md)（ゲストセッションの承認・TTL 方針）/
-  [ADR-0014](0014-shared-session-and-requirement-models.md)（要件モデル・承認と TTL）
+  [ADR-0046](0046-decouple-analysis-from-voice-worker.md)（背景分析の分離・離脱後始末のドレン）/
+  [ADR-0032](0032-guest-join-and-enduser-mode.md)（ゲストセッションの承認・TTL 方針）
 - 出典: 本番セッション `sess-6523db5e`（Issue #435 🟠）
 
 ## コンテキスト
@@ -69,4 +68,11 @@ api の finalize エンドポイントは未解消検知 0 件を要求する（
 - 既に finalized なら冪等に no-op（happy path と二重確定しない）。
 - タイトル・要約は自動確定では付かない（表示上の差。データには影響しない）。
 - ゲストセッションは従来どおり `keep_expiry=True`（セッション文書の TTL に従う）。
+- 部分書き込み耐性: スナップショット（`finalize_session`、1 write）を承認ループの**前**に置くため、
+  仮に多数の要件で承認ループ中にプロセスが kill されても、確定マーカと export スナップショットは
+  残る（未承認の末尾要件は draft のまま TTL に従う）。書き込みは `set_requirement_status` が
+  要件ごとに get+write する分、件数に比例するので、退出猶予を守るためデータ保全を最優先に配置する。
+- 失敗は握りつぶさず `auto_finalize_failed` を残す（`_on_close` は例外でシャットダウンを止めない）。
 - 後続: web の強制終了/離脱導線でも確定を促す UX（サーバ自動確定の上乗せ）。
+- 既知の制約: `score_session` は end_user でも developer ルーブリックで採点する既存の課題があり
+  本 ADR では触れない（別途 mode 別採点の導入で解消する）。
