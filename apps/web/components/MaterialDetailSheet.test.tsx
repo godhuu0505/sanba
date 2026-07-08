@@ -34,9 +34,9 @@ describe("MaterialDetailSheet（05-1 資料詳細）", () => {
     expect(screen.getByText("解析済")).toBeTruthy();
   });
 
-  it("矛盾バッジは色のみに依らずラベル＋現代語の説明（ariaLabel）を伴う（ADR-0017）", () => {
+  it("食い違いバッジは色のみに依らずラベル＋現代語の説明（ariaLabel）を伴う（ADR-0017）", () => {
     render(<MaterialDetailSheet detail={detail()} onClose={vi.fn()} />);
-    expect(screen.getByRole("status", { name: "矛盾を検知" })).toBeTruthy();
+    expect(screen.getByRole("status", { name: "食い違いを検知" })).toBeTruthy();
   });
 
   it("detection が無い視覚解析のみの矛盾でも表示できる（#202 AC）", () => {

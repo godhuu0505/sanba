@@ -7,16 +7,16 @@ import { DetectionPin } from "./DetectionPin";
 describe("DetectionPin（選択肢なし検知の読み取り専用ピン・#208）", () => {
   afterEach(() => cleanup());
 
-  it("要約を status として出し、抜けバッジ（ラベル＋アイコン）を添える", () => {
+  it("要約を status として出し、確認したい点バッジ（ラベル＋アイコン）を添える", () => {
     render(<DetectionPin summary="『該当なし』の空状態が未定義。" kind="gap" />);
     const pin = screen.getByRole("status");
     expect(pin.textContent).toContain("『該当なし』の空状態が未定義。");
-    expect(screen.getByLabelText("抜け（未定義）を検知").textContent).toContain("抜け");
+    expect(screen.getByLabelText("確認したい点").textContent).toContain("確認したい点");
   });
 
-  it("矛盾種別なら矛盾バッジを出す", () => {
+  it("矛盾種別なら食い違いバッジを出す", () => {
     render(<DetectionPin summary="関連度順か新着順か。" kind="contradiction" />);
-    expect(screen.getByLabelText("矛盾を検知").textContent).toContain("矛盾");
+    expect(screen.getByLabelText("食い違いを検知").textContent).toContain("食い違い");
   });
 
   it("読み取り専用: 回答ボタンを持たない", () => {

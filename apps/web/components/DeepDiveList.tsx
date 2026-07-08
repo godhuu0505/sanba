@@ -2,7 +2,6 @@
 
 import { ChevronRight } from "lucide-react";
 
-import { useInterviewMode } from "@/lib/interviewMode";
 import { detectionPresentation } from "@/lib/realtime/mapping";
 import type { Detection } from "@/lib/realtime/types";
 
@@ -12,7 +11,6 @@ export interface DeepDiveListProps {
 }
 
 export function DeepDiveList({ detections, onJump }: DeepDiveListProps) {
-  const interviewMode = useInterviewMode();
   if (detections.length === 0) {
     return (
       <p className="px-1 py-3 text-[12px] text-sanba-muted">
@@ -24,7 +22,7 @@ export function DeepDiveList({ detections, onJump }: DeepDiveListProps) {
   return (
     <div className="flex flex-col gap-[9px]">
       {detections.map((d) => {
-        const k = detectionPresentation(d.kind, interviewMode);
+        const k = detectionPresentation(d.kind);
         return (
           <div
             key={d.id}

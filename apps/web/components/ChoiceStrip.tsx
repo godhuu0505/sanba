@@ -3,7 +3,6 @@
 import { ChevronRight, Maximize2, Minimize2 } from "lucide-react";
 import { useEffect, useRef } from "react";
 
-import { useInterviewMode } from "@/lib/interviewMode";
 import { detectionPresentation } from "@/lib/realtime/mapping";
 import type { DetectionKind } from "@/lib/realtime/types";
 
@@ -36,7 +35,6 @@ export function ChoiceStrip({
   onOpenDetail,
   detectionKind,
 }: ChoiceStripProps) {
-  const interviewMode = useInterviewMode();
   const pressTimer = useRef<number | undefined>(undefined);
   const longPressed = useRef(false);
   const startPress = (i: number) => {
@@ -58,7 +56,7 @@ export function ChoiceStrip({
 
   if (options.length === 0) return null;
 
-  const presentation = detectionKind ? detectionPresentation(detectionKind, interviewMode) : null;
+  const presentation = detectionKind ? detectionPresentation(detectionKind) : null;
   const accent = presentation ? presentation.color : "var(--sanba-gold-deep)";
 
   return (

@@ -83,8 +83,8 @@ describe("ResultView（要件産婆結果）", () => {
     expect(preview).toBeTruthy();
     expect(screen.getByText("ログインできること")).toBeTruthy();
     expect(screen.getByText("パスワード再設定ができること")).toBeTruthy();
-    expect(screen.getByText(/Must/)).toBeTruthy();
-    expect(screen.getByText(/Should/)).toBeTruthy();
+    expect(screen.getByText(/ぜひ必要/)).toBeTruthy();
+    expect(screen.getByText(/あると助かる/)).toBeTruthy();
     expect(screen.queryByText(/ほか/)).toBeNull();
   });
 
@@ -115,12 +115,12 @@ describe("ResultView（要件産婆結果）", () => {
       confirmedCount: 1,
       requirements: [req("m1", "must", "唯一の必須要件")],
     });
-    expect(screen.getByText(/Must/)).toBeTruthy();
-    expect(screen.queryByText(/Should/)).toBeNull();
+    expect(screen.getByText(/ぜひ必要/)).toBeTruthy();
+    expect(screen.queryByText(/あると助かる/)).toBeNull();
     cleanup();
     setup({ confirmedCount: 2, requirements: [req("c1", "could", "C1"), req("w1", "wont", "W1")] });
-    expect(screen.queryByText(/Must/)).toBeNull();
-    expect(screen.queryByText(/Should/)).toBeNull();
+    expect(screen.queryByText(/ぜひ必要/)).toBeNull();
+    expect(screen.queryByText(/あると助かる/)).toBeNull();
     expect(screen.getByText(/ほか 2 件/)).toBeTruthy();
   });
 
