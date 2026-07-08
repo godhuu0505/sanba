@@ -782,8 +782,12 @@ class SANBAAgent(Agent):
             options: 選択肢ラベル（2〜4個。例 ["関連度順","新着順"]）。
                 自由に答えてほしい問いでは省略する（音声/テキストで回答）。
         """
-        if self._current_question_id is not None and self._question_asked_turn == self._user_turn:
+        superseded_in_turn = (
+            self._current_question_id is not None and self._question_asked_turn == self._user_turn
+        )
+        if superseded_in_turn:
             superseded = self._current_question_id
+            assert superseded is not None
             log.info(
                 "question_superseded",
                 session=self._session_id,
@@ -819,7 +823,13 @@ class SANBAAgent(Agent):
                     error=str(exc),
                 )
         log.info("question_asked", session=self._session_id, id=question_id, options=len(opts))
-        return {"asked": question_id}
+        result: dict[str, Any] = {"asked": question_id}
+        if superseded_in_turn:
+            result["note"] = (
+                "同一ターンで複数の問いを立てました。前の問いは差し替えました。"
+                "1ターンにつき問いは1つだけにし、質問を畳みかけないでください。"
+            )
+        return result
 
     async def clear_current_question(self, question_id: str) -> None:
         """回答を受けて現在質問をクリアし、``question.cleared`` を全参加者へ伝播する。
