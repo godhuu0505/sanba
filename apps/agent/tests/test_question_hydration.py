@@ -100,6 +100,47 @@ async def test_second_question_same_turn_supersedes_first() -> None:
 
 
 @pytest.mark.asyncio
+async def test_options_question_survives_optionless_followup_same_turn() -> None:
+    """同一ターンで 選択肢付き→選択肢無し の順に来ても、選択肢付きが残る（#434 task4 / C(a)）。"""
+    agent, _repo, transport, _pub = _agent()
+    ask = type(agent).ask_question.__wrapped__
+    r1 = await ask(agent, None, "並び順は？", ["関連度順", "新着順"])
+    transport.sent.clear()
+    r2 = await ask(agent, None, "他に何かありますか？")
+    types = [t["event"]["type"] for t in transport.sent]
+    assert types == [], "選択肢無しの後発は publish しない（現行の選択肢付きを維持）"
+    assert agent.current_question_id == r1["asked"]
+    assert r2["asked"] == r1["asked"]
+    assert "note" in r2 and "スキップ" in r2["note"]
+
+
+@pytest.mark.asyncio
+async def test_optionless_question_is_superseded_by_options_same_turn() -> None:
+    """逆順（選択肢無し→選択肢付き）は従来どおり supersede する（C(a)）。"""
+    agent, _repo, transport, _pub = _agent()
+    ask = type(agent).ask_question.__wrapped__
+    r1 = await ask(agent, None, "自由回答の問い")
+    r2 = await ask(agent, None, "選択肢の問い", ["A", "B"])
+    types = [t["event"]["type"] for t in transport.sent]
+    assert types == ["question.asked", "question.cleared", "question.asked"]
+    assert agent.current_question_id == r2["asked"]
+    assert r1["asked"] != r2["asked"]
+
+
+@pytest.mark.asyncio
+async def test_two_options_questions_same_turn_supersede() -> None:
+    """両方とも選択肢付きなら従来どおり後発が supersede する（C(a)）。"""
+    agent, _repo, transport, _pub = _agent()
+    ask = type(agent).ask_question.__wrapped__
+    r1 = await ask(agent, None, "Q1?", ["A", "B"])
+    r2 = await ask(agent, None, "Q2?", ["C", "D"])
+    types = [t["event"]["type"] for t in transport.sent]
+    assert types == ["question.asked", "question.cleared", "question.asked"]
+    assert agent.current_question_id == r2["asked"]
+    assert r1["asked"] != r2["asked"]
+
+
+@pytest.mark.asyncio
 async def test_question_in_new_turn_is_not_superseded_by_guard() -> None:
     agent, _repo, transport, _pub = _agent()
     ask = type(agent).ask_question.__wrapped__

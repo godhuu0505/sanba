@@ -79,3 +79,18 @@ SANBA の音声は Gemini Live のネイティブ音声モデル（speech-to-spe
   損なう。往復遅延が増え、産婆術の対話テンポに反する。
 - **`TURN_START_SENSITIVITY=low` を既定化**: 雑音由来の誤 start は減るが、「はい」等の短い返事を
   取りこぼすリスクがある（ADR-0038 の判断を踏襲）。prefix padding + BVC で代替する。
+
+## 追補（#435 / 認識テキストの正規化レイヤ）
+
+STT（S2S）は日本語を**分かち書き**（語間に空白）＋全角/半角ゆらぎで返しがちで、これがそのまま
+grounding クエリに載ると検索・分析の一致率が落ちる。独立 STT の差し替えは上記のとおり S2S の
+即応性を損なうため採らず、**認識テキスト → grounding クエリの間に保守的な正規化ステップ**を挟む
+（`tools/analysis.py` `normalize_query`。純粋関数・単体テスト可）。`search_grounding` と
+`_start_prefetch` の双方が同じ正規化を通すため先読みキャッシュのキーも一致する。
+
+正規化は意味を壊さない範囲に限定する: NFKC で全角/半角を畳み、連続空白を 1 つに縮め、**日本語文字
+どうしに挟まれた空白**（分かち書き由来）だけを除去する。英単語・数字に隣接する空白は保持して
+検索可能なトークン（`Cloud Run` 等）を壊さない。誤変換辞書のような踏み込んだ補正は持たず、まず
+本番ログ（`query_normalized` の before/after）で崩れパターンを観測してからルールを育てる。STT 設定
+（`turn_silence_duration_ms` / sensitivity / temperature）の見直しは実データで A/B 判断する（本 ADR の
+値を安易に変えない）。

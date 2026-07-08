@@ -425,3 +425,7 @@ export function useAuth(): GoogleAuth {
   }
   return ctx;
 }
+
+export function useAuthOptional(): GoogleAuth | null {
+  return useContext(AuthContext);
+}

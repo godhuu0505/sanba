@@ -343,3 +343,223 @@ def test_finalize_and_approve_is_noop_when_already_finalized() -> None:
 
     assert meta is not None
     assert meta.finalized_requirement_ids == ["c1"]
+
+
+def test_finalize_and_approve_second_call_does_not_overwrite_snapshot() -> None:
+    """CAS で 2 度目の確定は最初のスナップショットを上書きしない（API–agent 競合の冪等性）。"""
+    repo = _repo()
+    repo.create_session_doc(
+        SessionMeta(id="s-af3", title="t", owner_sub="sub", owner_email="o@example.com")
+    )
+    repo.save_requirement(
+        "s-af3",
+        Requirement(
+            id="c1",
+            statement="確定",
+            category=RequirementCategory.FUNCTIONAL,
+            priority=Priority.MUST,
+        ),
+    )
+
+    first = repo.finalize_and_approve(
+        "s-af3",
+        finalized_requirement_ids=["c1"],
+        labels=["sanba", "functional"],
+        approved_by="api:owner",
+        keep_expiry=False,
+    )
+    second = repo.finalize_and_approve(
+        "s-af3",
+        finalized_requirement_ids=["c1"],
+        labels=["sanba", "override"],
+        approved_by="agent:auto_finalize",
+        keep_expiry=False,
+    )
+
+    assert first is not None
+    assert second is not None
+    assert second.labels == ["sanba", "functional"]
+    c1 = repo.get_requirement("s-af3", "c1")
+    assert c1 is not None
+    assert c1.approved_by == "api:owner"
+
+
+class _FakeSnapshot:
+    def __init__(self, data: dict | None) -> None:
+        self._data = data
+
+    @property
+    def exists(self) -> bool:
+        return self._data is not None
+
+    def to_dict(self) -> dict | None:
+        return dict(self._data) if self._data is not None else None
+
+
+class _FakeDocRef:
+    def __init__(self, store: dict, events: list, path: str) -> None:
+        self._store = store
+        self._events = events
+        self._path = path
+
+    def collection(self, name: str) -> _FakeCollection:
+        return _FakeCollection(self._store, self._events, f"{self._path}/{name}")
+
+    def get(self, transaction: object | None = None) -> _FakeSnapshot:
+        self._events.append(("read", self._path))
+        return _FakeSnapshot(self._store.get(self._path))
+
+
+class _FakeCollection:
+    def __init__(self, store: dict, events: list, path: str) -> None:
+        self._store = store
+        self._events = events
+        self._path = path
+
+    def document(self, doc_id: str) -> _FakeDocRef:
+        return _FakeDocRef(self._store, self._events, f"{self._path}/{doc_id}")
+
+
+class _FakeTransaction:
+    def __init__(self, store: dict, events: list) -> None:
+        self._store = store
+        self._events = events
+
+    def set(self, ref: _FakeDocRef, data: dict, merge: bool = False) -> None:
+        self._events.append(("write", ref._path))
+        if merge and ref._path in self._store:
+            merged = dict(self._store[ref._path])
+            merged.update(data)
+            self._store[ref._path] = merged
+        else:
+            self._store[ref._path] = dict(data)
+
+
+class _FakeFirestoreClient:
+    def __init__(self, store: dict, events: list) -> None:
+        self._store = store
+        self._events = events
+
+    def collection(self, name: str) -> _FakeCollection:
+        return _FakeCollection(self._store, self._events, name)
+
+    def transaction(self) -> _FakeTransaction:
+        return _FakeTransaction(self._store, self._events)
+
+
+def _firestore_backed_repo(
+    monkeypatch: pytest.MonkeyPatch,
+) -> tuple[SessionRepository, dict, list]:
+    import google.cloud.firestore as firestore_mod
+
+    monkeypatch.setattr(firestore_mod, "transactional", lambda fn: fn)
+    store: dict[str, dict] = {}
+    events: list[tuple[str, str]] = []
+    repo = SessionRepository(data_retention_days=30)
+    repo._client = _FakeFirestoreClient(store, events)  # type: ignore[assignment]
+    return repo, store, events
+
+
+def _seed_firestore(store: dict, session_id: str, req_id: str) -> None:
+    store[f"sessions/{session_id}"] = SessionMeta(
+        id=session_id, title="t", owner_sub="sub", owner_email="o@example.com"
+    ).model_dump(mode="json")
+    store[f"sessions/{session_id}/requirements/{req_id}"] = Requirement(
+        id=req_id,
+        statement="確定",
+        category=RequirementCategory.FUNCTIONAL,
+        priority=Priority.MUST,
+    ).model_dump(mode="json")
+
+
+def test_finalize_and_approve_txn_reads_before_writes(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Firestore トランザクション経路が read を全 write より先に行い、確定と承認を書き込む。"""
+    import google.cloud.firestore as firestore_mod
+
+    repo, store, events = _firestore_backed_repo(monkeypatch)
+    _seed_firestore(store, "s-txn", "c1")
+
+    meta = repo.finalize_and_approve(
+        "s-txn",
+        finalized_requirement_ids=["c1"],
+        labels=["sanba", "functional"],
+        approved_by="api:owner",
+        keep_expiry=False,
+    )
+
+    assert meta is not None
+    assert meta.status == "finalized"
+    read_idx = [i for i, (kind, _) in enumerate(events) if kind == "read"]
+    write_idx = [i for i, (kind, _) in enumerate(events) if kind == "write"]
+    assert read_idx and write_idx
+    assert max(read_idx) < min(write_idx)
+    session_doc = store["sessions/s-txn"]
+    assert session_doc["status"] == "finalized"
+    assert session_doc["labels"] == ["sanba", "functional"]
+    req_doc = store["sessions/s-txn/requirements/c1"]
+    assert req_doc["status"] == RequirementStatus.APPROVED.value
+    assert req_doc["approved_by"] == "api:owner"
+    assert req_doc["expireAt"] is firestore_mod.DELETE_FIELD
+
+
+def test_finalize_and_approve_txn_keep_expiry_leaves_ttl(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`keep_expiry=True`（ゲスト）は承認しても expireAt を消さない。"""
+    repo, store, events = _firestore_backed_repo(monkeypatch)
+    _seed_firestore(store, "s-txn-keep", "c1")
+
+    repo.finalize_and_approve(
+        "s-txn-keep",
+        finalized_requirement_ids=["c1"],
+        labels=["sanba"],
+        approved_by="api:owner",
+        keep_expiry=True,
+    )
+
+    assert "expireAt" not in store["sessions/s-txn-keep/requirements/c1"]
+
+
+def test_finalize_and_approve_txn_second_call_is_noop(monkeypatch: pytest.MonkeyPatch) -> None:
+    """確定済みセッションへの 2 度目の確定は read のみで早期 return し、書き込まない（CAS）。"""
+    repo, store, events = _firestore_backed_repo(monkeypatch)
+    _seed_firestore(store, "s-txn2", "c1")
+
+    repo.finalize_and_approve(
+        "s-txn2",
+        finalized_requirement_ids=["c1"],
+        labels=["sanba", "functional"],
+        approved_by="api:owner",
+        keep_expiry=False,
+    )
+    events.clear()
+    second = repo.finalize_and_approve(
+        "s-txn2",
+        finalized_requirement_ids=["c1"],
+        labels=["sanba", "override"],
+        approved_by="agent:auto_finalize",
+        keep_expiry=False,
+    )
+
+    assert second is not None
+    assert second.status == "finalized"
+    assert all(kind == "read" for kind, _ in events)
+    assert not any(kind == "write" for kind, _ in events)
+    assert store["sessions/s-txn2"]["labels"] == ["sanba", "functional"]
+    assert store["sessions/s-txn2/requirements/c1"]["approved_by"] == "api:owner"
+
+
+def test_finalize_and_approve_txn_missing_session_returns_none(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """存在しないセッションはトランザクションで None を返し、書き込まない。"""
+    repo, store, events = _firestore_backed_repo(monkeypatch)
+
+    result = repo.finalize_and_approve(
+        "s-missing",
+        finalized_requirement_ids=["c1"],
+        labels=["sanba"],
+        approved_by="api:owner",
+        keep_expiry=False,
+    )
+
+    assert result is None
+    assert not any(kind == "write" for kind, _ in events)

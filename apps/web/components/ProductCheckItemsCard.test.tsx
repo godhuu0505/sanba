@@ -35,6 +35,10 @@ function product(overrides: Partial<Product> = {}): Product {
     output_format_defaults: { end_user: "", planner: "", developer: "" },
     check_items: [],
     check_items_limit: 10,
+    check_point_defaults: {
+      developer: ["性能・レスポンスの要件", "セキュリティ・権限・データ保護"],
+      end_user: ["どんな場面で使うか（ユースケース）"],
+    },
     ...overrides,
   };
 }
@@ -190,5 +194,40 @@ describe("ProductCheckItemsCard", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "確認項目を追加する" }));
     expect(await screen.findByRole("alert")).toBeTruthy();
+  });
+
+  it("未設定モードのデフォルト観点を提示する（H）", () => {
+    render(<ProductCheckItemsCard product={product()} onSaved={vi.fn()} />);
+    expect(screen.getByLabelText("開発者のデフォルト観点")).toBeTruthy();
+    expect(screen.getByLabelText("利用者のデフォルト観点")).toBeTruthy();
+    expect(screen.getByText("・性能・レスポンスの要件")).toBeTruthy();
+  });
+
+  it("設定済みモードのデフォルトは提示しない（H）", () => {
+    render(
+      <ProductCheckItemsCard
+        product={product({ check_items: [{ text: "認証方式", target: "developer" }] })}
+        onSaved={vi.fn()}
+      />,
+    );
+    expect(screen.queryByLabelText("開発者のデフォルト観点")).toBeNull();
+    expect(screen.getByLabelText("利用者のデフォルト観点")).toBeTruthy();
+  });
+
+  it("デフォルトを複製すると観点を対象付きで PATCH する（H）", async () => {
+    render(<ProductCheckItemsCard product={product()} onSaved={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "開発者のデフォルト観点を複製" }));
+    await waitFor(() =>
+      expect(updateProduct).toHaveBeenCalledWith(
+        "prod-1",
+        {
+          check_items: [
+            { text: "性能・レスポンスの要件", target: "developer" },
+            { text: "セキュリティ・権限・データ保護", target: "developer" },
+          ],
+        },
+        "id-token",
+      ),
+    );
   });
 });

@@ -10,6 +10,7 @@ import structlog
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sanba_shared.models import (
+    DEFAULT_CHECK_POINTS,
     MAX_CHECK_ITEMS,
     Audience,
     CheckItem,
@@ -135,6 +136,7 @@ class ProductResponse(BaseModel):
     output_format_defaults: dict[str, str] = Field(default_factory=dict)
     check_items: list[CheckItemResponse] = Field(default_factory=list)
     check_items_limit: int = MAX_CHECK_ITEMS
+    check_point_defaults: dict[str, list[str]] = Field(default_factory=dict)
 
 
 class DeleteProductResponse(BaseModel):
@@ -160,6 +162,9 @@ def _product_response(product: Product, *, role: str = "owner") -> ProductRespon
             CheckItemResponse(text=c.text, target=c.target.value if c.target else None)
             for c in product.check_items
         ],
+        check_point_defaults={
+            scope.value: list(points) for scope, points in DEFAULT_CHECK_POINTS.items()
+        },
     )
 
 

@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+import { InterviewModeProvider } from "@/lib/interviewMode";
 
 import { ChatHistory } from "./ChatHistory";
 
@@ -35,6 +37,75 @@ describe("ChatHistory（会話履歴タブ）", () => {
     const me = screen.getAllByLabelText("あなた");
     expect(me.map((n) => n.textContent).join("")).toContain("新しき順がよい");
     expect(me.map((n) => n.textContent).join("")).toContain("価格も大事");
+  });
+
+  it("userPicture を渡すと参加者の吹き出しに Google アイコンを表示する", () => {
+    const { container } = render(
+      <ChatHistory
+        transcript={[
+          line({ utterance_id: "u1", role: "assistant", text: "こんにちは" }),
+          line({ utterance_id: "u2", role: "participant", text: "はい" }),
+        ]}
+        userPicture="https://lh3.googleusercontent.com/a/portrait"
+      />,
+    );
+    const img = container.querySelector('img[alt="あなたのアイコン"]');
+    expect(img?.getAttribute("src")).toBe("https://lh3.googleusercontent.com/a/portrait");
+    expect(container.querySelectorAll("img").length).toBe(1);
+  });
+
+  it("最下部付近にいる間は新しい発話が来ると末尾へ自動スクロールする", () => {
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+    const { rerender } = render(
+      <div data-testid="scroller" style={{ overflowY: "auto" }}>
+        <ChatHistory transcript={[line({ utterance_id: "u1", text: "一" })]} />
+      </div>,
+    );
+    const scroller = screen.getByTestId("scroller");
+    Object.defineProperty(scroller, "scrollHeight", { configurable: true, value: 1000 });
+    Object.defineProperty(scroller, "clientHeight", { configurable: true, value: 300 });
+    Object.defineProperty(scroller, "scrollTop", { configurable: true, value: 580 });
+    fireEvent.scroll(scroller);
+    scrollIntoView.mockClear();
+    rerender(
+      <div data-testid="scroller" style={{ overflowY: "auto" }}>
+        <ChatHistory
+          transcript={[
+            line({ utterance_id: "u1", text: "一" }),
+            line({ utterance_id: "u2", text: "二" }),
+          ]}
+        />
+      </div>,
+    );
+    expect(scrollIntoView).toHaveBeenCalled();
+  });
+
+  it("ユーザーが上へスクロールしている間は自動スクロールで引き戻さない", () => {
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+    const { rerender } = render(
+      <div data-testid="scroller" style={{ overflowY: "auto" }}>
+        <ChatHistory transcript={[line({ utterance_id: "u1", text: "一" })]} />
+      </div>,
+    );
+    const scroller = screen.getByTestId("scroller");
+    Object.defineProperty(scroller, "scrollHeight", { configurable: true, value: 1000 });
+    Object.defineProperty(scroller, "clientHeight", { configurable: true, value: 300 });
+    Object.defineProperty(scroller, "scrollTop", { configurable: true, value: 0 });
+    fireEvent.scroll(scroller);
+    scrollIntoView.mockClear();
+    rerender(
+      <div data-testid="scroller" style={{ overflowY: "auto" }}>
+        <ChatHistory
+          transcript={[
+            line({ utterance_id: "u1", text: "一" }),
+            line({ utterance_id: "u2", text: "二" }),
+          ]}
+        />
+      </div>,
+    );
+    expect(scrollIntoView).not.toHaveBeenCalled();
   });
 
   it("partial（final=false）は「文字起こし中」を示す", () => {
@@ -96,5 +167,23 @@ describe("ChatHistory（会話履歴タブ）", () => {
     expect(screen.getByText(/話しかけてください/)).toBeTruthy();
     expect(screen.queryByText("up.png")).toBeNull();
     expect(screen.queryByText("cx.png")).toBeNull();
+  });
+
+  it("end_user では資料/リポジトリ解析が対象外であることを明示する（#434 task3）", () => {
+    render(
+      <InterviewModeProvider value="end_user">
+        <ChatHistory transcript={[]} />
+      </InterviewModeProvider>,
+    );
+    expect(screen.getByText("資料/リポジトリ解析：対象外")).toBeTruthy();
+  });
+
+  it("developer では対象外表示を出さない（回帰なし）", () => {
+    render(
+      <InterviewModeProvider value="developer">
+        <ChatHistory transcript={[line({ utterance_id: "u1", text: "はい" })]} />
+      </InterviewModeProvider>,
+    );
+    expect(screen.queryByText("資料/リポジトリ解析：対象外")).toBeNull();
   });
 });

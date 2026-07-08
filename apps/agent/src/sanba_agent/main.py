@@ -90,7 +90,12 @@ from .prompts.interview import (
     build_repo_premise,
 )
 from .retrieval import GroundingStore, Passage
-from .tools.analysis import analyze_transcript, heuristic_result, make_requirement_id
+from .tools.analysis import (
+    analyze_transcript,
+    heuristic_result,
+    make_requirement_id,
+    normalize_query,
+)
 
 log = structlog.get_logger(__name__)
 
@@ -362,6 +367,7 @@ class SANBAAgent(Agent):
         self._question_seq = 0
         self._questions: dict[str, str] = {}
         self._current_question_id: str | None = None
+        self._current_question_has_options = False
         self._question_asked_turn = -1
         self._published_gaps: set[str] = set()
         self._published_ambiguous: set[str] = set()
@@ -610,7 +616,9 @@ class SANBAAgent(Agent):
     async def analyze_requirements(self, _ctx: RunContext) -> dict:
         """これまでの会話から確定要件を点検し、次に聞くべき1問を返す。
 
-        会話が一区切りついたとき、または論点が曖昧なときに呼び出す。
+        会話が一区切りついたとき、または論点が曖昧なときに呼び出す。返り値の
+        `uncovered_check_points` はこのセッションでまだ十分に触れられていない観点（advisory /
+        ADR-0057）。あれば次の一問を寄せる材料にする。
         """
         task = self._analysis_task
         if task is not None and not task.done():
@@ -629,8 +637,8 @@ class SANBAAgent(Agent):
                 )
                 last = self._last_analysis
                 if last is not None:
-                    return last.model_dump(mode="json")
-                return heuristic_result("\n".join(self._transcript)).model_dump(mode="json")
+                    return self._analysis_tool_payload(last)
+                return self._analysis_tool_payload(heuristic_result("\n".join(self._transcript)))
         last = self._last_analysis
         if (
             last is not None
@@ -642,7 +650,7 @@ class SANBAAgent(Agent):
                 covered_turn=self._analysis_covered_turn,
                 turn=self._user_turn,
             )
-            return last.model_dump(mode="json")
+            return self._analysis_tool_payload(last)
         self._analysis_scheduler.start()
         try:
             if self._publisher is not None:
@@ -652,7 +660,18 @@ class SANBAAgent(Agent):
             self._analysis_scheduler.finish()
         if self._publisher is not None:
             await self._publisher.status("listening")
-        return result.model_dump(mode="json")
+        return self._analysis_tool_payload(result)
+
+    @staticmethod
+    def _analysis_tool_payload(result: AnalysisResult) -> dict:
+        """分析結果を live LLM 向けツール返り値に整形する（ADR-0057 増分2b）。
+
+        直近の未カバー観点（`coverage_open`）を `uncovered_check_points` として additive に載せ、
+        live LLM が次の一問を未カバー観点へ寄せられるようにする。creds 無し/観点 0 件では空。
+        """
+        payload = result.model_dump(mode="json")
+        payload["uncovered_check_points"] = list(result.coverage_open)
+        return payload
 
     async def _run_analysis(
         self, *, trigger: str, timeout_seconds: float | None = None
@@ -851,6 +870,7 @@ class SANBAAgent(Agent):
                     await self._publisher.detection_resolved(
                         amb_id, resolution=RESOLUTION_AGENT_RESOLVED
                     )
+            await self._publish_check_point_coverage(result)
             self._repo.set_session_seq(self._session_id, self._publisher.seq)
 
     def begin_shutdown(self) -> None:
@@ -860,6 +880,23 @@ class SANBAAgent(Agent):
         タスクを畳む前に呼ぶ。冪等。
         """
         self._closing = True
+
+    async def _publish_check_point_coverage(self, result: AnalysisResult) -> None:
+        """観点カバレッジ（済/未）を ``checkpoint.coverage`` で publish（ADR-0057 増分2a）。
+
+        `detection.gap` には流さない専用チャネル（未解消件数・終了ゲートに算入しない）。creds 無し
+        では `assess_check_point_coverage` が失敗と全カバー済みを区別できず一律 `[]` を返すため、
+        `covered=True` を全観点に出すと誤誘導になる。よって creds が真のときだけ publish する
+        （`assess_check_point_coverage` の creds 判定と対称）。観点 0 件でも publish しない。
+        永続化はしない（live-only）。
+        """
+        if self._publisher is None or not self._check_points:
+            return
+        if not (settings.google_api_key or settings.google_genai_use_vertexai):
+            return
+        uncovered = set(result.coverage_open)
+        points = [{"label": p, "covered": p not in uncovered} for p in self._check_points]
+        await self._publisher.checkpoint_coverage(points)
 
     async def drain_background_tasks(self, grace_seconds: float = DRAIN_GRACE_SECONDS) -> None:
         """セッション終了時に背景タスクを猶予付きで送り切り、残りはキャンセルする（ADR-0037）。
@@ -941,9 +978,24 @@ class SANBAAgent(Agent):
             options: 選択肢ラベル（2〜4個。例 ["関連度順","新着順"]）。
                 自由に答えてほしい問いでは省略する（音声/テキストで回答）。
         """
+        new_has_options = bool(options)
         superseded_in_turn = (
             self._current_question_id is not None and self._question_asked_turn == self._user_turn
         )
+        if superseded_in_turn and not new_has_options and self._current_question_has_options:
+            log.info(
+                "question_superseded_skipped",
+                session=self._session_id,
+                current=self._current_question_id,
+                turn=self._user_turn,
+            )
+            return {
+                "asked": self._current_question_id,
+                "note": (
+                    "選択肢付きの問いが未回答のため、選択肢の無い後発の問いはスキップしました。"
+                    "既存の選択肢付きの問いを維持します。"
+                ),
+            }
         if superseded_in_turn:
             superseded = self._current_question_id
             assert superseded is not None
@@ -959,6 +1011,7 @@ class SANBAAgent(Agent):
         self._questions[question_id] = prompt
         opts = [{"label": o, "value": o} for o in (options or [])]
         self._current_question_id = question_id
+        self._current_question_has_options = new_has_options
         self._question_asked_turn = self._user_turn
         if self._publisher is not None:
 
@@ -975,6 +1028,7 @@ class SANBAAgent(Agent):
                 )
             except Exception as exc:  # noqa: BLE001
                 self._current_question_id = None
+                self._current_question_has_options = False
                 log.warning(
                     "question_persist_failed",
                     session=self._session_id,
@@ -1018,6 +1072,7 @@ class SANBAAgent(Agent):
             )
         if cleared and self._current_question_id == question_id:
             self._current_question_id = None
+            self._current_question_has_options = False
         log.info("question_cleared", session=self._session_id, id=question_id, cleared=cleared)
 
     @function_tool
@@ -1104,6 +1159,7 @@ class SANBAAgent(Agent):
         返り値に `background`（引用できない内部資料の関連ヒット件数のみ）が付くことがある。
         その場合は内容・出所に一切触れず、話題の関連が深い合図としてだけ扱うこと。
         """
+        query = normalize_query(query)
         entry, reason = self._prefetch.get(query, turn=self._user_turn)
         if entry is not None and await self._cached_repo_sources_invalid(entry.result):
             entry, reason = None, REASON_ACL_RECHECK
@@ -1126,9 +1182,11 @@ class SANBAAgent(Agent):
         同期コンテキストから呼ばれるためイベントループが無い環境（同期ユニットテスト等）
         では黙ってスキップする。先読みは付加価値であり、失敗してもツールの同期経路が守る。
         """
-        query = text.strip()
+        query = normalize_query(text)
         if not query:
             return
+        if query != text.strip():
+            log.info("query_normalized", session=self._session_id, before=text.strip(), after=query)
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
@@ -2032,7 +2090,21 @@ async def entrypoint(ctx: JobContext) -> None:
             log.warning("auto_finalize_failed", session=session_id, error=str(exc))
         from .evaluation import score_session
 
-        await score_session(session_id=session_id, transcript="\n".join(agent.transcript))
+        mode = agent.interview_mode
+        glossary: list[str] = []
+        if mode == InviteScope.END_USER:
+            try:
+                product = _session_product(agent._repo, agent._repo.get_session(session_id))
+                if product is not None:
+                    glossary = list(product.glossary)
+            except Exception as exc:  # noqa: BLE001
+                log.warning("session_score_glossary_failed", session=session_id, error=str(exc))
+        await score_session(
+            session_id=session_id,
+            transcript="\n".join(agent.transcript),
+            mode=mode,
+            glossary=glossary,
+        )
 
     ctx.add_shutdown_callback(_on_close)
 
