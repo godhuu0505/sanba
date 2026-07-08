@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     otel_exporter_otlp_endpoint: str = ""
     otel_service_name: str = "sanba-api"
     otel_exporter_insecure: bool = False
+    otel_traces_to_cloud_trace: bool = True
 
     allowed_origins: str = "http://localhost:3000"
 
