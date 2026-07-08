@@ -17,9 +17,11 @@ import {
   deleteContextFile,
   exportRequirements,
   fetchContextFiles,
+  fetchExportEligibility,
   finalizeSession,
   sendTelemetry,
   uploadContextFile,
+  type ExportEligibility,
   type ExportOptions,
   type ExportResult,
   type FinalizeResult,
@@ -287,6 +289,10 @@ export function SessionView({
     return exportRequirements(sessionId, sessionToken, options);
   }
 
+  function handleCheckExportEligibility(): Promise<ExportEligibility> {
+    return fetchExportEligibility(sessionId, sessionToken);
+  }
+
   function handleFinalize(): Promise<FinalizeResult> {
     return finalizeSession(sessionId, sessionToken);
   }
@@ -320,6 +326,7 @@ export function SessionView({
         onToggleMute={() => setMuted((m) => !m)}
         onSendText={handleSendText}
         onExport={handleExport}
+        onCheckExportEligibility={handleCheckExportEligibility}
         onFinalize={handleFinalize}
         onAddMaterial={openSourceSheet}
         extraMaterials={pending}

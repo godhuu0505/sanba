@@ -6,7 +6,6 @@ export interface PrepForm {
   goal?: string;
   goalDetail?: string;
   consent?: boolean;
-  githubRepo?: string;
   productId?: string;
 }
 
@@ -23,7 +22,6 @@ export function readPrep(): PrepForm {
     if (typeof o.goal === "string") out.goal = o.goal;
     if (typeof o.goalDetail === "string") out.goalDetail = o.goalDetail;
     if (typeof o.consent === "boolean") out.consent = o.consent;
-    if (typeof o.githubRepo === "string") out.githubRepo = o.githubRepo;
     if (typeof o.productId === "string") out.productId = o.productId;
     return out;
   } catch {

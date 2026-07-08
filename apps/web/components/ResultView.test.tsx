@@ -204,4 +204,16 @@ describe("ResultView（要件産婆結果）", () => {
       includeMaterials: true,
     });
   });
+
+  it("起票権限が無いとき Issue ボタンを無効化し理由を出す（ADR-0053）", () => {
+    setup({ issueDisabledReason: "github not linked" });
+    const btn = screen.getByRole("button", { name: /Issue/ });
+    expect((btn as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText(/GitHub と連携すると起票できます/)).toBeTruthy();
+  });
+
+  it("repo 権限が無いときは対象リポジトリ権限の理由を出す（ADR-0053）", () => {
+    setup({ issueDisabledReason: "no repo access" });
+    expect(screen.getByText(/対象リポジトリへの権限がありません/)).toBeTruthy();
+  });
 });

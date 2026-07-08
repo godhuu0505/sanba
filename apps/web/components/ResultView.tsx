@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Check, ChevronRight, CircleDot, Cloud, FileText, type LucideIcon } from "lucide-react";
 
 import { Button, Figure } from "@/components/sanba";
+import { issueExportReasonText } from "../lib/issueExport";
 import { useInterviewMode } from "../lib/interviewMode";
 import { SideMenu } from "./SideMenu";
 import { categoryPresentation, priorityLabel } from "../lib/realtime/mapping";
@@ -24,17 +25,6 @@ export type IssueExportStatus =
   | { status: "done"; url?: string }
   | { status: "error"; reason?: string };
 
-function issueExportReasonText(reason?: string): string {
-  switch (reason) {
-    case "github connector disabled":
-      return "GitHub 連携が無効のため起票できませんでした。";
-    case "github repo not allowed":
-      return "許可されていないリポジトリのため起票できませんでした。";
-    default:
-      return "起票に失敗しました。時間をおいて再度お試しください。";
-  }
-}
-
 const PREVIEW_PRIORITIES: readonly Priority[] = ["must", "should"];
 const SECTION_LIMIT = 3;
 
@@ -51,6 +41,7 @@ export interface ResultViewProps {
   onExportDrive?: () => void;
   onExportIssue?: (choice: ExportChoice) => void;
   issueExport?: IssueExportStatus;
+  issueDisabledReason?: string | null;
 }
 
 export interface ExportChoice {
@@ -71,6 +62,7 @@ export function ResultView({
   onExportDrive,
   onExportIssue,
   issueExport = { status: "idle" },
+  issueDisabledReason = null,
 }: ResultViewProps) {
   const interviewMode = useInterviewMode();
   const endUser = interviewMode === "end_user";
@@ -238,13 +230,15 @@ export function ResultView({
             {available.map((o) => {
               const Icon = o.icon;
               const busy = o.label === "Issue" && issueExport.status === "pending";
+              const blocked = o.label === "Issue" && !!issueDisabledReason;
               return (
                 <button
                   key={o.label}
                   type="button"
                   onClick={o.handler}
-                  disabled={busy}
+                  disabled={busy || blocked}
                   aria-busy={busy}
+                  title={blocked ? issueExportReasonText(issueDisabledReason ?? undefined) : undefined}
                   className="flex flex-1 items-center justify-center gap-1.5 rounded-[11px] border border-sanba-border bg-sanba-surface py-[11px] text-[11.5px] font-bold text-sanba-muted disabled:opacity-60"
                 >
                   <Icon size={14} aria-hidden /> {busy ? "起票中…" : o.label}
@@ -252,6 +246,11 @@ export function ResultView({
               );
             })}
           </div>
+          {onExportIssue && issueDisabledReason && issueExport.status === "idle" && (
+            <p className="mt-[6px] w-full text-center text-[11px] font-bold text-sanba-muted">
+              {issueExportReasonText(issueDisabledReason)}
+            </p>
+          )}
           {onExportIssue && issueExport.status !== "idle" && issueExport.status !== "pending" && (
             <div className="mt-[6px] w-full" role="status" aria-live="polite">
               {issueExport.status === "done" ? (

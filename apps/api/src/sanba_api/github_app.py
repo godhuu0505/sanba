@@ -519,6 +519,37 @@ class GitHubAppClient:  # pragma: no cover - network
                 page += 1
         return repos
 
+    def repo_full_names(self, installation_id: int) -> set[str]:
+        """インストールがアクセスを許可した repo の full_name 集合（起票権限判定に使う）。"""
+        return {r.full_name for r in self.list_repos(installation_id)}
+
+    def create_issue(
+        self,
+        installation_id: int,
+        repo: str,
+        title: str,
+        body: str,
+        labels: list[str] | None = None,
+    ) -> str | None:  # pragma: no cover - network
+        """installation token（Issues: write）で Issue を起票し html_url を返す（ADR-0053）。"""
+        import httpx
+
+        payload: dict[str, object] = {"title": title, "body": body}
+        if labels:
+            payload["labels"] = labels
+        with httpx.Client(timeout=15) as client:
+            res = client.post(
+                f"{_API}/repos/{repo}/issues",
+                headers=self._inst_headers(installation_id),
+                json=payload,
+            )
+        if res.status_code in (200, 201):
+            url = res.json().get("html_url")
+            log.info("github_issue_created", repo=repo, url=url, labels=labels or [])
+            return url
+        log.warning("github_issue_failed", repo=repo, status=res.status_code)
+        return None
+
     def list_branches(self, installation_id: int, repo: str) -> list[dict[str, str]]:
         """repo の branch 一覧（name + head sha）。準備画面の branch 選択に使う。"""
         import httpx
