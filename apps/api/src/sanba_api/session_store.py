@@ -235,7 +235,11 @@ class FirestoreSessionStore:
         )
 
     def revoke(self, sid: str, now: int) -> None:
-        self._col.document(sid).update({"revoked_at": now})
+        ref = self._col.document(sid)
+        snap = ref.get()
+        if not snap.exists:
+            return
+        ref.update({"revoked_at": now})
 
     def revoke_by_sub(self, google_sub: str, now: int) -> int:
         query = self._col.where("google_sub", "==", google_sub).where("revoked_at", "==", None)

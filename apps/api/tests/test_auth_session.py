@@ -163,3 +163,27 @@ def test_cookie_authenticates_require_user(_fake_verifier: None) -> None:
 
     res = client.get("/api/sessions/mine", cookies={SESSION_COOKIE_NAME: cookie})
     assert res.status_code == 200
+
+
+def test_cookie_write_from_disallowed_origin_is_rejected(_fake_verifier: None) -> None:
+    client = TestClient(app)
+    ex = client.post("/api/session/exchange", json={"id_token": "valid"})
+    cookie = ex.cookies.get(SESSION_COOKIE_NAME)
+    assert cookie is not None
+
+    res = client.delete(
+        "/api/session",
+        cookies={SESSION_COOKIE_NAME: cookie},
+        headers={"Origin": "https://evil.example.com"},
+    )
+    assert res.status_code == 403
+
+
+def test_bearer_write_without_cookie_is_not_origin_checked(_fake_verifier: None) -> None:
+    client = TestClient(app)
+    res = client.post(
+        "/api/session/exchange",
+        json={"id_token": "valid"},
+        headers={"Origin": "https://evil.example.com"},
+    )
+    assert res.status_code == 200
