@@ -216,7 +216,7 @@ def test_guest_session_token_is_read_only(guest_enabled: None) -> None:
     headers = {"Authorization": f"Bearer {joined['session_token']}"}
 
     assert client.get(f"/api/sessions/{sid}/requirements", headers=headers).status_code == 200
-    assert client.get(f"/api/sessions/{sid}/detections", headers=headers).status_code == 200
+    assert client.get(f"/api/sessions/{sid}/inquiry", headers=headers).status_code == 200
     assert client.get(f"/api/sessions/{sid}/context/files", headers=headers).status_code == 200
     telemetry = client.post(
         f"/api/sessions/{sid}/telemetry",

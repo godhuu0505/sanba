@@ -26,8 +26,8 @@ def _fake_user() -> AuthUser:
 def _assume_logged_in() -> Iterator[None]:
     app.dependency_overrides[require_user] = _fake_user
     _read_repo._mem_requirements.clear()
-    _read_repo._mem_detections.clear()
     _read_repo._mem_questions.clear()
+    _repo._mem_inquiry.clear()
     yield
     app.dependency_overrides.pop(require_user, None)
 
@@ -97,17 +97,33 @@ def test_requirements_snapshot_shape() -> None:
     assert item["status"] == "confirmed"
 
 
-def test_detections_returns_only_unresolved() -> None:
-    _read_repo._seed_detection(
-        "sess-2", {"id": "d1", "kind": "gap", "summary": "性能未確認", "resolved": False}
-    )
-    _read_repo._seed_detection(
-        "sess-2", {"id": "d2", "kind": "contradiction", "summary": "解消済み", "resolved": True}
-    )
-    res = client.get("/api/sessions/sess-2/detections?open=1", headers=_auth(_token("sess-2")))
+def test_inquiry_hydrates_full_tree_with_seq_boundary() -> None:
+    from sanba_shared.inquiry import InquiryTree
+    from sanba_shared.models import InquiryKind
+
+    tree = InquiryTree()
+    root = tree.upsert(kind=InquiryKind.CHECK, text="認証方式", seq=1)[0]
+    child = tree.upsert(kind=InquiryKind.GAP, text="MFA の要否", seq=2, parent_id=root.id)[0]
+    tree.resolve(child.id, 3)
+    for node in tree.nodes():
+        _repo.save_inquiry_node("sess-2", node)
+    _repo.set_session_seq("sess-2", 7)
+
+    res = client.get("/api/sessions/sess-2/inquiry", headers=_auth(_token("sess-2")))
     assert res.status_code == 200
-    items = res.json()["items"]
-    assert [d["id"] for d in items] == ["d1"]
+    body = res.json()
+    assert body["seq"] == 7
+    nodes = {n["id"]: n for n in body["nodes"]}
+    assert nodes[root.id]["kind"] == "check"
+    assert nodes[root.id]["parent_id"] is None
+    assert nodes[child.id]["parent_id"] == root.id
+    assert nodes[child.id]["depth"] == 2
+    assert nodes[child.id]["status"] == "resolved"
+
+
+def test_inquiry_requires_session_token() -> None:
+    res = client.get("/api/sessions/sess-2/inquiry")
+    assert res.status_code == 401
 
 
 def test_requirements_returns_persisted_seq_boundary() -> None:
@@ -263,17 +279,32 @@ def test_finalize_survives_missing_requirement_on_preservation() -> None:
     assert res.json()["confirmed_count"] == 1
 
 
-def test_finalize_rejects_when_unresolved_detections_remain() -> None:
+def test_finalize_rejects_when_unresolved_gating_inquiries_remain() -> None:
+    from sanba_shared.models import InquiryKind, InquiryNode
+
     created = client.post("/api/sessions", json={"roles": ["pm"], "consent_acknowledged": True})
     sid = created.json()["session_id"]
-    _read_repo._seed_detection(
-        sid, {"id": "d1", "kind": "gap", "summary": "性能未確認", "resolved": False}
-    )
+    _repo.save_inquiry_node(sid, InquiryNode(id="inq1", kind=InquiryKind.GAP, text="性能未確認"))
     res = client.post(f"/api/sessions/{sid}/finalize", headers=_auth(_token(sid)))
     assert res.status_code == 409
     meta = _repo.get_session(sid)
     assert meta is not None
     assert meta.status != "finalized"
+
+
+def test_finalize_allows_when_only_advisory_ambiguous_inquiries_remain() -> None:
+    """ambiguous は advisory（終了ゲート対象外）で open でも確定を止めない（ADR-0059 ⑤）。"""
+    from sanba_shared.models import InquiryKind, InquiryNode
+
+    created = client.post("/api/sessions", json={"roles": ["pm"], "consent_acknowledged": True})
+    sid = created.json()["session_id"]
+    _repo.save_inquiry_node(sid, InquiryNode(id="amb1", kind=InquiryKind.AMBIGUOUS, text="曖昧"))
+    _read_repo._seed_requirement(
+        sid, {"id": "c1", "statement": "確定", "category": "functional", "priority": "must"}
+    )
+    res = client.post(f"/api/sessions/{sid}/finalize", headers=_auth(_token(sid)))
+    assert res.status_code == 200
+    assert res.json()["finalized"] is True
 
 
 def test_finalize_is_idempotent_and_keeps_first_snapshot() -> None:
@@ -300,7 +331,9 @@ def test_finalize_is_idempotent_and_keeps_first_snapshot() -> None:
     assert meta2.finalized_at == first_at
 
 
-def test_finalize_idempotent_even_with_late_open_detection() -> None:
+def test_finalize_idempotent_even_with_late_open_inquiry() -> None:
+    from sanba_shared.models import InquiryKind, InquiryNode
+
     created = client.post("/api/sessions", json={"roles": ["pm"], "consent_acknowledged": True})
     sid = created.json()["session_id"]
     _read_repo._seed_requirement(
@@ -308,9 +341,7 @@ def test_finalize_idempotent_even_with_late_open_detection() -> None:
     )
     first = client.post(f"/api/sessions/{sid}/finalize", headers=_auth(_token(sid)))
     assert first.status_code == 200
-    _read_repo._seed_detection(
-        sid, {"id": "d-late", "kind": "gap", "summary": "後追い", "resolved": False}
-    )
+    _repo.save_inquiry_node(sid, InquiryNode(id="inq-late", kind=InquiryKind.GAP, text="後追い"))
     again = client.post(f"/api/sessions/{sid}/finalize", headers=_auth(_token(sid)))
     assert again.status_code == 200
     assert again.json()["confirmed_count"] == 1

@@ -96,6 +96,43 @@ def test_check_items_render_as_bullets() -> None:
     assert "- 課金の有無" in out
 
 
+def test_validated_inquiries_render_resolved_gating_kinds_only() -> None:
+    from sanba_shared.inquiry import InquiryTree
+    from sanba_shared.models import InquiryKind
+
+    tree = InquiryTree()
+    n = {"v": 0}
+
+    def seq() -> int:
+        n["v"] += 1
+        return n["v"]
+
+    check = tree.upsert(kind=InquiryKind.CHECK, text="認証方式", seq=seq())[0]
+    tree.resolve(check.id, seq())
+    gap = tree.upsert(kind=InquiryKind.GAP, text="MFA の要否", seq=seq())[0]
+    tree.resolve(gap.id, seq())
+    contradiction = tree.upsert(kind=InquiryKind.CONTRADICTION, text="役割の矛盾", seq=seq())[0]
+    tree.resolve(contradiction.id, seq())
+    ambiguous = tree.upsert(kind=InquiryKind.AMBIGUOUS, text="曖昧な点", seq=seq())[0]
+    tree.resolve(ambiguous.id, seq())
+    tree.upsert(kind=InquiryKind.GAP, text="未解消の抜け", seq=seq())
+    dropped = tree.upsert(kind=InquiryKind.GAP, text="剪定された抜け", seq=seq())[0]
+    tree.drop(dropped.id, seq())
+
+    out = _render("{{validated_inquiries}}", inquiry_nodes=tree.nodes())
+    assert "- [x] 認証方式" in out
+    assert "- [x] MFA の要否" in out
+    assert "- [x] 役割の矛盾" in out
+    assert "曖昧な点" not in out, "ambiguous は確認済み論点から除外する（ADR-0059 決定⑧）"
+    assert "未解消の抜け" not in out, "open は確認済みではない"
+    assert "剪定された抜け" not in out, "dropped（剪定）は載せない"
+
+
+def test_validated_inquiries_empty_renders_placeholder() -> None:
+    out = _render("{{validated_inquiries}}")
+    assert "会話で確認できた論点はありません" in out
+
+
 def test_empty_optional_fields_fall_back_to_placeholder_text() -> None:
     out = _render("{{app_name}} / {{goal}}", app_name=None, goal=None)
     assert out == "（未設定） / （未設定）\n"

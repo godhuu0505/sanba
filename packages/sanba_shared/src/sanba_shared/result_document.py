@@ -17,7 +17,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from .models import DEFAULT_SESSION_TITLE, Requirement, RequirementStatus
+from .inquiry import InquiryTree
+from .models import DEFAULT_SESSION_TITLE, InquiryNode, Requirement, RequirementStatus
 
 _PRIORITY_ORDER = ["must", "should", "could", "wont"]
 _PRIORITY_LABELS = {
@@ -188,6 +189,19 @@ def _check_items_block(check_items: list[str]) -> str:
     return "\n".join(f"- {c}" for c in items)
 
 
+def _validated_inquiries_block(inquiry_nodes: list[InquiryNode]) -> str:
+    """会話で解消できた確認事項を「確認済みの論点」チェックリストへ機械整形する（ADR-0059 決定⑧）。
+
+    フィルタ（resolved かつ kind ∈ {check, gap, contradiction}・ambiguous/dropped 除外）は
+    ドメインの `InquiryTree.validated()` を正とし、ここは Markdown 整形だけを担う（HP9 も
+    ADR-0042 の機械テンプレート方針を維持し LLM を使わない）。
+    """
+    validated = InquiryTree.from_nodes(list(inquiry_nodes)).validated()
+    if not validated:
+        return "（会話で確認できた論点はありません）"
+    return "\n".join(f"- [x] {node.text.strip()}" for node in validated if node.text.strip())
+
+
 def render_result_document(
     template: str,
     *,
@@ -197,6 +211,7 @@ def render_result_document(
     date: str,
     requirements: list[dict[str, Any]],
     check_items: list[str],
+    inquiry_nodes: list[InquiryNode] | None = None,
 ) -> str:
     """テンプレートの `{{placeholder}}` を埋めて Markdown 文書を返す。
 
@@ -213,6 +228,7 @@ def render_result_document(
         "requirements": _requirements_grouped(requirements),
         "requirements_plain": _requirements_plain(requirements),
         "check_items": _check_items_block(check_items),
+        "validated_inquiries": _validated_inquiries_block(inquiry_nodes or []),
     }
 
     def _sub(m: re.Match[str]) -> str:
