@@ -245,8 +245,7 @@ async def test_tool_rides_on_inflight_background_run(
 
     async def _slow(transcript: str) -> AnalysisResult:
         calls.append(transcript)
-        while not gate.is_set():
-            await asyncio.sleep(0.005)
+        await asyncio.to_thread(gate.wait)
         return AnalysisResult(summary="s", next_question="q?", suggested_answer="a")
 
     monkeypatch.setattr("sanba_agent.main.analyze_transcript", _slow)
@@ -279,8 +278,7 @@ async def test_tool_ride_along_timeout_returns_without_competing_run(
 
     async def _hang(transcript: str) -> AnalysisResult:
         calls.append(transcript)
-        while not gate.is_set():
-            await asyncio.sleep(0.005)
+        await asyncio.to_thread(gate.wait)
         return AnalysisResult(summary="s", next_question="q?", suggested_answer="a")
 
     monkeypatch.setattr("sanba_agent.main.analyze_transcript", _hang)
