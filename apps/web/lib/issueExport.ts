@@ -6,6 +6,8 @@ export function issueExportReasonText(reason?: string): string {
       return "対象リポジトリへの権限がありません（アプリ管理者に確認してください）。";
     case "no repo":
       return "対象アプリにリポジトリが紐づいていないため起票できません。";
+    case "not finalized":
+      return "会話が未確定のため起票できません（確定した会話だけ起票できます）。";
     case "github app not configured":
       return "GitHub App が未設定のため起票できません。";
     case "guest":

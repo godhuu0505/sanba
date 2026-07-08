@@ -585,7 +585,11 @@ def test_export_body_records_exporter(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_export_eligibility_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
     created = client.post("/api/sessions", json={"roles": ["pm"], "consent_acknowledged": True})
     sid = created.json()["session_id"]
+    _read_repo._seed_requirement(
+        sid, {"id": "c1", "statement": "確定", "category": "functional", "priority": "must"}
+    )
     _enable_github(monkeypatch)
+    client.post(f"/api/sessions/{sid}/finalize", headers=_auth(_token(sid)))
     ok = client.get(f"/api/sessions/{sid}/export/eligibility", headers=_auth(_token(sid)))
     assert ok.status_code == 200
     body = ok.json()
@@ -598,10 +602,38 @@ def test_export_eligibility_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
     assert ng.json()["reason"] == "github not linked"
 
 
+def test_export_eligibility_blocked_until_finalized(monkeypatch: pytest.MonkeyPatch) -> None:
+    """未 finalize では起票不可（`not finalized`）にし、空 Issue 起票を塞ぐ（#435）。"""
+    created = client.post("/api/sessions", json={"roles": ["pm"], "consent_acknowledged": True})
+    sid = created.json()["session_id"]
+    _read_repo._seed_requirement(
+        sid, {"id": "c1", "statement": "確定", "category": "functional", "priority": "must"}
+    )
+    captured = _enable_github(monkeypatch)
+
+    ng = client.get(f"/api/sessions/{sid}/export/eligibility", headers=_auth(_token(sid)))
+    assert ng.json()["can_export"] is False
+    assert ng.json()["reason"] == "not finalized"
+
+    blocked = client.post(f"/api/sessions/{sid}/export", headers=_auth(_token(sid)))
+    assert blocked.json()["exported"] is False
+    assert blocked.json()["reason"] == "not finalized"
+    assert "repo" not in captured
+
+    client.post(f"/api/sessions/{sid}/finalize", headers=_auth(_token(sid)))
+    ok = client.post(f"/api/sessions/{sid}/export", headers=_auth(_token(sid)))
+    assert ok.json()["exported"] is True
+    assert ok.json()["count"] == 1
+
+
 def test_my_export_eligibility_uses_login_auth(monkeypatch: pytest.MonkeyPatch) -> None:
     created = client.post("/api/sessions", json={"roles": ["pm"], "consent_acknowledged": True})
     sid = created.json()["session_id"]
+    _read_repo._seed_requirement(
+        sid, {"id": "c1", "statement": "確定", "category": "functional", "priority": "must"}
+    )
     _enable_github(monkeypatch)
+    client.post(f"/api/sessions/{sid}/finalize", headers=_auth(_token(sid)))
     ok = client.get(f"/api/sessions/mine/{sid}/export/eligibility")
     assert ok.status_code == 200
     assert ok.json()["can_export"] is True
