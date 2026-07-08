@@ -2,29 +2,29 @@
 
 import { Scale, TriangleAlert } from "lucide-react";
 
-import type { Detection } from "@/lib/realtime/types";
+import type { InquiryNode } from "@/lib/realtime/types";
 
 import { Button, HelpIcon } from "@/components/sanba";
-import { DeepDiveList } from "./DeepDiveList";
+import { InquiryTree } from "./InquiryTree";
 
 export interface JudgmentGateProps {
   unresolved: number;
-  detections?: Detection[];
+  nodes?: InquiryNode[];
   onBack: () => void;
   onForceEnd: () => void;
   onConfirm: () => void;
   error?: string;
-  onJump?: (detectionId: string) => void;
+  onDrop?: (nodeId: string) => void;
 }
 
 export function JudgmentGate({
   unresolved,
-  detections,
+  nodes,
   onBack,
   onForceEnd,
   onConfirm,
   error,
-  onJump,
+  onDrop,
 }: JudgmentGateProps) {
   const resolved = unresolved === 0;
 
@@ -74,9 +74,9 @@ export function JudgmentGate({
               未解消が残っていると、要件を確定できません。
             </p>
           </div>
-          {detections && detections.length > 0 && onJump && (
+          {nodes && nodes.length > 0 && (
             <div className="mt-3 w-full">
-              <DeepDiveList detections={detections} onJump={onJump} />
+              <InquiryTree nodes={nodes} onDrop={onDrop} />
             </div>
           )}
           <div className="flex-1" />

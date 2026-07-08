@@ -1,6 +1,10 @@
 
 export * from "./types";
-export { decodeServerEvent, encodeUserSelection } from "./parse";
+export {
+  decodeServerEvent,
+  encodeUserSelection,
+  encodeUserInquiryDrop,
+} from "./parse";
 export {
   RealtimeStore,
   emptySessionState,
@@ -21,16 +25,23 @@ export {
 } from "./useRealtimeSession";
 export {
   detectionPresentation,
+  detectionHelpTerm,
+  inquiryPresentation,
+  inquiryHelpTerm,
   categoryPresentation,
   priorityLabel,
   PRIORITY_ORDER,
   type KindPresentation,
 } from "./mapping";
 export {
-  selectOpenDetections,
+  selectInquiryNodes,
+  selectGateNodes,
+  selectGateCount,
+  inquiryTreeStats,
   selectConfirmedRequirements,
   selectRequirementsByPriority,
   selectStats,
+  type InquiryTreeStats,
   type SessionStats,
 } from "./selectors";
 export { contractEventFixture, hydrationFixture } from "./fixtures";

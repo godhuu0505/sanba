@@ -2,17 +2,21 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { Detection } from "@/lib/realtime/types";
+import type { InquiryNode } from "@/lib/realtime/types";
 
 import { JudgmentGate } from "./JudgmentGate";
 
-const det = (over: Partial<Detection>): Detection => ({
-  id: "d1",
+const node = (over: Partial<InquiryNode> & { id: string }): InquiryNode => ({
+  parent_id: null,
   kind: "contradiction",
-  summary: "並び順の両論",
+  text: "並び順の両論",
+  status: "open",
+  confidence: 0.6,
+  depth: 0,
+  origin: "conversation",
   refs: [],
-  detector: "x",
-  resolved: false,
+  created_seq: 1,
+  resolved_seq: null,
   ...over,
 });
 
@@ -49,20 +53,21 @@ describe("JudgmentGate（確定ゲート）", () => {
     expect(cb.onForceEnd).toHaveBeenCalledTimes(1);
   });
 
-  it("未解消の内訳を渡すと項目を表示し、会話で確認で onJump(検知id)", () => {
-    const onJump = vi.fn();
+  it("未解消の内訳（ツリー）を渡すと項目を表示し、不要で onDrop(nodeId)", () => {
+    const onDrop = vi.fn();
     render(
       <JudgmentGate
         unresolved={1}
-        detections={[det({ id: "d3", kind: "contradiction" })]}
-        onJump={onJump}
+        nodes={[node({ id: "n3", kind: "contradiction", text: "退会導線の不一致" })]}
+        onDrop={onDrop}
         onBack={vi.fn()}
         onForceEnd={vi.fn()}
         onConfirm={vi.fn()}
       />,
     );
     expect(screen.getByText(/食い違い/)).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: /会話で確認/ }));
-    expect(onJump).toHaveBeenCalledWith("d3");
+    expect(screen.getByText("退会導線の不一致")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /不要にする/ }));
+    expect(onDrop).toHaveBeenCalledWith("n3");
   });
 });

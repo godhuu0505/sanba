@@ -45,17 +45,24 @@ export interface DetectionOption {
   value: string;
 }
 
-export interface Detection {
+export type InquiryKind = "gap" | "contradiction" | "ambiguous" | "check";
+
+export type InquiryStatus = "open" | "resolved" | "dropped";
+
+export type InquiryOp = "upsert" | "resolve" | "drop";
+
+export interface InquiryNode {
   id: string;
-  kind: DetectionKind;
-  summary: string;
+  parent_id: string | null;
+  kind: InquiryKind;
+  text: string;
+  status: InquiryStatus;
+  confidence: number;
+  depth: number;
+  origin: string;
   refs: string[];
-  category?: string;
-  options?: DetectionOption[];
-  detector: string;
-  resolved: boolean;
-  resolution?: "user_selected" | "agent_resolved";
-  selected_value?: string;
+  created_seq: number;
+  resolved_seq: number | null;
 }
 
 export interface AnalysisVisualConflict {
@@ -99,33 +106,9 @@ export type TranscriptFinalEvent = Envelope<"transcript.final"> & {
   text: string;
 };
 
-export type DetectionContradictionEvent = Envelope<"detection.contradiction"> & {
-  id: string;
-  summary: string;
-  refs: string[];
-  options?: DetectionOption[];
-  detector: string;
-};
-
-export type DetectionGapEvent = Envelope<"detection.gap"> & {
-  id: string;
-  summary: string;
-  category: string;
-  refs: string[];
-  detector: string;
-};
-
-export type DetectionAmbiguousEvent = Envelope<"detection.ambiguous"> & {
-  id: string;
-  summary: string;
-  refs: string[];
-  detector: string;
-};
-
-export type DetectionResolvedEvent = Envelope<"detection.resolved"> & {
-  detection_id: string;
-  resolution: "user_selected" | "agent_resolved";
-  selected_value?: string;
+export type InquiryNodeEvent = Envelope<"inquiry.node"> & {
+  op: InquiryOp;
+  node: InquiryNode;
 };
 
 export type RequirementUpsertedEvent = Envelope<"requirement.upserted"> & {
@@ -147,15 +130,6 @@ export type ContextProgressEvent = Envelope<"context.progress"> & {
   stage: ContextProgressStage;
   label?: string;
   detail?: string;
-};
-
-export interface CoveragePoint {
-  label: string;
-  covered: boolean;
-}
-
-export type CheckpointCoverageEvent = Envelope<"checkpoint.coverage"> & {
-  points: CoveragePoint[];
 };
 
 export type AnalysisVisualEvent = Envelope<"analysis.visual"> & {
@@ -193,17 +167,13 @@ export type ServerEvent =
   | StatusEvent
   | TranscriptPartialEvent
   | TranscriptFinalEvent
-  | DetectionContradictionEvent
-  | DetectionGapEvent
-  | DetectionAmbiguousEvent
-  | DetectionResolvedEvent
+  | InquiryNodeEvent
   | RequirementUpsertedEvent
   | QuestionAskedEvent
   | QuestionClearedEvent
   | AnalysisProgressEvent
   | AnalysisVisualEvent
   | ContextProgressEvent
-  | CheckpointCoverageEvent
   | SessionEndProposedEvent
   | SessionCompletedEvent;
 
@@ -225,4 +195,12 @@ export type UserAnsweredEvent = Envelope<"user.answered"> & {
   text?: string;
 };
 
-export type ClientEvent = UserSelectionEvent | UserTextEvent | UserAnsweredEvent;
+export type UserInquiryDropEvent = Envelope<"user.inquiry_drop"> & {
+  node_id: string;
+};
+
+export type ClientEvent =
+  | UserSelectionEvent
+  | UserTextEvent
+  | UserAnsweredEvent
+  | UserInquiryDropEvent;

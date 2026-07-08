@@ -607,8 +607,8 @@ describe("入口フロー（#140）", () => {
     expect(
       screen.queryByRole("button", { name: /ボタンを押しても動かない状況を改善したい/ }),
     ).toBeNull();
-    fireEvent.click(screen.getByRole("radio", { name: "企画者" }));
-    expect(screen.getByText("例：検索機能のリニューアル要件を固めたい")).toBeTruthy();
+    fireEvent.click(screen.getByRole("radio", { name: "開発者" }));
+    expect(screen.getByText("例：不具合の再現条件と原因の見立てを整理したい")).toBeTruthy();
     expect(screen.queryByText("例：ボタンを押しても動かない状況を改善したい")).toBeNull();
   });
 
@@ -659,7 +659,7 @@ describe("入口フロー（#140）", () => {
 
   it("同意文言と開始ボタン文言が更新されている（#222）", async () => {
     await gotoPrepare();
-    expect(screen.getByText("録音と AI 処理に同意します（最大 30 日保持）。")).toBeTruthy();
+    expect(screen.getByText("録音とAI処理に同意します（最大30日保持）")).toBeTruthy();
     expect(screen.getByRole("button", { name: "会話を始める" })).toBeTruthy();
   });
 

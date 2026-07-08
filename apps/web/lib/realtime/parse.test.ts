@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   decodeServerEvent,
   encodeUserAnswered,
+  encodeUserInquiryDrop,
   encodeUserSelection,
   encodeUserText,
 } from "./parse";
@@ -132,18 +133,55 @@ describe("decodeServerEvent ペイロードの enum/配列/範囲 検証 (#120)"
     expect(event?.type).toBe("requirement.upserted");
   });
 
-  it("detection.contradiction の refs が配列でない（文字列）なら bad-payload", () => {
-    const { reason } = decodeServerEvent(
-      bytes({
-        ...env,
-        type: "detection.contradiction",
-        id: "d1",
-        summary: "矛盾",
-        refs: "u1",
-        detector: "x",
-      }),
+  const validNode = {
+    id: "nq1",
+    parent_id: null,
+    kind: "gap",
+    text: "通知の保存タイミング",
+    status: "open",
+    confidence: 0.7,
+    depth: 1,
+    origin: "conversation",
+    refs: ["u1"],
+    created_seq: 10,
+    resolved_seq: null,
+  };
+
+  it("inquiry.node は op と node が妥当なら ok（ADR-0059）", () => {
+    const { reason, event } = decodeServerEvent(
+      bytes({ ...env, type: "inquiry.node", op: "upsert", node: validNode }),
     );
-    expect(reason).toBe("bad-payload");
+    expect(reason).toBe("ok");
+    expect(event?.type).toBe("inquiry.node");
+  });
+
+  it("inquiry.node の op が列挙外なら bad-payload", () => {
+    expect(
+      decodeServerEvent(bytes({ ...env, type: "inquiry.node", op: "merge", node: validNode }))
+        .reason,
+    ).toBe("bad-payload");
+  });
+
+  it("inquiry.node の node.kind が列挙外なら bad-payload", () => {
+    expect(
+      decodeServerEvent(
+        bytes({ ...env, type: "inquiry.node", op: "upsert", node: { ...validNode, kind: "note" } }),
+      ).reason,
+    ).toBe("bad-payload");
+  });
+
+  it("inquiry.node の node.refs が配列でないなら bad-payload", () => {
+    expect(
+      decodeServerEvent(
+        bytes({ ...env, type: "inquiry.node", op: "upsert", node: { ...validNode, refs: "u1" } }),
+      ).reason,
+    ).toBe("bad-payload");
+  });
+
+  it("inquiry.node の node が欠落なら bad-payload", () => {
+    expect(
+      decodeServerEvent(bytes({ ...env, type: "inquiry.node", op: "upsert" })).reason,
+    ).toBe("bad-payload");
   });
 
   it("analysis.progress の pct が 100 超なら bad-payload", () => {
@@ -193,37 +231,6 @@ describe("decodeServerEvent ペイロードの enum/配列/範囲 検証 (#120)"
     ).toBe("bad-payload");
   });
 
-  it("checkpoint.coverage は points が {label,covered} 配列なら ok（ADR-0057 増分2a）", () => {
-    const { reason, event } = decodeServerEvent(
-      bytes({
-        ...env,
-        type: "checkpoint.coverage",
-        points: [
-          { label: "性能・レスポンスの要件", covered: true },
-          { label: "セキュリティ・権限・データ保護", covered: false },
-        ],
-      }),
-    );
-    expect(reason).toBe("ok");
-    expect(event?.type).toBe("checkpoint.coverage");
-  });
-
-  it("checkpoint.coverage の points が配列でなければ bad-payload", () => {
-    expect(
-      decodeServerEvent(
-        bytes({ ...env, type: "checkpoint.coverage", points: "nope" }),
-      ).reason,
-    ).toBe("bad-payload");
-  });
-
-  it("checkpoint.coverage の point に covered が無ければ bad-payload", () => {
-    expect(
-      decodeServerEvent(
-        bytes({ ...env, type: "checkpoint.coverage", points: [{ label: "x" }] }),
-      ).reason,
-    ).toBe("bad-payload");
-  });
-
   it("session.end_proposed は 3 つの件数が数値なら ok（P1-b）", () => {
     const { reason, event } = decodeServerEvent(
       bytes({
@@ -252,21 +259,6 @@ describe("decodeServerEvent ペイロードの enum/配列/範囲 検証 (#120)"
     ).toBe("bad-payload");
   });
 
-  it("detection.ambiguous は refs 配列が妥当なら ok (#182)", () => {
-    const { reason, event } = decodeServerEvent(
-      bytes({ ...env, type: "detection.ambiguous", id: "a1", summary: "曖昧", refs: ["u1"], detector: "x" }),
-    );
-    expect(reason).toBe("ok");
-    expect(event?.type).toBe("detection.ambiguous");
-  });
-
-  it("detection.ambiguous の refs が配列でないなら bad-payload (#182)", () => {
-    expect(
-      decodeServerEvent(
-        bytes({ ...env, type: "detection.ambiguous", id: "a1", summary: "曖昧", refs: "u1", detector: "x" }),
-      ).reason,
-    ).toBe("bad-payload");
-  });
 });
 
 describe("encodeUserSelection", () => {
@@ -314,5 +306,20 @@ describe("encodeUserAnswered", () => {
     );
     expect(obj).toMatchObject({ type: "user.answered", question_id: "q1", text: "関連度順" });
     expect(obj.selected_value).toBeUndefined();
+  });
+});
+
+describe("encodeUserInquiryDrop", () => {
+  it("手動 drop の user.inquiry_drop エンベロープを組む（ADR-0059）", () => {
+    const obj = JSON.parse(
+      new TextDecoder().decode(encodeUserInquiryDrop("s1", "nq-a1", 5, "2026-06-24T00:00:00Z")),
+    );
+    expect(obj).toMatchObject({
+      v: 1,
+      type: "user.inquiry_drop",
+      seq: 5,
+      session_id: "s1",
+      node_id: "nq-a1",
+    });
   });
 });

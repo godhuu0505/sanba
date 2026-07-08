@@ -45,7 +45,6 @@ import { clearPrep, readPrep, writePrep } from "../lib/prepFormStorage";
 
 const ROLES = [
   { value: "customer", label: AUDIENCE_LABELS.end_user },
-  { value: "pm", label: AUDIENCE_LABELS.planner },
   { value: "engineer", label: AUDIENCE_LABELS.developer },
 ] as const;
 
@@ -66,17 +65,10 @@ function sessionPath(slug: string, sessionId: string): string {
 const GOAL_EXAMPLES: Record<string, string[]> = {
   customer: [
     "ボタンを押しても動かない状況を改善したい",
-    "情報入力に時間がかかるのをなんとかしたい",
     "目的の情報にたどり着けないのを解消したい",
-  ],
-  pm: [
-    "検索機能のリニューアル要件を固めたい",
-    "新機能の要件と優先度を整理したい",
-    "既存機能の改善方針を言語化したい",
   ],
   engineer: [
     "不具合の再現条件と原因の見立てを整理したい",
-    "曖昧な仕様を洗い出して受け入れ条件を決めたい",
     "改修の影響範囲と非機能要件を明確にしたい",
   ],
 };
@@ -503,7 +495,7 @@ export default function EntryFlow({
               id="goal"
               value={goal}
               onChange={(e) => setGoal(e.target.value)}
-              rows={3}
+              rows={1}
               aria-required="true"
               placeholder="ゴールを入力…"
               className="resize-y"
@@ -540,9 +532,8 @@ export default function EntryFlow({
               参考資料（任意）
             </span>
             <p className="text-[12px] leading-relaxed text-sanba-muted">
-              写真・スクリーンショット（PNG/JPG）、録画（MP4/MOV）、資料
-              （PDF・Word・Excel・PowerPoint・Markdown・HTML・CSV 等）を、事前に渡しておけます。
-              Google ドライブの Google ドキュメント・スプレッドシート・スライドも取り込めます。
+              PNG・JPG・MP4・MOV・PDF・Word・Excel・PowerPoint・Markdown・HTML・CSV 等。
+              Google ドライブのドキュメント・スプレッドシート・スライドも取り込めます。
             </p>
 
 
@@ -625,7 +616,7 @@ export default function EntryFlow({
                 className="mt-[3px] size-[16px] accent-sanba-gold"
               />
               <span>
-                録音と AI 処理に同意します（最大 {RETENTION_DAYS} 日保持）。
+                録音とAI処理に同意します（最大{RETENTION_DAYS}日保持）
                 <FieldBadge required />
               </span>
             </label>

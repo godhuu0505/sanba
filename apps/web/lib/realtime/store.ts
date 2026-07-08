@@ -4,8 +4,7 @@ import type {
   AnalysisVisualConflict,
   ContextProgressSource,
   ContextProgressStage,
-  CoveragePoint,
-  Detection,
+  InquiryNode,
   Question,
   Requirement,
   ServerEvent,
@@ -52,11 +51,10 @@ export interface SessionState {
   phase: SessionPhase;
   agentsActive: number;
   requirements: Requirement[];
-  detections: Detection[];
+  inquiryNodes: InquiryNode[];
   transcript: TranscriptLine[];
   analysis: AnalysisState[];
   contextProgress: ContextProgressState[];
-  coverage: CoveragePoint[];
   question: Question | null;
   endProposal: EndProposal | null;
   completed: SessionCompletion | null;
@@ -72,11 +70,10 @@ const EMPTY_STATE: SessionState = {
   phase: "idle",
   agentsActive: 0,
   requirements: [],
-  detections: [],
+  inquiryNodes: [],
   transcript: [],
   analysis: [],
   contextProgress: [],
-  coverage: [],
   question: null,
   endProposal: null,
   completed: null,
@@ -85,12 +82,10 @@ const EMPTY_STATE: SessionState = {
 
 export class RealtimeStore {
   private requirements = new Map<string, Versioned<Requirement>>();
-  private detections = new Map<string, Versioned<Detection>>();
+  private inquiryNodes = new Map<string, Versioned<InquiryNode>>();
   private transcript = new Map<string, Versioned<TranscriptLine>>();
   private analysis = new Map<string, Versioned<AnalysisState>>();
   private contextProgress = new Map<string, Versioned<ContextProgressState>>();
-  private coverage: CoveragePoint[] = [];
-  private lastCoverageSeq = 0;
   private phase: SessionPhase = "idle";
   private agentsActive = 0;
   private question: Question | null = null;
@@ -99,7 +94,7 @@ export class RealtimeStore {
   private completed: SessionCompletion | null = null;
 
   private requirementsHydrationSeq = 0;
-  private detectionsHydrationSeq = 0;
+  private inquiryHydrationSeq = 0;
   private maxSeq = 0;
   private lastStatusSeq = 0;
   private lastStatusLossySeq = 0;
@@ -179,19 +174,13 @@ export class RealtimeStore {
     if (changed) this.invalidate();
   }
 
-  hydrateDetections(items: Detection[], seq: number): void {
-    const freshIds = new Set(items.map((d) => d.id));
-    for (const d of items) {
-      const prev = this.detections.get(d.id);
+  hydrateInquiry(nodes: InquiryNode[], seq: number): void {
+    for (const n of nodes) {
+      const prev = this.inquiryNodes.get(n.id);
       if (prev && prev.seq > seq) continue;
-      this.detections.set(d.id, { seq, value: d });
+      this.inquiryNodes.set(n.id, { seq, value: n });
     }
-    for (const [key, entry] of this.detections.entries()) {
-      if (!entry.value.resolved && !freshIds.has(key) && entry.seq <= seq) {
-        this.detections.set(key, { seq, value: { ...entry.value, resolved: true } });
-      }
-    }
-    this.detectionsHydrationSeq = Math.max(this.detectionsHydrationSeq, seq);
+    this.inquiryHydrationSeq = Math.max(this.inquiryHydrationSeq, seq);
     this.maxSeq = Math.max(this.maxSeq, seq);
     this.invalidate();
   }
@@ -232,11 +221,8 @@ export class RealtimeStore {
     switch (type) {
       case "requirement.upserted":
         return this.requirementsHydrationSeq;
-      case "detection.contradiction":
-      case "detection.gap":
-      case "detection.ambiguous":
-      case "detection.resolved":
-        return this.detectionsHydrationSeq;
+      case "inquiry.node":
+        return this.inquiryHydrationSeq;
       default:
         return 0;
     }
@@ -277,104 +263,16 @@ export class RealtimeStore {
         return true;
       }
 
-      case "detection.contradiction": {
-        const existing = this.detections.get(event.id);
-        if (existing && existing.seq >= event.seq && existing.value.resolved) {
-          this.detections.set(event.id, {
-            seq: existing.seq,
-            value: {
-              ...existing.value,
-              kind: "contradiction",
-              summary: event.summary,
-              refs: event.refs,
-              options: event.options,
-              detector: event.detector,
-            },
-          });
-          return true;
-        }
-        return this.upsert(this.detections, event.id, event.seq, {
-          id: event.id,
-          kind: "contradiction",
-          summary: event.summary,
-          refs: event.refs,
-          options: event.options,
-          detector: event.detector,
-          resolved: false,
-        });
-      }
-
-      case "detection.gap": {
-        const existing = this.detections.get(event.id);
-        if (existing && existing.seq >= event.seq && existing.value.resolved) {
-          this.detections.set(event.id, {
-            seq: existing.seq,
-            value: {
-              ...existing.value,
-              kind: "gap",
-              summary: event.summary,
-              category: event.category,
-              refs: event.refs,
-              detector: event.detector,
-            },
-          });
-          return true;
-        }
-        return this.upsert(this.detections, event.id, event.seq, {
-          id: event.id,
-          kind: "gap",
-          summary: event.summary,
-          category: event.category,
-          refs: event.refs,
-          detector: event.detector,
-          resolved: false,
-        });
-      }
-
-      case "detection.ambiguous": {
-        const existing = this.detections.get(event.id);
-        if (existing && existing.seq >= event.seq && existing.value.resolved) {
-          this.detections.set(event.id, {
-            seq: existing.seq,
-            value: {
-              ...existing.value,
-              kind: "ambiguous",
-              summary: event.summary,
-              refs: event.refs,
-              detector: event.detector,
-            },
-          });
-          return true;
-        }
-        return this.upsert(this.detections, event.id, event.seq, {
-          id: event.id,
-          kind: "ambiguous",
-          summary: event.summary,
-          refs: event.refs,
-          detector: event.detector,
-          resolved: false,
-        });
-      }
-
-      case "detection.resolved": {
-        const prev = this.detections.get(event.detection_id);
-        if (!prev) {
-          return this.upsert(this.detections, event.detection_id, event.seq, {
-            id: event.detection_id,
-            kind: "contradiction",
-            summary: "",
-            refs: [],
-            detector: "",
-            resolved: true,
-            resolution: event.resolution,
-            selected_value: event.selected_value,
-          });
-        }
-        return this.upsert(this.detections, event.detection_id, event.seq, {
-          ...prev.value,
-          resolved: true,
-          resolution: event.resolution,
-          selected_value: event.selected_value ?? prev.value.selected_value,
+      case "inquiry.node": {
+        const status =
+          event.op === "resolve"
+            ? "resolved"
+            : event.op === "drop"
+              ? "dropped"
+              : event.node.status;
+        return this.upsert(this.inquiryNodes, event.node.id, event.seq, {
+          ...event.node,
+          status,
         });
       }
 
@@ -434,12 +332,6 @@ export class RealtimeStore {
           detail: event.detail ?? "",
         });
 
-      case "checkpoint.coverage":
-        if (event.seq <= this.lastCoverageSeq) return false;
-        this.lastCoverageSeq = event.seq;
-        this.coverage = event.points.map((p) => ({ label: p.label, covered: p.covered }));
-        return true;
-
       case "session.end_proposed":
         if (event.seq <= this.lastEndProposedSeq) return false;
         this.lastEndProposedSeq = event.seq;
@@ -480,11 +372,10 @@ export class RealtimeStore {
       phase: this.phase,
       agentsActive: this.agentsActive,
       requirements: this.sortedValues(this.requirements),
-      detections: this.sortedValues(this.detections),
+      inquiryNodes: this.sortedInquiry(),
       transcript: this.sortedTranscript(),
       analysis: this.sortedValues(this.analysis),
       contextProgress: this.sortedValues(this.contextProgress),
-      coverage: this.coverage,
       question: this.question,
       endProposal: this.endProposal,
       completed: this.completed,
@@ -494,6 +385,12 @@ export class RealtimeStore {
 
   private sortedValues<T>(map: Map<string, Versioned<T>>): T[] {
     return [...map.values()].sort((a, b) => a.seq - b.seq).map((v) => v.value);
+  }
+
+  private sortedInquiry(): InquiryNode[] {
+    return [...this.inquiryNodes.values()]
+      .map((v) => v.value)
+      .sort((a, b) => a.created_seq - b.created_seq);
   }
 
   private sortedTranscript(): TranscriptLine[] {
@@ -507,12 +404,10 @@ export class RealtimeStore {
 
   clear(): void {
     this.requirements.clear();
-    this.detections.clear();
+    this.inquiryNodes.clear();
     this.transcript.clear();
     this.analysis.clear();
     this.contextProgress.clear();
-    this.coverage = [];
-    this.lastCoverageSeq = 0;
     this.phase = "idle";
     this.agentsActive = 0;
     this.question = null;
@@ -520,7 +415,7 @@ export class RealtimeStore {
     this.lastEndProposedSeq = 0;
     this.completed = null;
     this.requirementsHydrationSeq = 0;
-    this.detectionsHydrationSeq = 0;
+    this.inquiryHydrationSeq = 0;
     this.maxSeq = 0;
     this.lastStatusSeq = 0;
     this.lastStatusLossySeq = 0;
