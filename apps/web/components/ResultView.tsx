@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { Check, ChevronRight, CircleDot, Cloud, FileText, type LucideIcon } from "lucide-react";
 
 import { Button, Figure } from "@/components/sanba";
@@ -48,8 +49,13 @@ export interface ResultViewProps {
   onRestart: () => void;
   onExportPdf?: () => void;
   onExportDrive?: () => void;
-  onExportIssue?: () => void;
+  onExportIssue?: (choice: ExportChoice) => void;
   issueExport?: IssueExportStatus;
+}
+
+export interface ExportChoice {
+  includeSummary: boolean;
+  includeMaterials: boolean;
 }
 
 export function ResultView({
@@ -68,11 +74,16 @@ export function ResultView({
 }: ResultViewProps) {
   const interviewMode = useInterviewMode();
   const endUser = interviewMode === "end_user";
+  const [includeSummary, setIncludeSummary] = useState(false);
+  const [includeMaterials, setIncludeMaterials] = useState(false);
   const artifactLinks = (artifacts ?? []).filter((a) => isSafeHttpUrl(a.url));
+  const issueHandler = onExportIssue
+    ? () => onExportIssue({ includeSummary, includeMaterials })
+    : undefined;
   const outputs: { label: string; icon: LucideIcon; handler?: () => void }[] = [
     { label: "PDF", icon: FileText, handler: onExportPdf },
     { label: "Drive", icon: Cloud, handler: onExportDrive },
-    { label: "Issue", icon: CircleDot, handler: onExportIssue },
+    { label: "Issue", icon: CircleDot, handler: issueHandler },
   ];
   const available = outputs.filter((o) => o.handler);
 
@@ -202,6 +213,27 @@ export function ResultView({
       {available.length > 0 && (
         <>
           <p className="mt-2 self-start text-[10.5px] font-bold text-sanba-muted">書き出す（任意）</p>
+          {onExportIssue && !endUser && (
+            <div className="mt-[6px] flex w-full flex-col gap-[6px] rounded-[11px] border border-sanba-border bg-sanba-surface px-3 py-[9px]">
+              <p className="text-[10.5px] font-bold text-sanba-muted">Issue 本文に含める（任意）</p>
+              <label className="flex items-center gap-2 text-[11.5px] text-sanba-ink">
+                <input
+                  type="checkbox"
+                  checked={includeSummary}
+                  onChange={(e) => setIncludeSummary(e.target.checked)}
+                />
+                会話の要約（発話全文は含めません）
+              </label>
+              <label className="flex items-center gap-2 text-[11.5px] text-sanba-ink">
+                <input
+                  type="checkbox"
+                  checked={includeMaterials}
+                  onChange={(e) => setIncludeMaterials(e.target.checked)}
+                />
+                参考資料のサマリ（ファイル名・解析観察・結果画面リンク）
+              </label>
+            </div>
+          )}
           <div className="mt-[6px] flex w-full gap-2">
             {available.map((o) => {
               const Icon = o.icon;

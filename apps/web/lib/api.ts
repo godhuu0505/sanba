@@ -373,13 +373,23 @@ export async function finalizeSession(
   return res.json();
 }
 
+export interface ExportOptions {
+  includeSummary?: boolean;
+  includeMaterials?: boolean;
+}
+
 export async function exportRequirements(
   sessionId: string,
   sessionToken: string | null,
+  options: ExportOptions = {},
 ): Promise<ExportResult> {
   const res = await fetch(`${API_URL}/api/sessions/${sessionId}/export`, {
     method: "POST",
     headers: authHeaders(sessionToken),
+    body: JSON.stringify({
+      include_summary: options.includeSummary ?? false,
+      include_materials: options.includeMaterials ?? false,
+    }),
   });
   if (!res.ok) throw new Error(`export failed: ${res.status}`);
   return res.json();

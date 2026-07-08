@@ -25,6 +25,7 @@ from sanba_shared.models import (
 from sanba_shared.output_formats import resolve_output_format
 from sanba_shared.repository import RequirementNotFound
 from sanba_shared.result_document import (
+    build_materials_block,
     issue_title,
     render_result_document,
     requirements_to_issue_labels,
@@ -77,7 +78,7 @@ from ..storage import (
     resolve_content_type,
 )
 from ..tasks import build_payload, enqueue_video_analysis
-from ..titles import generate_requirement_title
+from ..titles import generate_conversation_summary, generate_requirement_title
 from ..vision import analyze_image
 
 log = structlog.get_logger(__name__)
@@ -141,6 +142,13 @@ class ExportResponse(BaseModel):
     count: int | None = None
     doc_url: str | None = None
     reason: str | None = None
+
+
+class ExportRequest(BaseModel):
+    """GitHub Issue 起票の opt-in（P3・Q4）。いずれも既定 off。"""
+
+    include_summary: bool = False
+    include_materials: bool = False
 
 
 class FinalizeResponse(BaseModel):
@@ -991,6 +999,11 @@ def finalize_session_requirements(
     if generated_title:
         _repo.set_session_title(session_id, generated_title)
         log.info("session_title_generated", session=session_id, title=generated_title)
+    utterances = [u.model_dump(mode="json") for u in _repo.list_utterances(session_id)]
+    generated_summary = generate_conversation_summary(utterances)
+    if generated_summary:
+        _repo.set_session_summary(session_id, generated_summary)
+        log.info("session_summary_generated", session=session_id, chars=len(generated_summary))
     is_guest_session = existing.owner_email == ""
     for rid in confirmed_ids:
         try:
@@ -1014,9 +1027,29 @@ def finalize_session_requirements(
     return FinalizeResponse(finalized=True, confirmed_count=count)
 
 
+def _export_appendix(session: SessionMeta, opts: ExportRequest) -> str:
+    """起票本文末尾に付ける opt-in セクション（会話要約・参考資料 / P3・Q4）を組み立てる。
+
+    要約は確定時に生成・保存済みの `conversation_summary` を使う（起票のたびに LLM を
+    呼ばない）。参考資料は解析済み素材のファイル名＋観察サマリ＋結果画面リンク。
+    どちらも該当データが無ければその節を出さない。
+    """
+    sections: list[str] = []
+    if opts.include_summary and session.conversation_summary:
+        sections.append(f"## 会話の要約\n\n{session.conversation_summary.strip()}")
+    if opts.include_materials:
+        results_url = f"{settings.web_base_url.rstrip('/')}/results/{session.id}"
+        block = build_materials_block(_repo.list_materials(session.id), results_url)
+        if block:
+            sections.append(f"## 参考資料\n\n{block}")
+    return ("\n\n" + "\n\n".join(sections)) if sections else ""
+
+
 @router.post("/api/sessions/{session_id}/export", response_model=ExportResponse)
 def export_requirements(
-    session_id: str, access: SessionAccess = Depends(require_session_access)
+    session_id: str,
+    req: ExportRequest | None = None,
+    access: SessionAccess = Depends(require_session_access),
 ) -> ExportResponse:
     """確定要件を GitHub Issue として起票する（契約 §4 P1）。
 
@@ -1024,9 +1057,14 @@ def export_requirements(
     起票する。凍結の定義（旧データのフォールバック含む）は _finalized_snapshot_requirements
     に一元化し、過去要件閲覧と共有する。
 
+    リクエストボディの opt-in（既定 off / P3・Q4）で、本文末尾に会話の要約
+    （確定時に生成・保存済み）と参考資料のサマリ（ファイル名＋解析観察＋結果画面リンク）を
+    付す。既定 off なのは会話ログ由来の PII を無断で Issue に載せないため。
+
     ゲスト token（ADR-0032 決定4）は起票不可: 匿名の URL 保持者が owner の
     リポジトリへ Issue を作れてしまうため（connector 有効時）、コネクタ判定より前に拒む。
     """
+    opts = req or ExportRequest()
     forbid_guest_writes(access, "export")
     if not (settings.github_connector_enabled and settings.github_token):
         return ExportResponse(exported=False, reason="github connector disabled")
@@ -1055,6 +1093,7 @@ def export_requirements(
             else []
         ),
     )
+    body += _export_appendix(session, opts)
     url = github_export.create_issue(
         settings.github_token,
         export_repo,

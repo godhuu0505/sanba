@@ -321,6 +321,7 @@ class SessionMeta(BaseModel):
     finalized_requirement_ids: list[str] = Field(default_factory=list)
     labels: list[str] = Field(default_factory=list)
     exported_issue_url: str | None = None
+    conversation_summary: str | None = None
 
     product_id: str | None = None
     interview_mode: InviteScope = InviteScope.DEVELOPER

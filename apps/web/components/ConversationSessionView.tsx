@@ -15,7 +15,7 @@ import {
 import type { RealtimeMetricsSnapshot } from "@/lib/realtime/metrics";
 import type { SessionState } from "@/lib/realtime/store";
 import type { SendAnswer, SendSelection } from "@/lib/realtime/useRealtimeSession";
-import type { ExportResult } from "@/lib/api";
+import type { ExportOptions, ExportResult } from "@/lib/api";
 
 import { BottomBar } from "./BottomBar";
 import { ChatHistory } from "./ChatHistory";
@@ -42,7 +42,7 @@ export interface ConversationSessionViewProps {
   onToggleMic: () => void;
   onToggleMute: () => void;
   onSendText: (text: string) => void;
-  onExport: () => Promise<ExportResult>;
+  onExport: (options?: ExportOptions) => Promise<ExportResult>;
   onFinalize?: () => Promise<unknown>;
   onAddMaterial: () => void;
   extraMaterials?: MaterialItem[];
@@ -266,11 +266,11 @@ export function ConversationSessionView({
         issueExport={issueExport}
         onExportIssue={
           !readOnly && confirmed.length > 0
-            ? () => {
+            ? (choice) => {
                 if (exportingRef.current) return;
                 exportingRef.current = true;
                 setIssueExport({ status: "pending" });
-                void onExport()
+                void onExport(choice)
                   .then((r) =>
                     setIssueExport(
                       r.exported
