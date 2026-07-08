@@ -51,7 +51,11 @@ class GroundingStore:
         self._mem: list[_MemDoc] = []
         self._mem_lock = threading.Lock()
         if self._client is not None:
-            self._ensure_index()
+            try:
+                self._ensure_index()
+            except Exception as exc:  # pragma: no cover
+                log.warning("elasticsearch_unavailable_using_memory", error=str(exc))
+                self._client = None
 
     @property
     def is_memory(self) -> bool:

@@ -151,6 +151,12 @@ variable "otel_exporter_otlp_endpoint" {
   description = "OTLP/gRPC endpoint for traces (e.g. an OpenTelemetry Collector sidecar that forwards to Cloud Trace). Empty = tracing is skipped."
 }
 
+variable "alert_notification_channels" {
+  type        = list(string)
+  default     = []
+  description = "Monitoring アラートの通知先チャンネル ID（例: projects/<p>/notificationChannels/<id>）。空ならポリシーは作成するが通知はせず、Alerting コンソールと incident のみで可視化する。"
+}
+
 variable "terraform_deployer_sa" {
   type        = string
   default     = ""
