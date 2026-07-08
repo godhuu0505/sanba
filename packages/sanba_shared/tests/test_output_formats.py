@@ -125,3 +125,37 @@ def test_check_items_for_audience_filters_for_document() -> None:
         "全員向け",
         "企画者向け",
     ]
+
+
+def test_check_points_prefer_configured_items() -> None:
+    """管理者が設定した観点があればモード別デフォルトは出さない（ADR-0055）。"""
+    from sanba_shared.models import DEFAULT_CHECK_POINTS, InviteScope, check_points_for_scope
+
+    dev = check_points_for_scope(_tagged_items(), InviteScope.DEVELOPER)
+    assert dev == ["全員向け", "企画者向け", "開発者向け"]
+    assert dev != DEFAULT_CHECK_POINTS[InviteScope.DEVELOPER]
+
+
+def test_check_points_fall_back_to_mode_defaults_when_unconfigured() -> None:
+    """該当モードの設定が無ければモード別デフォルトを返す（ADR-0055）。"""
+    from sanba_shared.models import (
+        DEFAULT_CHECK_POINTS,
+        Audience,
+        InviteScope,
+        check_points_for_scope,
+    )
+
+    assert (
+        check_points_for_scope([], InviteScope.END_USER)
+        == DEFAULT_CHECK_POINTS[InviteScope.END_USER]
+    )
+    assert (
+        check_points_for_scope([], InviteScope.DEVELOPER)
+        == DEFAULT_CHECK_POINTS[InviteScope.DEVELOPER]
+    )
+
+    only_dev = [CheckItem(text="開発者向け", target=Audience.DEVELOPER)]
+    assert (
+        check_points_for_scope(only_dev, InviteScope.END_USER)
+        == DEFAULT_CHECK_POINTS[InviteScope.END_USER]
+    )

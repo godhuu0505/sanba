@@ -213,6 +213,37 @@ class InviteScope(StrEnum):
     END_USER = "end_user"
 
 
+DEFAULT_CHECK_POINTS: dict[InviteScope, list[str]] = {
+    InviteScope.END_USER: [
+        "どんな場面で使うか（ユースケース）",
+        "誰がどんなことに困っているか（ユーザーストーリー）",
+        "その困りごとが起きる規模・頻度",
+        "困りごとの深刻度・緊急度",
+        "現状の受け止め（満足度・温度感）",
+    ],
+    InviteScope.DEVELOPER: [
+        "性能・レスポンスの要件",
+        "セキュリティ・権限・データ保護",
+        "コスト・予算の制約",
+        "他機能・仕様との整合性と影響範囲",
+        "運用での回避策（ワークアラウンド）の有無",
+    ],
+}
+
+
+def check_points_for_scope(items: list[CheckItem], scope: InviteScope) -> list[str]:
+    """会話でシードする観点を返す（管理者設定を優先、無ければモード別デフォルト / ADR-0055）。
+
+    対象アプリの管理者が product に登録した確認項目（`check_items_for_scope` でモード絞り込み）を
+    優先し、そのモードに該当する設定が 1 件も無ければ `DEFAULT_CHECK_POINTS` のモード別デフォルトへ
+    フォールバックする。end_user は現場影響（ユースケース/規模/深刻度/温度感）、developer は技術面
+    （性能/セキュリティ/コスト/整合性/運用回避策）を既定の観点にする。呼び出し側は product が
+    あるときにだけ使う（product 不在の旧 1:1 セッション・文書不読はデフォルトを載せず素のまま）。
+    """
+    configured = check_items_for_scope(items, scope)
+    return configured or list(DEFAULT_CHECK_POINTS.get(scope, []))
+
+
 class ProductInvite(BaseModel):
     """product の深掘りリンク (`products/{id}/invites/{inviteId}`)。ADR-0031 決定3。
 

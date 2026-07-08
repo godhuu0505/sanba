@@ -237,13 +237,16 @@ flowchart TD
     ROOT -->|tool| WRITER["要件ライター<br/>Firestore / GitHub Issue"]
 
     subgraph fallback["ADK 不在時のフォールバック (creds 無し / テスト)"]
-        H1["heuristic_open_topics<br/>(NFR 抜けの定型検知)"]
         H2["heuristic_ambiguous_topics<br/>(曖昧表現の検知)"]
     end
     VA -.-> fallback
+    CP["check_points_for_scope<br/>(モード別観点: 管理者設定 or デフォルト)"]
+    CP -.->|instruction seed| VA
 ```
 
 > 実装の堅牢性: `analyze_transcript()` は ADK ランタイム/creds が無ければ**ヒューリスティック結果に必ずフォールバック**し、ローカル・CI が鍵なしで動く。
+>
+> 観点のカバレッジ: 会話で必ず確認する観点は、ハードコードの NFR gap 検知ではなく **モード別の check-points**（product 管理者設定、未設定ならモード別デフォルト）を instruction にシードして担う（ADR-0055）。
 
 ---
 
