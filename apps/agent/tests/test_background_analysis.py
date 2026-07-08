@@ -82,6 +82,59 @@ def _agent(transport: RecordingTransport | None = None) -> SANBAAgent:
     return SANBAAgent("s1", repo, GroundingStore(), publisher=publisher)
 
 
+def _agent_mode(mode: str, transport: RecordingTransport | None = None) -> SANBAAgent:
+    from sanba_shared.models import InviteScope
+
+    repo = SessionRepository()
+    repo.create_session_doc(
+        SessionMeta(
+            id="sm",
+            title="t",
+            owner_sub="owner",
+            owner_email="",
+            interview_mode=InviteScope(mode),
+        )
+    )
+    publisher = EventPublisher("sm", transport) if transport is not None else None
+    return SANBAAgent("sm", repo, GroundingStore(), publisher=publisher)
+
+
+@pytest.mark.asyncio
+async def test_end_user_mode_suppresses_nfr_gap_detections() -> None:
+    """end_user では開発者向け NFR gap を検知にしない（#434 タスク1・ADR-0055）。"""
+    transport = RecordingTransport()
+    agent = _agent_mode("end_user", transport)
+    result = AnalysisResult(
+        summary="s",
+        open_topics=["性能・レイテンシの要件", "可用性・SLO"],
+        ambiguous_topics=["いい感じにしたい"],
+        next_question="q?",
+        suggested_answer="a",
+    )
+    await agent._publish_analysis_detections(result)
+    types = [t["event"]["type"] for t in transport.sent]
+    assert "detection.gap" not in types, "NFR gap は end_user では出さない"
+    assert "detection.ambiguous" in types, "会話由来の曖昧語は end_user でも出す"
+    assert agent._open_detection_count() == 1, "open は ambiguous の1件のみ（gap は0）"
+
+
+@pytest.mark.asyncio
+async def test_developer_mode_still_publishes_nfr_gap_detections() -> None:
+    """developer モードの gap 検知は不変（回帰）。"""
+    transport = RecordingTransport()
+    agent = _agent_mode("developer", transport)
+    result = AnalysisResult(
+        summary="s",
+        open_topics=["性能・レイテンシの要件", "可用性・SLO"],
+        next_question="q?",
+        suggested_answer="a",
+    )
+    await agent._publish_analysis_detections(result)
+    types = [t["event"]["type"] for t in transport.sent]
+    assert types.count("detection.gap") == 2
+    assert agent._open_detection_count() == 2
+
+
 def _stub_analysis(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     """analyze_transcript を高速スタブに差し替え、呼び出し transcript を記録する。"""
     calls: list[str] = []

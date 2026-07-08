@@ -750,9 +750,20 @@ class SANBAAgent(Agent):
 
         呼び出し側（_run_analysis）が _analysis_lock で直列化している前提。status は
         触らない（背景実行は不可視・deliberating/listening はツール経路だけが出す）。
+
+        end_user モードでは gap（open_topics）を検知として出さない（ADR-0055 / #434 タスク1）:
+        gap は開発者向け NFR チェックリスト（heuristic_open_topics の固定5論点）由来で、
+        使用感インタビューの会話には該当キーワードが出ず常に全件 open のまま残る。これが
+        「未解消 N」を恒久的に非0にし、propose_session_end を永久ブロックしていた。ambiguous
+        （会話中の曖昧語）は使用感インタビューでも有意なので残す。
         """
         if self._publisher is not None:
-            current = {make_requirement_id(f"gap:{t}"): t for t in result.open_topics}
+            gate_gaps = self._interview_mode is not InviteScope.END_USER
+            current = (
+                {make_requirement_id(f"gap:{t}"): t for t in result.open_topics}
+                if gate_gaps
+                else {}
+            )
             for gap_id, topic in current.items():
                 if gap_id in self._published_gaps:
                     continue
