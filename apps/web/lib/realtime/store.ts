@@ -2,6 +2,8 @@
 import { RealtimeMetrics } from "./metrics";
 import type {
   AnalysisVisualConflict,
+  ContextProgressSource,
+  ContextProgressStage,
   Detection,
   Question,
   Requirement,
@@ -15,6 +17,13 @@ export interface AnalysisState {
   stage: string;
   extracted: string[];
   conflicts: AnalysisVisualConflict[];
+}
+
+export interface ContextProgressState {
+  source: ContextProgressSource;
+  stage: ContextProgressStage;
+  label: string;
+  detail: string;
 }
 
 export interface TranscriptLine {
@@ -39,6 +48,7 @@ export interface SessionState {
   detections: Detection[];
   transcript: TranscriptLine[];
   analysis: AnalysisState[];
+  contextProgress: ContextProgressState[];
   question: Question | null;
   completed: SessionCompletion | null;
   seq: number;
@@ -56,6 +66,7 @@ const EMPTY_STATE: SessionState = {
   detections: [],
   transcript: [],
   analysis: [],
+  contextProgress: [],
   question: null,
   completed: null,
   seq: 0,
@@ -66,6 +77,7 @@ export class RealtimeStore {
   private detections = new Map<string, Versioned<Detection>>();
   private transcript = new Map<string, Versioned<TranscriptLine>>();
   private analysis = new Map<string, Versioned<AnalysisState>>();
+  private contextProgress = new Map<string, Versioned<ContextProgressState>>();
   private phase: SessionPhase = "idle";
   private agentsActive = 0;
   private question: Question | null = null;
@@ -399,6 +411,14 @@ export class RealtimeStore {
         });
       }
 
+      case "context.progress":
+        return this.upsert(this.contextProgress, event.source, event.seq, {
+          source: event.source,
+          stage: event.stage,
+          label: event.label ?? "",
+          detail: event.detail ?? "",
+        });
+
       case "session.completed":
         if (event.seq <= this.lastCompletedSeq) return false;
         this.lastCompletedSeq = event.seq;
@@ -432,6 +452,7 @@ export class RealtimeStore {
       detections: this.sortedValues(this.detections),
       transcript: this.sortedTranscript(),
       analysis: this.sortedValues(this.analysis),
+      contextProgress: this.sortedValues(this.contextProgress),
       question: this.question,
       completed: this.completed,
       seq: this.maxSeq,
@@ -456,6 +477,7 @@ export class RealtimeStore {
     this.detections.clear();
     this.transcript.clear();
     this.analysis.clear();
+    this.contextProgress.clear();
     this.phase = "idle";
     this.agentsActive = 0;
     this.question = null;

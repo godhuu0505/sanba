@@ -49,6 +49,7 @@ const baseState = (over: Partial<SessionState> = {}): SessionState => ({
     { utterance_id: "u1", speaker: "顧客", role: "customer", text: "検索は関連度順で。", final: true },
   ],
   analysis: [{ asset_id: "a1", pct: 40, stage: "OCR", extracted: [], conflicts: [] }],
+  contextProgress: [],
   question: null,
   completed: null,
   seq: 9,
@@ -88,7 +89,7 @@ describe("ConversationSessionView（会話シェル結線）", () => {
     expect(screen.getByRole("button", { name: /要件 1/ })).toBeTruthy();
     expect(screen.getByRole("button", { name: /未確定 2/ })).toBeTruthy();
     expect(screen.getByRole("button", { name: /資料 1/ })).toBeTruthy();
-    expect(screen.getByText(/解析中/)).toBeTruthy();
+    expect(screen.getAllByText(/解析中/).length).toBeGreaterThan(0);
   });
 
   it("既定の会話履歴タブに transcript の吹き出しを出す", () => {

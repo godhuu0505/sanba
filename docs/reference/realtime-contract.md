@@ -61,6 +61,7 @@ web 側の適用規則: **`(type, id)` で冪等**（同じ要件/検知は upse
 | `question.cleared` | 04 | `question_id`（クリア対象 `question.asked` の `id`）（#212 / ADR-0020）。回答（タップ/音声/テキスト）で現在質問が解消されたことを全参加者へ伝播し、重複回答を防ぐ。`cleared_seq` は本イベントの **envelope `seq` そのもの**。web は `question_id === current?.id` かつ `seq > lastQuestionSeq` のときだけピンを畳む。`question.asked` と対称に seq 境界（`last_seq`）は進めない |
 | `analysis.progress` | 07 | `asset_id`, `pct`(0–100), `stage`（人間可読ラベル）。アップロード素材の解析は **API（サーバ identity）が直接 publish**（#145 / ADR-0023）。実体に正直な粗ステージ `received`(10)→`analyzing`(50)→`done`(100)/`failed` を出し、フェイクの中間 pct は作らない。会話中の画面共有由来は従来どおり agent が送る |
 | `analysis.visual` | 08 | `asset_id`, `extracted`:[string...], `conflicts`:[{`summary`,`refs`}]。アップロード解析の完了は API が publish（#145）。`conflicts`（言葉×画の矛盾 / ADR-0004）は突合実装まで空配列可 |
+| `context.progress` | 04 | `source`(`prep`\|`repo`), `stage`(`running`\|`done`\|`reused`\|`partial`\|`failed`), `label?`, `detail?`（P1-a）。会話開始時の前提読み込み（ゴール/ゴール詳細=prep・ソースコード索引=repo）の状態を **agent が publish** し、会話履歴のシステム吹き出しへ写像する。素材の進捗は `analysis.progress` が担うので重複させない。実体に正直な段階のみ（`reused`=既存索引利用・進捗バーなし / `running`=索引中）。end_user モードでは repo は送らない（private repo 情報を利用者会話に出さない多層防御） |
 | `session.completed` | 09/10 | `summary`:{`contradictions_resolved`,`gaps_found`,`issues_created`}, `artifacts`:[{`kind`,`url`}] |
 
 > エージェント識別子（`detector` / `source_speaker`）は **機能名**で送る。UI 上の色（緋=矛盾/黄土=抜け）は

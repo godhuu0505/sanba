@@ -162,6 +162,37 @@ describe("decodeServerEvent ペイロードの enum/配列/範囲 検証 (#120)"
     ).toBe("ok");
   });
 
+  it("context.progress は source/stage が妥当なら ok（P1-a）", () => {
+    const { reason, event } = decodeServerEvent(
+      bytes({
+        ...env,
+        type: "context.progress",
+        source: "repo",
+        stage: "reused",
+        label: "octo/app@main",
+        detail: "索引済みを利用",
+      }),
+    );
+    expect(reason).toBe("ok");
+    expect(event?.type).toBe("context.progress");
+  });
+
+  it("context.progress の source が列挙外なら bad-payload", () => {
+    expect(
+      decodeServerEvent(
+        bytes({ ...env, type: "context.progress", source: "video", stage: "done" }),
+      ).reason,
+    ).toBe("bad-payload");
+  });
+
+  it("context.progress の stage が列挙外なら bad-payload", () => {
+    expect(
+      decodeServerEvent(
+        bytes({ ...env, type: "context.progress", source: "prep", stage: "ocr" }),
+      ).reason,
+    ).toBe("bad-payload");
+  });
+
   it("detection.ambiguous は refs 配列が妥当なら ok (#182)", () => {
     const { reason, event } = decodeServerEvent(
       bytes({ ...env, type: "detection.ambiguous", id: "a1", summary: "曖昧", refs: ["u1"], detector: "x" }),

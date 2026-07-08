@@ -70,7 +70,7 @@ def _seed_session(
 def test_developer_session_keeps_grill_me_with_repo_premise() -> None:
     repo = _repo()
     _seed_session(repo, mode=InviteScope.DEVELOPER, github_repo="octo/demo")
-    instructions, mode, allow_repo, _ = build_agent_instructions(repo, "s1")
+    instructions, mode, allow_repo, *_ = build_agent_instructions(repo, "s1")
     assert mode is InviteScope.DEVELOPER
     assert instructions.startswith(VOICE_AGENT_INSTRUCTIONS)
     assert "前提リポジトリ" in instructions
@@ -88,7 +88,7 @@ def test_end_user_session_switches_persona_and_seeds_glossary() -> None:
         )
     )
     _seed_session(repo, mode=InviteScope.END_USER, product_id="prod-1")
-    instructions, mode, allow_repo, _ = build_agent_instructions(repo, "s1")
+    instructions, mode, allow_repo, *_ = build_agent_instructions(repo, "s1")
     assert mode is InviteScope.END_USER
     assert instructions.startswith(END_USER_VOICE_AGENT_INSTRUCTIONS)
     assert "請求アプリ" in instructions
@@ -102,7 +102,7 @@ def test_end_user_session_never_seeds_repo_premise() -> None:
     repo = _repo()
     repo.create_product(Product(id="prod-1", name="請求アプリ", owner_sub="owner"))
     _seed_session(repo, mode=InviteScope.END_USER, product_id="prod-1", github_repo="octo/secret")
-    instructions, _, allow_repo, _ = build_agent_instructions(repo, "s1")
+    instructions, _, allow_repo, *_ = build_agent_instructions(repo, "s1")
     assert "octo/secret" not in instructions
     assert "前提リポジトリ" not in instructions
     assert "search_grounding で `octo" not in instructions
@@ -113,13 +113,13 @@ def test_end_user_session_survives_missing_product() -> None:
     """product 削除済み / product_id なしでも end_user ペルソナで会話は成立する。"""
     repo = _repo()
     _seed_session(repo, mode=InviteScope.END_USER, product_id="prod-gone")
-    instructions, mode, allow_repo, _ = build_agent_instructions(repo, "s1")
+    instructions, mode, allow_repo, *_ = build_agent_instructions(repo, "s1")
     assert mode is InviteScope.END_USER
     assert instructions == END_USER_VOICE_AGENT_INSTRUCTIONS + _LANG
 
     repo2 = _repo()
     _seed_session(repo2, mode=InviteScope.END_USER, product_id=None)
-    instructions2, _, _, _ = build_agent_instructions(repo2, "s1")
+    instructions2, _, _, *_ = build_agent_instructions(repo2, "s1")
     assert instructions2 == END_USER_VOICE_AGENT_INSTRUCTIONS + _LANG
 
 
@@ -135,7 +135,7 @@ def test_check_items_seeded_for_developer_session() -> None:
         )
     )
     _seed_session(repo, mode=InviteScope.DEVELOPER, product_id="prod-1")
-    instructions, _, _, _ = build_agent_instructions(repo, "s1")
+    instructions, _, _, *_ = build_agent_instructions(repo, "s1")
     assert "このセッションで必ず確認する項目" in instructions
     assert "- ログイン方式を確認する" in instructions
     assert "- 課金の有無を確認する" in instructions
@@ -154,7 +154,7 @@ def test_check_items_seeded_for_end_user_session_with_translation_rule() -> None
         )
     )
     _seed_session(repo, mode=InviteScope.END_USER, product_id="prod-1")
-    instructions, _, _, _ = build_agent_instructions(repo, "s1")
+    instructions, _, _, *_ = build_agent_instructions(repo, "s1")
     assert "- 検索機能の使い勝手" in instructions
     assert "言い換えて確認する" in instructions
 
@@ -186,7 +186,7 @@ def test_check_items_target_filters_by_interview_mode() -> None:
 
     repo = _seed_repo()
     _seed_session(repo, mode=InviteScope.END_USER, product_id="prod-1")
-    instructions, _, _, _ = build_agent_instructions(repo, "s1")
+    instructions, _, _, *_ = build_agent_instructions(repo, "s1")
     assert "全員向け項目" in instructions
     assert "利用者向け項目" in instructions
     assert "企画者向け項目" not in instructions
@@ -194,7 +194,7 @@ def test_check_items_target_filters_by_interview_mode() -> None:
 
     repo2 = _seed_repo()
     _seed_session(repo2, mode=InviteScope.DEVELOPER, product_id="prod-1")
-    instructions2, _, _, _ = build_agent_instructions(repo2, "s1")
+    instructions2, _, _, *_ = build_agent_instructions(repo2, "s1")
     assert "全員向け項目" in instructions2
     assert "企画者向け項目" in instructions2
     assert "開発者向け項目" in instructions2
@@ -206,14 +206,14 @@ def test_no_check_items_leaves_instructions_unchanged() -> None:
     repo = _repo()
     repo.create_product(Product(id="prod-1", name="請求アプリ", owner_sub="owner"))
     _seed_session(repo, mode=InviteScope.DEVELOPER, product_id="prod-1")
-    instructions, _, _, _ = build_agent_instructions(repo, "s1")
+    instructions, _, _, *_ = build_agent_instructions(repo, "s1")
     assert "必ず確認する項目" not in instructions
 
 
 def test_missing_session_falls_back_to_developer() -> None:
     """セッション文書が読めないときは既定 developer（既存挙動の安全側）。"""
     repo = _repo()
-    instructions, mode, allow_repo, _ = build_agent_instructions(repo, "s-none")
+    instructions, mode, allow_repo, *_ = build_agent_instructions(repo, "s-none")
     assert mode is InviteScope.DEVELOPER
     assert instructions == VOICE_AGENT_INSTRUCTIONS + _LANG
 
@@ -232,7 +232,7 @@ def test_unreadable_session_fails_closed_for_repo_grounding() -> None:
         raise RuntimeError("firestore down")
 
     repo.get_session = _boom  # type: ignore[method-assign]
-    instructions, mode, allow_repo, _ = build_agent_instructions(repo, "s1")
+    instructions, mode, allow_repo, *_ = build_agent_instructions(repo, "s1")
     assert mode is InviteScope.DEVELOPER
     assert instructions == VOICE_AGENT_INSTRUCTIONS + _LANG
     assert "octo/secret" not in instructions

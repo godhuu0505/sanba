@@ -134,6 +134,15 @@ def _session_product(repo: SessionRepository, meta: SessionMeta | None) -> Produ
     return product
 
 
+class ContextSignal(NamedTuple):
+    """会話開始時に会話履歴へ出す前提読み込みバブル 1 件（``context.progress`` の元 / P1-a）。"""
+
+    source: str
+    stage: str
+    label: str
+    detail: str
+
+
 class AgentSetup(NamedTuple):
     """build_agent_instructions の結果（初期 instructions と付随フラグの束）。"""
 
@@ -141,6 +150,36 @@ class AgentSetup(NamedTuple):
     mode: InviteScope
     allow_repo_grounding: bool
     prep_note: str
+    context_signals: tuple[ContextSignal, ...] = ()
+
+
+def _context_signals(
+    meta: SessionMeta | None, mode: InviteScope, confirmed: bool
+) -> tuple[ContextSignal, ...]:
+    """会話開始時に「読み込み済み/索引中」を会話履歴へ出すためのシグナルを組み立てる（P1-a）。
+
+    実体に正直な段階のみ（ADR-0023 §1）: prep は同期シードなので done、repo は索引状態を
+    そのまま写す（ready/partial=reused, indexing/pending=running, failed=failed, none=出さない）。
+    repo は end_user モードでは出さない（private repo 情報を利用者会話に出さない多層防御・
+    build_agent_instructions の allow_repo_grounding と揃える）。
+    """
+    signals: list[ContextSignal] = []
+    if meta is not None and (meta.goal or meta.goal_detail):
+        detail = "ゴールとゴール詳細を確認" if meta.goal_detail else "ゴールを確認"
+        signals.append(ContextSignal("prep", "done", "ゴールとゴール詳細", detail))
+    if confirmed and mode is not InviteScope.DEVELOPER:
+        return tuple(signals)
+    if meta is not None and meta.github_repo and confirmed:
+        branch = meta.github_branch or "default"
+        label = f"{meta.github_repo}@{branch}"
+        status = meta.github_index_status
+        if status in (GitHubIndexStatus.READY, GitHubIndexStatus.PARTIAL):
+            signals.append(ContextSignal("repo", "reused", label, "索引済みを利用"))
+        elif status in (GitHubIndexStatus.INDEXING, GitHubIndexStatus.PENDING):
+            signals.append(ContextSignal("repo", "running", label, "ソースコードを読み込み中"))
+        elif status is GitHubIndexStatus.FAILED:
+            signals.append(ContextSignal("repo", "failed", label, "索引に失敗しました"))
+    return tuple(signals)
 
 
 def build_agent_instructions(repo: SessionRepository, session_id: str) -> AgentSetup:
@@ -197,6 +236,7 @@ def build_agent_instructions(repo: SessionRepository, session_id: str) -> AgentS
         )
         allow_repo_grounding = confirmed and meta is not None
     instructions += build_language_directive(settings.gemini_language)
+    signals = _context_signals(meta, mode, confirmed)
     log.info(
         "agent_instructions_built",
         session=session_id,
@@ -205,9 +245,10 @@ def build_agent_instructions(repo: SessionRepository, session_id: str) -> AgentS
         allow_repo_grounding=allow_repo_grounding,
         has_prep_context=bool(prep_note),
         check_items_count=len(seeded_check_items),
+        context_signals=len(signals),
         chars=len(instructions),
     )
-    return AgentSetup(instructions, mode, allow_repo_grounding, prep_note)
+    return AgentSetup(instructions, mode, allow_repo_grounding, prep_note, signals)
 
 
 def opening_instructions(mode: InviteScope, has_prep_context: bool = False) -> str:
@@ -296,6 +337,7 @@ class SANBAAgent(Agent):
         self._interview_mode = setup.mode
         self._allow_repo_grounding = setup.allow_repo_grounding
         self._prep_note = setup.prep_note
+        self._context_signals = setup.context_signals
         self._session_id = session_id
         self._repo = repo
         self._grounding = grounding
@@ -360,6 +402,22 @@ class SANBAAgent(Agent):
             return False
         self._injected_assets.add(asset_id)
         return True
+
+    async def emit_context_progress(self) -> None:
+        """会話開始時に前提読み込み（prep/repo）の状態を会話履歴へ 1 回だけ流す（P1-a）。
+
+        build_agent_instructions が読んだ meta から算出したシグナルを ``context.progress``
+        として publish する。音声は止めない・フェイク進捗は出さない（ADR-0023 §1）。
+        publish は seq を消費するので、送信後に session_seq を保存して再起動後の単調性を保つ。
+        """
+        if self._publisher is None or not self._context_signals:
+            return
+        for sig in self._context_signals:
+            with contextlib.suppress(Exception):
+                await self._publisher.context_progress(
+                    sig.source, sig.stage, label=sig.label, detail=sig.detail
+                )
+        self._repo.set_session_seq(self._session_id, self._publisher.seq)
 
     @property
     def current_question_id(self) -> str | None:
@@ -1773,6 +1831,7 @@ async def entrypoint(ctx: JobContext) -> None:
     session = await _start_session()
     ctx.room.on("data_received", _on_data)
     await publisher.status("listening")
+    await agent.emit_context_progress()
 
     await open_interview(
         session,

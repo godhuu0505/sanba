@@ -217,6 +217,28 @@ class EventPublisher:
             payload["agents_active"] = agents_active
         return await self._emit("status", payload, reliable=False)
 
+    async def context_progress(
+        self,
+        source: str,
+        stage: str,
+        *,
+        label: str = "",
+        detail: str = "",
+    ) -> dict[str, Any]:
+        """会話開始時の前提読み込み（prep / repo）の状態を ``context.progress`` で通知する。
+
+        素材（アップロード）の進捗は ``analysis.progress`` が担うので重複させない。
+        ``stage`` は実体に正直な段階のみ（running / done / reused / partial / failed）で、
+        中間 pct は捏造しない（ADR-0023 §1 の規律を prep/repo にも適用）。reliable で送る
+        （数件の離散イベント）。web は会話履歴のシステムバブルと参考資料タブへ写像する。
+        """
+        payload: dict[str, Any] = {"source": source, "stage": stage}
+        if label:
+            payload["label"] = label
+        if detail:
+            payload["detail"] = detail
+        return await self._emit("context.progress", payload, reliable=True)
+
     async def transcript_partial(
         self, speaker: str, role: str, utterance_id: str, text: str
     ) -> dict[str, Any]:

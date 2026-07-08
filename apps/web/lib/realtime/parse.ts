@@ -25,6 +25,7 @@ const KNOWN_TYPES: ReadonlySet<string> = new Set<ServerEventType>([
   "question.cleared",
   "analysis.progress",
   "analysis.visual",
+  "context.progress",
   "session.completed",
 ]);
 
@@ -52,6 +53,7 @@ const REQUIRED_FIELDS: Record<ServerEventType, readonly string[]> = {
   "question.cleared": ["question_id"],
   "analysis.progress": ["asset_id", "pct", "stage"],
   "analysis.visual": ["asset_id", "extracted", "conflicts"],
+  "context.progress": ["source", "stage"],
   "session.completed": ["summary", "artifacts"],
 };
 
@@ -85,6 +87,13 @@ const CATEGORIES: ReadonlySet<string> = new Set<RequirementCategory>([
   "open_question",
 ]);
 const REQ_STATUSES: ReadonlySet<string> = new Set<RequirementStatus>(["draft", "confirmed"]);
+const CONTEXT_STAGES: ReadonlySet<string> = new Set<string>([
+  "running",
+  "done",
+  "reused",
+  "partial",
+  "failed",
+]);
 
 function isStringArray(v: unknown): boolean {
   return Array.isArray(v) && v.every((x) => typeof x === "string");
@@ -106,6 +115,11 @@ function validatePayload(type: ServerEventType, obj: Record<string, unknown>): b
       return isStringArray(obj.refs);
     case "analysis.progress":
       return isNumberInRange(obj.pct, 0, 100);
+    case "context.progress":
+      return (
+        (obj.source === "prep" || obj.source === "repo") &&
+        CONTEXT_STAGES.has(obj.stage as string)
+      );
     case "analysis.visual":
       return Array.isArray(obj.extracted) && Array.isArray(obj.conflicts);
     case "session.completed": {
