@@ -32,9 +32,18 @@ vi.mock("@/lib/api", () => ({
     }
   },
   fetchMySessionRequirements: vi.fn(),
+  fetchMySessionResultDocument: vi.fn(),
+  fetchMyExportEligibility: vi.fn(),
+  exportMyRequirements: vi.fn(),
 }));
 
-import { ApiError, fetchMySessionRequirements, type MySessionRequirements } from "@/lib/api";
+import {
+  ApiError,
+  exportMyRequirements,
+  fetchMyExportEligibility,
+  fetchMySessionRequirements,
+  type MySessionRequirements,
+} from "@/lib/api";
 import PastRequirementsPage from "./page";
 
 const SCROLL: MySessionRequirements = {
@@ -75,6 +84,10 @@ describe("過去要件の絵巻閲覧画面（/results/[id]）", () => {
     push.mockClear();
     authState.signOut.mockClear();
     vi.mocked(fetchMySessionRequirements).mockReset().mockResolvedValue(SCROLL);
+    vi.mocked(fetchMyExportEligibility)
+      .mockReset()
+      .mockResolvedValue({ can_export: false, reason: "github not linked" });
+    vi.mocked(exportMyRequirements).mockReset();
   });
   afterEach(() => cleanup());
 
@@ -133,5 +146,40 @@ describe("過去要件の絵巻閲覧画面（/results/[id]）", () => {
     await waitFor(() => expect(screen.getByText("新機能要件定義")).toBeTruthy());
     fireEvent.click(screen.getByRole("button", { name: "戻る" }));
     expect(push).toHaveBeenCalledWith("/results");
+  });
+
+  it("repo 権限が無いと Issue 作成ボタンを無効化し手動起票を案内する（ADR-0053）", async () => {
+    vi.mocked(fetchMyExportEligibility).mockResolvedValue({
+      can_export: false,
+      reason: "no repo access",
+    });
+    render(<PastRequirementsPage />);
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Issue を作成" })).toBeTruthy(),
+    );
+    const btn = screen.getByRole("button", { name: "Issue を作成" });
+    expect((btn as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText(/対象リポジトリへの権限がありません/)).toBeTruthy();
+    expect(screen.getByText(/Markdown をコピー/)).toBeTruthy();
+  });
+
+  it("権限があれば Issue 作成ボタンが活性で、押下で起票し結果リンクを出す（ADR-0053）", async () => {
+    vi.mocked(fetchMyExportEligibility).mockResolvedValue({ can_export: true, repo: "o/r" });
+    vi.mocked(exportMyRequirements).mockResolvedValue({
+      exported: true,
+      issue_url: "https://github.com/o/r/issues/1",
+      count: 2,
+    });
+    render(<PastRequirementsPage />);
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Issue を作成" })).toBeTruthy(),
+    );
+    const btn = screen.getByRole("button", { name: "Issue を作成" });
+    expect((btn as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(btn);
+    await waitFor(() =>
+      expect(screen.getByRole("link", { name: /起票した Issue を開く/ })).toBeTruthy(),
+    );
+    expect(vi.mocked(exportMyRequirements)).toHaveBeenCalledWith("sess-1", "id-token");
   });
 });

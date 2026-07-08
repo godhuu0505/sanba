@@ -385,6 +385,23 @@ export async function exportRequirements(
   return res.json();
 }
 
+export interface ExportEligibility {
+  can_export: boolean;
+  reason?: string;
+  repo?: string | null;
+}
+
+export async function fetchExportEligibility(
+  sessionId: string,
+  sessionToken: string | null,
+): Promise<ExportEligibility> {
+  const res = await fetch(`${API_URL}/api/sessions/${sessionId}/export/eligibility`, {
+    headers: authHeaders(sessionToken),
+  });
+  if (!res.ok) throw new Error(`export eligibility failed: ${res.status}`);
+  return res.json();
+}
+
 
 export interface MySession {
   id: string;
@@ -458,6 +475,30 @@ export async function fetchMySessionResultDocument(
     { headers: authHeaders(idToken) },
   );
   if (!res.ok) throw new ApiError(res.status, `fetch result document failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchMyExportEligibility(
+  sessionId: string,
+  idToken: string | null,
+): Promise<ExportEligibility> {
+  const res = await fetch(
+    `${API_URL}/api/sessions/mine/${encodeURIComponent(sessionId)}/export/eligibility`,
+    { headers: authHeaders(idToken) },
+  );
+  if (!res.ok) throw new ApiError(res.status, `export eligibility failed: ${res.status}`);
+  return res.json();
+}
+
+export async function exportMyRequirements(
+  sessionId: string,
+  idToken: string | null,
+): Promise<ExportResult> {
+  const res = await fetch(
+    `${API_URL}/api/sessions/mine/${encodeURIComponent(sessionId)}/export`,
+    { method: "POST", headers: authHeaders(idToken) },
+  );
+  if (!res.ok) throw new ApiError(res.status, `export failed: ${res.status}`);
   return res.json();
 }
 

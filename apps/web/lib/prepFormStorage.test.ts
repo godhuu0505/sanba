@@ -12,18 +12,16 @@ describe("prepFormStorage（02 準備フォームの一時保存 / #179）", () 
     expect(readPrep()).toEqual({});
   });
 
-  it("書いた値を読み戻せる（goal/role/consent/githubRepo）", () => {
+  it("書いた値を読み戻せる（goal/role/consent）", () => {
     writePrep({
       role: "engineer",
       goal: "検索改善の要件",
       consent: true,
-      githubRepo: "acme/product-a",
     });
     expect(readPrep()).toEqual({
       role: "engineer",
       goal: "検索改善の要件",
       consent: true,
-      githubRepo: "acme/product-a",
     });
   });
 
