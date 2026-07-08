@@ -1098,6 +1098,7 @@ def _perform_export(
     client = _github_app_client()
     link = _repo.get_github_link(actor_sub)
     if client is None or link is None:
+        log.warning("export_link_missing", session=session.id, repo=export_repo, sub=actor_sub)
         return ExportResponse(exported=False, reason="github not linked")
     confirmed = _finalized_snapshot_requirements(session)
     product = _repo.get_product(session.product_id) if session.product_id else None
@@ -1129,6 +1130,14 @@ def _perform_export(
         with contextlib.suppress(Exception):
             client.close()
     if url is None:
+        log.warning(
+            "export_issue_create_failed",
+            session=session.id,
+            repo=export_repo,
+            exporter=link.github_login,
+            count=len(confirmed),
+            sub=actor_sub,
+        )
         return ExportResponse(exported=False, reason="issue creation failed")
     _repo.set_exported_issue_url(session.id, url)
     log.info(

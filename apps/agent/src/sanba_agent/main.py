@@ -151,6 +151,7 @@ class AgentSetup(NamedTuple):
     allow_repo_grounding: bool
     prep_note: str
     context_signals: tuple[ContextSignal, ...] = ()
+    product_id: str | None = None
 
 
 def _context_signals(
@@ -248,7 +249,8 @@ def build_agent_instructions(repo: SessionRepository, session_id: str) -> AgentS
         context_signals=len(signals),
         chars=len(instructions),
     )
-    return AgentSetup(instructions, mode, allow_repo_grounding, prep_note, signals)
+    product_id = meta.product_id if meta is not None else None
+    return AgentSetup(instructions, mode, allow_repo_grounding, prep_note, signals, product_id)
 
 
 def opening_instructions(mode: InviteScope, has_prep_context: bool = False) -> str:
@@ -339,6 +341,7 @@ class SANBAAgent(Agent):
         self._prep_note = setup.prep_note
         self._context_signals = setup.context_signals
         self._session_id = session_id
+        self._product_id = setup.product_id
         self._repo = repo
         self._grounding = grounding
         self._transcript: list[str] = []
@@ -750,9 +753,20 @@ class SANBAAgent(Agent):
 
         呼び出し側（_run_analysis）が _analysis_lock で直列化している前提。status は
         触らない（背景実行は不可視・deliberating/listening はツール経路だけが出す）。
+
+        end_user モードでは gap（open_topics）を検知として出さない（ADR-0055 / #434 タスク1）:
+        gap は開発者向け NFR チェックリスト（heuristic_open_topics の固定5論点）由来で、
+        使用感インタビューの会話には該当キーワードが出ず常に全件 open のまま残る。これが
+        「未解消 N」を恒久的に非0にし、propose_session_end を永久ブロックしていた。ambiguous
+        （会話中の曖昧語）は使用感インタビューでも有意なので残す。
         """
         if self._publisher is not None:
-            current = {make_requirement_id(f"gap:{t}"): t for t in result.open_topics}
+            gate_gaps = self._interview_mode is not InviteScope.END_USER
+            current = (
+                {make_requirement_id(f"gap:{t}"): t for t in result.open_topics}
+                if gate_gaps
+                else {}
+            )
             for gap_id, topic in current.items():
                 if gap_id in self._published_gaps:
                     continue
@@ -1153,7 +1167,9 @@ class SANBAAgent(Agent):
         current_sha, revoked = self._repo_access()
         output_filtered = not self._allow_repo_grounding
         fetch_k = want * 4 if (current_sha is not None or revoked or output_filtered) else want
-        passages = self._grounding.search(query, k=fetch_k, session_id=self._session_id)
+        passages = self._grounding.search(
+            query, k=fetch_k, session_id=self._session_id, product_id=self._product_id
+        )
         dropped_repo = dropped_other = 0
         if output_filtered:
             if revoked:
@@ -1177,11 +1193,13 @@ class SANBAAgent(Agent):
                     p for p in passages if not _is_stale_repo_passage(p.source, current_sha)
                 ]
             passages = passages[:want]
+        repo_hits = sum(1 for p in passages if p.source.startswith("github:"))
         log.info(
             "grounding_search",
             session=self._session_id,
             query=query,
             hits=len(passages),
+            repo_hits=repo_hits,
             interview_mode=self._interview_mode.value,
             output_filtered=output_filtered,
         )

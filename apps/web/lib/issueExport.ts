@@ -2,6 +2,10 @@ export function issueExportReasonText(reason?: string): string {
   switch (reason) {
     case "github not linked":
       return "GitHub と連携すると起票できます（アカウント設定から連携してください）。";
+    case "not finalized":
+      return "会話を確定（終了）してから起票できます。";
+    case "no issue permission":
+      return "この GitHub 連携には Issue を作成する権限がありません（Issues: Write を付与してください）。";
     case "no repo access":
       return "対象リポジトリへの権限がありません（アプリ管理者に確認してください）。";
     case "no repo":
