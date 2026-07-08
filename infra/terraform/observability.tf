@@ -126,11 +126,19 @@ resource "google_logging_metric" "background_task_failures" {
   }
 }
 
+resource "time_sleep" "metric_availability" {
+  depends_on = [
+    google_logging_metric.grounding_memory_fallback,
+    google_logging_metric.background_task_failures,
+  ]
+  create_duration = "180s"
+}
+
 resource "google_monitoring_alert_policy" "grounding_memory_fallback" {
   display_name = "SANBA — grounding が in-memory へ縮退"
   combiner     = "OR"
 
-  depends_on = [time_sleep.observability_iam_propagation]
+  depends_on = [time_sleep.metric_availability]
 
   documentation {
     content   = "本番 agent が Elasticsearch へ接続できず in-memory grounding へフォールバックした。永続ベクトル検索/KB が効かないため要件の裏付け精度が落ちる。ELASTICSEARCH_URL の疎通・API キー・クラスタ稼働を確認する（#376）。"
@@ -161,7 +169,7 @@ resource "google_monitoring_alert_policy" "background_task_failures" {
   display_name = "SANBA — 背景タスク失敗が継続"
   combiner     = "OR"
 
-  depends_on = [time_sleep.observability_iam_propagation]
+  depends_on = [time_sleep.metric_availability]
 
   documentation {
     content   = "背景タスク（publish / persist / prefetch / web_event）の失敗が継続している。イベント配信・永続化・先読みの取りこぼしにつながるため、Cloud Trace とログで原因を切り分ける（#376）。"
