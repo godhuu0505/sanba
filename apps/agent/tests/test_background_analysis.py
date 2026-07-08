@@ -439,7 +439,7 @@ async def test_drain_stops_inflight_analysis_followup(
     calls: list[str] = []
     gate = threading.Event()
 
-    async def _slow(transcript: str) -> AnalysisResult:
+    async def _slow(transcript: str, check_points: object = ()) -> AnalysisResult:
         calls.append(transcript)
         await asyncio.to_thread(gate.wait)
         return AnalysisResult(summary="s", next_question="q?", suggested_answer="a")
