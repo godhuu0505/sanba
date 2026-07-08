@@ -19,6 +19,7 @@ from .models import (
     CheckItem,
     GitHubIndexStatus,
     GitHubLink,
+    InquiryNode,
     MemberInviteStatus,
     Product,
     ProductInvite,
@@ -105,6 +106,7 @@ class SessionRepository:
         self._mem_utterances: dict[str, list[Utterance]] = {}
         self._mem_requirements: dict[str, dict[str, Requirement]] = {}
         self._mem_detections: dict[str, dict[str, dict[str, Any]]] = {}
+        self._mem_inquiry: dict[str, dict[str, dict[str, Any]]] = {}
         self._mem_seq: dict[str, int] = {}
         self._mem_lossy_epoch: dict[str, int] = {}
         self._mem_materials: dict[str, dict[str, dict[str, Any]]] = {}
@@ -1338,6 +1340,41 @@ class SessionRepository:
         existing = self._mem_detections.setdefault(session_id, {}).get(detection_id)
         if existing is not None:
             existing.update(patch)
+
+    def save_inquiry_node(self, session_id: str, node: InquiryNode) -> None:
+        """確認事項ツリーのノードを upsert する（ADR-0059）。
+
+        木の正本は `sessions/{id}/inquiry_nodes`。再接続/途中参加時に `GET /inquiry` で
+        木ごと復元できるよう、realtime 発火だけでなく永続化する。同一 id は上書き（冪等）。
+        """
+        doc = node.model_dump(mode="json")
+        if self._client is not None:
+            if (exp := self._expire_at()) is not None:
+                doc["expireAt"] = exp
+            (
+                self._client.collection("sessions")
+                .document(session_id)
+                .collection("inquiry_nodes")
+                .document(node.id)
+                .set(doc, merge=True)
+            )
+            return
+        self._mem_inquiry.setdefault(session_id, {})[node.id] = doc
+
+    def list_inquiry_nodes(self, session_id: str) -> list[InquiryNode]:
+        """セッションの確認事項ノード一覧（`InquiryTree` の再構築・ハイドレーション用）。"""
+        if self._client is not None:
+            docs = (
+                self._client.collection("sessions")
+                .document(session_id)
+                .collection("inquiry_nodes")
+                .stream()
+            )
+            return [InquiryNode.model_validate(d.to_dict()) for d in docs]
+        return [
+            InquiryNode.model_validate(doc)
+            for doc in self._mem_inquiry.get(session_id, {}).values()
+        ]
 
     def save_material(self, session_id: str, material: dict[str, Any]) -> None:
         """投入済み素材のメタ (id/name/kind/status/extracted) を upsert する。
