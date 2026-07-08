@@ -82,16 +82,4 @@ describe("SessionHistoryList（過去の要件を見る）", () => {
     );
     expect(screen.getByText(/起票済み/)).toBeTruthy();
   });
-
-  it("heading と headingAction を差し替えられる（ホーム用）", () => {
-    render(
-      <SessionHistoryList
-        items={ITEMS}
-        heading="過去の要件"
-        headingAction={<a href="/results">すべて見る →</a>}
-      />,
-    );
-    expect(screen.getByRole("heading", { name: "過去の要件" })).toBeTruthy();
-    expect(screen.getByRole("link", { name: /すべて見る/ }).getAttribute("href")).toBe("/results");
-  });
 });

@@ -16,8 +16,6 @@ export interface SessionHistoryListProps extends React.HTMLAttributes<HTMLElemen
   items: SessionHistoryItem[];
   hrefFor?: (id: string) => string;
   emptyText?: string;
-  heading?: string;
-  headingAction?: React.ReactNode;
 }
 
 const HEADING_ID = "session-history-heading";
@@ -30,8 +28,6 @@ export const SessionHistoryList = React.forwardRef<HTMLElement, SessionHistoryLi
       items,
       hrefFor = (id) => `/results/${encodeURIComponent(id)}`,
       emptyText = "過去の要件はまだございません。壁打ちを始めると、ここに残ります。",
-      heading = "過去の要件を見る",
-      headingAction,
       ...props
     },
     ref,
@@ -43,12 +39,9 @@ export const SessionHistoryList = React.forwardRef<HTMLElement, SessionHistoryLi
         className={cn("flex w-full flex-col gap-[10px]", className)}
         {...props}
       >
-        <div className="flex items-center justify-between">
-          <h2 id={HEADING_ID} className="text-[13px] font-bold text-sanba-muted">
-            {heading}
-          </h2>
-          {headingAction}
-        </div>
+        <h2 id={HEADING_ID} className="text-[13px] font-bold text-sanba-muted">
+          過去の要件を見る
+        </h2>
         {items.length === 0 ? (
           <div className="flex items-center rounded-[16px] border-[1.5px] border-dashed border-sanba-border-strong bg-sanba-surface px-[14px] py-[12px]">
             <p className="text-[13px] leading-relaxed text-sanba-muted">{emptyText}</p>
