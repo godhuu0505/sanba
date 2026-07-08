@@ -25,7 +25,7 @@ from datetime import UTC, datetime
 from typing import Any, Protocol
 
 import structlog
-from sanba_shared.models import Requirement
+from sanba_shared.models import InquiryNode, Requirement
 
 log = structlog.get_logger(__name__)
 
@@ -452,6 +452,17 @@ class EventPublisher:
                 "requirement_count": requirement_count,
                 "material_count": material_count,
             },
+        )
+
+    async def inquiry_node(self, node: InquiryNode, *, op: str) -> dict[str, Any]:
+        """確認事項ロジックツリーのノード変化を ``inquiry.node`` で通知する（ADR-0059）。
+
+        ``op`` は upsert / resolve / drop。ノード全体を upsert セマンティクスで送る（冪等）。
+        web はツリービュー（`InquiryTree`）へ写像する。reliable/seq（再接続で `GET /inquiry`
+        + seq gap 埋め）。
+        """
+        return await self._emit(
+            "inquiry.node", {"op": op, "node": node.model_dump(mode="json")}, reliable=True
         )
 
     async def session_completed(

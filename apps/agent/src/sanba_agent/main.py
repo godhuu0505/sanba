@@ -43,9 +43,11 @@ try:  # noqa: SIM105
     from livekit.plugins import noise_cancellation as _noise_cancellation
 except Exception:  # pragma: no cover
     _noise_cancellation = None  # type: ignore[assignment]
+from sanba_shared.inquiry import InquiryTree
 from sanba_shared.models import (
     AnalysisResult,
     GitHubIndexStatus,
+    InquiryStatus,
     InviteScope,
     Priority,
     Product,
@@ -74,6 +76,7 @@ from .events import (
     decode_user_selection,
     decode_user_text,
 )
+from .inquiry_feeder import reconcile_analysis
 from .observability import get_tracer, setup_observability
 from .prefetch import REASON_ACL_RECHECK, REASON_EMPTY, PrefetchCache
 from .prompts.interview import (
@@ -371,6 +374,9 @@ class SANBAAgent(Agent):
         self._question_asked_turn = -1
         self._published_gaps: set[str] = set()
         self._published_ambiguous: set[str] = set()
+        self._inquiry = InquiryTree()
+        self._inquiry_focus_id: str | None = None
+        self._inquiry_seq = 0
         self._injected_assets: set[str] = set()
         self._publish_tasks: set[asyncio.Task[Any]] = set()
         self._persist_tasks: set[asyncio.Task[Any]] = set()
@@ -719,6 +725,7 @@ class SANBAAgent(Agent):
             )
         async with self._analysis_lock:
             await self._publish_analysis_detections(result)
+            await self._reconcile_inquiry(result)
         self._last_analysis = result
         self._analysis_covered_turn = covered_turn
         return result
@@ -897,6 +904,40 @@ class SANBAAgent(Agent):
         uncovered = set(result.coverage_open)
         points = [{"label": p, "covered": p not in uncovered} for p in self._check_points]
         await self._publisher.checkpoint_coverage(points)
+
+    async def _reconcile_inquiry(self, result: AnalysisResult) -> None:
+        """分析結果を確認事項ツリーへ差分適用し、変化を ``inquiry.node`` で発火する（ADR-0059）。
+
+        木の正本は agent 側（決定①）。背景分析の検知の束をフォーカスノードの子へ upsert し、
+        最新パス不在は自動 resolve、確認観点は coverage で open/resolve する
+        （`reconcile_analysis`）。変化したノードだけを永続化（`save_inquiry_node`）し publish する。
+        """
+        if self._publisher is None:
+            return
+
+        def _next_seq() -> int:
+            self._inquiry_seq += 1
+            return self._inquiry_seq
+
+        changed = reconcile_analysis(
+            self._inquiry,
+            result,
+            check_points=self._check_points,
+            focus_id=self._inquiry_focus_id,
+            seq=_next_seq,
+        )
+        if not changed:
+            return
+        for node in changed:
+            self._repo.save_inquiry_node(self._session_id, node)
+            if node.status is InquiryStatus.DROPPED:
+                op = "drop"
+            elif node.status is InquiryStatus.RESOLVED:
+                op = "resolve"
+            else:
+                op = "upsert"
+            await self._publisher.inquiry_node(node, op=op)
+        self._repo.set_session_seq(self._session_id, self._publisher.seq)
 
     async def drain_background_tasks(self, grace_seconds: float = DRAIN_GRACE_SECONDS) -> None:
         """セッション終了時に背景タスクを猶予付きで送り切り、残りはキャンセルする（ADR-0037）。
