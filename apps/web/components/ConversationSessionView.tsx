@@ -314,7 +314,13 @@ export function ConversationSessionView({
           )
         }
         tabs={{
-          history: <ChatHistory transcript={state.transcript} />,
+          history: (
+            <ChatHistory
+              transcript={state.transcript}
+              contextProgress={state.contextProgress}
+              materials={materials}
+            />
+          ),
           files: readOnly ? null : (
             <MaterialsList
               items={materials}

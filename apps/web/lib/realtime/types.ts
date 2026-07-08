@@ -138,6 +138,17 @@ export type AnalysisProgressEvent = Envelope<"analysis.progress"> & {
   stage: string;
 };
 
+export type ContextProgressSource = "prep" | "repo";
+
+export type ContextProgressStage = "running" | "done" | "reused" | "partial" | "failed";
+
+export type ContextProgressEvent = Envelope<"context.progress"> & {
+  source: ContextProgressSource;
+  stage: ContextProgressStage;
+  label?: string;
+  detail?: string;
+};
+
 export type AnalysisVisualEvent = Envelope<"analysis.visual"> & {
   asset_id: string;
   extracted: string[];
@@ -176,6 +187,7 @@ export type ServerEvent =
   | QuestionClearedEvent
   | AnalysisProgressEvent
   | AnalysisVisualEvent
+  | ContextProgressEvent
   | SessionCompletedEvent;
 
 export type ServerEventType = ServerEvent["type"];

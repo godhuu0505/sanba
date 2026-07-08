@@ -191,6 +191,73 @@ async def test_background_analysis_timeout_is_fail_soft(
 
 
 @pytest.mark.asyncio
+async def test_emit_context_progress_publishes_prep_and_repo() -> None:
+    from sanba_shared.models import GitHubIndexStatus
+
+    repo = SessionRepository()
+    repo.create_session_doc(
+        SessionMeta(
+            id="s2",
+            title="t",
+            owner_sub="owner",
+            owner_email="",
+            goal="アカウント設定画面を作りたい",
+            goal_detail="通知設定も統合したい",
+            github_repo="octo/app",
+            github_branch="main",
+            github_index_status=GitHubIndexStatus.READY,
+        )
+    )
+    transport = RecordingTransport()
+    publisher = EventPublisher("s2", transport)
+    agent = SANBAAgent("s2", repo, GroundingStore(), publisher=publisher)
+    await agent.emit_context_progress()
+
+    events = [t["event"] for t in transport.sent if t["event"]["type"] == "context.progress"]
+    by_source = {e["source"]: e for e in events}
+    assert by_source["prep"]["stage"] == "done"
+    assert by_source["repo"]["stage"] == "reused"
+    assert by_source["repo"]["label"] == "octo/app@main"
+
+
+@pytest.mark.asyncio
+async def test_emit_context_progress_repo_indexing_is_running() -> None:
+    from sanba_shared.models import GitHubIndexStatus
+
+    repo = SessionRepository()
+    repo.create_session_doc(
+        SessionMeta(
+            id="s3",
+            title="t",
+            owner_sub="owner",
+            owner_email="",
+            github_repo="octo/app",
+            github_index_status=GitHubIndexStatus.INDEXING,
+        )
+    )
+    transport = RecordingTransport()
+    agent = SANBAAgent("s3", repo, GroundingStore(), publisher=EventPublisher("s3", transport))
+    await agent.emit_context_progress()
+
+    repo_event = next(
+        t["event"]
+        for t in transport.sent
+        if t["event"]["type"] == "context.progress" and t["event"]["source"] == "repo"
+    )
+    assert repo_event["stage"] == "running"
+
+
+@pytest.mark.asyncio
+async def test_emit_context_progress_without_signals_is_noop() -> None:
+    repo = SessionRepository()
+    repo.create_session_doc(SessionMeta(id="s4", title="t", owner_sub="owner", owner_email=""))
+    transport = RecordingTransport()
+    agent = SANBAAgent("s4", repo, GroundingStore(), publisher=EventPublisher("s4", transport))
+    await agent.emit_context_progress()
+    assert [t for t in transport.sent if t["event"]["type"] == "context.progress"] == []
+
+
+@pytest.mark.asyncio
 async def test_analysis_runs_off_event_loop_thread(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

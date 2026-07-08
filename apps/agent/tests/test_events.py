@@ -39,6 +39,30 @@ async def test_envelope_has_required_fields() -> None:
 
 
 @pytest.mark.asyncio
+async def test_context_progress_is_reliable_with_source_and_stage() -> None:
+    t = RecordingTransport()
+    pub = EventPublisher("s1", t)
+    env = await pub.context_progress(
+        "repo", "reused", label="octo/app@main", detail="索引済みを利用"
+    )
+    assert env["type"] == "context.progress"
+    assert env["source"] == "repo"
+    assert env["stage"] == "reused"
+    assert env["label"] == "octo/app@main"
+    assert env["detail"] == "索引済みを利用"
+    assert t.sent[0]["reliable"] is True
+
+
+@pytest.mark.asyncio
+async def test_context_progress_omits_empty_optional_fields() -> None:
+    t = RecordingTransport()
+    pub = EventPublisher("s1", t)
+    env = await pub.context_progress("prep", "done")
+    assert "label" not in env
+    assert "detail" not in env
+
+
+@pytest.mark.asyncio
 async def test_reliable_seq_is_monotonic_and_lossy_does_not_consume_it() -> None:
     t = RecordingTransport()
     pub = EventPublisher("s1", t)

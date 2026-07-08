@@ -46,4 +46,55 @@ describe("ChatHistory（会話履歴タブ）", () => {
     expect(screen.getByText(/文字起こし中/)).toBeTruthy();
     expect(screen.getByLabelText("あなた").textContent).toContain("価格の安き");
   });
+
+  it("前提の読み込み（context.progress）をセットアップ吹き出しで表示する", () => {
+    render(
+      <ChatHistory
+        transcript={[]}
+        contextProgress={[
+          { source: "prep", stage: "done", label: "ゴールとゴール詳細", detail: "確認" },
+          {
+            source: "repo",
+            stage: "running",
+            label: "octo/app@main",
+            detail: "ソースコードを読み込み中",
+          },
+        ]}
+      />,
+    );
+    expect(screen.getByText("ゴールとゴール詳細")).toBeTruthy();
+    expect(screen.getByText("octo/app@main")).toBeTruthy();
+    expect(screen.getByRole("progressbar", { name: /octo\/app@main/ })).toBeTruthy();
+  });
+
+  it("解析中の素材はプログレスバー付きの吹き出しで進捗を出す", () => {
+    render(
+      <ChatHistory
+        transcript={[]}
+        materials={[
+          { id: "a1", name: "capture-01.png", pct: 65, status: "analyzing" },
+          { id: "a2", name: "capture-02.png", pct: 100, status: "done", extracted: 3 },
+        ]}
+      />,
+    );
+    expect(screen.getByText("capture-01.png")).toBeTruthy();
+    expect(screen.getByText(/解析中… 65%/)).toBeTruthy();
+    expect(screen.getByRole("progressbar", { name: /capture-01\.png/ })).toBeTruthy();
+    expect(screen.getByText(/抽出 3 件/)).toBeTruthy();
+  });
+
+  it("アップロード中・キャンセル済みの素材は会話履歴に出さない", () => {
+    render(
+      <ChatHistory
+        transcript={[]}
+        materials={[
+          { id: "a1", name: "up.png", pct: 0, status: "uploading" },
+          { id: "a2", name: "cx.png", pct: 0, status: "cancelled" },
+        ]}
+      />,
+    );
+    expect(screen.getByText(/話しかけてください/)).toBeTruthy();
+    expect(screen.queryByText("up.png")).toBeNull();
+    expect(screen.queryByText("cx.png")).toBeNull();
+  });
 });
