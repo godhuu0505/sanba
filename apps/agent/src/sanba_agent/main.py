@@ -362,6 +362,7 @@ class SANBAAgent(Agent):
         self._question_seq = 0
         self._questions: dict[str, str] = {}
         self._current_question_id: str | None = None
+        self._current_question_has_options = False
         self._question_asked_turn = -1
         self._published_gaps: set[str] = set()
         self._published_ambiguous: set[str] = set()
@@ -972,9 +973,24 @@ class SANBAAgent(Agent):
             options: 選択肢ラベル（2〜4個。例 ["関連度順","新着順"]）。
                 自由に答えてほしい問いでは省略する（音声/テキストで回答）。
         """
+        new_has_options = bool(options)
         superseded_in_turn = (
             self._current_question_id is not None and self._question_asked_turn == self._user_turn
         )
+        if superseded_in_turn and not new_has_options and self._current_question_has_options:
+            log.info(
+                "question_superseded_skipped",
+                session=self._session_id,
+                current=self._current_question_id,
+                turn=self._user_turn,
+            )
+            return {
+                "asked": self._current_question_id,
+                "note": (
+                    "選択肢付きの問いが未回答のため、選択肢の無い後発の問いはスキップしました。"
+                    "既存の選択肢付きの問いを維持します。"
+                ),
+            }
         if superseded_in_turn:
             superseded = self._current_question_id
             assert superseded is not None
@@ -990,6 +1006,7 @@ class SANBAAgent(Agent):
         self._questions[question_id] = prompt
         opts = [{"label": o, "value": o} for o in (options or [])]
         self._current_question_id = question_id
+        self._current_question_has_options = new_has_options
         self._question_asked_turn = self._user_turn
         if self._publisher is not None:
 
@@ -1006,6 +1023,7 @@ class SANBAAgent(Agent):
                 )
             except Exception as exc:  # noqa: BLE001
                 self._current_question_id = None
+                self._current_question_has_options = False
                 log.warning(
                     "question_persist_failed",
                     session=self._session_id,
@@ -1049,6 +1067,7 @@ class SANBAAgent(Agent):
             )
         if cleared and self._current_question_id == question_id:
             self._current_question_id = None
+            self._current_question_has_options = False
         log.info("question_cleared", session=self._session_id, id=question_id, cleared=cleared)
 
     @function_tool
