@@ -1,8 +1,9 @@
 """Read-side persistence for hydration APIs.
 
-agent（apps/agent）が Firestore に書いた要件・検知を、web のハイドレーション
-（契約 §4）向けに読み出す。レスポンス schema は契約 §2/§3 の `requirement` /
-`detection` 形に揃える（source_speaker / confidence / citations / status を含む）。
+agent（apps/agent）が Firestore に書いた要件を、web のハイドレーション（契約 §4）向けに
+読み出す。レスポンス schema は契約 §3 の `requirement` 形に揃える（source_speaker /
+confidence / citations / status を含む）。確認事項ロジックツリー（ADR-0059）は正本の
+`SessionRepository.list_inquiry_nodes` から直接ハイドレーションするため、ここでは扱わない。
 
 Firestore が無い環境（単体テスト）ではインメモリにフォールバックする。
 """
@@ -36,27 +37,12 @@ def requirement_doc_to_contract(doc: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def detection_doc_to_contract(doc: dict[str, Any]) -> dict[str, Any]:
-    """Firestore の detection ドキュメントを契約 §3（web 正規化形）へ整形する。"""
-    return {
-        "id": doc.get("id", ""),
-        "kind": doc.get("kind", "gap"),
-        "summary": doc.get("summary", ""),
-        "refs": doc.get("refs", []),
-        "category": doc.get("category"),
-        "options": doc.get("options"),
-        "detector": doc.get("detector", ""),
-        "resolved": doc.get("resolved", False),
-    }
-
-
 class ReadRepository:
     """Hydration の読み出し境界。Firestore が無ければインメモリで動く。"""
 
     def __init__(self) -> None:
         self._client = self._init_client()
         self._mem_requirements: dict[str, list[dict[str, Any]]] = {}
-        self._mem_detections: dict[str, list[dict[str, Any]]] = {}
         self._mem_seq: dict[str, int] = {}
         self._mem_questions: dict[str, dict[str, Any]] = {}
 
@@ -72,9 +58,6 @@ class ReadRepository:
 
     def _seed_requirement(self, session_id: str, doc: dict[str, Any]) -> None:
         self._mem_requirements.setdefault(session_id, []).append(doc)
-
-    def _seed_detection(self, session_id: str, doc: dict[str, Any]) -> None:
-        self._mem_detections.setdefault(session_id, []).append(doc)
 
     def _seed_seq(self, session_id: str, seq: int) -> None:
         self._mem_seq[session_id] = seq
@@ -121,20 +104,6 @@ class ReadRepository:
             raw = self._mem_requirements.get(session_id, [])
             by_id = {d.get("id", ""): requirement_doc_to_contract(d) for d in raw}
         return [by_id[rid] for rid in ids if rid in by_id]
-
-    def list_open_detections(self, session_id: str) -> list[dict[str, Any]]:
-        if self._client is not None:
-            docs = (
-                self._client.collection("sessions")
-                .document(session_id)
-                .collection("detections")
-                .stream()
-            )
-            raw = [d.to_dict() for d in docs]
-        else:
-            raw = self._mem_detections.get(session_id, [])
-        items = [detection_doc_to_contract(d) for d in raw]
-        return [d for d in items if not d["resolved"]]
 
     def get_current_question(self, session_id: str) -> dict[str, Any]:
         """現在質問のハイドレーション（ADR-0020 §2 / §5-4）。

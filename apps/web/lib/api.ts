@@ -1,4 +1,4 @@
-import type { Detection, Question, Requirement } from "./realtime/types";
+import type { InquiryNode, Question, Requirement } from "./realtime/types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 
@@ -333,9 +333,9 @@ export interface RequirementsSnapshot {
   seq: number;
 }
 
-export interface DetectionsSnapshot {
-  items: Detection[];
-  seq?: number;
+export interface InquirySnapshot {
+  nodes: InquiryNode[];
+  seq: number;
 }
 
 export interface CurrentQuestionSnapshot {
@@ -390,15 +390,14 @@ export async function fetchCurrentQuestion(
   return res.json();
 }
 
-export async function fetchDetections(
+export async function fetchInquiry(
   sessionId: string,
   sessionToken: string | null,
-): Promise<DetectionsSnapshot> {
-  const res = await apiFetch(
-    `${API_URL}/api/sessions/${sessionId}/detections?open=1`,
-    { headers: authHeaders(sessionToken) },
-  );
-  if (!res.ok) throw new Error(`fetch detections failed: ${res.status}`);
+): Promise<InquirySnapshot> {
+  const res = await apiFetch(`${API_URL}/api/sessions/${sessionId}/inquiry`, {
+    headers: authHeaders(sessionToken),
+  });
+  if (!res.ok) throw new Error(`fetch inquiry failed: ${res.status}`);
   return res.json();
 }
 

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { contractEventFixture, hydrationFixture } from "./fixtures";
 import { selectMaterials } from "./selectors";
 import { RealtimeStore } from "./store";
-import type { Requirement, ServerEvent } from "./types";
+import type { InquiryNode, Requirement, ServerEvent } from "./types";
 
 const SESSION = "s1";
 
@@ -27,42 +27,101 @@ function reqEvent(seq: number, id: string, over: Partial<Requirement> = {}): Ser
   };
 }
 
-function contradiction(seq: number, id: string): ServerEvent {
+function inquiryNode(over: Partial<InquiryNode> & { id: string }): InquiryNode {
+  return {
+    parent_id: null,
+    kind: "gap",
+    text: "確認事項",
+    status: "open",
+    confidence: 0.6,
+    depth: 0,
+    origin: "conversation",
+    refs: [],
+    created_seq: 0,
+    resolved_seq: null,
+    ...over,
+  };
+}
+
+function inquiryEvent(seq: number, op: "upsert" | "resolve" | "drop", node: InquiryNode): ServerEvent {
   return {
     v: 1,
-    type: "detection.contradiction",
+    type: "inquiry.node",
     seq,
     ts: "2026-06-24T00:00:00Z",
     session_id: SESSION,
-    id,
-    summary: `c ${id}`,
-    refs: [],
-    detector: "contradiction_detector",
+    op,
+    node,
   };
+}
+
+function contradiction(seq: number, id: string): ServerEvent {
+  return inquiryEvent(
+    seq,
+    "upsert",
+    inquiryNode({ id, kind: "contradiction", text: `c ${id}`, created_seq: seq }),
+  );
 }
 
 function ambiguous(seq: number, id: string): ServerEvent {
-  return {
-    v: 1,
-    type: "detection.ambiguous",
+  return inquiryEvent(
     seq,
-    ts: "2026-06-24T00:00:00Z",
-    session_id: SESSION,
-    id,
-    summary: `a ${id}`,
-    refs: [],
-    detector: "ambiguity_detector",
-  };
+    "upsert",
+    inquiryNode({ id, kind: "ambiguous", text: `a ${id}`, created_seq: seq }),
+  );
 }
 
-describe("RealtimeStore — detection.ambiguous (#182)", () => {
-  it("ambiguous を kind=ambiguous の未解消検知として取り込む", () => {
+describe("RealtimeStore — inquiry.node upsert/resolve/drop", () => {
+  it("upsert で kind=ambiguous の open ノードを取り込む", () => {
     const s = new RealtimeStore();
     s.apply(ambiguous(1, "a1"));
-    const det = s.getSnapshot().detections;
-    expect(det).toHaveLength(1);
-    expect(det[0].kind).toBe("ambiguous");
-    expect(det[0].resolved).toBe(false);
+    const nodes = s.getSnapshot().inquiryNodes;
+    expect(nodes).toHaveLength(1);
+    expect(nodes[0].kind).toBe("ambiguous");
+    expect(nodes[0].status).toBe("open");
+  });
+
+  it("upsert はノード全体を置換する（新しい seq が勝つ）", () => {
+    const s = new RealtimeStore();
+    s.apply(inquiryEvent(1, "upsert", inquiryNode({ id: "n1", text: "旧", created_seq: 1 })));
+    s.apply(inquiryEvent(2, "upsert", inquiryNode({ id: "n1", text: "新", created_seq: 1 })));
+    const nodes = s.getSnapshot().inquiryNodes;
+    expect(nodes).toHaveLength(1);
+    expect(nodes[0].text).toBe("新");
+  });
+
+  it("resolve は status を resolved に更新する", () => {
+    const s = new RealtimeStore();
+    s.apply(inquiryEvent(1, "upsert", inquiryNode({ id: "n1", kind: "gap", created_seq: 1 })));
+    s.apply(
+      inquiryEvent(2, "resolve", inquiryNode({ id: "n1", kind: "gap", created_seq: 1, resolved_seq: 2 })),
+    );
+    const n = s.getSnapshot().inquiryNodes[0];
+    expect(n.status).toBe("resolved");
+    expect(n.resolved_seq).toBe(2);
+  });
+
+  it("drop は status を dropped に更新する", () => {
+    const s = new RealtimeStore();
+    s.apply(inquiryEvent(1, "upsert", inquiryNode({ id: "n1", created_seq: 1 })));
+    s.apply(inquiryEvent(2, "drop", inquiryNode({ id: "n1", created_seq: 1 })));
+    expect(s.getSnapshot().inquiryNodes[0].status).toBe("dropped");
+  });
+
+  it("既知イベントとして applied=true を返し maxSeq を進める（未知扱いの誤 gap を出さない）", () => {
+    const s = new RealtimeStore();
+    s.apply(inquiryEvent(1, "upsert", inquiryNode({ id: "n1", created_seq: 1 })));
+    s.apply(inquiryEvent(2, "upsert", inquiryNode({ id: "n2", created_seq: 2 })));
+    expect(s.getSnapshot().seq).toBe(2);
+    expect(s.metrics.read().gaps).toBe(0);
+  });
+
+  it("created_seq 昇順でノードを並べる（更新後も並びが崩れない）", () => {
+    const s = new RealtimeStore();
+    s.apply(inquiryEvent(1, "upsert", inquiryNode({ id: "n1", text: "一", created_seq: 1 })));
+    s.apply(inquiryEvent(2, "upsert", inquiryNode({ id: "n2", text: "二", created_seq: 2 })));
+    s.apply(inquiryEvent(3, "resolve", inquiryNode({ id: "n1", text: "一", created_seq: 1, resolved_seq: 3 })));
+    expect(s.getSnapshot().inquiryNodes.map((n) => n.id)).toEqual(["n1", "n2"]);
   });
 });
 
@@ -107,7 +166,7 @@ describe("RealtimeStore — dedup", () => {
     const s = new RealtimeStore();
     s.apply(contradiction(1, "d1"));
     s.apply(contradiction(1, "d1"));
-    expect(s.getSnapshot().detections).toHaveLength(1);
+    expect(s.getSnapshot().inquiryNodes).toHaveLength(1);
     expect(s.metrics.read().duplicates).toBe(1);
     expect(s.metrics.read().received).toBe(1);
   });
@@ -326,44 +385,38 @@ describe("RealtimeStore — hydration boundary", () => {
     expect(s.getSnapshot().transcript).toHaveLength(1);
   });
 
-  it("does not drop a detection by the requirements boundary when detections were not hydrated", () => {
+  it("does not drop an inquiry node by the requirements boundary when inquiry was not hydrated", () => {
     const s = new RealtimeStore();
     s.hydrateRequirements(hydrationFixture.items, 6);
     s.apply(contradiction(2, "d1"));
-    expect(s.getSnapshot().detections).toHaveLength(1);
+    expect(s.getSnapshot().inquiryNodes).toHaveLength(1);
     expect(s.metrics.read().duplicates).toBe(0);
   });
 
-  it("drops a live detection at/below its own detections boundary after hydrateDetections", () => {
+  it("drops a live inquiry node at/below its own inquiry boundary after hydrateInquiry", () => {
     const s = new RealtimeStore();
-    s.hydrateDetections(
-      [{ id: "d1", kind: "gap", summary: "snap", refs: [], detector: "", resolved: false }],
-      6,
-    );
+    s.hydrateInquiry([inquiryNode({ id: "d1", kind: "gap", text: "snap", created_seq: 6 })], 6);
     s.apply(contradiction(5, "d1"));
     expect(s.metrics.read().duplicates).toBe(1);
     s.apply(contradiction(7, "d2"));
-    expect(s.getSnapshot().detections.find((d) => d.id === "d2")).toBeTruthy();
+    expect(s.getSnapshot().inquiryNodes.find((n) => n.id === "d2")).toBeTruthy();
   });
 });
 
-describe("RealtimeStore — detection lifecycle", () => {
-  it("marks a detection resolved on detection.resolved", () => {
+describe("RealtimeStore — inquiry lifecycle", () => {
+  it("marks a node resolved on op=resolve", () => {
     const s = new RealtimeStore();
     s.apply(contradiction(1, "d1"));
-    s.apply({
-      v: 1,
-      type: "detection.resolved",
-      seq: 2,
-      ts: "2026-06-24T00:00:00Z",
-      session_id: SESSION,
-      detection_id: "d1",
-      resolution: "user_selected",
-      selected_value: "relevance",
-    });
-    const d = s.getSnapshot().detections[0];
-    expect(d.resolved).toBe(true);
-    expect(d.selected_value).toBe("relevance");
+    s.apply(
+      inquiryEvent(
+        2,
+        "resolve",
+        inquiryNode({ id: "d1", kind: "contradiction", text: "c d1", created_seq: 1, resolved_seq: 2 }),
+      ),
+    );
+    const n = s.getSnapshot().inquiryNodes[0];
+    expect(n.status).toBe("resolved");
+    expect(n.resolved_seq).toBe(2);
   });
 });
 
@@ -473,10 +526,10 @@ describe("RealtimeStore — session isolation", () => {
     const s = new RealtimeStore();
     s.setExpectedSessionId(SESSION);
     s.apply({ ...contradiction(1, "d1"), session_id: "other" });
-    expect(s.getSnapshot().detections).toHaveLength(0);
+    expect(s.getSnapshot().inquiryNodes).toHaveLength(0);
     expect(s.metrics.read().dropped).toBe(1);
     s.apply(contradiction(2, "d2"));
-    expect(s.getSnapshot().detections).toHaveLength(1);
+    expect(s.getSnapshot().inquiryNodes).toHaveLength(1);
   });
 });
 
@@ -643,7 +696,8 @@ describe("RealtimeStore — fixture replay", () => {
     for (const e of contractEventFixture) s.apply(e);
     const st = s.getSnapshot();
     expect(st.requirements).toHaveLength(3);
-    expect(st.detections.find((d) => d.id === "d1")?.resolved).toBe(true);
+    expect(st.inquiryNodes.find((n) => n.id === "nq-c1")?.status).toBe("resolved");
+    expect(st.inquiryNodes.find((n) => n.id === "nq-g1")?.status).toBe("open");
     expect(st.analysis[0].extracted).toContain("フィルタUI");
     expect(st.completed?.issues_created).toBe(3);
     expect(st.phase).toBe("deliberating");
@@ -652,57 +706,3 @@ describe("RealtimeStore — fixture replay", () => {
   });
 });
 
-function coverage(
-  seq: number,
-  points: { label: string; covered: boolean }[],
-): ServerEvent {
-  return {
-    v: 1,
-    type: "checkpoint.coverage",
-    seq,
-    ts: "2026-07-08T00:00:00Z",
-    session_id: SESSION,
-    points,
-  } as ServerEvent;
-}
-
-describe("RealtimeStore — checkpoint.coverage (ADR-0057 増分2a)", () => {
-  it("スナップショットを coverage スライスに全量置換する", () => {
-    const s = new RealtimeStore();
-    s.apply(coverage(1, [{ label: "性能", covered: false }]));
-    s.apply(
-      coverage(2, [
-        { label: "性能", covered: true },
-        { label: "セキュリティ", covered: false },
-      ]),
-    );
-    const st = s.getSnapshot();
-    expect(st.coverage).toEqual([
-      { label: "性能", covered: true },
-      { label: "セキュリティ", covered: false },
-    ]);
-  });
-
-  it("seq 番兵で古いスナップショットを無視する（単調性）", () => {
-    const s = new RealtimeStore();
-    s.apply(coverage(5, [{ label: "性能", covered: true }]));
-    s.apply(coverage(3, [{ label: "性能", covered: false }]));
-    expect(s.getSnapshot().coverage).toEqual([{ label: "性能", covered: true }]);
-  });
-
-  it("detection として数えず未解消/検知に影響しない", () => {
-    const s = new RealtimeStore();
-    s.apply(coverage(1, [{ label: "性能", covered: false }]));
-    const st = s.getSnapshot();
-    expect(st.detections).toHaveLength(0);
-  });
-
-  it("clear で coverage スライスと番兵をリセットする", () => {
-    const s = new RealtimeStore();
-    s.apply(coverage(2, [{ label: "性能", covered: true }]));
-    s.clear();
-    expect(s.getSnapshot().coverage).toEqual([]);
-    s.apply(coverage(1, [{ label: "セキュリティ", covered: false }]));
-    expect(s.getSnapshot().coverage).toEqual([{ label: "セキュリティ", covered: false }]);
-  });
-});

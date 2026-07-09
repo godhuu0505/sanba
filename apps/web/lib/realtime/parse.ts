@@ -8,6 +8,7 @@ import {
   type ServerEventType,
   type SessionPhase,
   type UserAnsweredEvent,
+  type UserInquiryDropEvent,
   type UserSelectionEvent,
   type UserTextEvent,
 } from "./types";
@@ -16,17 +17,13 @@ const KNOWN_TYPES: ReadonlySet<string> = new Set<ServerEventType>([
   "status",
   "transcript.partial",
   "transcript.final",
-  "detection.contradiction",
-  "detection.gap",
-  "detection.ambiguous",
-  "detection.resolved",
+  "inquiry.node",
   "requirement.upserted",
   "question.asked",
   "question.cleared",
   "analysis.progress",
   "analysis.visual",
   "context.progress",
-  "checkpoint.coverage",
   "session.end_proposed",
   "session.completed",
 ]);
@@ -46,17 +43,13 @@ const REQUIRED_FIELDS: Record<ServerEventType, readonly string[]> = {
   status: ["phase"],
   "transcript.partial": ["speaker", "role", "utterance_id", "text"],
   "transcript.final": ["speaker", "role", "utterance_id", "text"],
-  "detection.contradiction": ["id", "summary", "refs", "detector"],
-  "detection.gap": ["id", "summary", "category", "refs", "detector"],
-  "detection.ambiguous": ["id", "summary", "refs", "detector"],
-  "detection.resolved": ["detection_id", "resolution"],
+  "inquiry.node": ["op", "node"],
   "requirement.upserted": ["requirement"],
   "question.asked": ["id", "prompt"],
   "question.cleared": ["question_id"],
   "analysis.progress": ["asset_id", "pct", "stage"],
   "analysis.visual": ["asset_id", "extracted", "conflicts"],
   "context.progress": ["source", "stage"],
-  "checkpoint.coverage": ["points"],
   "session.end_proposed": ["open_count", "requirement_count", "material_count"],
   "session.completed": ["summary", "artifacts"],
 };
@@ -98,6 +91,14 @@ const CONTEXT_STAGES: ReadonlySet<string> = new Set<string>([
   "partial",
   "failed",
 ]);
+const INQUIRY_OPS: ReadonlySet<string> = new Set<string>(["upsert", "resolve", "drop"]);
+const INQUIRY_KINDS: ReadonlySet<string> = new Set<string>([
+  "gap",
+  "contradiction",
+  "ambiguous",
+  "check",
+]);
+const INQUIRY_STATUSES: ReadonlySet<string> = new Set<string>(["open", "resolved", "dropped"]);
 
 function isStringArray(v: unknown): boolean {
   return Array.isArray(v) && v.every((x) => typeof x === "string");
@@ -111,29 +112,31 @@ function validatePayload(type: ServerEventType, obj: Record<string, unknown>): b
   switch (type) {
     case "status":
       return PHASES.has(obj.phase as string);
-    case "detection.contradiction":
-      return isStringArray(obj.refs);
-    case "detection.gap":
-      return isStringArray(obj.refs) && typeof obj.category === "string";
-    case "detection.ambiguous":
-      return isStringArray(obj.refs);
+    case "inquiry.node": {
+      if (!INQUIRY_OPS.has(obj.op as string)) return false;
+      const node = obj.node;
+      if (typeof node !== "object" || node === null) return false;
+      const n = node as Record<string, unknown>;
+      return (
+        typeof n.id === "string" &&
+        (n.parent_id === null || typeof n.parent_id === "string") &&
+        INQUIRY_KINDS.has(n.kind as string) &&
+        typeof n.text === "string" &&
+        INQUIRY_STATUSES.has(n.status as string) &&
+        isNumberInRange(n.confidence, 0, 1) &&
+        typeof n.depth === "number" &&
+        typeof n.origin === "string" &&
+        isStringArray(n.refs) &&
+        typeof n.created_seq === "number" &&
+        (n.resolved_seq === null || typeof n.resolved_seq === "number")
+      );
+    }
     case "analysis.progress":
       return isNumberInRange(obj.pct, 0, 100);
     case "context.progress":
       return (
         (obj.source === "prep" || obj.source === "repo") &&
         CONTEXT_STAGES.has(obj.stage as string)
-      );
-    case "checkpoint.coverage":
-      return (
-        Array.isArray(obj.points) &&
-        obj.points.every(
-          (p) =>
-            typeof p === "object" &&
-            p !== null &&
-            typeof (p as Record<string, unknown>).label === "string" &&
-            typeof (p as Record<string, unknown>).covered === "boolean",
-        )
       );
     case "session.end_proposed":
       return (
@@ -277,6 +280,23 @@ export function encodeUserAnswered(
     question_id: questionId,
     ...(answer.selectedValue !== undefined ? { selected_value: answer.selectedValue } : {}),
     ...(answer.text !== undefined ? { text: answer.text } : {}),
+  };
+  return encoder.encode(JSON.stringify(event));
+}
+
+export function encodeUserInquiryDrop(
+  sessionId: string,
+  nodeId: string,
+  seq: number,
+  ts: string,
+): Uint8Array {
+  const event: UserInquiryDropEvent = {
+    v: SCHEMA_VERSION,
+    type: "user.inquiry_drop",
+    seq,
+    ts,
+    session_id: sessionId,
+    node_id: nodeId,
   };
   return encoder.encode(JSON.stringify(event));
 }

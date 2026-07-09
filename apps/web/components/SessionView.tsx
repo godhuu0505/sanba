@@ -52,10 +52,10 @@ export function SessionView({
   sessionToken: string | null;
   readOnly?: boolean;
 }) {
-  const { state, metrics, sendSelection, sendText, sendAnswer } = useRealtimeSession({
+  const { state, metrics, sendText, sendAnswer, sendInquiryDrop } = useRealtimeSession({
     sessionId,
     sessionToken,
-    hydrateDetections: true,
+    hydrateInquiry: true,
     hydrateAnalysis: true,
   });
   const auth = useAuth();
@@ -317,8 +317,8 @@ export function SessionView({
       <ConversationSessionView
         readOnly={readOnly}
         state={state}
-        sendSelection={sendSelection}
         sendAnswer={sendAnswer}
+        sendInquiryDrop={sendInquiryDrop}
         micOn={mic.enabled}
         muted={muted}
         agentSpeaking={agentSpeaking}
