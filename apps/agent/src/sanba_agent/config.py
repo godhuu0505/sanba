@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     analysis_ride_along_timeout_seconds: float = 10.0
 
     session_score_timeout_seconds: float = 4.0
+    session_close_analytics_timeout_seconds: float = 4.0
 
     voice_completion_shutdown_delay_s: float = 6.0
 

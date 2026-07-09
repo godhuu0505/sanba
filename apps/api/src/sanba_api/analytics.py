@@ -64,16 +64,19 @@ def usage_recorder(
     )
 
 
-def session_recorder(session_id: str, repo: SessionRepository) -> UsageRecorder:
+def session_recorder(
+    session_id: str, repo: SessionRepository, meta: Any | None = None
+) -> UsageRecorder:
     """セッションメタから文脈（product_id / interview_mode）を引いた recorder を作る。
 
+    取得済みの `meta`（SessionMeta）があれば渡して Firestore の再読込を省く。
     メタ読み取りの失敗は文脈なし recorder に倒し、呼び出し側の本処理を止めない。
     """
-    meta = None
-    try:
-        meta = repo.get_session(session_id)
-    except Exception as exc:  # noqa: BLE001
-        log.warning("analytics_recorder_meta_failed", session=session_id, error=str(exc))
+    if meta is None:
+        try:
+            meta = repo.get_session(session_id)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("analytics_recorder_meta_failed", session=session_id, error=str(exc))
     return usage_recorder(
         session_id,
         repo=repo,

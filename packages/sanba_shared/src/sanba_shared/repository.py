@@ -1262,20 +1262,44 @@ class SessionRepository:
         同じセッション文書へ書くため、上書きではなく Firestore の `Increment` 変換で合算する。
         in-memory fallback は同義の加算辞書を持つ（テスト/ローカル用途）。
         """
+        self.add_session_ai_costs(
+            session_id,
+            {
+                component: {
+                    "usd": usd,
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
+                    "requests": requests,
+                }
+            },
+        )
+
+    def add_session_ai_costs(self, session_id: str, components: dict[str, dict[str, Any]]) -> None:
+        """複数コンポーネントのコスト加算を 1 回の merge 書き込みにまとめる（ADR-0061）。
+
+        agent のセッション終了フックは LiveKit の退出猶予（~10s）内で走るため、
+        コンポーネント毎の逐次往復ではなく単一リクエストで加算する。
+        """
+        if not components:
+            return
+        total_usd = round(sum(float(c.get("usd", 0.0)) for c in components.values()), 8)
         if self._client is not None:
             from google.cloud import firestore
 
             self._client.collection("sessions").document(session_id).set(
                 {
                     "ai_cost": {
-                        "total_usd": firestore.Increment(usd),
+                        "total_usd": firestore.Increment(total_usd),
                         "components": {
-                            component: {
-                                "usd": firestore.Increment(usd),
-                                "input_tokens": firestore.Increment(input_tokens),
-                                "output_tokens": firestore.Increment(output_tokens),
-                                "requests": firestore.Increment(requests),
+                            name: {
+                                "usd": firestore.Increment(float(c.get("usd", 0.0))),
+                                "input_tokens": firestore.Increment(int(c.get("input_tokens", 0))),
+                                "output_tokens": firestore.Increment(
+                                    int(c.get("output_tokens", 0))
+                                ),
+                                "requests": firestore.Increment(int(c.get("requests", 1))),
                             }
+                            for name, c in components.items()
                         },
                     }
                 },
@@ -1284,14 +1308,15 @@ class SessionRepository:
             return
         with self._mem_ai_cost_lock:
             cost = self._mem_ai_cost.setdefault(session_id, {"total_usd": 0.0, "components": {}})
-            cost["total_usd"] = round(cost["total_usd"] + usd, 8)
-            entry = cost["components"].setdefault(
-                component, {"usd": 0.0, "input_tokens": 0, "output_tokens": 0, "requests": 0}
-            )
-            entry["usd"] = round(entry["usd"] + usd, 8)
-            entry["input_tokens"] += input_tokens
-            entry["output_tokens"] += output_tokens
-            entry["requests"] += requests
+            cost["total_usd"] = round(cost["total_usd"] + total_usd, 8)
+            for name, c in components.items():
+                entry = cost["components"].setdefault(
+                    name, {"usd": 0.0, "input_tokens": 0, "output_tokens": 0, "requests": 0}
+                )
+                entry["usd"] = round(entry["usd"] + float(c.get("usd", 0.0)), 8)
+                entry["input_tokens"] += int(c.get("input_tokens", 0))
+                entry["output_tokens"] += int(c.get("output_tokens", 0))
+                entry["requests"] += int(c.get("requests", 1))
 
     def get_session_ai_cost(self, session_id: str) -> dict[str, Any]:
         """`sessions/{id}.ai_cost`（加算済みの合計・内訳）を返す。無ければ空の形。"""

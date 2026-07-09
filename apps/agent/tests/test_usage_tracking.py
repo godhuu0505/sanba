@@ -161,10 +161,13 @@ async def test_emit_session_cost_summary_joins_costs_and_kpi() -> None:
         noise_cancellation=True,
         usd_jpy_rate=150.0,
         livekit_rates=LiveKitRates(),
+        finalized_count=4,
     )
     assert set(payload["components"]) == {"live_audio", "judge", "title"}
     assert payload["total_usd"] > payload["ai_usd"]
     assert payload["kpi"]["quality_overall"] == 0.8
+    assert payload["kpi"]["finalized_count"] == 4
+    assert payload["efficiency"]["usd_per_finalized_requirement"] > 0
     assert payload["kpi"]["inquiry"]["resolved_total"] == 4
     assert payload["kpi"]["session_seconds"] == 600.0
     assert payload["livekit"]["minutes"] == 10.0
@@ -187,7 +190,7 @@ async def test_emit_session_cost_summary_survives_firestore_failure() -> None:
     def _explode(*args: Any, **kwargs: Any) -> None:
         raise RuntimeError("firestore down")
 
-    repo.add_session_ai_cost = _explode  # type: ignore[method-assign]
+    repo.add_session_ai_costs = _explode  # type: ignore[method-assign]
     repo.set_session_cost_summary = _explode  # type: ignore[method-assign]
     sink = AnalyticsSink()
     recorder = UsageRecorder(sink, "sess-1")

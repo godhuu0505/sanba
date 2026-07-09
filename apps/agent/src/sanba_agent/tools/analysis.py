@@ -12,6 +12,7 @@ import re
 import unicodedata
 from collections.abc import Callable, Sequence
 
+import structlog
 from sanba_shared.analytics import (
     COMPONENT_ADK_TEAM,
     COMPONENT_ANALYSIS,
@@ -21,6 +22,8 @@ from sanba_shared.analytics import (
 from sanba_shared.models import AnalysisResult
 
 from ..config import settings
+
+log = structlog.get_logger(__name__)
 
 UsageHook = Callable[[str, TokenUsage], None]
 
@@ -101,8 +104,8 @@ def _report_usage(usage_hook: UsageHook | None, component: str, usage: TokenUsag
         return
     try:
         usage_hook(component, usage)
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception as exc:  # noqa: BLE001
+        log.warning("analysis_usage_hook_failed", component=component, error=str(exc))
 
 
 def _labels_config(billing_labels: dict[str, str] | None):  # type: ignore[no-untyped-def]

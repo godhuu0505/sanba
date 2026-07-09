@@ -39,8 +39,10 @@ class LiveUsageTracker:
     """`session_usage_updated` の累積スナップショットを差分化して `ai_usage` に落とす。
 
     負の差分（AgentSession 再起動で集計がリセットされた直後）はスナップショット全量を
-    新規差分として扱う。`commit()` は再起動・終了時にベースラインを畳み、次の
-    AgentSession の初回スナップショットが全量差分として計上されるようにする。
+    新規差分として扱う。`commit()` はベースラインを畳んで次の AgentSession の初回
+    スナップショットを全量差分として計上させるためのもので、**新セッションの開始が確定した
+    直後にだけ**呼ぶ（旧セッションの確定前に呼ぶと、再起動リトライや遅延イベントの
+    再スナップショットが全量二重計上される）。
     """
 
     def __init__(self, recorder: UsageRecorder, default_model: str) -> None:
@@ -96,43 +98,29 @@ async def emit_session_cost_summary(
     noise_cancellation: bool,
     usd_jpy_rate: float,
     livekit_rates: LiveKitRates | None = None,
+    finalized_count: int = 0,
 ) -> dict[str, Any]:
     """セッション終了時の `session_summary` を組み立てて排出・永続化する。
 
-    1. プロセス内累計（sink.totals）を Firestore `sessions/{id}.ai_cost` へ加算
-       （api/worker が都度加算した分と `Increment` で合流する）
-    2. 合算後のコスト内訳を読み戻し、LiveKit 分数推定・KPI と結合した payload を組み立てる
-    3. `session_summary` イベントを排出（`session_cost_summary` 構造化ログ + ES index）し、
-       確定サマリを `ai_cost.summary` へ merge 保存する
+    LiveKit の退出猶予（~10s）内で走るため、Firestore 往復を最小化する:
+    1. プロセス内累計（sink.totals）を **1 回の merge 書き込み**で `sessions/{id}.ai_cost` へ
+       加算（api/worker が都度加算した分と `Increment` で合流する）
+    2. 合算後のコスト内訳と要件数を読み戻し、LiveKit 分数推定・KPI と結合した payload を組み立てる
+    3. `session_summary` イベントを先に排出（`session_cost_summary` 構造化ログ + ES index）してから
+       確定サマリを `ai_cost.summary` へ merge 保存する（後段が中断されてもイベントは残る）
     Firestore の失敗は該当ステップだけを落とし（fail-soft）、ログ/ES 排出は続行する。
     """
     totals = sink.totals()
-    for component, values in totals.items():
-        try:
-            await asyncio.to_thread(
-                repo.add_session_ai_cost,
-                session_id,
-                component=component,
-                usd=float(values.get("usd", 0.0)),
-                input_tokens=int(values.get("input_tokens", 0)),
-                output_tokens=int(values.get("output_tokens", 0)),
-                requests=int(values.get("requests", 0)),
-            )
-        except Exception as exc:  # noqa: BLE001
-            log.warning(
-                "session_cost_increment_failed",
-                session=session_id,
-                component=component,
-                error=str(exc),
-            )
     components = _components_from_totals(totals)
-    meta = None
+    try:
+        await asyncio.to_thread(repo.add_session_ai_costs, session_id, components)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("session_cost_increment_failed", session=session_id, error=str(exc))
     requirement_count = 0
     try:
         cost_doc = await asyncio.to_thread(repo.get_session_ai_cost, session_id)
         if cost_doc.get("components"):
             components = {name: dict(values) for name, values in cost_doc["components"].items()}
-        meta = await asyncio.to_thread(repo.get_session, session_id)
         requirement_count = len(await asyncio.to_thread(repo.list_requirements, session_id))
     except Exception as exc:  # noqa: BLE001
         log.warning("session_cost_readback_failed", session=session_id, error=str(exc))
@@ -142,7 +130,7 @@ async def emit_session_cost_summary(
         rates=livekit_rates,
     )
     kpi: dict[str, Any] = {
-        "finalized_count": (meta.finalized_count or 0) if meta is not None else 0,
+        "finalized_count": finalized_count,
         "requirement_count": requirement_count,
         "session_seconds": round(session_seconds, 1),
         "inquiry": dict(inquiry_counts),
@@ -168,6 +156,6 @@ async def emit_session_cost_summary(
     try:
         await asyncio.to_thread(repo.set_session_cost_summary, session_id, payload)
     except Exception as exc:  # noqa: BLE001
-        log.warning("session_cost_summary_persist_failed", session=session_id, error=str(exc))
-    await asyncio.to_thread(sink.flush, 2.0)
+        log.warning("cost_summary_persist_failed", session=session_id, error=str(exc))
+    await asyncio.to_thread(sink.flush, 1.0)
     return payload

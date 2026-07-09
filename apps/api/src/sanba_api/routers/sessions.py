@@ -39,7 +39,7 @@ from sanba_shared.result_document import (
     requirements_to_issue_labels,
 )
 
-from ..analytics import billing_labels, embedding_hook, usage_recorder
+from ..analytics import billing_labels, embedding_hook, session_recorder
 from ..auth import InvalidInvite, SessionAccess, create_invite, verify_invite
 from ..auth_google import AuthUser, ensure_room_creator, require_user, require_user_bound
 from ..config import settings
@@ -96,22 +96,9 @@ log = structlog.get_logger(__name__)
 router = APIRouter()
 
 
-def _analytics_recorder(session_id: str) -> UsageRecorder:
-    """セッション文脈（product_id / interview_mode）を束ねた ai_usage recorder（ADR-0061）。
-
-    メタ読み取りの失敗でも文脈なし recorder に倒し、素材投入・確定の本処理を止めない。
-    """
-    meta = None
-    try:
-        meta = _repo.get_session(session_id)
-    except Exception as exc:  # noqa: BLE001
-        log.warning("analytics_recorder_meta_failed", session=session_id, error=str(exc))
-    return usage_recorder(
-        session_id,
-        repo=_repo,
-        product_id=meta.product_id if meta is not None else None,
-        interview_mode=meta.interview_mode.value if meta is not None else None,
-    )
+def _analytics_recorder(session_id: str, meta: SessionMeta | None = None) -> UsageRecorder:
+    """ai_usage recorder（ADR-0061。実体は `analytics.session_recorder`）。"""
+    return session_recorder(session_id, _repo, meta=meta)
 
 
 class CreateSessionRequest(BaseModel):
@@ -1054,7 +1041,7 @@ def finalize_session_requirements(
     )
     if meta is None:
         raise HTTPException(status_code=404, detail="session not found")
-    recorder = _analytics_recorder(session_id)
+    recorder = _analytics_recorder(session_id, meta=existing)
     finalize_labels = billing_labels(session_id, recorder.product_id)
     generated_title = generate_requirement_title(
         confirmed,

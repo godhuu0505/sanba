@@ -25,6 +25,18 @@ from .analytics_setup import ANALYTICS_DATA_STREAM, ensure_event_stream_template
 
 log = structlog.get_logger(__name__)
 
+_MEM_LIMIT = 1000
+
+
+def _fmt_usd(value: Any, digits: int = 8) -> str | None:
+    """金額を固定小数点文字列で描く（指数表記だと log-based metric の正規表現が誤抽出する）。"""
+    if value is None:
+        return None
+    try:
+        return f"{float(value):.{digits}f}"
+    except (TypeError, ValueError):
+        return None
+
 
 @dataclass(frozen=True)
 class AnalyticsConfig:
@@ -78,6 +90,11 @@ class AnalyticsSink:
         if pending:
             wait(pending, timeout=timeout)
 
+    def close(self, timeout: float = 1.0) -> None:
+        """送信済みを短時間待って残りを破棄する（プロセス退出を塞がない）。冪等。"""
+        self.flush(timeout)
+        self._executor.shutdown(wait=False, cancel_futures=True)
+
     def _log_event(self, event: dict[str, Any]) -> None:
         payload = event.get("payload", {})
         if event.get("event_type") == EVENT_AI_USAGE:
@@ -88,7 +105,7 @@ class AnalyticsSink:
                 product=event.get("product_id"),
                 component=payload.get("component"),
                 model=payload.get("model"),
-                estimated_usd=payload.get("estimated_usd"),
+                estimated_usd=_fmt_usd(payload.get("estimated_usd")),
                 input_tokens=tokens.get("input_tokens", 0),
                 output_tokens=tokens.get("output_tokens", 0),
                 requests=payload.get("requests", 1),
@@ -103,14 +120,16 @@ class AnalyticsSink:
                 session=event.get("session_id"),
                 product=event.get("product_id"),
                 interview_mode=event.get("interview_mode"),
-                total_usd=payload.get("total_usd"),
-                total_jpy=payload.get("total_jpy"),
-                ai_usd=payload.get("ai_usd"),
-                livekit_usd=livekit.get("estimated_usd", 0.0),
+                total_usd=_fmt_usd(payload.get("total_usd")),
+                total_jpy=_fmt_usd(payload.get("total_jpy"), digits=2),
+                ai_usd=_fmt_usd(payload.get("ai_usd")),
+                livekit_usd=_fmt_usd(livekit.get("estimated_usd", 0.0)),
                 finalized_count=kpi.get("finalized_count", 0),
                 resolved_inquiries=(kpi.get("inquiry") or {}).get("resolved_total", 0),
                 session_seconds=kpi.get("session_seconds", 0.0),
-                usd_per_finalized_requirement=efficiency.get("usd_per_finalized_requirement"),
+                usd_per_finalized_requirement=_fmt_usd(
+                    efficiency.get("usd_per_finalized_requirement")
+                ),
             )
             return
         log.info(
@@ -138,6 +157,8 @@ class AnalyticsSink:
     def _on_index_done(self, future: Future[None]) -> None:
         with self._lock:
             self._pending.discard(future)
+        if future.cancelled():
+            return
         exc = future.exception()
         if exc is not None:
             log.warning("analytics_emit_failed", error=str(exc))
@@ -150,9 +171,15 @@ class AnalyticsSink:
         if client is None:
             with self._lock:
                 self._mem.append(self._document(event))
+                if len(self._mem) > _MEM_LIMIT:
+                    del self._mem[: len(self._mem) - _MEM_LIMIT]
             return
         try:
-            client.index(index=self._config.data_stream, document=self._document(event))
+            client.index(
+                index=self._config.data_stream,
+                document=self._document(event),
+                require_data_stream=True,
+            )
         except Exception as exc:  # noqa: BLE001
             log.warning(
                 "analytics_emit_failed",

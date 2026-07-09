@@ -2180,6 +2180,7 @@ async def entrypoint(ctx: JobContext) -> None:
     session: AgentSession
     restart_count = 0
     restart_pending = False
+    noise_cancellation_active = False
     reply_tracker = _ReplyTracker()
     pending_reinject: list[str] = []
 
@@ -2285,11 +2286,14 @@ async def entrypoint(ctx: JobContext) -> None:
         so the agent can read mockups and whiteboards (multimodal grounding).
         開始に失敗した中途半端なセッションは閉じてから raise する（リーク防止）。
         """
+        nonlocal noise_cancellation_active
         s: AgentSession = AgentSession(llm=build_realtime_model())
         _wire_session(s)
+        noise_cancellation = build_noise_cancellation()
+        noise_cancellation_active = noise_cancellation is not None
         input_options = RoomInputOptions(
             video_enabled=True,
-            noise_cancellation=build_noise_cancellation(),
+            noise_cancellation=noise_cancellation,
         )
         try:
             await s.start(
@@ -2346,7 +2350,6 @@ async def entrypoint(ctx: JobContext) -> None:
         await asyncio.sleep(delay)
         with contextlib.suppress(Exception):
             usage_tracker.record_snapshot(list(session.usage.model_usage))
-        usage_tracker.commit()
         with contextlib.suppress(Exception):
             await session.aclose()
         try:
@@ -2360,6 +2363,7 @@ async def entrypoint(ctx: JobContext) -> None:
             )
             _schedule(_restart_session())
             return
+        usage_tracker.commit()
         restart_pending = False
         log.info("voice_session_restarted", session=session_id, attempt=restart_count)
         resume = build_resume_instructions(agent.transcript, pending_reinject)
@@ -2399,7 +2403,6 @@ async def entrypoint(ctx: JobContext) -> None:
             usage_tracker.record_snapshot(list(session.usage.model_usage))
         except Exception as exc:  # noqa: BLE001
             log.warning("usage_final_snapshot_failed", session=session_id, error=str(exc))
-        usage_tracker.commit()
         from .evaluation import score_session
 
         mode = agent.interview_mode
@@ -2423,17 +2426,19 @@ async def entrypoint(ctx: JobContext) -> None:
                 session_id, agent.product_id, use_vertexai=settings.google_genai_use_vertexai
             ),
         )
-        try:
-            meta = await asyncio.to_thread(repo.get_session, session_id)
-            await asyncio.to_thread(
-                repo.save_transcript,
-                session_id,
-                "\n".join(agent.transcript),
-                apply_ttl=meta is None or meta.owner_email == "",
-            )
-        except Exception as exc:  # noqa: BLE001
-            log.warning("transcript_persist_failed", session=session_id, error=str(exc))
-        try:
+
+        async def _close_analytics() -> None:
+            meta = None
+            try:
+                meta = await asyncio.to_thread(repo.get_session, session_id)
+                await asyncio.to_thread(
+                    repo.save_transcript,
+                    session_id,
+                    "\n".join(agent.transcript),
+                    apply_ttl=meta is None or meta.owner_email == "",
+                )
+            except Exception as exc:  # noqa: BLE001
+                log.warning("transcript_persist_failed", session=session_id, error=str(exc))
             await emit_session_cost_summary(
                 session_id=session_id,
                 repo=repo,
@@ -2442,7 +2447,7 @@ async def entrypoint(ctx: JobContext) -> None:
                 inquiry_counts=agent.inquiry_kpi_counts(),
                 judge_result=judge_result,
                 session_seconds=time.monotonic() - session_started_at,
-                noise_cancellation=build_noise_cancellation() is not None,
+                noise_cancellation=noise_cancellation_active,
                 usd_jpy_rate=settings.usd_jpy_rate,
                 livekit_rates=LiveKitRates(
                     connection_usd_per_min=settings.livekit_connection_usd_per_min,
@@ -2451,9 +2456,19 @@ async def entrypoint(ctx: JobContext) -> None:
                         settings.livekit_noise_cancellation_usd_per_min
                     ),
                 ),
+                finalized_count=(meta.finalized_count or 0) if meta is not None else 0,
             )
+
+        try:
+            await asyncio.wait_for(
+                _close_analytics(),
+                timeout=settings.session_close_analytics_timeout_seconds,
+            )
+        except TimeoutError:
+            log.warning("session_close_analytics_timeout", session=session_id)
         except Exception as exc:  # noqa: BLE001
-            log.warning("session_cost_summary_failed", session=session_id, error=str(exc))
+            log.warning("session_close_analytics_failed", session=session_id, error=str(exc))
+        analytics_sink.close()
 
     ctx.add_shutdown_callback(_on_close)
 
