@@ -34,6 +34,8 @@ class Settings(BaseSettings):
     voice_opening_reply_timeout_s: float = 8.0
     voice_opening_max_attempts: int = 3
 
+    voice_reply_watchdog_timeout_s: float = 20.0
+
     analysis_timeout_seconds: float = 20.0
     analysis_ride_along_timeout_seconds: float = 10.0
 

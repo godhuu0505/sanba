@@ -715,6 +715,51 @@ async def test_resolve_inquiry_tool_no_match_is_noop() -> None:
 
 
 @pytest.mark.asyncio
+async def test_resolve_inquiry_tool_matches_paraphrase() -> None:
+    """近い言い換えでも解消でき、空振りループに落ちない（#468 RC1）。"""
+    transport = RecordingTransport()
+    agent = _agent(transport)
+    add = type(agent).add_inquiry.__wrapped__
+    added = await add(agent, None, "並び順は関連度順で確定する")
+    resolve = type(agent).resolve_inquiry.__wrapped__
+    out = await resolve(agent, None, "並び順は関連度順で確定")
+    assert out["resolved"] is True
+    assert out["id"] == added["id"]
+
+
+@pytest.mark.asyncio
+async def test_resolve_inquiry_tool_circuit_breaks_after_repeated_no_match() -> None:
+    """連続 no-match でサーキットブレーカーが stop を返し、暴走ループを断つ（#468 RC3）。"""
+    transport = RecordingTransport()
+    agent = _agent(transport)
+    add = type(agent).add_inquiry.__wrapped__
+    await add(agent, None, "並び順の既定")
+    resolve = type(agent).resolve_inquiry.__wrapped__
+    out1 = await resolve(agent, None, "全く無関係な論点X")
+    await resolve(agent, None, "全く無関係な論点Y")
+    out3 = await resolve(agent, None, "全く無関係な論点Z")
+    assert out1.get("stop") is None
+    assert "open_inquiries" in out1
+    assert out3["stop"] is True
+    assert out3["resolved"] is False
+    assert any(item["text"] == "並び順の既定" for item in out3["open_inquiries"])
+
+
+@pytest.mark.asyncio
+async def test_resolve_inquiry_streak_resets_on_success() -> None:
+    transport = RecordingTransport()
+    agent = _agent(transport)
+    add = type(agent).add_inquiry.__wrapped__
+    await add(agent, None, "並び順の既定")
+    resolve = type(agent).resolve_inquiry.__wrapped__
+    await resolve(agent, None, "無関係A")
+    await resolve(agent, None, "無関係B")
+    assert agent._resolve_no_match_streak == 2
+    await resolve(agent, None, "並び順の既定")
+    assert agent._resolve_no_match_streak == 0
+
+
+@pytest.mark.asyncio
 async def test_resolve_inquiry_selection_resolves_and_emits() -> None:
     """web の user.selection は該当ノードを解消し inquiry.node(op=resolve) を返す（決定④）。"""
     transport = RecordingTransport()
