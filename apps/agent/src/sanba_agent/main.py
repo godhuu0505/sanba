@@ -43,9 +43,14 @@ try:  # noqa: SIM105
     from livekit.plugins import noise_cancellation as _noise_cancellation
 except Exception:  # pragma: no cover
     _noise_cancellation = None  # type: ignore[assignment]
+from sanba_shared.inquiry import InquiryTree, make_inquiry_id
 from sanba_shared.models import (
     AnalysisResult,
     GitHubIndexStatus,
+    InquiryKind,
+    InquiryNode,
+    InquiryOrigin,
+    InquiryStatus,
     InviteScope,
     Priority,
     Product,
@@ -60,11 +65,7 @@ from sanba_shared.repository import SessionRepository
 from .background import DEFAULT_MIN_NEW_UTTERANCES, AnalysisScheduler
 from .config import settings
 from .events import (
-    DETECTOR_AMBIGUITY,
-    DETECTOR_NFR,
     EVENTS_TOPIC,
-    RESOLUTION_AGENT_RESOLVED,
-    RESOLUTION_USER_SELECTED,
     WEB_EVENTS_TOPIC,
     EventPublisher,
     EventPublishError,
@@ -74,6 +75,7 @@ from .events import (
     decode_user_selection,
     decode_user_text,
 )
+from .inquiry_feeder import reconcile_analysis
 from .observability import get_tracer, setup_observability
 from .prefetch import REASON_ACL_RECHECK, REASON_EMPTY, PrefetchCache
 from .prompts.interview import (
@@ -293,10 +295,22 @@ def _is_stale_repo_passage(source: str, current_sha: str) -> bool:
 
 _USER_DERIVED_KINDS = frozenset({"utterance", "requirement"})
 
+_GATING_INQUIRY_KINDS = (InquiryKind.CONTRADICTION, InquiryKind.GAP, InquiryKind.CHECK)
+ADD_INQUIRY_CONFIDENCE = 0.9
+
 PREFETCH_TIMEOUT_SECONDS = 5.0
 ANALYSIS_TIMEOUT_SECONDS = settings.analysis_timeout_seconds
 DRAIN_GRACE_SECONDS = 2.0
 ACL_RECHECK_TIMEOUT_SECONDS = 2.0
+
+
+def _inquiry_op(status: InquiryStatus) -> str:
+    """ノードの状態を realtime の op（upsert|resolve|drop）へ写す（ADR-0059）。"""
+    if status is InquiryStatus.DROPPED:
+        return "drop"
+    if status is InquiryStatus.RESOLVED:
+        return "resolve"
+    return "upsert"
 
 
 async def _drain_tasks(tasks: set[asyncio.Task[Any]], grace_seconds: float) -> tuple[int, int]:
@@ -369,8 +383,9 @@ class SANBAAgent(Agent):
         self._current_question_id: str | None = None
         self._current_question_has_options = False
         self._question_asked_turn = -1
-        self._published_gaps: set[str] = set()
-        self._published_ambiguous: set[str] = set()
+        self._inquiry_focus_id: str | None = None
+        self._inquiry_seq = 0
+        self._inquiry = self._hydrate_inquiry()
         self._injected_assets: set[str] = set()
         self._publish_tasks: set[asyncio.Task[Any]] = set()
         self._persist_tasks: set[asyncio.Task[Any]] = set()
@@ -416,7 +431,7 @@ class SANBAAgent(Agent):
 
         - end_user モードでは注入しない（grounding 出力制御 ADR-0032 決定8 と揃え、
           内部素材の観察が Live 発話へ素通りするのを防ぐ）。allow_repo_grounding を流用する。
-        - 同一 asset は 1 回だけ（`_published_gaps` と同じ dedup パターン）。
+        - 同一 asset は 1 回だけ（`_injected_assets` の dedup）。
         許可したら asset_id を消費して True。以後の同一 asset は False。
         """
         if not self._allow_repo_grounding:
@@ -450,13 +465,47 @@ class SANBAAgent(Agent):
         """
         self._shutdown_hook = hook
 
-    def _open_detection_count(self) -> int:
-        """未解消の検知（gap/ambiguous）件数。終了提案・確定の可否判定に使う（P1-b）。
+    def _hydrate_inquiry(self) -> InquiryTree:
+        """既存の確認事項ノードから木を復元する（再接続/新プロセスでの引き継ぎ / ADR-0059 決定④）。
 
-        agent が publish し resolve で外す open 集合そのもの（web の「未解消 N」と一致）。
-        サーバ側 finalize も list_open_detections で二重にゲートするので、ここは good-faith。
+        木の正本は `sessions/{id}/inquiry_nodes`。新しい worker プロセスが既存セッションを
+        引き継ぐとき、永続化済みノードを載せ直して gating 数・フォーカスの土台を合わせる。採番
+        `_inquiry_seq` は既存ノードの最大 seq から続け、新規ノードの seq が衝突しないようにする。
+        読み取り失敗は fail-soft（空の木で会話は成立させる）。
         """
-        return len(self._published_gaps) + len(self._published_ambiguous)
+        try:
+            nodes = self._repo.list_inquiry_nodes(self._session_id)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("inquiry_hydration_failed", session=self._session_id, error=str(exc))
+            return InquiryTree()
+        if nodes:
+            self._inquiry_seq = max(max(n.created_seq, n.resolved_seq or 0) for n in nodes)
+            log.info("inquiry_hydrated", session=self._session_id, nodes=len(nodes))
+        return InquiryTree.from_nodes(nodes)
+
+    def _next_inquiry_seq(self) -> int:
+        """ツリーのノード採番（created_seq/resolved_seq）を単調増加させる。"""
+        self._inquiry_seq += 1
+        return self._inquiry_seq
+
+    def _gating_open_count(self) -> int:
+        """終了をブロックする未解消ノード数（HP8 / ADR-0059 決定⑤）。
+
+        `open かつ kind ∈ {contradiction, gap, check}`。ambiguous は advisory で算入しない。
+        終了提案・確定の可否判定に使う。サーバ側 finalize も二重にゲートするので good-faith。
+        """
+        return self._inquiry.gating_open_count(tau=0.0)
+
+    def _inquiry_summary_counts(self) -> tuple[int, int]:
+        """`session.completed` の要約用に (解消した矛盾数, 見つけた抜け数) をツリーから数える。"""
+        nodes = self._inquiry.nodes()
+        contradictions_resolved = sum(
+            1
+            for n in nodes
+            if n.kind is InquiryKind.CONTRADICTION and n.status is InquiryStatus.RESOLVED
+        )
+        gaps_found = sum(1 for n in nodes if n.kind is InquiryKind.GAP)
+        return contradictions_resolved, gaps_found
 
     @property
     def current_question_id(self) -> str | None:
@@ -587,28 +636,23 @@ class SANBAAgent(Agent):
         self.record_utterance("participant", text)
         return prompt
 
-    async def resolve_detection(self, detection_id: str, selected_value: str) -> None:
-        """ユーザーの選択（user.selection, 契約 §4.5）を受けて検知を解消する（#102）。
+    async def resolve_inquiry_selection(self, node_id: str, selected_value: str) -> None:
+        """ユーザーの選択（user.selection, 契約 §4.5）を受けて確認事項ノードを解消する（ADR-0059）。
 
-        web の検知カードで選択肢がタップされると呼ばれ、当該検知を解消済みにして
-        detection.resolved を web へ返す（カードが閉じ、リロードでも未解消に戻らない）。
-        選択内容は以後の会話の前提として記録しておく。
+        web の確認事項で選択肢がタップされると呼ばれ、当該ノードを解消済みにして
+        ``inquiry.node``(op=resolve) を web へ返す（リロードでも未解消に戻らない）。
+        選択内容は以後の会話の前提として記録しておく。id/剪定には触れず `InquiryTree` に委ねる。
         """
-        self._transcript.append(f"[選択] {detection_id} → {selected_value}")
-        self._repo.resolve_detection(self._session_id, detection_id, RESOLUTION_USER_SELECTED)
-        self._published_gaps.discard(detection_id)
-        self._published_ambiguous.discard(detection_id)
-        if self._publisher is not None:
-            await self._publisher.detection_resolved(
-                detection_id,
-                resolution=RESOLUTION_USER_SELECTED,
-                selected_value=selected_value,
-            )
-            self._repo.set_session_seq(self._session_id, self._publisher.seq)
+        self._transcript.append(f"[選択] {node_id} → {selected_value}")
+        node = self._inquiry.resolve(node_id, self._next_inquiry_seq())
+        if node is not None:
+            self._inquiry_focus_id = node.id
+            await self._emit_inquiry_nodes([node])
         log.info(
-            "detection_resolved",
+            "inquiry_resolved_by_selection",
             session=self._session_id,
-            detection=detection_id,
+            node=node_id,
+            resolved=node is not None,
             value=selected_value,
         )
 
@@ -676,11 +720,11 @@ class SANBAAgent(Agent):
     async def _run_analysis(
         self, *, trigger: str, timeout_seconds: float | None = None
     ) -> AnalysisResult:
-        """transcript を分析し、検知（gap/ambiguous）の publish まで行う共通経路。
+        """transcript を分析し、確認事項ツリーへの反映（`_reconcile_inquiry`）まで行う共通経路。
 
         ツールの同期フォールバックと背景実行（ADR-0037 段階B）の両方が通る。timeout は
-        LLM 分析部分にだけ適用し、publish は中断しない（部分 publish で _published_gaps と
-        web の整合が崩れるのを避ける）。
+        LLM 分析部分にだけ適用し、ツリー反映は中断しない（部分適用でツリーと web の整合が
+        崩れるのを避ける）。
         """
         transcript = "\n".join(self._transcript)
         if self._prep_note:
@@ -718,7 +762,7 @@ class SANBAAgent(Agent):
                 uncovered=result.coverage_open,
             )
         async with self._analysis_lock:
-            await self._publish_analysis_detections(result)
+            await self._reconcile_inquiry(result)
         self._last_analysis = result
         self._analysis_covered_turn = covered_turn
         return result
@@ -790,89 +834,6 @@ class SANBAAgent(Agent):
                 log.info("background_analysis_followup", session=self._session_id)
                 self._start_background_analysis()
 
-    async def _publish_analysis_detections(self, result: AnalysisResult) -> None:
-        """分析結果から検知（gap/ambiguous）を永続化し web へ publish する。
-
-        呼び出し側（_run_analysis）が _analysis_lock で直列化している前提。status は
-        触らない（背景実行は不可視・deliberating/listening はツール経路だけが出す）。
-
-        gap（`result.open_topics`）は汎用の検知チャネルとして残すが、ハードコードの企業向け
-        NFR ヒューリスティックは廃止したため現状は供給されない（ADR-0055）。
-        """
-        if self._publisher is not None:
-            current = {make_requirement_id(f"gap:{t}"): t for t in result.open_topics}
-            for gap_id, topic in current.items():
-                if gap_id in self._published_gaps:
-                    continue
-                self._published_gaps.add(gap_id)
-                self._end_proposed = False
-                summary = f"{topic}が未確認です。"
-                self._repo.save_detection(
-                    self._session_id,
-                    {
-                        "id": gap_id,
-                        "kind": "gap",
-                        "summary": summary,
-                        "category": "non_functional",
-                        "refs": [],
-                        "detector": DETECTOR_NFR,
-                        "resolved": False,
-                    },
-                )
-                await self._publisher.detection_gap(
-                    gap_id,
-                    summary=summary,
-                    category="non_functional",
-                    refs=[],
-                    detector=DETECTOR_NFR,
-                )
-            for gap_id in list(self._published_gaps):
-                if gap_id not in current:
-                    self._published_gaps.discard(gap_id)
-                    self._repo.resolve_detection(
-                        self._session_id, gap_id, RESOLUTION_AGENT_RESOLVED
-                    )
-                    await self._publisher.detection_resolved(
-                        gap_id, resolution=RESOLUTION_AGENT_RESOLVED
-                    )
-            current_ambiguous = {
-                make_requirement_id(f"ambiguous:{t}"): t for t in result.ambiguous_topics
-            }
-            for amb_id, snippet in current_ambiguous.items():
-                if amb_id in self._published_ambiguous:
-                    continue
-                self._published_ambiguous.add(amb_id)
-                self._end_proposed = False
-                summary = f"「{snippet}」は具体的な基準が不明瞭です。"
-                self._repo.save_detection(
-                    self._session_id,
-                    {
-                        "id": amb_id,
-                        "kind": "ambiguous",
-                        "summary": summary,
-                        "refs": [],
-                        "detector": DETECTOR_AMBIGUITY,
-                        "resolved": False,
-                    },
-                )
-                await self._publisher.detection_ambiguous(
-                    amb_id,
-                    summary=summary,
-                    refs=[],
-                    detector=DETECTOR_AMBIGUITY,
-                )
-            for amb_id in list(self._published_ambiguous):
-                if amb_id not in current_ambiguous:
-                    self._published_ambiguous.discard(amb_id)
-                    self._repo.resolve_detection(
-                        self._session_id, amb_id, RESOLUTION_AGENT_RESOLVED
-                    )
-                    await self._publisher.detection_resolved(
-                        amb_id, resolution=RESOLUTION_AGENT_RESOLVED
-                    )
-            await self._publish_check_point_coverage(result)
-            self._repo.set_session_seq(self._session_id, self._publisher.seq)
-
     def begin_shutdown(self) -> None:
         """シャットダウン開始を記録し、以後の背景分析の新規発火を止める（#435）。
 
@@ -881,22 +842,42 @@ class SANBAAgent(Agent):
         """
         self._closing = True
 
-    async def _publish_check_point_coverage(self, result: AnalysisResult) -> None:
-        """観点カバレッジ（済/未）を ``checkpoint.coverage`` で publish（ADR-0057 増分2a）。
+    async def _emit_inquiry_nodes(self, nodes: list[InquiryNode]) -> None:
+        """変化した確認事項ノードを永続化し ``inquiry.node`` で発火する（ADR-0059 決定①/③/④）。
 
-        `detection.gap` には流さない専用チャネル（未解消件数・終了ゲートに算入しない）。creds 無し
-        では `assess_check_point_coverage` が失敗と全カバー済みを区別できず一律 `[]` を返すため、
-        `covered=True` を全観点に出すと誤誘導になる。よって creds が真のときだけ publish する
-        （`assess_check_point_coverage` の creds 判定と対称）。観点 0 件でも publish しない。
-        永続化はしない（live-only）。
+        単一の書き手（voice ループ）が seq を採番済みのノードを受け取り、`save_inquiry_node` で
+        木の正本を更新してから op（upsert|resolve|drop）付きで publish する。永続化は publisher の
+        有無に依らず行い（正本を欠かさない）、realtime 発火は publisher があるときだけ行う。
         """
-        if self._publisher is None or not self._check_points:
+        if not nodes:
             return
-        if not (settings.google_api_key or settings.google_genai_use_vertexai):
+        for node in nodes:
+            self._repo.save_inquiry_node(self._session_id, node)
+        if self._publisher is None:
             return
-        uncovered = set(result.coverage_open)
-        points = [{"label": p, "covered": p not in uncovered} for p in self._check_points]
-        await self._publisher.checkpoint_coverage(points)
+        for node in nodes:
+            await self._publisher.inquiry_node(node, op=_inquiry_op(node.status))
+        self._repo.set_session_seq(self._session_id, self._publisher.seq)
+
+    async def _reconcile_inquiry(self, result: AnalysisResult) -> None:
+        """分析結果を確認事項ツリーへ差分適用し、変化を ``inquiry.node`` で発火する（ADR-0059）。
+
+        木の正本は agent 側（決定①）。背景分析の検知の束をフォーカスノードの子へ upsert し、
+        最新パス不在は自動 resolve、確認観点は coverage で open/resolve する
+        （`reconcile_analysis`）。新しい gating ノードが生えたら終了提案を取り下げる（HP8）。
+        """
+        changed = reconcile_analysis(
+            self._inquiry,
+            result,
+            check_points=self._check_points,
+            focus_id=self._inquiry_focus_id,
+            seq=self._next_inquiry_seq,
+        )
+        if not changed:
+            return
+        if any(n.status is InquiryStatus.OPEN and n.kind in _GATING_INQUIRY_KINDS for n in changed):
+            self._end_proposed = False
+        await self._emit_inquiry_nodes(changed)
 
     async def drain_background_tasks(self, grace_seconds: float = DRAIN_GRACE_SECONDS) -> None:
         """セッション終了時に背景タスクを猶予付きで送り切り、残りはキャンセルする（ADR-0037）。
@@ -1383,17 +1364,83 @@ class SANBAAgent(Agent):
         return meta.github_commit_sha, False
 
     @function_tool
+    async def resolve_inquiry(self, _ctx: RunContext, text: str) -> dict:
+        """会話で解消できた確認事項（矛盾・抜け・確認観点・曖昧）を解消済みにする（ADR-0059）。
+
+        参加者の回答や合意で、画面に出ている確認事項の一つが解決したと判断したときに呼ぶ。
+        一致する確認事項を解消し、画面の該当項目を済みにする。id・親子・剪定には触れない
+        （木が正本で、採番と整合は木に委ねる / 決定③）。
+
+        Args:
+            text: 解消した確認事項の要点（画面の文言に近い一文。例「並び順は関連度順で確定」）。
+        """
+        seq = self._next_inquiry_seq()
+        resolved: InquiryNode | None = None
+        for kind in (
+            InquiryKind.CONTRADICTION,
+            InquiryKind.GAP,
+            InquiryKind.CHECK,
+            InquiryKind.AMBIGUOUS,
+        ):
+            node = self._inquiry.resolve_by_text(kind, text, seq)
+            if node is not None:
+                resolved = node
+                break
+        if resolved is None:
+            log.info("resolve_inquiry_no_match", session=self._session_id)
+            return {"resolved": False, "reason": "not_found"}
+        self._inquiry_focus_id = resolved.id
+        await self._emit_inquiry_nodes([resolved])
+        log.info(
+            "resolve_inquiry",
+            session=self._session_id,
+            id=resolved.id,
+            kind=resolved.kind.value,
+        )
+        return {"resolved": True, "id": resolved.id}
+
+    @function_tool
+    async def add_inquiry(self, _ctx: RunContext, text: str) -> dict:
+        """会話中に新たに見つかった確認事項（未解決の論点）を1件、木に追加する（ADR-0059）。
+
+        深掘りの中で「まだ詰め切れていない」と気づいた論点を抜け（gap）として立てる。直近に
+        触れた確認事項（フォーカス）の子として付き、深さ・枝数の上限は木が強制する（決定③）。
+        追加した論点を新しいフォーカスにする。id・親子・剪定には触れない。
+
+        Args:
+            text: 追加する確認事項の要点（例「ゲスト購入時の在庫引き当ての扱い」）。
+        """
+        node_id = make_inquiry_id(InquiryKind.GAP, text)
+        changed = self._inquiry.upsert(
+            kind=InquiryKind.GAP,
+            text=text,
+            seq=self._next_inquiry_seq(),
+            confidence=ADD_INQUIRY_CONFIDENCE,
+            origin=InquiryOrigin.CONVERSATION,
+            parent_id=self._inquiry_focus_id,
+        )
+        node = self._inquiry.get(node_id)
+        added = node is not None and node.status is InquiryStatus.OPEN
+        if added:
+            self._inquiry_focus_id = node_id
+            self._end_proposed = False
+        await self._emit_inquiry_nodes(changed)
+        log.info("add_inquiry", session=self._session_id, id=node_id, added=added)
+        return {"added": added, "id": node_id}
+
+    @function_tool
     async def propose_session_end(self, _ctx: RunContext) -> dict:
         """確認したい点がすべて解消できたとき、会話を終える提案を出す（P1-b）。
 
-        未解消の論点（矛盾・抜け・不明瞭）が 0 件になったと判断したら呼ぶ。まだ残って
-        いれば proposed=false と残数を返すので、深掘りを続ける。0 件なら画面に終了提案の
-        カードを出し、ユーザーの同意を音声で確認する（同意を得たら complete_session を呼ぶ）。
+        未解消の確認事項（矛盾・抜け・確認観点）が 0 件になったと判断したら呼ぶ（曖昧な論点は
+        advisory で算入しない / ADR-0059 決定⑤）。まだ残っていれば proposed=false と残数を返すので、
+        深掘りを続ける。0 件なら画面に終了提案のカードを出し、ユーザーの同意を音声で確認する
+        （同意を得たら complete_session を呼ぶ）。
         """
-        open_count = self._open_detection_count()
+        open_count = self._gating_open_count()
         if open_count > 0:
             log.info("session_end_declined_open", session=self._session_id, open=open_count)
-            return {"proposed": False, "open_count": open_count, "reason": "open_detections"}
+            return {"proposed": False, "open_count": open_count, "reason": "open_inquiries"}
         requirements = len(self._repo.list_requirements(self._session_id))
         if requirements == 0:
             log.info("session_end_declined_no_requirements", session=self._session_id)
@@ -1421,15 +1468,16 @@ class SANBAAgent(Agent):
         if not self._end_proposed:
             log.info("session_complete_declined_not_proposed", session=self._session_id)
             return {"completed": False, "open_count": 0, "reason": "not_proposed"}
-        open_count = self._open_detection_count()
+        open_count = self._gating_open_count()
         if open_count > 0:
             log.info("session_complete_declined_open", session=self._session_id, open=open_count)
-            return {"completed": False, "open_count": open_count, "reason": "open_detections"}
+            return {"completed": False, "open_count": open_count, "reason": "open_inquiries"}
         self._completed = True
         if self._publisher is not None:
+            contradictions_resolved, gaps_found = self._inquiry_summary_counts()
             await self._publisher.session_completed(
-                contradictions_resolved=self._publisher.contradictions_resolved,
-                gaps_found=self._publisher.gaps_published,
+                contradictions_resolved=contradictions_resolved,
+                gaps_found=gaps_found,
                 issues_created=0,
                 artifacts=[],
             )
@@ -1495,9 +1543,10 @@ class SANBAAgent(Agent):
         )
         log.info("requirements_exported", session=self._session_id, repo=gh_repo, url=url)
         if self._publisher is not None and url is not None:
+            contradictions_resolved, gaps_found = self._inquiry_summary_counts()
             await self._publisher.session_completed(
-                contradictions_resolved=self._publisher.contradictions_resolved,
-                gaps_found=self._publisher.gaps_published,
+                contradictions_resolved=contradictions_resolved,
+                gaps_found=gaps_found,
                 issues_created=1,
                 artifacts=[{"kind": "issue", "url": url}],
             )
@@ -1675,21 +1724,23 @@ async def open_interview(
     max_attempts: int | None = None,
     reply_timeout_s: float | None = None,
 ) -> bool:
-    """開始一言（掴み）を、assistant 応答が観測できるまで最大 max_attempts 回試みる（#374）。
+    """開始一言（掴み）を、assistant 応答が観測できるまで最大 max_attempts 回試みる。
 
-    Gemini Live は接続直後に generation_created を返せず、開始一言が黙って落ちることがある
-    （sess-2d51da04 / sess-ae759ca3 で再現。livekit は RealtimeError を内部で握って listening に
-    戻すだけで、例外も error イベントも出ないため guarded_generate_reply では検知できない）。
-    ここでは各試行のあと ``reply_seen``（assistant の conversation_item が来たら set される
-    entrypoint 側イベント）を reply_timeout_s だけ待ち、来なければ voice_opening_no_response を
-    残して再試行する。再試行前に interrupt して、遅れて生成された一言との二重発話を避ける。
-    成功で True、上限まで応答が出なければ False（会話自体は生きており次の発話から前進できる）。
+    Gemini Live は接続直後に generation_created を返せず、開始一言が黙って落ちることがある。
+    livekit-agents は内部の RealtimeError を握って listening に戻すだけで例外も error イベントも
+    上に返さないため guarded_generate_reply では検知できない。各試行のあと ``reply_seen``
+    （assistant の conversation_item が来たら set される entrypoint 側イベント）を reply_timeout_s
+    だけ待ち、来なければ voice_opening_no_response を残して再試行する。タイムアウト後は必ず
+    interrupt を掛ける（最終試行も含む / 直後の enable_participant_audio で参加者マイクが開くため、
+    遅延した応答と重なる二重発話を防ぐ）。成功で True、上限まで応答が出なければ False を返し
+    voice_opening_exhausted を残す（会話は生きており次の発話から前進できる）。
     """
     attempts = max_attempts if max_attempts is not None else settings.voice_opening_max_attempts
     timeout_s = (
         reply_timeout_s if reply_timeout_s is not None else settings.voice_opening_reply_timeout_s
     )
-    for attempt in range(1, max(1, attempts) + 1):
+    total_attempts = max(1, attempts)
+    for attempt in range(1, total_attempts + 1):
         reply_seen.clear()
         await guarded_generate_reply(
             session, session_id=session_id, kind="opening", instructions=instructions
@@ -1697,14 +1748,24 @@ async def open_interview(
         try:
             await asyncio.wait_for(reply_seen.wait(), timeout=timeout_s)
         except TimeoutError:
-            log.warning("voice_opening_no_response", session=session_id, attempt=attempt)
-            if attempt < max(1, attempts):
-                with contextlib.suppress(Exception):
-                    await session.interrupt()
+            log.warning(
+                "voice_opening_no_response",
+                session=session_id,
+                attempt=attempt,
+                timeout_s=timeout_s,
+            )
+            with contextlib.suppress(Exception):
+                await session.interrupt()
             continue
         if attempt > 1:
             log.info("voice_opening_recovered", session=session_id, attempt=attempt)
         return True
+    log.warning(
+        "voice_opening_exhausted",
+        session=session_id,
+        attempts=total_attempts,
+        timeout_s=timeout_s,
+    )
     return False
 
 
@@ -1928,8 +1989,8 @@ async def entrypoint(ctx: JobContext) -> None:
             return
         sel = decode_user_selection(data, expected_session_id=session_id)
         if sel is not None:
-            detection_id, selected_value = sel
-            _schedule(agent.resolve_detection(detection_id, selected_value))
+            node_id, selected_value = sel
+            _schedule(agent.resolve_inquiry_selection(node_id, selected_value))
             return
         text = decode_user_text(data, expected_session_id=session_id)
         if text is not None:

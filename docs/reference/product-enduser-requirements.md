@@ -65,7 +65,7 @@ ADR 未起票のものは実装計画の Step 0 で起票する。
 
 | ID | 要件 |
 |---|---|
-| NFR-1 | **セキュリティ**: リンクは既存 HMAC 署名基盤（`apps/api/src/sanba_api/auth.py`）と同水準の署名・期限・検証。ゲスト join token の権限は当該セッションの読取＋既存 write 系（`user.selection` 等）のみ。PII マスク（`mask_pii_before_index`）は全経路で維持 |
+| NFR-1 | **セキュリティ**: リンクは既存 HMAC 署名基盤（`apps/api/src/sanba_api/auth.py`）と同水準の署名・期限・検証。ゲスト join token の権限は当該セッションの読取＋既存 write 系（`user.inquiry_drop` / `user.text` / `user.answered` 等）のみ。PII マスク（`mask_pii_before_index`）は全経路で維持 |
 | NFR-2 | **情報漏洩の遮断**: private repo 由来の索引内容は end_user モードの出力に露出しない（FR-2.5）。`GITHUB_REPO_ALLOWLIST`（ADR-0027）は product の repo 紐づけにも一貫適用 |
 | NFR-3 | **観測性**: 新規処理はすべて OTel トレース（Cloud Trace）＋構造化ログ（Cloud Monitoring）を通す。LLM 入出力（end_user プロンプト含む）は構造化ログ + Cloud Trace で観測する（CLAUDE.md 原則 3, ADR-0051） |
 | NFR-4 | **ステートレス維持**: invite の消費カウント等の状態は Firestore に置き、Cloud Run のワーカーはステートレスのまま |

@@ -13,7 +13,7 @@ import {
 import {
   fetchContextFiles,
   fetchCurrentQuestion,
-  fetchDetections,
+  fetchInquiry,
   fetchRequirements,
 } from "../api";
 import { contractEventFixture } from "./fixtures";
@@ -21,6 +21,7 @@ import { RealtimeMetrics, type RealtimeMetricsSnapshot } from "./metrics";
 import {
   decodeServerEvent,
   encodeUserAnswered,
+  encodeUserInquiryDrop,
   encodeUserSelection,
   encodeUserText,
 } from "./parse";
@@ -36,6 +37,8 @@ export type SendAnswer = (
   answer: { selectedValue?: string; text?: string },
 ) => void;
 
+export type SendInquiryDrop = (nodeId: string) => void;
+
 export interface UseRealtimeSessionResult {
   state: SessionState;
   metrics: RealtimeMetricsSnapshot;
@@ -43,12 +46,13 @@ export interface UseRealtimeSessionResult {
   sendSelection: SendSelection;
   sendText: SendText;
   sendAnswer: SendAnswer;
+  sendInquiryDrop: SendInquiryDrop;
 }
 
 interface LiveOptions {
   sessionId: string;
   sessionToken: string | null;
-  hydrateDetections?: boolean;
+  hydrateInquiry?: boolean;
   hydrateAnalysis?: boolean;
 }
 
@@ -74,7 +78,7 @@ function useStore(): {
 
 export function useRealtimeSession(opts: LiveOptions): UseRealtimeSessionResult {
   const { store, state, metrics } = useStore();
-  const { sessionId, sessionToken, hydrateDetections, hydrateAnalysis } = opts;
+  const { sessionId, sessionToken, hydrateInquiry, hydrateAnalysis } = opts;
 
   const onMessage = useCallback(
     (msg: { payload: Uint8Array }) => {
@@ -131,28 +135,41 @@ export function useRealtimeSession(opts: LiveOptions): UseRealtimeSessionResult 
     },
     [send, sessionId],
   );
+  const sendInquiryDrop = useCallback<SendInquiryDrop>(
+    (nodeId) => {
+      clientSeq.current += 1;
+      const payload = encodeUserInquiryDrop(
+        sessionId,
+        nodeId,
+        clientSeq.current,
+        new Date().toISOString(),
+      );
+      send(payload, { reliable: true });
+    },
+    [send, sessionId],
+  );
 
   const hydrate = useCallback(async () => {
     if (!sessionId) return;
     let requirementsOk = false;
-    let detectionsOk = !hydrateDetections;
+    let inquiryOk = !hydrateInquiry;
     try {
       const snap = await fetchRequirements(sessionId, sessionToken);
       store.hydrateRequirements(snap.items, snap.seq);
       requirementsOk = true;
     } catch {
     }
-    if (hydrateDetections) {
+    if (hydrateInquiry) {
       try {
-        const snap = await fetchDetections(sessionId, sessionToken);
-        store.hydrateDetections(snap.items, snap.seq ?? 0);
-        detectionsOk = true;
+        const snap = await fetchInquiry(sessionId, sessionToken);
+        store.hydrateInquiry(snap.nodes, snap.seq ?? 0);
+        inquiryOk = true;
       } catch {
       }
     }
     try {
       const snap = await fetchCurrentQuestion(sessionId, sessionToken);
-      store.hydrateQuestion(snap.question, snap.seq, requirementsOk && detectionsOk);
+      store.hydrateQuestion(snap.question, snap.seq, requirementsOk && inquiryOk);
     } catch {
     }
     if (hydrateAnalysis) {
@@ -162,7 +179,7 @@ export function useRealtimeSession(opts: LiveOptions): UseRealtimeSessionResult 
       } catch {
       }
     }
-  }, [sessionId, sessionToken, hydrateDetections, hydrateAnalysis, store]);
+  }, [sessionId, sessionToken, hydrateInquiry, hydrateAnalysis, store]);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -187,12 +204,13 @@ export function useRealtimeSession(opts: LiveOptions): UseRealtimeSessionResult 
     wasConnected.current = true;
   }, [connState, hydrate, store]);
 
-  return { state, metrics, store, sendSelection, sendText, sendAnswer };
+  return { state, metrics, store, sendSelection, sendText, sendAnswer, sendInquiryDrop };
 }
 
 const noopSelection: SendSelection = () => {};
 const noopText: SendText = () => {};
 const noopAnswer: SendAnswer = () => {};
+const noopInquiryDrop: SendInquiryDrop = () => {};
 
 export function useFixtureSession(
   events: ServerEvent[] = contractEventFixture,
@@ -222,5 +240,6 @@ export function useFixtureSession(
     sendSelection: noopSelection,
     sendText: noopText,
     sendAnswer: noopAnswer,
+    sendInquiryDrop: noopInquiryDrop,
   };
 }

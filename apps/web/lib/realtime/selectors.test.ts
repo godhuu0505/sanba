@@ -1,28 +1,31 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  inquiryTreeStats,
   mergeMaterials,
   selectActiveQuestion,
-  selectCheckpointCoverage,
+  selectGateCount,
+  selectGateNodes,
   selectMaterialDetail,
   selectMaterials,
   selectMiniStatus,
 } from "./selectors";
 import type { MaterialItem } from "./selectors";
 import type { AnalysisState, SessionState } from "./store";
+import type { InquiryNode } from "./types";
 
-describe("selectCheckpointCoverage", () => {
-  it("coverage スライスをそのまま返す", () => {
-    const coverage = [
-      { label: "性能", covered: true },
-      { label: "セキュリティ", covered: false },
-    ];
-    expect(selectCheckpointCoverage({ coverage } as SessionState)).toEqual(coverage);
-  });
-
-  it("未受信なら空配列", () => {
-    expect(selectCheckpointCoverage({ coverage: [] } as unknown as SessionState)).toEqual([]);
-  });
+const inqNode = (over: Partial<InquiryNode> & { id: string }): InquiryNode => ({
+  parent_id: null,
+  kind: "gap",
+  text: "確認事項",
+  status: "open",
+  confidence: 0.6,
+  depth: 0,
+  origin: "conversation",
+  refs: [],
+  created_seq: 0,
+  resolved_seq: null,
+  ...over,
 });
 
 describe("selectActiveQuestion", () => {
@@ -238,14 +241,14 @@ describe("selectMaterialDetail", () => {
 });
 
 describe("selectMiniStatus", () => {
-  it("要件数・未解消検知数・素材数・解析中フラグを導出する（深掘り一覧と同じ規則）", () => {
+  it("要件数・未解消（ゲート数）・素材数・解析中フラグを導出する（ambiguous は数えない）", () => {
     const s = {
       requirements: [{}, {}, {}],
-      detections: [
-        { resolved: false, summary: "矛盾" },
-        { resolved: true, summary: "解決済" },
-        { resolved: false, summary: "抜け" },
-        { resolved: false, summary: "" },
+      inquiryNodes: [
+        { status: "open" as const, kind: "contradiction" as const },
+        { status: "resolved" as const, kind: "gap" as const },
+        { status: "open" as const, kind: "gap" as const },
+        { status: "open" as const, kind: "ambiguous" as const },
       ],
       analysis: [{ pct: 62 }, { pct: 100 }],
     };
@@ -259,16 +262,62 @@ describe("selectMiniStatus", () => {
 
   it("解析が全完了なら analyzing=false", () => {
     expect(
-      selectMiniStatus({ requirements: [], detections: [], analysis: [{ pct: 100 }] }),
+      selectMiniStatus({ requirements: [], inquiryNodes: [], analysis: [{ pct: 100 }] }),
     ).toEqual({ requirements: 0, unresolved: 0, materials: 1, analyzing: false });
   });
 
   it("空の状態は全て 0 / false", () => {
-    expect(selectMiniStatus({ requirements: [], detections: [], analysis: [] })).toEqual({
+    expect(selectMiniStatus({ requirements: [], inquiryNodes: [], analysis: [] })).toEqual({
       requirements: 0,
       unresolved: 0,
       materials: 0,
       analyzing: false,
+    });
+  });
+});
+
+describe("selectGateNodes / selectGateCount（終了ゲート対象）", () => {
+  const state = (nodes: InquiryNode[]): SessionState => ({ inquiryNodes: nodes }) as SessionState;
+
+  it("open かつ kind∈{contradiction,gap,check} のみをゲート対象にする（ambiguous・resolved・dropped は除外）", () => {
+    const nodes = [
+      inqNode({ id: "c", kind: "contradiction", status: "open" }),
+      inqNode({ id: "g", kind: "gap", status: "open" }),
+      inqNode({ id: "ck", kind: "check", status: "open" }),
+      inqNode({ id: "amb", kind: "ambiguous", status: "open" }),
+      inqNode({ id: "gr", kind: "gap", status: "resolved" }),
+      inqNode({ id: "gd", kind: "gap", status: "dropped" }),
+    ];
+    expect(selectGateNodes(state(nodes)).map((n) => n.id)).toEqual(["c", "g", "ck"]);
+    expect(selectGateCount(state(nodes))).toBe(3);
+  });
+});
+
+describe("inquiryTreeStats（ヘッダ集計）", () => {
+  it("未解消（ゲート）・解消済・深さ・枝・除外を数える", () => {
+    const root = inqNode({ id: "root", kind: "check", status: "resolved", depth: 0 });
+    const g1 = inqNode({ id: "g1", kind: "gap", status: "open", parent_id: "root", depth: 1 });
+    const g1a = inqNode({ id: "g1a", kind: "gap", status: "open", parent_id: "g1", depth: 2 });
+    const g1b = inqNode({ id: "g1b", kind: "ambiguous", status: "open", parent_id: "g1", depth: 2 });
+    const c1 = inqNode({ id: "c1", kind: "contradiction", status: "open", parent_id: "root", depth: 1 });
+    const ck = inqNode({ id: "ck", kind: "check", status: "resolved", parent_id: "root", depth: 1 });
+    const dropped = inqNode({ id: "d1", kind: "gap", status: "dropped", parent_id: "root", depth: 1 });
+
+    const stats = inquiryTreeStats([root, g1, g1a, g1b, c1, ck, dropped]);
+    expect(stats.unresolved).toBe(3);
+    expect(stats.resolved).toBe(2);
+    expect(stats.dropped).toBe(1);
+    expect(stats.maxDepth).toBe(2);
+    expect(stats.maxBranch).toBe(3);
+  });
+
+  it("空なら全て 0", () => {
+    expect(inquiryTreeStats([])).toEqual({
+      unresolved: 0,
+      resolved: 0,
+      dropped: 0,
+      maxDepth: 0,
+      maxBranch: 0,
     });
   });
 });

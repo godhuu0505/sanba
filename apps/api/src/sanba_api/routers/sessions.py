@@ -14,9 +14,11 @@ from typing import Any
 import structlog
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field
+from sanba_shared.inquiry import InquiryTree
 from sanba_shared.models import (
     DEFAULT_SESSION_TITLE,
     Audience,
+    InquiryNode,
     Product,
     RequirementStatus,
     SessionMeta,
@@ -124,8 +126,9 @@ class RequirementsResponse(BaseModel):
     seq: int = 0
 
 
-class DetectionsResponse(BaseModel):
-    items: list[dict[str, Any]]
+class InquiryResponse(BaseModel):
+    nodes: list[InquiryNode]
+    seq: int = 0
 
 
 class CurrentQuestionResponse(BaseModel):
@@ -393,6 +396,7 @@ def get_my_session_result_document(
         check_items=(
             check_items_for_audience(product.check_items, audience) if product is not None else []
         ),
+        inquiry_nodes=_repo.list_inquiry_nodes(session_id),
     )
     record_result_document_rendered(audience.value, is_custom)
     log.info(
@@ -872,16 +876,20 @@ def get_requirements(
     return RequirementsResponse(items=items, seq=seq)
 
 
-@router.get("/api/sessions/{session_id}/detections", response_model=DetectionsResponse)
-def get_detections(
-    session_id: str,
-    open: int = 1,
-    access: SessionAccess = Depends(require_session_access),
-) -> DetectionsResponse:
-    """未解消の矛盾/抜け（契約 §4 P1）。05/08 の途中参加復元に使う。"""
-    items = _read_repo.list_open_detections(session_id)
-    log.info("detections_hydrated", session=session_id, count=len(items), open=open)
-    return DetectionsResponse(items=items)
+@router.get("/api/sessions/{session_id}/inquiry", response_model=InquiryResponse)
+def get_inquiry(
+    session_id: str, access: SessionAccess = Depends(require_session_access)
+) -> InquiryResponse:
+    """確認事項ロジックツリー全体のスナップショット（ADR-0059 決定④）。
+
+    再接続/途中参加で木ごと復元するためのハイドレーション（旧 `GET /detections` の置換）。
+    正本は `sessions/{id}/inquiry_nodes`（agent が単一書き手）で、`seq` は ADR-0021 の
+    seq gap 埋めに使う適用済み最大 seq。認可は他のハイドレーション GET と同じ join 済みトークン。
+    """
+    nodes = _repo.list_inquiry_nodes(session_id)
+    seq = _repo.get_session_seq(session_id)
+    log.info("inquiry_hydrated", session=session_id, count=len(nodes), seq=seq, sub=access.sub)
+    return InquiryResponse(nodes=nodes, seq=seq)
 
 
 @router.get(
@@ -969,10 +977,12 @@ def finalize_session_requirements(
     set_requirement_status（approved で expireAt 削除）に集約済みのものを再利用する。
 
     ガード:
-      - 既に finalized なら open 検知に関係なく保存済みスナップショット件数を返す（冪等）。
-        確定後に遅延 agent が open 検知を保存しても、再送/リロードの再 POST が 409 にならない。
-      - 未確定セッションは、未解消検知が 1 件でも残るなら 409 で拒否する（07 判定の
-        「未解消 0 件で確定可」をサーバ側でも担保。直接 POST や古いクライアント状態を防ぐ）。
+      - 既に finalized なら未解消ノードに関係なく保存済みスナップショット件数を返す（冪等）。
+        確定後に遅延 agent が open ノードを足しても、再送/リロードの再 POST は 409 にならない。
+      - 未確定セッションは、終了ゲート対象の未解消ノード（open かつ
+        kind∈{contradiction,gap,check}）が 1 件でも残るなら 409 で拒否する（HP8 判定の
+        「未解消 0 件で確定可」をサーバ側でも担保。ADR-0059 の agent ゲートと同義。
+        直接 POST や古いクライアント状態を防ぐ）。
 
     ゲスト token（ADR-0032 決定4）は確定不可: ゲストセッションの要件の承認・保全は
     owner が管理画面で行う（承認 = TTL 解除は owner の意思に限る）。
@@ -983,8 +993,9 @@ def finalize_session_requirements(
         raise HTTPException(status_code=404, detail="session not found")
     if existing.status == "finalized":
         return FinalizeResponse(finalized=True, confirmed_count=existing.finalized_count or 0)
-    if _read_repo.list_open_detections(session_id):
-        raise HTTPException(status_code=409, detail="unresolved detections remain")
+    open_inquiries = InquiryTree.from_nodes(_repo.list_inquiry_nodes(session_id))
+    if open_inquiries.gating_open_count() > 0:
+        raise HTTPException(status_code=409, detail="unresolved inquiries remain")
     confirmed = _confirmed_requirements(session_id)
     confirmed_ids = [r["id"] for r in confirmed]
     labels = requirements_to_issue_labels(confirmed)
@@ -1115,6 +1126,7 @@ def _perform_export(
             if product is not None
             else []
         ),
+        inquiry_nodes=_repo.list_inquiry_nodes(session.id),
     )
     body += _export_appendix(session, opts)
     body = f"{body}\n\n---\nSANBA session {session.id} / export by {link.github_login}"

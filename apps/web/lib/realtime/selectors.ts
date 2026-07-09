@@ -3,18 +3,59 @@ import { PRIORITY_ORDER } from "./mapping";
 import type { AnalysisState, SessionState } from "./store";
 import type {
   AnalysisVisualConflict,
-  CoveragePoint,
-  Detection,
+  InquiryKind,
+  InquiryNode,
+  InquiryStatus,
   Priority,
   Requirement,
 } from "./types";
 
-export function selectOpenDetections(state: SessionState): Detection[] {
-  return state.detections.filter((d) => !d.resolved && d.summary !== "").reverse();
+const GATE_KINDS: ReadonlySet<InquiryKind> = new Set<InquiryKind>([
+  "contradiction",
+  "gap",
+  "check",
+]);
+
+export function selectInquiryNodes(state: SessionState): InquiryNode[] {
+  return state.inquiryNodes;
 }
 
-export function selectCheckpointCoverage(state: SessionState): CoveragePoint[] {
-  return state.coverage;
+export function selectGateNodes(state: SessionState): InquiryNode[] {
+  return state.inquiryNodes.filter((n) => n.status === "open" && GATE_KINDS.has(n.kind));
+}
+
+export function selectGateCount(state: SessionState): number {
+  return selectGateNodes(state).length;
+}
+
+export interface InquiryTreeStats {
+  unresolved: number;
+  resolved: number;
+  dropped: number;
+  maxDepth: number;
+  maxBranch: number;
+}
+
+export function inquiryTreeStats(nodes: readonly InquiryNode[]): InquiryTreeStats {
+  let unresolved = 0;
+  let resolved = 0;
+  let dropped = 0;
+  let maxDepth = 0;
+  const childCount = new Map<string, number>();
+  for (const n of nodes) {
+    if (n.status === "dropped") {
+      dropped += 1;
+      continue;
+    }
+    if (n.status === "resolved") resolved += 1;
+    else if (GATE_KINDS.has(n.kind)) unresolved += 1;
+    if (n.depth > maxDepth) maxDepth = n.depth;
+    const parent = n.parent_id ?? "__root__";
+    childCount.set(parent, (childCount.get(parent) ?? 0) + 1);
+  }
+  let maxBranch = 0;
+  for (const c of childCount.values()) if (c > maxBranch) maxBranch = c;
+  return { unresolved, resolved, dropped, maxDepth, maxBranch };
 }
 
 export function selectActiveQuestion(state: SessionState): SessionState["question"] {
@@ -54,10 +95,10 @@ export function selectStats(state: SessionState): SessionStats {
     };
   }
   return {
-    contradictionsResolved: state.detections.filter(
-      (d) => d.kind === "contradiction" && d.resolved,
+    contradictionsResolved: state.inquiryNodes.filter(
+      (n) => n.kind === "contradiction" && n.status === "resolved",
     ).length,
-    gapsFound: state.detections.filter((d) => d.kind === "gap").length,
+    gapsFound: state.inquiryNodes.filter((n) => n.kind === "gap").length,
     confirmed: selectConfirmedRequirements(state).length,
   };
 }
@@ -67,7 +108,7 @@ export { PRIORITY_ORDER };
 
 export interface MiniStatusInput {
   requirements: readonly unknown[];
-  detections: readonly { resolved: boolean; summary: string }[];
+  inquiryNodes: readonly { status: InquiryStatus; kind: InquiryKind }[];
   analysis: readonly { pct: number }[];
 }
 
@@ -167,7 +208,7 @@ export function mergeMaterials(
 export function selectMiniStatus(s: MiniStatusInput): MiniStatus {
   return {
     requirements: s.requirements.length,
-    unresolved: s.detections.filter((d) => !d.resolved && d.summary !== "").length,
+    unresolved: s.inquiryNodes.filter((n) => n.status === "open" && GATE_KINDS.has(n.kind)).length,
     materials: s.analysis.length,
     analyzing: s.analysis.some((a) => a.pct < 100),
   };

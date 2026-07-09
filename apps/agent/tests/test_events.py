@@ -8,7 +8,14 @@ from __future__ import annotations
 import json
 
 import pytest
-from sanba_shared.models import Priority, Requirement, RequirementCategory
+from sanba_shared.models import (
+    InquiryKind,
+    InquiryNode,
+    InquiryStatus,
+    Priority,
+    Requirement,
+    RequirementCategory,
+)
 
 from sanba_agent.events import (
     EVENTS_TOPIC,
@@ -24,6 +31,12 @@ from sanba_agent.events import (
 )
 
 ENVELOPE_KEYS = {"v", "type", "seq", "ts", "session_id"}
+
+
+def _node(node_id: str = "inq_1", **over: object) -> InquiryNode:
+    base: dict[str, object] = {"id": node_id, "kind": InquiryKind.GAP, "text": "性能が未確認"}
+    base.update(over)
+    return InquiryNode(**base)  # type: ignore[arg-type]
 
 
 @pytest.mark.asyncio
@@ -80,7 +93,7 @@ async def test_reliable_seq_is_monotonic_and_lossy_does_not_consume_it() -> None
     pub = EventPublisher("s1", t)
     await pub.transcript_final("顧客", "customer", "u1", "検索したい")
     s = await pub.status("listening")
-    await pub.detection_gap("d1", "性能が未確認", "non_functional", [])
+    await pub.inquiry_node(_node(), op="upsert")
     reliable = [m["event"] for m in t.sent if m["event"].get("reliable") is not False]
     assert [e["seq"] for e in reliable] == [1, 2]
     assert s["reliable"] is False
@@ -124,41 +137,50 @@ async def test_analysis_progress_is_reliable_with_distinct_seq() -> None:
 async def test_start_seq_seeds_monotonic_continuation() -> None:
     t = RecordingTransport()
     pub = EventPublisher("s1", t, start_seq=5)
-    env = await pub.detection_gap("d1", "性能が未確認", "non_functional", [])
+    env = await pub.inquiry_node(_node(), op="upsert")
     assert env["seq"] == 6
 
 
 @pytest.mark.asyncio
-async def test_detection_contradiction_payload() -> None:
+async def test_inquiry_node_upsert_payload_matches_contract() -> None:
     t = RecordingTransport()
     pub = EventPublisher("s1", t)
-    await pub.detection_contradiction(
-        "d1",
-        "関連度順と新着順が食い違う",
+    node = _node(
+        "inq_abc",
+        kind=InquiryKind.CONTRADICTION,
+        text="関連度順と新着順が食い違う",
         refs=["u1", "u2"],
-        options=[{"label": "関連度順", "value": "relevance"}],
+        confidence=0.8,
+        depth=2,
+        parent_id="inq_root",
     )
-    ev = t.sent[0]["event"]
-    assert ev["type"] == "detection.contradiction"
-    assert ev["detector"] == "contradiction_detector"
-    assert ev["refs"] == ["u1", "u2"]
-    assert ev["options"][0]["value"] == "relevance"
+    env = await pub.inquiry_node(node, op="upsert")
+    assert env["type"] == "inquiry.node"
+    assert env["op"] == "upsert"
     assert t.sent[0]["reliable"] is True
+    payload = env["node"]
+    assert payload["id"] == "inq_abc"
+    assert payload["kind"] == "contradiction"
+    assert payload["parent_id"] == "inq_root"
+    assert payload["status"] == "open"
+    assert payload["refs"] == ["u1", "u2"]
+    assert payload["confidence"] == 0.8
+    assert payload["depth"] == 2
 
 
 @pytest.mark.asyncio
-async def test_detection_ambiguous_payload() -> None:
+async def test_inquiry_node_resolve_and_drop_ops() -> None:
     t = RecordingTransport()
     pub = EventPublisher("s1", t)
-    await pub.detection_ambiguous("d9", "並び順の意図が不明瞭", refs=["u3"])
-    ev = t.sent[0]["event"]
-    assert ev["type"] == "detection.ambiguous"
-    assert ev["detector"] == "ambiguity_detector"
-    assert ev["refs"] == ["u3"]
-    assert "category" not in ev
-    assert t.sent[0]["reliable"] is True
-    assert pub.ambiguous_published == 1
-    assert pub.detections_published == 1
+    resolved = _node("inq_r", status=InquiryStatus.RESOLVED, resolved_seq=3)
+    dropped = _node("inq_d", status=InquiryStatus.DROPPED, resolved_seq=4)
+    r_env = await pub.inquiry_node(resolved, op="resolve")
+    d_env = await pub.inquiry_node(dropped, op="drop")
+    assert r_env["op"] == "resolve"
+    assert r_env["node"]["status"] == "resolved"
+    assert d_env["op"] == "drop"
+    assert d_env["node"]["status"] == "dropped"
+    assert [e["event"]["seq"] for e in t.sent] == [1, 2]
 
 
 @pytest.mark.asyncio
@@ -217,7 +239,7 @@ async def test_question_asked_save_failure_does_not_send_or_consume_seq() -> Non
     assert t.sent == []
     assert pub.seq == 0
     assert pub.questions_published == 0
-    env = await pub.detection_gap("d1", "性能が未確認", "non_functional", [])
+    env = await pub.inquiry_node(_node(), op="upsert")
     assert env["seq"] == 1
 
 
@@ -343,43 +365,19 @@ async def test_requirement_citations_map_to_contract() -> None:
 
 
 @pytest.mark.asyncio
-async def test_counters_track_detections() -> None:
+async def test_session_completed_summary_passes_through_counts() -> None:
     t = RecordingTransport()
     pub = EventPublisher("s1", t)
-    await pub.detection_gap("d1", "性能が未確認", "non_functional", [])
-    await pub.detection_contradiction("d2", "食い違い", refs=[])
-    assert pub.gaps_published == 1
-    assert pub.contradictions_published == 1
-    assert pub.detections_published == 2
-
-
-@pytest.mark.asyncio
-async def test_resolution_counters_distinguish_user_and_agent() -> None:
-    t = RecordingTransport()
-    pub = EventPublisher("s1", t)
-    await pub.detection_resolved("d1", resolution="agent_resolved")
-    await pub.detection_resolved("d2", resolution="user_selected", selected_value="relevance")
-    assert pub.detections_resolved == 2
-    assert pub.contradictions_resolved == 1
-
-
-@pytest.mark.asyncio
-async def test_session_completed_summary_uses_real_counts() -> None:
-    t = RecordingTransport()
-    pub = EventPublisher("s1", t)
-    await pub.detection_gap("g1", "抜け1", "non_functional", [])
-    await pub.detection_gap("g2", "抜け2", "scope", [])
-    await pub.detection_contradiction("c1", "矛盾", refs=[])
-    await pub.detection_resolved("c1", resolution="user_selected", selected_value="v")
     await pub.session_completed(
-        contradictions_resolved=pub.contradictions_resolved,
-        gaps_found=pub.gaps_published,
+        contradictions_resolved=1,
+        gaps_found=2,
         issues_created=1,
         artifacts=[{"kind": "issue", "url": "http://x"}],
     )
     summary = t.sent[-1]["event"]["summary"]
     assert summary["gaps_found"] == 2
     assert summary["contradictions_resolved"] == 1
+    assert summary["issues_created"] == 1
 
 
 def test_decode_user_selection_valid() -> None:

@@ -5,17 +5,16 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   mergeMaterials,
   selectActiveQuestion,
-  selectCheckpointCoverage,
   selectConfirmedRequirements,
+  selectGateCount,
   selectMaterialDetail,
   selectMaterials,
   selectMiniStatus,
-  selectOpenDetections,
   type MaterialItem,
 } from "@/lib/realtime/selectors";
 import type { RealtimeMetricsSnapshot } from "@/lib/realtime/metrics";
 import type { SessionState } from "@/lib/realtime/store";
-import type { SendAnswer, SendSelection } from "@/lib/realtime/useRealtimeSession";
+import type { SendAnswer, SendInquiryDrop } from "@/lib/realtime/useRealtimeSession";
 import type { ExportEligibility, ExportOptions, ExportResult } from "@/lib/api";
 import { useAuthOptional } from "@/lib/auth";
 
@@ -23,8 +22,6 @@ import { BottomBar } from "./BottomBar";
 import { ChatHistory } from "./ChatHistory";
 import { ChoicePin } from "./ChoicePin";
 import { ConversationShell, type ShellTab } from "./ConversationShell";
-import { CoverageProgress } from "./CoverageProgress";
-import { DetectionPin } from "./DetectionPin";
 import { EndConfirmDialog } from "./EndConfirmDialog";
 import { EndProposalCard } from "./EndProposalCard";
 import { ForceEndConfirmDialog } from "./ForceEndConfirmDialog";
@@ -38,8 +35,8 @@ import { VoiceStatusIndicator } from "./VoiceStatusIndicator";
 export interface ConversationSessionViewProps {
   state: SessionState;
   readOnly?: boolean;
-  sendSelection: SendSelection;
   sendAnswer?: SendAnswer;
+  sendInquiryDrop?: SendInquiryDrop;
   micOn: boolean;
   muted: boolean;
   agentSpeaking?: boolean;
@@ -69,8 +66,8 @@ type Phase = "shell" | "judgment" | "result";
 export function ConversationSessionView({
   state,
   readOnly = false,
-  sendSelection,
   sendAnswer,
+  sendInquiryDrop,
   micOn,
   muted,
   agentSpeaking,
@@ -115,8 +112,7 @@ export function ConversationSessionView({
   const finalizingRef = useRef(false);
 
   const baseMini = selectMiniStatus(state);
-  const openDetections = selectOpenDetections(state);
-  const coverage = selectCheckpointCoverage(state);
+  const gateCount = selectGateCount(state);
   const confirmed = selectConfirmedRequirements(state);
 
   useEffect(() => {
@@ -181,17 +177,9 @@ export function ConversationSessionView({
     setPhase(next);
   }
 
-  const activeDetection = openDetections[0];
-  const activeChoice =
-    activeDetection && activeDetection.options && activeDetection.options.length > 0
-      ? activeDetection
-      : null;
-  const activeGap = activeDetection && !activeChoice ? activeDetection : null;
   const askedQuestion = selectActiveQuestion(state);
   const activeQuestion =
-    !activeDetection && askedQuestion && !answeredQuestions.has(askedQuestion.id)
-      ? askedQuestion
-      : null;
+    askedQuestion && !answeredQuestions.has(askedQuestion.id) ? askedQuestion : null;
 
   function jumpToConversation() {
     setPhase("shell");
@@ -288,7 +276,8 @@ export function ConversationSessionView({
       <>
         <JudgmentGate
           unresolved={mini.unresolved}
-          detections={openDetections}
+          nodes={state.inquiryNodes}
+          onDrop={sendInquiryDrop}
           error={finalizeError ?? undefined}
           onBack={() => setPhase("shell")}
           onForceEnd={() => {
@@ -322,7 +311,6 @@ export function ConversationSessionView({
                 finalizingRef.current = false;
               });
           }}
-          onJump={jumpToConversation}
         />
         {forceEndConfirm && (
           <ForceEndConfirmDialog
@@ -389,32 +377,20 @@ export function ConversationSessionView({
     );
   }
 
-  const choicePin = ended ? undefined : activeChoice ? (
-    <ChoicePin
-      questionId={activeChoice.id}
-      question={activeChoice.summary}
-      options={(activeChoice.options ?? []).map((o) => ({ label: o.label }))}
-      detectionKind={activeChoice.kind}
-      onAnswer={(i) => {
-        const opt = activeChoice.options?.[i];
-        if (opt) sendSelection(activeChoice.id, opt.value);
-      }}
-    />
-  ) : activeGap ? (
-    <DetectionPin summary={activeGap.summary} kind={activeGap.kind} />
-  ) : activeQuestion ? (
-    <ChoicePin
-      questionId={activeQuestion.id}
-      question={activeQuestion.prompt}
-      options={activeQuestion.options.map((o) => ({ label: o.label }))}
-      onAnswer={(i) => {
-        const opt = activeQuestion.options[i];
-        if (!opt) return;
-        sendAnswer?.(activeQuestion.id, { selectedValue: opt.value });
-        setAnsweredQuestions((prev) => new Set(prev).add(activeQuestion.id));
-      }}
-    />
-  ) : undefined;
+  const choicePin =
+    ended || !activeQuestion ? undefined : (
+      <ChoicePin
+        questionId={activeQuestion.id}
+        question={activeQuestion.prompt}
+        options={activeQuestion.options.map((o) => ({ label: o.label }))}
+        onAnswer={(i) => {
+          const opt = activeQuestion.options[i];
+          if (!opt) return;
+          sendAnswer?.(activeQuestion.id, { selectedValue: opt.value });
+          setAnsweredQuestions((prev) => new Set(prev).add(activeQuestion.id));
+        }}
+      />
+    );
 
   return (
     <>
@@ -455,11 +431,6 @@ export function ConversationSessionView({
         tabs={{
           history: (
             <div className="flex flex-col gap-3">
-              {coverage.length > 0 && (
-                <div className="px-4 pt-3">
-                  <CoverageProgress coverage={coverage} />
-                </div>
-              )}
               <ChatHistory
                 transcript={state.transcript}
                 contextProgress={state.contextProgress}
@@ -481,8 +452,8 @@ export function ConversationSessionView({
           scroll: (
             <RequirementsTab
               requirements={state.requirements}
-              deepDive={openDetections}
-              onJump={ended ? undefined : jumpToConversation}
+              nodes={state.inquiryNodes}
+              onDrop={ended ? undefined : sendInquiryDrop}
               focusUnresolved={focusDeepDive}
               onUnresolvedFocusConsumed={() => setFocusDeepDive(false)}
             />
@@ -519,7 +490,7 @@ export function ConversationSessionView({
         state.endProposal &&
         !endProposalDismissed &&
         !state.completed &&
-        openDetections.length === 0 && (
+        gateCount === 0 && (
           <div className="fixed inset-x-0 bottom-[92px] z-40 mx-auto w-full max-w-[420px] px-4">
             <EndProposalCard
               requirementCount={state.endProposal.requirement_count}

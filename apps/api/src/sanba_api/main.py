@@ -42,6 +42,7 @@ from .deps import (
 )
 from .observability import record_rate_limited, setup_observability
 from .routers import auth, github_link, members, products, sessions
+from .routers import session as auth_session
 from .routers.products import MAX_CHECK_ITEM_CHARS, MAX_OUTPUT_FORMAT_CHARS
 
 __all__ = [
@@ -68,7 +69,31 @@ __all__ = [
 log = structlog.get_logger(__name__)
 
 
+_allowed_origins = [o.strip() for o in settings.allowed_origins.split(",") if o.strip()]
+
+if "*" in _allowed_origins:
+    raise RuntimeError("ALLOWED_ORIGINS='*' は allow_credentials=True と衝突する (ADR-0060)")
+
+_unsafe_methods = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+
 app = FastAPI(title="SANBA API", version="0.2.0")
+
+
+@app.middleware("http")
+async def _enforce_origin_for_cookie_writes(request: Request, call_next: Any) -> Any:
+    """Cookie 由来リクエストの CSRF 多層防御（ADR-0060 §4）。
+
+    SameSite=Lax + 同一オリジン rewrites で構造的な CSRF 防御は成立しているが、
+    Cookie を持つ unsafe method には `Origin` ヘッダが allowlist に一致することも
+    要求する。Bearer 経路（Cookie を持たない）は無傷（server-to-server や外部連携が
+    Origin を持たないことがあるため）。
+    """
+    if request.method in _unsafe_methods and request.cookies.get("sanba_sid"):
+        origin = request.headers.get("origin", "")
+        if origin and origin not in _allowed_origins:
+            log.warning("origin_rejected", origin=origin, path=request.url.path)
+            return JSONResponse(status_code=403, content={"detail": "forbidden origin"})
+    return await call_next(request)
 
 
 @app.middleware("http")
@@ -98,9 +123,10 @@ async def _rate_limit_join(request: Request, call_next: Any) -> Any:
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[o.strip() for o in settings.allowed_origins.split(",")],
+    allow_origins=_allowed_origins,
     allow_methods=["*"],
     allow_headers=["*"],
+    allow_credentials=True,
 )
 setup_observability(app)
 
@@ -111,6 +137,7 @@ def healthz() -> dict[str, str]:
 
 
 app.include_router(auth.router)
+app.include_router(auth_session.router)
 app.include_router(sessions.router)
 app.include_router(github_link.router)
 app.include_router(products.router)

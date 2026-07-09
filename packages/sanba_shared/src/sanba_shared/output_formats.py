@@ -13,6 +13,7 @@
 - `{{requirements}}`  確定要件（MoSCoW 見出しでグループ化した Markdown）
 - `{{requirements_plain}}` 確定要件（優先度語彙を出さないフラットな箇条書き。利用者向け）
 - `{{check_items}}`   セッションで確認する項目として登録されていた項目の箇条書き
+- `{{validated_inquiries}}` 会話で解消できた確認事項のチェックリスト（ADR-0059）
 """
 
 from __future__ import annotations
@@ -34,6 +35,10 @@ DEFAULT_OUTPUT_FORMATS: dict[Audience, str] = {
 
 {{check_items}}
 
+## 会話のなかで確認できたこと
+
+{{validated_inquiries}}
+
 ご協力ありがとうございました。いただいたお話はサービスの改善に活用します。
 """,
     Audience.PLANNER: """\
@@ -50,6 +55,10 @@ DEFAULT_OUTPUT_FORMATS: dict[Audience, str] = {
 ## セッションで確認した項目
 
 {{check_items}}
+
+## 確認済みの論点
+
+{{validated_inquiries}}
 
 ## 次のアクション
 
@@ -70,6 +79,10 @@ DEFAULT_OUTPUT_FORMATS: dict[Audience, str] = {
 ## セッションで確認した項目
 
 {{check_items}}
+
+## 確認済みの論点
+
+{{validated_inquiries}}
 
 ## 備考
 

@@ -163,8 +163,10 @@ prep / repo の読み込み状態。asset の進捗は既存 `analysis.progress`
     "kind": "check" | "gap" | "ambiguous" | "contradiction",
     "text": "通知設定の保存タイミング",
     "status": "open" | "resolved" | "dropped",
-    "origin": "conversation" | "analysis" | "prep" | "material" | "check_item",
-    "evidence_utterance_id": "utt-039"
+    "origin": "conversation" | "analysis" | "prep" | "material",
+    "confidence": 0.7,
+    "refs": ["utt-039"],
+    "created_seq": 310, "resolved_seq": null
   }
 }
 ```
@@ -181,24 +183,31 @@ prep / repo の読み込み状態。asset の進捗は既存 `analysis.progress`
 | `GET /api/sessions/{id}/context/status` | 新設（prep / repo のスナップショット） |
 | `result_document.py` | `{{conversation_summary}}` プレースホルダ追加（保存済み値の機械挿入。LLM は finalize 時の 1 回のみ = Q2 ハイブリッド決定） |
 
-### 5.2 Phase 2（要 ADR。ここは実装前の設計案）
+### 5.2 Phase 2（ADR-0059 として実装・リリース済み）
+
+> 以下は当初の設計案。**実装は [ADR-0059](../adr/0059-inquiry-logic-tree.md) と
+> [realtime-contract.md §3/§4](../reference/realtime-contract.md) が正本**で、案から次の点が確定した:
+> `evidence_utterance_id` → **`refs: list[str]`**、**`confidence: float` を追加**（剪定順に使用）、origin は
+> `check_item` を持たず check ノードは coverage 経路が生成、`detections` は**互換期間なしのクリーンカット
+> オーバー**で撤去（決定④）。実体は `packages/sanba_shared/src/sanba_shared/inquiry.py` の `InquiryTree`。
 
 Firestore: `sessions/{id}/inquiry_nodes/{node_id}`
 
 ```
-id: str                     parent_id: str | None（None=ルート、ルートはゴール）
+id: str                     parent_id: str | None（None=ルート）
 kind: check|gap|ambiguous|contradiction
-text: str (≤200)            status: open|resolved|dropped
-depth: int (0..5)           origin: conversation|analysis|prep|material|check_item
-evidence_utterance_id: str | None    created_seq: int    resolved_seq: int | None
+text: str                   status: open|resolved|dropped
+confidence: float(0..1)     depth: int (1..5)
+origin: conversation|analysis|prep|material
+refs: list[str]             created_seq: int    resolved_seq: int | None
 ```
 
-制約（`sanba_shared` のバリデータでサーバ強制）:
-- `depth <= 5`。超過は親ノードへの `detail` 追記に平す。
-- 同一 `parent_id` の open 子ノード `<= 5`。超過時は agent が最も近い既存ノードへ統合（`upsert` で text を更新）。
-- `Product.check_items` はセッション開始時に `kind=check` のルート直下ノードとしてシード。
-- 既存 `detections` はツリー導入後、`inquiry_nodes` へ一本化（互換期間は両書き→web は inquiry を優先表示）。
-- `JudgmentGate` / 終了提案の「未解消」= `status=open` のノード数に切替。
+制約（`sanba_shared` の `InquiryTree` でサーバ強制）:
+- `depth <= 5`。超過は上限内に収まる最も深い祖先へ付け替える（`_clamp_parent`）。
+- 同一 `parent_id` の open 子ノード `<= 5`。超過時は **`confidence` 最小の open 子を `dropped` に丸める**。
+- 確認観点（`check_points`）は coverage 判定経路が `kind=check` のノードとして open/resolve する。
+- 既存 `detections` は**クリーンカットオーバー**で撤去し `inquiry.node` へ一本化（未リリースのため互換期間なし / 決定④）。
+- `JudgmentGate` / 終了提案の「未解消」= `open` かつ `kind∈{contradiction,gap,check}` のゲートノード数（ambiguous は advisory）。
 
 ## 6. 画面設計（モック + コンポーネント対応）
 
@@ -241,8 +250,9 @@ evidence_utterance_id: str | None    created_seq: int    resolved_seq: int | Non
 |------|--------------|------|
 | ツリービュー | `DeepDiveList.tsx` → 新 `InquiryTree.tsx` | インデント + 罫線でネスト表現（最大 5 階層なのでモバイルでも 16px×5 で収まる）。ノードは kind 別アイコン+色（check=萌黄✓ / gap=山吹? / ambiguous=藍鼠〜 / contradiction=朱!） |
 | ヘッダ集計 | `RequirementsTab.tsx` | 「未解消 N · 解消済 M · 深さ d/5」。枝上限接近時は「枝 4/5」を表示 |
-| 解消の根拠 | ノード詳細（タップで展開） | `evidence_utterance_id` から該当発話の時刻・抜粋を表示 |
-| 判定への接続 | `JudgmentGate.tsx` / `selectOpenDetections` | 未解消 = open ノード数へ切替（Phase 2 まで検知リストで代用） |
+| 解消の根拠 | ノード詳細（タップで展開） | `refs`（`utterance_id` 配列）から該当発話の時刻・抜粋を表示 |
+| 手動操作 | ノードの「不要」 | `user.inquiry_drop` を送信し誤検知を剪定（人間の品質責任）。resolve は会話駆動で手動 resolve は無し（決定⑥） |
+| 判定への接続 | `JudgmentGate.tsx` / `selectGateCount` | 未解消 = `open` かつ `kind∈{contradiction,gap,check}` のゲートノード数（ambiguous は advisory / 決定⑤） |
 
 ### 07 AI 主導終了フロー
 
