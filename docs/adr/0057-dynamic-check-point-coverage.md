@@ -5,7 +5,9 @@
 - 関連: [ADR-0055](0055-end-user-detection-handling.md)（ハードコード NFR gap を廃し、観点をモード別・設定可能にした ②）/
   [ADR-0043](0043-audience-tagged-check-items-and-render-unification.md)（audience タグ付き確認項目 — 観点の正典）/
   [ADR-0046](0046-decouple-analysis-from-voice-worker.md)（背景分析の分離 — 判定を走らせる経路）/
-  [ADR-0051](0051-google-native-observability-and-llmops.md)（LLMOps — 観測とルーブリック）
+  [ADR-0051](0051-google-native-observability-and-llmops.md)（LLMOps — 観測とルーブリック）/
+  [ADR-0059](0059-inquiry-logic-tree.md)（本 ADR の後継 — coverage を確認事項ツリーの check ノードへ統合し
+  終了ゲートへ昇格。`checkpoint.coverage` 機構は撤去）
 - きっかけ: オーナー要望「会話を進める中で観点が動的に変わると体験が良い」（②の続き）
 
 ## コンテキスト
@@ -78,3 +80,11 @@ publish しない**。理由:
     文言を surface しない）」の 2 点。**終了ゲートへの昇格はこの項目の範囲外**。昇格時は②で消した
     「終われない」の再来を防ぐため、(1) 精度閾値、(2) force-end 逃げ道、(3) end_user/developer 別の
     扱い、を別 ADR で定義する。
+
+> **後継（ADR-0059 で実現・2026-07-09）**: 増分2a の `checkpoint.coverage` 機構（専用イベント・
+> `coverage` スライス・`CoverageProgress`）は [ADR-0059](0059-inquiry-logic-tree.md) で撤去し、coverage を
+> 確認事項ロジックツリーの **check ノード**へ統合した（`coverage_open` に載る観点＝open な check ノード、
+> 外れれば resolve）。上で「別 ADR」とした終了ゲートへの昇格も ADR-0059 が実現する（kind∈{contradiction,
+> gap,check} かつ confidence≥τ をゲート・ambiguous は advisory・force-end 逃げ道あり・観点はモード別
+> シードで end_user に企業向けを出さない）。`analyze_transcript` の coverage 判定パイプライン（増分1・2b/2c）
+> 自体は存置し、ツリーのフィーダとして再利用する。
