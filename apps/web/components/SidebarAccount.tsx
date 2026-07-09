@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { Avatar, Divider } from "@/components/sanba";
-import type { GoogleProfile } from "@/lib/auth";
+import { useAuth, type GoogleProfile } from "@/lib/auth";
 
 export interface SidebarAccountProps {
   profile: GoogleProfile | null;
@@ -14,6 +14,7 @@ export interface SidebarAccountProps {
 
 export function SidebarAccount({ profile }: SidebarAccountProps) {
   const router = useRouter();
+  const { signOut } = useAuth();
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
@@ -29,9 +30,10 @@ export function SidebarAccount({ profile }: SidebarAccountProps) {
   const name = profile?.name?.trim() || email;
   const glyph = (profile?.name || profile?.email || "客").trim().charAt(0) || "客";
 
-  function handleLogout() {
+  async function handleLogout() {
     setOpen(false);
-    router.push("/login?loggedOut=1");
+    await signOut();
+    router.replace("/login");
   }
 
   return (
