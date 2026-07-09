@@ -14,6 +14,12 @@ from typing import Any
 import structlog
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field
+from sanba_shared.analytics import (
+    COMPONENT_SUMMARY,
+    COMPONENT_TITLE,
+    COMPONENT_VISION,
+    UsageRecorder,
+)
 from sanba_shared.inquiry import InquiryTree
 from sanba_shared.models import (
     DEFAULT_SESSION_TITLE,
@@ -33,6 +39,7 @@ from sanba_shared.result_document import (
     requirements_to_issue_labels,
 )
 
+from ..analytics import billing_labels, embedding_hook, session_recorder
 from ..auth import InvalidInvite, SessionAccess, create_invite, verify_invite
 from ..auth_google import AuthUser, ensure_room_creator, require_user, require_user_bound
 from ..config import settings
@@ -87,6 +94,11 @@ from ..vision import analyze_image
 log = structlog.get_logger(__name__)
 
 router = APIRouter()
+
+
+def _analytics_recorder(session_id: str, meta: SessionMeta | None = None) -> UsageRecorder:
+    """ai_usage recorder（ADR-0061。実体は `analytics.session_recorder`）。"""
+    return session_recorder(session_id, _repo, meta=meta)
 
 
 class CreateSessionRequest(BaseModel):
@@ -428,7 +440,10 @@ def add_context(
     if len(req.text) > settings.max_context_chars:
         raise HTTPException(status_code=413, detail="context too large")
     chunks = chunk_text(req.text)
-    n = _indexer.index_context(session_id, chunks, req.source_name)
+    recorder = _analytics_recorder(session_id)
+    n = _indexer.index_context(
+        session_id, chunks, req.source_name, usage_hook=embedding_hook(recorder)
+    )
     log.info("context_indexed", session=session_id, chunks=n, sub=access.sub)
     return ContextResponse(indexed_chunks=n)
 
@@ -488,7 +503,13 @@ async def add_context_file(
             if span is not None:
                 span.set_attribute("sanba.asset.id", doc_asset_id)
             _indexer.delete_context(session_id, f"asset:{doc_asset_id}")
-            n = _indexer.index_context(session_id, chunks, f"asset:{doc_asset_id}")
+            recorder = _analytics_recorder(session_id)
+            n = _indexer.index_context(
+                session_id,
+                chunks,
+                f"asset:{doc_asset_id}",
+                usage_hook=embedding_hook(recorder),
+            )
             record_asset_upload("doc", "extract_failed" if extract_failed else "indexed")
             _repo.save_material(
                 session_id,
@@ -575,8 +596,16 @@ async def add_context_file(
 
         with contextlib.suppress(Exception):
             await publisher.progress(asset.asset_id, STAGE_ANALYZING)
+        recorder = _analytics_recorder(session_id)
         try:
-            observations = analyze_image(raw, content_type)
+            observations = analyze_image(
+                raw,
+                content_type,
+                on_usage=lambda usage: recorder.record(
+                    COMPONENT_VISION, settings.gemini_vision_model, usage
+                ),
+                billing_labels=billing_labels(session_id, recorder.product_id),
+            )
         except Exception:
             with contextlib.suppress(Exception):
                 await publisher.progress(asset.asset_id, STAGE_FAILED)
@@ -584,7 +613,12 @@ async def add_context_file(
             raise
         indexed = 0
         if observations:
-            indexed = _indexer.index_context(session_id, observations, f"asset:{asset.asset_id}")
+            indexed = _indexer.index_context(
+                session_id,
+                observations,
+                f"asset:{asset.asset_id}",
+                usage_hook=embedding_hook(recorder),
+            )
         record_asset_upload(kind, "analyzed")
         analyzed = material_record(
             asset.asset_id, filename, kind, status="done", extracted=len(observations)
@@ -1007,12 +1041,26 @@ def finalize_session_requirements(
     )
     if meta is None:
         raise HTTPException(status_code=404, detail="session not found")
-    generated_title = generate_requirement_title(confirmed)
+    recorder = _analytics_recorder(session_id, meta=existing)
+    finalize_labels = billing_labels(session_id, recorder.product_id)
+    generated_title = generate_requirement_title(
+        confirmed,
+        usage_hook=lambda usage: recorder.record(
+            COMPONENT_TITLE, settings.gemini_reasoning_model, usage
+        ),
+        billing_labels=finalize_labels,
+    )
     if generated_title:
         _repo.set_session_title(session_id, generated_title)
         log.info("session_title_generated", session=session_id, title=generated_title)
     utterances = [u.model_dump(mode="json") for u in _repo.list_utterances(session_id)]
-    generated_summary = generate_conversation_summary(utterances)
+    generated_summary = generate_conversation_summary(
+        utterances,
+        usage_hook=lambda usage: recorder.record(
+            COMPONENT_SUMMARY, settings.gemini_reasoning_model, usage
+        ),
+        billing_labels=finalize_labels,
+    )
     if generated_summary:
         _repo.set_session_summary(session_id, generated_summary)
         log.info("session_summary_generated", session=session_id, chars=len(generated_summary))

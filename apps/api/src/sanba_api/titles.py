@@ -10,9 +10,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 import structlog
+from sanba_shared.analytics import TokenUsage, usage_from_genai
 from sanba_shared.result_document import build_summary_prompt, build_title_prompt
 
 from .config import settings
@@ -22,6 +24,25 @@ log = structlog.get_logger(__name__)
 _MAX_TITLE_CHARS = 60
 _MAX_SUMMARY_CHARS = 1200
 
+UsageHook = Callable[[TokenUsage], None]
+
+
+def _report_usage(usage_hook: UsageHook | None, resp: object) -> None:
+    if usage_hook is None:
+        return
+    try:
+        usage_hook(usage_from_genai(getattr(resp, "usage_metadata", None)))
+    except Exception as exc:  # noqa: BLE001
+        log.warning("title_usage_hook_failed", error=str(exc))
+
+
+def _labels_config(billing_labels: dict[str, str] | None):  # type: ignore[no-untyped-def]
+    if not billing_labels:
+        return None
+    from google.genai import types
+
+    return types.GenerateContentConfig(labels=billing_labels)
+
 
 def _clean_title(text: str) -> str:
     """モデル出力を Issue 標題に使える 1 行へ整える。"""
@@ -30,7 +51,12 @@ def _clean_title(text: str) -> str:
     return line[:_MAX_TITLE_CHARS].strip()
 
 
-def generate_requirement_title(requirements: list[dict[str, Any]]) -> str | None:
+def generate_requirement_title(
+    requirements: list[dict[str, Any]],
+    *,
+    usage_hook: UsageHook | None = None,
+    billing_labels: dict[str, str] | None = None,
+) -> str | None:
     """確定要件から成果物/Issue タイトルを生成する。生成不可なら None。"""
     if not (settings.google_api_key or settings.google_genai_use_vertexai):
         return None
@@ -44,14 +70,21 @@ def generate_requirement_title(requirements: list[dict[str, Any]]) -> str | None
         resp = client.models.generate_content(
             model=settings.gemini_reasoning_model,
             contents=build_title_prompt(requirements),
+            config=_labels_config(billing_labels),
         )
+        _report_usage(usage_hook, resp)
     except Exception as exc:  # pragma: no cover
         log.warning("title_generation_failed", error=str(exc))
         return None
     return _clean_title(resp.text or "") or None
 
 
-def generate_conversation_summary(utterances: list[dict[str, Any]]) -> str | None:
+def generate_conversation_summary(
+    utterances: list[dict[str, Any]],
+    *,
+    usage_hook: UsageHook | None = None,
+    billing_labels: dict[str, str] | None = None,
+) -> str | None:
     """会話ログから Issue 用の要約を生成する（P3・Q2 ハイブリッド）。生成不可なら None。
 
     確定時に 1 回だけ生成して保存し、起票時は保存値を使う（起票のたびに LLM を呼ばない）。
@@ -69,7 +102,9 @@ def generate_conversation_summary(utterances: list[dict[str, Any]]) -> str | Non
         resp = client.models.generate_content(
             model=settings.gemini_reasoning_model,
             contents=build_summary_prompt(utterances),
+            config=_labels_config(billing_labels),
         )
+        _report_usage(usage_hook, resp)
     except Exception as exc:  # pragma: no cover
         log.warning("summary_generation_failed", error=str(exc))
         return None

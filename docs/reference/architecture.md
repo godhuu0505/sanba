@@ -106,7 +106,7 @@ artifacts/{sessionId}           # 生成された要件ドキュメント (Cloud
 
 - **レイテンシ**: 音声往復 < 1.5s (P95)。Live API の barge-in 対応。
 - **可用性**: Cloud Run マルチリージョン想定。ワーカーはステートレス。
-- **コスト**: トークン/分課金を Cloud Billing（予算アラート）+ Cloud Monitoring で可視化。
+- **コスト**: セッション単位の実測 usage を `ai_usage` / `session_summary` イベントとして Elasticsearch `sanba-analytics-*` + Kibana で分析し、`session_cost_summary` の log-based metric でコスト異常を検知する（ADR-0061）。Cloud Billing（予算アラート）と billing labels 突合で実額を検証する。
 - **セキュリティ**: 会話に PII が含まれうるため、Secret Manager・最小権限 SA・保存時暗号化。
 
 詳細な DevOps サイクルは [`devops.md`](../how-to/devops.md)。

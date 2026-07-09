@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     analysis_ride_along_timeout_seconds: float = 10.0
 
     session_score_timeout_seconds: float = 4.0
+    session_close_analytics_timeout_seconds: float = 4.0
 
     voice_completion_shutdown_delay_s: float = 6.0
 
@@ -50,6 +51,11 @@ class Settings(BaseSettings):
     elasticsearch_url: str = ""
     elasticsearch_api_key: str = ""
     gemini_embed_model: str = "gemini-embedding-001"
+
+    usd_jpy_rate: float = 150.0
+    livekit_connection_usd_per_min: float = 0.0005
+    livekit_agent_session_usd_per_min: float = 0.01
+    livekit_noise_cancellation_usd_per_min: float = 0.005
 
     mask_pii_before_index: bool = True
     data_retention_days: int = 30

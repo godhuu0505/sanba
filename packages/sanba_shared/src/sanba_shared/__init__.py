@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+from .analytics import TokenUsage, UsageRecorder, estimate_usd, usage_from_genai
+from .analytics_sink import AnalyticsConfig, AnalyticsSink
 from .inquiry import InquiryTree, make_inquiry_id, normalize_text
 from .models import (
     AnalysisResult,
@@ -24,6 +26,8 @@ from .repository import SessionRepository
 
 __all__ = [
     "AnalysisResult",
+    "AnalyticsConfig",
+    "AnalyticsSink",
     "InquiryKind",
     "InquiryNode",
     "InquiryOrigin",
@@ -35,7 +39,11 @@ __all__ = [
     "RequirementStatus",
     "SessionMeta",
     "SessionRepository",
+    "TokenUsage",
+    "UsageRecorder",
     "Utterance",
+    "estimate_usd",
     "make_inquiry_id",
     "normalize_text",
+    "usage_from_genai",
 ]

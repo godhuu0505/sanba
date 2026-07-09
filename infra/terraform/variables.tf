@@ -258,3 +258,27 @@ variable "github_app_web_return_url" {
   default     = ""
   description = "連携保存後にユーザーを戻す web 設定画面の URL。空=domain から web の /settings を導出。"
 }
+
+variable "session_cost_alert_usd" {
+  description = "1 セッションの推定 AI コスト (USD) がこの値を超えたらアラート (ADR-0061)"
+  type        = number
+  default     = 5
+}
+
+variable "enable_billing_export" {
+  description = "BigQuery billing export 用 dataset を作成するか (ADR-0061 補強。export 自体は請求先アカウント側で設定)"
+  type        = bool
+  default     = false
+}
+
+variable "billing_export_location" {
+  description = "billing export dataset のロケーション (Cloud Billing export の対応リージョンに合わせる)"
+  type        = string
+  default     = "US"
+}
+
+variable "usd_jpy_rate" {
+  description = "セッションコストの ¥ 表示に使う固定換算レート (ADR-0061)"
+  type        = string
+  default     = "150.0"
+}

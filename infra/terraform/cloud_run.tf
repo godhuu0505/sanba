@@ -16,6 +16,7 @@ locals {
     GEMINI_LIVE_MODEL      = coalesce(var.gemini_live_model, "gemini-live-2.5-flash-native-audio")
     GEMINI_REASONING_MODEL = var.gemini_reasoning_model
     OTEL_SERVICE_NAME      = "sanba-agent"
+    USD_JPY_RATE           = var.usd_jpy_rate
   })
 
   api_env = merge(local.common_env, {
