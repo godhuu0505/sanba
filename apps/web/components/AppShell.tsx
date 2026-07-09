@@ -1,15 +1,6 @@
 "use client";
 
-import {
-  ChevronLeft,
-  Home,
-  Menu,
-  Package,
-  PanelLeftClose,
-  PanelLeftOpen,
-  ScrollText,
-  X,
-} from "lucide-react";
+import { ChevronLeft, Home, Menu, Package, PanelLeftClose, PanelLeftOpen, ScrollText } from "lucide-react";
 import Link from "next/link";
 import * as React from "react";
 import type { LucideIcon } from "lucide-react";
@@ -35,7 +26,7 @@ const NAV_ITEMS: NavItem[] = [
   { key: "products", href: "/products", label: "アプリ管理", Icon: Package },
 ];
 
-const COLLAPSE_KEY = "sanba.sidebar.collapsed";
+const HIDDEN_KEY = "sanba.sidebar.hidden";
 
 export interface AppShellProps {
   current?: AppNavKey;
@@ -48,11 +39,9 @@ export interface AppShellProps {
 
 function SidebarBody({
   current,
-  collapsed,
   onNavigate,
 }: {
   current?: AppNavKey;
-  collapsed: boolean;
   onNavigate?: () => void;
 }) {
   return (
@@ -65,22 +54,40 @@ function SidebarBody({
             href={href}
             aria-current={isCurrent ? "page" : undefined}
             aria-label={label}
-            title={collapsed ? label : undefined}
             onClick={onNavigate}
             className={cn(
               "flex items-center gap-[10px] rounded-[10px] px-[12px] py-[10px] text-[14px] font-bold transition-colors",
-              collapsed && "justify-center px-0",
               isCurrent
                 ? "bg-sanba-gold-pale text-sanba-gold-text"
                 : "text-sanba-cream hover:bg-sanba-bg",
             )}
           >
             <Icon size={18} aria-hidden className="shrink-0" />
-            {!collapsed && <span className="truncate">{label}</span>}
+            <span className="truncate">{label}</span>
           </Link>
         );
       })}
     </nav>
+  );
+}
+
+function SidebarHeader({ onClose }: { onClose: () => void }) {
+  return (
+    <div className="mb-[10px] flex h-[44px] items-center justify-between px-[6px]">
+      <Link href="/" aria-label="SANBA ホーム" className="flex items-center">
+        <Logo size="md" />
+      </Link>
+      <button
+        type="button"
+        onClick={onClose}
+        aria-label="サイドメニューを閉じる"
+        aria-expanded
+        title="サイドメニューを閉じる"
+        className="flex size-[32px] items-center justify-center rounded-[8px] text-sanba-muted transition-colors hover:bg-sanba-bg hover:text-sanba-cream"
+      >
+        <PanelLeftClose size={18} aria-hidden />
+      </button>
+    </div>
   );
 }
 
@@ -93,23 +100,20 @@ export function AppShell({
   children,
 }: AppShellProps) {
   const auth = useAuthOptional();
-  const [collapsed, setCollapsed] = React.useState(false);
+  const [open, setOpen] = React.useState(true);
   const [mobileOpen, setMobileOpen] = React.useState(false);
 
   React.useEffect(() => {
     try {
-      if (window.localStorage.getItem(COLLAPSE_KEY) === "1") setCollapsed(true);
+      if (window.localStorage.getItem(HIDDEN_KEY) === "1") setOpen(false);
     } catch {}
   }, []);
 
-  const toggleCollapsed = React.useCallback(() => {
-    setCollapsed((v) => {
-      const next = !v;
-      try {
-        window.localStorage.setItem(COLLAPSE_KEY, next ? "1" : "0");
-      } catch {}
-      return next;
-    });
+  const setOpenPersist = React.useCallback((next: boolean) => {
+    setOpen(next);
+    try {
+      window.localStorage.setItem(HIDDEN_KEY, next ? "0" : "1");
+    } catch {}
   }, []);
 
   React.useEffect(() => {
@@ -123,45 +127,13 @@ export function AppShell({
 
   return (
     <div className="sanba-screen-bg sanba-font flex min-h-dvh w-full text-sanba-cream">
-      <aside
-        className={cn(
-          "hidden shrink-0 flex-col border-r border-sanba-border bg-sanba-surface-strong p-[12px] transition-[width] duration-200 ease-out lg:flex",
-          collapsed ? "w-[72px]" : "w-[248px]",
-        )}
-      >
-        <div
-          className={cn(
-            "mb-[10px] flex h-[44px] items-center",
-            collapsed ? "justify-center" : "px-[6px]",
-          )}
-        >
-          <Link href="/" aria-label="SANBA ホーム" className="flex items-center">
-            <Logo size="md" wordmark={!collapsed} />
-          </Link>
-        </div>
-        <SidebarBody current={current} collapsed={collapsed} />
-        {auth && <SidebarAccount profile={auth.profile} collapsed={collapsed} />}
-        <button
-          type="button"
-          onClick={toggleCollapsed}
-          aria-label={collapsed ? "サイドメニューを開く" : "サイドメニューを閉じる"}
-          aria-expanded={!collapsed}
-          title={collapsed ? "サイドメニューを開く" : "サイドメニューを閉じる"}
-          className={cn(
-            "mt-[8px] flex items-center gap-[10px] rounded-[10px] px-[12px] py-[10px] text-[13px] font-bold text-sanba-muted transition-colors hover:bg-sanba-bg hover:text-sanba-cream",
-            collapsed && "justify-center px-0",
-          )}
-        >
-          {collapsed ? (
-            <PanelLeftOpen size={18} aria-hidden className="shrink-0" />
-          ) : (
-            <>
-              <PanelLeftClose size={18} aria-hidden className="shrink-0" />
-              <span>折りたたむ</span>
-            </>
-          )}
-        </button>
-      </aside>
+      {open && (
+        <aside className="hidden w-[248px] shrink-0 flex-col border-r border-sanba-border bg-sanba-surface-strong p-[12px] lg:flex">
+          <SidebarHeader onClose={() => setOpenPersist(false)} />
+          <SidebarBody current={current} />
+          {auth && <SidebarAccount profile={auth.profile} />}
+        </aside>
+      )}
 
       {mobileOpen && (
         <div className="fixed inset-0 z-50 flex lg:hidden">
@@ -175,39 +147,32 @@ export function AppShell({
             aria-label="サイドメニュー"
             className="sanba-drawer-in relative z-10 flex w-[264px] max-w-[82%] flex-col border-r border-sanba-border bg-sanba-surface-strong p-[12px] shadow-lg"
           >
-            <div className="mb-[10px] flex h-[44px] items-center justify-between px-[6px]">
-              <Logo size="md" />
-              <button
-                type="button"
-                aria-label="メニューを閉じる"
-                onClick={() => setMobileOpen(false)}
-                className="flex size-[32px] items-center justify-center rounded-[8px] text-sanba-muted transition-colors hover:bg-sanba-bg hover:text-sanba-cream"
-              >
-                <X size={16} aria-hidden />
-              </button>
-            </div>
-            <SidebarBody
-              current={current}
-              collapsed={false}
-              onNavigate={() => setMobileOpen(false)}
-            />
-            {auth && <SidebarAccount profile={auth.profile} collapsed={false} />}
+            <SidebarHeader onClose={() => setMobileOpen(false)} />
+            <SidebarBody current={current} onNavigate={() => setMobileOpen(false)} />
+            {auth && <SidebarAccount profile={auth.profile} />}
           </aside>
         </div>
       )}
 
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex h-[52px] shrink-0 items-center gap-[10px] border-b border-sanba-border-strong bg-sanba-surface-strong px-[14px]">
-          <button
-            type="button"
-            aria-haspopup="menu"
-            aria-expanded={mobileOpen}
-            aria-label="メニューを開く"
-            onClick={() => setMobileOpen(true)}
-            className="flex size-[36px] items-center justify-center rounded-[10px] text-sanba-cream transition-colors hover:bg-sanba-bg lg:hidden"
-          >
-            <Menu size={19} aria-hidden />
-          </button>
+          {!open && (
+            <div className="hidden items-center gap-[8px] lg:flex">
+              <button
+                type="button"
+                onClick={() => setOpenPersist(true)}
+                aria-label="サイドメニューを開く"
+                aria-expanded={false}
+                title="サイドメニューを開く"
+                className="flex size-[36px] items-center justify-center rounded-[10px] text-sanba-cream transition-colors hover:bg-sanba-bg"
+              >
+                <PanelLeftOpen size={19} aria-hidden />
+              </button>
+              <Link href="/" aria-label="SANBA ホーム" className="flex items-center">
+                <Logo size="sm" wordmark={false} />
+              </Link>
+            </div>
+          )}
           {onBack && (
             <button
               type="button"
@@ -224,9 +189,19 @@ export function AppShell({
           {title != null && title !== "" && (
             <h1 className="truncate text-[15px] font-bold text-sanba-cream">{title}</h1>
           )}
-          {headerRight != null && (
-            <div className="ml-auto flex items-center">{headerRight}</div>
-          )}
+          <div className="ml-auto flex items-center gap-[8px]">
+            {headerRight}
+            <button
+              type="button"
+              aria-haspopup="menu"
+              aria-expanded={mobileOpen}
+              aria-label="メニューを開く"
+              onClick={() => setMobileOpen(true)}
+              className="flex size-[36px] items-center justify-center rounded-[10px] text-sanba-cream transition-colors hover:bg-sanba-bg lg:hidden"
+            >
+              <Menu size={19} aria-hidden />
+            </button>
+          </div>
         </header>
         <main
           className={cn(

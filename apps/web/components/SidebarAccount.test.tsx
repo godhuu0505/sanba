@@ -10,7 +10,9 @@ vi.mock("next/navigation", () => ({
 import { SidebarAccount } from "./SidebarAccount";
 
 const profile = {
+  sub: "google-sub-1",
   email: "go@sanba.local",
+  email_verified: true,
   name: "産婆",
   picture: "https://lh3.googleusercontent.com/a/portrait",
 };
@@ -32,7 +34,14 @@ describe("SidebarAccount（サイドメニュー下部のアカウント）", ()
 
   it("picture 未設定ならイニシャルのアバターを出す（フォールバック）", () => {
     const { container } = render(
-      <SidebarAccount profile={{ email: "no@sanba.local", name: "無" }} />,
+      <SidebarAccount
+        profile={{
+          sub: "google-sub-2",
+          email: "no@sanba.local",
+          email_verified: true,
+          name: "無",
+        }}
+      />,
     );
     expect(container.querySelector("img")).toBeNull();
     expect(screen.getByRole("button", { name: "アカウントメニュー" }).textContent).toContain("無");
@@ -62,11 +71,5 @@ describe("SidebarAccount（サイドメニュー下部のアカウント）", ()
     open();
     fireEvent.keyDown(window, { key: "Escape" });
     expect(screen.queryByRole("menu")).toBeNull();
-  });
-
-  it("collapsed ではメール文字列を隠しアイコンのみにする", () => {
-    render(<SidebarAccount profile={profile} collapsed />);
-    const button = screen.getByRole("button", { name: "アカウントメニュー" });
-    expect(button.textContent).toBe("");
   });
 });

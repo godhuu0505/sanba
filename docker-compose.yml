@@ -27,13 +27,14 @@ services:
         # 空なら web は dev モード (Google ログインを出さず bypass で進む / ADR-0012)。
         NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${NEXT_PUBLIC_GOOGLE_CLIENT_ID:-}
     env_file: .env.local
+    environment:
+      INTERNAL_API_URL: ${INTERNAL_API_URL:-http://api:8080}
     ports: ["3000:3000"]
     depends_on:
       api:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
-      # node:slim には curl が無いので node 組み込みの fetch で確認する。
       test: ["CMD", "node", "-e", "fetch('http://localhost:3000').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 10s
       timeout: 5s

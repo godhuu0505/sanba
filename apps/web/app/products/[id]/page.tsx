@@ -3,7 +3,7 @@
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
-import { AccountMenu } from "@/components/AccountMenu";
+import { AppShell } from "@/components/AppShell";
 import { ProductCheckItemsCard } from "@/components/ProductCheckItemsCard";
 import { ProductInvitesCard } from "@/components/ProductInvitesCard";
 import { ProductOutputFormatsCard } from "@/components/ProductOutputFormatsCard";
@@ -11,7 +11,6 @@ import { ProductMembersCard } from "@/components/ProductMembersCard";
 import { ProductRepoCard } from "@/components/ProductRepoCard";
 import { authGate } from "@/components/RequireAuth";
 import {
-  AppHeader,
   Button,
   Card,
   CardTitle,
@@ -20,7 +19,6 @@ import {
   Field,
   HelpIcon,
   Input,
-  Screen,
 } from "@/components/sanba";
 import {
   ApiError,
@@ -156,9 +154,8 @@ export default function ProductDetailPage() {
 
   if (notFound) {
     return (
-      <Screen className="px-4 py-3 sanba-scroll">
-        <AppHeader title="アプリ詳細" onBack={() => router.push("/products")} />
-        <main className="mx-auto flex w-full max-w-[480px] flex-1 flex-col gap-[18px] pt-2">
+      <AppShell current="products" title="アプリ詳細" onBack={() => router.push("/products")}>
+        <div className="mx-auto flex w-full max-w-[480px] flex-1 flex-col gap-[18px] px-4 py-4">
           <Card>
             <CardTitle>見つかりません</CardTitle>
             <p className="text-[12px] leading-relaxed text-sanba-muted">
@@ -168,19 +165,14 @@ export default function ProductDetailPage() {
               アプリ管理へ戻る
             </Button>
           </Card>
-        </main>
-      </Screen>
+        </div>
+      </AppShell>
     );
   }
 
   return (
-    <Screen className="px-4 py-3 sanba-scroll">
-      <AppHeader
-        title="アプリ詳細"
-        onBack={() => router.push("/products")}
-        right={<AccountMenu profile={auth.profile} />}
-      />
-      <main className="mx-auto flex w-full max-w-[480px] flex-1 flex-col gap-[18px] pt-2">
+    <AppShell current="products" title="アプリ詳細" onBack={() => router.push("/products")}>
+      <div className="mx-auto flex w-full max-w-[480px] flex-1 flex-col gap-[18px] px-4 py-4">
         {product === null ? (
           <Card>
             <p className="text-[12px] text-sanba-muted">読み込み中…</p>
@@ -340,7 +332,7 @@ export default function ProductDetailPage() {
             </Card>
           </>
         )}
-      </main>
-    </Screen>
+      </div>
+    </AppShell>
   );
 }

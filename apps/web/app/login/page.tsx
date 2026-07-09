@@ -1,10 +1,9 @@
 "use client";
 
-
 import { useRouter } from "next/navigation";
 import { useEffect, useRef } from "react";
 
-import { BrandMark, BrandSplash, Button, Screen } from "@/components/sanba";
+import { BrandMark, Button, Screen } from "@/components/sanba";
 import { useAuth } from "@/lib/auth";
 
 export function safeNextPath(raw: string | null): string | null {
@@ -31,7 +30,7 @@ export default function LoginPage() {
   useEffect(() => {
     nextRef.current = safeNextPath(new URLSearchParams(window.location.search).get("next"));
     if (loggedOutRef.current) {
-      signOut();
+      void signOut();
       window.history.replaceState(window.history.state, "", "/login");
     }
   }, [signOut]);
@@ -49,7 +48,7 @@ export default function LoginPage() {
     if (showSignIn && !devMode) resetButton();
   }, [showSignIn, devMode, resetButton]);
 
-  if (!ready || loggedIn) return <BrandSplash />;
+  if (loggedIn) return null;
 
   return (
     <Screen className="items-center justify-center px-6 py-10">
@@ -72,7 +71,7 @@ export default function LoginPage() {
 
         <div className="flex w-full flex-col items-center gap-3">
           {devMode ? (
-            <Button variant="gold" block onClick={devSignIn}>
+            <Button variant="gold" block onClick={() => void devSignIn()}>
               開発用ログイン（bypass）
             </Button>
           ) : (

@@ -3,8 +3,6 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 
-import { BrandSplash } from "@/components/sanba";
-
 export interface RequireAuthProps {
   ready: boolean;
   loggedIn: boolean;
@@ -16,7 +14,7 @@ type GateAuth = { devMode: boolean; ready: boolean; loggedIn: boolean };
 
 export function authGate(auth: GateAuth, next: string): React.ReactElement | null {
   if (auth.devMode) return null;
-  if (auth.ready && auth.loggedIn) return null;
+  if (auth.loggedIn) return null;
   return <RequireAuth ready={auth.ready} loggedIn={auth.loggedIn} next={next} />;
 }
 
@@ -29,7 +27,6 @@ export function RequireAuth({ ready, loggedIn, next, children }: RequireAuthProp
     }
   }, [ready, loggedIn, next, router]);
 
-  if (!ready) return <BrandSplash />;
   if (!loggedIn) return null;
   return <>{children}</>;
 }

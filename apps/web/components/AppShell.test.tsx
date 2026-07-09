@@ -51,19 +51,28 @@ describe("AppShell（恒常サイドメニュー＋ヘッダー）", () => {
     expect(backed).toBe(1);
   });
 
-  it("折りたたみでアイコンのみになり、状態を localStorage に保存する（PC）", () => {
+  it("閉じるとサイドメニューを隠し、開くボタンを出して localStorage に保存する（PC）", () => {
     render(<AppShell>本文</AppShell>);
-    expect(screen.getByRole("link", { name: "ホーム" }).textContent).toContain("ホーム");
+    expect(screen.getByRole("link", { name: "ホーム" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "サイドメニューを閉じる" }));
-    expect(screen.getByRole("link", { name: "ホーム" }).textContent).toBe("");
+    expect(screen.queryByRole("link", { name: "ホーム" })).toBeNull();
     expect(screen.getByRole("button", { name: "サイドメニューを開く" })).toBeTruthy();
-    expect(window.localStorage.getItem("sanba.sidebar.collapsed")).toBe("1");
+    expect(window.localStorage.getItem("sanba.sidebar.hidden")).toBe("1");
   });
 
-  it("保存済みの折りたたみ状態を復元する（PC）", () => {
-    window.localStorage.setItem("sanba.sidebar.collapsed", "1");
+  it("開くボタンで再表示し localStorage を更新する（PC）", () => {
+    render(<AppShell>本文</AppShell>);
+    fireEvent.click(screen.getByRole("button", { name: "サイドメニューを閉じる" }));
+    fireEvent.click(screen.getByRole("button", { name: "サイドメニューを開く" }));
+    expect(screen.getByRole("link", { name: "ホーム" })).toBeTruthy();
+    expect(window.localStorage.getItem("sanba.sidebar.hidden")).toBe("0");
+  });
+
+  it("保存済みの非表示状態を復元する（PC）", () => {
+    window.localStorage.setItem("sanba.sidebar.hidden", "1");
     render(<AppShell>本文</AppShell>);
     expect(screen.getByRole("button", { name: "サイドメニューを開く" })).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "ホーム" })).toBeNull();
   });
 
   it("スマホ: ハンバーガーでドロワーが開き、項目クリックで閉じる", () => {
