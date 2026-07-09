@@ -1786,6 +1786,58 @@ async def guarded_generate_reply(
             return False
 
 
+async def guarded_turn_reply(
+    session: AgentSession,
+    *,
+    session_id: str,
+    kind: str,
+    reply_tracker: _ReplyTracker,
+    timeout_s: float,
+    reinject: str | None,
+    pending_reinject: list[str],
+    request_restart: Callable[[], None],
+    **gen_kwargs: Any,
+) -> bool:
+    """会話途中の generate_reply を応答監視つきで実行する（#468 Fix B）。
+
+    発行前の応答数を基準に、watchdog タイムアウト以内に assistant 応答が増えなければ
+    voice_reply_no_response を残し、捨てた入力（reinject）を pending_reinject へ退避して
+    request_restart でセッションを張り直す。Gemini Live が無言でターンを落とす／ツール
+    呼び出しで livelock する事象から復旧する。応答を観測できたら True、無応答で再起動を
+    要求したら False を返す。
+    """
+    baseline = reply_tracker.count
+    ok = await guarded_generate_reply(session, session_id=session_id, kind=kind, **gen_kwargs)
+    if ok:
+        try:
+            await reply_tracker.wait_beyond(baseline, timeout_s)
+            return True
+        except TimeoutError:
+            pass
+    log.warning(
+        "voice_reply_no_response",
+        session=session_id,
+        kind=kind,
+        timeout_s=timeout_s,
+    )
+    if reinject is not None:
+        pending_reinject.append(reinject)
+    request_restart()
+    return False
+
+
+def build_resume_instructions(transcript: list[str], pending_reinject: list[str]) -> str:
+    """再起動後の再開一言の instructions を組み立てる（#468 Fix B）。
+
+    resume_instructions の文脈復元に、watchdog が退避した未応答入力（動画観察など transcript
+    に載らないもの）を連結して、無応答で落とした一言を再起動後に取り戻す。
+    """
+    resume = resume_instructions(transcript)
+    if pending_reinject:
+        resume = resume + "\n\n" + "\n\n".join(pending_reinject)
+    return resume
+
+
 async def open_interview(
     session: AgentSession,
     *,
@@ -2065,29 +2117,17 @@ async def entrypoint(ctx: JobContext) -> None:
     pending_reinject: list[str] = []
 
     async def _guarded_turn_reply(*, kind: str, reinject: str | None, **gen_kwargs: Any) -> None:
-        """会話途中の generate_reply を応答監視つきで実行する（#468 Fix B）。
-
-        発行前の応答数を基準に、watchdog タイムアウト以内に assistant 応答が増えなければ
-        voice_reply_no_response を残し、捨てた入力（reinject）を退避してセッションを張り直す。
-        Gemini Live が無言でターンを落とす／ツール呼び出しで livelock する事象から復旧する。
-        """
-        baseline = reply_tracker.count
-        ok = await guarded_generate_reply(session, session_id=session_id, kind=kind, **gen_kwargs)
-        if ok:
-            try:
-                await reply_tracker.wait_beyond(baseline, settings.voice_reply_watchdog_timeout_s)
-                return
-            except TimeoutError:
-                pass
-        log.warning(
-            "voice_reply_no_response",
-            session=session_id,
+        await guarded_turn_reply(
+            session,
+            session_id=session_id,
             kind=kind,
+            reply_tracker=reply_tracker,
             timeout_s=settings.voice_reply_watchdog_timeout_s,
+            reinject=reinject,
+            pending_reinject=pending_reinject,
+            request_restart=_request_restart,
+            **gen_kwargs,
         )
-        if reinject is not None:
-            pending_reinject.append(reinject)
-        _request_restart()
 
     def _on_data(packet) -> None:  # type: ignore[no-untyped-def]
         topic = getattr(packet, "topic", None)
@@ -2206,6 +2246,8 @@ async def entrypoint(ctx: JobContext) -> None:
         SANBAAgent は close 時に activity が外れるため同一インスタンスを再利用でき、
         transcript・採番・検知の状態は維持される。Gemini 側の会話履歴は新規セッションでは
         失われるので、resume_instructions が直前の transcript 末尾を文脈として渡す。
+        watchdog 経由の再起動は旧セッションがまだ開いたままなので、新規開始の前に閉じる
+        （error-close 経由は既に閉じており aclose は無害 / #468）。
         """
         nonlocal session, restart_count, restart_pending
         if restart_count >= settings.voice_session_max_restarts:
@@ -2226,6 +2268,8 @@ async def entrypoint(ctx: JobContext) -> None:
             delay_s=delay,
         )
         await asyncio.sleep(delay)
+        with contextlib.suppress(Exception):
+            await session.aclose()
         try:
             session = await _start_session()
         except Exception as exc:  # noqa: BLE001
@@ -2239,10 +2283,8 @@ async def entrypoint(ctx: JobContext) -> None:
             return
         restart_pending = False
         log.info("voice_session_restarted", session=session_id, attempt=restart_count)
-        resume = resume_instructions(agent.transcript)
-        if pending_reinject:
-            resume = resume + "\n\n" + "\n\n".join(pending_reinject)
-            pending_reinject.clear()
+        resume = build_resume_instructions(agent.transcript, pending_reinject)
+        pending_reinject.clear()
         try:
             await publisher.status("listening")
             await session.generate_reply(instructions=resume)

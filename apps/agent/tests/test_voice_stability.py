@@ -352,3 +352,128 @@ class TestReplyTracker:
         second_baseline = tracker.count
         with pytest.raises(TimeoutError):
             await tracker.wait_beyond(second_baseline, timeout_s=0.05)
+
+
+class _WatchdogFakeSession:
+    """guarded_turn_reply 検証用スタブ。generate_reply で応答到着や失敗を再現する。"""
+
+    def __init__(self, *, bump: object | None = None, raises: BaseException | None = None) -> None:
+        self._bump = bump
+        self._raises = raises
+        self.reply_calls = 0
+
+    async def generate_reply(self, **kwargs: object) -> None:
+        self.reply_calls += 1
+        if self._raises is not None:
+            raise self._raises
+        if self._bump is not None:
+            self._bump.bump()  # type: ignore[attr-defined]
+
+
+class TestGuardedTurnReply:
+    @pytest.mark.asyncio
+    async def test_returns_true_when_reply_observed(self) -> None:
+        from sanba_agent.main import _ReplyTracker, guarded_turn_reply
+
+        tracker = _ReplyTracker()
+        session = _WatchdogFakeSession(bump=tracker)
+        pending: list[str] = []
+        restarts: list[int] = []
+        ok = await guarded_turn_reply(
+            session,  # type: ignore[arg-type]
+            session_id="s1",
+            kind="user_text",
+            reply_tracker=tracker,
+            timeout_s=1.0,
+            reinject="動画観察",
+            pending_reinject=pending,
+            request_restart=lambda: restarts.append(1),
+            user_input="x",
+        )
+        assert ok is True
+        assert pending == []
+        assert restarts == []
+
+    @pytest.mark.asyncio
+    async def test_restarts_and_stashes_reinject_on_timeout(self) -> None:
+        from sanba_agent.main import _ReplyTracker, guarded_turn_reply
+
+        tracker = _ReplyTracker()
+        session = _WatchdogFakeSession()
+        pending: list[str] = []
+        restarts: list[int] = []
+        ok = await guarded_turn_reply(
+            session,  # type: ignore[arg-type]
+            session_id="s1",
+            kind="video_analysis",
+            reply_tracker=tracker,
+            timeout_s=0.05,
+            reinject="動画観察の再投入",
+            pending_reinject=pending,
+            request_restart=lambda: restarts.append(1),
+            instructions="y",
+        )
+        assert ok is False
+        assert pending == ["動画観察の再投入"]
+        assert restarts == [1]
+
+    @pytest.mark.asyncio
+    async def test_timeout_without_reinject_restarts_without_stash(self) -> None:
+        from sanba_agent.main import _ReplyTracker, guarded_turn_reply
+
+        tracker = _ReplyTracker()
+        session = _WatchdogFakeSession()
+        pending: list[str] = []
+        restarts: list[int] = []
+        ok = await guarded_turn_reply(
+            session,  # type: ignore[arg-type]
+            session_id="s1",
+            kind="user_text",
+            reply_tracker=tracker,
+            timeout_s=0.05,
+            reinject=None,
+            pending_reinject=pending,
+            request_restart=lambda: restarts.append(1),
+            user_input="x",
+        )
+        assert ok is False
+        assert pending == []
+        assert restarts == [1]
+
+    @pytest.mark.asyncio
+    async def test_generate_reply_exception_triggers_restart(self) -> None:
+        """generate_reply が例外で落ちても（guarded 側で握る）無応答として再起動する。"""
+        from sanba_agent.main import _ReplyTracker, guarded_turn_reply
+
+        tracker = _ReplyTracker()
+        session = _WatchdogFakeSession(raises=RuntimeError("room closed"))
+        pending: list[str] = []
+        restarts: list[int] = []
+        ok = await guarded_turn_reply(
+            session,  # type: ignore[arg-type]
+            session_id="s1",
+            kind="answer",
+            reply_tracker=tracker,
+            timeout_s=1.0,
+            reinject="再投入",
+            pending_reinject=pending,
+            request_restart=lambda: restarts.append(1),
+            instructions="z",
+        )
+        assert ok is False
+        assert pending == ["再投入"]
+        assert restarts == [1]
+
+
+class TestBuildResumeInstructions:
+    def test_appends_pending_reinject(self) -> None:
+        from sanba_agent.main import build_resume_instructions
+
+        text = build_resume_instructions(["[u1] participant: A"], ["動画観察の再投入"])
+        assert "復旧" in text
+        assert "動画観察の再投入" in text
+
+    def test_no_reinject_is_plain_resume(self) -> None:
+        from sanba_agent.main import build_resume_instructions, resume_instructions
+
+        assert build_resume_instructions([], []) == resume_instructions([])
