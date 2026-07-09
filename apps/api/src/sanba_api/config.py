@@ -49,6 +49,11 @@ class Settings(BaseSettings):
     require_login_nonce: bool = False
     auth_nonce_ttl_seconds: int = 3900
 
+    session_cookie_ttl_seconds: int = 8 * 3600
+    session_absolute_ttl_seconds: int = 24 * 3600
+    session_cookie_secure: bool = True
+    session_cookie_domain: str = ""
+
     admin_emails: str = ""
 
     room_creator_allowlist: str = ""

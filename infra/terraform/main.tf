@@ -108,6 +108,13 @@ resource "google_firestore_field" "sessions_ttl" {
   ttl_config {}
 }
 
+resource "google_firestore_field" "auth_sessions_ttl" {
+  database   = google_firestore_database.default.name
+  collection = "auth_sessions"
+  field      = "expires_at"
+  ttl_config {}
+}
+
 resource "google_service_account" "runtime" {
   account_id   = "sanba-runtime"
   display_name = "SANBA Cloud Run runtime"

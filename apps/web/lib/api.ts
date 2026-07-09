@@ -1,6 +1,6 @@
 import type { Detection, Question, Requirement } from "./realtime/types";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 
 let currentAuthNonce: string | null = null;
 
@@ -16,9 +16,59 @@ export interface AuthNonce {
 
 export async function fetchAuthNonce(): Promise<AuthNonce | null> {
   try {
-    const res = await fetch(`${API_URL}/api/auth/nonce`);
+    const res = await apiFetch(`${API_URL}/api/auth/nonce`, { credentials: "include" });
     if (!res.ok) return null;
     return (await res.json()) as AuthNonce;
+  } catch {
+    return null;
+  }
+}
+
+export interface SessionProfile {
+  sub: string;
+  email: string;
+  email_verified: boolean;
+  name: string;
+  picture?: string;
+  expires_at: number;
+  idle_expires_at: number;
+}
+
+export async function fetchSessionMe(): Promise<SessionProfile | null> {
+  try {
+    const res = await apiFetch(`${API_URL}/api/session/me`, { credentials: "include" });
+    if (!res.ok) return null;
+    return (await res.json()) as SessionProfile;
+  } catch {
+    return null;
+  }
+}
+
+export async function revokeSession(): Promise<void> {
+  try {
+    await apiFetch(`${API_URL}/api/session`, {
+      method: "DELETE",
+      credentials: "include",
+    });
+  } catch {
+  }
+}
+
+export async function exchangeIdToken(
+  idToken: string,
+  nonceEnvelope: string | null,
+): Promise<SessionProfile | null> {
+  try {
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (nonceEnvelope) headers["X-Auth-Nonce"] = nonceEnvelope;
+    const res = await apiFetch(`${API_URL}/api/session/exchange`, {
+      method: "POST",
+      credentials: "include",
+      headers,
+      body: JSON.stringify({ id_token: idToken }),
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as SessionProfile;
   } catch {
     return null;
   }
@@ -29,6 +79,10 @@ function authHeaders(idToken: string | null): Record<string, string> {
   if (idToken) headers.Authorization = `Bearer ${idToken}`;
   if (currentAuthNonce) headers["X-Auth-Nonce"] = currentAuthNonce;
   return headers;
+}
+
+function apiFetch(input: string, init: RequestInit = {}): Promise<Response> {
+  return fetch(input, { credentials: "include", ...init });
 }
 
 export interface CreateSessionResponse {
@@ -60,7 +114,7 @@ export async function createSession(
   if (productId) body.product_id = productId;
   if (goal?.trim()) body.goal = goal;
   if (goalDetail?.trim()) body.goal_detail = goalDetail;
-  const res = await fetch(`${API_URL}/api/sessions`, {
+  const res = await apiFetch(`${API_URL}/api/sessions`, {
     method: "POST",
     headers: authHeaders(idToken),
     body: JSON.stringify(body),
@@ -75,7 +129,7 @@ export async function addSessionContext(
   sessionToken: string | null,
   sourceName = "uploaded",
 ): Promise<{ indexed_chunks: number }> {
-  const res = await fetch(`${API_URL}/api/sessions/${sessionId}/context`, {
+  const res = await apiFetch(`${API_URL}/api/sessions/${sessionId}/context`, {
     method: "POST",
     headers: authHeaders(sessionToken),
     body: JSON.stringify({ text, source_name: sourceName }),
@@ -167,7 +221,7 @@ export async function uploadContextFile(
   form.append("file", file);
   const headers: Record<string, string> = {};
   if (sessionToken) headers.Authorization = `Bearer ${sessionToken}`;
-  const res = await fetch(`${API_URL}/api/sessions/${sessionId}/context/file`, {
+  const res = await apiFetch(`${API_URL}/api/sessions/${sessionId}/context/file`, {
     method: "POST",
     headers,
     body: form,
@@ -193,7 +247,7 @@ async function uploadVideoDirect(
   signal?: AbortSignal,
 ): Promise<UploadResult | "disabled"> {
   const contentType = file.type || "video/mp4";
-  const init = await fetch(`${API_URL}/api/sessions/${sessionId}/context/file/upload-init`, {
+  const init = await apiFetch(`${API_URL}/api/sessions/${sessionId}/context/file/upload-init`, {
     method: "POST",
     headers: authHeaders(sessionToken),
     body: JSON.stringify({ filename: file.name, content_type: contentType, size: file.size }),
@@ -213,7 +267,7 @@ async function uploadVideoDirect(
   });
   if (!put.ok) throw new Error(`upload failed: ${put.status}`);
 
-  const done = await fetch(`${API_URL}/api/sessions/${sessionId}/context/file/upload-complete`, {
+  const done = await apiFetch(`${API_URL}/api/sessions/${sessionId}/context/file/upload-complete`, {
     method: "POST",
     headers: authHeaders(sessionToken),
     body: JSON.stringify({
@@ -244,7 +298,7 @@ export function sendTelemetry(
   sessionToken: string | null,
 ): void {
   try {
-    void fetch(`${API_URL}/api/sessions/${sessionId}/telemetry`, {
+    void apiFetch(`${API_URL}/api/sessions/${sessionId}/telemetry`, {
       method: "POST",
       headers: authHeaders(sessionToken),
       body: JSON.stringify({ event, ...attrs }),
@@ -265,7 +319,7 @@ export async function deleteContextFile(
   assetId: string,
   sessionToken: string | null,
 ): Promise<DeleteContextFileResult> {
-  const res = await fetch(
+  const res = await apiFetch(
     `${API_URL}/api/sessions/${sessionId}/context/file/${encodeURIComponent(assetId)}`,
     { method: "DELETE", headers: authHeaders(sessionToken) },
   );
@@ -307,7 +361,7 @@ export async function fetchRequirements(
   sessionId: string,
   sessionToken: string | null,
 ): Promise<RequirementsSnapshot> {
-  const res = await fetch(`${API_URL}/api/sessions/${sessionId}/requirements`, {
+  const res = await apiFetch(`${API_URL}/api/sessions/${sessionId}/requirements`, {
     headers: authHeaders(sessionToken),
   });
   if (!res.ok) throw new Error(`fetch requirements failed: ${res.status}`);
@@ -318,7 +372,7 @@ export async function fetchContextFiles(
   sessionId: string,
   sessionToken: string | null,
 ): Promise<ContextFilesSnapshot> {
-  const res = await fetch(`${API_URL}/api/sessions/${sessionId}/context/files`, {
+  const res = await apiFetch(`${API_URL}/api/sessions/${sessionId}/context/files`, {
     headers: authHeaders(sessionToken),
   });
   if (!res.ok) throw new Error(`fetch context files failed: ${res.status}`);
@@ -329,7 +383,7 @@ export async function fetchCurrentQuestion(
   sessionId: string,
   sessionToken: string | null,
 ): Promise<CurrentQuestionSnapshot> {
-  const res = await fetch(`${API_URL}/api/sessions/${sessionId}/questions/current`, {
+  const res = await apiFetch(`${API_URL}/api/sessions/${sessionId}/questions/current`, {
     headers: authHeaders(sessionToken),
   });
   if (!res.ok) throw new Error(`fetch current question failed: ${res.status}`);
@@ -340,7 +394,7 @@ export async function fetchDetections(
   sessionId: string,
   sessionToken: string | null,
 ): Promise<DetectionsSnapshot> {
-  const res = await fetch(
+  const res = await apiFetch(
     `${API_URL}/api/sessions/${sessionId}/detections?open=1`,
     { headers: authHeaders(sessionToken) },
   );
@@ -365,7 +419,7 @@ export async function finalizeSession(
   sessionId: string,
   sessionToken: string | null,
 ): Promise<FinalizeResult> {
-  const res = await fetch(`${API_URL}/api/sessions/${sessionId}/finalize`, {
+  const res = await apiFetch(`${API_URL}/api/sessions/${sessionId}/finalize`, {
     method: "POST",
     headers: authHeaders(sessionToken),
   });
@@ -383,7 +437,7 @@ export async function exportRequirements(
   sessionToken: string | null,
   options: ExportOptions = {},
 ): Promise<ExportResult> {
-  const res = await fetch(`${API_URL}/api/sessions/${sessionId}/export`, {
+  const res = await apiFetch(`${API_URL}/api/sessions/${sessionId}/export`, {
     method: "POST",
     headers: authHeaders(sessionToken),
     body: JSON.stringify({
@@ -405,7 +459,7 @@ export async function fetchExportEligibility(
   sessionId: string,
   sessionToken: string | null,
 ): Promise<ExportEligibility> {
-  const res = await fetch(`${API_URL}/api/sessions/${sessionId}/export/eligibility`, {
+  const res = await apiFetch(`${API_URL}/api/sessions/${sessionId}/export/eligibility`, {
     headers: authHeaders(sessionToken),
   });
   if (!res.ok) throw new Error(`export eligibility failed: ${res.status}`);
@@ -424,7 +478,7 @@ export interface MySession {
 }
 
 export async function fetchMySessions(idToken: string | null): Promise<MySession[]> {
-  const res = await fetch(`${API_URL}/api/sessions/mine`, {
+  const res = await apiFetch(`${API_URL}/api/sessions/mine`, {
     headers: authHeaders(idToken),
   });
   if (!res.ok) throw new Error(`fetch my sessions failed: ${res.status}`);
@@ -440,7 +494,7 @@ export interface GithubRepos {
 }
 
 export async function fetchGithubRepos(idToken: string | null): Promise<GithubRepos> {
-  const res = await fetch(`${API_URL}/api/github/repos`, {
+  const res = await apiFetch(`${API_URL}/api/github/repos`, {
     headers: authHeaders(idToken),
   });
   if (!res.ok) throw new Error(`fetch github repos failed: ${res.status}`);
@@ -459,7 +513,7 @@ export async function fetchMySessionRequirements(
   sessionId: string,
   idToken: string | null,
 ): Promise<MySessionRequirements> {
-  const res = await fetch(
+  const res = await apiFetch(
     `${API_URL}/api/sessions/mine/${encodeURIComponent(sessionId)}/requirements`,
     { headers: authHeaders(idToken) },
   );
@@ -480,7 +534,7 @@ export async function fetchMySessionResultDocument(
   audience: Audience,
   idToken: string | null,
 ): Promise<ResultDocument> {
-  const res = await fetch(
+  const res = await apiFetch(
     `${API_URL}/api/sessions/mine/${encodeURIComponent(sessionId)}/result-document?audience=${audience}`,
     { headers: authHeaders(idToken) },
   );
@@ -492,7 +546,7 @@ export async function fetchMyExportEligibility(
   sessionId: string,
   idToken: string | null,
 ): Promise<ExportEligibility> {
-  const res = await fetch(
+  const res = await apiFetch(
     `${API_URL}/api/sessions/mine/${encodeURIComponent(sessionId)}/export/eligibility`,
     { headers: authHeaders(idToken) },
   );
@@ -504,7 +558,7 @@ export async function exportMyRequirements(
   sessionId: string,
   idToken: string | null,
 ): Promise<ExportResult> {
-  const res = await fetch(
+  const res = await apiFetch(
     `${API_URL}/api/sessions/mine/${encodeURIComponent(sessionId)}/export`,
     { method: "POST", headers: authHeaders(idToken) },
   );
@@ -517,7 +571,7 @@ export async function joinSession(params: {
   participantName: string;
   idToken: string | null;
 }): Promise<JoinResponse> {
-  const res = await fetch(`${API_URL}/api/sessions/join`, {
+  const res = await apiFetch(`${API_URL}/api/sessions/join`, {
     method: "POST",
     headers: authHeaders(params.idToken),
     body: JSON.stringify({
@@ -565,13 +619,13 @@ export interface SessionGitHub {
 }
 
 export async function getGithubLinkStatus(idToken: string | null): Promise<GitHubLinkStatus> {
-  const res = await fetch(`${API_URL}/api/github/link`, { headers: authHeaders(idToken) });
+  const res = await apiFetch(`${API_URL}/api/github/link`, { headers: authHeaders(idToken) });
   if (!res.ok) throw new Error(`github link status failed: ${res.status}`);
   return res.json();
 }
 
 export async function startGithubLink(idToken: string | null): Promise<{ install_url: string }> {
-  const res = await fetch(`${API_URL}/api/github/link/start`, {
+  const res = await apiFetch(`${API_URL}/api/github/link/start`, {
     method: "POST",
     headers: authHeaders(idToken),
   });
@@ -580,7 +634,7 @@ export async function startGithubLink(idToken: string | null): Promise<{ install
 }
 
 export async function unlinkGithub(idToken: string | null): Promise<GitHubLinkStatus> {
-  const res = await fetch(`${API_URL}/api/github/link`, {
+  const res = await apiFetch(`${API_URL}/api/github/link`, {
     method: "DELETE",
     headers: authHeaders(idToken),
   });
@@ -593,7 +647,7 @@ export async function listGithubBranches(
   repo: string,
   idToken: string | null,
 ): Promise<GitHubBranchItem[]> {
-  const res = await fetch(
+  const res = await apiFetch(
     `${API_URL}/api/github/branches?repo=${encodeURIComponent(repo)}`,
     { headers: authHeaders(idToken) },
   );
@@ -642,7 +696,7 @@ async function productFetch<T>(
   idToken: string | null,
   init?: RequestInit,
 ): Promise<T> {
-  const res = await fetch(`${API_URL}${path}`, {
+  const res = await apiFetch(`${API_URL}${path}`, {
     ...init,
     headers: { ...authHeaders(idToken), ...(init?.headers ?? {}) },
   });
@@ -897,7 +951,7 @@ export async function joinProduct(
   consentAcknowledged: boolean,
   idToken: string | null,
 ): Promise<ProductJoinResult> {
-  const res = await fetch(`${API_URL}/api/products/join`, {
+  const res = await apiFetch(`${API_URL}/api/products/join`, {
     method: "POST",
     headers: authHeaders(idToken),
     body: JSON.stringify({ token, consent_acknowledged: consentAcknowledged }),
@@ -920,7 +974,7 @@ export async function selectSessionRepo(
 ): Promise<SessionGitHub> {
   const body: Record<string, unknown> = { repo };
   if (branch) body.branch = branch;
-  const res = await fetch(`${API_URL}/api/sessions/${sessionId}/github`, {
+  const res = await apiFetch(`${API_URL}/api/sessions/${sessionId}/github`, {
     method: "POST",
     headers: authHeaders(sessionToken),
     body: JSON.stringify(body),
@@ -933,7 +987,7 @@ export async function getSessionRepo(
   sessionId: string,
   sessionToken: string | null,
 ): Promise<SessionGitHub> {
-  const res = await fetch(`${API_URL}/api/sessions/${sessionId}/github`, {
+  const res = await apiFetch(`${API_URL}/api/sessions/${sessionId}/github`, {
     headers: authHeaders(sessionToken),
   });
   if (!res.ok) throw new Error(`get session repo failed: ${res.status}`);

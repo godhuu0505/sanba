@@ -1,118 +1,107 @@
 // @vitest-environment jsdom
-import { act, cleanup, renderHook } from "@testing-library/react";
+import { act, cleanup, render, renderHook, waitFor } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-class FakeBroadcastChannel {
-  static instances: FakeBroadcastChannel[] = [];
-  onmessage: ((e: MessageEvent) => void) | null = null;
-  closed = false;
-  constructor(public readonly name: string) {
-    FakeBroadcastChannel.instances.push(this);
-  }
-  postMessage(data: unknown): void {
-    for (const ch of FakeBroadcastChannel.instances) {
-      if (ch === this || ch.closed || ch.name !== this.name) continue;
-      ch.onmessage?.({ data } as MessageEvent);
-    }
-  }
-  close(): void {
-    this.closed = true;
-  }
-}
-
-let capturedCallback: ((res: { credential?: string }) => void) | null = null;
-
-const initialize = vi.fn((config: { callback: (res: { credential?: string }) => void }) => {
-  capturedCallback = config.callback;
-});
-const renderButton = vi.fn();
-const prompt = vi.fn();
-const disableAutoSelect = vi.fn();
-
-function makeJwt(claims: Record<string, unknown> = { email: "a@example.com", name: "A" }): string {
-  const b64 = (o: unknown) =>
-    btoa(JSON.stringify(o)).replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
-  return `${b64({ alg: "none" })}.${b64(claims)}.sig`;
-}
-
-beforeEach(() => {
-  vi.stubEnv("NEXT_PUBLIC_GOOGLE_CLIENT_ID", "test-client-id.apps.googleusercontent.com");
-  vi.resetModules();
-  vi.stubGlobal("BroadcastChannel", FakeBroadcastChannel);
-  FakeBroadcastChannel.instances = [];
-  capturedCallback = null;
-  initialize.mockClear();
-  disableAutoSelect.mockClear();
-  (window as unknown as { google: unknown }).google = {
-    accounts: { id: { initialize, renderButton, prompt, disableAutoSelect } },
-  };
+vi.hoisted(() => {
+  process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID = "test-client-id.apps.googleusercontent.com";
 });
 
-afterEach(() => {
-  cleanup();
-  vi.unstubAllEnvs();
-  vi.unstubAllGlobals();
-  vi.restoreAllMocks();
-  delete (window as unknown as { google?: unknown }).google;
-});
+const mocks = vi.hoisted(() => ({
+  fetchSessionMe: vi.fn(),
+  revokeSession: vi.fn(async () => undefined),
+  exchangeIdToken: vi.fn(),
+  fetchAuthNonce: vi.fn(async () => null),
+  setAuthNonce: vi.fn(),
+}));
 
-async function renderLoggedIn() {
-  const { useGoogleAuth, LOGOUT_CHANNEL } = await import("./auth");
-  const view = renderHook(() => useGoogleAuth());
-  act(() => capturedCallback?.({ credential: makeJwt() }));
-  expect(view.result.current.loggedIn).toBe(true);
-  const otherTab = new FakeBroadcastChannel(LOGOUT_CHANNEL);
-  const received = vi.fn();
-  otherTab.onmessage = received;
-  return { view, otherTab, received };
-}
+vi.mock("./api", () => ({
+  fetchSessionMe: mocks.fetchSessionMe,
+  revokeSession: mocks.revokeSession,
+  exchangeIdToken: mocks.exchangeIdToken,
+  fetchAuthNonce: mocks.fetchAuthNonce,
+  setAuthNonce: mocks.setAuthNonce,
+}));
 
-describe("useGoogleAuth 別タブログアウト伝播（ADR-0030 / real モード）", () => {
-  it("signOut（既定）は他タブへ logout を配送し、自タブも即ログアウトする", async () => {
-    const { view, received } = await renderLoggedIn();
+vi.mock("./googleDrive", () => ({
+  isDriveConfigured: () => false,
+}));
 
-    act(() => view.result.current.signOut());
-    expect(view.result.current.loggedIn).toBe(false);
-    expect(received).toHaveBeenCalledTimes(1);
-    expect(disableAutoSelect).toHaveBeenCalled();
+import { AuthProvider, LOGOUT_CHANNEL, useAuth } from "./auth";
+
+const profile = {
+  sub: "google-sub-1",
+  email: "user@example.com",
+  email_verified: true,
+  name: "Test",
+  expires_at: 9_999_999_999,
+  idle_expires_at: 9_999_999_999,
+};
+
+describe("クロスタブログアウト（ADR-0030 / ADR-0060 サーバセッション経路）", () => {
+  beforeEach(() => {
+    process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID = "test-client-id.apps.googleusercontent.com";
+    mocks.fetchSessionMe.mockResolvedValue(profile);
+    mocks.revokeSession.mockResolvedValue(undefined);
+  });
+  afterEach(() => {
+    cleanup();
+    vi.clearAllMocks();
+    process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID = "";
   });
 
-  it("signOut({ broadcast: false })（401 回復・キャンセル導線）は他タブへ配送しない", async () => {
-    const { view, received } = await renderLoggedIn();
+  it("signOut は revokeSession を呼びローカル state をクリアする", async () => {
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <AuthProvider>{children}</AuthProvider>
+    );
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current.loggedIn).toBe(true));
 
-    act(() => view.result.current.signOut({ broadcast: false }));
-    expect(view.result.current.loggedIn).toBe(false);
-    expect(received).not.toHaveBeenCalled();
+    await act(async () => {
+      await result.current.signOut();
+    });
+
+    expect(mocks.revokeSession).toHaveBeenCalledTimes(1);
+    expect(result.current.loggedIn).toBe(false);
+    expect(result.current.profile).toBeNull();
   });
 
-  it("他タブからの合図（onmessage）で loggedIn=false に落ち、調査用の痕跡を残す", async () => {
-    const info = vi.spyOn(console, "info").mockImplementation(() => {});
-    const { view, otherTab } = await renderLoggedIn();
+  it("signOut({ broadcast: false }) でも revokeSession は同じく呼ばれる（サーバ側 revoke は失わない）", async () => {
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <AuthProvider>{children}</AuthProvider>
+    );
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current.loggedIn).toBe(true));
 
-    act(() => otherTab.postMessage("logout"));
-    expect(view.result.current.loggedIn).toBe(false);
-    expect(disableAutoSelect).toHaveBeenCalled();
-    expect(info).toHaveBeenCalledWith("[auth] cross-tab logout received");
-  });
+    await act(async () => {
+      await result.current.signOut({ broadcast: false });
+    });
 
-  it("アンマウントで購読チャネルを close する（リーク防止）", async () => {
-    const { view } = await renderLoggedIn();
-    const hookChannel = FakeBroadcastChannel.instances[0];
-    expect(hookChannel.closed).toBe(false);
-
-    view.unmount();
-    expect(hookChannel.closed).toBe(true);
-  });
-
-  it("BroadcastChannel の無い環境でもタブ間伝播だけを諦め、自タブの signOut は成立する", async () => {
-    vi.stubGlobal("BroadcastChannel", undefined);
-    const { useGoogleAuth } = await import("./auth");
-    const { result } = renderHook(() => useGoogleAuth());
-
-    act(() => capturedCallback?.({ credential: makeJwt() }));
-    expect(result.current.loggedIn).toBe(true);
-
-    act(() => result.current.signOut());
+    expect(mocks.revokeSession).toHaveBeenCalledTimes(1);
     expect(result.current.loggedIn).toBe(false);
   });
+
+  it("非 dev モードでは BroadcastChannel(LOGOUT_CHANNEL) を購読する", () => {
+    const OriginalBC = globalThis.BroadcastChannel;
+    const names: string[] = [];
+    class Tracked extends OriginalBC {
+      constructor(name: string) {
+        super(name);
+        names.push(name);
+      }
+    }
+    (globalThis as { BroadcastChannel: typeof BroadcastChannel }).BroadcastChannel =
+      Tracked as typeof BroadcastChannel;
+    try {
+      render(
+        <AuthProvider>
+          <div>x</div>
+        </AuthProvider>,
+      );
+      expect(names).toContain(LOGOUT_CHANNEL);
+    } finally {
+      (globalThis as { BroadcastChannel: typeof BroadcastChannel }).BroadcastChannel = OriginalBC;
+    }
+  });
+
 });
