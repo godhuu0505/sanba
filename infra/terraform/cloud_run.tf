@@ -19,25 +19,26 @@ locals {
   })
 
   api_env = merge(local.common_env, {
-    OTEL_SERVICE_NAME = "sanba-api"
-    REQUIRE_CONSENT   = "true"
-    GOOGLE_OAUTH_CLIENT_ID = var.google_oauth_client_id
-    ADMIN_EMAILS = var.admin_emails
-    REQUIRE_LOGIN_NONCE = tostring(var.require_login_nonce)
-    ROOM_CREATOR_ALLOWLIST = var.room_creator_allowlist
+    OTEL_SERVICE_NAME           = "sanba-api"
+    REQUIRE_CONSENT             = "true"
+    GOOGLE_OAUTH_CLIENT_ID      = var.google_oauth_client_id
+    ADMIN_EMAILS                = var.admin_emails
+    REQUIRE_LOGIN_NONCE         = tostring(var.require_login_nonce)
+    ROOM_CREATOR_ALLOWLIST      = var.room_creator_allowlist
     GUEST_JOIN_ENABLED          = tostring(var.guest_join_enabled)
     INVITE_JOIN_RATE_PER_MINUTE = tostring(var.invite_join_rate_per_minute)
-    ALLOWED_ORIGINS = local.domain_enabled ? join(",", concat([for h in local.web_hosts : "https://${h}"], [google_cloud_run_v2_service.web.uri])) : google_cloud_run_v2_service.web.uri
-    GCS_BUCKET            = google_storage_bucket.materials.name
-    ENABLE_VIDEO_ANALYSIS = tostring(var.enable_video_analysis)
-    VIDEO_TASKS_QUEUE     = google_cloud_tasks_queue.video_analysis.name
-    VIDEO_TASKS_LOCATION  = var.region
-    WORKER_URL        = join("", google_cloud_run_v2_service.worker[*].uri)
-    WORKER_INVOKER_SA = google_service_account.worker.email
-    GITHUB_APP_ENABLED   = tostring(var.github_app_enabled)
-    GITHUB_APP_ID        = var.github_app_id
-    GITHUB_APP_SLUG      = var.github_app_slug
-    GITHUB_APP_CLIENT_ID = var.github_app_client_id
+    ALLOWED_ORIGINS             = local.domain_enabled ? join(",", concat([for h in local.web_hosts : "https://${h}"], [google_cloud_run_v2_service.web.uri])) : google_cloud_run_v2_service.web.uri
+    SESSION_COOKIE_DOMAIN       = local.domain_enabled ? ".${local.web_host}" : ""
+    GCS_BUCKET                  = google_storage_bucket.materials.name
+    ENABLE_VIDEO_ANALYSIS       = tostring(var.enable_video_analysis)
+    VIDEO_TASKS_QUEUE           = google_cloud_tasks_queue.video_analysis.name
+    VIDEO_TASKS_LOCATION        = var.region
+    WORKER_URL                  = join("", google_cloud_run_v2_service.worker[*].uri)
+    WORKER_INVOKER_SA           = google_service_account.worker.email
+    GITHUB_APP_ENABLED          = tostring(var.github_app_enabled)
+    GITHUB_APP_ID               = var.github_app_id
+    GITHUB_APP_SLUG             = var.github_app_slug
+    GITHUB_APP_CLIENT_ID        = var.github_app_client_id
     GITHUB_APP_CALLBACK_URL = var.github_app_callback_url != "" ? var.github_app_callback_url : (
       local.domain_enabled ? "https://${local.api_host}/api/github/link/callback" : ""
     )
@@ -107,7 +108,7 @@ resource "google_cloud_run_v2_service" "agent" {
       image = "${local.image_base}/agent:${var.image_tag}"
       ports { container_port = 8081 }
       resources {
-        limits = { cpu = "2", memory = "2Gi" }
+        limits   = { cpu = "2", memory = "2Gi" }
         cpu_idle = false
       }
       dynamic "env" {

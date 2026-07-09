@@ -218,3 +218,75 @@ def test_bearer_write_without_cookie_is_not_origin_checked(_fake_verifier: None)
         headers={"Origin": "https://evil.example.com"},
     )
     assert res.status_code == 200
+
+
+def _set_cookie_header_of(res: object) -> str | None:
+    headers = getattr(res, "headers", None)
+    if headers is None:
+        return None
+    get_list = getattr(headers, "get_list", None)
+    values: list[str] = list(get_list("set-cookie")) if callable(get_list) else []
+    for text in values:
+        if f"{SESSION_COOKIE_NAME}=" in text:
+            return text
+    return None
+
+
+def _set_cookie_domain_of(res: object) -> str | None:
+    text = _set_cookie_header_of(res)
+    if text is None:
+        return None
+    for part in text.split(";"):
+        token = part.strip()
+        if token.lower().startswith("domain="):
+            return token.split("=", 1)[1]
+    return ""
+
+
+def _set_cookie_value_of(res: object) -> str | None:
+    text = _set_cookie_header_of(res)
+    if text is None:
+        return None
+    prefix = f"{SESSION_COOKIE_NAME}="
+    return text.split(";", 1)[0][len(prefix) :]
+
+
+def test_session_cookie_domain_is_applied_when_configured(_fake_verifier: None) -> None:
+    prev = settings.session_cookie_domain
+    settings.session_cookie_domain = ".youken.sanba.net"
+    try:
+        client = TestClient(app)
+        res = client.post("/api/session/exchange", json={"id_token": "valid"})
+        assert _set_cookie_domain_of(res) == ".youken.sanba.net"
+    finally:
+        settings.session_cookie_domain = prev
+
+
+def test_session_cookie_omits_domain_when_unset(_fake_verifier: None) -> None:
+    prev = settings.session_cookie_domain
+    settings.session_cookie_domain = ""
+    try:
+        client = TestClient(app)
+        res = client.post("/api/session/exchange", json={"id_token": "valid"})
+        header = _set_cookie_header_of(res)
+        assert header is not None
+        assert "domain=" not in header.lower()
+    finally:
+        settings.session_cookie_domain = prev
+
+
+def test_logout_delete_cookie_uses_same_domain_as_issue(_fake_verifier: None) -> None:
+    prev = settings.session_cookie_domain
+    settings.session_cookie_domain = ".youken.sanba.net"
+    try:
+        client = TestClient(app)
+        ex = client.post("/api/session/exchange", json={"id_token": "valid"})
+        assert _set_cookie_domain_of(ex) == ".youken.sanba.net"
+
+        sid = _set_cookie_value_of(ex)
+        assert sid
+        rev = client.delete("/api/session", cookies={SESSION_COOKIE_NAME: sid})
+        assert rev.status_code == 204
+        assert _set_cookie_domain_of(rev) == ".youken.sanba.net"
+    finally:
+        settings.session_cookie_domain = prev
