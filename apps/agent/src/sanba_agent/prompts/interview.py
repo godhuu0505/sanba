@@ -209,6 +209,7 @@ def build_check_items_seed(check_items: list[str], *, end_user: bool = False) ->
 
 MATERIALS_SEED_MAX_ITEM_CHARS = 600
 MATERIALS_SEED_MAX_TOTAL_CHARS = 4000
+MATERIALS_SEED_MAX_LISTED = 20
 
 
 def build_materials_premise(
@@ -252,7 +253,9 @@ def build_materials_premise(
         body.append(excerpt)
     if listed_only:
         body.append("### 本文未掲載の資料（`search_grounding` で内容を検索できる）")
-        body.extend(f"- {n}" for n in listed_only)
+        body.extend(f"- {n}" for n in listed_only[:MATERIALS_SEED_MAX_LISTED])
+        if len(listed_only) > MATERIALS_SEED_MAX_LISTED:
+            body.append(f"- …他 {len(listed_only) - MATERIALS_SEED_MAX_LISTED} 件")
     lines = [
         "",
         "## 参考資料",

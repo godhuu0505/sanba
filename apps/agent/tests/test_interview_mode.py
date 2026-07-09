@@ -329,6 +329,25 @@ def test_unreadable_session_fails_closed_for_materials_seed() -> None:
     assert setup.instructions == VOICE_AGENT_INSTRUCTIONS + _LANG
 
 
+def test_materials_seed_masks_pii_before_llm_context() -> None:
+    """素材の解析結果は PII をマスクしてからシードする（索引経路と同じ規律 / ADR-0063）。"""
+    repo = _repo()
+    _seed_session(repo, mode=InviteScope.DEVELOPER)
+    repo.save_material(
+        "s1",
+        {
+            "id": "asset-1",
+            "name": "contacts.md",
+            "kind": "doc",
+            "status": "done",
+            "extracted_texts": ["担当者の連絡先は taro@example.com です。"],
+        },
+    )
+    setup = build_agent_instructions(repo, "s1")
+    assert "taro@example.com" not in setup.instructions
+    assert "[EMAIL]" in setup.instructions
+
+
 def test_materials_read_failure_keeps_conversation_alive() -> None:
     """素材メタの読み取り失敗はシードなしに縮退し、会話は成立する（fail-soft）。"""
     repo = _repo()

@@ -85,6 +85,7 @@ from .events import (
 )
 from .inquiry_feeder import reconcile_analysis
 from .observability import get_tracer, setup_observability
+from .pii import mask_pii
 from .prefetch import REASON_ACL_RECHECK, REASON_EMPTY, PrefetchCache
 from .prompts.interview import (
     DEVELOPER_OPENING_INSTRUCTIONS,
@@ -215,12 +216,27 @@ def _context_signals(
 
 
 def _session_materials(repo: SessionRepository, session_id: str) -> list[dict[str, Any]]:
-    """初期シード用に素材メタを読む（ADR-0063）。読み取り失敗は空＝シードなしで会話は成立させる。"""
+    """初期シード用に素材メタを読む（ADR-0063）。読み取り失敗は空＝シードなしで会話は成立させる。
+
+    素材メタの `extracted_texts` は web 表示用に生のまま保存されている（画像/動画の既存
+    パターン）ため、LLM コンテキストへ流す前にここで PII をマスクする。索引経路
+    （ContextIndexer / GroundingStore）の書き込み時マスクと同じ規律を読み取り側で適用し、
+    `search_grounding` の返り値とシードで露出面をそろえる（sanba-reviewer P1）。
+    """
     try:
-        return repo.list_materials(session_id)
+        materials = repo.list_materials(session_id)
     except Exception as exc:  # noqa: BLE001
         log.warning("materials_seed_read_failed", session=session_id, error=str(exc))
         return []
+    if not settings.mask_pii_before_index:
+        return materials
+    masked: list[dict[str, Any]] = []
+    for m in materials:
+        texts = m.get("extracted_texts")
+        if texts:
+            m = {**m, "extracted_texts": [mask_pii(str(t)) for t in texts]}
+        masked.append(m)
+    return masked
 
 
 def build_agent_instructions(repo: SessionRepository, session_id: str) -> AgentSetup:
@@ -522,7 +538,7 @@ class SANBAAgent(Agent):
         return True
 
     async def emit_context_progress(self) -> None:
-        """会話開始時に前提読み込み（prep/repo）の状態を会話履歴へ 1 回だけ流す（P1-a）。
+        """会話開始時に前提読み込み（prep/repo/materials）の状態を会話履歴へ 1 回だけ流す（P1-a）。
 
         build_agent_instructions が読んだ meta から算出したシグナルを ``context.progress``
         として publish する。音声は止めない・フェイク進捗は出さない（ADR-0023 §1）。
@@ -2174,7 +2190,9 @@ async def entrypoint(ctx: JobContext) -> None:
 
     grounding = GroundingStore(usage_hook=_embed_usage)
     if grounding.is_memory:
-        log.warning("grounding_memory_fallback", session=session_id)
+        log.warning(
+            "elasticsearch_unavailable_using_memory", session=session_id, reason="not_configured"
+        )
     seed_knowledge_base(grounding)
     publisher = EventPublisher(
         session_id,

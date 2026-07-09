@@ -517,6 +517,7 @@ branch protection・特権ワークフローの確認）。
 - [ ] `deploy.yml` が GitHub Actions / GitHub Mobile から再現デプロイできる。
 - [ ] LiveKit 実キーで音声経路が通る（#35 と連携）。
 - [ ] （§6.8）Elasticsearch を有効化するなら: `ELASTICSEARCH_URL` 設定・`sanba-elasticsearch-api-key` 投入・`ACTIVE_APP_SECRET_IDS` に追加・再デプロイ済み。agent ログに `elasticsearch_unavailable_using_memory` が出ず、KB が索引済み。
+- [ ] （§6.8）本番は `REQUIRE_ELASTICSEARCH=true` を agent/api/worker に設定済み（ES 未設定・不通なら起動時に fail-fast する / ADR-0063）。
 - [ ] #68 のリポジトリ設定が全て有効。PR #74（#67）がマージ済み。
 - [ ] （§6.5）apex 取得・`vars.PROD_DOMAIN`（+ 必要なら `vars.PROD_WEB_SUBDOMAIN`）設定・apply 済み・NS を Cloud DNS に向け済み・`sanba-cert` が `ACTIVE`。
 - [ ] （§6.5）Google OAuth の承認済み JavaScript 生成元に web オリジン（例 `https://youken.sanba.net`）を追加済み。

@@ -40,9 +40,12 @@ Elasticsearch grounding（kind=context）と素材メタ（`materials.extracted_
    `extracted_texts` を `<materials-context>` フェンス（`build_untrusted_fence`）で
    囲んで `VOICE_AGENT_INSTRUCTIONS` へ連結する。扱いの指示（既知の再質問を
    しない・発話と食い違えば矛盾として指摘する・詳細は `search_grounding`）を併記する。
+   `extracted_texts` は web 表示用に生のまま保存されている（画像/動画の既存パターン）
+   ため、LLM コンテキストへ流す前に読み取り側で PII をマスクする（索引経路の
+   書き込み時マスクと同じ規律。`search_grounding` の返り値と露出面をそろえる）。
 2. **シード上限は機械的に切る**: 1 素材あたり 600 字・全体 4,000 字。超過した
-   素材は本文を載せずファイル名のみ列挙し、`search_grounding` での深掘りへ誘導する
-   （初期コンテキスト肥大による音声レイテンシ・コスト増を抑える）。
+   素材は本文を載せずファイル名のみ列挙（上限 20 件 + 残数表記）し、`search_grounding`
+   での深掘りへ誘導する（初期コンテキスト肥大による音声レイテンシ・コスト増を抑える）。
 3. **doc アップロードも `extracted_texts` を保存する**: API の doc 経路は現状
    chunk を ES にのみ投入し素材メタへ本文を残していないため、抽出 chunk の先頭
    （上限 4,000 字）を `extracted_texts` として保存し、画像（API）・動画（worker）と
@@ -85,10 +88,13 @@ Elasticsearch grounding（kind=context）と素材メタ（`materials.extracted_
   フェイルクローズ・上限挙動を `apps/agent/tests/test_interview_mode.py` に追加する。
 - doc 経路の `extracted_texts` 保存は `apps/api/tests` で検証する。
 - 観測性: シード結果は `agent_instructions_built`（materials 件数を追加）と
-  `context.progress`（source=materials）で追える。ES 縮退は `grounding_memory_fallback`
-  警告ログで検出できる。
+  `context.progress`（source=materials）で追える。ES 未設定による縮退は既存アラートの
+  フィルタ文字列と同じ `elasticsearch_unavailable_using_memory`（reason=not_configured）で
+  警告し、Terraform のログベースメトリクス（`infra/terraform/observability.tf`）に
+  そのまま載せる（新しいログ名を増やさない）。
 - IaC: 本番の Cloud Run 環境変数に `REQUIRE_ELASTICSEARCH=true` を追加する
-  （`infra/` の変更は別 PR・要レビュー）。
+  （`infra/` の変更は別 PR・要レビュー）。デプロイチェックリスト
+  （`docs/how-to/deploy-gcp.md`）に設定確認項目を追記済み。
 - フォローアップ（本 ADR のスコープ外・ロードマップ）: ADK 分析
   （`analyze_transcript`）への資料ノート前置（inquiry `origin=material` の実働）、
   doc アップロードの能動注入（ADR-0040 §4 の対象拡大）、repo 前提の深化。
