@@ -308,7 +308,9 @@ class TestOpenInterview:
         assert session.interrupts == 1
 
     @pytest.mark.asyncio
-    async def test_gives_up_after_max_attempts(self) -> None:
+    async def test_gives_up_after_max_attempts_and_interrupts_on_last(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
         import asyncio
 
         from sanba_agent.main import open_interview
@@ -325,4 +327,6 @@ class TestOpenInterview:
         )
         assert ok is False
         assert session.reply_calls == 3
-        assert session.interrupts == 2
+        assert session.interrupts == 3
+        captured = capsys.readouterr()
+        assert "voice_opening_exhausted" in captured.out
