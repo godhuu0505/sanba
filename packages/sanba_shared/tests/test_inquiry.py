@@ -164,3 +164,60 @@ def test_repository_persists_and_reloads_nodes_in_memory() -> None:
     assert loaded[0].kind is InquiryKind.CHECK
     rebuilt = InquiryTree.from_nodes(loaded)
     assert rebuilt.get(loaded[0].id) is not None
+
+
+_RESOLVE_KINDS = (
+    InquiryKind.CONTRADICTION,
+    InquiryKind.GAP,
+    InquiryKind.CHECK,
+    InquiryKind.AMBIGUOUS,
+)
+
+
+def test_resolve_best_match_prefers_exact() -> None:
+    tree = InquiryTree()
+    seq = _seq()
+    node = tree.upsert(kind=InquiryKind.GAP, text="並び順の既定", seq=seq())[0]
+    resolved = tree.resolve_best_match(_RESOLVE_KINDS, "並び順の既定", seq())
+    assert resolved is not None
+    assert resolved.id == node.id
+    assert resolved.status is InquiryStatus.RESOLVED
+
+
+def test_resolve_best_match_fuzzy_matches_paraphrase() -> None:
+    """近い言い換えでも open ノードを解消できる（#468 の暴走ループ根治）。"""
+    tree = InquiryTree()
+    seq = _seq()
+    node = tree.upsert(kind=InquiryKind.GAP, text="並び順は関連度順で確定する", seq=seq())[0]
+    resolved = tree.resolve_best_match(_RESOLVE_KINDS, "並び順は関連度順で確定", seq())
+    assert resolved is not None
+    assert resolved.id == node.id
+    assert resolved.status is InquiryStatus.RESOLVED
+
+
+def test_resolve_best_match_returns_none_for_unrelated_text() -> None:
+    tree = InquiryTree()
+    seq = _seq()
+    tree.upsert(kind=InquiryKind.GAP, text="並び順の既定", seq=seq())
+    assert tree.resolve_best_match(_RESOLVE_KINDS, "認証方式は OAuth", seq()) is None
+
+
+def test_resolve_best_match_skips_ambiguous_tie() -> None:
+    """同点1位が複数なら誤解消を避けて None を返す。"""
+    tree = InquiryTree()
+    seq = _seq()
+    tree.upsert(kind=InquiryKind.GAP, text="項目A", seq=seq())
+    tree.upsert(kind=InquiryKind.CHECK, text="項目B", seq=seq())
+    assert tree.resolve_best_match(_RESOLVE_KINDS, "項目C", seq()) is None
+    assert len(tree.open_nodes(_RESOLVE_KINDS)) == 2
+
+
+def test_open_nodes_filters_resolved_and_kind() -> None:
+    tree = InquiryTree()
+    seq = _seq()
+    gap = tree.upsert(kind=InquiryKind.GAP, text="抜け", seq=seq())[0]
+    tree.upsert(kind=InquiryKind.CHECK, text="観点", seq=seq())
+    tree.resolve(gap.id, seq())
+    open_checks = tree.open_nodes((InquiryKind.CHECK,))
+    assert [n.text for n in open_checks] == ["観点"]
+    assert gap.id not in {n.id for n in tree.open_nodes()}

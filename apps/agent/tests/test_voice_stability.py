@@ -247,12 +247,10 @@ class TestSelectExporterKind:
 
 
 class _OpeningFakeSession:
-    """開始一言の復旧テスト用スタブ。指定した試行回目で assistant 応答(reply_seen)を再現する。"""
+    """開始一言の復旧テスト用スタブ。指定した試行回目で assistant 応答(reply_tracker)を再現する。"""
 
-    def __init__(self, *, reply_seen: object, succeed_on_attempt: int | None) -> None:
-        import asyncio
-
-        self._reply_seen: asyncio.Event = reply_seen  # type: ignore[assignment]
+    def __init__(self, *, reply_tracker: object, succeed_on_attempt: int | None) -> None:
+        self._reply_tracker = reply_tracker
         self._succeed_on = succeed_on_attempt
         self.reply_calls = 0
         self.interrupts = 0
@@ -260,7 +258,7 @@ class _OpeningFakeSession:
     async def generate_reply(self, **kwargs: object) -> None:
         self.reply_calls += 1
         if self._succeed_on is not None and self.reply_calls >= self._succeed_on:
-            self._reply_seen.set()
+            self._reply_tracker.bump()  # type: ignore[attr-defined]
 
     async def interrupt(self) -> None:
         self.interrupts += 1
@@ -269,17 +267,15 @@ class _OpeningFakeSession:
 class TestOpenInterview:
     @pytest.mark.asyncio
     async def test_succeeds_on_first_attempt(self) -> None:
-        import asyncio
+        from sanba_agent.main import _ReplyTracker, open_interview
 
-        from sanba_agent.main import open_interview
-
-        reply_seen = asyncio.Event()
-        session = _OpeningFakeSession(reply_seen=reply_seen, succeed_on_attempt=1)
+        tracker = _ReplyTracker()
+        session = _OpeningFakeSession(reply_tracker=tracker, succeed_on_attempt=1)
         ok = await open_interview(
             session,
             session_id="s1",
             instructions="どうも",
-            reply_seen=reply_seen,
+            reply_tracker=tracker,
             max_attempts=3,
             reply_timeout_s=0.05,
         )
@@ -289,17 +285,15 @@ class TestOpenInterview:
 
     @pytest.mark.asyncio
     async def test_recovers_on_retry(self) -> None:
-        import asyncio
+        from sanba_agent.main import _ReplyTracker, open_interview
 
-        from sanba_agent.main import open_interview
-
-        reply_seen = asyncio.Event()
-        session = _OpeningFakeSession(reply_seen=reply_seen, succeed_on_attempt=2)
+        tracker = _ReplyTracker()
+        session = _OpeningFakeSession(reply_tracker=tracker, succeed_on_attempt=2)
         ok = await open_interview(
             session,
             session_id="s1",
             instructions="どうも",
-            reply_seen=reply_seen,
+            reply_tracker=tracker,
             max_attempts=3,
             reply_timeout_s=0.05,
         )
@@ -311,17 +305,15 @@ class TestOpenInterview:
     async def test_gives_up_after_max_attempts_and_interrupts_on_last(
         self, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        import asyncio
+        from sanba_agent.main import _ReplyTracker, open_interview
 
-        from sanba_agent.main import open_interview
-
-        reply_seen = asyncio.Event()
-        session = _OpeningFakeSession(reply_seen=reply_seen, succeed_on_attempt=None)
+        tracker = _ReplyTracker()
+        session = _OpeningFakeSession(reply_tracker=tracker, succeed_on_attempt=None)
         ok = await open_interview(
             session,
             session_id="s1",
             instructions="どうも",
-            reply_seen=reply_seen,
+            reply_tracker=tracker,
             max_attempts=3,
             reply_timeout_s=0.05,
         )
@@ -330,3 +322,33 @@ class TestOpenInterview:
         assert session.interrupts == 3
         captured = capsys.readouterr()
         assert "voice_opening_exhausted" in captured.out
+
+
+class TestReplyTracker:
+    @pytest.mark.asyncio
+    async def test_wait_beyond_returns_when_reply_arrives(self) -> None:
+        from sanba_agent.main import _ReplyTracker
+
+        tracker = _ReplyTracker()
+        baseline = tracker.count
+        tracker.bump()
+        await tracker.wait_beyond(baseline, timeout_s=0.05)
+
+    @pytest.mark.asyncio
+    async def test_wait_beyond_times_out_without_reply(self) -> None:
+        from sanba_agent.main import _ReplyTracker
+
+        tracker = _ReplyTracker()
+        with pytest.raises(TimeoutError):
+            await tracker.wait_beyond(tracker.count, timeout_s=0.05)
+
+    @pytest.mark.asyncio
+    async def test_wait_beyond_is_per_turn_monotonic(self) -> None:
+        """先行ターンの応答は後続ターンの baseline を満たさない（連投 race の解消）。"""
+        from sanba_agent.main import _ReplyTracker
+
+        tracker = _ReplyTracker()
+        tracker.bump()
+        second_baseline = tracker.count
+        with pytest.raises(TimeoutError):
+            await tracker.wait_beyond(second_baseline, timeout_s=0.05)
