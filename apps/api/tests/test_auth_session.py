@@ -224,10 +224,9 @@ def _set_cookie_header_of(res: object) -> str | None:
     headers = getattr(res, "headers", None)
     if headers is None:
         return None
-    for k, v in headers.raw:  # type: ignore[attr-defined]
-        if k.decode().lower() != "set-cookie":
-            continue
-        text = v.decode()
+    get_list = getattr(headers, "get_list", None)
+    values: list[str] = list(get_list("set-cookie")) if callable(get_list) else []
+    for text in values:
         if f"{SESSION_COOKIE_NAME}=" in text:
             return text
     return None
@@ -269,7 +268,9 @@ def test_session_cookie_omits_domain_when_unset(_fake_verifier: None) -> None:
     try:
         client = TestClient(app)
         res = client.post("/api/session/exchange", json={"id_token": "valid"})
-        assert _set_cookie_domain_of(res) == ""
+        header = _set_cookie_header_of(res)
+        assert header is not None
+        assert "domain=" not in header.lower()
     finally:
         settings.session_cookie_domain = prev
 
