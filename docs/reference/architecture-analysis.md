@@ -264,20 +264,20 @@ sequenceDiagram
     participant FS as 🟦 Firestore
 
     Note over VA: 会話中のライブ差分 (単調増加 seq)
-    VA->>FS: 要件/検知/現在質問を保存 (+ last_seq)
-    VA->>LK: requirement.upserted / detection.gap / question.asked
+    VA->>FS: 要件/確認事項ノード/現在質問を保存 (+ last_seq)
+    VA->>LK: requirement.upserted / inquiry.node / question.asked
     LK-->>U: live イベント (seq つき)
 
     Note over U,API: リロード / 途中参加 (欠番検知)
-    U->>API: GET /requirements,/detections,/questions/current (Bearer session_token)
+    U->>API: GET /requirements,/inquiry,/questions/current (Bearer session_token)
     API->>FS: 読み取り
     API-->>U: スナップショット + seq
     U->>U: live 差分と (type,id) 冪等 upsert で合流
 
     Note over U,VA: web → agent の操作
-    U->>LK: user.selection / user.text / user.answered
+    U->>LK: user.inquiry_drop / user.text / user.answered
     LK->>VA: data_received
-    VA->>FS: 検知解消 / 回答記録 (CAS で current 質問クリア)
+    VA->>FS: 確認事項の剪定/解消 / 回答記録 (CAS で current 質問クリア)
 ```
 
 API 側にも `apps/api/src/sanba_api/realtime.py` の `AnalysisPublisher` があり、素材アップロードの解析進捗を LiveKit に publish できる（次節）。ただしこの publish は **`ENABLE_REALTIME_PUBLISH`（既定 OFF・Terraform の Cloud Run env にも未注入）が有効なときだけ**で、無効時は `NullSender` で no-op になる（web は `GET /context/files` のハイドレーションで状態を復元する）。
@@ -484,7 +484,7 @@ flowchart TB
     S["sessions/{sessionId}<br/>title, status, owner_sub/email, roles,<br/>last_seq, finalized_count, finalized_requirement_ids"]
     U["utterances/{id} ⏳TTL<br/>speaker, text, expireAt"]
     R["requirements/{id} ⏳TTL<br/>statement, category, priority, source, citations, status"]
-    D["detections/{id}<br/>kind(gap/ambiguous/contradiction), resolved"]
+    D["inquiry_nodes/{id}<br/>kind(gap/ambiguous/contradiction/check),<br/>parent_id, status, confidence, depth, refs"]
     Q["questions/current ⏳TTL<br/>prompt, options, asked_seq (CAS tombstone)"]
     M["materials/{assetId}<br/>name, kind, status, extracted"]
     S --> U
