@@ -110,6 +110,13 @@ Set-Cookie: sanba_sid=<opaque>;
 - `SameSite=Lax` + 同一オリジンで CSRF は構造的に防御される（外部サイトからの unsafe method に
   Cookie が乗らない）。多層防御として、unsafe methods は `Origin` ヘッダを検証する middleware を
   API 側に追加する。
+- **Cookie の Domain 属性（追記）**: 本番では web と API が別サブドメイン（`youken.sanba.net`
+  と `api.youken.sanba.net`）のため、`SESSION_COOKIE_DOMAIN=.${web_host}` を Terraform で API
+  に注入し、cookie を親ドメインに広げて両ホストで参照できるようにする。web_host が apex
+  （`web_subdomain=""` の構成）の場合、Domain は `.<eTLD+1>` になり **eTLD+1 配下の全ホスト**が
+  scope に入る。将来 `staging.<eTLD+1>` や `admin.<eTLD+1>` を同 DNS に追加するときは、
+  それらのホストにも `sanba_sid` が送信されることを踏まえて信頼境界を設計する。
+  `domain_enabled=false`（ローカル）は Domain 属性なし（発行ホスト帰属）で従前どおり。
 - 絶対上限は `expires_at` で 24h。それを超えると Firestore TTL が消し、client にも Cookie 期限が
   切れる。
 - リフレッシュ戦略: `GET /api/session/me` 到達時に `idle_expires_at` を延長（+8h）し、
