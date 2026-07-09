@@ -38,7 +38,7 @@ Figma フレーム（fileKey `eI6QvvCEO021zpdMmxr8Iq` / node `31:2`）とは 1:1
 | 08 | 結果（産婆結果＋出力） | [`08-result.md`](08-result.md) | P1 | 実装済（`ResultView`。GitHub Issue 起票） |
 
 > **結線の現状（2026-06-26 更新）**: 03〜08 は `apps/web` に結線済み（TDD）。会話の双方向は
-> リアルタイム契約に沿って実装: 検知の選択（`user.selection`）/ テキスト送信（`user.text` #185）/
+> リアルタイム契約に沿って実装: 確認事項の剪定（`user.inquiry_drop`）/ テキスト送信（`user.text` #185）/
 > 通常質問の回答（`question.asked`・`user.answered` #181）/ 素材復元（GET `context/files` #184）/
 > 確定の永続化（POST `finalize` #186）。残る seam は live Gemini ループ側のトリガ（ask_question の
 > 発火条件・テキスト→応答の調整）で、実キー（`GOOGLE_API_KEY` 等）での実機検証が前提。

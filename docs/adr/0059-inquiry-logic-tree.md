@@ -1,6 +1,6 @@
 # ADR-0059: 確認事項ロジックツリー（HP7）— 会話/解析で増減するノードの木を一級の状態にする
 
-- ステータス: Proposed
+- ステータス: Accepted
 - 日付: 2026-07-09
 - 関連: [ADR-0057](0057-dynamic-check-point-coverage.md)（確認観点カバレッジ 増分1 — 本 ADR がその増分2/3。ノード供給源）/
   [ADR-0055](0055-end-user-detection-handling.md)（モード別・ハードコード NFR gap 廃止 — 終了不能 #434 の構造的解決）/
@@ -142,5 +142,14 @@ finalize 時、`inquiry_nodes` の resolved かつ kind ∈ {check, gap, contrad
   - 受容したリスク: ambiguous を終了ゲートから外す（重要な曖昧さは会話で gap/contradiction に昇格させる）、
     スコープが Phase A を兼ねて拡大（二度作らない分トータルは軽い）。
 
-> 本 ADR は grill-me セッションで確定した設計判断を記録するもので、実装前の提案（Proposed）。
-> 実装着手時に人間が再レビューする前提で、ノード確信度の算出方法や `τ` の初期値など数値は実データで調整する。
+## 実装状況
+
+本 ADR は grill-me セッションで確定した設計判断を記録する。設計は **実装・本番リリース済み**（2026-07-09）:
+Stage① 基盤（データモデル・`InquiryTree`・永続化）を #460、Stage②〜⑤ のクリーンカットオーバー
+（agent 調停器・`inquiry.node`・終了ゲート付け替え・api `GET /inquiry`・web `InquiryTree`・HP9
+`{{validated_inquiries}}`）を #462 で着地し、Cloud Run へデプロイ済み。`detection.*` は撤去し
+`inquiry.node` へ一本化した。
+
+フォローアップ（本 ADR 範囲外の残作業）: ノード確信度の算出方法や終了ゲート閾値 `τ` の初期値は
+実データで調整する。会話由来ノードの手動 resolve は導入せず、剪定（`user.inquiry_drop`）のみを
+人手操作として公開する方針は維持する。
