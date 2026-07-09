@@ -215,6 +215,21 @@ describe("decodeServerEvent ペイロードの enum/配列/範囲 検証 (#120)"
     expect(event?.type).toBe("context.progress");
   });
 
+  it("context.progress は source=materials も ok（ADR-0063）", () => {
+    const { reason, event } = decodeServerEvent(
+      bytes({
+        ...env,
+        type: "context.progress",
+        source: "materials",
+        stage: "done",
+        label: "参考資料 2件",
+        detail: "解析済みの資料を会話の前提に読み込み",
+      }),
+    );
+    expect(reason).toBe("ok");
+    expect(event?.type).toBe("context.progress");
+  });
+
   it("context.progress の source が列挙外なら bad-payload", () => {
     expect(
       decodeServerEvent(

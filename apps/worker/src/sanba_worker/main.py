@@ -31,6 +31,13 @@ _tracer = get_tracer(__name__)
 
 _repo = SessionRepository()
 _indexer = ContextIndexer(settings.grounding_config(), masker=mask_pii)
+if settings.require_elasticsearch and _indexer.is_memory:
+    raise RuntimeError(
+        "REQUIRE_ELASTICSEARCH is set but Elasticsearch is not reachable; "
+        "set ELASTICSEARCH_URL correctly or unset REQUIRE_ELASTICSEARCH"
+    )
+if _indexer.is_memory:
+    log.warning("grounding_memory_fallback")
 _analytics_sink = AnalyticsSink(
     AnalyticsConfig(
         elasticsearch_url=settings.elasticsearch_url,

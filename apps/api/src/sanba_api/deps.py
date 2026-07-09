@@ -64,6 +64,13 @@ def _over_rate_limit(client_ip: str) -> bool:
 
 
 _indexer = ContextIndexer()
+if settings.require_elasticsearch and _indexer.is_memory:
+    raise RuntimeError(
+        "REQUIRE_ELASTICSEARCH is set but Elasticsearch is not reachable; "
+        "set ELASTICSEARCH_URL correctly or unset REQUIRE_ELASTICSEARCH"
+    )
+if _indexer.is_memory:
+    log.warning("grounding_memory_fallback")
 
 _asset_store = AssetStore()
 

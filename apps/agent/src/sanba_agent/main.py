@@ -95,6 +95,7 @@ from .prompts.interview import (
     build_check_items_seed,
     build_glossary_seed,
     build_language_directive,
+    build_materials_premise,
     build_prep_analysis_note,
     build_prep_premise,
     build_repo_premise,
@@ -172,14 +173,18 @@ class AgentSetup(NamedTuple):
 
 
 def _context_signals(
-    meta: SessionMeta | None, mode: InviteScope, confirmed: bool
+    meta: SessionMeta | None,
+    mode: InviteScope,
+    confirmed: bool,
+    seeded_materials: int = 0,
 ) -> tuple[ContextSignal, ...]:
     """会話開始時に「読み込み済み/索引中」を会話履歴へ出すためのシグナルを組み立てる（P1-a）。
 
     実体に正直な段階のみ（ADR-0023 §1）: prep は同期シードなので done、repo は索引状態を
     そのまま写す（ready/partial=reused, indexing/pending=running, failed=failed, none=出さない）。
     repo は end_user モードでは出さない（private repo 情報を利用者会話に出さない多層防御・
-    build_agent_instructions の allow_repo_grounding と揃える）。
+    build_agent_instructions の allow_repo_grounding と揃える）。materials は実際に初期
+    instructions へシードした解析済み素材の数（ADR-0063。シードしたときだけ done で出す）。
     """
     signals: list[ContextSignal] = []
     if meta is not None and (meta.goal or meta.goal_detail):
@@ -197,7 +202,25 @@ def _context_signals(
             signals.append(ContextSignal("repo", "running", label, "ソースコードを読み込み中"))
         elif status is GitHubIndexStatus.FAILED:
             signals.append(ContextSignal("repo", "failed", label, "索引に失敗しました"))
+    if seeded_materials > 0:
+        signals.append(
+            ContextSignal(
+                "materials",
+                "done",
+                f"参考資料 {seeded_materials}件",
+                "解析済みの資料を会話の前提に読み込み",
+            )
+        )
     return tuple(signals)
+
+
+def _session_materials(repo: SessionRepository, session_id: str) -> list[dict[str, Any]]:
+    """初期シード用に素材メタを読む（ADR-0063）。読み取り失敗は空＝シードなしで会話は成立させる。"""
+    try:
+        return repo.list_materials(session_id)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("materials_seed_read_failed", session=session_id, error=str(exc))
+        return []
 
 
 def build_agent_instructions(repo: SessionRepository, session_id: str) -> AgentSetup:
@@ -209,9 +232,11 @@ def build_agent_instructions(repo: SessionRepository, session_id: str) -> AgentS
     private repo 由来の情報が利用者の会話に露出する面を初期 instructions にも
     作らない（#321 / 多層防御として PR8 以降も維持）。
 
-    developer では準備フォームのゴール・詳細（ADR-0035）も前提としてシードし、
-    analyze 用の事前情報ノート（prep_note）を併せて返す。repo 由来のシード可否は
-    「セッション文書を正しく読めて、かつ end_user でない」ときだけ True にする。
+    developer では準備フォームのゴール・詳細（ADR-0035）に加え、解析済みの参考資料
+    （ADR-0063: `materials.extracted_texts` の機械的シード）も前提としてシードし、
+    analyze 用の事前情報ノート(prep_note)を併せて返す。資料はモードを確認できた
+    非 end_user のときだけシードする（repo 前提と同じフェイルクローズ）。repo 由来の
+    シード可否は「セッション文書を正しく読めて、かつ end_user でない」ときだけ True にする。
     文書が読めない（Firestore 不通・enum 版ずれ等）ときは developer ペルソナに
     落としつつ repo 前提・GitHub seed は**付けない**: モードを確認できないまま
     repo 由来を載せると end_user セッションへ private 情報が漏れ得るため、
@@ -234,6 +259,7 @@ def build_agent_instructions(repo: SessionRepository, session_id: str) -> AgentS
     check_items_seed = build_check_items_seed(
         seeded_check_items, end_user=mode is InviteScope.END_USER
     )
+    seeded_materials = 0
     if mode is InviteScope.END_USER:
         assert meta is not None
         glossary_seed = (
@@ -246,15 +272,22 @@ def build_agent_instructions(repo: SessionRepository, session_id: str) -> AgentS
         if meta is not None:
             prep_premise = build_prep_premise(meta.goal, meta.goal_detail, meta.roles)
             prep_note = build_prep_analysis_note(meta.goal, meta.goal_detail)
+        materials_premise = ""
+        if confirmed and meta is not None:
+            materials = _session_materials(repo, session_id)
+            materials_premise = build_materials_premise(materials)
+            if materials_premise:
+                seeded_materials = sum(1 for m in materials if m.get("status") == "done")
         instructions = (
             VOICE_AGENT_INSTRUCTIONS
             + prep_premise
             + (_repo_premise(meta) if confirmed else "")
+            + materials_premise
             + check_items_seed
         )
         allow_repo_grounding = confirmed and meta is not None
     instructions += build_language_directive(settings.gemini_language)
-    signals = _context_signals(meta, mode, confirmed)
+    signals = _context_signals(meta, mode, confirmed, seeded_materials)
     log.info(
         "agent_instructions_built",
         session=session_id,
@@ -263,6 +296,7 @@ def build_agent_instructions(repo: SessionRepository, session_id: str) -> AgentS
         allow_repo_grounding=allow_repo_grounding,
         has_prep_context=bool(prep_note),
         check_items_count=len(seeded_check_items),
+        seeded_materials=seeded_materials,
         context_signals=len(signals),
         chars=len(instructions),
     )
@@ -2139,6 +2173,8 @@ async def entrypoint(ctx: JobContext) -> None:
         usage_recorder.record(COMPONENT_EMBEDDING, settings.gemini_embed_model, usage)
 
     grounding = GroundingStore(usage_hook=_embed_usage)
+    if grounding.is_memory:
+        log.warning("grounding_memory_fallback", session=session_id)
     seed_knowledge_base(grounding)
     publisher = EventPublisher(
         session_id,
@@ -2473,7 +2509,25 @@ async def entrypoint(ctx: JobContext) -> None:
     ctx.add_shutdown_callback(_on_close)
 
 
+def ensure_grounding_backend() -> None:
+    """起動時に grounding バックエンドの設定を検証する（ADR-0063 決定6）。
+
+    `REQUIRE_ELASTICSEARCH=true`（本番）のとき、ES 未設定・不通なら fail-fast で
+    プロセスを落とし、「資料が見えないエージェント」がサイレントに動き続けるのを防ぐ。
+    実行中の ES 障害は従来どおり in-memory 縮退＋警告ログで会話を止めない
+    （起動時＝設定の正しさ、実行時＝可用性、で境界を分ける）。
+    """
+    if not settings.require_elasticsearch:
+        return
+    if GroundingStore().is_memory:
+        raise RuntimeError(
+            "REQUIRE_ELASTICSEARCH is set but Elasticsearch is not reachable; "
+            "set ELASTICSEARCH_URL correctly or unset REQUIRE_ELASTICSEARCH"
+        )
+
+
 def main() -> None:
+    ensure_grounding_backend()
     cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint))
 
 

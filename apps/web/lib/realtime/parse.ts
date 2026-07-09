@@ -135,7 +135,7 @@ function validatePayload(type: ServerEventType, obj: Record<string, unknown>): b
       return isNumberInRange(obj.pct, 0, 100);
     case "context.progress":
       return (
-        (obj.source === "prep" || obj.source === "repo") &&
+        (obj.source === "prep" || obj.source === "repo" || obj.source === "materials") &&
         CONTEXT_STAGES.has(obj.stage as string)
       );
     case "session.end_proposed":

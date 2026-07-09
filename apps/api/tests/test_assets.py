@@ -346,6 +346,34 @@ def test_upload_html_indexes_visible_text() -> None:
     assert res.json()["indexed_chunks"] >= 1
 
 
+def test_upload_doc_saves_extracted_texts_for_agent_seed() -> None:
+    """doc も画像/動画と同じく素材メタへ本文（extracted_texts）を残す（ADR-0063）。
+
+    voice agent が起動時に初期前提としてシードする源。上限（DOC_SEED_MAX_CHARS）で
+    機械的に打ち切られ、全文は従来どおり grounding 側が持つ。
+    """
+    from sanba_api.main import _repo
+    from sanba_api.routers.sessions import DOC_SEED_MAX_CHARS, _doc_seed_texts
+
+    sid = _new_session()
+    res = client.post(
+        f"/api/sessions/{sid}/context/file",
+        files={"file": ("prd.md", "要約機能が必要。\n\n対象は社内。".encode(), "text/markdown")},
+        headers=_session_auth(sid),
+    )
+    assert res.status_code == 200
+    material = _repo.get_material(sid, res.json()["asset_id"])
+    assert material is not None
+    texts = material["extracted_texts"]
+    assert any("要約機能が必要" in t for t in texts)
+    assert sum(len(t) for t in texts) <= DOC_SEED_MAX_CHARS
+
+    capped = _doc_seed_texts(["あ" * 3000, "い" * 3000, "う" * 3000])
+    assert sum(len(t) for t in capped) == DOC_SEED_MAX_CHARS
+    assert _doc_seed_texts([]) == []
+    assert _doc_seed_texts(["  ", ""]) == []
+
+
 def test_upload_docx_indexes_extracted_text() -> None:
     import io
 

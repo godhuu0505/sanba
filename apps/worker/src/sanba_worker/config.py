@@ -20,6 +20,7 @@ class WorkerSettings(BaseSettings):
     gcs_bucket: str = ""
     elasticsearch_url: str = ""
     elasticsearch_api_key: str = ""
+    require_elasticsearch: bool = False
     mask_pii_before_index: bool = True
 
     max_video_duration_seconds: int = 600
