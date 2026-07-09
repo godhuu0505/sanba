@@ -1,11 +1,35 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const push = vi.fn();
+const replace = vi.fn();
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push, replace: vi.fn(), refresh: vi.fn() }),
+  useRouter: () => ({ push, replace, refresh: vi.fn() }),
 }));
+
+const signOut = vi.fn(async () => undefined);
+vi.mock("@/lib/auth", async () => {
+  const actual =
+    await vi.importActual<typeof import("@/lib/auth")>("@/lib/auth");
+  return {
+    ...actual,
+    useAuth: () => ({
+      profile: null,
+      loggedIn: true,
+      ready: true,
+      devMode: false,
+      credential: null,
+      buttonRef: { current: null },
+      devSignIn: vi.fn(),
+      signOut,
+      resetButton: vi.fn(),
+      driveGranted: null,
+      requestDriveAccess: vi.fn(),
+      refreshProfile: vi.fn(),
+    }),
+  };
+});
 
 import { AccountMenu } from "./AccountMenu";
 
@@ -19,6 +43,8 @@ const profile = {
 describe("AccountMenu", () => {
   beforeEach(() => {
     push.mockClear();
+    replace.mockClear();
+    signOut.mockClear();
   });
   afterEach(() => cleanup());
 
@@ -62,10 +88,14 @@ describe("AccountMenu", () => {
     expect(screen.queryByRole("menu")).toBeNull();
   });
 
-  it("ログアウトは /login?loggedOut=1 への遷移に一本化する（signOut は遷移先で実行）", () => {
+  it("ログアウトは signOut を待ってから /login へ遷移する（DELETE /api/session を確実に発火させる）", async () => {
     render(<AccountMenu profile={profile} />);
     open();
-    fireEvent.click(screen.getByRole("menuitem", { name: /ログアウト/ }));
-    expect(push).toHaveBeenCalledWith("/login?loggedOut=1");
+    await act(async () => {
+      fireEvent.click(screen.getByRole("menuitem", { name: /ログアウト/ }));
+    });
+    await waitFor(() => expect(signOut).toHaveBeenCalledTimes(1));
+    expect(replace).toHaveBeenCalledWith("/login");
+    expect(push).not.toHaveBeenCalledWith("/login?loggedOut=1");
   });
 });
