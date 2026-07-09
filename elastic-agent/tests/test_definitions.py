@@ -15,8 +15,8 @@ from sanba_elastic_agent.definitions import (
 def test_load_bundled_definitions_are_valid_and_referentially_consistent():
     tools, agent = load_definitions()
     tool_ids = {t.id for t in tools}
-    assert agent.id == "sanba-analytics-agent"
-    assert tool_ids == {"sanba-top-cost-sessions", "sanba-product-efficiency"}
+    assert agent.id == "sanba-external-context-agent"
+    assert tool_ids == {"sanba-external-context-search"}
     assert set(agent.tool_ids) <= tool_ids
 
 
@@ -40,7 +40,7 @@ def test_load_rejects_dangling_tool_reference(tmp_path):
     (tmp_path / "tools" / "t.json").write_text(
         json.dumps({"id": "real-tool", "type": "esql", "configuration": {"query": "FROM x"}})
     )
-    (tmp_path / "analytics-agent.json").write_text(
+    (tmp_path / "external-context-agent.json").write_text(
         json.dumps(
             {"id": "a", "name": "A", "instructions": "i", "tools": ["real-tool", "ghost-tool"]}
         )

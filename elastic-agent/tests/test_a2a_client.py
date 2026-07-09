@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from sanba_elastic_agent.a2a_client import (
-    AnalyticsAgentClient,
+    ElasticAgentClient,
     build_message_send,
     extract_text,
 )
@@ -32,7 +32,7 @@ def test_extract_text_ignores_non_text_parts_and_empty():
 
 
 def test_ask_is_noop_when_unconfigured():
-    client = AnalyticsAgentClient(ElasticAgentSettings(enabled=False))
+    client = ElasticAgentClient(ElasticAgentSettings(enabled=False))
     result = client.ask("what is the cost?")
     assert result.delegated is False
     assert result.error == "elastic_agent_not_configured"

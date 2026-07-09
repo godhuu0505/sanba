@@ -16,8 +16,8 @@ class ElasticAgentSettings(BaseSettings):
     kibana_url: str = ""
     api_key: str = ""
     space: str = ""
-    agent_id: str = "sanba-analytics-agent"
-    analytics_index: str = "sanba-analytics-*"
+    agent_id: str = "sanba-external-context-agent"
+    context_index: str = "sanba-external-context"
     request_timeout_seconds: float = 30.0
 
     @property

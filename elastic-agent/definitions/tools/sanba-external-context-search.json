@@ -1,0 +1,9 @@
+{
+  "id": "sanba-external-context-search",
+  "type": "index_search",
+  "description": "Search external context that the target application's source code cannot reveal: outside situation, background/history, organizational and operational constraints, and system-level external requirements described in curated files. Read-only over the sanba-external-context index (ADR-0063).",
+  "configuration": {
+    "index": "sanba-external-context",
+    "fields": ["title", "text", "source", "product_id", "tags"]
+  }
+}

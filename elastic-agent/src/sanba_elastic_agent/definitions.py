@@ -72,7 +72,7 @@ def load_definitions(directory: Path | None = None) -> tuple[list[ToolDefinition
     """`definitions/` からツール群とエージェント定義を読み、参照整合性まで検証する。"""
     base = directory or DEFINITIONS_DIR
     tools = [parse_tool(json.loads(p.read_text())) for p in sorted((base / "tools").glob("*.json"))]
-    agent = parse_agent(json.loads((base / "analytics-agent.json").read_text()))
+    agent = parse_agent(json.loads((base / "external-context-agent.json").read_text()))
     known = {t.id for t in tools}
     missing = [tid for tid in agent.tool_ids if tid not in known]
     if missing:

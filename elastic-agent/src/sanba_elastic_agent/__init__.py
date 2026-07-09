@@ -7,12 +7,15 @@ SANBA を A2A / MCP の標準契約で結ぶ。エージェント runtime は自
 
 from __future__ import annotations
 
+from .a2a_client import DelegationResult, ElasticAgentClient
 from .config import ElasticAgentSettings, settings
 from .contract import a2a_agent_card_url, a2a_message_url, mcp_endpoint_url
 
 __all__ = [
     "ElasticAgentSettings",
     "settings",
+    "ElasticAgentClient",
+    "DelegationResult",
     "a2a_message_url",
     "a2a_agent_card_url",
     "mcp_endpoint_url",

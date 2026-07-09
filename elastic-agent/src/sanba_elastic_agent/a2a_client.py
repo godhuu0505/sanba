@@ -62,8 +62,8 @@ def extract_text(response: dict) -> str:
     return "\n".join(t for t in texts if t).strip()
 
 
-class AnalyticsAgentClient:
-    """`sanba-analytics-*` に対する会話型 read-only エージェントへの A2A クライアント。"""
+class ElasticAgentClient:
+    """境界の向こうの Elastic エージェント（初弾は外部コンテキスト）への A2A クライアント。"""
 
     def __init__(self, config: ElasticAgentSettings | None = None) -> None:
         self._settings = config or settings
