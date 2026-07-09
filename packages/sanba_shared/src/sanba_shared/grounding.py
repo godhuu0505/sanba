@@ -17,6 +17,8 @@ from dataclasses import dataclass
 
 import structlog
 
+from .analytics import TokenUsage, estimated_embedding_tokens
+
 log = structlog.get_logger(__name__)
 
 INDEX = "sanba-grounding"
@@ -129,12 +131,25 @@ class ContextIndexer:
             return self._masker(chunk)
         return chunk
 
-    def index_context(self, session_id: str, chunks: list[str], source_name: str) -> int:
-        """Index `chunks` for a session; returns the number indexed."""
+    def index_context(
+        self,
+        session_id: str,
+        chunks: list[str],
+        source_name: str,
+        *,
+        usage_hook: Callable[[TokenUsage], None] | None = None,
+    ) -> int:
+        """Index `chunks` for a session; returns the number indexed.
+
+        `usage_hook` には埋め込みに消費したトークン集計（1 呼び出しに束ねた `TokenUsage`）を
+        渡す（ADR-0061 の `ai_usage` 排出用）。hook の失敗は索引処理へ波及させない。
+        """
+        embed_tokens = 0
         for i, chunk in enumerate(chunks):
             source = f"{source_name}#{i}"
             text = self._mask(chunk)
-            embedding = _embed(text, self._config)
+            embedding, tokens = _embed(text, self._config)
+            embed_tokens += tokens
             if self._client is not None:  # pragma: no cover
                 doc: dict[str, object] = {
                     "text": text,
@@ -149,6 +164,11 @@ class ContextIndexer:
                 self._mem.append(
                     {"text": text, "source": source, "kind": "context", "session_id": session_id}
                 )
+        if usage_hook is not None and embed_tokens > 0:
+            try:
+                usage_hook(TokenUsage(input_tokens=embed_tokens, input_text_tokens=embed_tokens))
+            except Exception as exc:  # noqa: BLE001
+                log.warning("embed_usage_hook_failed", session=session_id, error=str(exc))
         log.info("context_indexed", session=session_id, source=source_name, chunks=len(chunks))
         return len(chunks)
 
@@ -237,9 +257,14 @@ class ContextIndexer:
         return deleted
 
 
-def _embed(text: str, config: GroundingConfig) -> list[float] | None:
+def _embed(text: str, config: GroundingConfig) -> tuple[list[float] | None, int]:
+    """テキストを埋め込み、(ベクトル, 消費トークン数) を返す。失敗・未設定は (None, 0)。
+
+    トークン数は Vertex の `embeddings[].statistics.token_count` を優先し、無ければ
+    文字数からの概算（`estimated_embedding_tokens`）で埋める（ADR-0061 のコスト集計用）。
+    """
     if not (config.google_api_key or config.use_vertexai):
-        return None
+        return None, 0
     try:  # pragma: no cover
         from google import genai
 
@@ -247,8 +272,12 @@ def _embed(text: str, config: GroundingConfig) -> list[float] | None:
         resp = client.models.embed_content(model=config.embed_model, contents=text)
         embeddings = resp.embeddings
         if not embeddings or embeddings[0].values is None:
-            return None
-        return list(embeddings[0].values)
+            return None, 0
+        statistics = getattr(embeddings[0], "statistics", None)
+        token_count = int(getattr(statistics, "token_count", 0) or 0)
+        if token_count <= 0:
+            token_count = estimated_embedding_tokens(text)
+        return list(embeddings[0].values), token_count
     except Exception as exc:  # pragma: no cover
         log.warning("embed_failed", error=str(exc))
-        return None
+        return None, 0

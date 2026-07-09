@@ -12,14 +12,18 @@ Hybrid search = BM25(全文) + kNN(Gemini embeddings)。Elasticsearch が無い�
 from __future__ import annotations
 
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass
 
 import structlog
+from sanba_shared.analytics import TokenUsage, estimated_embedding_tokens
 
 from .config import settings
 from .pii import mask_pii
 
 log = structlog.get_logger(__name__)
+
+EmbedUsageHook = Callable[[TokenUsage], None]
 
 INDEX = "sanba-grounding"
 EMBED_DIM = 3072
@@ -46,10 +50,11 @@ class _MemDoc:
 class GroundingStore:
     """Index and retrieve grounding passages. ES with in-memory fallback."""
 
-    def __init__(self) -> None:
+    def __init__(self, usage_hook: EmbedUsageHook | None = None) -> None:
         self._client = self._init_client()
         self._mem: list[_MemDoc] = []
         self._mem_lock = threading.Lock()
+        self._usage_hook = usage_hook
         if self._client is not None:
             try:
                 self._ensure_index()
@@ -122,7 +127,7 @@ class GroundingStore:
                 self._mem.append(_MemDoc(text, source, kind, session_id, None))
             return
         try:
-            embedding = embed_text(text)
+            embedding = embed_text(text, on_usage=self._usage_hook)
             doc: dict[str, object] = {
                 "text": text,
                 "source": source,
@@ -218,7 +223,7 @@ class GroundingStore:
         session_id: str | None = None,
         product_id: str | None = None,
     ) -> list[Passage]:
-        embedding = embed_text(query)
+        embedding = embed_text(query, on_usage=self._usage_hook)
         params = self._build_search_params(query, k, kinds, embedding, session_id, product_id)
         res = self._client.search(index=INDEX, **params)
         return [
@@ -292,8 +297,12 @@ def _embedding_client():  # type: ignore[no-untyped-def] # pragma: no cover
     return _embed_client
 
 
-def embed_text(text: str) -> list[float] | None:
-    """Embed text with Gemini. Returns None when no credentials are configured."""
+def embed_text(text: str, *, on_usage: EmbedUsageHook | None = None) -> list[float] | None:
+    """Embed text with Gemini. Returns None when no credentials are configured.
+
+    `on_usage` には消費トークン（Vertex の `statistics.token_count`、無ければ文字数概算）を
+    渡す（ADR-0061 の embedding コスト集計）。hook の失敗は埋め込み本体へ波及させない。
+    """
     if not (settings.google_api_key or settings.google_genai_use_vertexai):
         return None
     try:  # pragma: no cover
@@ -302,6 +311,15 @@ def embed_text(text: str) -> list[float] | None:
         embeddings = resp.embeddings
         if not embeddings or embeddings[0].values is None:
             return None
+        if on_usage is not None:
+            statistics = getattr(embeddings[0], "statistics", None)
+            token_count = int(getattr(statistics, "token_count", 0) or 0)
+            if token_count <= 0:
+                token_count = estimated_embedding_tokens(text)
+            try:
+                on_usage(TokenUsage(input_tokens=token_count, input_text_tokens=token_count))
+            except Exception as exc:  # noqa: BLE001
+                log.warning("embed_usage_hook_failed", error=str(exc))
         return list(embeddings[0].values)
     except Exception as exc:  # pragma: no cover
         log.warning("embed_failed", error=str(exc))

@@ -119,6 +119,9 @@ class SessionRepository:
         self._mem_member_invites: dict[str, ProductMemberInvite] = {}
         self._mem_member_lock = threading.Lock()
         self._mem_product_lock = threading.Lock()
+        self._mem_ai_cost: dict[str, dict[str, Any]] = {}
+        self._mem_ai_cost_lock = threading.Lock()
+        self._mem_transcripts: dict[str, dict[str, Any]] = {}
 
     @staticmethod
     def _init_client():  # type: ignore[no-untyped-def]
@@ -1242,6 +1245,138 @@ class SessionRepository:
         else:
             self._mem_sessions[session_id] = updated
         return updated
+
+    def add_session_ai_cost(
+        self,
+        session_id: str,
+        *,
+        component: str,
+        usd: float,
+        input_tokens: int = 0,
+        output_tokens: int = 0,
+        requests: int = 1,
+    ) -> None:
+        """`sessions/{id}.ai_cost` へコンポーネント別コストを加算する（ADR-0061）。
+
+        agent（セッション終了時の一括加算）と api/worker（呼び出し都度の加算）が別プロセスから
+        同じセッション文書へ書くため、上書きではなく Firestore の `Increment` 変換で合算する。
+        in-memory fallback は同義の加算辞書を持つ（テスト/ローカル用途）。
+        """
+        if self._client is not None:
+            from google.cloud import firestore
+
+            self._client.collection("sessions").document(session_id).set(
+                {
+                    "ai_cost": {
+                        "total_usd": firestore.Increment(usd),
+                        "components": {
+                            component: {
+                                "usd": firestore.Increment(usd),
+                                "input_tokens": firestore.Increment(input_tokens),
+                                "output_tokens": firestore.Increment(output_tokens),
+                                "requests": firestore.Increment(requests),
+                            }
+                        },
+                    }
+                },
+                merge=True,
+            )
+            return
+        with self._mem_ai_cost_lock:
+            cost = self._mem_ai_cost.setdefault(session_id, {"total_usd": 0.0, "components": {}})
+            cost["total_usd"] = round(cost["total_usd"] + usd, 8)
+            entry = cost["components"].setdefault(
+                component, {"usd": 0.0, "input_tokens": 0, "output_tokens": 0, "requests": 0}
+            )
+            entry["usd"] = round(entry["usd"] + usd, 8)
+            entry["input_tokens"] += input_tokens
+            entry["output_tokens"] += output_tokens
+            entry["requests"] += requests
+
+    def get_session_ai_cost(self, session_id: str) -> dict[str, Any]:
+        """`sessions/{id}.ai_cost`（加算済みの合計・内訳）を返す。無ければ空の形。"""
+        empty: dict[str, Any] = {"total_usd": 0.0, "components": {}}
+        if self._client is not None:
+            snap = self._client.collection("sessions").document(session_id).get()
+            if not snap.exists:
+                return empty
+            data = snap.to_dict() or {}
+            cost = data.get("ai_cost") or {}
+            return {
+                "total_usd": float(cost.get("total_usd", 0.0)),
+                "components": dict(cost.get("components") or {}),
+            }
+        with self._mem_ai_cost_lock:
+            cost = self._mem_ai_cost.get(session_id)
+            if cost is None:
+                return empty
+            return {
+                "total_usd": cost["total_usd"],
+                "components": {k: dict(v) for k, v in cost["components"].items()},
+            }
+
+    def set_session_cost_summary(self, session_id: str, summary: dict[str, Any]) -> None:
+        """セッション終了時の確定サマリを `ai_cost.summary` へ merge 保存する（ADR-0061）。"""
+        if self._client is not None:
+            self._client.collection("sessions").document(session_id).set(
+                {"ai_cost": {"summary": summary}}, merge=True
+            )
+            return
+        with self._mem_ai_cost_lock:
+            cost = self._mem_ai_cost.setdefault(session_id, {"total_usd": 0.0, "components": {}})
+            cost["summary"] = dict(summary)
+
+    def get_session_cost_summary(self, session_id: str) -> dict[str, Any] | None:
+        if self._client is not None:
+            snap = self._client.collection("sessions").document(session_id).get()
+            if not snap.exists:
+                return None
+            cost = (snap.to_dict() or {}).get("ai_cost") or {}
+            summary = cost.get("summary")
+            return dict(summary) if summary else None
+        with self._mem_ai_cost_lock:
+            cost = self._mem_ai_cost.get(session_id) or {}
+            summary = cost.get("summary")
+            return dict(summary) if summary else None
+
+    def save_transcript(self, session_id: str, text: str, *, apply_ttl: bool) -> None:
+        """セッション終了時に transcript 全文を永続化する（ADR-0061 決定 4 / P5 の前提）。
+
+        置き場は `sessions/{id}/transcripts/full` の単一文書。PII は発話ログと同じ
+        `mask_pii` を通してから保存する。ゲストセッション（`apply_ttl=True`）は
+        `expireAt`（既定 30 日）を張り、ログインセッションは保持する（分析データは
+        今保存しない限り将来取り戻せない）。
+        """
+        stored_text = mask_pii(text) if self._mask_pii else text
+        doc: dict[str, Any] = {
+            "text": stored_text,
+            "line_count": len([line for line in text.splitlines() if line.strip()]),
+            "created_at": datetime.now(UTC),
+        }
+        if self._client is not None:
+            if apply_ttl and (exp := self._expire_at()) is not None:
+                doc["expireAt"] = exp
+            (
+                self._client.collection("sessions")
+                .document(session_id)
+                .collection("transcripts")
+                .document("full")
+                .set(doc)
+            )
+            return
+        self._mem_transcripts[session_id] = doc
+
+    def get_transcript(self, session_id: str) -> dict[str, Any] | None:
+        if self._client is not None:
+            snap = (
+                self._client.collection("sessions")
+                .document(session_id)
+                .collection("transcripts")
+                .document("full")
+                .get()
+            )
+            return snap.to_dict() if snap.exists else None
+        return self._mem_transcripts.get(session_id)
 
     def save_requirement(self, session_id: str, requirement: Requirement) -> None:
         if self._client is not None:

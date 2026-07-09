@@ -10,11 +10,19 @@ import hashlib
 import json
 import re
 import unicodedata
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 
+from sanba_shared.analytics import (
+    COMPONENT_ADK_TEAM,
+    COMPONENT_ANALYSIS,
+    TokenUsage,
+    usage_from_genai,
+)
 from sanba_shared.models import AnalysisResult
 
 from ..config import settings
+
+UsageHook = Callable[[str, TokenUsage], None]
 
 
 def make_requirement_id(statement: str) -> str:
@@ -88,7 +96,30 @@ def heuristic_ambiguous_topics(transcript: str) -> list[str]:
     return found
 
 
-async def analyze_transcript(transcript: str, check_points: Sequence[str] = ()) -> AnalysisResult:
+def _report_usage(usage_hook: UsageHook | None, component: str, usage: TokenUsage) -> None:
+    if usage_hook is None or usage.is_empty:
+        return
+    try:
+        usage_hook(component, usage)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _labels_config(billing_labels: dict[str, str] | None):  # type: ignore[no-untyped-def]
+    if not billing_labels:
+        return None
+    from google.genai import types
+
+    return types.GenerateContentConfig(labels=billing_labels)
+
+
+async def analyze_transcript(
+    transcript: str,
+    check_points: Sequence[str] = (),
+    *,
+    usage_hook: UsageHook | None = None,
+    billing_labels: dict[str, str] | None = None,
+) -> AnalysisResult:
     """Run the ADK interview team over the transcript and return next steps.
 
     Falls back to a heuristic result if the ADK runtime is not available
@@ -97,22 +128,40 @@ async def analyze_transcript(transcript: str, check_points: Sequence[str] = ()) 
     `check_points`（このセッションで確認する観点 / ADR-0057）が与えられたら、会話でまだ
     触れられていないものを LLM で判定し `coverage_open` に載せる。gap/曖昧語とは別の advisory
     シグナルで、ADK 本体と並行に走らせて遅延を足さない。
+
+    `usage_hook(component, usage)` には ADK チーム・観点カバレッジ LLM のトークン usage を
+    渡す（ADR-0061 の `ai_usage` 排出用）。hook の失敗は分析本体へ波及させない。
+    `billing_labels` は Vertex 経路の直接 `generate_content`（カバレッジ判定）にだけ付与する
+    （ADK チームは共有キャッシュのためリクエスト毎ラベルを付けない既知の制約）。
     """
     ambiguous_topics = heuristic_ambiguous_topics(transcript)
     coverage_task = (
-        asyncio.ensure_future(assess_check_point_coverage(transcript, check_points))
+        asyncio.ensure_future(
+            assess_check_point_coverage(
+                transcript,
+                check_points,
+                usage_hook=usage_hook,
+                billing_labels=billing_labels,
+            )
+        )
         if check_points
         else None
     )
     try:
-        result = await _run_adk(transcript, ambiguous_topics)
+        result = await _run_adk(transcript, ambiguous_topics, usage_hook=usage_hook)
     except Exception:
         result = heuristic_result(transcript)
     coverage_open = await coverage_task if coverage_task is not None else []
     return result.model_copy(update={"coverage_open": coverage_open})
 
 
-async def assess_check_point_coverage(transcript: str, check_points: Sequence[str]) -> list[str]:
+async def assess_check_point_coverage(
+    transcript: str,
+    check_points: Sequence[str],
+    *,
+    usage_hook: UsageHook | None = None,
+    billing_labels: dict[str, str] | None = None,
+) -> list[str]:
     """与えた観点のうち、会話でまだ触れられていないものを LLM で返す（ADR-0057）。
 
     キーワード一致だと ADR-0055 で廃したハードコード論点の誤検知が再来するため LLM で判定する。
@@ -125,13 +174,19 @@ async def assess_check_point_coverage(transcript: str, check_points: Sequence[st
     if not (settings.google_api_key or settings.google_genai_use_vertexai):
         return []
     try:
-        return await _llm_check_point_coverage(transcript, points)
+        return await _llm_check_point_coverage(
+            transcript, points, usage_hook=usage_hook, billing_labels=billing_labels
+        )
     except Exception:
         return []
 
 
 async def _llm_check_point_coverage(
-    transcript: str, points: list[str]
+    transcript: str,
+    points: list[str],
+    *,
+    usage_hook: UsageHook | None = None,
+    billing_labels: dict[str, str] | None = None,
 ) -> list[str]:  # pragma: no cover - needs creds
     from google import genai
 
@@ -147,7 +202,12 @@ async def _llm_check_point_coverage(
     )
     client = genai.Client(api_key=settings.google_api_key or None)
     resp = await client.aio.models.generate_content(
-        model=settings.gemini_reasoning_model, contents=prompt
+        model=settings.gemini_reasoning_model,
+        contents=prompt,
+        config=_labels_config(billing_labels),
+    )
+    _report_usage(
+        usage_hook, COMPONENT_ANALYSIS, usage_from_genai(getattr(resp, "usage_metadata", None))
     )
     text = (resp.text or "").strip().removeprefix("```json").removesuffix("```").strip()
     data = json.loads(text)
@@ -179,8 +239,17 @@ def _naive_summary(transcript: str) -> str:
     return " / ".join(kept) if kept else "まだ要件は確定していません。"
 
 
-async def _run_adk(transcript: str, ambiguous_topics: list[str]) -> AnalysisResult:
-    """Invoke the ADK agent team. Imported lazily to avoid hard runtime deps in tests."""
+async def _run_adk(
+    transcript: str,
+    ambiguous_topics: list[str],
+    *,
+    usage_hook: UsageHook | None = None,
+) -> AnalysisResult:
+    """Invoke the ADK agent team. Imported lazily to avoid hard runtime deps in tests.
+
+    ADK イベントが運ぶ `usage_metadata`（サブエージェント LLM ターン毎）を合算し、
+    `usage_hook` へ 1 回で渡す（ADR-0061 の adk_team コスト集計）。
+    """
     from google.adk.runners import InMemoryRunner
     from google.genai import types
 
@@ -196,11 +265,14 @@ async def _run_adk(transcript: str, ambiguous_topics: list[str]) -> AnalysisResu
     )
     content = types.Content(role="user", parts=[types.Part(text=prompt)])
     final_text = ""
+    adk_usage = TokenUsage()
     async for event in runner.run_async(
         user_id="voice-agent", session_id=session.id, new_message=content
     ):
+        adk_usage = adk_usage.add(usage_from_genai(getattr(event, "usage_metadata", None)))
         if event.is_final_response() and event.content and event.content.parts:
             final_text = event.content.parts[0].text or ""
+    _report_usage(usage_hook, COMPONENT_ADK_TEAM, adk_usage)
 
     next_q = _extract_question(final_text)
     return AnalysisResult(

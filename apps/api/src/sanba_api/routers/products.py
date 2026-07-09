@@ -31,6 +31,7 @@ from sanba_shared.repository import (
     ProductSlugTaken,
 )
 
+from ..analytics import embedding_hook, scope_recorder
 from ..auth import (
     InvalidProductInvite,
     create_invite,
@@ -444,6 +445,9 @@ def _index_product_repo_task(
                 max_files=settings.github_index_max_files,
                 max_total_bytes=settings.github_index_max_total_bytes,
                 max_file_bytes=settings.github_index_max_file_bytes,
+                usage_hook=embedding_hook(
+                    scope_recorder(product_id, product_id=product_id)
+                ),
             )
             summary = redact_secrets(outcome.summary)
             if settings.mask_pii_before_index:

@@ -170,7 +170,7 @@ def test_index_passage_upserts_with_deterministic_id(monkeypatch) -> None:
         def index(self, **kwargs: object) -> None:
             calls.append(kwargs)
 
-    monkeypatch.setattr(retrieval, "embed_text", lambda text: None)
+    monkeypatch.setattr(retrieval, "embed_text", lambda text, **_kwargs: None)
     store = GroundingStore()
     store._client = _FakeClient()
     store.index_passage("KB text", "guide:x", "knowledge", doc_id="knowledge:guide:x")
