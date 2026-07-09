@@ -210,7 +210,7 @@ def test_context_files_include_analysis_details(monkeypatch: pytest.MonkeyPatch)
     observations = ["検索ボタンがある", "設定画面へのリンクが無い"]
     monkeypatch.setattr(
         "sanba_api.routers.sessions.analyze_image",
-        lambda raw, content_type: observations,
+        lambda raw, content_type, **_kwargs: observations,
     )
     sid = _new_session()
     client.post(

@@ -18,8 +18,8 @@ terraform {
 }
 
 provider "google" {
-  project = var.project_id
-  region  = var.region
+  project               = var.project_id
+  region                = var.region
   user_project_override = true
   billing_project       = var.project_id
 }
@@ -115,6 +115,13 @@ resource "google_firestore_field" "auth_sessions_ttl" {
   ttl_config {}
 }
 
+resource "google_firestore_field" "transcripts_ttl" {
+  database   = google_firestore_database.default.name
+  collection = "transcripts"
+  field      = "expireAt"
+  ttl_config {}
+}
+
 resource "google_service_account" "runtime" {
   account_id   = "sanba-runtime"
   display_name = "SANBA Cloud Run runtime"
@@ -134,6 +141,21 @@ resource "google_project_iam_member" "runtime_roles" {
   role       = each.value
   member     = "serviceAccount:${google_service_account.runtime.email}"
   depends_on = [google_project_service.services]
+}
+
+resource "google_project_service" "bigquery" {
+  count              = var.enable_billing_export ? 1 : 0
+  service            = "bigquery.googleapis.com"
+  disable_on_destroy = false
+}
+
+resource "google_bigquery_dataset" "billing_export" {
+  count         = var.enable_billing_export ? 1 : 0
+  dataset_id    = "billing_export"
+  friendly_name = "Cloud Billing export (ADR-0061)"
+  description   = "Cloud Billing の Detailed usage cost export の出力先。エクスポート自体は請求先アカウント側の設定（コンソール/gcloud billing）でこの dataset を指す必要がある。Vertex AI リクエストの billing labels (session_id / product_id) がここに反映され、推定コストとの突合に使う。"
+  location      = var.billing_export_location
+  depends_on    = [google_project_service.bigquery]
 }
 
 resource "google_billing_budget" "monthly" {

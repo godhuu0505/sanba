@@ -15,7 +15,7 @@ import contextlib
 import os
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from typing import Any, NamedTuple
 from urllib.parse import urlparse
@@ -43,6 +43,14 @@ try:  # noqa: SIM105
     from livekit.plugins import noise_cancellation as _noise_cancellation
 except Exception:  # pragma: no cover
     _noise_cancellation = None  # type: ignore[assignment]
+from sanba_shared.analytics import (
+    COMPONENT_EMBEDDING,
+    COMPONENT_JUDGE,
+    LiveKitRates,
+    UsageRecorder,
+    vertex_billing_labels,
+)
+from sanba_shared.analytics_sink import AnalyticsConfig, AnalyticsSink
 from sanba_shared.inquiry import InquiryTree, make_inquiry_id
 from sanba_shared.models import (
     AnalysisResult,
@@ -98,6 +106,7 @@ from .tools.analysis import (
     make_requirement_id,
     normalize_query,
 )
+from .usage import LiveUsageTracker, emit_session_cost_summary
 
 log = structlog.get_logger(__name__)
 
@@ -296,6 +305,13 @@ def _is_stale_repo_passage(source: str, current_sha: str) -> bool:
 _USER_DERIVED_KINDS = frozenset({"utterance", "requirement"})
 
 _GATING_INQUIRY_KINDS = (InquiryKind.CONTRADICTION, InquiryKind.GAP, InquiryKind.CHECK)
+_RESOLVE_INQUIRY_KINDS = (
+    InquiryKind.CONTRADICTION,
+    InquiryKind.GAP,
+    InquiryKind.CHECK,
+    InquiryKind.AMBIGUOUS,
+)
+RESOLVE_INQUIRY_NO_MATCH_LIMIT = 3
 ADD_INQUIRY_CONFIDENCE = 0.9
 
 PREFETCH_TIMEOUT_SECONDS = 5.0
@@ -361,9 +377,14 @@ class SANBAAgent(Agent):
         repo: SessionRepository,
         grounding: GroundingStore,
         publisher: EventPublisher | None = None,
+        usage_recorder: UsageRecorder | None = None,
     ) -> None:
         setup = build_agent_instructions(repo, session_id)
         super().__init__(instructions=setup.instructions)
+        self._usage_recorder = usage_recorder
+        self._billing_labels = vertex_billing_labels(
+            session_id, setup.product_id, use_vertexai=settings.google_genai_use_vertexai
+        )
         self._interview_mode = setup.mode
         self._allow_repo_grounding = setup.allow_repo_grounding
         self._prep_note = setup.prep_note
@@ -386,6 +407,7 @@ class SANBAAgent(Agent):
         self._inquiry_focus_id: str | None = None
         self._inquiry_seq = 0
         self._inquiry = self._hydrate_inquiry()
+        self._resolve_no_match_streak = 0
         self._injected_assets: set[str] = set()
         self._publish_tasks: set[asyncio.Task[Any]] = set()
         self._persist_tasks: set[asyncio.Task[Any]] = set()
@@ -425,6 +447,30 @@ class SANBAAgent(Agent):
     @property
     def session_id(self) -> str:
         return self._session_id
+
+    @property
+    def product_id(self) -> str | None:
+        """紐づく product の id（ADR-0061 の分析イベント主軸。無ければ None）。"""
+        return self._product_id
+
+    def inquiry_kpi_counts(self) -> dict[str, int]:
+        """確認事項ツリーの kind × status 集計（`session_summary` の KPI 用 / ADR-0061）。"""
+        counts: dict[str, int] = {}
+        open_total = resolved_total = 0
+        for node in self._inquiry.nodes():
+            key = f"{node.kind.value}_{node.status.value}"
+            counts[key] = counts.get(key, 0) + 1
+            if node.status is InquiryStatus.OPEN:
+                open_total += 1
+            elif node.status is InquiryStatus.RESOLVED:
+                resolved_total += 1
+        counts["open_total"] = open_total
+        counts["resolved_total"] = resolved_total
+        return counts
+
+    def _analysis_usage_hook(self, component: str, usage: Any) -> None:
+        if self._usage_recorder is not None:
+            self._usage_recorder.record(component, settings.gemini_reasoning_model, usage)
 
     def claim_video_injection(self, asset_id: str) -> bool:
         """動画解析の会話注入を 1 回だけ許可する（ADR-0040 §4）。
@@ -647,6 +693,7 @@ class SANBAAgent(Agent):
         node = self._inquiry.resolve(node_id, self._next_inquiry_seq())
         if node is not None:
             self._inquiry_focus_id = node.id
+            self._resolve_no_match_streak = 0
             await self._emit_inquiry_nodes([node])
         log.info(
             "inquiry_resolved_by_selection",
@@ -782,7 +829,14 @@ class SANBAAgent(Agent):
         def _worker() -> None:
             outcome: AnalysisResult | BaseException
             try:
-                outcome = asyncio.run(analyze_transcript(transcript, self._check_points))
+                outcome = asyncio.run(
+                    analyze_transcript(
+                        transcript,
+                        self._check_points,
+                        usage_hook=self._analysis_usage_hook,
+                        billing_labels=self._billing_labels,
+                    )
+                )
             except Exception as exc:  # noqa: BLE001
                 outcome = exc
 
@@ -1375,20 +1429,43 @@ class SANBAAgent(Agent):
             text: 解消した確認事項の要点（画面の文言に近い一文。例「並び順は関連度順で確定」）。
         """
         seq = self._next_inquiry_seq()
-        resolved: InquiryNode | None = None
-        for kind in (
-            InquiryKind.CONTRADICTION,
-            InquiryKind.GAP,
-            InquiryKind.CHECK,
-            InquiryKind.AMBIGUOUS,
-        ):
-            node = self._inquiry.resolve_by_text(kind, text, seq)
-            if node is not None:
-                resolved = node
-                break
+        resolved = self._inquiry.resolve_best_match(_RESOLVE_INQUIRY_KINDS, text, seq)
         if resolved is None:
-            log.info("resolve_inquiry_no_match", session=self._session_id)
-            return {"resolved": False, "reason": "not_found"}
+            self._resolve_no_match_streak += 1
+            open_items = [
+                {"id": n.id, "text": n.text}
+                for n in self._inquiry.open_nodes(_RESOLVE_INQUIRY_KINDS)
+            ]
+            log.info(
+                "resolve_inquiry_no_match",
+                session=self._session_id,
+                streak=self._resolve_no_match_streak,
+                open_count=len(open_items),
+            )
+            if self._resolve_no_match_streak >= RESOLVE_INQUIRY_NO_MATCH_LIMIT:
+                log.warning(
+                    "resolve_inquiry_circuit_break",
+                    session=self._session_id,
+                    streak=self._resolve_no_match_streak,
+                    open_count=len(open_items),
+                )
+                return {
+                    "resolved": False,
+                    "reason": "no_open_match",
+                    "stop": True,
+                    "open_inquiries": open_items,
+                    "guidance": (
+                        "一致する確認事項がありません。resolve_inquiry の再試行をやめ、"
+                        "会話を続けてください。解消するなら open_inquiries の text を"
+                        "そのまま渡してください。"
+                    ),
+                }
+            return {
+                "resolved": False,
+                "reason": "not_found",
+                "open_inquiries": open_items,
+            }
+        self._resolve_no_match_streak = 0
         self._inquiry_focus_id = resolved.id
         await self._emit_inquiry_nodes([resolved])
         log.info(
@@ -1424,6 +1501,7 @@ class SANBAAgent(Agent):
         if added:
             self._inquiry_focus_id = node_id
             self._end_proposed = False
+            self._resolve_no_match_streak = 0
         await self._emit_inquiry_nodes(changed)
         log.info("add_inquiry", session=self._session_id, id=node_id, added=added)
         return {"added": added, "id": node_id}
@@ -1684,6 +1762,44 @@ def build_turn_detection(
     )
 
 
+ReplyGuard = Callable[..., Awaitable[None]]
+
+
+class _ReplyTracker:
+    """assistant 応答の到着を単調増加カウンタで追う（#468）。
+
+    単一 ``asyncio.Event`` では並行ターン（テキスト連投・画像注入と音声が重なる）が互いの
+    応答を取り違えて競合するため、応答数のカウンタで「自分の発行より後に応答が来たか」を
+    判定する。``bump`` は conversation_item_added（assistant）ごとに呼ぶ。``wait_beyond`` は
+    ``baseline`` を超える応答が来るまで待ち、来なければ ``TimeoutError``。
+    """
+
+    def __init__(self) -> None:
+        self._count = 0
+        self._event = asyncio.Event()
+
+    @property
+    def count(self) -> int:
+        return self._count
+
+    def bump(self) -> None:
+        self._count += 1
+        self._event.set()
+
+    async def wait_beyond(self, baseline: int, timeout_s: float) -> None:
+        loop = asyncio.get_event_loop()
+        deadline = loop.time() + timeout_s
+        while self._count <= baseline:
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                raise TimeoutError
+            self._event.clear()
+            if self._count > baseline:
+                return
+            with contextlib.suppress(TimeoutError):
+                await asyncio.wait_for(self._event.wait(), timeout=remaining)
+
+
 async def guarded_generate_reply(
     session: AgentSession, *, session_id: str, kind: str, **kwargs: Any
 ) -> bool:
@@ -1715,12 +1831,64 @@ async def guarded_generate_reply(
             return False
 
 
+async def guarded_turn_reply(
+    session: AgentSession,
+    *,
+    session_id: str,
+    kind: str,
+    reply_tracker: _ReplyTracker,
+    timeout_s: float,
+    reinject: str | None,
+    pending_reinject: list[str],
+    request_restart: Callable[[], None],
+    **gen_kwargs: Any,
+) -> bool:
+    """会話途中の generate_reply を応答監視つきで実行する（#468 Fix B）。
+
+    発行前の応答数を基準に、watchdog タイムアウト以内に assistant 応答が増えなければ
+    voice_reply_no_response を残し、捨てた入力（reinject）を pending_reinject へ退避して
+    request_restart でセッションを張り直す。Gemini Live が無言でターンを落とす／ツール
+    呼び出しで livelock する事象から復旧する。応答を観測できたら True、無応答で再起動を
+    要求したら False を返す。
+    """
+    baseline = reply_tracker.count
+    ok = await guarded_generate_reply(session, session_id=session_id, kind=kind, **gen_kwargs)
+    if ok:
+        try:
+            await reply_tracker.wait_beyond(baseline, timeout_s)
+            return True
+        except TimeoutError:
+            pass
+    log.warning(
+        "voice_reply_no_response",
+        session=session_id,
+        kind=kind,
+        timeout_s=timeout_s,
+    )
+    if reinject is not None:
+        pending_reinject.append(reinject)
+    request_restart()
+    return False
+
+
+def build_resume_instructions(transcript: list[str], pending_reinject: list[str]) -> str:
+    """再起動後の再開一言の instructions を組み立てる（#468 Fix B）。
+
+    resume_instructions の文脈復元に、watchdog が退避した未応答入力（動画観察など transcript
+    に載らないもの）を連結して、無応答で落とした一言を再起動後に取り戻す。
+    """
+    resume = resume_instructions(transcript)
+    if pending_reinject:
+        resume = resume + "\n\n" + "\n\n".join(pending_reinject)
+    return resume
+
+
 async def open_interview(
     session: AgentSession,
     *,
     session_id: str,
     instructions: str,
-    reply_seen: asyncio.Event,
+    reply_tracker: _ReplyTracker,
     max_attempts: int | None = None,
     reply_timeout_s: float | None = None,
 ) -> bool:
@@ -1728,12 +1896,12 @@ async def open_interview(
 
     Gemini Live は接続直後に generation_created を返せず、開始一言が黙って落ちることがある。
     livekit-agents は内部の RealtimeError を握って listening に戻すだけで例外も error イベントも
-    上に返さないため guarded_generate_reply では検知できない。各試行のあと ``reply_seen``
-    （assistant の conversation_item が来たら set される entrypoint 側イベント）を reply_timeout_s
-    だけ待ち、来なければ voice_opening_no_response を残して再試行する。タイムアウト後は必ず
-    interrupt を掛ける（最終試行も含む / 直後の enable_participant_audio で参加者マイクが開くため、
-    遅延した応答と重なる二重発話を防ぐ）。成功で True、上限まで応答が出なければ False を返し
-    voice_opening_exhausted を残す（会話は生きており次の発話から前進できる）。
+    上に返さないため guarded_generate_reply では検知できない。各試行のあと ``reply_tracker``
+    （assistant の conversation_item が来たら bump される entrypoint 側カウンタ）が発行前より
+    増えるのを reply_timeout_s だけ待ち、来なければ voice_opening_no_response を残して再試行する。
+    タイムアウト後は必ず interrupt を掛ける（最終試行も含む / 直後の enable_participant_audio で
+    参加者マイクが開くため、遅延した応答と重なる二重発話を防ぐ）。成功で True、上限まで応答が
+    出なければ False を返し voice_opening_exhausted を残す（会話は生き次の発話から前進できる）。
     """
     attempts = max_attempts if max_attempts is not None else settings.voice_opening_max_attempts
     timeout_s = (
@@ -1741,12 +1909,12 @@ async def open_interview(
     )
     total_attempts = max(1, attempts)
     for attempt in range(1, total_attempts + 1):
-        reply_seen.clear()
+        baseline = reply_tracker.count
         await guarded_generate_reply(
             session, session_id=session_id, kind="opening", instructions=instructions
         )
         try:
-            await asyncio.wait_for(reply_seen.wait(), timeout=timeout_s)
+            await reply_tracker.wait_beyond(baseline, timeout_s)
         except TimeoutError:
             log.warning(
                 "voice_opening_no_response",
@@ -1770,7 +1938,11 @@ async def open_interview(
 
 
 async def respond_to_user_text(
-    agent: SANBAAgent, session: AgentSession, text: str, current_qid: str | None
+    agent: SANBAAgent,
+    session: AgentSession,
+    text: str,
+    current_qid: str | None,
+    guard: ReplyGuard,
 ) -> None:
     """テキスト入力（user.text, 契約 §4.5 / #185）を音声発話と同じ会話ターンとして扱う。
 
@@ -1778,37 +1950,50 @@ async def respond_to_user_text(
     クリアした上で、音声のバージインと同様に読み上げ中の応答を中断してから、本文を
     user ターンとして Live セッションの会話文脈へ注入し応答を生成する
     （livekit-agents 既定のテキスト入力コールバックと同じ interrupt + user_input 方式）。
+    応答生成は guard（応答監視つき）経由で行い、無応答なら再起動で復旧する（#468）。
+    発話は transcript へ記録済みのため再起動時は resume_instructions が文脈を復元する。
     """
     agent.record_utterance("participant", text)
     if current_qid is not None:
         await agent.clear_current_question(current_qid)
     await session.interrupt()
-    await session.generate_reply(user_input=text)
+    await guard(kind="user_text", reinject=None, user_input=text)
 
 
 async def respond_to_answer(
-    agent: SANBAAgent, session: AgentSession, question_id: str, answer: str
+    agent: SANBAAgent,
+    session: AgentSession,
+    question_id: str,
+    answer: str,
+    guard: ReplyGuard,
 ) -> None:
     """通常質問（金枠, #181）への回答を記録し、要件を一歩進める応答を生成する。
 
     回答を「問い本文つき」で発話記録し（Codex P2）、何への回答か後続の
     analyze_requirements が分かるようにする。テキスト/タップ回答も音声回答と同様、
-    読み上げ中なら中断してから応答する（user.text と同じ即時反応）。
+    読み上げ中なら中断してから応答する（user.text と同じ即時反応）。応答生成は guard
+    （応答監視つき）経由で行い、無応答なら再起動で復旧する（#468）。
     """
     prompt = agent.record_answer(question_id, answer)
     await agent.clear_current_question(question_id)
     topic = f"問い「{prompt}」" if prompt else "先ほどの問い"
     await session.interrupt()
-    await session.generate_reply(
+    await guard(
+        kind="answer",
+        reinject=None,
         instructions=(
             f"{topic}に対し参加者は「{answer}」と答えました。"
             "これを踏まえて要件を一歩進め、必要なら次の問いを1つだけ投げてください。"
-        )
+        ),
     )
 
 
 async def inject_video_analysis(
-    agent: SANBAAgent, session: AgentSession, asset_id: str, observations: list[str]
+    agent: SANBAAgent,
+    session: AgentSession,
+    asset_id: str,
+    observations: list[str],
+    guard: ReplyGuard,
 ) -> None:
     """アップロード動画の解析結果を会話へ能動注入する（ADR-0040 §4）。
 
@@ -1817,7 +2002,8 @@ async def inject_video_analysis(
     ADR-0040 §4 が analysis.visual に限って許可する。ただし発話を遮らない穏当な注入にする
     （`session.interrupt()` は呼ばない）: 次の発話境界で自然に織り込ませ、読み上げ中の割り込みを
     避ける。dedup・モードゲートは `claim_video_injection` に集約（end_user は注入しない）。
-    ルームが閉じていれば generate_reply は失敗するが guarded 側で握る（grounding には投入済み）。
+    応答生成は guard（応答監視つき）経由で行い、無応答なら再起動で復旧する。観察は transcript に
+    載らないため reinject で再起動時に再投入し、動画の一言を失わない（#468）。
     """
     if not agent.claim_video_injection(asset_id):
         return
@@ -1828,9 +2014,7 @@ async def inject_video_analysis(
         "この内容に自然に触れつつ、要件を深掘りする質問を1つだけ、日本語で簡潔に投げてください。"
         "既に会話で扱った点の繰り返しは避けてください。"
     )
-    await guarded_generate_reply(
-        session, session_id=agent.session_id, kind="video_analysis", instructions=instructions
-    )
+    await guard(kind="video_analysis", reinject=instructions, instructions=instructions)
 
 
 def _is_livekit_cloud_url(url: str) -> bool:
@@ -1937,11 +2121,24 @@ async def entrypoint(ctx: JobContext) -> None:
     await ctx.connect()
 
     session_id = ctx.room.name
+    session_started_at = time.monotonic()
     repo = SessionRepository(
         data_retention_days=settings.data_retention_days,
         mask_pii_before_persist=settings.mask_pii_before_index,
     )
-    grounding = GroundingStore()
+    analytics_sink = AnalyticsSink(
+        AnalyticsConfig(
+            elasticsearch_url=settings.elasticsearch_url,
+            elasticsearch_api_key=settings.elasticsearch_api_key,
+        )
+    )
+    usage_recorder = UsageRecorder(analytics_sink, session_id)
+    usage_tracker = LiveUsageTracker(usage_recorder, settings.gemini_live_model)
+
+    def _embed_usage(usage) -> None:  # type: ignore[no-untyped-def]
+        usage_recorder.record(COMPONENT_EMBEDDING, settings.gemini_embed_model, usage)
+
+    grounding = GroundingStore(usage_hook=_embed_usage)
     seed_knowledge_base(grounding)
     publisher = EventPublisher(
         session_id,
@@ -1949,7 +2146,16 @@ async def entrypoint(ctx: JobContext) -> None:
         start_seq=repo.get_startup_seq(session_id),
         start_lossy_seq=repo.reserve_lossy_seq_base(session_id),
     )
-    agent = SANBAAgent(session_id=session_id, repo=repo, grounding=grounding, publisher=publisher)
+    agent = SANBAAgent(
+        session_id=session_id,
+        repo=repo,
+        grounding=grounding,
+        publisher=publisher,
+        usage_recorder=usage_recorder,
+    )
+    usage_recorder.set_context(
+        product_id=agent.product_id, interview_mode=agent.interview_mode.value
+    )
     if agent.allow_repo_grounding:
         seed_github_context(grounding, session_id, repo, _resolve_github_repo(repo, session_id))
     else:
@@ -1974,7 +2180,22 @@ async def entrypoint(ctx: JobContext) -> None:
     session: AgentSession
     restart_count = 0
     restart_pending = False
-    reply_seen = asyncio.Event()
+    noise_cancellation_active = False
+    reply_tracker = _ReplyTracker()
+    pending_reinject: list[str] = []
+
+    async def _guarded_turn_reply(*, kind: str, reinject: str | None, **gen_kwargs: Any) -> None:
+        await guarded_turn_reply(
+            session,
+            session_id=session_id,
+            kind=kind,
+            reply_tracker=reply_tracker,
+            timeout_s=settings.voice_reply_watchdog_timeout_s,
+            reinject=reinject,
+            pending_reinject=pending_reinject,
+            request_restart=_request_restart,
+            **gen_kwargs,
+        )
 
     def _on_data(packet) -> None:  # type: ignore[no-untyped-def]
         topic = getattr(packet, "topic", None)
@@ -1983,7 +2204,11 @@ async def entrypoint(ctx: JobContext) -> None:
             visual = decode_analysis_visual(data, expected_session_id=session_id)
             if visual is not None:
                 asset_id, observations = visual
-                _schedule(inject_video_analysis(agent, session, asset_id, observations))
+                _schedule(
+                    inject_video_analysis(
+                        agent, session, asset_id, observations, _guarded_turn_reply
+                    )
+                )
             return
         if topic != WEB_EVENTS_TOPIC:
             return
@@ -1994,12 +2219,16 @@ async def entrypoint(ctx: JobContext) -> None:
             return
         text = decode_user_text(data, expected_session_id=session_id)
         if text is not None:
-            _schedule(respond_to_user_text(agent, session, text, agent.current_question_id))
+            _schedule(
+                respond_to_user_text(
+                    agent, session, text, agent.current_question_id, _guarded_turn_reply
+                )
+            )
             return
         answered = decode_user_answered(data, expected_session_id=session_id)
         if answered is not None:
             question_id, answer = answered
-            _schedule(respond_to_answer(agent, session, question_id, answer))
+            _schedule(respond_to_answer(agent, session, question_id, answer, _guarded_turn_reply))
 
     def _wire_session(s: AgentSession) -> None:
         """AgentSession ごとのイベントハンドラを張る（再起動で作り直すたびに呼ぶ / ADR-0038）。"""
@@ -2022,7 +2251,7 @@ async def entrypoint(ctx: JobContext) -> None:
             item = getattr(ev, "item", None)
             if getattr(item, "role", None) != "assistant":
                 return
-            reply_seen.set()
+            reply_tracker.bump()
             text = getattr(item, "text_content", None)
             if text:
                 agent.publish_agent_utterance(text)
@@ -2036,6 +2265,15 @@ async def entrypoint(ctx: JobContext) -> None:
                 error=str(getattr(ev.error, "error", ev.error)),
             )
 
+        @s.on("session_usage_updated")
+        def _on_session_usage(ev) -> None:  # type: ignore[no-untyped-def]
+            try:
+                usage_tracker.record_snapshot(
+                    list(getattr(getattr(ev, "usage", None), "model_usage", None) or [])
+                )
+            except Exception as exc:  # noqa: BLE001
+                log.warning("usage_snapshot_failed", session=session_id, error=str(exc))
+
         @s.on("close")
         def _on_session_close(ev: CloseEvent) -> None:
             if ev.reason == CloseReason.ERROR:
@@ -2048,11 +2286,14 @@ async def entrypoint(ctx: JobContext) -> None:
         so the agent can read mockups and whiteboards (multimodal grounding).
         開始に失敗した中途半端なセッションは閉じてから raise する（リーク防止）。
         """
+        nonlocal noise_cancellation_active
         s: AgentSession = AgentSession(llm=build_realtime_model())
         _wire_session(s)
+        noise_cancellation = build_noise_cancellation()
+        noise_cancellation_active = noise_cancellation is not None
         input_options = RoomInputOptions(
             video_enabled=True,
-            noise_cancellation=build_noise_cancellation(),
+            noise_cancellation=noise_cancellation,
         )
         try:
             await s.start(
@@ -2085,6 +2326,8 @@ async def entrypoint(ctx: JobContext) -> None:
         SANBAAgent は close 時に activity が外れるため同一インスタンスを再利用でき、
         transcript・採番・検知の状態は維持される。Gemini 側の会話履歴は新規セッションでは
         失われるので、resume_instructions が直前の transcript 末尾を文脈として渡す。
+        watchdog 経由の再起動は旧セッションがまだ開いたままなので、新規開始の前に閉じる
+        （error-close 経由は既に閉じており aclose は無害 / #468）。
         """
         nonlocal session, restart_count, restart_pending
         if restart_count >= settings.voice_session_max_restarts:
@@ -2105,6 +2348,10 @@ async def entrypoint(ctx: JobContext) -> None:
             delay_s=delay,
         )
         await asyncio.sleep(delay)
+        with contextlib.suppress(Exception):
+            usage_tracker.record_snapshot(list(session.usage.model_usage))
+        with contextlib.suppress(Exception):
+            await session.aclose()
         try:
             session = await _start_session()
         except Exception as exc:  # noqa: BLE001
@@ -2116,11 +2363,14 @@ async def entrypoint(ctx: JobContext) -> None:
             )
             _schedule(_restart_session())
             return
+        usage_tracker.commit()
         restart_pending = False
         log.info("voice_session_restarted", session=session_id, attempt=restart_count)
+        resume = build_resume_instructions(agent.transcript, pending_reinject)
+        pending_reinject.clear()
         try:
             await publisher.status("listening")
-            await session.generate_reply(instructions=resume_instructions(agent.transcript))
+            await session.generate_reply(instructions=resume)
         except Exception as exc:  # noqa: BLE001
             log.warning(
                 "voice_session_resume_reply_failed",
@@ -2138,7 +2388,7 @@ async def entrypoint(ctx: JobContext) -> None:
         session,
         session_id=session_id,
         instructions=opening_instructions(agent.interview_mode, agent.has_prep_context),
-        reply_seen=reply_seen,
+        reply_tracker=reply_tracker,
     )
 
     async def _on_close() -> None:
@@ -2149,6 +2399,10 @@ async def entrypoint(ctx: JobContext) -> None:
             await agent.auto_finalize_if_needed()
         except Exception as exc:  # noqa: BLE001
             log.warning("auto_finalize_failed", session=session_id, error=str(exc))
+        try:
+            usage_tracker.record_snapshot(list(session.usage.model_usage))
+        except Exception as exc:  # noqa: BLE001
+            log.warning("usage_final_snapshot_failed", session=session_id, error=str(exc))
         from .evaluation import score_session
 
         mode = agent.interview_mode
@@ -2160,12 +2414,61 @@ async def entrypoint(ctx: JobContext) -> None:
                     glossary = list(product.glossary)
             except Exception as exc:  # noqa: BLE001
                 log.warning("session_score_glossary_failed", session=session_id, error=str(exc))
-        await score_session(
+        judge_result = await score_session(
             session_id=session_id,
             transcript="\n".join(agent.transcript),
             mode=mode,
             glossary=glossary,
+            usage_hook=lambda usage: usage_recorder.record(
+                COMPONENT_JUDGE, settings.gemini_reasoning_model, usage
+            ),
+            billing_labels=vertex_billing_labels(
+                session_id, agent.product_id, use_vertexai=settings.google_genai_use_vertexai
+            ),
         )
+
+        async def _close_analytics() -> None:
+            meta = None
+            try:
+                meta = await asyncio.to_thread(repo.get_session, session_id)
+                await asyncio.to_thread(
+                    repo.save_transcript,
+                    session_id,
+                    "\n".join(agent.transcript),
+                    apply_ttl=meta is None or meta.owner_email == "",
+                )
+            except Exception as exc:  # noqa: BLE001
+                log.warning("transcript_persist_failed", session=session_id, error=str(exc))
+            await emit_session_cost_summary(
+                session_id=session_id,
+                repo=repo,
+                sink=analytics_sink,
+                recorder=usage_recorder,
+                inquiry_counts=agent.inquiry_kpi_counts(),
+                judge_result=judge_result,
+                session_seconds=time.monotonic() - session_started_at,
+                noise_cancellation=noise_cancellation_active,
+                usd_jpy_rate=settings.usd_jpy_rate,
+                livekit_rates=LiveKitRates(
+                    connection_usd_per_min=settings.livekit_connection_usd_per_min,
+                    agent_session_usd_per_min=settings.livekit_agent_session_usd_per_min,
+                    noise_cancellation_usd_per_min=(
+                        settings.livekit_noise_cancellation_usd_per_min
+                    ),
+                ),
+                finalized_count=(meta.finalized_count or 0) if meta is not None else 0,
+            )
+
+        try:
+            await asyncio.wait_for(
+                _close_analytics(),
+                timeout=settings.session_close_analytics_timeout_seconds,
+            )
+        except TimeoutError:
+            log.warning("session_close_analytics_timeout", session=session_id)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("session_close_analytics_failed", session=session_id, error=str(exc))
+        analytics_sink.close()
 
     ctx.add_shutdown_callback(_on_close)
 

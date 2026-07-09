@@ -18,6 +18,12 @@ from dataclasses import dataclass, field
 
 import structlog
 from pydantic import BaseModel, Field
+from sanba_shared.analytics import (
+    COMPONENT_EMBEDDING,
+    COMPONENT_VISION,
+    UsageRecorder,
+    vertex_billing_labels,
+)
 from sanba_shared.grounding import ContextIndexer
 from sanba_shared.media import VideoAnalysis, analyze_video
 from sanba_shared.repository import SessionRepository
@@ -72,8 +78,13 @@ def process_video(
     settings: WorkerSettings,
     analyze: VideoAnalyzer = analyze_video,
     fetch_bytes: BytesFetcher | None = None,
+    usage_recorder: UsageRecorder | None = None,
 ) -> TaskResult:
-    """1 動画を解析し grounding へ投入。冪等・破棄競合安全（ADR-0040 §3）。"""
+    """1 動画を解析し grounding へ投入。冪等・破棄競合安全（ADR-0040 §3）。
+
+    `usage_recorder` があれば動画解析（vision）と観察の索引（embedding）のトークン usage を
+    `ai_usage` として排出する（ADR-0061）。記録は fail-soft で解析本体を止めない。
+    """
     session_id, asset_id = payload.session_id, payload.asset_id
 
     material = repo.get_material(session_id, asset_id)
@@ -91,8 +102,22 @@ def process_video(
         return TaskResult("failed", "video_too_long")
 
     config = settings.media_config()
+    usage_kwargs: dict[str, object] = {}
+    if usage_recorder is not None:
+        usage_kwargs = {
+            "on_usage": lambda usage: usage_recorder.record(
+                COMPONENT_VISION, settings.gemini_vision_model, usage
+            ),
+            "billing_labels": vertex_billing_labels(
+                session_id,
+                usage_recorder.product_id,
+                use_vertexai=settings.google_genai_use_vertexai,
+            ),
+        }
     if settings.google_genai_use_vertexai and payload.gcs_uri:
-        result = analyze(config, gcs_uri=payload.gcs_uri, content_type=payload.content_type)
+        result = analyze(
+            config, gcs_uri=payload.gcs_uri, content_type=payload.content_type, **usage_kwargs
+        )
     else:
         if fetch_bytes is None or payload.gcs_uri is None:
             raise RuntimeError("local video analysis requires a bytes fetcher and gcs_uri")
@@ -100,7 +125,7 @@ def process_video(
         if len(raw) > settings.max_inline_video_bytes:
             _mark_failed(repo, session_id, asset_id, "video_too_large_for_local")
             return TaskResult("failed", "video_too_large_for_local")
-        result = analyze(config, raw=raw, content_type=payload.content_type)
+        result = analyze(config, raw=raw, content_type=payload.content_type, **usage_kwargs)
 
     if not _still_analyzing(repo, session_id, asset_id):
         log.info(
@@ -113,7 +138,16 @@ def process_video(
 
     indexed = 0
     if result.observations:
-        indexed = indexer.index_context(session_id, result.observations, f"asset:{asset_id}")
+        embed_hook = None
+        if usage_recorder is not None:
+            recorder = usage_recorder
+
+            def embed_hook(usage):  # type: ignore[no-untyped-def]
+                recorder.record(COMPONENT_EMBEDDING, settings.gemini_embed_model, usage)
+
+        indexed = indexer.index_context(
+            session_id, result.observations, f"asset:{asset_id}", usage_hook=embed_hook
+        )
 
     done_record: dict[str, object] = {
         "id": asset_id,

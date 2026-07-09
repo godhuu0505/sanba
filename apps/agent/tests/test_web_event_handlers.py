@@ -36,6 +36,15 @@ async def _drain_publishes() -> None:
         await asyncio.sleep(0)
 
 
+def _passthrough_guard(session: FakeAgentSession):  # type: ignore[no-untyped-def]
+    """entrypoint の _guarded_turn_reply 相当の最小 guard（generate_reply をそのまま実行）。"""
+
+    async def guard(*, kind: str, reinject: str | None, **gen_kwargs: Any) -> None:
+        await session.generate_reply(**gen_kwargs)
+
+    return guard
+
+
 def _agent() -> tuple[SANBAAgent, SessionRepository, RecordingTransport]:
     repo = SessionRepository()
     repo._client = None
@@ -49,7 +58,9 @@ async def test_user_text_interrupts_then_replies_as_user_turn() -> None:
     agent, _repo, transport = _agent()
     session = FakeAgentSession()
 
-    await respond_to_user_text(agent, session, "決済は Stripe にしたい", None)  # type: ignore[arg-type]
+    await respond_to_user_text(
+        agent, session, "決済は Stripe にしたい", None, _passthrough_guard(session)
+    )  # type: ignore[arg-type]
 
     assert [name for name, _ in session.calls] == ["interrupt", "generate_reply"]
     _, kwargs = session.calls[-1]
@@ -67,7 +78,7 @@ async def test_user_text_clears_bound_current_question() -> None:
     agent._current_question_id = "q1"
     session = FakeAgentSession()
 
-    await respond_to_user_text(agent, session, "新着順で", "q1")  # type: ignore[arg-type]
+    await respond_to_user_text(agent, session, "新着順で", "q1", _passthrough_guard(session))  # type: ignore[arg-type]
 
     assert repo._mem_questions["s1"]["cleared"] is True
     assert agent.current_question_id is None
@@ -78,7 +89,7 @@ async def test_user_text_without_current_question_skips_clear() -> None:
     agent, repo, _transport = _agent()
     session = FakeAgentSession()
 
-    await respond_to_user_text(agent, session, "こんにちは", None)  # type: ignore[arg-type]
+    await respond_to_user_text(agent, session, "こんにちは", None, _passthrough_guard(session))  # type: ignore[arg-type]
 
     assert "s1" not in repo._mem_questions
     assert [name for name, _ in session.calls] == ["interrupt", "generate_reply"]
@@ -91,7 +102,7 @@ async def test_user_answered_interrupts_and_advances_with_question_context() -> 
     agent._questions["q1"] = "対象OSは？"
     session = FakeAgentSession()
 
-    await respond_to_answer(agent, session, "q1", "iOS のみ")  # type: ignore[arg-type]
+    await respond_to_answer(agent, session, "q1", "iOS のみ", _passthrough_guard(session))  # type: ignore[arg-type]
 
     assert repo._mem_questions["s1"]["cleared"] is True
     assert [name for name, _ in session.calls] == ["interrupt", "generate_reply"]
@@ -114,7 +125,8 @@ async def test_inject_video_analysis_generates_reply_without_interrupt() -> None
         agent,
         session,
         "asset-abc",
-        ["[00:01] ログイン画面", "[00:05] 保存ボタン"],  # type: ignore[arg-type]
+        ["[00:01] ログイン画面", "[00:05] 保存ボタン"],
+        _passthrough_guard(session),  # type: ignore[arg-type]
     )
 
     assert [name for name, _ in session.calls] == ["generate_reply"]
@@ -130,8 +142,12 @@ async def test_inject_video_analysis_dedups_same_asset() -> None:
     agent._allow_repo_grounding = True
     session = FakeAgentSession()
 
-    await inject_video_analysis(agent, session, "asset-x", ["[00:01] a"])  # type: ignore[arg-type]
-    await inject_video_analysis(agent, session, "asset-x", ["[00:01] a"])  # type: ignore[arg-type]
+    await inject_video_analysis(
+        agent, session, "asset-x", ["[00:01] a"], _passthrough_guard(session)
+    )  # type: ignore[arg-type]
+    await inject_video_analysis(
+        agent, session, "asset-x", ["[00:01] a"], _passthrough_guard(session)
+    )  # type: ignore[arg-type]
 
     assert [name for name, _ in session.calls] == ["generate_reply"]
 
@@ -143,7 +159,9 @@ async def test_inject_video_analysis_skipped_for_end_user() -> None:
     agent._allow_repo_grounding = False
     session = FakeAgentSession()
 
-    await inject_video_analysis(agent, session, "asset-y", ["[00:01] a"])  # type: ignore[arg-type]
+    await inject_video_analysis(
+        agent, session, "asset-y", ["[00:01] a"], _passthrough_guard(session)
+    )  # type: ignore[arg-type]
 
     assert session.calls == []
     assert "asset-y" not in agent._injected_assets
