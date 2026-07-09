@@ -118,6 +118,11 @@ Set-Cookie: sanba_sid=<opaque>;
   `admin.<domain>` を同 DNS に追加するときは、それらのホストにも `sanba_sid` が送信される
   ことを踏まえて信頼境界を設計する。`domain_enabled=false`（ローカル）は Domain 属性なし
   （発行ホスト帰属）で従前どおり。
+  - **GitHub App callback への同送は許容**（ADR-0053）: `api.<web_host>/api/github/link/callback`
+    にも `sanba_sid` cookie が乗るが、当該エンドポイントは cookie を参照せず GitHub 側の
+    `state` パラメータで整合を取っており、TLS で保護された同一運用ドメイン内での送信のため
+    追加の情報漏洩は無い。`__Host-` 接頭辞は Domain 属性を許さないため今回の設計と両立しない。
+    `__Secure-` 接頭辞は cookie 名変更で全経路の同期改修が必要になるため本 ADR では見送る。
 - 絶対上限は `expires_at` で 24h。それを超えると Firestore TTL が消し、client にも Cookie 期限が
   切れる。
 - リフレッシュ戦略: `GET /api/session/me` 到達時に `idle_expires_at` を延長（+8h）し、
