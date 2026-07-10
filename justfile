@@ -123,6 +123,8 @@ test:
     cd packages/sanba_shared && uv run pytest -q
     cd apps/agent && uv run pytest -q
     cd apps/api && uv run pytest -q
+    cd apps/worker && uv run pytest -q
+    cd external-agents && uv run pytest -q
     cd infra/four-keys/collector && uv run pytest -q
 
 # lint + 型チェック
@@ -131,6 +133,8 @@ lint: check-comments
     cd packages/sanba_shared && uv run ruff check . && uv run mypy src
     cd apps/agent && uv run ruff check . && uv run mypy src
     cd apps/api && uv run ruff check . && uv run mypy src
+    cd apps/worker && uv run ruff check . && uv run mypy src
+    cd external-agents && uv run ruff check . && uv run mypy src
     cd infra/four-keys/collector && uv run ruff check . && uv run mypy src
     cd apps/web && npm run lint && npm run typecheck
 
@@ -172,3 +176,8 @@ tf-plan:
 [group('ops')]
 tf-apply:
     cd infra/terraform && terraform apply
+
+# sanba-analytics (ADR-0061) の ES データストリーム/ILM/単価 index と Kibana ダッシュボードを冪等セットアップ
+[group('ops')]
+analytics-setup:
+    cd packages/sanba_shared && uv run python ../../scripts/setup_analytics.py

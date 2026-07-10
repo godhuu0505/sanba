@@ -44,7 +44,7 @@ async def test_score_session_falls_back_on_timeout(monkeypatch: pytest.MonkeyPat
     from sanba_agent import evaluation
     from sanba_agent.config import settings
 
-    async def _hang(transcript: str) -> JudgeResult:
+    async def _hang(transcript: str, **_kwargs: object) -> JudgeResult:
         await asyncio.sleep(60)
         raise AssertionError("unreachable")
 
@@ -196,7 +196,7 @@ async def test_score_session_end_user_timeout_falls_to_end_user_heuristic(
     from sanba_agent import evaluation
     from sanba_agent.config import settings
 
-    async def _hang(transcript: str, glossary: list[str]) -> JudgeResult:
+    async def _hang(transcript: str, glossary: list[str], **_kwargs: object) -> JudgeResult:
         await asyncio.sleep(60)
         raise AssertionError("unreachable")
 

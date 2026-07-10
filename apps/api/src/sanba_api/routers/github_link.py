@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 from sanba_shared.models import GitHubIndexStatus, GitHubLink
 
 from .. import github_export
+from ..analytics import embedding_hook, session_recorder
 from ..auth import SessionAccess
 from ..auth_google import AuthUser, require_user
 from ..config import settings
@@ -251,6 +252,7 @@ def _index_repo_task(
                 max_files=settings.github_index_max_files,
                 max_total_bytes=settings.github_index_max_total_bytes,
                 max_file_bytes=settings.github_index_max_file_bytes,
+                usage_hook=embedding_hook(session_recorder(session_id, _repo)),
             )
             summary = redact_secrets(outcome.summary)
             if settings.mask_pii_before_index:

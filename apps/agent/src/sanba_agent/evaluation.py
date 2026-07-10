@@ -15,15 +15,36 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 import structlog
+from sanba_shared.analytics import TokenUsage, usage_from_genai
 from sanba_shared.models import InviteScope
 
 from .config import settings
 
 log = structlog.get_logger(__name__)
+
+UsageHook = Callable[[TokenUsage], None]
+
+
+def _report_usage(usage_hook: UsageHook | None, resp: object) -> None:
+    if usage_hook is None:
+        return
+    try:
+        usage_hook(usage_from_genai(getattr(resp, "usage_metadata", None)))
+    except Exception as exc:  # noqa: BLE001
+        log.warning("judge_usage_hook_failed", error=str(exc))
+
+
+def _labels_config(billing_labels: dict[str, str] | None):  # type: ignore[no-untyped-def]
+    if not billing_labels:
+        return None
+    from google.genai import types
+
+    return types.GenerateContentConfig(labels=billing_labels)
+
 
 _NFR_KEYWORD_GROUPS: tuple[tuple[str, ...], ...] = (
     ("レイテンシ", "性能", "速", "latency", "performance"),
@@ -108,21 +129,33 @@ def _heuristic_end_user_scores(transcript: str, glossary: list[str]) -> JudgeRes
     )
 
 
-async def judge_end_user_interview(transcript: str, glossary: list[str]) -> JudgeResult:
+async def judge_end_user_interview(
+    transcript: str,
+    glossary: list[str],
+    *,
+    usage_hook: UsageHook | None = None,
+    billing_labels: dict[str, str] | None = None,
+) -> JudgeResult:
     """Score an end_user-mode transcript, falling back to deterministic heuristics."""
     if not transcript.strip():
         return JudgeResult.from_scores(dict.fromkeys((k for k, _ in END_USER_RUBRIC), 0.0), "empty")
     if not (settings.google_api_key or settings.google_genai_use_vertexai):
         return _heuristic_end_user_scores(transcript, glossary)
     try:  # pragma: no cover - needs network/credentials
-        return await _llm_judge_end_user(transcript, glossary)
+        return await _llm_judge_end_user(
+            transcript, glossary, usage_hook=usage_hook, billing_labels=billing_labels
+        )
     except Exception as exc:  # pragma: no cover
         log.warning("llm_judge_failed_falling_back", error=str(exc))
         return _heuristic_end_user_scores(transcript, glossary)
 
 
 async def _llm_judge_end_user(
-    transcript: str, glossary: list[str]
+    transcript: str,
+    glossary: list[str],
+    *,
+    usage_hook: UsageHook | None = None,
+    billing_labels: dict[str, str] | None = None,
 ) -> JudgeResult:  # pragma: no cover - needs creds
     from google import genai
 
@@ -140,8 +173,11 @@ async def _llm_judge_end_user(
     )
     client = genai.Client(api_key=settings.google_api_key or None)
     resp = await client.aio.models.generate_content(
-        model=settings.gemini_reasoning_model, contents=prompt
+        model=settings.gemini_reasoning_model,
+        contents=prompt,
+        config=_labels_config(billing_labels),
     )
+    _report_usage(usage_hook, resp)
     text = (resp.text or "").strip().removeprefix("```json").removesuffix("```").strip()
     data = json.loads(text)
     return JudgeResult.from_scores(
@@ -177,20 +213,30 @@ def _heuristic_scores(transcript: str) -> JudgeResult:
     )
 
 
-async def judge_interview(transcript: str) -> JudgeResult:
+async def judge_interview(
+    transcript: str,
+    *,
+    usage_hook: UsageHook | None = None,
+    billing_labels: dict[str, str] | None = None,
+) -> JudgeResult:
     """Score an interview transcript with an LLM judge, falling back to heuristics."""
     if not transcript.strip():
         return JudgeResult.from_scores(dict.fromkeys((k for k, _ in RUBRIC), 0.0), "empty")
     if not (settings.google_api_key or settings.google_genai_use_vertexai):
         return _heuristic_scores(transcript)
     try:  # pragma: no cover - needs network/credentials
-        return await _llm_judge(transcript)
+        return await _llm_judge(transcript, usage_hook=usage_hook, billing_labels=billing_labels)
     except Exception as exc:  # pragma: no cover
         log.warning("llm_judge_failed_falling_back", error=str(exc))
         return _heuristic_scores(transcript)
 
 
-async def _llm_judge(transcript: str) -> JudgeResult:  # pragma: no cover - needs creds
+async def _llm_judge(
+    transcript: str,
+    *,
+    usage_hook: UsageHook | None = None,
+    billing_labels: dict[str, str] | None = None,
+) -> JudgeResult:  # pragma: no cover - needs creds
     from google import genai
 
     criteria = "\n".join(f"- {k}: {desc}" for k, desc in RUBRIC)
@@ -204,8 +250,11 @@ async def _llm_judge(transcript: str) -> JudgeResult:  # pragma: no cover - need
     )
     client = genai.Client(api_key=settings.google_api_key or None)
     resp = await client.aio.models.generate_content(
-        model=settings.gemini_reasoning_model, contents=prompt
+        model=settings.gemini_reasoning_model,
+        contents=prompt,
+        config=_labels_config(billing_labels),
     )
+    _report_usage(usage_hook, resp)
     text = (resp.text or "").strip().removeprefix("```json").removesuffix("```").strip()
     data = json.loads(text)
     return JudgeResult.from_scores(
@@ -220,6 +269,8 @@ async def score_session(
     *,
     mode: InviteScope = InviteScope.DEVELOPER,
     glossary: Sequence[str] = (),
+    usage_hook: UsageHook | None = None,
+    billing_labels: dict[str, str] | None = None,
 ) -> JudgeResult:
     """Online evaluation: score a finished session and emit it as a structured log.
 
@@ -242,12 +293,18 @@ async def score_session(
     try:
         if end_user:
             result = await asyncio.wait_for(
-                judge_end_user_interview(transcript, glossary_list),
+                judge_end_user_interview(
+                    transcript,
+                    glossary_list,
+                    usage_hook=usage_hook,
+                    billing_labels=billing_labels,
+                ),
                 timeout=settings.session_score_timeout_seconds,
             )
         else:
             result = await asyncio.wait_for(
-                judge_interview(transcript), timeout=settings.session_score_timeout_seconds
+                judge_interview(transcript, usage_hook=usage_hook, billing_labels=billing_labels),
+                timeout=settings.session_score_timeout_seconds,
             )
     except TimeoutError:
         log.warning("session_score_timeout", session=session_id, interview_mode=mode.value)

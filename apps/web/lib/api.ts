@@ -541,6 +541,29 @@ export async function fetchMySessionResultDocument(
   return res.json();
 }
 
+export interface TranscriptUtterance {
+  speaker: string;
+  text: string;
+  ts: string;
+}
+
+export interface SessionTranscript {
+  id: string;
+  utterances: TranscriptUtterance[];
+}
+
+export async function fetchMySessionTranscript(
+  sessionId: string,
+  idToken: string | null,
+): Promise<SessionTranscript> {
+  const res = await apiFetch(
+    `${API_URL}/api/sessions/mine/${encodeURIComponent(sessionId)}/transcript`,
+    { headers: authHeaders(idToken) },
+  );
+  if (!res.ok) throw new ApiError(res.status, `fetch my session transcript failed: ${res.status}`);
+  return res.json();
+}
+
 export async function fetchMyExportEligibility(
   sessionId: string,
   idToken: string | null,

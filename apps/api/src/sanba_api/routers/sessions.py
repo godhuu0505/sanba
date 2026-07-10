@@ -14,6 +14,12 @@ from typing import Any
 import structlog
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field
+from sanba_shared.analytics import (
+    COMPONENT_SUMMARY,
+    COMPONENT_TITLE,
+    COMPONENT_VISION,
+    UsageRecorder,
+)
 from sanba_shared.inquiry import InquiryTree
 from sanba_shared.models import (
     DEFAULT_SESSION_TITLE,
@@ -33,6 +39,7 @@ from sanba_shared.result_document import (
     requirements_to_issue_labels,
 )
 
+from ..analytics import billing_labels, embedding_hook, session_recorder
 from ..auth import InvalidInvite, SessionAccess, create_invite, verify_invite
 from ..auth_google import AuthUser, ensure_room_creator, require_user, require_user_bound
 from ..config import settings
@@ -61,9 +68,11 @@ from ..observability import (
     record_material_event,
     record_my_requirements_viewed,
     record_my_sessions_listed,
+    record_my_transcript_viewed,
     record_question_hydration,
     record_result_document_rendered,
 )
+from ..pii import mask_pii
 from ..realtime import (
     STAGE_ANALYZING,
     STAGE_FAILED,
@@ -87,6 +96,11 @@ from ..vision import analyze_image
 log = structlog.get_logger(__name__)
 
 router = APIRouter()
+
+
+def _analytics_recorder(session_id: str, meta: SessionMeta | None = None) -> UsageRecorder:
+    """ai_usage recorder（ADR-0061。実体は `analytics.session_recorder`）。"""
+    return session_recorder(session_id, _repo, meta=meta)
 
 
 class CreateSessionRequest(BaseModel):
@@ -412,6 +426,92 @@ def get_my_session_result_document(
     )
 
 
+class TranscriptUtterance(BaseModel):
+    """会話ログの 1 発話。`speaker` は participant か SANBA（エージェント）。"""
+
+    speaker: str
+    text: str
+    ts: datetime
+
+
+class SessionTranscriptResponse(BaseModel):
+    """`GET /api/sessions/mine/{id}/transcript` の応答（要件結果画面の会話ログ表示 / #479）。
+
+    utterances は時系列（`list_utterances` の ts 昇順）。text は保存時に mask_pii 済み。
+    """
+
+    id: str
+    utterances: list[TranscriptUtterance]
+
+
+@router.get(
+    "/api/sessions/mine/{session_id}/transcript",
+    response_model=SessionTranscriptResponse,
+)
+def get_my_session_transcript(
+    session_id: str, user: AuthUser = Depends(require_user)
+) -> SessionTranscriptResponse:
+    """本人 (owner_sub) のセッションの会話ログを時系列で返す。
+
+    認可は `get_my_session_requirements` と同じ（idToken で本人確認・owner_sub 一致、
+    非所有/不存在はどちらも 404 に平す）。当該セッションの発話のみを返し、閲覧権限は
+    要件結果画面と同一（追加制限なし / #479 Must）。
+    """
+    session = _repo.get_session(session_id)
+    if session is None or session.owner_sub != user.sub:
+        raise HTTPException(status_code=404, detail="session not found")
+    utterances = _repo.list_utterances(session_id)
+    record_my_transcript_viewed(len(utterances))
+    log.info("my_transcript_viewed", session=session_id, owner=user.sub, count=len(utterances))
+    return SessionTranscriptResponse(
+        id=session.id,
+        utterances=[
+            TranscriptUtterance(speaker=u.speaker, text=u.text, ts=u.ts) for u in utterances
+        ],
+    )
+
+
+DOC_SEED_MAX_CHARS = 4000
+DOC_VISUAL_MAX_ITEMS = 3
+DOC_VISUAL_MAX_ITEM_CHARS = 300
+
+
+def _doc_visual_observations(seed_texts: list[str]) -> list[str]:
+    """doc の解析完了を会話へ能動注入するための抜粋を作る（ADR-0064 決定8）。
+
+    `analysis.visual` に載せて agent が会話中の一言として触れる素材で、朗読ではなく
+    認識合わせが目的のため先頭 3 件・各 300 字に機械的に切る（全文はシード済み素材メタと
+    grounding 検索が持つ）。イベントは LLM コンテキストへ直行するため送信前に PII を
+    マスクする（シード読み取り側のマスクと同じ規律）。
+    """
+    return [mask_pii(t)[:DOC_VISUAL_MAX_ITEM_CHARS] for t in seed_texts[:DOC_VISUAL_MAX_ITEMS]]
+
+
+def _doc_seed_texts(chunks: list[str], max_total_chars: int = DOC_SEED_MAX_CHARS) -> list[str]:
+    """doc の抽出 chunk から素材メタへ残すシード用テキストを先頭から切り出す（ADR-0064）。
+
+    voice agent が起動時に `materials.extracted_texts` を初期前提としてシードするため、
+    画像（本エンドポイント）・動画（worker）と同じ形で doc にも本文を残す。Firestore
+    文書の肥大を避けて全体 `max_total_chars` 字で機械的に打ち切る（全文は従来どおり
+    ES grounding が持ち、`search_grounding` で検索できる）。
+    """
+    seed: list[str] = []
+    used = 0
+    for chunk in chunks:
+        text = chunk.strip()
+        if not text:
+            continue
+        remaining = max_total_chars - used
+        if remaining <= 0:
+            break
+        if len(text) > remaining:
+            seed.append(text[:remaining])
+            break
+        seed.append(text)
+        used += len(text)
+    return seed
+
+
 @router.post("/api/sessions/{session_id}/context", response_model=ContextResponse)
 def add_context(
     session_id: str,
@@ -428,7 +528,10 @@ def add_context(
     if len(req.text) > settings.max_context_chars:
         raise HTTPException(status_code=413, detail="context too large")
     chunks = chunk_text(req.text)
-    n = _indexer.index_context(session_id, chunks, req.source_name)
+    recorder = _analytics_recorder(session_id)
+    n = _indexer.index_context(
+        session_id, chunks, req.source_name, usage_hook=embedding_hook(recorder)
+    )
     log.info("context_indexed", session=session_id, chunks=n, sub=access.sub)
     return ContextResponse(indexed_chunks=n)
 
@@ -488,12 +591,26 @@ async def add_context_file(
             if span is not None:
                 span.set_attribute("sanba.asset.id", doc_asset_id)
             _indexer.delete_context(session_id, f"asset:{doc_asset_id}")
-            n = _indexer.index_context(session_id, chunks, f"asset:{doc_asset_id}")
-            record_asset_upload("doc", "extract_failed" if extract_failed else "indexed")
-            _repo.save_material(
+            recorder = _analytics_recorder(session_id)
+            n = _indexer.index_context(
                 session_id,
-                material_record(doc_asset_id, filename, "doc", status="done", extracted=n),
+                chunks,
+                f"asset:{doc_asset_id}",
+                usage_hook=embedding_hook(recorder),
             )
+            record_asset_upload("doc", "extract_failed" if extract_failed else "indexed")
+            doc_material = material_record(
+                doc_asset_id, filename, "doc", status="done", extracted=n
+            )
+            seed_texts = _doc_seed_texts(chunks)
+            if seed_texts:
+                doc_material["extracted_texts"] = seed_texts
+            _repo.save_material(session_id, doc_material)
+            if seed_texts:
+                with contextlib.suppress(Exception):
+                    await _analysis_publisher(session_id).visual(
+                        doc_asset_id, _doc_visual_observations(seed_texts)
+                    )
             log.info(
                 "doc_indexed",
                 session=session_id,
@@ -575,8 +692,16 @@ async def add_context_file(
 
         with contextlib.suppress(Exception):
             await publisher.progress(asset.asset_id, STAGE_ANALYZING)
+        recorder = _analytics_recorder(session_id)
         try:
-            observations = analyze_image(raw, content_type)
+            observations = analyze_image(
+                raw,
+                content_type,
+                on_usage=lambda usage: recorder.record(
+                    COMPONENT_VISION, settings.gemini_vision_model, usage
+                ),
+                billing_labels=billing_labels(session_id, recorder.product_id),
+            )
         except Exception:
             with contextlib.suppress(Exception):
                 await publisher.progress(asset.asset_id, STAGE_FAILED)
@@ -584,7 +709,12 @@ async def add_context_file(
             raise
         indexed = 0
         if observations:
-            indexed = _indexer.index_context(session_id, observations, f"asset:{asset.asset_id}")
+            indexed = _indexer.index_context(
+                session_id,
+                observations,
+                f"asset:{asset.asset_id}",
+                usage_hook=embedding_hook(recorder),
+            )
         record_asset_upload(kind, "analyzed")
         analyzed = material_record(
             asset.asset_id, filename, kind, status="done", extracted=len(observations)
@@ -1007,12 +1137,26 @@ def finalize_session_requirements(
     )
     if meta is None:
         raise HTTPException(status_code=404, detail="session not found")
-    generated_title = generate_requirement_title(confirmed)
+    recorder = _analytics_recorder(session_id, meta=existing)
+    finalize_labels = billing_labels(session_id, recorder.product_id)
+    generated_title = generate_requirement_title(
+        confirmed,
+        usage_hook=lambda usage: recorder.record(
+            COMPONENT_TITLE, settings.gemini_reasoning_model, usage
+        ),
+        billing_labels=finalize_labels,
+    )
     if generated_title:
         _repo.set_session_title(session_id, generated_title)
         log.info("session_title_generated", session=session_id, title=generated_title)
     utterances = [u.model_dump(mode="json") for u in _repo.list_utterances(session_id)]
-    generated_summary = generate_conversation_summary(utterances)
+    generated_summary = generate_conversation_summary(
+        utterances,
+        usage_hook=lambda usage: recorder.record(
+            COMPONENT_SUMMARY, settings.gemini_reasoning_model, usage
+        ),
+        billing_labels=finalize_labels,
+    )
     if generated_summary:
         _repo.set_session_summary(session_id, generated_summary)
         log.info("session_summary_generated", session=session_id, chars=len(generated_summary))

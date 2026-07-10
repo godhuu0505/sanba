@@ -11,10 +11,12 @@ summary is also indexed (and returned) so the agent can seed it as premise.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Protocol
 
 import structlog
+from sanba_shared.analytics import TokenUsage
 
 from .github_app import (
     IndexFile,
@@ -83,11 +85,21 @@ def fetch_and_index_repo(
     max_files: int,
     max_total_bytes: int,
     max_file_bytes: int,
+    usage_hook: Callable[[TokenUsage], None] | None = None,
 ) -> IndexOutcome:
     """repo を取得・秘匿レダクト・chunk して session の grounding 索引へ入れる。
 
     返り値の `summary` は agent の初期シード用（SessionMeta 経由で渡す土台）。
+    `usage_hook` には索引全体の埋め込みトークン集計を 1 回で渡す（ADR-0061。ファイル毎に
+    イベントを割らず、repo 索引 1 回 = 1 `ai_usage` に束ねる）。
     """
+    embed_usage = TokenUsage()
+
+    def _collect(usage: TokenUsage) -> None:
+        nonlocal embed_usage
+        embed_usage = embed_usage.add(usage)
+
+    collect = _collect if usage_hook is not None else None
     tree = fetcher.list_tree(installation_id, repo, commit_sha)
     selection = select_indexable_files(
         tree.files,
@@ -128,6 +140,7 @@ def fetch_and_index_repo(
         session_id,
         chunk_text(redact_secrets(summary)),
         repo_source_name(repo, branch, commit_sha, "_summary"),
+        usage_hook=collect,
     )
 
     issues_failed = False
@@ -145,6 +158,7 @@ def fetch_and_index_repo(
             session_id,
             chunk_text(redact_secrets(text)),
             repo_source_name(repo, branch, commit_sha, f"_issue_{issue.get('number')}"),
+            usage_hook=collect,
         )
 
     fetch_failures = 0
@@ -161,7 +175,10 @@ def fetch_and_index_repo(
             continue
         tagged = [f"[{repo} {f.path}]\n{c}" for c in chunks]
         indexed_chunks += indexer.index_context(
-            session_id, tagged, repo_source_name(repo, branch, commit_sha, f.path)
+            session_id,
+            tagged,
+            repo_source_name(repo, branch, commit_sha, f.path),
+            usage_hook=collect,
         )
         indexed_files += 1
 
@@ -172,6 +189,11 @@ def fetch_and_index_repo(
         or fetch_failures > 0
         or issues_failed
     )
+    if usage_hook is not None and not embed_usage.is_empty:
+        try:
+            usage_hook(embed_usage)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("repo_index_usage_hook_failed", repo=repo, error=str(exc))
     failed = bool(selection.selected) and indexed_files == 0
     outcome = IndexOutcome(
         indexed_files=indexed_files,

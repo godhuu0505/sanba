@@ -11,6 +11,8 @@ import contextlib
 
 import structlog
 from fastapi import FastAPI, HTTPException, Request
+from sanba_shared.analytics import UsageRecorder
+from sanba_shared.analytics_sink import AnalyticsConfig, AnalyticsSink
 from sanba_shared.grounding import ContextIndexer
 from sanba_shared.pii import mask_pii
 from sanba_shared.realtime import STAGE_DONE, AnalysisPublisher, build_sender
@@ -27,10 +29,68 @@ app = FastAPI(title="sanba-worker")
 setup_observability(app)
 _tracer = get_tracer(__name__)
 
+
+def ensure_grounding_backend(indexer: ContextIndexer, *, required: bool) -> None:
+    """起動時に grounding バックエンドの設定を検証する（ADR-0064 決定6）。
+
+    `REQUIRE_ELASTICSEARCH=true`（本番）のとき、ES 未設定・不通なら fail-fast で
+    起動を止め、解析結果の索引がプロセス内メモリへサイレントに落ちた構成を検出する。
+    未設定時は従来どおり in-memory 縮退を許し、既存アラートのフィルタ文字列
+    （`elasticsearch_unavailable_using_memory`）で観測に載せる。
+    """
+    if not indexer.is_memory:
+        return
+    if required:
+        raise RuntimeError(
+            "REQUIRE_ELASTICSEARCH is set but Elasticsearch is not reachable; "
+            "set ELASTICSEARCH_URL correctly or unset REQUIRE_ELASTICSEARCH"
+        )
+    log.warning("elasticsearch_unavailable_using_memory", reason="not_configured")
+
+
 _repo = SessionRepository()
 _indexer = ContextIndexer(settings.grounding_config(), masker=mask_pii)
+ensure_grounding_backend(_indexer, required=settings.require_elasticsearch)
+_analytics_sink = AnalyticsSink(
+    AnalyticsConfig(
+        elasticsearch_url=settings.elasticsearch_url,
+        elasticsearch_api_key=settings.elasticsearch_api_key,
+    )
+)
 
 MAX_TASK_ATTEMPTS = 5
+
+
+def _usage_recorder(session_id: str) -> UsageRecorder:
+    """タスクのセッション文脈を束ねた ai_usage recorder（ADR-0061）。
+
+    排出と同時に `sessions/{id}.ai_cost` へ加算し、agent の `session_summary` に合流させる。
+    メタ読み取り失敗は文脈なし recorder に倒し、解析本処理を止めない。
+    """
+    meta = None
+    try:
+        meta = _repo.get_session(session_id)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("analytics_recorder_meta_failed", session=session_id, error=str(exc))
+
+    def _increment(component: str, payload: dict) -> None:  # type: ignore[type-arg]
+        tokens = payload.get("tokens", {})
+        _repo.add_session_ai_cost(
+            session_id,
+            component=component,
+            usd=float(payload.get("estimated_usd", 0.0)),
+            input_tokens=int(tokens.get("input_tokens", 0)),
+            output_tokens=int(tokens.get("output_tokens", 0)),
+            requests=int(payload.get("requests", 1)),
+        )
+
+    return UsageRecorder(
+        _analytics_sink,
+        session_id,
+        product_id=meta.product_id if meta is not None else None,
+        interview_mode=meta.interview_mode.value if meta is not None else None,
+        on_record=_increment,
+    )
 
 
 async def _publish_visual(session_id: str, asset_id: str, result: TaskResult) -> None:
@@ -86,6 +146,7 @@ async def analyze_video_task(req: Request) -> dict[str, str]:
                 indexer=_indexer,
                 settings=settings,
                 fetch_bytes=gcs_fetch_bytes,
+                usage_recorder=_usage_recorder(payload.session_id),
             )
             if span is not None:
                 span.set_attribute("sanba.result", result.status)
