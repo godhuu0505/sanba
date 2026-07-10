@@ -1806,7 +1806,7 @@ class SANBAAgent(Agent):
                 result_nr["stop"] = True
                 result_nr["guidance"] = (
                     "propose_session_end の再試行をやめ、音声で会話を続けてください。"
-                    "要件がまだ 0 件です。参加者から具体的な話を引き出してから再度提案してください。"
+                    "要件がまだ 0 件です。参加者から具体的な話を引き出してから再提案してください。"
                 )
             return result_nr
         self._end_proposed = True
