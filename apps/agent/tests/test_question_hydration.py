@@ -172,6 +172,24 @@ async def test_same_prompt_reask_same_turn_is_skipped() -> None:
     assert transport.sent == [], "再掲は publish しない（画面の問いピンを揺らさない）"
     assert r2["asked"] == r1["asked"]
     assert "note" in r2 and "提示済み" in r2["note"]
+    assert "stop" not in r2, "1回目の再掲はまだ打ち切らない"
+
+
+@pytest.mark.asyncio
+async def test_same_prompt_repeat_circuit_breaks() -> None:
+    """同一問いの再掲が続いたら stop=True で打ち切る（sess-29dc6e7e の同一問い33連発対策）。"""
+    agent, _repo, transport, _pub = _agent()
+    ask = type(agent).ask_question.__wrapped__
+    await ask(agent, None, "Q1?")
+    await ask(agent, None, "Q1?")
+    transport.sent.clear()
+    r3 = await ask(agent, None, "Q1?")
+    assert r3.get("stop") is True
+    assert transport.sent == []
+
+    agent.record_utterance("participant", "回答します")
+    r4 = await ask(agent, None, "Q2?")
+    assert "stop" not in r4, "新しいターンでは再び問いを立てられる"
 
 
 @pytest.mark.asyncio
@@ -206,3 +224,27 @@ async def test_same_prompt_with_options_added_still_supersedes() -> None:
     assert types == ["question.asked", "question.cleared", "question.asked"]
     assert r2["asked"] != r1["asked"]
     assert agent.current_question_id == r2["asked"]
+
+
+@pytest.mark.asyncio
+async def test_current_question_hydrates_on_new_process() -> None:
+    """新プロセスがセッションを引き継ぐとき、未回答の金枠ピンの current 追跡も復元する。"""
+    repo = SessionRepository()
+    repo._client = None
+    repo.save_current_question(
+        "s1", {"id": "req_abc-8", "prompt": "並び順は？", "options": []}, asked_seq=12
+    )
+    agent = SANBAAgent(session_id="s1", repo=repo, grounding=GroundingStore(), publisher=None)
+    assert agent.current_question_id == "req_abc-8"
+    assert agent._questions["req_abc-8"] == "並び順は？"
+    assert agent._question_seq == 8, "採番は引き継いだ id の連番から続ける"
+
+
+@pytest.mark.asyncio
+async def test_cleared_current_question_is_not_hydrated() -> None:
+    repo = SessionRepository()
+    repo._client = None
+    repo.save_current_question("s1", {"id": "q1", "prompt": "済みの問い"}, asked_seq=3)
+    repo.clear_current_question("s1", "q1", cleared_seq=4)
+    agent = SANBAAgent(session_id="s1", repo=repo, grounding=GroundingStore(), publisher=None)
+    assert agent.current_question_id is None

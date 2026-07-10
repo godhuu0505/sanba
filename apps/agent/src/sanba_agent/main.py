@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import os
+import re
 import threading
 import time
 from collections.abc import Awaitable, Callable
@@ -363,7 +364,7 @@ _RESOLVE_INQUIRY_KINDS = (
 )
 RESOLVE_INQUIRY_NO_MATCH_LIMIT = 3
 SESSION_END_DECLINE_LIMIT = 2
-ASK_QUESTION_SUPERSEDE_LIMIT = 2
+ASK_QUESTION_REASK_LIMIT = 2
 ADD_INQUIRY_CONFIDENCE = 0.9
 
 PREFETCH_TIMEOUT_SECONDS = 5.0
@@ -450,7 +451,7 @@ class SANBAAgent(Agent):
         self._utterance_seq = 0
         self._transcript: list[str] = self._hydrate_transcript()
         self._pending_user_uid: str | None = None
-        self._agent_utterance_seq = 0
+        self._agent_utterance_seq = publisher.seq if publisher is not None else 0
         self._question_seq = 0
         self._questions: dict[str, str] = {}
         self._current_question_id: str | None = None
@@ -462,7 +463,8 @@ class SANBAAgent(Agent):
         self._resolve_no_match_streak = 0
         self._end_declined_streak = 0
         self._end_forced = False
-        self._question_supersedes_in_turn = 0
+        self._question_reasks_in_turn = 0
+        self._hydrate_current_question()
         self._injected_assets: set[str] = set()
         self._publish_tasks: set[asyncio.Task[Any]] = set()
         self._persist_tasks: set[asyncio.Task[Any]] = set()
@@ -604,6 +606,35 @@ class SANBAAgent(Agent):
         log.info("transcript_hydrated", session=self._session_id, utterances=len(utterances))
         return [f"[u{i}] {u.speaker}: {u.text}" for i, u in enumerate(utterances, start=1)]
 
+    def _hydrate_current_question(self) -> None:
+        """永続化済みの未回答質問（金枠ピン）の current 追跡を引き継ぐ（ADR-0020 §5-8）。
+
+        web は `questions/current` からピンを復元し続けるため、agent 側の
+        `_current_question_id` を合わせないと、引き継ぎ後の回答で
+        `clear_current_question` が呼ばれず回答済みのピンが画面に残り続ける。
+        採番 `_question_seq` は id 末尾の連番から続け、同一プロンプト再掲時の
+        id 衝突を防ぐ。読み取り失敗は fail-soft（未提示扱いで会話は成立させる）。
+        """
+        try:
+            doc = self._repo.get_current_question(self._session_id)
+        except Exception as exc:  # noqa: BLE001
+            log.warning(
+                "current_question_hydration_failed", session=self._session_id, error=str(exc)
+            )
+            return
+        if doc is None:
+            return
+        question_id = str(doc.get("id") or "")
+        prompt = str(doc.get("prompt") or "")
+        if not question_id or not prompt:
+            return
+        self._questions[question_id] = prompt
+        self._current_question_id = question_id
+        self._current_question_has_options = bool(doc.get("options"))
+        if (match := re.search(r"-(\d+)$", question_id)) is not None:
+            self._question_seq = int(match.group(1))
+        log.info("current_question_hydrated", session=self._session_id, id=question_id)
+
     def _next_inquiry_seq(self) -> int:
         """ツリーのノード採番（created_seq/resolved_seq）を単調増加させる。"""
         self._inquiry_seq += 1
@@ -701,7 +732,7 @@ class SANBAAgent(Agent):
         if speaker == "participant":
             self._user_turn += 1
             self._end_declined_streak = 0
-            self._question_supersedes_in_turn = 0
+            self._question_reasks_in_turn = 0
             self._start_prefetch(text)
             if self._analysis_scheduler.note_utterance():
                 self._start_background_analysis()
@@ -1101,26 +1132,41 @@ class SANBAAgent(Agent):
             and self._current_question_id is not None
             and self._questions.get(self._current_question_id) == prompt
         ):
-            log.info(
-                "question_repeat_skipped",
-                session=self._session_id,
-                current=self._current_question_id,
-                turn=self._user_turn,
-            )
-            return {
+            self._question_reasks_in_turn += 1
+            circuit_break = self._question_reasks_in_turn >= ASK_QUESTION_REASK_LIMIT
+            if circuit_break:
+                log.warning(
+                    "question_repeat_circuit_break",
+                    session=self._session_id,
+                    current=self._current_question_id,
+                    turn=self._user_turn,
+                    reasks=self._question_reasks_in_turn,
+                )
+            else:
+                log.info(
+                    "question_repeat_skipped",
+                    session=self._session_id,
+                    current=self._current_question_id,
+                    turn=self._user_turn,
+                    reasks=self._question_reasks_in_turn,
+                )
+            result: dict[str, Any] = {
                 "asked": self._current_question_id,
                 "note": (
                     "同じ問いは提示済みです。ask_question を再度呼ばず、"
                     "音声で参加者の回答を待ってください。"
                 ),
             }
-        if superseded_in_turn and self._question_supersedes_in_turn >= ASK_QUESTION_SUPERSEDE_LIMIT:
+            if circuit_break:
+                result["stop"] = True
+            return result
+        if superseded_in_turn and self._question_reasks_in_turn >= ASK_QUESTION_REASK_LIMIT:
             log.warning(
                 "question_supersede_circuit_break",
                 session=self._session_id,
                 current=self._current_question_id,
                 turn=self._user_turn,
-                supersedes=self._question_supersedes_in_turn,
+                reasks=self._question_reasks_in_turn,
             )
             return {
                 "asked": self._current_question_id,
@@ -1147,7 +1193,7 @@ class SANBAAgent(Agent):
         if superseded_in_turn:
             superseded = self._current_question_id
             assert superseded is not None
-            self._question_supersedes_in_turn += 1
+            self._question_reasks_in_turn += 1
             log.info(
                 "question_superseded",
                 session=self._session_id,
@@ -1185,7 +1231,7 @@ class SANBAAgent(Agent):
                     error=str(exc),
                 )
         log.info("question_asked", session=self._session_id, id=question_id, options=len(opts))
-        result: dict[str, Any] = {"asked": question_id}
+        result = {"asked": question_id}
         if superseded_in_turn:
             result["note"] = (
                 "同一ターンで複数の問いを立てました。前の問いは差し替えました。"
@@ -1707,6 +1753,9 @@ class SANBAAgent(Agent):
             log.info("session_complete_declined_open", session=self._session_id, open=open_count)
             return {"completed": False, "open_count": open_count, "reason": "open_inquiries"}
         self._completed = True
+        if self._end_forced and open_count > 0:
+            self._repo.set_session_end_forced(self._session_id)
+            log.info("session_end_forced_persisted", session=self._session_id, open=open_count)
         if self._publisher is not None:
             contradictions_resolved, gaps_found = self._inquiry_summary_counts()
             await self._publisher.session_completed(

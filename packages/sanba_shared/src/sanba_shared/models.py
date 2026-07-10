@@ -348,6 +348,7 @@ class SessionMeta(BaseModel):
     goal: str | None = None
     goal_detail: str | None = None
     status: str = "active"
+    end_forced_by_user: bool = False
     created_at: datetime = Field(default_factory=_now)
     finalized_at: datetime | None = None
     finalized_count: int | None = None

@@ -365,6 +365,10 @@ async def test_propose_session_end_user_requested_overrides_open_inquiries() -> 
     completed = await complete(agent, None)
     assert completed["completed"] is True
     assert any(t["event"]["type"] == "session.completed" for t in transport.sent)
+    meta = agent._repo.get_session("s1")
+    assert meta is not None and meta.end_forced_by_user is True, (
+        "強制終了は session 文書へ記録し、API finalize の gating を本人意思で通す"
+    )
 
 
 @pytest.mark.asyncio

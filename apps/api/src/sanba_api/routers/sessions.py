@@ -1066,7 +1066,9 @@ def finalize_session_requirements(
       - 未確定セッションは、終了ゲート対象の未解消ノード（open かつ
         kind∈{contradiction,gap,check}）が 1 件でも残るなら 409 で拒否する（HP8 判定の
         「未解消 0 件で確定可」をサーバ側でも担保。ADR-0059 の agent ゲートと同義。
-        直接 POST や古いクライアント状態を防ぐ）。
+        直接 POST や古いクライアント状態を防ぐ）。例外は `end_forced_by_user`
+        （agent の complete_session が参加者の明示的な終了要求を記録した場合）で、
+        本人意思による強制終了は未解消が残っていても確定を通す。
 
     ゲスト token（ADR-0032 決定4）は確定不可: ゲストセッションの要件の承認・保全は
     owner が管理画面で行う（承認 = TTL 解除は owner の意思に限る）。
@@ -1078,8 +1080,11 @@ def finalize_session_requirements(
     if existing.status == "finalized":
         return FinalizeResponse(finalized=True, confirmed_count=existing.finalized_count or 0)
     open_inquiries = InquiryTree.from_nodes(_repo.list_inquiry_nodes(session_id))
-    if open_inquiries.gating_open_count() > 0:
+    open_count = open_inquiries.gating_open_count()
+    if open_count > 0 and not existing.end_forced_by_user:
         raise HTTPException(status_code=409, detail="unresolved inquiries remain")
+    if open_count > 0:
+        log.info("finalize_with_forced_end", session=session_id, open=open_count)
     confirmed = _confirmed_requirements(session_id)
     confirmed_ids = [r["id"] for r in confirmed]
     labels = requirements_to_issue_labels(confirmed)

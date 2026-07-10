@@ -1680,6 +1680,22 @@ class SessionRepository:
             return
         self._mem_questions[session_id] = doc
 
+    def get_current_question(self, session_id: str) -> dict[str, Any] | None:
+        """未回答の現在質問ドキュメントを返す（tombstone / 未提示は None）。
+
+        worker のインスタンス入れ替え等で新プロセスがセッションを引き継ぐとき、
+        agent 側の current 追跡（`_current_question_id`）を web の金枠ピンと
+        合わせるために読む（ADR-0020 §5-8 の引き継ぎ経路）。
+        """
+        if self._client is not None:
+            snap = self._question_doc(session_id).get()
+            doc = snap.to_dict() if snap.exists else None
+        else:
+            doc = self._mem_questions.get(session_id)
+        if doc is None or doc.get("cleared"):
+            return None
+        return dict(doc)
+
     def clear_current_question(self, session_id: str, question_id: str, cleared_seq: int) -> bool:
         """回答済みの現在質問を tombstone 化する（ADR-0020 §5-3 / §5-7 / §5-9）。
 
@@ -1729,6 +1745,26 @@ class SessionRepository:
             return True
 
         return bool(_txn(self._client.transaction()))
+
+    def set_session_end_forced(self, session_id: str) -> None:
+        """参加者の明示要求による強制終了を session 文書へ記録する。
+
+        未解消の確認事項が残ったままでも参加者が終了を望んだ事実を正本に残し、
+        API の finalize gating（`gating_open_count > 0` を 409）を本人意思で
+        迂回できるようにする（agent の complete_session と対で使う）。
+        """
+        if self._client is not None:
+            (
+                self._client.collection("sessions")
+                .document(session_id)
+                .set({"end_forced_by_user": True}, merge=True)
+            )
+            return
+        meta = self._mem_sessions.get(session_id)
+        if meta is not None:
+            self._mem_sessions[session_id] = meta.model_copy(
+                update={"end_forced_by_user": True}
+            )
 
     def set_session_seq(self, session_id: str, seq: int) -> None:
         """セッションの適用済み最大 seq を保存する (ハイドレーション境界, 契約 §4)。"""

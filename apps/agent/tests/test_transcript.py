@@ -111,3 +111,19 @@ async def test_transcript_hydration_failure_is_fail_soft() -> None:
     repo.list_utterances = _boom  # type: ignore[assignment]
     agent = SANBAAgent(session_id="s1", repo=repo, grounding=GroundingStore())
     assert agent.transcript == []
+
+
+@pytest.mark.asyncio
+async def test_agent_utterance_ids_continue_from_publisher_seq_on_takeover() -> None:
+    """引き継ぎ後の SANBA 発話 id は publisher の起点 seq から続け、旧 a{n} と衝突させない。"""
+    repo = SessionRepository()
+    repo._client = None
+    transport = RecordingTransport()
+    pub = EventPublisher("s1", transport, start_seq=42)
+    agent = SANBAAgent(session_id="s1", repo=repo, grounding=GroundingStore(), publisher=pub)
+
+    agent.publish_agent_utterance("復旧しました。続きから伺います")
+    await _drain(agent)
+
+    finals = [s["event"] for s in transport.sent if s["event"]["type"] == "transcript.final"]
+    assert finals[0]["utterance_id"] == "a43", "旧プロセスが発行し得た a1..a42 と重ならない"
