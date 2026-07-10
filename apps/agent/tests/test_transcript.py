@@ -210,3 +210,49 @@ async def test_utterance_ids_stable_across_multiple_takeovers() -> None:
         "[u2] participant: 要望B",
         "[u3] participant: 要望C",
     ], "再引き継ぎ後も u{n} は参加者発話位置から採番され変化しない"
+
+
+@pytest.mark.asyncio
+async def test_record_user_final_normalizes_wakachigaki_stt() -> None:
+    agent, transport, repo = _agent()
+
+    agent.record_user_final("認証 は 無し で よく て 、 Cloud Run で 実行 し ます 。")
+    await _drain(agent)
+
+    expected = "認証は無しでよくて 、 Cloud Run で実行します 。"
+    finals = [s["event"] for s in transport.sent if s["event"]["type"] == "transcript.final"]
+    assert len(finals) == 1
+    assert finals[0]["text"] == expected
+    assert [u.text for u in repo.list_utterances("s1")] == [expected]
+    assert agent.transcript == [f"[u1] participant: {expected}"]
+
+
+@pytest.mark.asyncio
+async def test_partial_then_normalized_final_share_utterance_id() -> None:
+    agent, transport, _repo = _agent()
+
+    agent.publish_user_partial("認証 は")
+    uid = agent._pending_user_uid
+    assert uid is not None
+
+    agent.record_user_final("認証 は 無し で")
+    await _drain(agent)
+
+    finals = [s["event"] for s in transport.sent if s["event"]["type"] == "transcript.final"]
+    assert len(finals) == 1
+    assert finals[0]["utterance_id"] == uid
+    assert finals[0]["text"] == "認証は無しで"
+    assert agent._pending_user_uid is None
+
+
+@pytest.mark.asyncio
+async def test_record_user_final_skips_when_normalized_empty() -> None:
+    agent, transport, repo = _agent()
+
+    result = agent.record_user_final("　  ")
+    await _drain(agent)
+
+    assert result == ""
+    assert [s["event"] for s in transport.sent if s["event"]["type"] == "transcript.final"] == []
+    assert repo.list_utterances("s1") == []
+    assert agent.transcript == []

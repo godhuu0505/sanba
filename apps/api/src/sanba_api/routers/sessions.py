@@ -1188,6 +1188,36 @@ def finalize_session_requirements(
     return FinalizeResponse(finalized=True, confirmed_count=count)
 
 
+def _ensure_session_title(session: SessionMeta, confirmed: list[dict[str, Any]]) -> SessionMeta:
+    """起票時に、既定タイトルのままなら確定要件から標題を遅延生成して保存する（#482）。
+
+    タイトル生成は対話的 finalize でしか走らず、未解消 inquiry 等で auto-finalize（ADR-0056）に
+    倒れたセッションは既定 `要件インタビュー` のまま起票され、Issue 名と本文見出しがフォールバックに
+    なる。起票はユーザー起点の HTTP 呼び出しで退出猶予の制約が無いため、ここで生成して本文見出しと
+    Issue 標題の双方へ反映する。生成不可（認証なし/確定要件なし/失敗）なら fail-open で従来のまま。
+    """
+    title_stripped = (session.title or "").strip()
+    if title_stripped and title_stripped != DEFAULT_SESSION_TITLE:
+        return session
+    recorder = _analytics_recorder(session.id, meta=session)
+    generated = generate_requirement_title(
+        confirmed,
+        usage_hook=lambda usage: recorder.record(
+            COMPONENT_TITLE, settings.gemini_reasoning_model, usage
+        ),
+        billing_labels=billing_labels(session.id, recorder.product_id),
+    )
+    if not generated:
+        return session
+    try:
+        updated = _repo.set_session_title(session.id, generated)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("export_title_persist_failed", session=session.id, error=str(exc))
+        return session
+    log.info("export_title_generated", session=session.id, title=generated)
+    return updated or session
+
+
 def _export_appendix(session: SessionMeta, opts: ExportRequest) -> str:
     """起票本文末尾に付ける opt-in セクション（会話要約・参考資料 / P3・Q4）を組み立てる。
 
@@ -1261,6 +1291,7 @@ def _perform_export(
         log.warning("export_link_missing", session=session.id, repo=export_repo, sub=actor_sub)
         return ExportResponse(exported=False, reason="github not linked")
     confirmed = _finalized_snapshot_requirements(session)
+    session = _ensure_session_title(session, confirmed)
     product = _repo.get_product(session.product_id) if session.product_id else None
     template, _ = resolve_output_format(product, Audience.DEVELOPER)
     body = render_result_document(

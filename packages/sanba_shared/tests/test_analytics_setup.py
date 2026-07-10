@@ -8,6 +8,7 @@ from sanba_shared.analytics_setup import (
     PRICING_INDEX,
     ensure_event_stream_template,
     event_mappings,
+    is_serverless,
     setup_analytics,
 )
 
@@ -85,24 +86,56 @@ def test_setup_analytics_is_idempotent_and_full() -> None:
     assert {d["id"] for d in pricing_docs} == set(PRICING)
 
 
-class ServerlessIndices(FakeIndices):
-    def put_index_template(self, **kwargs: Any) -> None:
-        if "settings" in kwargs.get("template", {}):
-            raise RuntimeError(
-                "illegal_argument_exception: Settings [index.number_of_replicas]"
-                " are not available when running in serverless mode"
-            )
-        super().put_index_template(**kwargs)
+class FakeServerlessES(FakeES):
+    def info(self) -> dict[str, Any]:
+        return {"version": {"build_flavor": "serverless"}}
 
 
-def test_ensure_event_stream_template_falls_back_without_settings_on_serverless() -> None:
-    client = FakeES()
-    client.indices = ServerlessIndices()
+class FakeInfoRaisesES(FakeES):
+    def info(self) -> dict[str, Any]:
+        raise RuntimeError("action [cluster:monitor/main] is unauthorized")
+
+
+class FakeMalformedInfoES(FakeES):
+    def info(self) -> str:
+        return "not-a-dict"
+
+
+def test_is_serverless_detects_flavor_and_defaults_false() -> None:
+    assert is_serverless(FakeServerlessES()) is True
+    assert is_serverless(FakeES()) is False
+
+
+def test_is_serverless_falls_back_to_safe_side_when_info_fails() -> None:
+    assert is_serverless(FakeInfoRaisesES()) is True
+    assert is_serverless(FakeMalformedInfoES()) is True
+
+
+def test_ensure_event_stream_template_uses_safe_side_when_info_fails() -> None:
+    client = FakeInfoRaisesES()
     assert ensure_event_stream_template(client) is True
-    template = client.indices.templates[0]
-    assert template["name"] == ANALYTICS_INDEX_TEMPLATE
-    assert "settings" not in template["template"]
-    assert "mappings" in template["template"]
+    template = client.indices.templates[0]["template"]
+    assert "settings" not in template
+    assert template["lifecycle"]["data_retention"].endswith("d")
+
+
+def test_ensure_event_stream_template_serverless_omits_replicas_and_ilm() -> None:
+    client = FakeServerlessES()
+    assert ensure_event_stream_template(client) is True
+    template = client.indices.templates[0]["template"]
+    assert "settings" not in template
+    assert template["lifecycle"]["data_retention"].endswith("d")
+
+
+def test_setup_analytics_serverless_skips_ilm_and_uses_data_stream_lifecycle() -> None:
+    client = FakeServerlessES()
+    setup_analytics(client, retention_days=90)
+    assert client.ilm.policies == []
+    template = client.indices.templates[0]["template"]
+    assert "settings" not in template
+    assert template["lifecycle"]["data_retention"] == "90d"
+    assert client.indices.created_data_streams == [ANALYTICS_DATA_STREAM]
+    assert client.indices.created_indices == [PRICING_INDEX]
 
 
 def test_event_mappings_cover_core_fields() -> None:
@@ -115,18 +148,3 @@ def test_event_mappings_cover_core_fields() -> None:
     assert payload["efficiency"]["properties"]["usd_per_finalized_requirement"] == {
         "type": "double"
     }
-
-
-def test_put_index_template_reraises_unrelated_errors() -> None:
-    class BrokenIndices(FakeIndices):
-        def put_index_template(self, **kwargs: Any) -> None:
-            raise RuntimeError("connection refused")
-
-    client = FakeES()
-    client.indices = BrokenIndices()
-    try:
-        ensure_event_stream_template(client)
-    except RuntimeError as exc:
-        assert "connection refused" in str(exc)
-    else:
-        raise AssertionError("settings 起因でない失敗は握りつぶさず再送出する")
