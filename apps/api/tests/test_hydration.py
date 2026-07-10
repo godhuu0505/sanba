@@ -292,6 +292,21 @@ def test_finalize_rejects_when_unresolved_gating_inquiries_remain() -> None:
     assert meta.status != "finalized"
 
 
+def test_finalize_allows_open_inquiries_when_end_forced_by_user() -> None:
+    """参加者の明示要求で終了したセッションは未解消が残っていても確定できる（sess-29dc6e7e）。"""
+    from sanba_shared.models import InquiryKind, InquiryNode
+
+    created = client.post("/api/sessions", json={"roles": ["pm"], "consent_acknowledged": True})
+    sid = created.json()["session_id"]
+    _repo.save_inquiry_node(sid, InquiryNode(id="inq1", kind=InquiryKind.GAP, text="性能未確認"))
+    _repo.set_session_end_forced(sid)
+    res = client.post(f"/api/sessions/{sid}/finalize", headers=_auth(_token(sid)))
+    assert res.status_code == 200
+    meta = _repo.get_session(sid)
+    assert meta is not None
+    assert meta.status == "finalized"
+
+
 def test_finalize_allows_when_only_advisory_ambiguous_inquiries_remain() -> None:
     """ambiguous は advisory（終了ゲート対象外）で open でも確定を止めない（ADR-0059 ⑤）。"""
     from sanba_shared.models import InquiryKind, InquiryNode
