@@ -88,6 +88,8 @@ def main() -> int:
     out = {
         "totals": {
             "raw": (data.get("totals") or {}).get("raw"),
+            "verified": (data.get("totals") or {}).get("verified"),
+            "truncated": (data.get("totals") or {}).get("truncated", 0),
             "confirmed": len(confirmed),
             "p0": sum(1 for f in confirmed if sev(f) == "P0"),
             "p1": sum(1 for f in confirmed if sev(f) == "P1"),

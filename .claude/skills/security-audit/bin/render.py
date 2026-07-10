@@ -36,15 +36,20 @@ def bar(s):
     return esc(s).replace("|", "\\|")
 
 
+def cat_of(f):
+    c = (f.get("category") or "").strip()
+    return c if c else "?"
+
+
 def cats_present(conf):
-    return sorted(set(f.get("category", "?") for f in conf), key=lambda c: (c[0], c))
+    return sorted(set(cat_of(f) for f in conf), key=lambda c: (c[0], c))
 
 
 def matrix(conf, out):
     out.append("| 観点 | 説明 | P0 | P1 | P2 | 計 |")
     out.append("|---|---|--:|--:|--:|--:|")
     for c in cats_present(conf):
-        cf = [f for f in conf if f.get("category") == c]
+        cf = [f for f in conf if cat_of(f) == c]
         p0 = sum(1 for f in cf if sev(f) == "P0")
         p1 = sum(1 for f in cf if sev(f) == "P1")
         p2 = sum(1 for f in cf if sev(f) == "P2")
@@ -79,13 +84,15 @@ def cmd_reports(audit, units, targets, dest, head):
         grp = [f for f in conf if sev(f) == sv]
         L.append(f"## {label} — {len(grp)} 件\n")
         for c in cats_present(grp):
-            cf = [f for f in grp if f.get("category") == c]
+            cf = [f for f in grp if cat_of(f) == c]
             L.append(f"### 観点 {c}｜{CAT_LABEL.get(c, c)} — {len(cf)} 件\n")
             for f in cf:
                 L.append(
                     f"#### {f['_id']} `{f['file']}:{f.get('line')}` — {esc(f.get('title'))}"
                 )
-                L.append(f"- 観点/フレームワーク: {c} / {f.get('framework') or '-'}")
+                L.append(
+                    f"- 観点/フレームワーク: {c} / {esc(f.get('framework')) or '-'}"
+                )
                 L.append(f"- 事実: {esc(f.get('fact'))}")
                 L.append(f"- なぜ問題か: {esc(f.get('why'))}")
                 L.append(f"- 顕在化する条件: {esc(f.get('trigger'))}")
@@ -100,7 +107,7 @@ def cmd_reports(audit, units, targets, dest, head):
             f"#### U-{i:02d} `{f['file']}:{f.get('line')}` — {esc(f.get('title'))}"
         )
         L.append(
-            f"- 観点/フレームワーク: {f.get('category')} / {f.get('framework') or '-'}"
+            f"- 観点/フレームワーク: {esc(cat_of(f))} / {esc(f.get('framework')) or '-'}"
         )
         L.append(f"- 事実: {esc(f.get('fact'))}")
         L.append(f"- 検証判定の根拠: {esc((f.get('verdict') or {}).get('reasoning'))}")
@@ -190,7 +197,10 @@ def cmd_summary(audit, units, targets, dest, head):
     L.append(f"| 　└ P1 | {t['p1']} |")
     L.append(f"| 　└ P2 | {t['p2']} |")
     L.append(f"| 要確認（UNCERTAIN） | {t['uncertain']} |")
-    L.append(f"| 検証で棄却（REFUTED） | {t['refuted']} |\n")
+    L.append(f"| 検証で棄却（REFUTED） | {t['refuted']} |")
+    if t.get("truncated"):
+        L.append(f"| 未検証（単位上限で切り捨て） | {t['truncated']} |")
+    L.append("")
     L.append("## 観点 × 重大度 マトリクス（確定のみ）\n")
     matrix(conf, L)
     L.append("")
@@ -203,7 +213,7 @@ def cmd_summary(audit, units, targets, dest, head):
     L.append("| ID | 重大度 | ファイル:行 | 観点 | 指摘 |\n|---|---|---|---|---|")
     for f in [x for x in conf if sev(x) in ("P0", "P1")]:
         L.append(
-            f"| {f['_id']} | {sev(f)} | `{f['file']}:{f.get('line')}` | {f.get('category')} | {bar(f.get('title'))} |"
+            f"| {f['_id']} | {sev(f)} | `{f['file']}:{f.get('line')}` | {bar(cat_of(f))} | {bar(f.get('title'))} |"
         )
     L.append("")
     os.makedirs(dest, exist_ok=True)
@@ -222,7 +232,10 @@ def cmd_issue_body(audit, head, out):
     L.append(
         f"- 確定 **{t['confirmed']}** 件（P0 {t.get('p0', 0)} / P1 {t['p1']} / P2 {t['p2']}） / 要確認 {t['uncertain']} / 棄却 {t['refuted']}"
     )
-    L.append(f"- 生指摘 {t.get('raw')} 件を敵対的検証で絞り込み\n")
+    trunc = (
+        f"（うち {t['truncated']} 件は単位上限で未検証）" if t.get("truncated") else ""
+    )
+    L.append(f"- 生指摘 {t.get('raw')} 件を敵対的検証で絞り込み{trunc}\n")
     L.append("## 観点 × 重大度\n")
     matrix(conf, L)
     L.append("")
@@ -231,7 +244,7 @@ def cmd_issue_body(audit, head, out):
         L.append("## P0 追跡（緊急）\n")
         for f in p0:
             L.append(
-                f"- [ ] **{f['_id']}** `{f['file']}:{f.get('line')}` ({f.get('category')}/{f.get('framework') or '-'}) — {esc(f.get('title'))}"
+                f"- [ ] **{f['_id']}** `{f['file']}:{f.get('line')}` ({esc(cat_of(f))}/{esc(f.get('framework')) or '-'}) — {esc(f.get('title'))}"
             )
         L.append("")
     L.append("## P1 追跡\n")
@@ -243,7 +256,7 @@ def cmd_issue_body(audit, head, out):
     L.append("## P2 追跡\n")
     for f in [x for x in conf if sev(x) == "P2"]:
         L.append(
-            f"- [ ] {f['_id']} `{f['file']}:{f.get('line')}` ({f.get('category')}) — {esc(f.get('title'))}"
+            f"- [ ] {f['_id']} `{f['file']}:{f.get('line')}` ({esc(cat_of(f))}) — {esc(f.get('title'))}"
         )
     L.append("")
     body = "\n".join(L)
@@ -366,6 +379,18 @@ def main() -> int:
             raise SystemExit(
                 f"{args.what}: units.json と targets が不一致です（units に無い対象 {len(missing)} 件 / "
                 f"targets に無い unit ファイル {len(extra)} 件）。別実行の units/targets を混同していないか確認してください。"
+            )
+        finding_files = {
+            f.get("file")
+            for key in ("confirmed", "uncertain", "refuted")
+            for f in (audit.get(key) or [])
+        }
+        out_of_target = finding_files - target_set
+        if out_of_target:
+            sample = ", ".join(sorted(x for x in out_of_target if x)[:5])
+            raise SystemExit(
+                f"{args.what}: audit.json に監査対象外ファイルの finding が {len(out_of_target)} 件あります（例: {sample}）。"
+                "別実行/別 HEAD の audit.json を渡していないか確認してください。"
             )
 
     if args.what == "reports":

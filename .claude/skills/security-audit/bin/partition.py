@@ -118,8 +118,11 @@ def main() -> int:
     repo = os.path.abspath(args.repo)
     os.makedirs(args.out, exist_ok=True)
     tracked = subprocess.run(
-        ["git", "-C", repo, "ls-files"], capture_output=True, text=True, check=True
-    ).stdout.splitlines()
+        ["git", "-C", repo, "ls-files", "-z"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.split("\0")
     targets = sorted(f for f in tracked if f.strip() and is_target(f))
     with open(os.path.join(args.out, "audit_targets.txt"), "w") as fh:
         fh.write("\n".join(targets) + "\n")
