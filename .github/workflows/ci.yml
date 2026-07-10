@@ -88,12 +88,12 @@ jobs:
       - run: uv run mypy src # 型を quality-gate に実在させる (#58)
       - run: uv run pytest -q
 
-  elastic-agent:
-    name: elastic-agent (lint + test)
+  external-agents:
+    name: external-agents (lint + test)
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: elastic-agent
+        working-directory: external-agents
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: astral-sh/setup-uv@f98e06938123ccabd21905ea5d0069192241f9f1 # v8.3.1
@@ -173,7 +173,7 @@ jobs:
   # docker は重いため集約対象外 (web の npm run build で build は担保済み)。
   quality-gate:
     name: quality-gate
-    needs: [no-comments, shared, agent, api, worker, elastic-agent, four-keys, web]
+    needs: [no-comments, shared, agent, api, worker, external-agents, four-keys, web]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:
@@ -185,4 +185,4 @@ jobs:
             echo "::error::必須ジョブが失敗/キャンセル/スキップされました"
             exit 1
           fi
-          echo "全必須ジョブ (no-comments/shared/agent/api/worker/elastic-agent/four-keys/web) が成功"
+          echo "全必須ジョブ (no-comments/shared/agent/api/worker/external-agents/four-keys/web) が成功"

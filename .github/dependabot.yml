@@ -16,6 +16,14 @@ updates:
       python-deps:
         patterns: ["*"]
 
+  - package-ecosystem: pip
+    directory: /external-agents
+    schedule:
+      interval: weekly
+    groups:
+      python-deps:
+        patterns: ["*"]
+
   - package-ecosystem: npm
     directory: /apps/web
     schedule:

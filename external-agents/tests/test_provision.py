@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from sanba_elastic_agent.definitions import load_definitions
-from sanba_elastic_agent.provision import plan_provision
+from sanba_external_agents.elastic.catalog import load_definitions
+from sanba_external_agents.elastic.provision import plan_provision
 
 KIBANA = "https://kb.example.com"
 
