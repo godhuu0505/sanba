@@ -24,6 +24,9 @@ updates:
       python-deps:
         patterns: ["*"]
 
+  # typescript 7（Go ネイティブ実装）は typescript-eslint（peer: <6.1.0）と
+  # Next.js 16 の build worker が未対応で CI が落ちるため、対応が揃うまで
+  # major 更新を ignore する（PR #485 の失敗要因）。
   - package-ecosystem: npm
     directory: /apps/web
     schedule:
@@ -31,6 +34,9 @@ updates:
     groups:
       npm-deps:
         patterns: ["*"]
+    ignore:
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: github-actions
     directory: /
