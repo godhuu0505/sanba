@@ -1,10 +1,11 @@
-"""SANBA <-> Elastic の結合面（seam）の契約: エンドポイント URL の純粋な組み立て（ADR-0063）。
+"""Elastic Agent Builder のエンドポイント URL 契約: 純粋な組み立て（ADR-0063）。
 
-Elastic Agent Builder が公開する標準面に限定する:
+Kibana Agent Builder が公開する REST パス（`api/agent_builder/*`）に固有なので Elastic プロバイダー
+アダプタ配下に置く（プロバイダー非依存なのは `..a2a_client` の JSON-RPC 部品のみ）:
   - A2A（エージェント間）: agent card と message 実行
   - MCP（ツール/データ）: ツール公開エンドポイント
-ネットワークに触れない純関数なので単体テストで固定する。エンジンを自前実装に差し替える場合も、
-同じパス規約を満たす限りこの契約は不変。
+ネットワークに触れない純関数なので単体テストで固定する。将来 AWS / Google ADK 等を足すときは、
+各プロバイダーの API パスに応じた同種の contract を各アダプタ配下に置く。
 """
 
 from __future__ import annotations

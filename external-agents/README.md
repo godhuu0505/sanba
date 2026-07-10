@@ -19,19 +19,20 @@ seam（`contract` / `a2a_client`）を上位に置き、プロバイダー固有
 
 ## この境界が持つもの / 持たないもの
 
-- 持つ: プロバイダー非依存の A2A/MCP seam（契約の純関数・A2A 部品）と、プロバイダー固有アダプタ
-  （宣言的 agent/tool 定義・冪等プロビジョニング・A2A クライアント）。
+- 持つ: **真にプロバイダー非依存**な A2A 部品（`a2a_client`: JSON-RPC 2.0 の組み立て/応答解析）と、
+  プロバイダー固有アダプタ（エンドポイント URL 契約・宣言的 agent/tool 定義・冪等プロビジョニング・
+  A2A クライアント）。
 - 持たない: エージェント runtime そのもの。Agent Builder（GA プロダクト）を作り直さない
-  （「薄いエージェント」禁止・車輪の再発明回避）。プロバイダーは seam の背後で差し替え可能。
+  （「薄いエージェント」禁止・車輪の再発明回避）。プロバイダーはサブパッケージ差し替えで交換可能。
 
 ## 構成
 
 ```
 external-agents/
   src/sanba_external_agents/
-    contract.py           A2A/MCP エンドポイント URL の純関数（プロバイダー非依存）
-    a2a_client.py         A2A の組み立て/応答解析の純関数（プロバイダー非依存）
+    a2a_client.py         A2A の組み立て/応答解析の純関数（プロバイダー非依存な seam）
     elastic/              Elastic Agent Builder プロバイダーアダプタ
+      contract.py         Kibana Agent Builder の URL 契約（api/agent_builder/*・kibana_url）
       config.py           env 設定（ELASTIC_AGENT_*）。既定 OFF・未設定は no-op 縮退
       client.py           A2A 委譲クライアント（fail-soft）
       catalog.py          宣言的定義の読み込み・検証
@@ -41,7 +42,9 @@ external-agents/
   tests/                  ネットワーク非依存の単体テスト
 ```
 
-将来のプロバイダーは `elastic/` と同階層に `aws/`・`google_adk/` を並べるだけ。上位の seam は不変。
+エンドポイント URL 契約は各プロバイダーの API パスに固有（Kibana は `api/agent_builder/*`）なので
+`elastic/` 配下に置く。将来のプロバイダーは `elastic/` と同階層に `aws/`・`google_adk/` を並べ、
+その配下に各社の contract を持つ。上位の `a2a_client` は不変。
 
 ## 安全側の既定（ADR-0003 / ADR-0007 の流儀）
 

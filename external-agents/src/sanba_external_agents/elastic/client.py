@@ -17,8 +17,8 @@ import urllib.request
 import structlog
 
 from ..a2a_client import DelegationResult, build_message_send, extract_text
-from ..contract import a2a_message_url, require_http_url
 from .config import ElasticAgentSettings, settings
+from .contract import a2a_message_url, require_http_url
 
 log = structlog.get_logger(__name__)
 

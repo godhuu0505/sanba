@@ -113,13 +113,16 @@ ADR-0050 の系譜で本 ADR に記録）。
 プロバイダー固有アダプタをサブパッケージに隔離**する（「汎用名でプロバイダーを隠す」のではなく
 「汎用 seam + プロバイダー明示」がプロバイダー固定を本当に避ける形）:
 
-- **プロバイダー非依存の seam**（`src/sanba_external_agents/`）: `contract.py`（A2A/MCP エンドポイント
-  URL の純関数）、`a2a_client.py`（A2A の組み立て/応答解析の純関数）。A2A/MCP はオープン標準なので共通。
-- **プロバイダー固有アダプタ**（`src/sanba_external_agents/elastic/`）: `config.py`（`ELASTIC_AGENT_*`）、
-  `client.py`（A2A 委譲クライアント）、`provision.py`（Agent Builder へ冪等 upsert。ADR-0061
-  `analytics_setup.py` と同じ「存在確認 → 作成/更新」+ fail-soft + urllib の流儀）、`catalog.py` +
-  `definitions/`（agent・tool を JSON で版管理。provision の原本）、`sample-data/`（外部要件ファイル例）。
-- 将来のプロバイダーは `elastic/` と同階層に `aws/`・`google_adk/` を並べる。
+- **プロバイダー非依存の seam**（`src/sanba_external_agents/`）: `a2a_client.py`（A2A の JSON-RPC 2.0
+  `message/send` 組み立てと応答解析の純関数）。A2A はオープン標準なのでプロバイダー横断で共通。
+- **プロバイダー固有アダプタ**（`src/sanba_external_agents/elastic/`）: `contract.py`（エンドポイント
+  URL 契約。Kibana Agent Builder の `api/agent_builder/*`・`kibana_url`・space に固有なので**汎用扱い
+  しない**）、`config.py`（`ELASTIC_AGENT_*`）、`client.py`（A2A 委譲クライアント）、`provision.py`
+  （Agent Builder へ冪等 upsert。ADR-0061 `analytics_setup.py` と同じ「存在確認 → 作成/更新」+ fail-soft
+  + urllib の流儀）、`catalog.py` + `definitions/`（agent・tool を JSON で版管理。provision の原本）、
+  `sample-data/`（外部要件ファイル例）。
+- 将来のプロバイダーは `elastic/` と同階層に `aws/`・`google_adk/` を並べ、その配下に各社の URL 契約を
+  持つ（エンドポイントパスはプロバイダーごとに異なるため、汎用化するのは A2A 部品のみ）。
 
 **エージェント runtime の自作はしない**（Agent Builder の作り直しは「薄いエージェント」アンチパターン
 かつ車輪の再発明）。境界ドキュメントは `README.md` と本 ADR。

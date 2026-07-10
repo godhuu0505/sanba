@@ -15,9 +15,9 @@ from dataclasses import dataclass
 
 import structlog
 
-from ..contract import require_http_url, root_url
 from .catalog import AgentDefinition, ToolDefinition, load_definitions
 from .config import ElasticAgentSettings
+from .contract import require_http_url, root_url
 
 log = structlog.get_logger(__name__)
 

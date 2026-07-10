@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from sanba_external_agents.contract import (
+from sanba_external_agents.elastic.contract import (
     a2a_agent_card_url,
     a2a_message_url,
     converse_url,
