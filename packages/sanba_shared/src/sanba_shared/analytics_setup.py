@@ -99,12 +99,6 @@ def event_mappings() -> dict[str, Any]:
 
 
 def is_serverless(client: Any) -> bool:
-    """対象クラスタが Elasticsearch Serverless かを判定する（判定不能なら False）。
-
-    Serverless は `index.number_of_replicas` も ILM も設定できず、指定すると 400 で弾かれる。
-    `GET /`（`client.info()`）の `version.build_flavor == "serverless"` で見分け、
-    template 構築時に replica/ILM を落として data stream lifecycle へ切り替える。
-    """
     info = getattr(client, "info", None)
     if not callable(info):
         return False
@@ -149,7 +143,6 @@ def ensure_event_stream_template(client: Any) -> bool:
 
     アプリの ES API key が template 権限を持たない環境でも fail-soft で動くよう、
     `AnalyticsSink` の初期化から呼ぶ軽量経路。ILM 付きの全量は `setup_analytics` で行う。
-    Serverless では replica/ILM を落とし、retention は data stream lifecycle で持たせる。
     """
     if client.indices.exists_index_template(name=ANALYTICS_INDEX_TEMPLATE):
         return False
@@ -205,11 +198,7 @@ def seed_pricing_index(client: Any) -> int:
 
 
 def setup_analytics(client: Any, *, retention_days: int = DEFAULT_ANALYTICS_RETENTION_DAYS) -> None:
-    """ILM・index template・データストリーム・単価 index を冪等に整える（ops 用の全量経路）。
-
-    Serverless では ILM が使えないため、retention は index template の data stream lifecycle
-    （`data_retention`）に載せ、ILM ポリシー投入はスキップする。
-    """
+    """ILM・index template・データストリーム・単価 index を冪等に整える（ops 用の全量経路）。"""
     serverless = is_serverless(client)
     if not serverless:
         put_ilm_policy(client, retention_days)
