@@ -76,3 +76,20 @@ def test_fails_open_when_generation_returns_none(monkeypatch: pytest.MonkeyPatch
     updated = sess._ensure_session_title(session, [{"status": "confirmed", "statement": "x"}])
 
     assert updated.title == DEFAULT_SESSION_TITLE
+
+
+def test_generates_title_when_default_with_trailing_space(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[list[dict[str, object]]] = []
+
+    def fake_gen(requirements: list[dict[str, object]], **_: object) -> str:
+        calls.append(requirements)
+        return "在庫アプリの通知要件"
+
+    monkeypatch.setattr(sess, "generate_requirement_title", fake_gen)
+    session = _seed("sess-4", DEFAULT_SESSION_TITLE + " ")
+    confirmed = [{"status": "confirmed", "statement": "通知を出す"}]
+
+    updated = sess._ensure_session_title(session, confirmed)
+
+    assert updated.title == "在庫アプリの通知要件"
+    assert calls == [confirmed]

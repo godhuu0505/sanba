@@ -170,6 +170,7 @@ def test_issue_title_is_not_double_prefixed() -> None:
     from sanba_shared.result_document import issue_title
 
     assert issue_title("SANBA: 既に付いている", "sess-1") == "SANBA: 既に付いている"
+    assert issue_title("SANBA:スペースなし", "sess-1") == "SANBA:スペースなし"
 
 
 def test_build_title_prompt_lists_only_confirmed_statements() -> None:

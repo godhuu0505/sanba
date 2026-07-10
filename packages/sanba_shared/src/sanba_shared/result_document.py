@@ -44,7 +44,7 @@ def issue_title(session_title: str, session_id: str) -> str:
     title = (session_title or "").strip()
     if not title or title == DEFAULT_SESSION_TITLE:
         title = f"要件定義 {session_id}"
-    if title.startswith(ISSUE_TITLE_PREFIX):
+    if title.startswith("SANBA:"):
         return title
     return f"{ISSUE_TITLE_PREFIX}{title}"
 

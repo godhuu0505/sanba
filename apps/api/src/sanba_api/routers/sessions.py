@@ -1191,7 +1191,8 @@ def _ensure_session_title(session: SessionMeta, confirmed: list[dict[str, Any]])
     なる。起票はユーザー起点の HTTP 呼び出しで退出猶予の制約が無いため、ここで生成して本文見出しと
     Issue 標題の双方へ反映する。生成不可（認証なし/確定要件なし/失敗）なら fail-open で従来のまま。
     """
-    if (session.title or "").strip() and session.title != DEFAULT_SESSION_TITLE:
+    title_stripped = (session.title or "").strip()
+    if title_stripped and title_stripped != DEFAULT_SESSION_TITLE:
         return session
     recorder = _analytics_recorder(session.id, meta=session)
     generated = generate_requirement_title(
