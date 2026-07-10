@@ -81,11 +81,13 @@ python3 $B summary --audit "$WORK/audit.json" --units "$WORK/units.json" --targe
 python3 $B issue-body --audit "$WORK/audit.json" --head "$(git rev-parse --short HEAD)" --out "$WORK/issue.md"
 NNNN=$(printf '%04d' $(( 10#$(ls docs/adr/ | grep -Eo '^[0-9]{4}' | sort -n | tail -1) + 1 )))
 python3 $B adr --audit "$WORK/audit.json" --next "$NNNN" --adr-dir docs/adr --head "$(git rev-parse --short HEAD)"
+python3 scripts/gen-docs-index.py   # docs/adr/README.md 索引を再生成（CI docs-check 対策）
 ```
 
-- issue 本文: 確定指摘の事実サマリー＋観点×重大度マトリクス＋P1/P2 追跡チェックボックス（remediation なし）。
+- issue 本文: 確定指摘の事実サマリー＋観点×重大度マトリクス＋P0/P1/P2 追跡チェックボックス（remediation なし）。
 - ADR: 監査プロセス（手法・方針）を採用として記録する方法論 ADR（`docs/adr/NNNN-codebase-security-audit-process.md`）。
-  生成後、`- 日付:` 行の `TODO` を起票日に置換すること。
+  生成後、`- 日付:` 行の `TODO` を起票日に置換すること。**ADR を追加したら必ず `scripts/gen-docs-index.py`
+  （= `just docs-index`）で `docs/adr/README.md` 索引を再生成する**。索引が古いと CI の docs-check が落ちる。
 
 ### 6. コミット → PR → issue 起票
 

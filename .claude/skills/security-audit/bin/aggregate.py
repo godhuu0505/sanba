@@ -32,9 +32,17 @@ def sev(f: dict) -> str:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Aggregate workflow audit output into a normalized audit.json.")
-    ap.add_argument("--input", required=True, help="workflow output file (task .output or raw result json)")
-    ap.add_argument("--repo", default=".", help="repository root (for path normalization)")
+    ap = argparse.ArgumentParser(
+        description="Aggregate workflow audit output into a normalized audit.json."
+    )
+    ap.add_argument(
+        "--input",
+        required=True,
+        help="workflow output file (task .output or raw result json)",
+    )
+    ap.add_argument(
+        "--repo", default=".", help="repository root (for path normalization)"
+    )
     ap.add_argument("--out", required=True, help="output work directory")
     args = ap.parse_args()
 
@@ -49,8 +57,15 @@ def main() -> int:
         for f in coll:
             f["file"] = rel(str(f.get("file", "")), repo)
 
-    order = {"P1": 0, "P2": 1}
-    confirmed.sort(key=lambda f: (order.get(sev(f), 9), f.get("unit", ""), f.get("file", ""), f.get("line", 0)))
+    order = {"P0": 0, "P1": 1, "P2": 2}
+    confirmed.sort(
+        key=lambda f: (
+            order.get(sev(f), 9),
+            f.get("unit", ""),
+            f.get("file", ""),
+            f.get("line", 0),
+        )
+    )
     for i, f in enumerate(confirmed, 1):
         f["_id"] = f"SEC-{i:03d}"
 
@@ -62,6 +77,7 @@ def main() -> int:
         "totals": {
             "raw": (data.get("totals") or {}).get("raw"),
             "confirmed": len(confirmed),
+            "p0": sum(1 for f in confirmed if sev(f) == "P0"),
             "p1": sum(1 for f in confirmed if sev(f) == "P1"),
             "p2": sum(1 for f in confirmed if sev(f) == "P2"),
             "uncertain": len(uncertain),
@@ -75,7 +91,9 @@ def main() -> int:
     with open(os.path.join(args.out, "audit.json"), "w") as fh:
         json.dump(out, fh, ensure_ascii=False, indent=1)
     t = out["totals"]
-    print(f"confirmed: {t['confirmed']} (P1 {t['p1']} / P2 {t['p2']})  uncertain: {t['uncertain']}  refuted: {t['refuted']}")
+    print(
+        f"confirmed: {t['confirmed']} (P0 {t['p0']} / P1 {t['p1']} / P2 {t['p2']})  uncertain: {t['uncertain']}  refuted: {t['refuted']}"
+    )
     return 0
 
 
