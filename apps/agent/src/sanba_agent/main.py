@@ -705,7 +705,18 @@ class SANBAAgent(Agent):
         """
         uid = self._pending_user_uid
         self._pending_user_uid = None
-        return self.record_utterance("participant", text, utterance_id=uid)
+        stripped = text.strip()
+        normalized = normalize_query(text)
+        if not normalized:
+            return ""
+        if normalized != stripped:
+            log.info(
+                "query_normalized",
+                session=self._session_id,
+                before=stripped,
+                after=normalized,
+            )
+        return self.record_utterance("participant", normalized, utterance_id=uid)
 
     def publish_agent_utterance(self, text: str) -> None:
         """SANBA（エージェント）の発話を web の会話履歴へ出し、発話ログにも残す（role=assistant）。
