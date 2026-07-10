@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from sanba_elastic_agent.definitions import (
+from sanba_external_agents.elastic.catalog import (
     DefinitionError,
     load_definitions,
     parse_agent,
