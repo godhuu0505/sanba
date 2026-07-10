@@ -250,6 +250,28 @@ async def test_propose_session_end_refused_before_any_requirement() -> None:
 
 
 @pytest.mark.asyncio
+async def test_propose_session_end_no_requirements_circuit_breaks() -> None:
+    """要件 0 件での終了提案が繰り返されたら stop=True で暴走ループを断つ。"""
+    transport = RecordingTransport()
+    agent = _agent(transport)
+    propose = type(agent).propose_session_end.__wrapped__
+
+    first = await propose(agent, None)
+    assert first["proposed"] is False
+    assert first["reason"] == "no_requirements"
+    assert "stop" not in first
+
+    second = await propose(agent, None)
+    assert second["stop"] is True
+    assert "guidance" in second
+    assert second["reason"] == "no_requirements"
+
+    agent.record_utterance("participant", "続きを話します")
+    reset = await propose(agent, None)
+    assert "stop" not in reset, "参加者の新しいターンでストリークはリセットされる"
+
+
+@pytest.mark.asyncio
 async def test_complete_session_requires_prior_proposal() -> None:
     """提案（同意フロー）を経ずに直接 complete_session を呼んでも終了しない（レビュー指摘）。"""
     transport = RecordingTransport()

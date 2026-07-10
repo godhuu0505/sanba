@@ -594,9 +594,9 @@ class SANBAAgent(Agent):
         ここから会話文脈を取り戻せる（inquiry の `_hydrate_inquiry` と同じ引き継ぎ経路）。
         SANBA（エージェント）発話は会話ログ表示（#479）のため utterances に永続化されて
         いるが、分析用 transcript には従来どおり載せない（`publish_agent_utterance` と同じ
-        不変条件）ため除外する。採番 `_utterance_seq` は SANBA 分も含む全件数から続け、
-        utterance_id の衝突を防ぐ。読み取り失敗は fail-soft（空の transcript で会話は
-        成立させる）。
+        不変条件）ため除外する。採番 `_utterance_seq` は参加者発話数のみから続け（SANBA は
+        `a{n}` 空間なので衝突リスクなし）、再引き継ぎ時に enumerate が u{n} を再割り当て
+        しても採番がずれない。読み取り失敗は fail-soft（空の transcript で会話は成立させる）。
         """
         try:
             utterances = self._repo.list_utterances(self._session_id)
@@ -605,8 +605,8 @@ class SANBAAgent(Agent):
             return []
         if not utterances:
             return []
-        self._utterance_seq = len(utterances)
         participant = [u for u in utterances if u.speaker != "SANBA"]
+        self._utterance_seq = len(participant)
         log.info(
             "transcript_hydrated",
             session=self._session_id,
@@ -1775,8 +1775,29 @@ class SANBAAgent(Agent):
             return result
         requirements = len(self._repo.list_requirements(self._session_id))
         if requirements == 0 and not user_requested:
-            log.info("session_end_declined_no_requirements", session=self._session_id)
-            return {"proposed": False, "open_count": open_count, "reason": "no_requirements"}
+            self._end_declined_streak += 1
+            log.info(
+                "session_end_declined_no_requirements",
+                session=self._session_id,
+                streak=self._end_declined_streak,
+            )
+            result_nr: dict[str, Any] = {
+                "proposed": False,
+                "open_count": open_count,
+                "reason": "no_requirements",
+            }
+            if self._end_declined_streak >= SESSION_END_DECLINE_LIMIT:
+                log.warning(
+                    "session_end_circuit_break_no_req",
+                    session=self._session_id,
+                    streak=self._end_declined_streak,
+                )
+                result_nr["stop"] = True
+                result_nr["guidance"] = (
+                    "propose_session_end の再試行をやめ、音声で会話を続けてください。"
+                    "要件がまだ 0 件です。参加者から具体的な話を引き出してから再度提案してください。"
+                )
+            return result_nr
         self._end_proposed = True
         self._end_forced = user_requested and open_count > 0
         self._end_declined_streak = 0

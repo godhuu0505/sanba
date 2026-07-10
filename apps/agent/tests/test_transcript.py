@@ -179,4 +179,34 @@ async def test_transcript_hydration_excludes_agent_utterances() -> None:
     agent = SANBAAgent(session_id="s1", repo=repo, grounding=GroundingStore())
     assert agent.transcript == ["[u1] participant: 会話ログを表示したい"]
     uid = agent.record_utterance("participant", "追加の要望です")
-    assert uid == "u3", "採番は SANBA 分も含む全件数から続け、旧 id と衝突させない"
+    assert uid == "u2", "採番は参加者発話数のみから継ぐ（SANBA は a{n} 空間で衝突なし）"
+
+
+@pytest.mark.asyncio
+async def test_utterance_ids_stable_across_multiple_takeovers() -> None:
+    """複数回プロセス交代しても参加者発話の u{n} が変わらず citations が壊れない。"""
+    from sanba_shared.models import Utterance
+
+    repo = SessionRepository()
+    repo._client = None
+    repo.add_utterance("s1", Utterance(speaker="SANBA", text="こんにちは"))
+    repo.add_utterance("s1", Utterance(speaker="participant", text="要望A"))
+    repo.add_utterance("s1", Utterance(speaker="SANBA", text="ありがとうございます"))
+    repo.add_utterance("s1", Utterance(speaker="participant", text="要望B"))
+
+    second = SANBAAgent(session_id="s1", repo=repo, grounding=GroundingStore())
+    assert second.transcript == [
+        "[u1] participant: 要望A",
+        "[u2] participant: 要望B",
+    ]
+    uid = second.record_utterance("participant", "要望C")
+    assert uid == "u3"
+
+    repo.add_utterance("s1", Utterance(speaker="participant", text="要望C"))
+
+    third = SANBAAgent(session_id="s1", repo=repo, grounding=GroundingStore())
+    assert third.transcript == [
+        "[u1] participant: 要望A",
+        "[u2] participant: 要望B",
+        "[u3] participant: 要望C",
+    ], "再引き継ぎ後も u{n} は参加者発話位置から採番され変化しない"
