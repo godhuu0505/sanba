@@ -80,12 +80,15 @@ _unsafe_methods = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 def _rate_limit_key(request: Request) -> str:
     """レートリミットの実クライアント識別子を返す。
 
-    Cloud Run / LB 配下では `request.client.host` は上流プロキシに収束するため、
-    `X-Forwarded-For` があれば左端（最初に付与された実クライアント）を優先する。
+    `X-Forwarded-For` の**右端**（直近の信頼プロキシ = GCP フロントエンドが追記したホップ）を
+    使う。クライアントが自ら詰めた偽装値は左側に残り右端には出ないため、キーを詐称して
+    バケットを回避できない。XFF が無ければ実 TCP ピア（`request.client.host`）へフォールバック。
+    多段 LB 配下では右端がフロントエンド IP に収束しうるが、その環境はエッジの Cloud Armor
+    （実送信元 IP 単位のレート制限）を一次防御に据える。
     """
     forwarded = request.headers.get("x-forwarded-for", "")
     if forwarded:
-        client = forwarded.split(",", 1)[0].strip()
+        client = forwarded.rsplit(",", 1)[-1].strip()
         if client:
             return client
     return request.client.host if request.client else "unknown"

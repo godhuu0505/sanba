@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sanba_shared.grounding import GroundingConfig
 from sanba_shared.media import MediaConfig
@@ -21,6 +22,7 @@ class WorkerSettings(BaseSettings):
 
     gcs_bucket: str = ""
     oidc_audience: str = ""
+    oidc_service_account: str = ""
     elasticsearch_url: str = ""
     elasticsearch_api_key: str = ""
     require_elasticsearch: bool = False
@@ -43,6 +45,16 @@ class WorkerSettings(BaseSettings):
     @property
     def is_production(self) -> bool:
         return self.environment.strip().lower() in {"production", "prod"}
+
+    @model_validator(mode="after")
+    def _require_oidc_verification_in_production(self) -> WorkerSettings:
+        """本番では OIDC 検証が実質無効化されないよう audience か invoker SA の設定を必須化する。"""
+        if self.is_production and not (self.oidc_audience or self.oidc_service_account):
+            raise ValueError(
+                "production ENVIRONMENT requires OIDC_AUDIENCE or OIDC_SERVICE_ACCOUNT "
+                "so Cloud Tasks OIDC verification is enforced"
+            )
+        return self
 
     @property
     def livekit_publish_url(self) -> str:

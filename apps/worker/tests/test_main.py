@@ -160,6 +160,63 @@ def test_production_accepts_valid_oidc_token(
     assert resp.json()["status"] == "done"
 
 
+def test_production_rejects_unexpected_caller_email(
+    client_with_material: tuple[TestClient, SessionRepository], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from sanba_worker import auth
+
+    client, _ = client_with_material
+    monkeypatch.setattr(main.settings, "environment", "production")
+    monkeypatch.setattr(
+        main.settings, "oidc_service_account", "worker@sanba.iam.gserviceaccount.com"
+    )
+    monkeypatch.setattr(
+        auth,
+        "_verifier",
+        lambda _t, _a: {
+            "iss": "https://accounts.google.com",
+            "email": "attacker@evil.iam.gserviceaccount.com",
+            "email_verified": True,
+        },
+    )
+    resp = client.post(
+        "/tasks/analyze-video",
+        json={"session_id": "s1", "asset_id": "asset-x", "gcs_uri": "gs://b/o.mp4"},
+        headers={"Authorization": "Bearer fake-id-token"},
+    )
+    assert resp.status_code == 401
+
+
+def test_production_accepts_matching_caller_email(
+    client_with_material: tuple[TestClient, SessionRepository], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from sanba_worker import auth
+    from sanba_worker.analysis import TaskResult
+
+    client, _ = client_with_material
+    monkeypatch.setattr(main.settings, "environment", "production")
+    monkeypatch.setattr(
+        main.settings, "oidc_service_account", "worker@sanba.iam.gserviceaccount.com"
+    )
+    monkeypatch.setattr(main.settings, "enable_realtime_publish", False)
+    monkeypatch.setattr(
+        auth,
+        "_verifier",
+        lambda _t, _a: {
+            "iss": "https://accounts.google.com",
+            "email": "worker@sanba.iam.gserviceaccount.com",
+            "email_verified": True,
+        },
+    )
+    monkeypatch.setattr(main, "process_video", lambda *a, **k: TaskResult("done", extracted=0))
+    resp = client.post(
+        "/tasks/analyze-video",
+        json={"session_id": "s1", "asset_id": "asset-x", "gcs_uri": "gs://b/o.mp4"},
+        headers={"Authorization": "Bearer fake-id-token"},
+    )
+    assert resp.status_code == 200
+
+
 def test_publish_visual_emits_progress_and_visual(monkeypatch: pytest.MonkeyPatch) -> None:
     """done の解析結果が analysis.progress(done) + analysis.visual として publish される。"""
     import asyncio

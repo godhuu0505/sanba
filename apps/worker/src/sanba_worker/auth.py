@@ -39,10 +39,15 @@ def verify_oidc_token(
     authorization: str | None,
     *,
     audience: str,
+    service_account: str,
     required: bool,
     verifier: OidcVerifier | None = None,
 ) -> None:
-    """`Authorization: Bearer` の OIDC トークンを検証する。`required=False` なら素通しする。"""
+    """`Authorization: Bearer` の OIDC トークンを検証する。`required=False` なら素通しする。
+
+    署名・issuer に加え、`service_account` が設定されていれば `email` claim が Cloud Tasks の
+    invoker SA と一致することを検証する（`audience` が未配線でも検証が空振りしないようにする）。
+    """
     if not required:
         return
     if not authorization or not authorization.startswith("Bearer "):
@@ -59,6 +64,11 @@ def verify_oidc_token(
     iss = str(claims.get("iss", ""))
     if iss not in _GOOGLE_ISSUERS:
         raise HTTPException(status_code=401, detail="unexpected issuer")
+    if service_account and (
+        str(claims.get("email", "")) != service_account or not claims.get("email_verified")
+    ):
+        log.warning("oidc_unexpected_caller", email=str(claims.get("email", "")))
+        raise HTTPException(status_code=401, detail="unexpected caller")
 
 
 def require_cloud_tasks_auth(request: Request) -> None:
@@ -66,6 +76,7 @@ def require_cloud_tasks_auth(request: Request) -> None:
     verify_oidc_token(
         request.headers.get("Authorization"),
         audience=settings.oidc_audience,
+        service_account=settings.oidc_service_account,
         required=settings.is_production,
         verifier=_verifier,
     )

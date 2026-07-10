@@ -120,6 +120,8 @@ class SessionRepository:
         self._mem_detections: dict[str, dict[str, dict[str, Any]]] = {}
         self._mem_inquiry: dict[str, dict[str, dict[str, Any]]] = {}
         self._mem_seq: dict[str, int] = {}
+        self._seq_lock = threading.Lock()
+        self._seq_highwater: dict[str, int] = {}
         self._mem_lossy_epoch: dict[str, int] = {}
         self._mem_materials: dict[str, dict[str, dict[str, Any]]] = {}
         self._mem_questions: dict[str, dict[str, Any]] = {}
@@ -1763,15 +1765,24 @@ class SessionRepository:
         return bool(_txn(self._client.transaction()))
 
     def set_session_seq(self, session_id: str, seq: int) -> None:
-        """セッションの適用済み最大 seq を保存する (ハイドレーション境界, 契約 §4)。"""
-        if self._client is not None:
-            (
-                self._client.collection("sessions")
-                .document(session_id)
-                .set({"last_seq": seq}, merge=True)
-            )
-            return
-        self._mem_seq[session_id] = seq
+        """セッションの適用済み最大 seq を単調増加で保存する (ハイドレーション境界, 契約 §4)。
+
+        `asyncio.to_thread` 経由で複数タスクから並行に呼ばれても `last_seq` が後退しないよう、
+        プロセス内 highwater とロックで「より大きい seq のときだけ」書き込む。完了順が前後しても
+        永続値が単調増加を保ち、再起動後の EventPublisher シードが実際より低くならない。
+        """
+        with self._seq_lock:
+            if seq <= self._seq_highwater.get(session_id, 0):
+                return
+            self._seq_highwater[session_id] = seq
+            if self._client is not None:
+                (
+                    self._client.collection("sessions")
+                    .document(session_id)
+                    .set({"last_seq": seq}, merge=True)
+                )
+            else:
+                self._mem_seq[session_id] = seq
 
     def get_session_seq(self, session_id: str) -> int:
         """保存済みの適用済み最大 seq を返す（未保存なら 0）。

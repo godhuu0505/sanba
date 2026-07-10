@@ -21,9 +21,14 @@ def _request(
     return Request(scope)
 
 
-def test_rate_limit_key_prefers_forwarded_for() -> None:
+def test_rate_limit_key_uses_trusted_rightmost_forwarded_for() -> None:
     req = _request({"x-forwarded-for": "198.51.100.7, 10.0.0.1"})
-    assert main._rate_limit_key(req) == "198.51.100.7"
+    assert main._rate_limit_key(req) == "10.0.0.1"
+
+
+def test_rate_limit_key_ignores_client_spoofed_leftmost_forwarded_for() -> None:
+    spoofed = _request({"x-forwarded-for": "evil-spoofed-value, 203.0.113.9"})
+    assert main._rate_limit_key(spoofed) == "203.0.113.9"
 
 
 def test_rate_limit_key_falls_back_to_peer_without_forwarded() -> None:
