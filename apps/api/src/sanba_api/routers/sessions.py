@@ -68,6 +68,7 @@ from ..observability import (
     record_material_event,
     record_my_requirements_viewed,
     record_my_sessions_listed,
+    record_my_transcript_viewed,
     record_question_hydration,
     record_result_document_rendered,
 )
@@ -422,6 +423,51 @@ def get_my_session_result_document(
     )
     return ResultDocumentResponse(
         audience=audience.value, is_custom_format=is_custom, markdown=markdown
+    )
+
+
+class TranscriptUtterance(BaseModel):
+    """会話ログの 1 発話。`speaker` は participant か SANBA（エージェント）。"""
+
+    speaker: str
+    text: str
+    ts: datetime
+
+
+class SessionTranscriptResponse(BaseModel):
+    """`GET /api/sessions/mine/{id}/transcript` の応答（要件結果画面の会話ログ表示 / #479）。
+
+    utterances は時系列（`list_utterances` の ts 昇順）。text は保存時に mask_pii 済み。
+    """
+
+    id: str
+    utterances: list[TranscriptUtterance]
+
+
+@router.get(
+    "/api/sessions/mine/{session_id}/transcript",
+    response_model=SessionTranscriptResponse,
+)
+def get_my_session_transcript(
+    session_id: str, user: AuthUser = Depends(require_user)
+) -> SessionTranscriptResponse:
+    """本人 (owner_sub) のセッションの会話ログを時系列で返す。
+
+    認可は `get_my_session_requirements` と同じ（idToken で本人確認・owner_sub 一致、
+    非所有/不存在はどちらも 404 に平す）。当該セッションの発話のみを返し、閲覧権限は
+    要件結果画面と同一（追加制限なし / #479 Must）。
+    """
+    session = _repo.get_session(session_id)
+    if session is None or session.owner_sub != user.sub:
+        raise HTTPException(status_code=404, detail="session not found")
+    utterances = _repo.list_utterances(session_id)
+    record_my_transcript_viewed(len(utterances))
+    log.info("my_transcript_viewed", session=session_id, owner=user.sub, count=len(utterances))
+    return SessionTranscriptResponse(
+        id=session.id,
+        utterances=[
+            TranscriptUtterance(speaker=u.speaker, text=u.text, ts=u.ts) for u in utterances
+        ],
     )
 
 

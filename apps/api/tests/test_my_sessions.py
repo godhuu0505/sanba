@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 
 import pytest
 from fastapi.testclient import TestClient
-from sanba_shared.models import SessionMeta
+from sanba_shared.models import SessionMeta, Utterance
 
 from sanba_api import auth_google
 from sanba_api.auth_google import AuthUser, require_user
@@ -29,6 +29,7 @@ def _user(sub: str, email: str) -> AuthUser:
 @pytest.fixture(autouse=True)
 def _reset() -> Iterator[None]:
     _repo._mem_sessions.clear()
+    _repo._mem_utterances.clear()
     _read_repo._mem_requirements.clear()
     assert _repo._client is None, "テストは Firestore 非接続のメモリ fallback 前提"
     yield
@@ -220,6 +221,55 @@ def test_my_requirements_hides_other_owners_session_as_404() -> None:
 def test_my_requirements_unknown_session_is_404() -> None:
     _login("alice")
     assert client.get("/api/sessions/mine/no-such/requirements").status_code == 404
+
+
+def _seed_utterance(sid: str, speaker: str, text: str, *, ts: datetime) -> None:
+    _repo.add_utterance(sid, Utterance(speaker=speaker, text=text, ts=ts))
+
+
+def test_my_transcript_returns_utterances_in_time_order() -> None:
+    _seed("sess-1", "alice", created=datetime(2024, 6, 20, tzinfo=UTC))
+    _seed_utterance(
+        "sess-1", "SANBA", "何を規矩としましょう", ts=datetime(2024, 6, 20, 0, 0, tzinfo=UTC)
+    )
+    _seed_utterance("sess-1", "participant", "価格順で", ts=datetime(2024, 6, 20, 0, 1, tzinfo=UTC))
+    _login("alice")
+
+    res = client.get("/api/sessions/mine/sess-1/transcript")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["id"] == "sess-1"
+    assert [(u["speaker"], u["text"]) for u in body["utterances"]] == [
+        ("SANBA", "何を規矩としましょう"),
+        ("participant", "価格順で"),
+    ]
+
+
+def test_my_transcript_empty_when_none_recorded() -> None:
+    _seed("sess-1", "alice", created=datetime(2024, 6, 20, tzinfo=UTC))
+    _login("alice")
+
+    body = client.get("/api/sessions/mine/sess-1/transcript").json()
+    assert body["utterances"] == []
+
+
+def test_my_transcript_hides_other_owners_session_as_404() -> None:
+    _seed("sess-bob", "bob", created=datetime(2024, 6, 20, tzinfo=UTC))
+    _seed_utterance("sess-bob", "participant", "秘密", ts=datetime(2024, 6, 20, tzinfo=UTC))
+    _login("alice")
+
+    assert client.get("/api/sessions/mine/sess-bob/transcript").status_code == 404
+
+
+def test_my_transcript_unknown_session_is_404() -> None:
+    _login("alice")
+    assert client.get("/api/sessions/mine/no-such/transcript").status_code == 404
+
+
+def test_my_transcript_requires_login(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(auth_google.settings, "google_oauth_client_id", "cid", raising=True)
+    monkeypatch.setattr(auth_google.settings, "auth_dev_bypass", False, raising=True)
+    assert client.get("/api/sessions/mine/sess-1/transcript").status_code == 401
 
 
 def test_my_requirements_requires_login(monkeypatch: pytest.MonkeyPatch) -> None:
