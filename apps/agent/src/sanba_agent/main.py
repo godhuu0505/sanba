@@ -766,16 +766,21 @@ class SANBAAgent(Agent):
         return self.record_utterance("participant", text, utterance_id=uid)
 
     def publish_agent_utterance(self, text: str) -> None:
-        """SANBA（エージェント）の発話を web の会話履歴へ出す（role=assistant で左吹き出し）。
+        """SANBA（エージェント）の発話を web の会話履歴へ出し、発話ログにも残す（role=assistant）。
 
         音声だけでは聞き逃す発話もテキストで追えるようにする。分析用 transcript には
-        載せない（LLM 応答は要件抽出の入力ではないため）。participant の u{n} と衝突しない
+        載せない（LLM 応答は要件抽出の入力ではないため）が、要件結果画面の会話ログ表示（#479）
+        のため utterances には participant と同じ時系列（_persist_lock で直列化）で永続化する。
+        grounding へは索引しない（検索対象は素材・参加者発話）。participant の u{n} と衝突しない
         a{n} 空間で採番する。publisher 未設定なら no-op。
         """
         if self._publisher is None:
             return
         self._agent_utterance_seq += 1
         uid = f"a{self._agent_utterance_seq}"
+        session_id = self._session_id
+        repo = self._repo
+        self._persist(lambda: repo.add_utterance(session_id, Utterance(speaker="SANBA", text=text)))
         self._publish(self._publisher.transcript_final("SANBA", "assistant", uid, text))
 
     def record_answer(self, question_id: str, answer: str) -> str | None:

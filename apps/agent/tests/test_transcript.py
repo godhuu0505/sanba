@@ -17,23 +17,23 @@ from sanba_agent.main import SANBAAgent
 from sanba_agent.retrieval import GroundingStore
 
 
-def _agent() -> tuple[SANBAAgent, RecordingTransport]:
+def _agent() -> tuple[SANBAAgent, RecordingTransport, SessionRepository]:
     repo = SessionRepository()
     repo._client = None
     transport = RecordingTransport()
     pub = EventPublisher("s1", transport)
     agent = SANBAAgent(session_id="s1", repo=repo, grounding=GroundingStore(), publisher=pub)
-    return agent, transport
+    return agent, transport, repo
 
 
 async def _drain(agent: SANBAAgent) -> None:
-    while agent._publish_tasks:
-        await asyncio.gather(*list(agent._publish_tasks))
+    while agent._publish_tasks or agent._persist_tasks:
+        await asyncio.gather(*list(agent._publish_tasks), *list(agent._persist_tasks))
 
 
 @pytest.mark.asyncio
 async def test_user_partial_then_final_share_utterance_id() -> None:
-    agent, transport = _agent()
+    agent, transport, _repo = _agent()
 
     agent.publish_user_partial("価格の")
     agent.publish_user_partial("価格の安き")
@@ -56,7 +56,7 @@ async def test_user_partial_then_final_share_utterance_id() -> None:
 
 @pytest.mark.asyncio
 async def test_agent_utterance_published_as_assistant() -> None:
-    agent, transport = _agent()
+    agent, transport, repo = _agent()
 
     agent.publish_agent_utterance("何を規矩としましょう")
     agent.publish_agent_utterance("では価格順で進めます")
@@ -67,6 +67,12 @@ async def test_agent_utterance_published_as_assistant() -> None:
     assert [e["utterance_id"] for e in finals] == ["a1", "a2"]
     assert finals[0]["text"] == "何を規矩としましょう"
     assert agent.transcript == []
+
+    stored = repo.list_utterances("s1")
+    assert [(u.speaker, u.text) for u in stored] == [
+        ("SANBA", "何を規矩としましょう"),
+        ("SANBA", "では価格順で進めます"),
+    ]
 
 
 @pytest.mark.asyncio

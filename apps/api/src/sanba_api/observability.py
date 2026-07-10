@@ -262,6 +262,24 @@ def record_result_document_rendered(audience: str, is_custom: bool) -> None:
         pass
 
 
+_my_transcript_counter = metrics.get_meter("sanba_api.sessions").create_counter(
+    "sanba_my_transcript_viewed_total",
+    description="本人セッションの会話ログ閲覧リクエスト数 (result=empty/viewed ごと)",
+)
+
+
+def record_my_transcript_viewed(count: int) -> None:
+    """本人セッションの会話ログ閲覧を 1 リクエストとして計上する。
+
+    発話 0 件でも確実に計上し (加算方式だと 0 件が no-op になる死角)、
+    result=empty/viewed で「開いたが会話ログが無かった」頻度を観測する。
+    """
+    try:
+        _my_transcript_counter.add(1, {"result": "empty" if count == 0 else "viewed"})
+    except Exception:  # pragma: no cover - メトリクスは本処理を止めない
+        pass
+
+
 def setup_observability(app: FastAPI) -> None:
     """Configure OTel tracing (Cloud Trace 直送 / OTLP / 無効) + FastAPI instrumentation.
 

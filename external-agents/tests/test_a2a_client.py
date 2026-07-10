@@ -1,11 +1,6 @@
 from __future__ import annotations
 
-from sanba_elastic_agent.a2a_client import (
-    ElasticAgentClient,
-    build_message_send,
-    extract_text,
-)
-from sanba_elastic_agent.config import ElasticAgentSettings
+from sanba_external_agents.a2a_client import build_message_send, extract_text
 
 
 def test_build_message_send_shape():
@@ -56,16 +51,3 @@ def test_extract_text_ignores_non_text_parts_and_empty():
 
 def test_extract_text_empty_on_missing_result():
     assert extract_text({}) == ""
-
-
-def test_ask_is_noop_when_unconfigured():
-    client = ElasticAgentClient(ElasticAgentSettings(enabled=False))
-    result = client.ask("what is the cost?")
-    assert result.delegated is False
-    assert result.error == "elastic_agent_not_configured"
-
-
-def test_configured_requires_enabled_url_and_key():
-    assert ElasticAgentSettings(enabled=True, kibana_url="", api_key="k").configured is False
-    assert ElasticAgentSettings(enabled=False, kibana_url="u", api_key="k").configured is False
-    assert ElasticAgentSettings(enabled=True, kibana_url="u", api_key="k").configured is True

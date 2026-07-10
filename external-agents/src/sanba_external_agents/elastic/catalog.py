@@ -10,7 +10,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-DEFINITIONS_DIR = Path(__file__).resolve().parents[2] / "definitions"
+DEFINITIONS_DIR = Path(__file__).resolve().parent / "definitions"
 
 TOOL_TYPES = {"esql", "index_search"}
 
