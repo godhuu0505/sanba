@@ -98,15 +98,49 @@ def event_mappings() -> dict[str, Any]:
     }
 
 
-def put_index_template(client: Any, *, with_ilm: bool) -> None:
-    settings: dict[str, Any] = {"number_of_replicas": 0}
-    if with_ilm:
-        settings["index.lifecycle.name"] = ANALYTICS_ILM_POLICY
+def is_serverless(client: Any) -> bool:
+    """対象クラスタが Elasticsearch Serverless かを判定する（判定不能なら False）。
+
+    Serverless は `index.number_of_replicas` も ILM も設定できず、指定すると 400 で弾かれる。
+    `GET /`（`client.info()`）の `version.build_flavor == "serverless"` で見分け、
+    template 構築時に replica/ILM を落として data stream lifecycle へ切り替える。
+    """
+    info = getattr(client, "info", None)
+    if not callable(info):
+        return False
+    try:
+        data = info()
+    except Exception:  # noqa: BLE001
+        return False
+    try:
+        version = data.get("version") or {}
+        return version.get("build_flavor") == "serverless"
+    except AttributeError:
+        return False
+
+
+def put_index_template(
+    client: Any,
+    *,
+    with_ilm: bool,
+    serverless: bool = False,
+    retention_days: int = DEFAULT_ANALYTICS_RETENTION_DAYS,
+) -> None:
+    settings: dict[str, Any] = {}
+    template: dict[str, Any] = {"mappings": event_mappings()}
+    if serverless:
+        template["lifecycle"] = {"data_retention": f"{retention_days}d"}
+    else:
+        settings["number_of_replicas"] = 0
+        if with_ilm:
+            settings["index.lifecycle.name"] = ANALYTICS_ILM_POLICY
+    if settings:
+        template["settings"] = settings
     client.indices.put_index_template(
         name=ANALYTICS_INDEX_TEMPLATE,
         index_patterns=[ANALYTICS_INDEX_PATTERN],
         data_stream={},
-        template={"settings": settings, "mappings": event_mappings()},
+        template=template,
     )
 
 
@@ -115,10 +149,11 @@ def ensure_event_stream_template(client: Any) -> bool:
 
     アプリの ES API key が template 権限を持たない環境でも fail-soft で動くよう、
     `AnalyticsSink` の初期化から呼ぶ軽量経路。ILM 付きの全量は `setup_analytics` で行う。
+    Serverless では replica/ILM を落とし、retention は data stream lifecycle で持たせる。
     """
     if client.indices.exists_index_template(name=ANALYTICS_INDEX_TEMPLATE):
         return False
-    put_index_template(client, with_ilm=False)
+    put_index_template(client, with_ilm=False, serverless=is_serverless(client))
     return True
 
 
@@ -170,9 +205,17 @@ def seed_pricing_index(client: Any) -> int:
 
 
 def setup_analytics(client: Any, *, retention_days: int = DEFAULT_ANALYTICS_RETENTION_DAYS) -> None:
-    """ILM・index template・データストリーム・単価 index を冪等に整える（ops 用の全量経路）。"""
-    put_ilm_policy(client, retention_days)
-    put_index_template(client, with_ilm=True)
+    """ILM・index template・データストリーム・単価 index を冪等に整える（ops 用の全量経路）。
+
+    Serverless では ILM が使えないため、retention は index template の data stream lifecycle
+    （`data_retention`）に載せ、ILM ポリシー投入はスキップする。
+    """
+    serverless = is_serverless(client)
+    if not serverless:
+        put_ilm_policy(client, retention_days)
+    put_index_template(
+        client, with_ilm=not serverless, serverless=serverless, retention_days=retention_days
+    )
     if not client.indices.exists(index=ANALYTICS_DATA_STREAM):
         client.indices.create_data_stream(name=ANALYTICS_DATA_STREAM)
     seeded = seed_pricing_index(client)
@@ -180,6 +223,7 @@ def setup_analytics(client: Any, *, retention_days: int = DEFAULT_ANALYTICS_RETE
         "analytics_setup_done",
         data_stream=ANALYTICS_DATA_STREAM,
         retention_days=retention_days,
+        serverless=serverless,
         pricing_models=seeded,
     )
 

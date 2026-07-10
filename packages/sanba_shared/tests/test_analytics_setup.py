@@ -8,6 +8,7 @@ from sanba_shared.analytics_setup import (
     PRICING_INDEX,
     ensure_event_stream_template,
     event_mappings,
+    is_serverless,
     setup_analytics,
 )
 
@@ -83,6 +84,35 @@ def test_setup_analytics_is_idempotent_and_full() -> None:
     pricing_docs = [d for d in client.docs if d["index"] == PRICING_INDEX]
     assert len(pricing_docs) == 2 * len(PRICING)
     assert {d["id"] for d in pricing_docs} == set(PRICING)
+
+
+class FakeServerlessES(FakeES):
+    def info(self) -> dict[str, Any]:
+        return {"version": {"build_flavor": "serverless"}}
+
+
+def test_is_serverless_detects_flavor_and_defaults_false() -> None:
+    assert is_serverless(FakeServerlessES()) is True
+    assert is_serverless(FakeES()) is False
+
+
+def test_ensure_event_stream_template_serverless_omits_replicas_and_ilm() -> None:
+    client = FakeServerlessES()
+    assert ensure_event_stream_template(client) is True
+    template = client.indices.templates[0]["template"]
+    assert "settings" not in template
+    assert template["lifecycle"]["data_retention"].endswith("d")
+
+
+def test_setup_analytics_serverless_skips_ilm_and_uses_data_stream_lifecycle() -> None:
+    client = FakeServerlessES()
+    setup_analytics(client, retention_days=90)
+    assert client.ilm.policies == []
+    template = client.indices.templates[0]["template"]
+    assert "settings" not in template
+    assert template["lifecycle"]["data_retention"] == "90d"
+    assert client.indices.created_data_streams == [ANALYTICS_DATA_STREAM]
+    assert client.indices.created_indices == [PRICING_INDEX]
 
 
 def test_event_mappings_cover_core_fields() -> None:
