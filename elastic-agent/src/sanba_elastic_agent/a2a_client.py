@@ -18,7 +18,7 @@ from dataclasses import dataclass
 import structlog
 
 from .config import ElasticAgentSettings, settings
-from .contract import a2a_message_url
+from .contract import a2a_message_url, require_http_url
 
 log = structlog.get_logger(__name__)
 
@@ -40,6 +40,7 @@ def build_message_send(text: str, *, message_id: str | None = None) -> dict:
         "method": "message/send",
         "params": {
             "message": {
+                "kind": "message",
                 "role": "user",
                 "messageId": mid,
                 "parts": [{"kind": "text", "text": text}],
@@ -95,8 +96,10 @@ class ElasticAgentClient:
         return DelegationResult(delegated=True, text=extract_text(response), raw=response)
 
     def _send(self, question: str) -> dict:  # pragma: no cover
-        url = a2a_message_url(
-            self._settings.kibana_url, self._settings.agent_id, self._settings.space
+        url = require_http_url(
+            a2a_message_url(
+                self._settings.kibana_url, self._settings.agent_id, self._settings.space
+            )
         )
         body = json.dumps(build_message_send(question)).encode()
         request = urllib.request.Request(

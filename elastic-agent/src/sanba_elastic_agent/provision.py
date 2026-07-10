@@ -16,7 +16,7 @@ from dataclasses import dataclass
 import structlog
 
 from .config import ElasticAgentSettings
-from .contract import _root
+from .contract import require_http_url, root_url
 from .definitions import AgentDefinition, ToolDefinition, load_definitions
 
 log = structlog.get_logger(__name__)
@@ -35,7 +35,7 @@ class ProvisionStep:
 
 
 def _collection_url(kibana_url: str, path: str, space: str) -> str:
-    return f"{_root(kibana_url, space)}/{path}"
+    return f"{root_url(kibana_url, space)}/{path}"
 
 
 def plan_provision(
@@ -82,7 +82,10 @@ def _send(
     url: str, method: str, api_key: str, payload: dict, timeout: float
 ) -> None:  # pragma: no cover
     request = urllib.request.Request(
-        url, data=json.dumps(payload).encode(), method=method, headers=_headers(api_key)
+        require_http_url(url),
+        data=json.dumps(payload).encode(),
+        method=method,
+        headers=_headers(api_key),
     )
     with urllib.request.urlopen(request, timeout=timeout):  # noqa: S310
         return None

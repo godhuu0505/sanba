@@ -21,6 +21,11 @@ def test_build_message_send_reuses_one_id():
     assert body["id"] == body["params"]["message"]["messageId"]
 
 
+def test_build_message_send_marks_message_kind():
+    body = build_message_send("hi")
+    assert body["params"]["message"]["kind"] == "message"
+
+
 def test_extract_text_from_direct_parts():
     resp = {"result": {"parts": [{"kind": "text", "text": "a"}, {"kind": "text", "text": "b"}]}}
     assert extract_text(resp) == "a\nb"
