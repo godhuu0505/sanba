@@ -347,7 +347,7 @@ def test_upload_html_indexes_visible_text() -> None:
 
 
 def test_upload_doc_saves_extracted_texts_for_agent_seed() -> None:
-    """doc も画像/動画と同じく素材メタへ本文（extracted_texts）を残す（ADR-0063）。
+    """doc も画像/動画と同じく素材メタへ本文（extracted_texts）を残す（ADR-0064）。
 
     voice agent が起動時に初期前提としてシードする源。上限（DOC_SEED_MAX_CHARS）で
     機械的に打ち切られ、全文は従来どおり grounding 側が持つ。
@@ -378,7 +378,7 @@ def test_upload_doc_publishes_visual_excerpt_for_active_injection(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """doc 索引完了は analysis.visual を publish し、会話中の agent が能動的に触れられる
-    （ADR-0063 決定8）。イベントの観察は PII マスク済み・件数/文字数キャップ済みの抜粋。
+    （ADR-0064 決定8）。イベントの観察は PII マスク済み・件数/文字数キャップ済みの抜粋。
     """
     from sanba_api.routers import sessions as sessions_module
 

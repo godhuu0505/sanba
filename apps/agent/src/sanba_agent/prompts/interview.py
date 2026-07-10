@@ -218,7 +218,7 @@ def build_materials_premise(
     max_item_chars: int = MATERIALS_SEED_MAX_ITEM_CHARS,
     max_total_chars: int = MATERIALS_SEED_MAX_TOTAL_CHARS,
 ) -> str:
-    """解析済みの参考資料を初期 instructions にシードする一節（ADR-0063）。
+    """解析済みの参考資料を初期 instructions にシードする一節（ADR-0064）。
 
     ADR-0035（準備フォーム）と同じ「LLM 追加呼び出しなしの機械的組み立て」。
     素材メタ（`materials.extracted_texts`）を正とし、1 素材 `max_item_chars` 字・

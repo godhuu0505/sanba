@@ -1,4 +1,4 @@
-"""grounding バックエンドの起動時検証（ADR-0063 決定6）のテスト。
+"""grounding バックエンドの起動時検証（ADR-0064 決定6）のテスト。
 
 `REQUIRE_ELASTICSEARCH` 設定時は ES 不通で fail-fast し、未設定時は従来どおり
 in-memory 縮退で起動できることを検証する。

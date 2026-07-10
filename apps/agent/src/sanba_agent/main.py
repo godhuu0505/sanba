@@ -185,7 +185,7 @@ def _context_signals(
     そのまま写す（ready/partial=reused, indexing/pending=running, failed=failed, none=出さない）。
     repo は end_user モードでは出さない（private repo 情報を利用者会話に出さない多層防御・
     build_agent_instructions の allow_repo_grounding と揃える）。materials は実際に初期
-    instructions へシードした解析済み素材の数（ADR-0063。シードしたときだけ done で出す）。
+    instructions へシードした解析済み素材の数（ADR-0064。シードしたときだけ done で出す）。
     """
     signals: list[ContextSignal] = []
     if meta is not None and (meta.goal or meta.goal_detail):
@@ -216,7 +216,7 @@ def _context_signals(
 
 
 def _session_materials(repo: SessionRepository, session_id: str) -> list[dict[str, Any]]:
-    """初期シード用に素材メタを読む（ADR-0063）。読み取り失敗は空＝シードなしで会話は成立させる。
+    """初期シード用に素材メタを読む（ADR-0064）。読み取り失敗は空＝シードなしで会話は成立させる。
 
     素材メタの `extracted_texts` は web 表示用に生のまま保存されている（画像/動画の既存
     パターン）ため、LLM コンテキストへ流す前にここで PII をマスクする。索引経路
@@ -249,7 +249,7 @@ def build_agent_instructions(repo: SessionRepository, session_id: str) -> AgentS
     作らない（#321 / 多層防御として PR8 以降も維持）。
 
     developer では準備フォームのゴール・詳細（ADR-0035）に加え、解析済みの参考資料
-    （ADR-0063: `materials.extracted_texts` の機械的シード）も前提としてシードし、
+    （ADR-0064: `materials.extracted_texts` の機械的シード）も前提としてシードし、
     analyze 用の事前情報ノート(prep_note)を併せて返す。資料はモードを確認できた
     非 end_user のときだけシードする（repo 前提と同じフェイルクローズ）。repo 由来の
     シード可否は「セッション文書を正しく読めて、かつ end_user でない」ときだけ True にする。
@@ -2047,7 +2047,7 @@ async def inject_video_analysis(
 ) -> None:
     """アップロード素材（動画・画像・文書）の解析結果を会話へ能動注入する。
 
-    worker/API が publish した analysis.visual（ADR-0040 §4・doc は ADR-0063 決定8 で対象拡大）
+    worker/API が publish した analysis.visual（ADR-0040 §4・doc は ADR-0064 決定8 で対象拡大）
     を受けて、エージェントが素材内容に触れて深掘り
     質問を投げられるようにする。ADR-0037 は非同期の会話割り込みを避ける決定だったが、本注入は
     ADR-0040 §4 が analysis.visual に限って許可する。ただし発話を遮らない穏当な注入にする
@@ -2530,7 +2530,7 @@ async def entrypoint(ctx: JobContext) -> None:
 
 
 def ensure_grounding_backend() -> None:
-    """起動時に grounding バックエンドの設定を検証する（ADR-0063 決定6）。
+    """起動時に grounding バックエンドの設定を検証する（ADR-0064 決定6）。
 
     `REQUIRE_ELASTICSEARCH=true`（本番）のとき、ES 未設定・不通なら fail-fast で
     プロセスを落とし、「資料が見えないエージェント」がサイレントに動き続けるのを防ぐ。

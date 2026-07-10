@@ -257,7 +257,7 @@ def test_unreadable_session_fails_closed_for_repo_grounding() -> None:
 
 
 def test_developer_session_seeds_analyzed_materials_with_signal() -> None:
-    """解析済み素材はシードされ、context.progress シグナルも出る（ADR-0063）。"""
+    """解析済み素材はシードされ、context.progress シグナルも出る（ADR-0064）。"""
     repo = _repo()
     _seed_session(repo, mode=InviteScope.DEVELOPER)
     repo.save_material(
@@ -330,7 +330,7 @@ def test_unreadable_session_fails_closed_for_materials_seed() -> None:
 
 
 def test_materials_seed_masks_pii_before_llm_context() -> None:
-    """素材の解析結果は PII をマスクしてからシードする（索引経路と同じ規律 / ADR-0063）。"""
+    """素材の解析結果は PII をマスクしてからシードする（索引経路と同じ規律 / ADR-0064）。"""
     repo = _repo()
     _seed_session(repo, mode=InviteScope.DEVELOPER)
     repo.save_material(

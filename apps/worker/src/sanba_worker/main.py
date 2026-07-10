@@ -31,7 +31,7 @@ _tracer = get_tracer(__name__)
 
 
 def ensure_grounding_backend(indexer: ContextIndexer, *, required: bool) -> None:
-    """起動時に grounding バックエンドの設定を検証する（ADR-0063 決定6）。
+    """起動時に grounding バックエンドの設定を検証する（ADR-0064 決定6）。
 
     `REQUIRE_ELASTICSEARCH=true`（本番）のとき、ES 未設定・不通なら fail-fast で
     起動を止め、解析結果の索引がプロセス内メモリへサイレントに落ちた構成を検出する。

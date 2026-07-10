@@ -431,7 +431,7 @@ DOC_VISUAL_MAX_ITEM_CHARS = 300
 
 
 def _doc_visual_observations(seed_texts: list[str]) -> list[str]:
-    """doc の解析完了を会話へ能動注入するための抜粋を作る（ADR-0063 決定8）。
+    """doc の解析完了を会話へ能動注入するための抜粋を作る（ADR-0064 決定8）。
 
     `analysis.visual` に載せて agent が会話中の一言として触れる素材で、朗読ではなく
     認識合わせが目的のため先頭 3 件・各 300 字に機械的に切る（全文はシード済み素材メタと
@@ -442,7 +442,7 @@ def _doc_visual_observations(seed_texts: list[str]) -> list[str]:
 
 
 def _doc_seed_texts(chunks: list[str], max_total_chars: int = DOC_SEED_MAX_CHARS) -> list[str]:
-    """doc の抽出 chunk から素材メタへ残すシード用テキストを先頭から切り出す（ADR-0063）。
+    """doc の抽出 chunk から素材メタへ残すシード用テキストを先頭から切り出す（ADR-0064）。
 
     voice agent が起動時に `materials.extracted_texts` を初期前提としてシードするため、
     画像（本エンドポイント）・動画（worker）と同じ形で doc にも本文を残す。Firestore

@@ -71,6 +71,6 @@
 | [0060](0060-server-side-session-and-cookie.md) | サーバサイドセッション（不透明 SID + HttpOnly Cookie）と Next.js 同一オリジン化 | Accepted |
 | [0061](0061-session-ai-cost-kpi-analytics.md) | セッション単位の AI コスト・KPI 分析イベント基盤（Elasticsearch + Kibana） | Proposed |
 | [0062](0062-devops-llmops-maturity-roadmap.md) | DevOps/LLMOps 成熟度ロードマップ — AI 増幅時代の安定性・安全性ゲート（プログレッシブデリバリー / エージェント評価の格上げ / SLO・エラーバジェット / ランタイムガードレール） | Proposed |
-| [0063](0063-material-context-seeding.md) | 参考資料の解析結果を voice agent の初期前提としてシードする | Proposed |
+| [0064](0064-material-context-seeding.md) | 参考資料の解析結果を voice agent の初期前提としてシードする | Proposed |
 
 付随資料は [`supplements/`](supplements/) に置く（特定 ADR の実測・検証データ）。
