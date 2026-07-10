@@ -15,7 +15,9 @@ import os
 import sys
 from pathlib import Path
 
-KIBANA_NDJSON = Path(__file__).parent.parent / "infra/observability/kibana/sanba-analytics.ndjson"
+KIBANA_NDJSON = (
+    Path(__file__).parent.parent / "infra/observability/kibana/sanba-analytics.ndjson"
+)
 
 
 def main() -> int:
@@ -27,6 +29,7 @@ def main() -> int:
     from sanba_shared.analytics_setup import (
         DEFAULT_ANALYTICS_RETENTION_DAYS,
         import_kibana_saved_objects,
+        is_serverless,
         setup_analytics,
     )
 
@@ -36,10 +39,20 @@ def main() -> int:
         kwargs["api_key"] = api_key
     client = Elasticsearch(**kwargs)  # type: ignore[arg-type]
     retention_days = int(
-        os.environ.get("ANALYTICS_RETENTION_DAYS", str(DEFAULT_ANALYTICS_RETENTION_DAYS))
+        os.environ.get(
+            "ANALYTICS_RETENTION_DAYS", str(DEFAULT_ANALYTICS_RETENTION_DAYS)
+        )
     )
+    serverless = is_serverless(client)
     setup_analytics(client, retention_days=retention_days)
-    print(f"elasticsearch: analytics data stream / ILM({retention_days}d) / pricing index ready")
+    retention_desc = (
+        f"data stream lifecycle({retention_days}d)"
+        if serverless
+        else f"ILM({retention_days}d)"
+    )
+    print(
+        f"elasticsearch: analytics data stream / {retention_desc} / pricing index ready"
+    )
 
     kibana_url = os.environ.get("KIBANA_URL", "")
     if kibana_url:

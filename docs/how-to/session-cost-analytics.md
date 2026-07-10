@@ -27,7 +27,9 @@
    just analytics-setup
    ```
 
-   - `ANALYTICS_RETENTION_DAYS`（既定 365）で ILM の削除期限を変える。
+   - `ANALYTICS_RETENTION_DAYS`（既定 365）で保持期間を変える。非 serverless は ILM、
+     Elasticsearch Serverless では ILM が使えないため data stream lifecycle（`data_retention`）で削除する。
+     serverless 判定はセットアップ時に自動で行い、アプリ起動時の fail-soft テンプレート作成も同じ判定に従う。
    - `KIBANA_URL` 未設定なら ES 側だけ整える（ダッシュボードは後から import 可能）。
 2. Terraform を apply する（merge 後は deploy.yml の migrate ジョブが自動適用）:
    - log-based metrics `sanba/session_cost_usd` / `sanba/session_cost_count` /
@@ -72,7 +74,7 @@
 | `LIVEKIT_CONNECTION_USD_PER_MIN` | 0.0005 | LiveKit 接続分数の推定単価 |
 | `LIVEKIT_AGENT_SESSION_USD_PER_MIN` | 0.01 | agent session 分数の推定単価 |
 | `LIVEKIT_NOISE_CANCELLATION_USD_PER_MIN` | 0.005 | Krisp BVC 分数の推定単価 |
-| `ANALYTICS_RETENTION_DAYS` | 365 | 分析イベントの ILM 保持期間（setup スクリプト） |
+| `ANALYTICS_RETENTION_DAYS` | 365 | 分析イベントの保持期間（非 serverless=ILM / serverless=data stream lifecycle） |
 | `TF_VAR_session_cost_alert_usd` | 5 | セッションコスト異常アラートのしきい値 |
 | `TF_VAR_enable_billing_export` | false | billing export 用 BigQuery dataset の作成 |
 

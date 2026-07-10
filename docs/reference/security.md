@@ -19,7 +19,7 @@
 | RAG grounding（資料・要件・発話） | Elasticsearch | 中〜高 | **索引前に PII マスク**、ILM で期限切れ削除 |
 | 参考資料アップロード | Elasticsearch | 中〜高 | チャンク化＋PIIマスク後に索引 |
 | transcript 全文（セッション終了時 / ADR-0061） | Firestore（`sessions/{id}/transcripts/full`） | 高 | **PII マスク後に保存**。ゲストは 30 日 TTL、ログインセッションは P5 分析のため保持 |
-| コスト・KPI 分析イベント（ADR-0061） | Elasticsearch（`sanba-analytics-*`）+ Cloud Logging | 低 | ID・トークン数・金額・スコアのみで会話本文を含めない。ILM（既定 365 日）で削除 |
+| コスト・KPI 分析イベント（ADR-0061） | Elasticsearch（`sanba-analytics-*`）+ Cloud Logging | 低 | ID・トークン数・金額・スコアのみで会話本文を含めない。保持期間（既定 365 日）で削除（非 serverless=ILM / serverless=data stream lifecycle） |
 
 ## 3. 同意（#10）
 - セッション作成時に**録音・AI処理への明示的な同意**が必須（`require_consent`）。
@@ -39,7 +39,8 @@
   （既定 30 日）で自動削除。ログインユーザーのセッションは将来のナレッジ改善分析（P5）の
   ため保持する（削除はセッション文書と合わせて運用で行う）。
 - 分析イベント（`sanba-analytics-*`）: 会話本文を含まないため長期保持を許容し、
-  `just analytics-setup` が張る ILM（`ANALYTICS_RETENTION_DAYS`、既定 365 日）で削除する。
+  `just analytics-setup` が張る保持ポリシー（`ANALYTICS_RETENTION_DAYS`、既定 365 日）で削除する。
+  非 serverless は ILM、Elasticsearch Serverless では ILM 非対応のため data stream lifecycle（`data_retention`）を使う。
 
 ## 6. 暗号化 & 最小権限
 - 保存時/通信時暗号化は GCP デフォルト（必要なら CMEK を検討）。

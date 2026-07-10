@@ -104,13 +104,11 @@ def is_serverless(client: Any) -> bool:
         return False
     try:
         data = info()
-    except Exception:  # noqa: BLE001
-        return False
-    try:
         version = data.get("version") or {}
         return version.get("build_flavor") == "serverless"
-    except AttributeError:
-        return False
+    except Exception as exc:  # noqa: BLE001
+        log.warning("es_flavor_detect_failed", error=str(exc))
+        return True
 
 
 def put_index_template(

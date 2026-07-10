@@ -91,9 +91,32 @@ class FakeServerlessES(FakeES):
         return {"version": {"build_flavor": "serverless"}}
 
 
+class FakeInfoRaisesES(FakeES):
+    def info(self) -> dict[str, Any]:
+        raise RuntimeError("action [cluster:monitor/main] is unauthorized")
+
+
+class FakeMalformedInfoES(FakeES):
+    def info(self) -> str:
+        return "not-a-dict"
+
+
 def test_is_serverless_detects_flavor_and_defaults_false() -> None:
     assert is_serverless(FakeServerlessES()) is True
     assert is_serverless(FakeES()) is False
+
+
+def test_is_serverless_falls_back_to_safe_side_when_info_fails() -> None:
+    assert is_serverless(FakeInfoRaisesES()) is True
+    assert is_serverless(FakeMalformedInfoES()) is True
+
+
+def test_ensure_event_stream_template_uses_safe_side_when_info_fails() -> None:
+    client = FakeInfoRaisesES()
+    assert ensure_event_stream_template(client) is True
+    template = client.indices.templates[0]["template"]
+    assert "settings" not in template
+    assert template["lifecycle"]["data_retention"].endswith("d")
 
 
 def test_ensure_event_stream_template_serverless_omits_replicas_and_ilm() -> None:
