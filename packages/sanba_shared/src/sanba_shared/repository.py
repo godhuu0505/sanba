@@ -1681,20 +1681,20 @@ class SessionRepository:
         self._mem_questions[session_id] = doc
 
     def get_current_question(self, session_id: str) -> dict[str, Any] | None:
-        """未回答の現在質問ドキュメントを返す（tombstone / 未提示は None）。
+        """現在質問ドキュメントを返す（未提示は None、cleared な tombstone も返す）。
 
         worker のインスタンス入れ替え等で新プロセスがセッションを引き継ぐとき、
         agent 側の current 追跡（`_current_question_id`）を web の金枠ピンと
-        合わせるために読む（ADR-0020 §5-8 の引き継ぎ経路）。
+        合わせるために読む（ADR-0020 §5-8 の引き継ぎ経路）。tombstone も返すのは、
+        採番 `_question_seq` を id 末尾の連番から継げるようにするため（同一プロンプト
+        再提示時の id 再利用を防ぐ）。未回答かどうかは呼び出し側が `cleared` で見る。
         """
         if self._client is not None:
             snap = self._question_doc(session_id).get()
             doc = snap.to_dict() if snap.exists else None
         else:
             doc = self._mem_questions.get(session_id)
-        if doc is None or doc.get("cleared"):
-            return None
-        return dict(doc)
+        return dict(doc) if doc is not None else None
 
     def clear_current_question(self, session_id: str, question_id: str, cleared_seq: int) -> bool:
         """回答済みの現在質問を tombstone 化する（ADR-0020 §5-3 / §5-7 / §5-9）。

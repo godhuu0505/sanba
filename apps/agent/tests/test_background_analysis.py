@@ -392,6 +392,49 @@ async def test_user_requested_end_is_retracted_by_new_gap() -> None:
 
 
 @pytest.mark.asyncio
+async def test_forced_end_survives_redetection_of_existing_gap() -> None:
+    """既存 open ノードの再検知では強制終了提案を取り下げない（分析タイミング依存の失敗防止）。"""
+    transport = RecordingTransport()
+    agent = _agent(transport)
+    _seed_requirement(agent)
+    _seed_gap(agent, "性能要件が未確認")
+    propose = type(agent).propose_session_end.__wrapped__
+    await propose(agent, None, user_requested=True)
+    assert agent._end_proposed is True and agent._end_forced is True
+
+    same = AnalysisResult(
+        summary="s", open_topics=["性能要件が未確認"], next_question="q?", suggested_answer="a"
+    )
+    await agent._reconcile_inquiry(same)
+    assert agent._end_proposed is True, "同じ open ノードの再検知では取り下げない"
+    assert agent._end_forced is True
+
+    fresh = AnalysisResult(
+        summary="s", open_topics=["全く新しい論点"], next_question="q?", suggested_answer="a"
+    )
+    await agent._reconcile_inquiry(fresh)
+    assert agent._end_proposed is False, "新規の gating ノードが生えたら取り下げる"
+    assert agent._end_forced is False
+
+
+@pytest.mark.asyncio
+async def test_add_inquiry_of_existing_open_gap_keeps_end_proposal() -> None:
+    transport = RecordingTransport()
+    agent = _agent(transport)
+    _seed_requirement(agent)
+    _seed_gap(agent, "性能要件が未確認")
+    propose = type(agent).propose_session_end.__wrapped__
+    await propose(agent, None, user_requested=True)
+
+    add = type(agent).add_inquiry.__wrapped__
+    await add(agent, None, "性能要件が未確認")
+    assert agent._end_proposed is True, "既存 open ノードの再追加では取り下げない"
+
+    await add(agent, None, "新しい論点")
+    assert agent._end_proposed is False
+
+
+@pytest.mark.asyncio
 async def test_new_gap_retracts_prior_end_proposal() -> None:
     """終了提案後に新しい抜けが検知されたら提案は取り下げられ、再提案が要る（レビュー指摘）。"""
     transport = RecordingTransport()

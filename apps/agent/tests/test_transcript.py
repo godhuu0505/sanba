@@ -133,3 +133,50 @@ async def test_agent_utterance_ids_continue_from_publisher_seq_on_takeover() -> 
 
     finals = [s["event"] for s in transport.sent if s["event"]["type"] == "transcript.final"]
     assert finals[0]["utterance_id"] == "a43", "旧プロセスが発行し得た a1..a42 と重ならない"
+
+
+@pytest.mark.asyncio
+async def test_agent_utterance_checkpoints_seq_for_takeover() -> None:
+    """SANBA 発話の送出後に seq を永続化し、質問を挟まない会話でも引き継ぎ後の id が衝突しない。"""
+    repo = SessionRepository()
+    repo._client = None
+    transport = RecordingTransport()
+    first = SANBAAgent(
+        session_id="s1",
+        repo=repo,
+        grounding=GroundingStore(),
+        publisher=EventPublisher("s1", transport, start_seq=repo.get_startup_seq("s1")),
+    )
+    first.publish_agent_utterance("こんにちは")
+    first.publish_agent_utterance("始めましょう")
+    await _drain(first)
+    checkpoint = repo.get_startup_seq("s1")
+    assert checkpoint >= 2, "transcript.final 後の seq が復元起点に含まれる"
+
+    transport2 = RecordingTransport()
+    second = SANBAAgent(
+        session_id="s1",
+        repo=repo,
+        grounding=GroundingStore(),
+        publisher=EventPublisher("s1", transport2, start_seq=repo.get_startup_seq("s1")),
+    )
+    second.publish_agent_utterance("復旧しました")
+    await _drain(second)
+    finals = [s["event"] for s in transport2.sent if s["event"]["type"] == "transcript.final"]
+    assert finals[0]["utterance_id"] not in {"a1", "a2"}, "旧プロセスの id を再利用しない"
+
+
+@pytest.mark.asyncio
+async def test_transcript_hydration_excludes_agent_utterances() -> None:
+    """SANBA 発話（#479 で永続化対象）は分析用 transcript へ復元しない（live と同じ不変条件）。"""
+    from sanba_shared.models import Utterance
+
+    repo = SessionRepository()
+    repo._client = None
+    repo.add_utterance("s1", Utterance(speaker="SANBA", text="こんにちは、始めましょう"))
+    repo.add_utterance("s1", Utterance(speaker="participant", text="会話ログを表示したい"))
+
+    agent = SANBAAgent(session_id="s1", repo=repo, grounding=GroundingStore())
+    assert agent.transcript == ["[u1] participant: 会話ログを表示したい"]
+    uid = agent.record_utterance("participant", "追加の要望です")
+    assert uid == "u3", "採番は SANBA 分も含む全件数から続け、旧 id と衝突させない"

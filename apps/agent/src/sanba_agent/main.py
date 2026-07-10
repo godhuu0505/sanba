@@ -457,6 +457,7 @@ class SANBAAgent(Agent):
         self._current_question_id: str | None = None
         self._current_question_has_options = False
         self._question_asked_turn = -1
+        self._user_turn = 0
         self._inquiry_focus_id: str | None = None
         self._inquiry_seq = 0
         self._inquiry = self._hydrate_inquiry()
@@ -471,7 +472,6 @@ class SANBAAgent(Agent):
         self._persist_lock = asyncio.Lock()
         self._prefetch = PrefetchCache()
         self._prefetch_task: asyncio.Task[None] | None = None
-        self._user_turn = 0
         self._analysis_scheduler = AnalysisScheduler()
         self._analysis_task: asyncio.Task[None] | None = None
         self._analysis_lock = asyncio.Lock()
@@ -592,8 +592,11 @@ class SANBAAgent(Agent):
         発話は `record_utterance` が 1 件ずつ `sessions/{id}/utterances` へ永続化しており、
         worker のインスタンス入れ替え等でジョブが別プロセスへ再ディスパッチされても
         ここから会話文脈を取り戻せる（inquiry の `_hydrate_inquiry` と同じ引き継ぎ経路）。
-        採番 `_utterance_seq` は復元件数から続け、utterance_id の衝突を防ぐ。
-        読み取り失敗は fail-soft（空の transcript で会話は成立させる）。
+        SANBA（エージェント）発話は会話ログ表示（#479）のため utterances に永続化されて
+        いるが、分析用 transcript には従来どおり載せない（`publish_agent_utterance` と同じ
+        不変条件）ため除外する。採番 `_utterance_seq` は SANBA 分も含む全件数から続け、
+        utterance_id の衝突を防ぐ。読み取り失敗は fail-soft（空の transcript で会話は
+        成立させる）。
         """
         try:
             utterances = self._repo.list_utterances(self._session_id)
@@ -603,17 +606,26 @@ class SANBAAgent(Agent):
         if not utterances:
             return []
         self._utterance_seq = len(utterances)
-        log.info("transcript_hydrated", session=self._session_id, utterances=len(utterances))
-        return [f"[u{i}] {u.speaker}: {u.text}" for i, u in enumerate(utterances, start=1)]
+        participant = [u for u in utterances if u.speaker != "SANBA"]
+        log.info(
+            "transcript_hydrated",
+            session=self._session_id,
+            utterances=len(participant),
+            total=len(utterances),
+        )
+        return [f"[u{i}] {u.speaker}: {u.text}" for i, u in enumerate(participant, start=1)]
 
     def _hydrate_current_question(self) -> None:
-        """永続化済みの未回答質問（金枠ピン）の current 追跡を引き継ぐ（ADR-0020 §5-8）。
+        """永続化済みの現在質問（金枠ピン）の current 追跡と採番を引き継ぐ（ADR-0020 §5-8）。
 
         web は `questions/current` からピンを復元し続けるため、agent 側の
         `_current_question_id` を合わせないと、引き継ぎ後の回答で
         `clear_current_question` が呼ばれず回答済みのピンが画面に残り続ける。
-        採番 `_question_seq` は id 末尾の連番から続け、同一プロンプト再掲時の
-        id 衝突を防ぐ。読み取り失敗は fail-soft（未提示扱いで会話は成立させる）。
+        採番 `_question_seq` は id 末尾の連番から続け、同一プロンプト再提示時の
+        id 再利用（web の answeredQuestions が回答済みと誤認しピンが出ない）を防ぐ。
+        採番の復元は cleared な tombstone からも行う。未回答の復元は現在のユーザー
+        ターンで提示済みとして扱い、差し替え保護・再掲ブレーカを引き継ぎ直後から
+        効かせる。読み取り失敗は fail-soft（未提示扱いで会話は成立させる）。
         """
         try:
             doc = self._repo.get_current_question(self._session_id)
@@ -625,14 +637,15 @@ class SANBAAgent(Agent):
         if doc is None:
             return
         question_id = str(doc.get("id") or "")
+        if question_id and (match := re.search(r"-(\d+)$", question_id)) is not None:
+            self._question_seq = int(match.group(1))
         prompt = str(doc.get("prompt") or "")
-        if not question_id or not prompt:
+        if doc.get("cleared") or not question_id or not prompt:
             return
         self._questions[question_id] = prompt
         self._current_question_id = question_id
         self._current_question_has_options = bool(doc.get("options"))
-        if (match := re.search(r"-(\d+)$", question_id)) is not None:
-            self._question_seq = int(match.group(1))
+        self._question_asked_turn = self._user_turn
         log.info("current_question_hydrated", session=self._session_id, id=question_id)
 
     def _next_inquiry_seq(self) -> int:
@@ -773,15 +786,27 @@ class SANBAAgent(Agent):
         のため utterances には participant と同じ時系列（_persist_lock で直列化）で永続化する。
         grounding へは索引しない（検索対象は素材・参加者発話）。participant の u{n} と衝突しない
         a{n} 空間で採番する。publisher 未設定なら no-op。
+
+        送出後に session の seq をチェックポイントする。transcript.final は
+        `get_startup_seq` の復元対象（last_seq / current question の seq）に含まれず、
+        質問を挟まない発話だけが続いた後にプロセス交代すると採番の起点
+        （`_agent_utterance_seq` = publisher の起動 seq）が旧発話より手前に戻り、
+        a{n} が再利用されて web の既存吹き出しを上書きするため。
         """
         if self._publisher is None:
             return
         self._agent_utterance_seq += 1
         uid = f"a{self._agent_utterance_seq}"
+        publisher = self._publisher
         session_id = self._session_id
         repo = self._repo
         self._persist(lambda: repo.add_utterance(session_id, Utterance(speaker="SANBA", text=text)))
-        self._publish(self._publisher.transcript_final("SANBA", "assistant", uid, text))
+
+        async def _emit_and_checkpoint() -> None:
+            await publisher.transcript_final("SANBA", "assistant", uid, text)
+            self._persist(lambda: repo.set_session_seq(session_id, publisher.seq))
+
+        self._publish(_emit_and_checkpoint())
 
     def record_answer(self, question_id: str, answer: str) -> str | None:
         """通常質問（#181）への回答を、問い本文とともに発話として記録する（Codex P2）。
@@ -1033,6 +1058,7 @@ class SANBAAgent(Agent):
         最新パス不在は自動 resolve、確認観点は coverage で open/resolve する
         （`reconcile_analysis`）。新しい gating ノードが生えたら終了提案を取り下げる（HP8）。
         """
+        open_before = {n.id for n in self._inquiry.open_nodes(_GATING_INQUIRY_KINDS)}
         changed = reconcile_analysis(
             self._inquiry,
             result,
@@ -1042,7 +1068,13 @@ class SANBAAgent(Agent):
         )
         if not changed:
             return
-        if any(n.status is InquiryStatus.OPEN and n.kind in _GATING_INQUIRY_KINDS for n in changed):
+        newly_open = any(
+            n.status is InquiryStatus.OPEN
+            and n.kind in _GATING_INQUIRY_KINDS
+            and n.id not in open_before
+            for n in changed
+        )
+        if newly_open:
             self._end_proposed = False
             self._end_forced = False
         await self._emit_inquiry_nodes(changed)
@@ -1653,6 +1685,8 @@ class SANBAAgent(Agent):
             text: 追加する確認事項の要点（例「ゲスト購入時の在庫引き当ての扱い」）。
         """
         node_id = make_inquiry_id(InquiryKind.GAP, text)
+        existing = self._inquiry.get(node_id)
+        was_open = existing is not None and existing.status is InquiryStatus.OPEN
         changed = self._inquiry.upsert(
             kind=InquiryKind.GAP,
             text=text,
@@ -1665,9 +1699,10 @@ class SANBAAgent(Agent):
         added = node is not None and node.status is InquiryStatus.OPEN
         if added:
             self._inquiry_focus_id = node_id
+            self._resolve_no_match_streak = 0
+        if added and not was_open:
             self._end_proposed = False
             self._end_forced = False
-            self._resolve_no_match_streak = 0
         await self._emit_inquiry_nodes(changed)
         log.info("add_inquiry", session=self._session_id, id=node_id, added=added)
         return {"added": added, "id": node_id}
