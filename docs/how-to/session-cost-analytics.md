@@ -59,9 +59,11 @@
 - Vertex AI 経路（`GOOGLE_GENAI_USE_VERTEXAI=true`）の `generateContent` 系呼び出しには
   billing labels（`session_id` / `product_id`）が付与される。Live API と embeddings は
   Google 側の制約で対象外（実測 usage × 公式単価の推定が唯一の手段）。
-- `TF_VAR_enable_billing_export=true` で BigQuery dataset `billing_export` が作られる。
+- GitHub Variable `ENABLE_BILLING_EXPORT=true`（terraform.yml が `TF_VAR_enable_billing_export`
+  として渡す）で BigQuery dataset `billing_export` が作られる。
   Cloud Billing の **Detailed usage cost export** をこの dataset に向ける設定は
-  請求先アカウント側（コンソール）で 1 度だけ行う。
+  請求先アカウント側（コンソール）で 1 度だけ行う
+  （手順は [pre-launch-cost-controls.md §3](pre-launch-cost-controls.md)）。
 - 突合クエリ例（BigQuery）: `labels` に `session_id` を持つ行を `SUM(cost)` し、
   Firestore `sessions/{id}.ai_cost.total_usd` ないし Kibana の推定値と比較する。
   乖離が継続的に大きい場合は単価表・トークン集計の見直しを行う（指標をハックしない原則）。
@@ -76,6 +78,6 @@
 | `LIVEKIT_NOISE_CANCELLATION_USD_PER_MIN` | 0.005 | Krisp BVC 分数の推定単価 |
 | `ANALYTICS_RETENTION_DAYS` | 365 | 分析イベントの保持期間（非 serverless=ILM / serverless=data stream lifecycle） |
 | `TF_VAR_session_cost_alert_usd` | 5 | セッションコスト異常アラートのしきい値 |
-| `TF_VAR_enable_billing_export` | false | billing export 用 BigQuery dataset の作成 |
+| `ENABLE_BILLING_EXPORT`（GitHub Variable） | false | billing export 用 BigQuery dataset の作成 |
 
 LiveKit 分数単価は推定値（実額は LiveKit ダッシュボードで確認し、乖離したら env で調整する）。
