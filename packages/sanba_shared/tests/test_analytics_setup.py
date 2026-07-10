@@ -85,6 +85,26 @@ def test_setup_analytics_is_idempotent_and_full() -> None:
     assert {d["id"] for d in pricing_docs} == set(PRICING)
 
 
+class ServerlessIndices(FakeIndices):
+    def put_index_template(self, **kwargs: Any) -> None:
+        if "settings" in kwargs.get("template", {}):
+            raise RuntimeError(
+                "illegal_argument_exception: Settings [index.number_of_replicas]"
+                " are not available when running in serverless mode"
+            )
+        super().put_index_template(**kwargs)
+
+
+def test_ensure_event_stream_template_falls_back_without_settings_on_serverless() -> None:
+    client = FakeES()
+    client.indices = ServerlessIndices()
+    assert ensure_event_stream_template(client) is True
+    template = client.indices.templates[0]
+    assert template["name"] == ANALYTICS_INDEX_TEMPLATE
+    assert "settings" not in template["template"]
+    assert "mappings" in template["template"]
+
+
 def test_event_mappings_cover_core_fields() -> None:
     props = event_mappings()["properties"]
     assert props["session_id"] == {"type": "keyword"}
@@ -95,3 +115,18 @@ def test_event_mappings_cover_core_fields() -> None:
     assert payload["efficiency"]["properties"]["usd_per_finalized_requirement"] == {
         "type": "double"
     }
+
+
+def test_put_index_template_reraises_unrelated_errors() -> None:
+    class BrokenIndices(FakeIndices):
+        def put_index_template(self, **kwargs: Any) -> None:
+            raise RuntimeError("connection refused")
+
+    client = FakeES()
+    client.indices = BrokenIndices()
+    try:
+        ensure_event_stream_template(client)
+    except RuntimeError as exc:
+        assert "connection refused" in str(exc)
+    else:
+        raise AssertionError("settings 起因でない失敗は握りつぶさず再送出する")

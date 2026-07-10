@@ -99,15 +99,33 @@ def event_mappings() -> dict[str, Any]:
 
 
 def put_index_template(client: Any, *, with_ilm: bool) -> None:
+    """index template を作る。settings 非対応（Elastic serverless）なら settings 抜きで再試行する。
+
+    serverless は `index.number_of_replicas` や ILM の index settings を受け付けず 400 を返す
+    （プラットフォーム側が管理するため指定不要）。self-managed / Cloud hosted では従来どおり
+    replicas=0（+ ILM）で作る。
+    """
     settings: dict[str, Any] = {"number_of_replicas": 0}
     if with_ilm:
         settings["index.lifecycle.name"] = ANALYTICS_ILM_POLICY
-    client.indices.put_index_template(
-        name=ANALYTICS_INDEX_TEMPLATE,
-        index_patterns=[ANALYTICS_INDEX_PATTERN],
-        data_stream={},
-        template={"settings": settings, "mappings": event_mappings()},
-    )
+    try:
+        client.indices.put_index_template(
+            name=ANALYTICS_INDEX_TEMPLATE,
+            index_patterns=[ANALYTICS_INDEX_PATTERN],
+            data_stream={},
+            template={"settings": settings, "mappings": event_mappings()},
+        )
+    except Exception as exc:  # noqa: BLE001
+        message = str(exc)
+        if "illegal_argument_exception" not in message and "serverless" not in message:
+            raise
+        log.warning("analytics_template_settings_unsupported", error=message)
+        client.indices.put_index_template(
+            name=ANALYTICS_INDEX_TEMPLATE,
+            index_patterns=[ANALYTICS_INDEX_PATTERN],
+            data_stream={},
+            template={"mappings": event_mappings()},
+        )
 
 
 def ensure_event_stream_template(client: Any) -> bool:

@@ -305,6 +305,89 @@ async def test_complete_session_refuses_when_open_remains() -> None:
 
 
 @pytest.mark.asyncio
+async def test_propose_session_end_circuit_breaks_after_repeated_declines() -> None:
+    """同一ターン内で拒否が続いたら stop=True と誘導を返し、暴走再試行を断つ（sess-29dc6e7e）。"""
+    transport = RecordingTransport()
+    agent = _agent(transport)
+    _seed_requirement(agent)
+    propose = type(agent).propose_session_end.__wrapped__
+    _seed_gap(agent, "性能要件が未確認")
+
+    first = await propose(agent, None)
+    assert first["proposed"] is False
+    assert "stop" not in first
+    assert first["open_inquiries"], "未解消の一覧を返し、解消の手がかりを渡す"
+
+    second = await propose(agent, None)
+    assert second["stop"] is True
+    assert "guidance" in second
+
+    agent.record_utterance("participant", "続きを話します")
+    reset = await propose(agent, None)
+    assert "stop" not in reset, "参加者の新しいターンでストリークはリセットされる"
+
+
+@pytest.mark.asyncio
+async def test_declined_open_inquiries_exclude_advisory_ambiguous() -> None:
+    """open_inquiries は gating 対象のみで open_count と一致させる（AMBIGUOUS は advisory）。"""
+    transport = RecordingTransport()
+    agent = _agent(transport)
+    _seed_requirement(agent)
+    propose = type(agent).propose_session_end.__wrapped__
+    _seed_gap(agent, "性能要件が未確認")
+    agent._inquiry.upsert(
+        kind=InquiryKind.AMBIGUOUS, text="対象ユーザーの範囲が曖昧", seq=agent._next_inquiry_seq()
+    )
+
+    declined = await propose(agent, None)
+    assert declined["open_count"] == 1
+    assert len(declined["open_inquiries"]) == 1
+    assert declined["open_inquiries"][0]["text"] == "性能要件が未確認"
+
+
+@pytest.mark.asyncio
+async def test_propose_session_end_user_requested_overrides_open_inquiries() -> None:
+    """参加者が終了を望むなら未解消が残っていても提案・確定できる（sess-29dc6e7e）。"""
+    transport = RecordingTransport()
+    agent = _agent(transport)
+    _seed_requirement(agent)
+    agent.set_shutdown_hook(lambda reason: None)
+    _seed_gap(agent, "性能要件が未確認")
+    propose = type(agent).propose_session_end.__wrapped__
+    complete = type(agent).complete_session.__wrapped__
+
+    proposed = await propose(agent, None, user_requested=True)
+    assert proposed["proposed"] is True
+    assert proposed["open_count"] == 1
+    sent = [t["event"] for t in transport.sent if t["event"]["type"] == "session.end_proposed"]
+    assert sent and sent[0]["open_count"] == 1
+
+    completed = await complete(agent, None)
+    assert completed["completed"] is True
+    assert any(t["event"]["type"] == "session.completed" for t in transport.sent)
+
+
+@pytest.mark.asyncio
+async def test_user_requested_end_is_retracted_by_new_gap() -> None:
+    """強制提案の後に新しい抜けが出たら、強制フラグごと取り下げる（整合性を優先）。"""
+    transport = RecordingTransport()
+    agent = _agent(transport)
+    _seed_requirement(agent)
+    agent.set_shutdown_hook(lambda reason: None)
+    _seed_gap(agent, "性能要件が未確認")
+    propose = type(agent).propose_session_end.__wrapped__
+    complete = type(agent).complete_session.__wrapped__
+    await propose(agent, None, user_requested=True)
+
+    add = type(agent).add_inquiry.__wrapped__
+    await add(agent, None, "在庫引き当ての扱い")
+
+    result = await complete(agent, None)
+    assert result["completed"] is False
+    assert result["reason"] == "not_proposed"
+
+
+@pytest.mark.asyncio
 async def test_new_gap_retracts_prior_end_proposal() -> None:
     """終了提案後に新しい抜けが検知されたら提案は取り下げられ、再提案が要る（レビュー指摘）。"""
     transport = RecordingTransport()

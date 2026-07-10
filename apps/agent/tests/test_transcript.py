@@ -78,3 +78,36 @@ async def test_publish_helpers_noop_without_publisher() -> None:
     agent.publish_agent_utterance("y")
     assert agent._pending_user_uid is None
     assert agent._agent_utterance_seq == 0
+
+
+@pytest.mark.asyncio
+async def test_transcript_hydrates_from_persisted_utterances() -> None:
+    """新プロセスがセッションを引き継ぐとき発話ログから transcript を復元する（sess-29dc6e7e）。"""
+    repo = SessionRepository()
+    repo._client = None
+    first = SANBAAgent(session_id="s1", repo=repo, grounding=GroundingStore())
+    first.record_utterance("participant", "会話ログを表示したい")
+    first.record_utterance("participant", "今回のセッション分だけでよい")
+    while first._persist_tasks:
+        await asyncio.gather(*list(first._persist_tasks))
+
+    second = SANBAAgent(session_id="s1", repo=repo, grounding=GroundingStore())
+    assert second.transcript == [
+        "[u1] participant: 会話ログを表示したい",
+        "[u2] participant: 今回のセッション分だけでよい",
+    ]
+    uid = second.record_utterance("participant", "追加の要望です")
+    assert uid == "u3", "復元後の採番は既存の発話の続きから振る"
+
+
+@pytest.mark.asyncio
+async def test_transcript_hydration_failure_is_fail_soft() -> None:
+    repo = SessionRepository()
+    repo._client = None
+
+    def _boom(session_id: str):  # type: ignore[no-untyped-def]
+        raise RuntimeError("firestore down")
+
+    repo.list_utterances = _boom  # type: ignore[assignment]
+    agent = SANBAAgent(session_id="s1", repo=repo, grounding=GroundingStore())
+    assert agent.transcript == []

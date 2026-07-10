@@ -159,3 +159,50 @@ async def test_clear_without_publisher_is_noop() -> None:
     repo._client = None
     agent = SANBAAgent(session_id="s1", repo=repo, grounding=GroundingStore(), publisher=None)
     await agent.clear_current_question("q1")
+
+
+@pytest.mark.asyncio
+async def test_same_prompt_reask_same_turn_is_skipped() -> None:
+    """同一ターンで同じ問いを再掲しても supersede せず現状維持する（sess-29dc6e7e の暴走対策）。"""
+    agent, _repo, transport, _pub = _agent()
+    ask = type(agent).ask_question.__wrapped__
+    r1 = await ask(agent, None, "Q1?")
+    transport.sent.clear()
+    r2 = await ask(agent, None, "Q1?")
+    assert transport.sent == [], "再掲は publish しない（画面の問いピンを揺らさない）"
+    assert r2["asked"] == r1["asked"]
+    assert "note" in r2 and "提示済み" in r2["note"]
+
+
+@pytest.mark.asyncio
+async def test_supersede_circuit_breaks_within_turn() -> None:
+    """同一ターンの差し替えが上限を超えたら stop=True で打ち切る（sess-29dc6e7e の暴走対策）。"""
+    agent, _repo, transport, _pub = _agent()
+    ask = type(agent).ask_question.__wrapped__
+    await ask(agent, None, "Q1?")
+    await ask(agent, None, "Q2?")
+    r3 = await ask(agent, None, "Q3?")
+    assert r3["asked"] != ""
+    transport.sent.clear()
+    r4 = await ask(agent, None, "Q4?")
+    assert r4.get("stop") is True
+    assert r4["asked"] == r3["asked"], "現状の問いを維持する"
+    assert transport.sent == []
+
+    agent.record_utterance("participant", "回答します")
+    r5 = await ask(agent, None, "Q5?")
+    assert "stop" not in r5, "新しいターンでは再び問いを立てられる"
+    assert agent.current_question_id == r5["asked"]
+
+
+@pytest.mark.asyncio
+async def test_same_prompt_with_options_added_still_supersedes() -> None:
+    """同じ文言でも選択肢を付け足す再質問は正当な差し替えとして通す。"""
+    agent, _repo, transport, _pub = _agent()
+    ask = type(agent).ask_question.__wrapped__
+    r1 = await ask(agent, None, "並び順は？")
+    r2 = await ask(agent, None, "並び順は？", ["関連度順", "新着順"])
+    types = [t["event"]["type"] for t in transport.sent]
+    assert types == ["question.asked", "question.cleared", "question.asked"]
+    assert r2["asked"] != r1["asked"]
+    assert agent.current_question_id == r2["asked"]
