@@ -148,3 +148,32 @@ def test_event_mappings_cover_core_fields() -> None:
     assert payload["efficiency"]["properties"]["usd_per_finalized_requirement"] == {
         "type": "double"
     }
+
+
+def test_kibana_dashboard_ndjson_is_valid_and_references_resolve() -> None:
+    """Kibana ダッシュボード ndjson は各行が有効な JSON で、references が自ファイル内で解決する。
+
+    手書きで saved objects を編集する運用のため、壊れた JSON・参照 id の誤記を CI で機械検出する
+    （import 前に落とす）。全 references の id は同 ndjson 内の別オブジェクト id を指すはず。
+    """
+    import json
+    from pathlib import Path
+
+    ndjson = Path(__file__).parents[3] / "infra/observability/kibana/sanba-analytics.ndjson"
+    objs: list[dict[str, Any]] = []
+    for lineno, line in enumerate(ndjson.read_text().splitlines(), start=1):
+        line = line.strip()
+        if not line:
+            continue
+        obj = json.loads(line)
+        assert obj.get("id"), f"line {lineno}: id 欠落"
+        assert obj.get("type"), f"line {lineno}: type 欠落"
+        objs.append(obj)
+
+    ids = {o["id"] for o in objs}
+    assert len(ids) == len(objs), "id が重複している"
+    for o in objs:
+        for ref in o.get("references", []):
+            assert ref["id"] in ids, (
+                f"{o['type']}:{o['id']} の参照 {ref['id']}（{ref.get('name')}）が ndjson 内に無い"
+            )
