@@ -29,8 +29,28 @@ app = FastAPI(title="sanba-worker")
 setup_observability(app)
 _tracer = get_tracer(__name__)
 
+
+def ensure_grounding_backend(indexer: ContextIndexer, *, required: bool) -> None:
+    """起動時に grounding バックエンドの設定を検証する（ADR-0064 決定6）。
+
+    `REQUIRE_ELASTICSEARCH=true`（本番）のとき、ES 未設定・不通なら fail-fast で
+    起動を止め、解析結果の索引がプロセス内メモリへサイレントに落ちた構成を検出する。
+    未設定時は従来どおり in-memory 縮退を許し、既存アラートのフィルタ文字列
+    （`elasticsearch_unavailable_using_memory`）で観測に載せる。
+    """
+    if not indexer.is_memory:
+        return
+    if required:
+        raise RuntimeError(
+            "REQUIRE_ELASTICSEARCH is set but Elasticsearch is not reachable; "
+            "set ELASTICSEARCH_URL correctly or unset REQUIRE_ELASTICSEARCH"
+        )
+    log.warning("elasticsearch_unavailable_using_memory", reason="not_configured")
+
+
 _repo = SessionRepository()
 _indexer = ContextIndexer(settings.grounding_config(), masker=mask_pii)
+ensure_grounding_backend(_indexer, required=settings.require_elasticsearch)
 _analytics_sink = AnalyticsSink(
     AnalyticsConfig(
         elasticsearch_url=settings.elasticsearch_url,

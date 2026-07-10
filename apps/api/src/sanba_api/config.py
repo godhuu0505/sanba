@@ -75,6 +75,7 @@ class Settings(BaseSettings):
 
     elasticsearch_url: str = ""
     elasticsearch_api_key: str = ""
+    require_elasticsearch: bool = False
     google_api_key: str = ""
     google_genai_use_vertexai: bool = False
     gemini_embed_model: str = "gemini-embedding-001"

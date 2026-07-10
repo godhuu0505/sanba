@@ -256,6 +256,111 @@ def test_unreadable_session_fails_closed_for_repo_grounding() -> None:
     assert allow_repo is False
 
 
+def test_developer_session_seeds_analyzed_materials_with_signal() -> None:
+    """解析済み素材はシードされ、context.progress シグナルも出る（ADR-0064）。"""
+    repo = _repo()
+    _seed_session(repo, mode=InviteScope.DEVELOPER)
+    repo.save_material(
+        "s1",
+        {
+            "id": "asset-1",
+            "name": "prd.md",
+            "kind": "doc",
+            "status": "done",
+            "extracted_texts": ["要約機能が必要。"],
+        },
+    )
+    repo.save_material(
+        "s1", {"id": "asset-2", "name": "x.mp4", "kind": "video", "status": "analyzing"}
+    )
+    setup = build_agent_instructions(repo, "s1")
+    assert "## 参考資料" in setup.instructions
+    assert "prd.md" in setup.instructions
+    assert "要約機能が必要。" in setup.instructions
+    assert "x.mp4" not in setup.instructions
+    materials_signals = [s for s in setup.context_signals if s.source == "materials"]
+    assert len(materials_signals) == 1
+    assert materials_signals[0].stage == "done"
+    assert "参考資料 1件" == materials_signals[0].label
+
+
+def test_end_user_session_never_seeds_materials() -> None:
+    """内部素材の解析結果は end_user の初期 instructions・シグナルに出さない（ADR-0032 と整合）。"""
+    repo = _repo()
+    repo.create_product(Product(id="prod-1", name="請求アプリ", owner_sub="owner"))
+    _seed_session(repo, mode=InviteScope.END_USER, product_id="prod-1")
+    repo.save_material(
+        "s1",
+        {
+            "id": "asset-1",
+            "name": "internal-prd.md",
+            "kind": "doc",
+            "status": "done",
+            "extracted_texts": ["内部向けの秘密仕様"],
+        },
+    )
+    setup = build_agent_instructions(repo, "s1")
+    assert "internal-prd.md" not in setup.instructions
+    assert "内部向けの秘密仕様" not in setup.instructions
+    assert all(s.source != "materials" for s in setup.context_signals)
+
+
+def test_unreadable_session_fails_closed_for_materials_seed() -> None:
+    """セッション文書が読めないときは資料もシードしない（repo 前提と同じフェイルクローズ）。"""
+    repo = _repo()
+    _seed_session(repo, mode=InviteScope.DEVELOPER)
+    repo.save_material(
+        "s1",
+        {
+            "id": "asset-1",
+            "name": "prd.md",
+            "kind": "doc",
+            "status": "done",
+            "extracted_texts": ["要約機能が必要。"],
+        },
+    )
+
+    def _boom(session_id: str) -> SessionMeta | None:
+        raise RuntimeError("firestore down")
+
+    repo.get_session = _boom  # type: ignore[method-assign]
+    setup = build_agent_instructions(repo, "s1")
+    assert "prd.md" not in setup.instructions
+    assert setup.instructions == VOICE_AGENT_INSTRUCTIONS + _LANG
+
+
+def test_materials_seed_masks_pii_before_llm_context() -> None:
+    """素材の解析結果は PII をマスクしてからシードする（索引経路と同じ規律 / ADR-0064）。"""
+    repo = _repo()
+    _seed_session(repo, mode=InviteScope.DEVELOPER)
+    repo.save_material(
+        "s1",
+        {
+            "id": "asset-1",
+            "name": "contacts.md",
+            "kind": "doc",
+            "status": "done",
+            "extracted_texts": ["担当者の連絡先は taro@example.com です。"],
+        },
+    )
+    setup = build_agent_instructions(repo, "s1")
+    assert "taro@example.com" not in setup.instructions
+    assert "[EMAIL]" in setup.instructions
+
+
+def test_materials_read_failure_keeps_conversation_alive() -> None:
+    """素材メタの読み取り失敗はシードなしに縮退し、会話は成立する（fail-soft）。"""
+    repo = _repo()
+    _seed_session(repo, mode=InviteScope.DEVELOPER)
+
+    def _boom(session_id: str) -> list[dict]:
+        raise RuntimeError("firestore down")
+
+    repo.list_materials = _boom  # type: ignore[method-assign]
+    setup = build_agent_instructions(repo, "s1")
+    assert setup.instructions == VOICE_AGENT_INSTRUCTIONS + _LANG
+
+
 def test_opening_instructions_selected_by_mode() -> None:
     assert opening_instructions(InviteScope.DEVELOPER) == DEVELOPER_OPENING_INSTRUCTIONS
     assert opening_instructions(InviteScope.END_USER) == END_USER_OPENING_INSTRUCTIONS

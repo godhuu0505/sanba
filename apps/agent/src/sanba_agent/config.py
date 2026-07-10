@@ -50,6 +50,7 @@ class Settings(BaseSettings):
 
     elasticsearch_url: str = ""
     elasticsearch_api_key: str = ""
+    require_elasticsearch: bool = False
     gemini_embed_model: str = "gemini-embedding-001"
 
     usd_jpy_rate: float = 150.0

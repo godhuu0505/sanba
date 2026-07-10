@@ -63,7 +63,26 @@ def _over_rate_limit(client_ip: str) -> bool:
     return False
 
 
+def ensure_grounding_backend(indexer: ContextIndexer, *, required: bool) -> None:
+    """起動時に grounding バックエンドの設定を検証する（ADR-0064 決定6）。
+
+    `REQUIRE_ELASTICSEARCH=true`（本番）のとき、ES 未設定・不通なら fail-fast で
+    起動を止め、索引がプロセス内メモリへサイレントに落ちた構成を検出する。
+    未設定時は従来どおり in-memory 縮退を許し、既存アラートのフィルタ文字列
+    （`elasticsearch_unavailable_using_memory`）で観測に載せる。
+    """
+    if not indexer.is_memory:
+        return
+    if required:
+        raise RuntimeError(
+            "REQUIRE_ELASTICSEARCH is set but Elasticsearch is not reachable; "
+            "set ELASTICSEARCH_URL correctly or unset REQUIRE_ELASTICSEARCH"
+        )
+    log.warning("elasticsearch_unavailable_using_memory", reason="not_configured")
+
+
 _indexer = ContextIndexer()
+ensure_grounding_backend(_indexer, required=settings.require_elasticsearch)
 
 _asset_store = AssetStore()
 

@@ -3,7 +3,7 @@
 > このファイルは `just docs-index`（`scripts/gen-docs-index.py`）で生成する。
 > 手で編集しない。ADR を追加・改訂したら再生成する。
 
-設計判断記録（Architecture Decision Record）の一覧。全 64 件。
+設計判断記録（Architecture Decision Record）の一覧。全 65 件。
 書き方・ステータス制御語彙は [`/adr` 雛形](../../.claude/commands/adr.md) を参照。
 
 | # | タイトル | ステータス |
@@ -72,5 +72,6 @@
 | [0061](0061-session-ai-cost-kpi-analytics.md) | セッション単位の AI コスト・KPI 分析イベント基盤（Elasticsearch + Kibana） | Proposed |
 | [0062](0062-devops-llmops-maturity-roadmap.md) | DevOps/LLMOps 成熟度ロードマップ — AI 増幅時代の安定性・安全性ゲート（プログレッシブデリバリー / エージェント評価の格上げ / SLO・エラーバジェット / ランタイムガードレール） | Proposed |
 | [0063](0063-elastic-agent-builder-a2a-boundary.md) | Elasticsearch 接続エージェント（Elastic Agent Builder）と A2A 連携の境界設計 | Proposed |
+| [0064](0064-material-context-seeding.md) | 参考資料の解析結果を voice agent の初期前提としてシードする | Proposed |
 
 付随資料は [`supplements/`](supplements/) に置く（特定 ADR の実測・検証データ）。
