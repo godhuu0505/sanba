@@ -36,6 +36,7 @@ vi.mock("@/lib/api", () => ({
   },
   fetchMySessionRequirements: vi.fn(),
   fetchMySessionResultDocument: vi.fn(),
+  fetchMySessionTranscript: vi.fn(),
   fetchMyExportEligibility: vi.fn(),
   exportMyRequirements: vi.fn(),
 }));
@@ -45,7 +46,9 @@ import {
   exportMyRequirements,
   fetchMyExportEligibility,
   fetchMySessionRequirements,
+  fetchMySessionTranscript,
   type MySessionRequirements,
+  type SessionTranscript,
 } from "@/lib/api";
 import PastRequirementsPage from "./page";
 
@@ -78,6 +81,14 @@ const SCROLL: MySessionRequirements = {
   ],
 };
 
+const TRANSCRIPT: SessionTranscript = {
+  id: "sess-1",
+  utterances: [
+    { speaker: "SANBA", text: "何を規矩としましょう", ts: "2024-06-20T10:00:00Z" },
+    { speaker: "participant", text: "価格順で進めたい", ts: "2024-06-20T10:00:05Z" },
+  ],
+};
+
 describe("過去要件の絵巻閲覧画面（/results/[id]）", () => {
   beforeEach(() => {
     authState.loggedIn = true;
@@ -87,6 +98,7 @@ describe("過去要件の絵巻閲覧画面（/results/[id]）", () => {
     push.mockClear();
     authState.signOut.mockClear();
     vi.mocked(fetchMySessionRequirements).mockReset().mockResolvedValue(SCROLL);
+    vi.mocked(fetchMySessionTranscript).mockReset().mockResolvedValue(TRANSCRIPT);
     vi.mocked(fetchMyExportEligibility)
       .mockReset()
       .mockResolvedValue({ can_export: false, reason: "github not linked" });
@@ -184,5 +196,43 @@ describe("過去要件の絵巻閲覧画面（/results/[id]）", () => {
       expect(screen.getByRole("link", { name: /起票した Issue を開く/ })).toBeTruthy(),
     );
     expect(vi.mocked(exportMyRequirements)).toHaveBeenCalledWith("sess-1", "id-token");
+  });
+
+  it("会話ログは既定で畳まれ、展開して初めて取得し双方向のテキストで表示する", async () => {
+    render(<PastRequirementsPage />);
+    await waitFor(() => expect(screen.getByText("新機能要件定義")).toBeTruthy());
+    expect(vi.mocked(fetchMySessionTranscript)).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByText("会話ログ"));
+    await waitFor(() =>
+      expect(vi.mocked(fetchMySessionTranscript)).toHaveBeenCalledWith("sess-1", "id-token"),
+    );
+    await waitFor(() => expect(screen.getByText(/何を規矩としましょう/)).toBeTruthy());
+    expect(screen.getByText(/価格順で進めたい/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "会話ログをコピー" })).toBeTruthy();
+  });
+
+  it("会話ログが空なら空状態の文言を出す", async () => {
+    vi.mocked(fetchMySessionTranscript).mockResolvedValue({ id: "sess-1", utterances: [] });
+    render(<PastRequirementsPage />);
+    await waitFor(() => expect(screen.getByText("新機能要件定義")).toBeTruthy());
+    fireEvent.click(screen.getByText("会話ログ"));
+    await waitFor(() =>
+      expect(screen.getByText(/この会話の会話ログはまだありません/)).toBeTruthy(),
+    );
+  });
+
+  it("会話ログの取得失敗は再試行導線を出し、押下で取り直す", async () => {
+    vi.mocked(fetchMySessionTranscript)
+      .mockRejectedValueOnce(new Error("network"))
+      .mockResolvedValueOnce(TRANSCRIPT);
+    render(<PastRequirementsPage />);
+    await waitFor(() => expect(screen.getByText("新機能要件定義")).toBeTruthy());
+    fireEvent.click(screen.getByText("会話ログ"));
+    await waitFor(() =>
+      expect(screen.getByText(/会話ログの読み込みに失敗しました/)).toBeTruthy(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "もう一度試す" }));
+    await waitFor(() => expect(screen.getByText(/何を規矩としましょう/)).toBeTruthy());
   });
 });

@@ -13,10 +13,12 @@ import {
   fetchMyExportEligibility,
   fetchMySessionRequirements,
   fetchMySessionResultDocument,
+  fetchMySessionTranscript,
   type Audience,
   type ExportEligibility,
   type MySessionRequirements,
   type ResultDocument,
+  type SessionTranscript,
 } from "@/lib/api";
 import { AUDIENCE_LABELS, AUDIENCES } from "@/lib/audience";
 import { useAuth } from "@/lib/auth";
@@ -43,6 +45,22 @@ type DocLoad =
   | { state: "loading" }
   | { state: "ok"; data: ResultDocument }
   | { state: "error" };
+
+type TranscriptLoad =
+  | { state: "idle" }
+  | { state: "loading" }
+  | { state: "ok"; data: SessionTranscript }
+  | { state: "error" };
+
+function speakerLabel(speaker: string): string {
+  if (speaker === "SANBA") return "SANBA";
+  if (speaker === "participant") return "あなた";
+  return speaker;
+}
+
+function transcriptToText(t: SessionTranscript): string {
+  return t.utterances.map((u) => `${speakerLabel(u.speaker)}: ${u.text}`).join("\n\n");
+}
 
 type IssueState =
   | { state: "idle" }
@@ -71,6 +89,18 @@ export default function PastRequirementsPage() {
   const [copied, setCopied] = useState(false);
   const [elig, setElig] = useState<ExportEligibility | null>(null);
   const [issue, setIssue] = useState<IssueState>({ state: "idle" });
+  const [transcript, setTranscript] = useState<TranscriptLoad>({ state: "idle" });
+  const [logCopied, setLogCopied] = useState(false);
+
+  const loadTranscript = useCallback(async () => {
+    setTranscript({ state: "loading" });
+    try {
+      const data = await fetchMySessionTranscript(sessionId, auth.credential);
+      setTranscript({ state: "ok", data });
+    } catch {
+      setTranscript({ state: "error" });
+    }
+  }, [sessionId, auth.credential]);
 
   const fetchDocument = useCallback(
     async (target: Audience) => {
@@ -251,6 +281,62 @@ export default function PastRequirementsPage() {
                 </>
               )}
             </div>
+
+            <details
+              className="flex flex-col gap-[8px] px-1 pt-2"
+              onToggle={(e) => {
+                if (e.currentTarget.open && transcript.state === "idle") {
+                  void loadTranscript();
+                }
+              }}
+            >
+              <summary className="cursor-pointer text-[14px] font-bold text-sanba-cream">
+                会話ログ
+              </summary>
+              <p className="mt-[8px] text-[12px] leading-relaxed text-sanba-muted">
+                このセッションの会話ログです。テキストで表示し、コピーできます。
+              </p>
+              {transcript.state === "loading" && (
+                <p className="mt-[8px] text-[12px] text-sanba-muted">読み込み中…</p>
+              )}
+              {transcript.state === "error" && (
+                <div className="mt-[8px] flex flex-col gap-[8px]">
+                  <p role="alert" className="text-[12px] text-sanba-rec-text">
+                    会話ログの読み込みに失敗しました。
+                  </p>
+                  <Button variant="outline" block onClick={() => void loadTranscript()}>
+                    もう一度試す
+                  </Button>
+                </div>
+              )}
+              {transcript.state === "ok" &&
+                (transcript.data.utterances.length === 0 ? (
+                  <p className="mt-[8px] text-[12px] text-sanba-muted">
+                    この会話の会話ログはまだありません。
+                  </p>
+                ) : (
+                  <>
+                    <pre className="mt-[8px] max-h-[360px] overflow-auto whitespace-pre-wrap rounded-[12px] border border-sanba-border bg-sanba-surface p-[12px] text-[12px] leading-relaxed text-sanba-cream">
+                      {transcriptToText(transcript.data)}
+                    </pre>
+                    <Button
+                      variant="outline"
+                      block
+                      onClick={() => {
+                        void navigator.clipboard
+                          .writeText(transcriptToText(transcript.data))
+                          .then(() => {
+                            setLogCopied(true);
+                            setTimeout(() => setLogCopied(false), 2000);
+                          })
+                          .catch(() => setLogCopied(false));
+                      }}
+                    >
+                      {logCopied ? "コピーしました" : "会話ログをコピー"}
+                    </Button>
+                  </>
+                ))}
+            </details>
 
             <div className="flex flex-col gap-[8px] px-1 pt-2">
               <h3 className="text-[14px] font-bold text-sanba-cream">GitHub に Issue を作成</h3>
