@@ -67,8 +67,26 @@ def create_link_state(sub: str, secret: str, ttl_seconds: int = 600, *, nonce: s
     return f"{payload_b64}.{_sign(payload_b64, secret)}"
 
 
+_consumed_nonces: dict[str, int] = {}
+
+
+def _consume_nonce(nonce: str, exp: int) -> bool:
+    now = int(time.time())
+    for key, expiry in list(_consumed_nonces.items()):
+        if expiry <= now:
+            del _consumed_nonces[key]
+    if nonce in _consumed_nonces:
+        return False
+    _consumed_nonces[nonce] = exp
+    return True
+
+
 def verify_link_state(token: str, secret: str) -> str:
-    """署名・期限・スコープを検証し、束縛された sub を返す。失敗時は InvalidLinkState。"""
+    """署名・期限・スコープを検証し、束縛された sub を返す。失敗時は InvalidLinkState。
+
+    検証成功時に payload の nonce を単発化（プロセス内 TTL 集合で消費記録）し、TTL 内の
+    同一 state 再送（リプレイ）を拒否する。多インスタンス構成では共有ストアが別途必要。
+    """
     try:
         payload_b64, sig = token.split(".", 1)
     except ValueError as exc:
@@ -85,11 +103,15 @@ def verify_link_state(token: str, secret: str) -> str:
 
     if payload.get("scope") != _LINK_SCOPE:
         raise InvalidLinkState("wrong scope")
-    if int(payload.get("exp", 0)) < int(time.time()):
+    exp = int(payload.get("exp", 0))
+    if exp < int(time.time()):
         raise InvalidLinkState("expired")
     sub = payload.get("sub")
     if not sub:
         raise InvalidLinkState("missing sub")
+    nonce = str(payload.get("nonce", ""))
+    if not nonce or not _consume_nonce(nonce, exp):
+        raise InvalidLinkState("replayed state")
     return str(sub)
 
 
@@ -111,7 +133,7 @@ def build_app_jwt(app_id: str, private_key_pem: str, now: int) -> str:
 _REDACTED = "«redacted-secret»"
 
 _SECRET_PATTERNS: tuple[re.Pattern[str], ...] = (
-    re.compile(r"-----BEGIN[A-Z ]*PRIVATE KEY-----.*?-----END[A-Z ]*PRIVATE KEY-----", re.DOTALL),
+    re.compile(r"-----BEGIN[A-Z ]*PRIVATE KEY-----[\s\S]{0,20000}?-----END[A-Z ]*PRIVATE KEY-----"),
     re.compile(r"gh[pousr]_[A-Za-z0-9]{20,}"),
     re.compile(r"github_pat_[A-Za-z0-9_]{20,}"),
     re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b"),
@@ -391,6 +413,13 @@ def _parse_iso_epoch(value: object) -> float:
     return time.time() + 3000
 
 
+def _validate_repo(repo: str) -> None:
+    from .deps import _GITHUB_REPO_RE
+
+    if not _GITHUB_REPO_RE.match(repo):
+        raise ValueError(f"invalid repo format: {repo!r}")
+
+
 class GitHubAppClient:  # pragma: no cover - network
     """installation token を都度発行して read-only に repo を読む薄いクライアント。"""
 
@@ -530,6 +559,7 @@ class GitHubAppClient:  # pragma: no cover - network
         全 repo 列挙を避ける（大規模 installation でも軽量）。200=可、403/404=不可。"""
         import httpx
 
+        _validate_repo(repo)
         with httpx.Client(timeout=15) as client:
             res = client.get(
                 f"{_API}/repos/{repo}",
@@ -557,6 +587,7 @@ class GitHubAppClient:  # pragma: no cover - network
         """installation token（Issues: write）で Issue を起票し html_url を返す（ADR-0053）。"""
         import httpx
 
+        _validate_repo(repo)
         payload: dict[str, object] = {"title": title, "body": body}
         if labels:
             payload["labels"] = labels
@@ -577,6 +608,7 @@ class GitHubAppClient:  # pragma: no cover - network
         """repo の branch 一覧（name + head sha）。準備画面の branch 選択に使う。"""
         import httpx
 
+        _validate_repo(repo)
         branches: list[dict[str, str]] = []
         headers = self._inst_headers(installation_id)
         with httpx.Client(timeout=15) as client:
@@ -602,6 +634,7 @@ class GitHubAppClient:  # pragma: no cover - network
         """repo の description / language / default_branch 等。"""
         import httpx
 
+        _validate_repo(repo)
         with httpx.Client(timeout=15) as client:
             res = client.get(f"{_API}/repos/{repo}", headers=self._inst_headers(installation_id))
         res.raise_for_status()
@@ -622,6 +655,7 @@ class GitHubAppClient:  # pragma: no cover - network
 
         import httpx
 
+        _validate_repo(repo)
         with httpx.Client(timeout=15) as client:
             res = client.get(
                 f"{_API}/repos/{repo}/branches/{quote(branch, safe='')}",
@@ -639,6 +673,7 @@ class GitHubAppClient:  # pragma: no cover - network
         """
         import httpx
 
+        _validate_repo(repo)
         headers = self._inst_headers(installation_id)
         with httpx.Client(timeout=30) as client:
             commit = client.get(f"{_API}/repos/{repo}/git/commits/{sha}", headers=headers)
@@ -683,6 +718,7 @@ class GitHubAppClient:  # pragma: no cover - network
         """
         from urllib.parse import quote
 
+        _validate_repo(repo)
         res = self._shared_http().get(
             f"{_API}/repos/{repo}/contents/{quote(path, safe='/')}",
             headers={
@@ -698,6 +734,7 @@ class GitHubAppClient:  # pragma: no cover - network
         """README 本文（無ければ None）。"""
         import httpx
 
+        _validate_repo(repo)
         with httpx.Client(timeout=15) as client:
             res = client.get(
                 f"{_API}/repos/{repo}/readme",
@@ -717,6 +754,7 @@ class GitHubAppClient:  # pragma: no cover - network
         """直近の Issue を取得する（PR は除く。前提情報として索引する）。"""
         import httpx
 
+        _validate_repo(repo)
         with httpx.Client(timeout=15) as client:
             res = client.get(
                 f"{_API}/repos/{repo}/issues",

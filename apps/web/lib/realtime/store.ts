@@ -66,7 +66,7 @@ interface Versioned<T> {
   value: T;
 }
 
-const EMPTY_STATE: SessionState = {
+const emptySessionState = (): SessionState => ({
   phase: "idle",
   agentsActive: 0,
   requirements: [],
@@ -78,7 +78,7 @@ const EMPTY_STATE: SessionState = {
   endProposal: null,
   completed: null,
   seq: 0,
-};
+});
 
 export class RealtimeStore {
   private requirements = new Map<string, Versioned<Requirement>>();
@@ -426,4 +426,4 @@ export class RealtimeStore {
   }
 }
 
-export const emptySessionState = (): SessionState => EMPTY_STATE;
+export { emptySessionState };

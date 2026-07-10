@@ -7,7 +7,7 @@ locals {
   web_host = local.has_web_subdomain ? "${var.web_subdomain}.${var.domain}" : var.domain
   api_host = local.domain_enabled ? "api.${local.web_host}" : ""
 
-  web_hosts = local.domain_enabled ? (local.has_web_subdomain ? [local.web_host] : [var.domain, "www.${var.domain}"]) : []
+  web_hosts      = local.domain_enabled ? (local.has_web_subdomain ? [local.web_host] : [var.domain, "www.${var.domain}"]) : []
   redirect_hosts = local.has_web_subdomain ? [var.domain, "www.${var.domain}"] : []
 
   cert_domains = local.domain_enabled ? distinct(concat(local.web_hosts, local.redirect_hosts, [local.api_host])) : []
@@ -44,10 +44,50 @@ resource "google_compute_region_network_endpoint_group" "api" {
   depends_on = [google_project_service.lb]
 }
 
+resource "google_compute_security_policy" "edge" {
+  count       = local.domain_enabled ? 1 : 0
+  name        = "sanba-edge-armor"
+  description = "外部 HTTPS LB (web/api バックエンド) のエッジ防御。既定 allow + IP あたりの L7 レートリミットで無制限リクエスト/DDoS を緩和する（SEC-056）。"
+
+  rule {
+    action      = "throttle"
+    priority    = 1000
+    description = "送信元 IP ごとに 60 秒あたり 600 リクエストを超えた分を 429 で絞る（保守的な閾値。正常な対話利用は許容）。"
+    match {
+      versioned_expr = "SRC_IPS_V1"
+      config {
+        src_ip_ranges = ["*"]
+      }
+    }
+    rate_limit_options {
+      conform_action = "allow"
+      exceed_action  = "deny(429)"
+      enforce_on_key = "IP"
+      rate_limit_threshold {
+        count        = 600
+        interval_sec = 60
+      }
+    }
+  }
+
+  rule {
+    action      = "allow"
+    priority    = 2147483647
+    description = "既定ルール: 上位ルールに一致しないトラフィックは許可する。"
+    match {
+      versioned_expr = "SRC_IPS_V1"
+      config {
+        src_ip_ranges = ["*"]
+      }
+    }
+  }
+}
+
 resource "google_compute_backend_service" "web" {
   count                 = local.domain_enabled ? 1 : 0
   name                  = "sanba-web-be"
   load_balancing_scheme = "EXTERNAL_MANAGED"
+  security_policy       = google_compute_security_policy.edge[0].id
   backend { group = google_compute_region_network_endpoint_group.web[0].id }
   log_config {
     enable      = true
@@ -60,6 +100,7 @@ resource "google_compute_backend_service" "api" {
   count                 = local.domain_enabled ? 1 : 0
   name                  = "sanba-api-be"
   load_balancing_scheme = "EXTERNAL_MANAGED"
+  security_policy       = google_compute_security_policy.edge[0].id
   backend { group = google_compute_region_network_endpoint_group.api[0].id }
   log_config {
     enable      = true

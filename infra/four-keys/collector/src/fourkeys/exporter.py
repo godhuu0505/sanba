@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -10,6 +12,10 @@ from .github_source import collect
 from .models import FourKeys
 
 _LEVELS = ("elite", "high", "medium", "low", "unknown")
+
+_DEFAULT_CACHE_TTL_SECONDS = float(os.getenv("FOURKEYS_CACHE_TTL_SECONDS", "60"))
+_cache_lock = threading.Lock()
+_cache: dict[float, tuple[float, FourKeys]] = {}
 
 
 def _line(name: str, value: float, labels: str = "") -> str:
@@ -83,13 +89,22 @@ def render_prometheus(m: FourKeys) -> str:
     return "\n".join(out) + "\n"
 
 
-def snapshot(window_days: float = 30.0) -> FourKeys:
-    deployments, incidents, source = collect(window_days=window_days)
-    return compute(deployments, incidents, window_days=window_days, source=source)
+def snapshot(
+    window_days: float = 30.0, ttl_seconds: float = _DEFAULT_CACHE_TTL_SECONDS
+) -> FourKeys:
+    now = time.monotonic()
+    with _cache_lock:
+        cached = _cache.get(window_days)
+        if cached is not None and now - cached[0] < ttl_seconds:
+            return cached[1]
+        deployments, incidents, source = collect(window_days=window_days)
+        result = compute(deployments, incidents, window_days=window_days, source=source)
+        _cache[window_days] = (time.monotonic(), result)
+        return result
 
 
 def serve(port: int = 9301, window_days: float = 30.0) -> None:
-    """Expose ``/metrics`` for Prometheus to scrape. Recomputes per scrape."""
+    """Expose ``/metrics`` for Prometheus to scrape (results TTL-cached)."""
 
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:  # noqa: N802 - http.server API
@@ -106,5 +121,6 @@ def serve(port: int = 9301, window_days: float = 30.0) -> None:
         def log_message(self, *args: object) -> None:
             return
 
-    httpd = ThreadingHTTPServer(("0.0.0.0", port), Handler)  # noqa: S104 - container service
+    host = os.getenv("FOURKEYS_BIND_HOST", "0.0.0.0")  # noqa: S104
+    httpd = ThreadingHTTPServer((host, port), Handler)
     httpd.serve_forever()

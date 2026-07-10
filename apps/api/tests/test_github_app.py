@@ -40,6 +40,13 @@ def test_link_state_rejects_tamper() -> None:
         verify_link_state(forged, SECRET)
 
 
+def test_link_state_rejects_replay() -> None:
+    token = create_link_state("user-replay", SECRET)
+    assert verify_link_state(token, SECRET) == "user-replay"
+    with pytest.raises(InvalidLinkState):
+        verify_link_state(token, SECRET)
+
+
 def test_link_state_rejects_wrong_secret() -> None:
     token = create_link_state("user-123", SECRET)
     with pytest.raises(InvalidLinkState):
@@ -130,6 +137,14 @@ def test_redact_private_key_block() -> None:
 def test_redact_noop_on_clean_code() -> None:
     code = "def add(a, b):\n    return a + b\n"
     assert redact_secrets(code) == code
+
+
+def test_redact_incomplete_private_key_block_is_bounded() -> None:
+    text = "-----BEGIN PRIVATE KEY-----\n" + ("A" * 300_000)
+    start = time.perf_counter()
+    out = redact_secrets(text)
+    assert time.perf_counter() - start < 1.0
+    assert out == text
 
 
 @pytest.mark.parametrize(

@@ -108,6 +108,31 @@ def test_does_not_resurrect_deleted_material() -> None:
     assert repo.get_material("s1", "asset-abc") is None
 
 
+def test_rejects_bucket_outside_allowlist() -> None:
+    repo = _repo_with_material()
+    result = process_video(
+        _payload(gcs_uri="gs://evil-bucket/o.mp4"),
+        repo=repo,
+        indexer=_indexer(),
+        settings=_settings(gcs_bucket="allowed-bucket"),
+        analyze=_fake_analyze("x"),
+    )
+    assert result.status == "failed" and result.reason == "disallowed_bucket"
+    assert repo.get_material("s1", "asset-abc")["status"] == "failed"
+
+
+def test_allows_configured_bucket() -> None:
+    repo = _repo_with_material()
+    result = process_video(
+        _payload(gcs_uri="gs://allowed-bucket/o.mp4"),
+        repo=repo,
+        indexer=_indexer(),
+        settings=_settings(gcs_bucket="allowed-bucket"),
+        analyze=_fake_analyze("[00:01] x"),
+    )
+    assert result.status == "done"
+
+
 def test_local_path_rejects_oversized_bytes() -> None:
     repo = _repo_with_material()
     result = process_video(

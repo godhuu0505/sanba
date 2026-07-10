@@ -6,9 +6,10 @@
 .gitignore
 **/.github
 
-# Python 仮想環境・キャッシュ・lock (uv pip install では未使用)
+# Python 仮想環境・キャッシュ・lock。lock は既定で除外し、再現ビルドに使うものだけ個別に戻す。
 **/.venv
 **/uv.lock
+!apps/agent/uv.lock
 **/__pycache__
 **/*.pyc
 **/.pytest_cache

@@ -57,6 +57,13 @@ def test_invite_not_yet_expired_passes() -> None:
     assert int(time.time()) > 0
 
 
+def test_invite_rejects_other_token_kind() -> None:
+    """同一シークレットで署名された session トークンは scope で弾く（トークン混同防止）。"""
+    token = create_session_token("sess-x", "sub-1", "pm", SECRET)
+    with pytest.raises(InvalidInvite, match="wrong scope"):
+        verify_invite(token, SECRET)
+
+
 def test_auth_nonce_roundtrip_returns_raw() -> None:
     raw, envelope = create_auth_nonce(SECRET, 600)
     assert verify_auth_nonce(envelope, SECRET) == raw

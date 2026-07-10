@@ -729,7 +729,7 @@ def join_product(
         claim = verify_product_invite_token(req.token, settings.session_signing_secret)
     except InvalidProductInvite as exc:
         log.warning("product_invite_rejected", reason=str(exc))
-        raise HTTPException(status_code=403, detail=f"invalid invite link: {exc}") from exc
+        raise HTTPException(status_code=403, detail="invalid invite link") from exc
     if guest:
         if not settings.guest_join_enabled:
             record_guest_join("flag_off")
@@ -768,7 +768,7 @@ def join_product(
             invite=claim.invite_id,
             reason=exc.reason,
         )
-        raise HTTPException(status_code=403, detail=f"invite not usable: {exc.reason}") from exc
+        raise HTTPException(status_code=403, detail="invite not usable") from exc
     except InviteRateLimited as exc:
         if guest:
             record_guest_join("rate_limited")

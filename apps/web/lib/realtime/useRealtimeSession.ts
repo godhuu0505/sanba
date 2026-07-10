@@ -39,6 +39,8 @@ export type SendAnswer = (
 
 export type SendInquiryDrop = (nodeId: string) => void;
 
+const GAP_HYDRATE_MIN_INTERVAL_MS = 2000;
+
 export interface UseRealtimeSessionResult {
   state: SessionState;
   metrics: RealtimeMetricsSnapshot;
@@ -149,6 +151,9 @@ export function useRealtimeSession(opts: LiveOptions): UseRealtimeSessionResult 
     [send, sessionId],
   );
 
+  const hydrateInFlightRef = useRef(false);
+  const lastGapHydrateAtRef = useRef(0);
+
   const hydrate = useCallback(async () => {
     if (!sessionId) return;
     let requirementsOk = false;
@@ -181,6 +186,19 @@ export function useRealtimeSession(opts: LiveOptions): UseRealtimeSessionResult 
     }
   }, [sessionId, sessionToken, hydrateInquiry, hydrateAnalysis, store]);
 
+  const hydrateOnGap = useCallback(async () => {
+    if (hydrateInFlightRef.current) return;
+    const now = Date.now();
+    if (now - lastGapHydrateAtRef.current < GAP_HYDRATE_MIN_INTERVAL_MS) return;
+    lastGapHydrateAtRef.current = now;
+    hydrateInFlightRef.current = true;
+    try {
+      await hydrate();
+    } finally {
+      hydrateInFlightRef.current = false;
+    }
+  }, [hydrate]);
+
   useEffect(() => {
     if (!sessionId) return;
     store.clear();
@@ -188,10 +206,10 @@ export function useRealtimeSession(opts: LiveOptions): UseRealtimeSessionResult 
     void hydrate();
     const off = store.onGapDetected(() => {
       store.metrics.recordReconnect();
-      void hydrate();
+      void hydrateOnGap();
     });
     return off;
-  }, [sessionId, store, hydrate]);
+  }, [sessionId, store, hydrate, hydrateOnGap]);
 
   const connState = useConnectionState();
   const wasConnected = useRef(false);

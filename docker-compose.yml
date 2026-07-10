@@ -123,7 +123,7 @@ services:
 
   # ============================ Realtime media ============================
   livekit:
-    image: livekit/livekit-server:latest
+    image: livekit/livekit-server:v1.13.3
     command: ["--dev", "--bind", "0.0.0.0"]
     ports:
       - "7880:7880"
@@ -136,7 +136,7 @@ services:
 
   # ============================ State (Firestore emulator) ============================
   firestore:
-    image: google/cloud-sdk:emulators
+    image: google/cloud-sdk:575.0.1-emulators
     command: >
       gcloud emulators firestore start
       --host-port=0.0.0.0:8200 --project=${GOOGLE_CLOUD_PROJECT:-sanba-dev}

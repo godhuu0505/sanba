@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+INSECURE_LIVEKIT_KEY_DEFAULT = "devkey"
+INSECURE_LIVEKIT_SECRET_DEFAULT = "secret"
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    environment: str = "development"
 
     google_api_key: str = ""
     google_genai_use_vertexai: bool = False
@@ -69,6 +75,29 @@ class Settings(BaseSettings):
     github_connector_enabled: bool = False
     github_token: str = ""
     github_repo: str = ""
+
+    @property
+    def is_production(self) -> bool:
+        """`ENVIRONMENT` が production/prod のとき真（fail-closed 検証の発火条件）。"""
+        return self.environment.strip().lower() in {"production", "prod"}
+
+    @model_validator(mode="after")
+    def _reject_insecure_production_config(self) -> Settings:
+        """本番環境では LiveKit の既知デフォルト鍵での起動を拒否する（フェイルクローズ）。"""
+        if not self.is_production:
+            return self
+        insecure: list[str] = []
+        if self.livekit_api_key == INSECURE_LIVEKIT_KEY_DEFAULT:
+            insecure.append("LIVEKIT_API_KEY")
+        if self.livekit_api_secret == INSECURE_LIVEKIT_SECRET_DEFAULT:
+            insecure.append("LIVEKIT_API_SECRET")
+        if insecure:
+            raise ValueError(
+                "insecure configuration rejected for production ENVIRONMENT: "
+                + ", ".join(insecure)
+                + " must be overridden with secure values"
+            )
+        return self
 
 
 settings = Settings()

@@ -74,6 +74,149 @@ def test_bad_payload_returns_400(
     assert resp.status_code == 400
 
 
+def test_invalid_json_body_returns_400(
+    client_with_material: tuple[TestClient, SessionRepository],
+) -> None:
+    client, _ = client_with_material
+    resp = client.post(
+        "/tasks/analyze-video",
+        content=b"{not-json",
+        headers={"Content-Type": "application/json"},
+    )
+    assert resp.status_code == 400
+
+
+def test_non_numeric_retry_header_is_treated_as_zero(
+    client_with_material: tuple[TestClient, SessionRepository], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from sanba_worker.analysis import TaskResult
+
+    client, _ = client_with_material
+    monkeypatch.setattr(main, "process_video", lambda *a, **k: TaskResult("done", extracted=0))
+    monkeypatch.setattr(main.settings, "enable_realtime_publish", False)
+    resp = client.post(
+        "/tasks/analyze-video",
+        json={"session_id": "s1", "asset_id": "asset-x", "gcs_uri": "gs://b/o.mp4"},
+        headers={"X-CloudTasks-TaskRetryCount": "not-a-number"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "done"
+
+
+def test_records_analysis_duration_seconds(
+    client_with_material: tuple[TestClient, SessionRepository], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from sanba_worker.analysis import TaskResult
+
+    client, _ = client_with_material
+    recorded: list[tuple[str, float | None]] = []
+    monkeypatch.setattr(main, "process_video", lambda *a, **k: TaskResult("done", extracted=0))
+    monkeypatch.setattr(main.settings, "enable_realtime_publish", False)
+    monkeypatch.setattr(
+        main,
+        "record_analysis",
+        lambda result, *, seconds=None: recorded.append((result, seconds)),
+    )
+    resp = client.post(
+        "/tasks/analyze-video",
+        json={"session_id": "s1", "asset_id": "asset-x", "gcs_uri": "gs://b/o.mp4"},
+        headers={"X-CloudTasks-TaskRetryCount": "0"},
+    )
+    assert resp.status_code == 200
+    assert recorded and recorded[0][0] == "done"
+    assert recorded[0][1] is not None and recorded[0][1] >= 0.0
+
+
+def test_production_requires_oidc_token(
+    client_with_material: tuple[TestClient, SessionRepository], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, _ = client_with_material
+    monkeypatch.setattr(main.settings, "environment", "production")
+    resp = client.post(
+        "/tasks/analyze-video",
+        json={"session_id": "s1", "asset_id": "asset-x", "gcs_uri": "gs://b/o.mp4"},
+    )
+    assert resp.status_code == 401
+
+
+def test_production_accepts_valid_oidc_token(
+    client_with_material: tuple[TestClient, SessionRepository], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from sanba_worker import auth
+    from sanba_worker.analysis import TaskResult
+
+    client, _ = client_with_material
+    monkeypatch.setattr(main.settings, "environment", "production")
+    monkeypatch.setattr(main.settings, "oidc_audience", "https://worker.example")
+    monkeypatch.setattr(main.settings, "enable_realtime_publish", False)
+    monkeypatch.setattr(auth, "_verifier", lambda _t, _a: {"iss": "https://accounts.google.com"})
+    monkeypatch.setattr(main, "process_video", lambda *a, **k: TaskResult("done", extracted=0))
+    resp = client.post(
+        "/tasks/analyze-video",
+        json={"session_id": "s1", "asset_id": "asset-x", "gcs_uri": "gs://b/o.mp4"},
+        headers={"Authorization": "Bearer fake-id-token"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "done"
+
+
+def test_production_rejects_unexpected_caller_email(
+    client_with_material: tuple[TestClient, SessionRepository], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from sanba_worker import auth
+
+    client, _ = client_with_material
+    monkeypatch.setattr(main.settings, "environment", "production")
+    monkeypatch.setattr(
+        main.settings, "oidc_service_account", "worker@sanba.iam.gserviceaccount.com"
+    )
+    monkeypatch.setattr(
+        auth,
+        "_verifier",
+        lambda _t, _a: {
+            "iss": "https://accounts.google.com",
+            "email": "attacker@evil.iam.gserviceaccount.com",
+            "email_verified": True,
+        },
+    )
+    resp = client.post(
+        "/tasks/analyze-video",
+        json={"session_id": "s1", "asset_id": "asset-x", "gcs_uri": "gs://b/o.mp4"},
+        headers={"Authorization": "Bearer fake-id-token"},
+    )
+    assert resp.status_code == 401
+
+
+def test_production_accepts_matching_caller_email(
+    client_with_material: tuple[TestClient, SessionRepository], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from sanba_worker import auth
+    from sanba_worker.analysis import TaskResult
+
+    client, _ = client_with_material
+    monkeypatch.setattr(main.settings, "environment", "production")
+    monkeypatch.setattr(
+        main.settings, "oidc_service_account", "worker@sanba.iam.gserviceaccount.com"
+    )
+    monkeypatch.setattr(main.settings, "enable_realtime_publish", False)
+    monkeypatch.setattr(
+        auth,
+        "_verifier",
+        lambda _t, _a: {
+            "iss": "https://accounts.google.com",
+            "email": "worker@sanba.iam.gserviceaccount.com",
+            "email_verified": True,
+        },
+    )
+    monkeypatch.setattr(main, "process_video", lambda *a, **k: TaskResult("done", extracted=0))
+    resp = client.post(
+        "/tasks/analyze-video",
+        json={"session_id": "s1", "asset_id": "asset-x", "gcs_uri": "gs://b/o.mp4"},
+        headers={"Authorization": "Bearer fake-id-token"},
+    )
+    assert resp.status_code == 200
+
+
 def test_publish_visual_emits_progress_and_visual(monkeypatch: pytest.MonkeyPatch) -> None:
     """done の解析結果が analysis.progress(done) + analysis.visual として publish される。"""
     import asyncio

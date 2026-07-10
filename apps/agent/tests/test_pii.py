@@ -16,6 +16,12 @@ def test_keeps_ordinary_text() -> None:
     assert mask_pii("レイテンシは1秒以内") == "レイテンシは1秒以内"
 
 
+def test_masks_postal_code() -> None:
+    assert "[POSTAL]" in mask_pii("住所は〒123-4567 です")
+    assert "[POSTAL]" in mask_pii("123-4567 に送ってください")
+    assert mask_pii("バージョンは1-2です") == "バージョンは1-2です"
+
+
 def test_grounding_store_masks_before_indexing() -> None:
     store = GroundingStore()
     store.index_passage("連絡先は carol@example.com", "utt:1", "utterance", "sess-1")

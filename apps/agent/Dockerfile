@@ -4,7 +4,8 @@
 FROM python:3.13-slim@sha256:eb43ff125d8d58d7449dcba7d336c23bcac412f526d861db493b9994d8010280 AS base
 
 ENV PYTHONUNBUFFERED=1 \
-    UV_LINK_MODE=copy
+    UV_LINK_MODE=copy \
+    UV_PROJECT_ENVIRONMENT=/app/apps/agent/.venv
 WORKDIR /app
 
 # uv for fast, reproducible installs
@@ -12,11 +13,14 @@ COPY --from=ghcr.io/astral-sh/uv:latest@sha256:3d868e555f8f1dbc324afa005066cd11e
 
 # 共有パッケージ + アプリ。構造を保つことで pyproject の [tool.uv.sources] が解決できる。
 COPY packages/sanba_shared ./packages/sanba_shared
-COPY apps/agent/pyproject.toml ./apps/agent/pyproject.toml
+COPY apps/agent/pyproject.toml apps/agent/uv.lock ./apps/agent/
 COPY apps/agent/src ./apps/agent/src
-# BuildKit キャッシュマウントで uv のダウンロード済み wheel を再ビルド間で再利用する。
+# uv.lock を使った再現ビルド: --frozen で lock を更新せずそのまま解決し (供給網統制)、
+# --no-dev で dev グループ (pytest/ruff/mypy) を除外する。BuildKit キャッシュマウントで
+# ダウンロード済み wheel を再ビルド間で再利用する。
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv pip install --system ./apps/agent
+    uv sync --frozen --no-dev --project apps/agent
+ENV PATH="/app/apps/agent/.venv/bin:${PATH}"
 
 # LiveKit Agents need plugin model files. 本番/CI ではビルド時に同梱して
 # コールドスタートを速くする (既定 DOWNLOAD_MODELS=1)。ローカルは compose で

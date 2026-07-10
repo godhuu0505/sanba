@@ -6,7 +6,13 @@ Firestore 無しのメモリモードで、検知の保存・解消・seq 永続
 
 from __future__ import annotations
 
-from sanba_shared.models import Utterance
+from sanba_shared.models import (
+    InquiryKind,
+    InquiryNode,
+    Requirement,
+    RequirementCategory,
+    Utterance,
+)
 from sanba_shared.repository import SessionRepository
 
 
@@ -23,6 +29,79 @@ def test_add_utterance_masks_pii_before_persist() -> None:
     stored = repo._mem_utterances["s1"][0]
     assert "bob@example.com" not in stored.text
     assert "[EMAIL]" in stored.text
+
+
+def test_save_requirement_masks_pii_statement() -> None:
+    repo = _mem_repo()
+    repo.save_requirement(
+        "s1",
+        Requirement(
+            id="r1",
+            category=RequirementCategory.FUNCTIONAL,
+            statement="連絡先は bob@example.com にする",
+        ),
+    )
+    stored = repo._mem_requirements["s1"]["r1"]
+    assert "bob@example.com" not in stored.statement
+    assert "[EMAIL]" in stored.statement
+
+
+def test_save_inquiry_node_masks_pii_text() -> None:
+    repo = _mem_repo()
+    repo.save_inquiry_node(
+        "s1", InquiryNode(id="n1", kind=InquiryKind.CHECK, text="連絡は bob@example.com か確認")
+    )
+    stored = repo.list_inquiry_nodes("s1")[0]
+    assert "bob@example.com" not in stored.text
+    assert "[EMAIL]" in stored.text
+
+
+def test_save_material_masks_extracted_texts() -> None:
+    repo = _mem_repo()
+    repo.save_material(
+        "s1",
+        {"id": "asset-1", "status": "done", "extracted_texts": ["連絡は bob@example.com"]},
+    )
+    stored = repo._mem_materials["s1"]["asset-1"]
+    assert stored["extracted_texts"] == ["連絡は [EMAIL]"]
+
+
+def test_save_current_question_masks_prompt_and_options() -> None:
+    repo = _mem_repo()
+    repo.save_current_question(
+        "s1",
+        {
+            "id": "q1",
+            "prompt": "連絡先 bob@example.com で合っていますか",
+            "options": [{"label": "bob@example.com", "value": "bob@example.com"}],
+        },
+        asked_seq=1,
+    )
+    doc = repo._mem_questions["s1"]
+    assert "bob@example.com" not in doc["prompt"]
+    assert "[EMAIL]" in doc["prompt"]
+    assert doc["options"][0]["label"] == "[EMAIL]"
+    assert doc["options"][0]["value"] == "[EMAIL]"
+
+
+def test_save_detection_masks_summary() -> None:
+    repo = _mem_repo()
+    repo.save_detection("s1", {"id": "d1", "summary": "連絡は bob@example.com", "resolved": False})
+    stored = repo._mem_detections["s1"]["d1"]
+    assert "bob@example.com" not in stored["summary"]
+    assert "[EMAIL]" in stored["summary"]
+
+
+def test_persistence_masking_can_be_disabled() -> None:
+    repo = SessionRepository(mask_pii_before_persist=False)
+    repo._client = None
+    repo.save_requirement(
+        "s1",
+        Requirement(
+            id="r1", category=RequirementCategory.FUNCTIONAL, statement="連絡先は bob@example.com"
+        ),
+    )
+    assert "bob@example.com" in repo._mem_requirements["s1"]["r1"].statement
 
 
 def test_save_and_resolve_detection() -> None:

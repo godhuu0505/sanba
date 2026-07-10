@@ -56,7 +56,12 @@ def _sign(payload_b64: str, secret: str) -> str:
 
 def create_invite(session_id: str, role: str, secret: str, ttl_seconds: int = 3600) -> str:
     """Mint a signed invite for `session_id` valid for `ttl_seconds`."""
-    payload = {"sid": session_id, "role": role, "exp": int(time.time()) + ttl_seconds}
+    payload = {
+        "sid": session_id,
+        "role": role,
+        "scope": "invite",
+        "exp": int(time.time()) + ttl_seconds,
+    }
     payload_b64 = _b64url_encode(json.dumps(payload, separators=(",", ":")).encode())
     return f"{payload_b64}.{_sign(payload_b64, secret)}"
 
@@ -77,6 +82,8 @@ def verify_invite(token: str, secret: str) -> Invite:
     except Exception as exc:
         raise InvalidInvite("malformed payload") from exc
 
+    if payload.get("scope") != "invite":
+        raise InvalidInvite("wrong scope")
     exp = payload.get("exp")
     if not isinstance(exp, int) or exp < int(time.time()):
         raise InvalidInvite("expired")

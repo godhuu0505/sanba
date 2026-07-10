@@ -205,7 +205,7 @@ def test_join_rejects_unusable_invite_with_reason() -> None:
     client.post(f"/api/products/prod-1/invites/{revoked['id']}/revoke")
     res = _join(revoked["token"])
     assert res.status_code == 403
-    assert "revoked" in res.json()["detail"]
+    assert res.json()["detail"] == "invite not usable"
 
     main._repo.create_invite(
         ProductInvite(
@@ -217,13 +217,13 @@ def test_join_rejects_unusable_invite_with_reason() -> None:
     doc_expired_token = create_product_invite_token("prod-1", "inv-expired", SECRET, None)
     res = _join(doc_expired_token)
     assert res.status_code == 403
-    assert "expired" in res.json()["detail"]
+    assert res.json()["detail"] == "invite not usable"
 
     limited = _issue(max_uses=1)
     assert _join(limited["token"]).status_code == 200
     res = _join(limited["token"])
     assert res.status_code == 403
-    assert "exhausted" in res.json()["detail"]
+    assert res.json()["detail"] == "invite not usable"
 
 
 def test_join_use_count_is_capped_under_concurrency() -> None:

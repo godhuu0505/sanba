@@ -16,6 +16,8 @@ import structlog
 
 log = structlog.get_logger(__name__)
 
+_MAX_REQUIREMENT_IDS = 1000
+
 
 def requirement_doc_to_contract(doc: dict[str, Any]) -> dict[str, Any]:
     """Firestore の requirement ドキュメントを契約 §3 の形へ整形する。
@@ -88,18 +90,18 @@ class ReadRepository:
         """
         if not ids:
             return []
+        ids = ids[:_MAX_REQUIREMENT_IDS]
+        by_id: dict[str, dict[str, Any]]
         if self._client is not None:
-            by_id: dict[str, dict[str, Any]] = {}
-            for rid in ids:
-                snap = (
-                    self._client.collection("sessions")
-                    .document(session_id)
-                    .collection("requirements")
-                    .document(rid)
-                    .get()
-                )
-                if snap.exists:
-                    by_id[rid] = requirement_doc_to_contract(snap.to_dict())
+            requirements = (
+                self._client.collection("sessions").document(session_id).collection("requirements")
+            )
+            refs = [requirements.document(rid) for rid in ids]
+            by_id = {
+                snap.id: requirement_doc_to_contract(snap.to_dict())
+                for snap in self._client.get_all(refs)
+                if snap.exists
+            }
         else:
             raw = self._mem_requirements.get(session_id, [])
             by_id = {d.get("id", ""): requirement_doc_to_contract(d) for d in raw}

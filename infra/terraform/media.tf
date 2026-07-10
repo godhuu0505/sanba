@@ -2,11 +2,12 @@ locals {
   materials_bucket = var.materials_bucket_name != "" ? var.materials_bucket_name : "${var.project_id}-sanba-materials"
 
   worker_env = merge(local.common_env, {
-    OTEL_SERVICE_NAME      = "sanba-worker"
-    GCS_BUCKET             = google_storage_bucket.materials.name
-    ENABLE_VIDEO_ANALYSIS  = "true"
-    GEMINI_REASONING_MODEL = var.gemini_reasoning_model
+    OTEL_SERVICE_NAME          = "sanba-worker"
+    GCS_BUCKET                 = google_storage_bucket.materials.name
+    ENABLE_VIDEO_ANALYSIS      = "true"
+    GEMINI_REASONING_MODEL     = var.gemini_reasoning_model
     MAX_VIDEO_DURATION_SECONDS = tostring(var.max_video_duration_seconds)
+    OIDC_SERVICE_ACCOUNT       = google_service_account.worker.email
   })
 }
 
@@ -15,8 +16,8 @@ resource "google_storage_bucket" "materials" {
   location                    = var.region
   uniform_bucket_level_access = true
   public_access_prevention    = "enforced"
-  force_destroy = false
-  depends_on    = [google_project_service.services]
+  force_destroy               = false
+  depends_on                  = [google_project_service.services]
 
   lifecycle_rule {
     action {

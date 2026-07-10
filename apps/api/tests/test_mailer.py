@@ -86,6 +86,17 @@ def test_sends_with_starttls_and_login(monkeypatch: pytest.MonkeyPatch) -> None:
     assert "owner@example.com" in body
 
 
+def test_refuses_plaintext_auth_when_starttls_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    """認証情報があるのに STARTTLS 無効なら、接続・login・送信の前に中止して平文送信を防ぐ。"""
+    monkeypatch.setattr(settings, "smtp_host", "smtp.example.com")
+    monkeypatch.setattr(settings, "smtp_username", "apikey")
+    monkeypatch.setattr(settings, "smtp_password", "secret")
+    monkeypatch.setattr(settings, "smtp_starttls", False)
+    monkeypatch.setattr(mailer.smtplib, "SMTP", _FakeSMTP)
+    assert _send() is False
+    assert _FakeSMTP.instances == []
+
+
 def test_failure_returns_false_and_does_not_raise(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "smtp_host", "smtp.example.com")
     monkeypatch.setattr(mailer.smtplib, "SMTP", _FakeSMTP)

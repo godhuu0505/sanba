@@ -37,6 +37,18 @@ log = structlog.get_logger(__name__)
 EDITABLE_REQUIREMENT_FIELDS = frozenset({"statement", "priority", "category"})
 
 
+def _mask_question_options(options: list[Any]) -> list[Any]:
+    masked: list[Any] = []
+    for option in options:
+        if isinstance(option, dict):
+            masked.append({k: mask_pii(v) if isinstance(v, str) else v for k, v in option.items()})
+        elif isinstance(option, str):
+            masked.append(mask_pii(option))
+        else:
+            masked.append(option)
+    return masked
+
+
 class RequirementNotFound(Exception):
     """対象の要件が存在しないときに送出。"""
 
@@ -108,6 +120,8 @@ class SessionRepository:
         self._mem_detections: dict[str, dict[str, dict[str, Any]]] = {}
         self._mem_inquiry: dict[str, dict[str, dict[str, Any]]] = {}
         self._mem_seq: dict[str, int] = {}
+        self._seq_lock = threading.Lock()
+        self._seq_highwater: dict[str, int] = {}
         self._mem_lossy_epoch: dict[str, int] = {}
         self._mem_materials: dict[str, dict[str, dict[str, Any]]] = {}
         self._mem_questions: dict[str, dict[str, Any]] = {}
@@ -1404,14 +1418,17 @@ class SessionRepository:
         return self._mem_transcripts.get(session_id)
 
     def save_requirement(self, session_id: str, requirement: Requirement) -> None:
+        stored = requirement
+        if self._mask_pii:
+            stored = requirement.model_copy(update={"statement": mask_pii(requirement.statement)})
         if self._client is not None:
-            doc = requirement.model_dump(mode="json")
-            if requirement.status is not RequirementStatus.APPROVED:
+            doc = stored.model_dump(mode="json")
+            if stored.status is not RequirementStatus.APPROVED:
                 if (exp := self._expire_at()) is not None:
                     doc["expireAt"] = exp
             self._req_doc(session_id, requirement.id).set(doc)
             return
-        self._mem_requirements.setdefault(session_id, {})[requirement.id] = requirement
+        self._mem_requirements.setdefault(session_id, {})[requirement.id] = stored
 
     def list_requirements(self, session_id: str) -> list[Requirement]:
         if self._client is not None:
@@ -1514,8 +1531,11 @@ class SessionRepository:
         復元できるよう、publish だけでなく永続化する。
         """
         detection_id = detection["id"]
+        stored = detection
+        if self._mask_pii and isinstance(detection.get("summary"), str):
+            stored = {**detection, "summary": mask_pii(detection["summary"])}
         if self._client is not None:
-            doc = dict(detection)
+            doc = dict(stored)
             if (exp := self._expire_at()) is not None:
                 doc["expireAt"] = exp
             (
@@ -1526,7 +1546,7 @@ class SessionRepository:
                 .set(doc, merge=True)
             )
             return
-        self._mem_detections.setdefault(session_id, {})[detection_id] = dict(detection)
+        self._mem_detections.setdefault(session_id, {})[detection_id] = dict(stored)
 
     def resolve_detection(self, session_id: str, detection_id: str, resolution: str) -> None:
         """検知を解消済みに更新する。open スナップショットから外れるようにする。"""
@@ -1550,7 +1570,10 @@ class SessionRepository:
         木の正本は `sessions/{id}/inquiry_nodes`。再接続/途中参加時に `GET /inquiry` で
         木ごと復元できるよう、realtime 発火だけでなく永続化する。同一 id は上書き（冪等）。
         """
-        doc = node.model_dump(mode="json")
+        stored = node
+        if self._mask_pii:
+            stored = node.model_copy(update={"text": mask_pii(node.text)})
+        doc = stored.model_dump(mode="json")
         if self._client is not None:
             if (exp := self._expire_at()) is not None:
                 doc["expireAt"] = exp
@@ -1587,8 +1610,14 @@ class SessionRepository:
         同一 asset_id は上書き (冪等)。解析の進行で status/extracted を更新できる。
         """
         material_id = material["id"]
+        stored = material
+        if self._mask_pii and isinstance(material.get("extracted_texts"), list):
+            stored = {
+                **material,
+                "extracted_texts": [mask_pii(str(t)) for t in material["extracted_texts"]],
+            }
         if self._client is not None:
-            doc = dict(material)
+            doc = dict(stored)
             if (exp := self._expire_at()) is not None:
                 doc["expireAt"] = exp
             (
@@ -1599,7 +1628,7 @@ class SessionRepository:
                 .set(doc, merge=True)
             )
             return
-        self._mem_materials.setdefault(session_id, {})[material_id] = dict(material)
+        self._mem_materials.setdefault(session_id, {})[material_id] = dict(stored)
 
     def list_materials(self, session_id: str) -> list[dict[str, Any]]:
         """セッションに投入された素材メタの一覧。"""
@@ -1666,10 +1695,15 @@ class SessionRepository:
         未回答のまま離脱したら他の一過性データと同じく TTL で消える（§5-8）。
         `asked_seq` はその問いが publish された envelope seq。GET の順序情報に使う（§3）。
         """
+        prompt = question["prompt"]
+        options = question.get("options") or []
+        if self._mask_pii:
+            prompt = mask_pii(prompt)
+            options = _mask_question_options(options)
         doc: dict[str, Any] = {
             "id": question["id"],
-            "prompt": question["prompt"],
-            "options": question.get("options") or [],
+            "prompt": prompt,
+            "options": options,
             "asked_seq": asked_seq,
             "cleared": False,
         }
@@ -1767,15 +1801,24 @@ class SessionRepository:
             )
 
     def set_session_seq(self, session_id: str, seq: int) -> None:
-        """セッションの適用済み最大 seq を保存する (ハイドレーション境界, 契約 §4)。"""
-        if self._client is not None:
-            (
-                self._client.collection("sessions")
-                .document(session_id)
-                .set({"last_seq": seq}, merge=True)
-            )
-            return
-        self._mem_seq[session_id] = seq
+        """セッションの適用済み最大 seq を単調増加で保存する (ハイドレーション境界, 契約 §4)。
+
+        `asyncio.to_thread` 経由で複数タスクから並行に呼ばれても `last_seq` が後退しないよう、
+        プロセス内 highwater とロックで「より大きい seq のときだけ」書き込む。完了順が前後しても
+        永続値が単調増加を保ち、再起動後の EventPublisher シードが実際より低くならない。
+        """
+        with self._seq_lock:
+            if seq <= self._seq_highwater.get(session_id, 0):
+                return
+            self._seq_highwater[session_id] = seq
+            if self._client is not None:
+                (
+                    self._client.collection("sessions")
+                    .document(session_id)
+                    .set({"last_seq": seq}, merge=True)
+                )
+            else:
+                self._mem_seq[session_id] = seq
 
     def get_session_seq(self, session_id: str) -> int:
         """保存済みの適用済み最大 seq を返す（未保存なら 0）。

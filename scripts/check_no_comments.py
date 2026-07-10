@@ -54,14 +54,11 @@ def is_pragma(comment_text: str, line_no: int) -> bool:
 
 def check_file(path: Path) -> list[tuple[int, str]]:
     violations = []
-    try:
-        src = path.read_bytes()
-        tokens = tokenize.tokenize(io.BytesIO(src).readline)
-        for tok in tokens:
-            if tok.type == tokenize.COMMENT and not is_pragma(tok.string, tok.start[0]):
-                violations.append((tok.start[0], tok.string.strip()))
-    except (tokenize.TokenizeError, SyntaxError, UnicodeDecodeError):
-        pass
+    src = path.read_bytes()
+    tokens = tokenize.tokenize(io.BytesIO(src).readline)
+    for tok in tokens:
+        if tok.type == tokenize.COMMENT and not is_pragma(tok.string, tok.start[0]):
+            violations.append((tok.start[0], tok.string.strip()))
     return violations
 
 
@@ -77,11 +74,20 @@ def main(argv: list[str]) -> int:
             [target_path] if target_path.is_file() else list(iter_py_files(target_path))
         )
         for f in files:
-            for line_no, text in check_file(f):
-                try:
-                    rel = f.relative_to(repo_root)
-                except ValueError:
-                    rel = f
+            try:
+                rel = f.relative_to(repo_root)
+            except ValueError:
+                rel = f
+            try:
+                results = check_file(f)
+            except (tokenize.TokenError, SyntaxError, UnicodeDecodeError) as exc:
+                print(
+                    f"{rel}: コメント検査に失敗しました（検査不能）: {exc}",
+                    file=sys.stderr,
+                )
+                exit_code = 1
+                continue
+            for line_no, text in results:
                 print(f"{rel}:{line_no}: disallowed comment: {text}")
                 exit_code = 1
     if exit_code:

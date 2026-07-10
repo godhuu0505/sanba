@@ -32,16 +32,11 @@ const KEEP_PATTERNS = [
 
 function findViolations(file) {
   const src = readFileSync(file, "utf8");
-  let ast;
-  try {
-    ast = parse(src, {
-      sourceType: "module",
-      plugins: ["typescript", "jsx"],
-      attachComment: true,
-    });
-  } catch {
-    return [];
-  }
+  const ast = parse(src, {
+    sourceType: "module",
+    plugins: ["typescript", "jsx"],
+    attachComment: true,
+  });
   return (ast.comments ?? [])
     .filter((c) => !KEEP_PATTERNS.some((re) => re.test(c.value)))
     .map((c) => ({ line: c.loc.start.line, text: c.value.trim().slice(0, 80) }));
@@ -55,8 +50,16 @@ const files =
 
 let exitCode = 0;
 for (const file of files) {
-  for (const { line, text } of findViolations(file)) {
-    const rel = path.relative(repoRoot, file);
+  const rel = path.relative(repoRoot, file);
+  let violations;
+  try {
+    violations = findViolations(file);
+  } catch (e) {
+    console.error(`${rel}: コメント検査に失敗しました（検査不能）: ${e.message}`);
+    exitCode = 1;
+    continue;
+  }
+  for (const { line, text } of violations) {
     console.log(`${rel}:${line}: disallowed comment: ${text}`);
     exitCode = 1;
   }

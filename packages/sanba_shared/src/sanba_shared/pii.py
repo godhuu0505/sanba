@@ -18,6 +18,7 @@ _EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 _PHONE = re.compile(r"(?<!\d)(?:\+?\d[\d\-\s()]{8,}\d)(?!\d)")
 _CARD = re.compile(r"(?<!\d)(?:\d[ -]?){13,16}(?!\d)")
 _LONGNUM = re.compile(r"(?<!\d)\d{12}(?!\d)")
+_POSTAL = re.compile(r"〒\s?\d{3}-?\d{4}|(?<!\d)\d{3}-\d{4}(?!\d)")
 
 
 def mask_pii(text: str) -> str:
@@ -28,4 +29,5 @@ def mask_pii(text: str) -> str:
     text = _CARD.sub("[NUMBER]", text)
     text = _LONGNUM.sub("[NUMBER]", text)
     text = _PHONE.sub("[PHONE]", text)
+    text = _POSTAL.sub("[POSTAL]", text)
     return text

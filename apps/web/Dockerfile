@@ -30,10 +30,15 @@ RUN npm run build
 FROM node:25-slim@sha256:81db02c4b671288a03915da9534dbd54f96d0e7c24d80ccc54f5b36b2e684370 AS runner
 WORKDIR /app
 ENV NODE_ENV=production
+# ベースイメージ同梱 OS パッケージの既知脆弱性 (例: libgnutls30) をセキュリティ更新で解消する。
+# runtime は `node server.js` のみで npm/npx を使わないため削除する (攻撃面と npm 同梱の
+# 脆弱な依存 = picomatch/sigstore 等を除去)。
+RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/* \
+    && rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/public ./public
 # node:* images ship an unprivileged "node" user; run as it (defense in depth).
 USER node
 EXPOSE 3000
-CMD ["sh", "-c", "node server.js"]
+CMD ["node", "server.js"]

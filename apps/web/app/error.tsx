@@ -19,6 +19,8 @@ export default function Error({
     error.message,
   );
 
+  const showRawMessage = process.env.NODE_ENV !== "production";
+
   return (
     <Screen>
       <AppHeader />
@@ -35,10 +37,15 @@ export default function Error({
               ? "新しいバージョンに更新されました。再読み込みしてください。"
               : "予期しないエラーが発生しました。お手数ですが、もう一度お試しください。"}
           </p>
-          {error.message && (
+          {showRawMessage && error.message && (
             <p className="break-all rounded-[10px] border border-sanba-border bg-sanba-bg/40 px-[12px] py-[10px] text-[12px] text-sanba-cream">
               {error.message}
               {error.digest ? ` (digest: ${error.digest})` : ""}
+            </p>
+          )}
+          {!showRawMessage && error.digest && (
+            <p className="break-all rounded-[10px] border border-sanba-border bg-sanba-bg/40 px-[12px] py-[10px] text-[12px] text-sanba-muted">
+              エラーID: {error.digest}
             </p>
           )}
           <div className="flex gap-[8px]">

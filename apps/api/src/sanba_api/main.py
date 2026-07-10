@@ -76,6 +76,24 @@ if "*" in _allowed_origins:
 
 _unsafe_methods = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 
+
+def _rate_limit_key(request: Request) -> str:
+    """レートリミットの実クライアント識別子を返す。
+
+    `X-Forwarded-For` の**右端**（直近の信頼プロキシ = GCP フロントエンドが追記したホップ）を
+    使う。クライアントが自ら詰めた偽装値は左側に残り右端には出ないため、キーを詐称して
+    バケットを回避できない。XFF が無ければ実 TCP ピア（`request.client.host`）へフォールバック。
+    多段 LB 配下では右端がフロントエンド IP に収束しうるが、その環境はエッジの Cloud Armor
+    （実送信元 IP 単位のレート制限）を一次防御に据える。
+    """
+    forwarded = request.headers.get("x-forwarded-for", "")
+    if forwarded:
+        client = forwarded.rsplit(",", 1)[-1].strip()
+        if client:
+            return client
+    return request.client.host if request.client else "unknown"
+
+
 app = FastAPI(title="SANBA API", version="0.2.0")
 
 
@@ -90,7 +108,7 @@ async def _enforce_origin_for_cookie_writes(request: Request, call_next: Any) ->
     """
     if request.method in _unsafe_methods and request.cookies.get("sanba_sid"):
         origin = request.headers.get("origin", "")
-        if origin and origin not in _allowed_origins:
+        if origin not in _allowed_origins:
             log.warning("origin_rejected", origin=origin, path=request.url.path)
             return JSONResponse(status_code=403, content={"detail": "forbidden origin"})
     return await call_next(request)
@@ -111,7 +129,7 @@ async def _rate_limit_join(request: Request, call_next: Any) -> Any:
         "/api/sessions/join",
         "/api/products/join",
     ):
-        client_ip = request.client.host if request.client else "unknown"
+        client_ip = _rate_limit_key(request)
         if _over_rate_limit(client_ip):
             log.warning(
                 "join_rate_limited", client_ip=client_ip, limit=settings.join_rate_per_minute

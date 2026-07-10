@@ -85,7 +85,7 @@ declare global {
 }
 
 export function useGoogleAuth(): GoogleAuth {
-  const devMode = CLIENT_ID === "";
+  const devMode = CLIENT_ID === "" && process.env.NODE_ENV !== "production";
   const [profile, setProfile] = useState<GoogleProfile | null>(null);
   const [ready, setReady] = useState(false);
   const [renderCount, setRenderCount] = useState(0);

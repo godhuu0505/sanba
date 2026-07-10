@@ -2,6 +2,7 @@ locals {
   image_base = "${var.region}-docker.pkg.dev/${var.project_id}/sanba"
 
   common_env = {
+    ENVIRONMENT                 = var.environment
     GOOGLE_CLOUD_PROJECT        = var.project_id
     GOOGLE_CLOUD_LOCATION       = var.region
     GOOGLE_GENAI_USE_VERTEXAI   = tostring(var.use_vertexai)

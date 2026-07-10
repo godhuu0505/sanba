@@ -41,7 +41,7 @@ def _assume_logged_in() -> Iterator[None]:
 
 def test_chunk_text_splits_on_paragraphs() -> None:
     text = "段落1の内容。\n\n段落2の内容。\n\n段落3の内容。"
-    chunks = chunk_text(text, chunk_size=20)
+    chunks = chunk_text(text, chunk_size=20, overlap=5)
     assert len(chunks) >= 2
     assert all(c.strip() for c in chunks)
 
@@ -190,6 +190,41 @@ def test_zip_bomb_is_rejected_before_expansion(monkeypatch: pytest.MonkeyPatch) 
         extract_text_from_upload("bomb.xlsx", buf.getvalue())
 
 
+def test_pdf_page_count_over_limit_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    import io
+
+    from pypdf import PdfWriter
+
+    from sanba_api import ingestion
+
+    writer = PdfWriter()
+    for _ in range(3):
+        writer.add_blank_page(width=72, height=72)
+    buf = io.BytesIO()
+    writer.write(buf)
+
+    monkeypatch.setattr(ingestion, "_MAX_PDF_PAGES", 1)
+    with pytest.raises(DocumentExtractionError):
+        extract_text_from_upload("bomb.pdf", buf.getvalue())
+
+
+def test_pdf_text_volume_over_limit_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    import io
+
+    from pypdf import PdfWriter
+
+    from sanba_api import ingestion
+
+    writer = PdfWriter()
+    writer.add_blank_page(width=72, height=72)
+    buf = io.BytesIO()
+    writer.write(buf)
+
+    monkeypatch.setattr(ingestion, "_MAX_PDF_TEXT_CHARS", -1)
+    with pytest.raises(DocumentExtractionError):
+        extract_text_from_upload("bomb.pdf", buf.getvalue())
+
+
 def test_upload_broken_docx_returns_zero_chunks() -> None:
     """壊れた文書のアップロードは 500 にせず indexed_chunks=0 で返る（best-effort）。"""
     created = client.post(
@@ -285,4 +320,4 @@ def test_context_endpoint_rejects_oversized() -> None:
         json={"text": "x" * 200_001, "source_name": "big.txt"},
         headers=_session_auth(sid),
     )
-    assert res.status_code == 413
+    assert res.status_code == 422
