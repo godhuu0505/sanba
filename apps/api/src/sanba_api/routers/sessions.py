@@ -71,6 +71,7 @@ from ..observability import (
     record_question_hydration,
     record_result_document_rendered,
 )
+from ..pii import mask_pii
 from ..realtime import (
     STAGE_ANALYZING,
     STAGE_FAILED,
@@ -424,6 +425,47 @@ def get_my_session_result_document(
     )
 
 
+DOC_SEED_MAX_CHARS = 4000
+DOC_VISUAL_MAX_ITEMS = 3
+DOC_VISUAL_MAX_ITEM_CHARS = 300
+
+
+def _doc_visual_observations(seed_texts: list[str]) -> list[str]:
+    """doc の解析完了を会話へ能動注入するための抜粋を作る（ADR-0064 決定8）。
+
+    `analysis.visual` に載せて agent が会話中の一言として触れる素材で、朗読ではなく
+    認識合わせが目的のため先頭 3 件・各 300 字に機械的に切る（全文はシード済み素材メタと
+    grounding 検索が持つ）。イベントは LLM コンテキストへ直行するため送信前に PII を
+    マスクする（シード読み取り側のマスクと同じ規律）。
+    """
+    return [mask_pii(t)[:DOC_VISUAL_MAX_ITEM_CHARS] for t in seed_texts[:DOC_VISUAL_MAX_ITEMS]]
+
+
+def _doc_seed_texts(chunks: list[str], max_total_chars: int = DOC_SEED_MAX_CHARS) -> list[str]:
+    """doc の抽出 chunk から素材メタへ残すシード用テキストを先頭から切り出す（ADR-0064）。
+
+    voice agent が起動時に `materials.extracted_texts` を初期前提としてシードするため、
+    画像（本エンドポイント）・動画（worker）と同じ形で doc にも本文を残す。Firestore
+    文書の肥大を避けて全体 `max_total_chars` 字で機械的に打ち切る（全文は従来どおり
+    ES grounding が持ち、`search_grounding` で検索できる）。
+    """
+    seed: list[str] = []
+    used = 0
+    for chunk in chunks:
+        text = chunk.strip()
+        if not text:
+            continue
+        remaining = max_total_chars - used
+        if remaining <= 0:
+            break
+        if len(text) > remaining:
+            seed.append(text[:remaining])
+            break
+        seed.append(text)
+        used += len(text)
+    return seed
+
+
 @router.post("/api/sessions/{session_id}/context", response_model=ContextResponse)
 def add_context(
     session_id: str,
@@ -511,10 +553,18 @@ async def add_context_file(
                 usage_hook=embedding_hook(recorder),
             )
             record_asset_upload("doc", "extract_failed" if extract_failed else "indexed")
-            _repo.save_material(
-                session_id,
-                material_record(doc_asset_id, filename, "doc", status="done", extracted=n),
+            doc_material = material_record(
+                doc_asset_id, filename, "doc", status="done", extracted=n
             )
+            seed_texts = _doc_seed_texts(chunks)
+            if seed_texts:
+                doc_material["extracted_texts"] = seed_texts
+            _repo.save_material(session_id, doc_material)
+            if seed_texts:
+                with contextlib.suppress(Exception):
+                    await _analysis_publisher(session_id).visual(
+                        doc_asset_id, _doc_visual_observations(seed_texts)
+                    )
             log.info(
                 "doc_indexed",
                 session=session_id,

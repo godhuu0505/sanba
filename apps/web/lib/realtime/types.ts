@@ -121,7 +121,7 @@ export type AnalysisProgressEvent = Envelope<"analysis.progress"> & {
   stage: string;
 };
 
-export type ContextProgressSource = "prep" | "repo";
+export type ContextProgressSource = "prep" | "repo" | "materials";
 
 export type ContextProgressStage = "running" | "done" | "reused" | "partial" | "failed";
 

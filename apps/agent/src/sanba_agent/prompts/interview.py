@@ -31,8 +31,8 @@ VOICE_AGENT_INSTRUCTIONS = """\
 参加者が画面共有やモック・ホワイトボードを見せたら、その映像を観察し、
 画面に写っている UI・図・数値から要件を読み取って確認の問いにつなげる。
 視覚情報から要件を読み取ったら `note_visual_requirement` で記録する。
-参加者がアップロードした動画の解析結果が届いたら、その観察に自然に触れて、
-画面遷移や操作フローについて要件を深掘りする問いにつなげる（既出の点は繰り返さない）。
+参加者がアップロードした資料（動画・画像・文書）の解析結果が届いたら、その観察に自然に触れて、
+内容に関わる要件を深掘りする問いにつなげる（朗読はせず一言の認識合わせに留め、既出の点は繰り返さない）。
 
 会話の途中で `analyze_requirements` ツールを使い、これまでの要件を構造化・点検する。
 ツールが返す「次に聞くべき論点」を踏まえて次の質問を組み立てる。
@@ -204,6 +204,78 @@ def build_check_items_seed(check_items: list[str], *, end_user: bool = False) ->
             "- 相手は利用者なので、各項目は技術用語を使わず、相手のアプリ体験に出てきた言葉に"
             "言い換えて確認する。"
         )
+    return "\n".join(lines)
+
+
+MATERIALS_SEED_MAX_ITEM_CHARS = 600
+MATERIALS_SEED_MAX_TOTAL_CHARS = 4000
+MATERIALS_SEED_MAX_LISTED = 20
+
+
+def build_materials_premise(
+    materials: list[dict],
+    *,
+    max_item_chars: int = MATERIALS_SEED_MAX_ITEM_CHARS,
+    max_total_chars: int = MATERIALS_SEED_MAX_TOTAL_CHARS,
+) -> str:
+    """解析済みの参考資料を初期 instructions にシードする一節（ADR-0064）。
+
+    ADR-0035（準備フォーム）と同じ「LLM 追加呼び出しなしの機械的組み立て」。
+    素材メタ（`materials.extracted_texts`）を正とし、1 素材 `max_item_chars` 字・
+    全体 `max_total_chars` 字で機械的に切る。予算超過分と本文の無い素材は
+    ファイル名のみ列挙して `search_grounding` へ誘導する。解析済み（status=done）
+    以外は載せない。資料はアップロード者由来の非信頼データのため共通フェンス
+    （build_untrusted_fence）で囲む。素材が無ければ空文字＝シードなし。
+    """
+    done = [m for m in materials if m.get("status") == "done"]
+    if not done:
+        return ""
+    body: list[str] = []
+    listed_only: list[str] = []
+    used = 0
+    for m in done:
+        name = str(m.get("name") or m.get("id") or "").strip() or "(名称不明)"
+        texts = [str(t).strip() for t in m.get("extracted_texts") or [] if str(t).strip()]
+        excerpt = ""
+        for t in texts:
+            if not excerpt:
+                excerpt = t
+            elif len(excerpt) + 1 + len(t) <= max_item_chars:
+                excerpt = f"{excerpt}\n{t}"
+            else:
+                break
+        excerpt = excerpt[:max_item_chars]
+        if not excerpt or used + len(excerpt) > max_total_chars:
+            listed_only.append(name)
+            continue
+        used += len(excerpt)
+        body.append(f"### 資料「{name}」")
+        body.append(excerpt)
+    if listed_only:
+        body.append("### 本文未掲載の資料（`search_grounding` で内容を検索できる）")
+        body.extend(f"- {n}" for n in listed_only[:MATERIALS_SEED_MAX_LISTED])
+        if len(listed_only) > MATERIALS_SEED_MAX_LISTED:
+            body.append(f"- …他 {len(listed_only) - MATERIALS_SEED_MAX_LISTED} 件")
+    lines = [
+        "",
+        "## 参考資料",
+        f"参加者はこのセッションに参考資料を {len(done)} 件アップロード済みで、"
+        "その解析結果は次のとおりです。",
+        *build_untrusted_fence(
+            "materials-context",
+            "アップロードされた参考資料の解析結果",
+            "要件理解の材料",
+            body,
+        ),
+        "",
+        "参考資料の扱い:",
+        "- 資料に既に書かれている事項は質問で繰り返さず、確認・深掘り・具体化に切り替える。",
+        "- 会話の序盤で、資料を読んだ前提であることが伝わる形で内容に一度触れる"
+        "（列挙や朗読はせず、一言の認識合わせに留める）。",
+        "- 発話が資料の内容と食い違ったら、イエスマンにならず矛盾として率直に指摘し、"
+        "どちらが正か確認してから記録する。",
+        "- さらに詳細が必要なときは `search_grounding` で資料名や記載内容を検索する。",
+    ]
     return "\n".join(lines)
 
 

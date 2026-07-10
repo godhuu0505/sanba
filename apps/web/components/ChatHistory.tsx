@@ -94,7 +94,9 @@ function ContextBubble({ item }: { item: ContextProgressState }) {
     <LoaderCircle size={13} className="animate-spin" />
   );
   const prefix = item.source === "repo" ? <Package size={13} /> : <FileText size={13} />;
-  const title = item.label || (item.source === "repo" ? "ソースコード" : "ゴール");
+  const title =
+    item.label ||
+    (item.source === "repo" ? "ソースコード" : item.source === "materials" ? "参考資料" : "ゴール");
   return (
     <SetupBubble
       icon={
