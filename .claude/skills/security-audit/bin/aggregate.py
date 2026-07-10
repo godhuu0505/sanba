@@ -23,8 +23,15 @@ def load_result(path: str) -> dict:
 
 
 def rel(path: str, repo: str) -> str:
-    p = path.replace(repo + "/", "").replace(repo, "")
-    return p.lstrip("/")
+    p = str(path or "")
+    if p.startswith(repo + "/"):
+        p = p[len(repo) + 1 :]
+    elif p == repo:
+        p = ""
+    p = p.lstrip("/")
+    while p.startswith("./"):
+        p = p[2:]
+    return p
 
 
 def sev(f: dict) -> str:
