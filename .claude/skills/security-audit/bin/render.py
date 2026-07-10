@@ -346,10 +346,27 @@ def main() -> int:
     units = json.load(open(args.units)) if args.units else {"units": []}
     targets = [l.strip() for l in open(args.targets)] if args.targets else []
     targets = [t for t in targets if t]
-    if args.what in ("reports", "summary") and not targets:
-        raise SystemExit(
-            f"{args.what}: --targets が空です。監査対象ファイル一覧を確認してください。"
-        )
+    if args.what in ("reports", "summary"):
+        if not targets:
+            raise SystemExit(
+                f"{args.what}: --targets が空です。監査対象ファイル一覧を確認してください。"
+            )
+        unit_list = units.get("units") or []
+        if not unit_list:
+            raise SystemExit(
+                f"{args.what}: --units に監査単位がありません（units.json が空）。partition.py の出力を確認してください。"
+            )
+        unit_files = set()
+        for u in unit_list:
+            unit_files.update(u.get("files") or [])
+        target_set = set(targets)
+        missing = target_set - unit_files
+        extra = unit_files - target_set
+        if missing or extra:
+            raise SystemExit(
+                f"{args.what}: units.json と targets が不一致です（units に無い対象 {len(missing)} 件 / "
+                f"targets に無い unit ファイル {len(extra)} 件）。別実行の units/targets を混同していないか確認してください。"
+            )
 
     if args.what == "reports":
         cmd_reports(audit, units, targets, args.dest, args.head)

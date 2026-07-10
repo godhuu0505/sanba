@@ -102,10 +102,12 @@ const findResults = await pipeline(
       seenKey.add(k)
       return true
     })
-    let inScope = deduped
-    if (deduped.length > MAX_VERIFY_PER_UNIT) {
-      log(`find:${unit.name} finding が ${deduped.length} 件と多いため検証を上限 ${MAX_VERIFY_PER_UNIT} 件に制限（モデル出力の暴走/DoS 対策）`)
-      inScope = deduped.slice(0, MAX_VERIFY_PER_UNIT)
+    const sevRank = { P0: 0, P1: 1, P2: 2 }
+    const ranked = deduped.slice().sort((a, b) => (sevRank[a.severity] ?? 9) - (sevRank[b.severity] ?? 9))
+    let inScope = ranked
+    if (ranked.length > MAX_VERIFY_PER_UNIT) {
+      log(`find:${unit.name} finding が ${ranked.length} 件と多いため重大度順で上位 ${MAX_VERIFY_PER_UNIT} 件のみ検証（P0/P1 を優先。モデル出力の暴走/DoS 対策）`)
+      inScope = ranked.slice(0, MAX_VERIFY_PER_UNIT)
     }
     if (inScope.length === 0) {
       return { unit: unit.name, confirmedFiles: found.confirmedFiles || [], verified: [] }

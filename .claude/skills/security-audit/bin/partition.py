@@ -8,10 +8,29 @@ import subprocess
 import sys
 
 EXCLUDE_EXT = {
-    "md", "lock", "png", "svg", "ico", "jpg", "jpeg", "gif", "webp",
-    "woff", "woff2", "ttf", "eot", "gitkeep", "css", "map",
+    "md",
+    "lock",
+    "png",
+    "ico",
+    "jpg",
+    "jpeg",
+    "gif",
+    "webp",
+    "woff",
+    "woff2",
+    "ttf",
+    "eot",
+    "gitkeep",
+    "map",
 }
-EXCLUDE_BASENAMES = {"package-lock.json", "uv.lock", ".terraform.lock.hcl", "poetry.lock", "yarn.lock", "pnpm-lock.yaml"}
+EXCLUDE_BASENAMES = {
+    "package-lock.json",
+    "uv.lock",
+    ".terraform.lock.hcl",
+    "poetry.lock",
+    "yarn.lock",
+    "pnpm-lock.yaml",
+}
 TEST_PATTERNS = [
     re.compile(r"(^|/)tests?/"),
     re.compile(r"(^|/)test_[^/]+\.py$"),
@@ -48,7 +67,7 @@ def module_key(path: str) -> str:
 
 
 def sub_key(path: str, mod: str) -> str:
-    rest = path[len(mod):].lstrip("/")
+    rest = path[len(mod) :].lstrip("/")
     seg = rest.split("/")
     if len(seg) >= 2:
         return seg[0]
@@ -88,7 +107,9 @@ def partition(files: list[str], max_per_unit: int) -> list[dict]:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Build audit target list and unit partition from git ls-files.")
+    ap = argparse.ArgumentParser(
+        description="Build audit target list and unit partition from git ls-files."
+    )
     ap.add_argument("--repo", default=".", help="repository root")
     ap.add_argument("--out", required=True, help="output work directory")
     ap.add_argument("--max-per-unit", type=int, default=25)
