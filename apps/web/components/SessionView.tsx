@@ -8,6 +8,7 @@ import {
   useTrackToggle,
 } from "@livekit/components-react";
 import { Track } from "livekit-client";
+import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 import {
@@ -60,6 +61,7 @@ export function SessionView({
   });
   const auth = useAuth();
 
+  const router = useRouter();
   const mic = useTrackToggle({ source: Track.Source.Microphone });
   const camera = useTrackToggle({ source: Track.Source.Camera });
   const screenShare = useTrackToggle({ source: Track.Source.ScreenShare });
@@ -345,7 +347,8 @@ export function SessionView({
           setTimerRunning(false);
           void room.disconnect();
         }}
-        onRestart={() => window.location.reload()}
+        onRestart={() => router.push("/")}
+        onNavigateResults={() => router.push(`/results/${sessionId}`)}
         metrics={metrics}
       />
 

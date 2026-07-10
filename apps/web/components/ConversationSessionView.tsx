@@ -56,6 +56,7 @@ export interface ConversationSessionViewProps {
   onLeaveConversation?: () => void;
   onEndSession?: () => void;
   onRestart?: () => void;
+  onNavigateResults?: () => void;
   metrics?: RealtimeMetricsSnapshot;
   recording?: boolean;
   elapsed?: string;
@@ -87,6 +88,7 @@ export function ConversationSessionView({
   onLeaveConversation,
   onEndSession,
   onRestart,
+  onNavigateResults,
   metrics,
   recording = true,
   elapsed,
@@ -108,7 +110,6 @@ export function ConversationSessionView({
   const [endProposalDismissed, setEndProposalDismissed] = useState(false);
   const [autoFinalizing, setAutoFinalizing] = useState(false);
   const [forceEndConfirm, setForceEndConfirm] = useState(false);
-  const [forceEndNotice, setForceEndNotice] = useState<string | null>(null);
   const finalizingRef = useRef(false);
 
   const baseMini = selectMiniStatus(state);
@@ -217,39 +218,15 @@ export function ConversationSessionView({
 
   const endProvisional = useCallback(() => {
     setForceEndConfirm(false);
-    setForceEndNotice(null);
-    setProvisional(true);
     setEnded(true);
     onEndSession?.();
-    setPhase("result");
-  }, [onEndSession]);
-
-  const finalizeFromForceEnd = useCallback(async () => {
-    if (readOnly) {
-      endProvisional();
+    if (!readOnly && onNavigateResults) {
+      onNavigateResults();
       return;
     }
-    if (finalizingRef.current) return;
-    finalizingRef.current = true;
-    setAutoFinalizing(true);
-    setForceEndNotice(null);
-    try {
-      await Promise.resolve(onFinalize?.());
-      setForceEndConfirm(false);
-      setProvisional(false);
-      setEnded(true);
-      onEndSession?.();
-      setPhase("result");
-    } catch (e) {
-      console.error("finalize on force-end failed", e);
-      setForceEndNotice(
-        "未解消が残っているため確定できません。内容はサーバ側で保全されます。",
-      );
-    } finally {
-      finalizingRef.current = false;
-      setAutoFinalizing(false);
-    }
-  }, [readOnly, onFinalize, onEndSession, endProvisional]);
+    setProvisional(true);
+    setPhase("result");
+  }, [readOnly, onEndSession, onNavigateResults]);
 
   useEffect(() => {
     if (state.completed && state.endProposal && phase === "shell" && !ended) {
@@ -281,7 +258,6 @@ export function ConversationSessionView({
           error={finalizeError ?? undefined}
           onBack={() => setPhase("shell")}
           onForceEnd={() => {
-            setForceEndNotice(null);
             setForceEndConfirm(true);
           }}
           onConfirm={() => {
@@ -314,13 +290,9 @@ export function ConversationSessionView({
         />
         {forceEndConfirm && (
           <ForceEndConfirmDialog
-            busy={autoFinalizing}
-            notice={forceEndNotice ?? undefined}
-            onFinalize={() => void finalizeFromForceEnd()}
             onProvisional={endProvisional}
             onCancel={() => {
               setForceEndConfirm(false);
-              setForceEndNotice(null);
             }}
           />
         )}

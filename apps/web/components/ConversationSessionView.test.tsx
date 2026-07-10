@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { InterviewModeProvider } from "@/lib/interviewMode";
@@ -313,32 +313,30 @@ describe("ConversationSessionView（会話シェル結線）", () => {
     fireEvent.click(screen.getByRole("button", { name: "未解消のまま終える" }));
   }
 
+  it("未解消のまま終える確認ダイアログは到達不能な『確定して終える』を出さない（②）", () => {
+    renderView({ onNavigateResults: vi.fn() });
+    gotoForceEndConfirm();
+    expect(screen.getByRole("dialog", { name: "未解消のまま終える確認" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "確定して終える" })).toBeNull();
+  });
+
   it("未解消のまま終える→確定せず終えるでは onFinalize を呼ばない（#186 / E）", () => {
     const onFinalize = vi.fn(async () => ({ finalized: true, confirmed_count: 0 }));
-    renderView({ onFinalize });
+    renderView({ onFinalize, onNavigateResults: vi.fn() });
     gotoForceEndConfirm();
-    expect(screen.getByRole("dialog", { name: "確定して締める確認" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "確定せず終える" }));
     expect(onFinalize).not.toHaveBeenCalled();
   });
 
-  it("未解消のまま終える→確定して終えるで onFinalize を呼ぶ（E）", async () => {
-    const onFinalize = vi.fn(async () => ({ finalized: true, confirmed_count: 1 }));
-    renderView({ onFinalize });
+  it("未解消のまま終える→確定せず終えるで結果画面へ遷移し中間画面を挟まない（③）", () => {
+    const onNavigateResults = vi.fn();
+    const onEndSession = vi.fn();
+    renderView({ onNavigateResults, onEndSession });
     gotoForceEndConfirm();
-    fireEvent.click(screen.getByRole("button", { name: "確定して終える" }));
-    await waitFor(() => expect(onFinalize).toHaveBeenCalledTimes(1));
-  });
-
-  it("確定して終えるが未解消 409 で失敗したらフォールバック文言を出す（E）", async () => {
-    const onFinalize = vi.fn(async () => {
-      throw new Error("409 unresolved");
-    });
-    renderView({ onFinalize });
-    gotoForceEndConfirm();
-    fireEvent.click(screen.getByRole("button", { name: "確定して終える" }));
-    expect(await screen.findByText(/サーバ側で保全されます/)).toBeTruthy();
-    expect(onFinalize).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "確定せず終える" }));
+    expect(onEndSession).toHaveBeenCalledTimes(1);
+    expect(onNavigateResults).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText(/途中まで整理しました/)).toBeNull();
   });
 
   it("AI の終了提案（session.end_proposed）でカードを出し、同意で確定→結果へ進む（P1-b）", async () => {
@@ -527,6 +525,17 @@ describe("ConversationSessionView（読取専用ゲスト / ADR-0032 決定4）"
     expect(onFinalize).not.toHaveBeenCalled();
     expect(await screen.findByText(/要件がまとまりました/)).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Issue" })).toBeNull();
+  });
+
+  it("read-only は onNavigateResults 指定でも遷移せず provisional 画面へフォールバックする（③ ゲスト経路）", async () => {
+    const onNavigateResults = vi.fn();
+    renderView({ readOnly: true, onNavigateResults });
+    fireEvent.click(screen.getByRole("button", { name: "会話を終了" }));
+    fireEvent.click(screen.getByRole("button", { name: "終了する" }));
+    fireEvent.click(screen.getByRole("button", { name: "未解消のまま終える" }));
+    fireEvent.click(screen.getByRole("button", { name: "確定せず終える" }));
+    expect(onNavigateResults).not.toHaveBeenCalled();
+    expect(await screen.findByText(/途中まで整理しました/)).toBeTruthy();
   });
 });
 
