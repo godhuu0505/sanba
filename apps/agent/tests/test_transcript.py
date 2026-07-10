@@ -84,3 +84,18 @@ async def test_publish_helpers_noop_without_publisher() -> None:
     agent.publish_agent_utterance("y")
     assert agent._pending_user_uid is None
     assert agent._agent_utterance_seq == 0
+
+
+@pytest.mark.asyncio
+async def test_record_user_final_normalizes_wakachigaki_stt() -> None:
+    agent, transport, repo = _agent()
+
+    agent.record_user_final("認証 は 無し で よく て 、 Cloud Run で 実行 し ます 。")
+    await _drain(agent)
+
+    expected = "認証は無しでよくて 、 Cloud Run で実行します 。"
+    finals = [s["event"] for s in transport.sent if s["event"]["type"] == "transcript.final"]
+    assert len(finals) == 1
+    assert finals[0]["text"] == expected
+    assert [u.text for u in repo.list_utterances("s1")] == [expected]
+    assert agent.transcript == [f"[u1] participant: {expected}"]

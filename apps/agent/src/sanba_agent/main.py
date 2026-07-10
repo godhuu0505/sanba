@@ -702,10 +702,15 @@ class SANBAAgent(Agent):
 
         認識中に割り当てた utterance_id があればそれで確定し、web 側で partial の吹き出しを
         そのまま final に差し替える。無ければ record_utterance が新規採番する。
+
+        Gemini Live 内蔵 STT は日本語を分かち書き（語間に空白）＋全角/半角ゆらぎで返しがちで、
+        そのままだと会話ログ（#479）・確定吹き出しの表示が「日本語に見えない」（#483）。
+        grounding クエリと同じ保守的な `normalize_query` を確定テキストの入口で一度だけ通し、
+        表示・分析・索引のすべてを読める日本語に揃える（意味は壊さない範囲）。
         """
         uid = self._pending_user_uid
         self._pending_user_uid = None
-        return self.record_utterance("participant", text, utterance_id=uid)
+        return self.record_utterance("participant", normalize_query(text), utterance_id=uid)
 
     def publish_agent_utterance(self, text: str) -> None:
         """SANBA（エージェント）の発話を web の会話履歴へ出し、発話ログにも残す（role=assistant）。
