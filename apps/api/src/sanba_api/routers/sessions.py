@@ -438,10 +438,7 @@ def _doc_visual_observations(seed_texts: list[str]) -> list[str]:
     grounding 検索が持つ）。イベントは LLM コンテキストへ直行するため送信前に PII を
     マスクする（シード読み取り側のマスクと同じ規律）。
     """
-    return [
-        mask_pii(t)[:DOC_VISUAL_MAX_ITEM_CHARS] for t in seed_texts[:DOC_VISUAL_MAX_ITEMS]
-    ]
-
+    return [mask_pii(t)[:DOC_VISUAL_MAX_ITEM_CHARS] for t in seed_texts[:DOC_VISUAL_MAX_ITEMS]]
 
 
 def _doc_seed_texts(chunks: list[str], max_total_chars: int = DOC_SEED_MAX_CHARS) -> list[str]:
@@ -564,19 +561,10 @@ async def add_context_file(
                 doc_material["extracted_texts"] = seed_texts
             _repo.save_material(session_id, doc_material)
             if seed_texts:
-                sender = (
-                    build_sender(
-                        settings.livekit_publish_url,
-                        settings.livekit_api_key,
-                        settings.livekit_api_secret,
-                        session_id,
-                    )
-                    if settings.enable_realtime_publish
-                    else NullSender()
-                )
-                publisher = AnalysisPublisher(session_id, sender, _repo)
                 with contextlib.suppress(Exception):
-                    await publisher.visual(doc_asset_id, _doc_visual_observations(seed_texts))
+                    await _analysis_publisher(session_id).visual(
+                        doc_asset_id, _doc_visual_observations(seed_texts)
+                    )
             log.info(
                 "doc_indexed",
                 session=session_id,
