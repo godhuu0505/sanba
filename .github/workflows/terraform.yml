@@ -75,8 +75,13 @@ jobs:
       TF_VAR_project_id:                  ${{ vars.GCP_PROJECT_ID }}
       TF_VAR_region:                      ${{ vars.GCP_REGION || 'us-central1' }}
       TF_VAR_billing_account:             ${{ vars.BILLING_ACCOUNT }}
-      # LiveKit 未配線のうちは agent ワーカーの常駐は不要 (登録先が無く常時課金になるだけ)。
-      # 既定 0。LiveKit を入れたら GitHub Variable AGENT_MIN_INSTANCES=1 にする。
+      # BigQuery への Detailed usage cost export 用 dataset を作るか (ADR-0061)。dataset を
+      # 作った後、請求先アカウント側のエクスポート設定はコンソールで一度だけ行う (runbook 参照)。
+      TF_VAR_enable_billing_export:       ${{ vars.ENABLE_BILLING_EXPORT || 'false' }}
+      # agent ワーカーの常駐数。0 の間は音声セッションを開始できないが常時課金も無い
+      # (プレスリリース前のコスト最小化運用)。切り替えは agent-standby.yml (warm/sleep) が
+      # gcloud 即時反映 + この Variable の同期更新をまとめて行う。手で変える場合も
+      # GitHub Variable AGENT_MIN_INSTANCES を更新する (次の apply が巻き戻すため)。
       TF_VAR_agent_min_instances:         ${{ vars.AGENT_MIN_INSTANCES || '0' }}
       TF_VAR_domain:                      ${{ vars.PROD_DOMAIN }}
       # web をサブドメインで配信する場合のみ設定 (例: "youken" → youken.<PROD_DOMAIN>)。

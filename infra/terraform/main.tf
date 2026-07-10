@@ -149,13 +149,27 @@ resource "google_project_service" "bigquery" {
   disable_on_destroy = false
 }
 
+resource "google_project_iam_member" "tf_deployer_bigquery" {
+  count      = var.enable_billing_export ? 1 : 0
+  project    = var.project_id
+  role       = "roles/bigquery.user"
+  member     = "serviceAccount:${local.tf_deployer_sa}"
+  depends_on = [google_project_service.bigquery]
+}
+
+resource "time_sleep" "bigquery_iam_propagation" {
+  count           = var.enable_billing_export ? 1 : 0
+  depends_on      = [google_project_iam_member.tf_deployer_bigquery]
+  create_duration = "60s"
+}
+
 resource "google_bigquery_dataset" "billing_export" {
   count         = var.enable_billing_export ? 1 : 0
   dataset_id    = "billing_export"
   friendly_name = "Cloud Billing export (ADR-0061)"
   description   = "Cloud Billing の Detailed usage cost export の出力先。エクスポート自体は請求先アカウント側の設定（コンソール/gcloud billing）でこの dataset を指す必要がある。Vertex AI リクエストの billing labels (session_id / product_id) がここに反映され、推定コストとの突合に使う。"
   location      = var.billing_export_location
-  depends_on    = [google_project_service.bigquery]
+  depends_on    = [google_project_service.bigquery, time_sleep.bigquery_iam_propagation]
 }
 
 resource "google_billing_budget" "monthly" {
