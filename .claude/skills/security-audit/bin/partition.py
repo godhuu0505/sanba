@@ -103,6 +103,14 @@ def partition(files: list[str], max_per_unit: int) -> list[dict]:
         if bucket:
             name = f"{slug(mod)}-{idx}" if idx > 1 else slug(mod)
             units.append({"name": name, "files": bucket})
+    seen: dict[str, int] = {}
+    for u in units:
+        base = u["name"]
+        if base in seen:
+            seen[base] += 1
+            u["name"] = f"{base}--{seen[base]}"
+        else:
+            seen[base] = 0
     return units
 
 
@@ -117,15 +125,21 @@ def main() -> int:
 
     repo = os.path.abspath(args.repo)
     os.makedirs(args.out, exist_ok=True)
-    tracked = subprocess.run(
+    raw = subprocess.run(
         ["git", "-C", repo, "ls-files", "-z"],
         capture_output=True,
-        text=True,
         check=True,
-    ).stdout.split("\0")
+    ).stdout
+    tracked = raw.decode("utf-8", "surrogateescape").split("\0")
     targets = sorted(f for f in tracked if f.strip() and is_target(f))
-    with open(os.path.join(args.out, "audit_targets.txt"), "w") as fh:
-        fh.write("\n".join(targets) + "\n")
+    with open(
+        os.path.join(args.out, "audit_targets.txt"),
+        "w",
+        encoding="utf-8",
+        errors="surrogateescape",
+        newline="",
+    ) as fh:
+        fh.write("\0".join(targets))
     units = partition(targets, args.max_per_unit)
     total = sum(len(u["files"]) for u in units)
     payload = {"repo": repo, "total": total, "units": units}

@@ -36,6 +36,10 @@ def bar(s):
     return esc(s).replace("|", "\\|")
 
 
+def code_cell(s):
+    return "`" + esc(s).replace("`", "'").replace("|", "\\|") + "`"
+
+
 def cat_of(f):
     c = (f.get("category") or "").strip()
     return c if c else "?"
@@ -53,7 +57,9 @@ def matrix(conf, out):
         p0 = sum(1 for f in cf if sev(f) == "P0")
         p1 = sum(1 for f in cf if sev(f) == "P1")
         p2 = sum(1 for f in cf if sev(f) == "P2")
-        out.append(f"| {c} | {CAT_LABEL.get(c, c)} | {p0} | {p1} | {p2} | {len(cf)} |")
+        out.append(
+            f"| {bar(c)} | {bar(CAT_LABEL.get(c, c))} | {p0} | {p1} | {p2} | {len(cf)} |"
+        )
     tp0 = sum(1 for f in conf if sev(f) == "P0")
     tp1 = sum(1 for f in conf if sev(f) == "P1")
     tp2 = sum(1 for f in conf if sev(f) == "P2")
@@ -153,7 +159,7 @@ def cmd_reports(audit, units, targets, dest, head):
                 unconfirmed.append(rf)
             mark = "✓" if seen else "—"
             L.append(
-                f"| `{rf}` | {mark} | {len(fids)} | {', '.join(fids) if fids else '-'} |"
+                f"| {code_cell(rf)} | {mark} | {len(fids)} | {', '.join(fids) if fids else '-'} |"
             )
         L.append("")
     L.append("---\n## 集計\n")
@@ -168,7 +174,7 @@ def cmd_reports(audit, units, targets, dest, head):
             "### 未確認ファイル（発見エージェントが confirmedFiles に含めなかったもの）\n"
         )
         for rf in unconfirmed:
-            L.append(f"- `{rf}`")
+            L.append(f"- {code_cell(rf)}")
         L.append("")
     open(os.path.join(dest, "coverage-log.md"), "w").write("\n".join(L))
     print(
@@ -357,8 +363,12 @@ def main() -> int:
             f"{args.what}: --units と --targets は必須です（欠落すると対象総数 0 の偽の網羅ログを生成するため）。"
         )
     units = json.load(open(args.units)) if args.units else {"units": []}
-    targets = [l.strip() for l in open(args.targets)] if args.targets else []
-    targets = [t for t in targets if t]
+    if args.targets:
+        raw = open(args.targets, encoding="utf-8", errors="surrogateescape").read()
+        parts = raw.split("\0") if "\0" in raw else raw.splitlines()
+        targets = [t for t in parts if t.strip()]
+    else:
+        targets = []
     if args.what in ("reports", "summary"):
         if not targets:
             raise SystemExit(
