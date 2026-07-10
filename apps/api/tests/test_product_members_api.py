@@ -361,7 +361,12 @@ def test_respond_by_token_rejects_other_email_and_tampered_token() -> None:
     token = _invite_via_api()["token"]
     _login(STRANGER, "stranger@example.com")
     res = client.post("/api/member-invites/resolve", json={"token": token})
-    assert res.status_code == 200 and res.json()["email_match"] is False
+    assert res.status_code == 200
+    resolved = res.json()
+    assert resolved["email_match"] is False
+    assert resolved["product_name"] == ""
+    assert resolved["invited_by_email"] != OWNER_EMAIL
+    assert "***" in resolved["invited_by_email"]
     res = client.post(
         "/api/member-invites/respond-by-token", json={"token": token, "action": "accept"}
     )

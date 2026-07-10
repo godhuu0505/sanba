@@ -27,7 +27,7 @@ def _fake_user() -> AuthUser:
 
 
 class FakeClient:
-    oauth_configured = False
+    oauth_configured = True
 
     def user_owns_installation(self, code: str, installation_id: int) -> bool:
         return True
@@ -82,7 +82,10 @@ def _setup(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
 
 def _link() -> None:
     state = create_link_state(OWNER, main.settings.session_signing_secret)
-    res = client.get("/api/github/link/callback", params={"installation_id": 99, "state": state})
+    res = client.get(
+        "/api/github/link/callback",
+        params={"installation_id": 99, "state": state, "code": "owner-code"},
+    )
     assert res.status_code == 200
 
 
@@ -122,6 +125,10 @@ class _OAuthClient(FakeClient):
         return self._owns
 
 
+class _UnconfiguredClient(FakeClient):
+    oauth_configured = False
+
+
 def test_callback_requires_code_when_oauth_configured(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(github_link, "_github_app_client", lambda: _OAuthClient(owns=True))
     state = create_link_state(OWNER, main.settings.session_signing_secret)
@@ -143,11 +150,33 @@ def test_callback_rejects_unowned_installation(monkeypatch: pytest.MonkeyPatch) 
 def test_callback_failclosed_when_oauth_unconfigured_and_no_dev_bypass(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr(github_link, "_github_app_client", lambda: _UnconfiguredClient())
     monkeypatch.setattr(main.settings, "auth_dev_bypass", False)
     state = create_link_state(OWNER, main.settings.session_signing_secret)
     res = client.get("/api/github/link/callback", params={"installation_id": 99, "state": state})
     assert res.status_code == 503
     assert client.get("/api/github/link").json()["linked"] is False
+
+
+def test_callback_failclosed_when_oauth_unconfigured_even_with_dev_bypass(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(github_link, "_github_app_client", lambda: _UnconfiguredClient())
+    monkeypatch.setattr(main.settings, "auth_dev_bypass", True)
+    state = create_link_state(OWNER, main.settings.session_signing_secret)
+    res = client.get("/api/github/link/callback", params={"installation_id": 99, "state": state})
+    assert res.status_code == 503
+    assert client.get("/api/github/link").json()["linked"] is False
+
+
+def test_callback_rejects_replayed_state(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(github_link, "_github_app_client", lambda: FakeClient())
+    state = create_link_state(OWNER, main.settings.session_signing_secret)
+    params = {"installation_id": 99, "state": state, "code": "owner-code"}
+    first = client.get("/api/github/link/callback", params=params)
+    assert first.status_code == 200
+    replay = client.get("/api/github/link/callback", params=params)
+    assert replay.status_code == 403
 
 
 def test_callback_links_when_ownership_verified(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -222,6 +251,12 @@ def test_list_branches() -> None:
     assert names == ["main", "dev"]
 
 
+def test_list_branches_rejects_malformed_repo() -> None:
+    _link()
+    res = client.get("/api/github/branches", params={"repo": "not-a-repo"})
+    assert res.status_code == 400
+
+
 def _override_session_access(session_id: str, sub: str) -> None:
     def _fake(session_id: str = session_id) -> SessionAccess:  # noqa: B008
         return SessionAccess(session_id=session_id, sub=sub, role="pm")
@@ -282,6 +317,17 @@ def test_select_repo_rejects_repo_outside_allowlist(monkeypatch: pytest.MonkeyPa
         assert res.status_code == 400
         meta = main._repo.get_session(sid)
         assert meta is not None and meta.github_repo is None
+    finally:
+        app.dependency_overrides.pop(require_session_access, None)
+
+
+def test_select_repo_rejects_malformed_repo() -> None:
+    _link()
+    sid = _make_session()
+    _override_session_access(sid, OWNER)
+    try:
+        res = client.post(f"/api/sessions/{sid}/github", json={"repo": "not-a-repo"})
+        assert res.status_code == 400
     finally:
         app.dependency_overrides.pop(require_session_access, None)
 

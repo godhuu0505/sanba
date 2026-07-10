@@ -8,6 +8,7 @@ dependencies = [
     "uvicorn[standard]>=0.30",
     "pydantic>=2.7",
     "pydantic-settings>=2.14.2",
+    "google-auth>=2.30",
     "google-cloud-firestore>=2.16.0",
     "google-cloud-storage>=2.16.0",
     "elasticsearch>=8.14,<10",

@@ -33,7 +33,7 @@ services:
 
   # ============================ Observability ============================
   otel-collector:
-    image: otel/opentelemetry-collector-contrib:latest
+    image: otel/opentelemetry-collector-contrib:0.156.0
     command: ["--config=/etc/otel/config.yaml"]
     volumes:
       - ./infra/observability/otel/config.yaml:/etc/otel/config.yaml:ro
@@ -42,14 +42,14 @@ services:
     restart: unless-stopped
 
   prometheus:
-    image: prom/prometheus:latest
+    image: prom/prometheus:v2.55.1
     volumes:
       - ./infra/observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
     ports: ["9090:9090"]
     restart: unless-stopped
 
   loki:
-    image: grafana/loki:latest
+    image: grafana/loki:3.7.3
     command: ["-config.file=/etc/loki/config.yaml"]
     volumes:
       - ./infra/observability/loki/config.yaml:/etc/loki/config.yaml:ro
@@ -57,7 +57,7 @@ services:
     restart: unless-stopped
 
   tempo:
-    image: grafana/tempo:latest
+    image: grafana/tempo:2.10.7
     command: ["-config.file=/etc/tempo/config.yaml"]
     volumes:
       - ./infra/observability/tempo/config.yaml:/etc/tempo/config.yaml:ro
@@ -65,14 +65,17 @@ services:
     restart: unless-stopped
 
   grafana:
-    image: grafana/grafana:latest
+    image: grafana/grafana:11.6.16
     environment:
+      # 匿名アクセスは残すが権限は Viewer に下げる（無認証 Admin を廃止）。
       GF_AUTH_ANONYMOUS_ENABLED: "true"
-      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
-      GF_SECURITY_ALLOW_EMBEDDING: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      # iframe 埋め込みを禁止して clickjacking 面を塞ぐ。
+      GF_SECURITY_ALLOW_EMBEDDING: "false"
     volumes:
       - ./infra/observability/grafana/provisioning:/etc/grafana/provisioning:ro
-    ports: ["3001:3000"]
+    # ローカルホストのみに公開（LAN 等からの到達を防ぐ）。
+    ports: ["127.0.0.1:3001:3000"]
     depends_on: [prometheus, loki, tempo]
     restart: unless-stopped
 

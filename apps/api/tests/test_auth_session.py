@@ -165,7 +165,11 @@ def test_revoke_clears_cookie_and_invalidates_session(
     cookie = ex.cookies.get(SESSION_COOKIE_NAME)
     assert cookie is not None
 
-    res = client.delete("/api/session", cookies={SESSION_COOKIE_NAME: cookie})
+    res = client.delete(
+        "/api/session",
+        cookies={SESSION_COOKIE_NAME: cookie},
+        headers={"Origin": "http://localhost:3000"},
+    )
     assert res.status_code == 204
     assert _in_memory_store.get(cookie) is None
 
@@ -207,6 +211,17 @@ def test_cookie_write_from_disallowed_origin_is_rejected(_fake_verifier: None) -
         cookies={SESSION_COOKIE_NAME: cookie},
         headers={"Origin": "https://evil.example.com"},
     )
+    assert res.status_code == 403
+
+
+def test_cookie_write_without_origin_is_rejected(_fake_verifier: None) -> None:
+    """Origin ヘッダ欠落の Cookie 付き unsafe method は素通りさせず 403 で弾く（SEC-025）。"""
+    client = TestClient(app)
+    ex = client.post("/api/session/exchange", json={"id_token": "valid"})
+    cookie = ex.cookies.get(SESSION_COOKIE_NAME)
+    assert cookie is not None
+
+    res = client.delete("/api/session", cookies={SESSION_COOKIE_NAME: cookie})
     assert res.status_code == 403
 
 
@@ -285,7 +300,11 @@ def test_logout_delete_cookie_uses_same_domain_as_issue(_fake_verifier: None) ->
 
         sid = _set_cookie_value_of(ex)
         assert sid
-        rev = client.delete("/api/session", cookies={SESSION_COOKIE_NAME: sid})
+        rev = client.delete(
+            "/api/session",
+            cookies={SESSION_COOKIE_NAME: sid},
+            headers={"Origin": "http://localhost:3000"},
+        )
         assert rev.status_code == 204
         assert _set_cookie_domain_of(rev) == ".youken.sanba.net"
     finally:

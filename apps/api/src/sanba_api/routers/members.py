@@ -318,9 +318,8 @@ def revoke_product_member_invite(
     except MemberInviteNotFound as exc:
         raise HTTPException(status_code=404, detail="invite not found") from exc
     except MemberInviteNotPending as exc:
-        raise HTTPException(
-            status_code=409, detail=f"invite already responded: {exc.reason}"
-        ) from exc
+        log.warning("member_invite_revoke_conflict", invite=invite_id, reason=exc.reason)
+        raise HTTPException(status_code=409, detail="invite already responded") from exc
     record_member_event("invite_revoked")
     log.info("member_invite_revoked", product=product_id, invite=invite_id, by=user.sub)
     return _member_invite_display(revoked)
@@ -379,7 +378,8 @@ def _respond_member_invite(
     except ProductNotFound as exc:
         raise HTTPException(status_code=404, detail="invite not found") from exc
     except MemberInviteNotPending as exc:
-        raise HTTPException(status_code=409, detail=f"invite not pending: {exc.reason}") from exc
+        log.warning("member_invite_respond_conflict", invite=invite.id, reason=exc.reason)
+        raise HTTPException(status_code=409, detail="invite not pending") from exc
     event = "invite_accepted" if accept else "invite_declined"
     record_member_event(event)
     log.info(
@@ -422,20 +422,23 @@ def resolve_member_invite(
         claim = verify_member_invite_token(req.token, settings.session_signing_secret)
     except InvalidMemberInvite as exc:
         log.warning("member_invite_token_rejected", reason=str(exc))
-        raise HTTPException(status_code=403, detail=f"invalid invite link: {exc}") from exc
+        raise HTTPException(status_code=403, detail="invalid invite link") from exc
     invite = _repo.get_member_invite(claim.invite_id)
     if invite is None or invite.product_id != claim.product_id:
         raise HTTPException(status_code=404, detail="invite not found")
     product = _repo.get_product(invite.product_id)
     if product is None:
         raise HTTPException(status_code=404, detail="invite not found")
+    email_match = invite.email == user.email.lower()
     return MemberInviteResolution(
         id=invite.id,
-        product_name=product.name,
-        invited_by_email=invite.invited_by_email,
+        product_name=product.name if email_match else "",
+        invited_by_email=invite.invited_by_email
+        if email_match
+        else _mask_email(invite.invited_by_email),
         masked_email=_mask_email(invite.email),
         status=_invite_effective_status(invite),
-        email_match=invite.email == user.email.lower(),
+        email_match=email_match,
     )
 
 
@@ -452,7 +455,7 @@ def respond_member_invite_by_token(
         claim = verify_member_invite_token(req.token, settings.session_signing_secret)
     except InvalidMemberInvite as exc:
         log.warning("member_invite_token_rejected", reason=str(exc))
-        raise HTTPException(status_code=403, detail=f"invalid invite link: {exc}") from exc
+        raise HTTPException(status_code=403, detail="invalid invite link") from exc
     invite = _repo.get_member_invite(claim.invite_id)
     if invite is None or invite.product_id != claim.product_id:
         raise HTTPException(status_code=404, detail="invite not found")

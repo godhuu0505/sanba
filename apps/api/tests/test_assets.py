@@ -153,6 +153,18 @@ def test_upload_image_returns_asset_id() -> None:
     assert body["indexed_chunks"] == 0
 
 
+def test_upload_rejects_oversized_before_full_read(monkeypatch: pytest.MonkeyPatch) -> None:
+    """サイズ検証前の全量メモリ読込を防ぐ: 申告サイズが上限超なら 413（SEC-040）。"""
+    monkeypatch.setattr(settings, "max_asset_bytes", 8, raising=True)
+    sid = _new_session()
+    res = client.post(
+        f"/api/sessions/{sid}/context/file",
+        files={"file": ("mock.png", b"\x89PNG\r\n\x1a\nEXTRA-BYTES-OVER-LIMIT", "image/png")},
+        headers=_session_auth(sid),
+    )
+    assert res.status_code == 413
+
+
 def test_upload_video_is_pending() -> None:
     sid = _new_session()
     res = client.post(

@@ -3,6 +3,12 @@ import type { NextRequest } from "next/server";
 
 const SESSION_COOKIE = "sanba_sid";
 
+const SESSION_ID_PATTERN = /^[A-Za-z0-9_-]{20,}$/;
+
+function looksLikeSessionId(value: string | undefined): value is string {
+  return value !== undefined && SESSION_ID_PATTERN.test(value);
+}
+
 const PUBLIC_PATHS = new Set<string>([
   "/login",
   "/design",
@@ -19,18 +25,22 @@ function isPublic(pathname: string): boolean {
   return PUBLIC_PREFIXES.some((p) => pathname.startsWith(p));
 }
 
+function redirectToLogin(request: NextRequest, pathname: string, search: string): NextResponse {
+  const loginUrl = request.nextUrl.clone();
+  loginUrl.pathname = "/login";
+  loginUrl.search = `?next=${encodeURIComponent(pathname + search)}`;
+  return NextResponse.redirect(loginUrl);
+}
+
 export function middleware(request: NextRequest): NextResponse {
   const { pathname, search } = request.nextUrl;
 
   if (isPublic(pathname)) return NextResponse.next();
 
   const sid = request.cookies.get(SESSION_COOKIE)?.value;
-  if (sid) return NextResponse.next();
+  if (looksLikeSessionId(sid)) return NextResponse.next();
 
-  const loginUrl = request.nextUrl.clone();
-  loginUrl.pathname = "/login";
-  loginUrl.search = `?next=${encodeURIComponent(pathname + search)}`;
-  return NextResponse.redirect(loginUrl);
+  return redirectToLogin(request, pathname, search);
 }
 
 export const config = {

@@ -8,6 +8,17 @@ variable "region" {
   default = "us-central1"
 }
 
+variable "environment" {
+  type        = string
+  default     = "production"
+  description = "デプロイ環境識別子（ENVIRONMENT）。production のとき api/agent が既知の脆弱デフォルト鍵・認証バイパスでの起動を拒否する（fail-closed）。dev デプロイでは development 等を指定して緩める。"
+
+  validation {
+    condition     = contains(["production", "staging", "development"], var.environment)
+    error_message = "environment は production / staging / development のいずれか。"
+  }
+}
+
 variable "image_tag" {
   type        = string
   default     = "latest"
@@ -105,14 +116,14 @@ variable "guest_join_enabled" {
 
 variable "require_login_nonce" {
   type        = bool
-  default     = false
-  description = "create/join で ID トークンの nonce claim をサーバ照合するか（ADR-0047 / REQUIRE_LOGIN_NONCE）。ID トークン注入対策。段階リリース用フラグ（web の nonce フロー確認後に true）。"
+  default     = true
+  description = "create/join で ID トークンの nonce claim をサーバ照合するか（ADR-0047 / REQUIRE_LOGIN_NONCE）。ID トークン注入・リプレイ対策。既定 true（fail-closed）。"
 }
 
 variable "room_creator_allowlist" {
   type        = string
   default     = ""
-  description = "ルーム作成を許可する email/ドメインのカンマ区切り（ADR-0012 §3 / ROOM_CREATOR_ALLOWLIST）。空=制限なし。admin は常に可。"
+  description = "ルーム作成を許可する email/ドメインのカンマ区切り（ADR-0012 §3 / ROOM_CREATOR_ALLOWLIST）。運用ポリシー値。空=認証済みの任意ユーザーがルーム作成可（無認証開放ではなくログイン必須が前提）。作成者を絞りたい運用ではここに allowlist を設定する。admin は常に可（SEC-060）。"
 }
 
 variable "invite_join_rate_per_minute" {
@@ -208,7 +219,7 @@ variable "session_signing_secret" {
   type        = string
   default     = ""
   sensitive   = true
-  description = "Signs session invites. Empty = a strong value is generated and stored. 通常は空のまま。"
+  description = "セッション招待の署名鍵。空なら terraform が強い値を生成して Secret Manager に格納する。生成値・注入値のいずれも terraform state に平文で materialize するため、防御は GCS backend の暗号化 + IAM に依存する（SEC-058）。本番は外部（Secret 注入 / この var への外部投入）で管理し state 生成に依存しない運用を推奨。通常は空のまま。"
 }
 
 variable "app_secret_ids" {

@@ -68,6 +68,11 @@ def send_member_invite_email(
         log.info("member_invite_email_skipped", reason="smtp_not_configured")
         return False
 
+    if settings.smtp_username and not settings.smtp_starttls:
+        record_member_invite_email("failed")
+        log.warning("member_invite_email_failed", reason="smtp_starttls_required_for_auth")
+        return False
+
     msg = EmailMessage()
     msg["From"] = settings.smtp_from
     msg["To"] = to

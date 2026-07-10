@@ -29,6 +29,7 @@ from sanba_shared.media import VideoAnalysis, analyze_video
 from sanba_shared.repository import SessionRepository
 
 from .config import WorkerSettings
+from .storage import ensure_allowed_bucket
 
 log = structlog.get_logger(__name__)
 
@@ -100,6 +101,13 @@ def process_video(
     ):
         _mark_failed(repo, session_id, asset_id, "video_too_long")
         return TaskResult("failed", "video_too_long")
+
+    if payload.gcs_uri is not None:
+        try:
+            ensure_allowed_bucket(payload.gcs_uri, settings.gcs_bucket)
+        except ValueError as exc:
+            _mark_failed(repo, session_id, asset_id, f"disallowed_bucket:{exc}")
+            return TaskResult("failed", "disallowed_bucket")
 
     config = settings.media_config()
     usage_kwargs: dict[str, object] = {}

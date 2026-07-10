@@ -23,6 +23,7 @@ log = structlog.get_logger(__name__)
 
 INDEX = "sanba-grounding"
 EMBED_DIM = 3072
+MAX_INDEX_CHUNKS = 500
 
 
 @dataclass(frozen=True)
@@ -47,10 +48,19 @@ def _source_matches(source: str, prefix: str) -> bool:
 
 
 def chunk_text(text: str, chunk_size: int = 600, overlap: int = 80) -> list[str]:
-    """Split text into overlapping chunks on paragraph/sentence boundaries."""
+    """Split text into overlapping chunks on paragraph/sentence boundaries.
+
+    Raises ``ValueError`` unless ``chunk_size > 0`` and ``0 <= overlap < chunk_size``,
+    so a degenerate step (<=0) can neither raise mid-loop nor silently drop paragraphs.
+    """
+    if chunk_size <= 0:
+        raise ValueError("chunk_size must be positive")
+    if not 0 <= overlap < chunk_size:
+        raise ValueError("overlap must satisfy 0 <= overlap < chunk_size")
     text = text.strip()
     if not text:
         return []
+    step = max(1, chunk_size - overlap)
     paragraphs = [p.strip() for p in re.split(r"\n\s*\n", text) if p.strip()]
     chunks: list[str] = []
     buf = ""
@@ -63,7 +73,7 @@ def chunk_text(text: str, chunk_size: int = 600, overlap: int = 80) -> list[str]
         if len(para) <= chunk_size:
             buf = para
         else:
-            for i in range(0, len(para), chunk_size - overlap):
+            for i in range(0, len(para), step):
                 chunks.append(para[i : i + chunk_size])
             buf = ""
     if buf:
@@ -143,7 +153,19 @@ class ContextIndexer:
 
         `usage_hook` には埋め込みに消費したトークン集計（1 呼び出しに束ねた `TokenUsage`）を
         渡す（ADR-0061 の `ai_usage` 排出用）。hook の失敗は索引処理へ波及させない。
+
+        1 呼び出しあたりのチャンク数は `MAX_INDEX_CHUNKS` で上限を設ける。超過分は黙って
+        捨てず warning ログを出してから切り捨てる（埋め込み API と ES への同期往復の暴発を防ぐ）。
         """
+        if len(chunks) > MAX_INDEX_CHUNKS:
+            log.warning(
+                "index_context_chunks_truncated",
+                session=session_id,
+                source=source_name,
+                received=len(chunks),
+                indexed=MAX_INDEX_CHUNKS,
+            )
+            chunks = chunks[:MAX_INDEX_CHUNKS]
         embed_tokens = 0
         for i, chunk in enumerate(chunks):
             source = f"{source_name}#{i}"

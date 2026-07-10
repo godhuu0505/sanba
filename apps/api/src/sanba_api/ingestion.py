@@ -60,6 +60,8 @@ class DocumentExtractionError(Exception):
 
 
 _MAX_ZIP_EXPANSION_BYTES = 100_000_000
+_MAX_PDF_PAGES = 5_000
+_MAX_PDF_TEXT_CHARS = 100_000_000
 
 
 def _guard_zip_expansion(raw: bytes) -> None:
@@ -106,7 +108,18 @@ def _extract_pdf(raw: bytes) -> str:
     from pypdf import PdfReader
 
     reader = PdfReader(io.BytesIO(raw))
-    return "\n".join(page.extract_text() or "" for page in reader.pages)
+    pages = reader.pages
+    if len(pages) > _MAX_PDF_PAGES:
+        raise DocumentExtractionError(f"pdf has {len(pages)} pages (limit {_MAX_PDF_PAGES})")
+    parts: list[str] = []
+    total = 0
+    for page in pages:
+        text = page.extract_text() or ""
+        total += len(text)
+        if total > _MAX_PDF_TEXT_CHARS:
+            raise DocumentExtractionError(f"pdf text exceeds {_MAX_PDF_TEXT_CHARS} chars")
+        parts.append(text)
+    return "\n".join(parts)
 
 
 def _extract_docx(raw: bytes) -> str:

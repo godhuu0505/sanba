@@ -134,6 +134,8 @@ jobs:
       - run: npm run typecheck
       - run: npm run test
       - run: npm run build
+        env:
+          NEXT_PUBLIC_API_URL: https://api.ci-build-check.invalid
 
   docker:
     name: docker build

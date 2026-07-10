@@ -2,11 +2,18 @@
 
 from __future__ import annotations
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+INSECURE_SIGNING_SECRET_DEFAULT = "dev-only-insecure-secret-change-me"
+INSECURE_LIVEKIT_KEY_DEFAULT = "devkey"
+INSECURE_LIVEKIT_SECRET_DEFAULT = "secret"
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    environment: str = "development"
 
     livekit_url: str = "ws://localhost:7880"
     livekit_api_key: str = "devkey"
@@ -118,6 +125,43 @@ class Settings(BaseSettings):
     mask_pii_before_index: bool = True
     require_consent: bool = True
     data_retention_days: int = 30
+
+    @property
+    def is_production(self) -> bool:
+        """`ENVIRONMENT` が production/prod のとき真（fail-closed 検証の発火条件）。"""
+        return self.environment.strip().lower() in {"production", "prod"}
+
+    @model_validator(mode="after")
+    def _reject_insecure_production_config(self) -> Settings:
+        """本番環境では既知の脆弱デフォルト値・開発用バイパスを拒否して起動を止める。
+
+        公開ソース上の固定シークレットや認証バイパスフラグのまま本番デプロイされると
+        認証・認可が事実上無効化されるため、production では即時に例外を投げてフェイルクローズ
+        させる（設定漏れをフェイルオープンにしない）。
+        """
+        if not self.is_production:
+            return self
+        insecure: list[str] = []
+        if (
+            not self.session_signing_secret
+            or self.session_signing_secret == INSECURE_SIGNING_SECRET_DEFAULT
+        ):
+            insecure.append("SESSION_SIGNING_SECRET")
+        if self.livekit_api_key == INSECURE_LIVEKIT_KEY_DEFAULT:
+            insecure.append("LIVEKIT_API_KEY")
+        if self.livekit_api_secret == INSECURE_LIVEKIT_SECRET_DEFAULT:
+            insecure.append("LIVEKIT_API_SECRET")
+        if self.auth_dev_bypass:
+            insecure.append("AUTH_DEV_BYPASS")
+        if self.local_direct_dispatch:
+            insecure.append("LOCAL_DIRECT_DISPATCH")
+        if insecure:
+            raise ValueError(
+                "insecure configuration rejected for production ENVIRONMENT: "
+                + ", ".join(insecure)
+                + " must be overridden with secure values"
+            )
+        return self
 
 
 settings = Settings()

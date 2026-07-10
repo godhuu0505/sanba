@@ -192,7 +192,7 @@ def test_invite_rate_limit_overlaps_with_max_uses(
     assert _join(token).status_code == 200
     res = _join(token)
     assert res.status_code == 403
-    assert "exhausted" in res.json()["detail"]
+    assert res.json()["detail"] == "invite not usable"
     assert _use_count() == 1
 
 

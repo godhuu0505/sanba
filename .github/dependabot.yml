@@ -40,6 +40,9 @@ updates:
       github-actions:
         patterns: ["*"]
 
+  # Dependabot docker は Dockerfile の FROM のみ更新する。docker-compose.yml /
+  # docker-compose.tools.yml の image: は対象外なので、それらは固定バージョンタグ
+  # （＋可能ならダイジェスト）で手動ピンして供給網リスクを抑える（SEC-047）。
   - package-ecosystem: docker
     directories:
       - /apps/agent

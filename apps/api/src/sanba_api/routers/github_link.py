@@ -14,6 +14,7 @@ from ..auth import SessionAccess
 from ..auth_google import AuthUser, require_user
 from ..config import settings
 from ..deps import (
+    _GITHUB_REPO_RE,
     SelectRepoRequest,
     SessionGitHubResponse,
     _github_app_client,
@@ -97,7 +98,8 @@ def github_link_callback(installation_id: int, state: str, code: str | None = No
     認証ヘッダは無い（GitHub リダイレクト）。署名 state が sub を束縛し CSRF を防ぐが、
     state だけでは「その sub が当該 installation を保有するか」は証明できない。OAuth
     （user-to-server）を構成している場合は `code` から所有権を検証してから保存し、別人の
-    installation_id 横取りを防ぐ。OAuth 未構成の dev/local では検証を省く。
+    installation_id 横取りを防ぐ。OAuth 未構成なら所有権を証明できないため 503 で拒否する
+    （dev-bypass でも任意 installation の束縛を許さない / フェイルクローズ）。
     """
     client = _github_app_client()
     if client is None:
@@ -106,7 +108,7 @@ def github_link_callback(installation_id: int, state: str, code: str | None = No
         sub = verify_link_state(state, settings.session_signing_secret)
     except InvalidLinkState as exc:
         log.warning("github_link_state_rejected", reason=str(exc))
-        raise HTTPException(status_code=403, detail=f"invalid state: {exc}") from exc
+        raise HTTPException(status_code=403, detail="invalid state") from exc
 
     if client.oauth_configured:
         if not code:
@@ -119,8 +121,6 @@ def github_link_callback(installation_id: int, state: str, code: str | None = No
         if not owns:
             log.warning("github_installation_not_owned", sub=sub, installation_id=installation_id)
             raise HTTPException(status_code=403, detail="installation not owned by user")
-    elif settings.auth_dev_bypass:
-        log.warning("github_owner_unverified_dev_bypass", installation_id=installation_id)
     else:
         log.warning("github_owner_unverified_rejected", installation_id=installation_id)
         raise HTTPException(status_code=503, detail="ownership verification not configured")
@@ -209,6 +209,8 @@ def github_list_branches(
     repo: str, user: AuthUser = Depends(require_user)
 ) -> GitHubBranchesResponse:
     """選択 repo の branch 一覧（準備画面の branch 選択 / ADR-0028）。"""
+    if not _GITHUB_REPO_RE.match(repo):
+        raise HTTPException(status_code=400, detail="github_repo must be in 'owner/name' format")
     client = _github_app_client()
     link = _repo.get_github_link(user.sub)
     if client is None or link is None:
@@ -312,6 +314,8 @@ def select_session_repo(
         raise HTTPException(status_code=404, detail="session not found")
     if access.sub != meta.owner_sub:
         raise HTTPException(status_code=403, detail="owner only")
+    if not _GITHUB_REPO_RE.match(req.repo):
+        raise HTTPException(status_code=400, detail="github_repo must be in 'owner/name' format")
     if not _github_repo_allowed(req.repo):
         raise HTTPException(status_code=400, detail="github_repo is not allowed")
     client = _github_app_client()

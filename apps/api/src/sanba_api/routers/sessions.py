@@ -12,7 +12,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 import structlog
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field
 from sanba_shared.analytics import (
     COMPONENT_SUMMARY,
@@ -119,7 +119,7 @@ class CreateSessionResponse(BaseModel):
 
 
 class ContextRequest(BaseModel):
-    text: str
+    text: str = Field(max_length=settings.max_context_chars)
     source_name: str = "uploaded"
 
 
@@ -536,9 +536,39 @@ def add_context(
     return ContextResponse(indexed_chunks=n)
 
 
+def _declared_upload_size(request: Request, file: UploadFile) -> int | None:
+    """アップロードの申告サイズを返す（`file.size` 優先、無ければ Content-Length）。"""
+    size = file.size
+    if isinstance(size, int) and size >= 0:
+        return size
+    header = request.headers.get("content-length")
+    if header is None:
+        return None
+    try:
+        return int(header)
+    except ValueError:
+        return None
+
+
+async def _read_upload_within_limit(file: UploadFile, limit: int, kind: str) -> bytes:
+    """上限+1 まで逐次読み、超過を検知したら 413。全量メモリ確保前にサイズ違反を止める。"""
+    chunk_size = 1024 * 1024
+    buffer = bytearray()
+    while True:
+        chunk = await file.read(chunk_size)
+        if not chunk:
+            break
+        buffer.extend(chunk)
+        if len(buffer) > limit:
+            record_asset_upload(kind, "rejected")
+            raise HTTPException(status_code=413, detail="file too large")
+    return bytes(buffer)
+
+
 @router.post("/api/sessions/{session_id}/context/file", response_model=ContextResponse)
 async def add_context_file(
     session_id: str,
+    request: Request,
     file: UploadFile = File(...),
     access: SessionAccess = Depends(require_session_access),
 ) -> ContextResponse:
@@ -558,7 +588,11 @@ async def add_context_file(
     """
     forbid_guest_writes(access, "context_file")
     filename = file.filename or "upload"
-    raw = await file.read()
+    declared = _declared_upload_size(request, file)
+    if declared is not None and declared > settings.max_asset_bytes:
+        record_asset_upload("unknown", "rejected")
+        raise HTTPException(status_code=413, detail="file too large")
+    raw = await _read_upload_within_limit(file, settings.max_asset_bytes, "unknown")
 
     if is_text_upload(filename, file.content_type):
         byte_limit = (
@@ -979,7 +1013,10 @@ def join_session(
     ID トークンは nonce 束縛される（ADR-0047 §2 / require_user_bound）。
     """
     if settings.auth_dev_bypass and req.invite.startswith("dev:"):
-        _, session_id, role = req.invite.split(":", 2)
+        parts = req.invite.split(":", 2)
+        if len(parts) < 3:
+            raise HTTPException(status_code=400, detail="malformed dev invite")
+        _, session_id, role = parts
     else:
         try:
             invite = verify_invite(req.invite, settings.session_signing_secret)

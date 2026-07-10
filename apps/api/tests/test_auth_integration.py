@@ -56,6 +56,16 @@ def test_dev_bypass_allows_local_flow(monkeypatch) -> None:
     assert res.json()["session_id"].startswith("sess-")
 
 
+def test_dev_bypass_malformed_invite_returns_400(monkeypatch) -> None:
+    """auth_dev_bypass=true でも 'dev:' 単体の不正形式は 500 でなく 400 で弾く。"""
+    monkeypatch.setattr(auth_google.settings, "auth_dev_bypass", True, raising=True)
+    monkeypatch.setattr(main.settings, "join_rate_per_minute", 100, raising=True)
+    main._join_hits.clear()
+
+    res = client.post("/api/sessions/join", json={"invite": "dev:", "participant_name": "x"})
+    assert res.status_code == 400
+
+
 def test_unauthenticated_join_spam_is_rate_limited(monkeypatch) -> None:
     """未認証スパムは認証検証より先にレートリミットされる。
 

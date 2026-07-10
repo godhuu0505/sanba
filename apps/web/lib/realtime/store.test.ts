@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { contractEventFixture, hydrationFixture } from "./fixtures";
 import { selectMaterials } from "./selectors";
-import { RealtimeStore } from "./store";
+import { RealtimeStore, emptySessionState } from "./store";
 import type { InquiryNode, Requirement, ServerEvent } from "./types";
 
 const SESSION = "s1";
@@ -703,6 +703,28 @@ describe("RealtimeStore — fixture replay", () => {
     expect(st.phase).toBe("deliberating");
     expect(s.metrics.read().gaps).toBe(0);
     expect(s.metrics.read().duplicates).toBe(0);
+  });
+});
+
+describe("emptySessionState — defensive copy", () => {
+  it("returns a fresh object with fresh arrays on each call", () => {
+    const a = emptySessionState();
+    const b = emptySessionState();
+    expect(a).not.toBe(b);
+    expect(a.requirements).not.toBe(b.requirements);
+    expect(a.inquiryNodes).not.toBe(b.inquiryNodes);
+    expect(a.transcript).not.toBe(b.transcript);
+    expect(a.analysis).not.toBe(b.analysis);
+    expect(a.contextProgress).not.toBe(b.contextProgress);
+  });
+
+  it("does not leak mutations of a returned value into later calls", () => {
+    const first = emptySessionState();
+    first.requirements.push({} as never);
+    first.phase = "deliberating";
+    const second = emptySessionState();
+    expect(second.requirements).toHaveLength(0);
+    expect(second.phase).toBe("idle");
   });
 });
 

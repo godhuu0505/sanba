@@ -36,4 +36,4 @@ COPY --from=builder /app/public ./public
 # node:* images ship an unprivileged "node" user; run as it (defense in depth).
 USER node
 EXPOSE 3000
-CMD ["sh", "-c", "node server.js"]
+CMD ["node", "server.js"]

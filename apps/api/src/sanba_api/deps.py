@@ -46,20 +46,41 @@ def _get_tracer() -> Any:
 
 
 _join_hits: dict[str, deque[float]] = defaultdict(deque)
+_JOIN_HITS_MAX_KEYS = 10_000
+
+
+def _evict_stale_join_hits(now: float) -> None:
+    """全キーから期限切れ hit を掃除し、空になった deque のキーを dict から除く。"""
+    window_start = now - 60
+    for ip in list(_join_hits.keys()):
+        hits = _join_hits[ip]
+        while hits and hits[0] < window_start:
+            hits.popleft()
+        if not hits:
+            del _join_hits[ip]
 
 
 def _over_rate_limit(client_ip: str) -> bool:
     """sliding-window で join が上限超過なら True（上限内なら副作用でヒットを記録）。
 
-    判定を関数に切り出し、body 解析より前のミドルウェア層から呼ぶ。
+    判定を関数に切り出し、body 解析より前のミドルウェア層から呼ぶ。IP ごとの deque は
+    期限切れで空になったらキーごと除去し、キー総数が上限に達したら全キーを一括掃除して
+    無制限蓄積（CWE-770）を防ぐ。
     """
-    window_start = time.time() - 60
-    hits = _join_hits[client_ip]
-    while hits and hits[0] < window_start:
-        hits.popleft()
-    if len(hits) >= settings.join_rate_per_minute:
+    now = time.time()
+    window_start = now - 60
+    hits = _join_hits.get(client_ip)
+    if hits is not None:
+        while hits and hits[0] < window_start:
+            hits.popleft()
+        if not hits:
+            del _join_hits[client_ip]
+            hits = None
+    if hits is not None and len(hits) >= settings.join_rate_per_minute:
         return True
-    hits.append(time.time())
+    if len(_join_hits) >= _JOIN_HITS_MAX_KEYS:
+        _evict_stale_join_hits(now)
+    _join_hits[client_ip].append(now)
     return False
 
 
@@ -112,7 +133,7 @@ def require_session_access(
         access = verify_session_token(token, settings.session_signing_secret)
     except InvalidSessionToken as exc:
         log.warning("session_token_rejected", reason=str(exc))
-        raise HTTPException(status_code=403, detail=f"invalid session token: {exc}") from exc
+        raise HTTPException(status_code=403, detail="invalid session token") from exc
     if access.session_id != session_id:
         raise HTTPException(status_code=403, detail="session mismatch")
     return access

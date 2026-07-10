@@ -10,8 +10,8 @@ const eslintConfig = [
   {
     settings: { react: { version: "19.2" } },
     rules: {
-      "react-hooks/refs": "off",
-      "react-hooks/set-state-in-effect": "off",
+      "react-hooks/refs": "warn",
+      "react-hooks/set-state-in-effect": "warn",
     },
   },
   {

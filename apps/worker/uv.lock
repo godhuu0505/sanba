@@ -1792,6 +1792,7 @@ source = { editable = "." }
 dependencies = [
     { name = "elasticsearch" },
     { name = "fastapi" },
+    { name = "google-auth" },
     { name = "google-cloud-firestore" },
     { name = "google-cloud-storage" },
     { name = "google-genai" },
@@ -1819,6 +1820,7 @@ dev = [
 requires-dist = [
     { name = "elasticsearch", specifier = ">=8.14,<10" },
     { name = "fastapi", specifier = ">=0.111" },
+    { name = "google-auth", specifier = ">=2.30" },
     { name = "google-cloud-firestore", specifier = ">=2.16.0" },
     { name = "google-cloud-storage", specifier = ">=2.16.0" },
     { name = "google-genai", specifier = ">=1.0.0" },

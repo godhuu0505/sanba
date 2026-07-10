@@ -8,9 +8,10 @@ Cloud Run + IAM が OIDC を検証し、Cloud Tasks 用 SA からの invoke の�
 from __future__ import annotations
 
 import contextlib
+import time
 
 import structlog
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from sanba_shared.analytics import UsageRecorder
 from sanba_shared.analytics_sink import AnalyticsConfig, AnalyticsSink
 from sanba_shared.grounding import ContextIndexer
@@ -19,6 +20,7 @@ from sanba_shared.realtime import STAGE_DONE, AnalysisPublisher, build_sender
 from sanba_shared.repository import SessionRepository
 
 from .analysis import TaskResult, VideoTaskPayload, _mark_failed, process_video
+from .auth import require_cloud_tasks_auth
 from .config import settings
 from .observability import get_tracer, record_analysis, setup_observability
 from .storage import gcs_fetch_bytes
@@ -115,20 +117,36 @@ async def _publish_visual(session_id: str, asset_id: str, result: TaskResult) ->
         await publisher.visual(asset_id, result.observations)
 
 
+def _retry_count(raw: str | None) -> int:
+    """`X-CloudTasks-TaskRetryCount` を安全に int 化する（非数値/欠如は 0 に倒す）。"""
+    if raw is None:
+        return 0
+    try:
+        return max(0, int(raw))
+    except ValueError:
+        return 0
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
 @app.post("/tasks/analyze-video")
-async def analyze_video_task(req: Request) -> dict[str, str]:
-    body = await req.json()
+async def analyze_video_task(
+    req: Request, _auth: None = Depends(require_cloud_tasks_auth)
+) -> dict[str, str]:
+    try:
+        body = await req.json()
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="invalid json body") from exc
     try:
         payload = VideoTaskPayload.model_validate(body)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"bad payload: {exc}") from exc
 
-    retry_count = int(req.headers.get("X-CloudTasks-TaskRetryCount", "0"))
+    retry_count = _retry_count(req.headers.get("X-CloudTasks-TaskRetryCount"))
+    started = time.perf_counter()
     try:
         span_cm = (
             _tracer.start_as_current_span("sanba.worker.analyze_video")
@@ -150,7 +168,7 @@ async def analyze_video_task(req: Request) -> dict[str, str]:
             )
             if span is not None:
                 span.set_attribute("sanba.result", result.status)
-        record_analysis(result.status)
+        record_analysis(result.status, seconds=time.perf_counter() - started)
         if result.status == "done":
             await _publish_visual(payload.session_id, payload.asset_id, result)
         return {"status": result.status, "reason": result.reason}
@@ -162,9 +180,10 @@ async def analyze_video_task(req: Request) -> dict[str, str]:
             retry=retry_count,
             error=str(exc),
         )
+        elapsed = time.perf_counter() - started
         if retry_count >= MAX_TASK_ATTEMPTS - 1:
             _mark_failed(_repo, payload.session_id, payload.asset_id, f"exhausted:{exc}")
-            record_analysis("failed")
+            record_analysis("failed", seconds=elapsed)
             return {"status": "failed", "reason": "retries_exhausted"}
-        record_analysis("error")
+        record_analysis("error", seconds=elapsed)
         raise HTTPException(status_code=503, detail="transient error, retry") from exc

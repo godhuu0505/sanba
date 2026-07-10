@@ -534,7 +534,7 @@ export async function fetchMySessionResultDocument(
   idToken: string | null,
 ): Promise<ResultDocument> {
   const res = await apiFetch(
-    `${API_URL}/api/sessions/mine/${encodeURIComponent(sessionId)}/result-document?audience=${audience}`,
+    `${API_URL}/api/sessions/mine/${encodeURIComponent(sessionId)}/result-document?audience=${encodeURIComponent(audience)}`,
     { headers: authHeaders(idToken) },
   );
   if (!res.ok) throw new ApiError(res.status, `fetch result document failed: ${res.status}`);

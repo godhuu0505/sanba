@@ -26,8 +26,8 @@ export function SidebarAccount({ profile }: SidebarAccountProps) {
     return () => window.removeEventListener("keydown", onKey);
   }, [open]);
 
-  const email = profile?.email ?? "dev@sanba.local";
-  const name = profile?.name?.trim() || email;
+  const email = profile?.email ?? null;
+  const name = profile?.name?.trim() || profile?.email || "ゲスト";
   const glyph = (profile?.name || profile?.email || "客").trim().charAt(0) || "客";
 
   async function handleLogout() {
@@ -49,7 +49,9 @@ export function SidebarAccount({ profile }: SidebarAccountProps) {
         <Avatar tone="user" glyph={glyph} size={32} imageUrl={profile?.picture} alt="" />
         <span className="min-w-0 flex-1">
           <span className="block truncate text-[13px] font-bold text-sanba-cream">{name}</span>
-          <span className="block truncate text-[11px] text-sanba-muted">{email}</span>
+          {email && (
+            <span className="block truncate text-[11px] text-sanba-muted">{email}</span>
+          )}
         </span>
       </button>
 
@@ -66,10 +68,16 @@ export function SidebarAccount({ profile }: SidebarAccountProps) {
             aria-label="アカウント"
             className="absolute bottom-[calc(100%+8px)] left-0 z-50 flex w-[220px] flex-col gap-[6px] rounded-[14px] border border-sanba-border bg-sanba-surface p-[8px] shadow-lg"
           >
-            <p className="truncate px-[10px] pt-[4px] text-[12px] text-sanba-muted">
-              <CircleCheck size={13} aria-hidden className="mr-1 inline-block align-[-2px]" />
-              ログイン中: <span className="text-sanba-cream">{email}</span>
-            </p>
+            {email ? (
+              <p className="truncate px-[10px] pt-[4px] text-[12px] text-sanba-muted">
+                <CircleCheck size={13} aria-hidden className="mr-1 inline-block align-[-2px]" />
+                ログイン中: <span className="text-sanba-cream">{email}</span>
+              </p>
+            ) : (
+              <p className="truncate px-[10px] pt-[4px] text-[12px] text-sanba-muted">
+                アカウント情報を取得できません
+              </p>
+            )}
             <Divider />
             <Link
               href="/settings"

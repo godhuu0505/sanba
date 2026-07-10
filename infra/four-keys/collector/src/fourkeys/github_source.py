@@ -124,8 +124,8 @@ def _within_window(
     deployments: list[Deployment], incidents: list[Incident], window_days: float
 ) -> tuple[list[Deployment], list[Incident]]:
     cutoff = datetime.now(UTC) - timedelta(days=window_days)
-    deps = [d for d in deployments if d.deployed_at >= cutoff]
-    incs = [i for i in incidents if i.opened_at >= cutoff]
+    deps = [d for d in deployments if d.deployed_at is not None and d.deployed_at >= cutoff]
+    incs = [i for i in incidents if i.opened_at is not None and i.opened_at >= cutoff]
     return deps, incs
 
 
@@ -141,29 +141,33 @@ def collect(
     fallback, so callers can label the data provenance honestly.
     """
 
-    repo = repo or os.getenv("GITHUB_REPOSITORY", "godhuu0505/ai-hackathon2")
+    repo = repo or os.getenv("GITHUB_REPOSITORY")
     token = token or os.getenv("GITHUB_TOKEN") or os.getenv("GH_TOKEN")
-    try:
-        runs_payload = _get(
-            f"{_API}/repos/{repo}/actions/workflows/{workflow}/runs?per_page=100",
-            token,
-        )
-        issues_payload = _get(
-            f"{_API}/repos/{repo}/issues?labels=incident&state=all&per_page=100",
-            token,
-        )
-        runs = runs_payload.get("workflow_runs", []) if isinstance(runs_payload, dict) else []
-        issues = issues_payload if isinstance(issues_payload, list) else []
-        deployments = _deployments_from_runs(runs)
-        incidents = _incidents_from_issues(issues)
-        if not deployments:
-            deployments, incidents = _load_sample()
-            source = "sample"
-        else:
-            source = "github"
-    except (urllib.error.URLError, TimeoutError, KeyError, ValueError, OSError):
+    if not repo:
         deployments, incidents = _load_sample()
         source = "sample"
+    else:
+        try:
+            runs_payload = _get(
+                f"{_API}/repos/{repo}/actions/workflows/{workflow}/runs?per_page=100",
+                token,
+            )
+            issues_payload = _get(
+                f"{_API}/repos/{repo}/issues?labels=incident&state=all&per_page=100",
+                token,
+            )
+            runs = runs_payload.get("workflow_runs", []) if isinstance(runs_payload, dict) else []
+            issues = issues_payload if isinstance(issues_payload, list) else []
+            deployments = _deployments_from_runs(runs)
+            incidents = _incidents_from_issues(issues)
+            if deployments or incidents:
+                source = "github"
+            else:
+                deployments, incidents = _load_sample()
+                source = "sample"
+        except (urllib.error.URLError, TimeoutError, KeyError, ValueError, OSError):
+            deployments, incidents = _load_sample()
+            source = "sample"
 
     deployments, incidents = _within_window(deployments, incidents, window_days)
     return deployments, incidents, source

@@ -7,14 +7,16 @@ title = "SANBA gitleaks config"
 useDefault = true
 
 [allowlist]
-description = "Local-dev placeholders and example files (no real secrets)"
+description = "Local-dev placeholders (no real secrets)."
+# .env.example は値が全てプレースホルダの配布テンプレートなのでファイル単位で許可する。
+# docker-compose.yml は運用ファイルなので丸ごと許可はせず、既知の dev クレデンシャル行だけを
+# 値ベースで許可する。これにより将来 docker-compose.yml に混入する本物の秘密は検出できる。
 paths = [
   '''\.env\.example''',
-  '''docker-compose\.yml''',
 ]
 regexes = [
-  # Known dev placeholder values committed intentionally.
+  # 意図的にコミットしている既知の dev プレースホルダ値だけをピンポイントで許可する
+  # （広域一致の `devkey` 単独は使わない）。
   '''dev-only-insecure-secret-change-me''',
   '''LIVEKIT_KEYS:\s*"devkey:\s*secret"''',
-  '''devkey''',
 ]

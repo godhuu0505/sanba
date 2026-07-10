@@ -10,6 +10,8 @@ from sanba_shared.media import MediaConfig
 class WorkerSettings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
+    environment: str = "development"
+
     google_cloud_project: str = "sanba-dev"
     google_cloud_location: str = "us-central1"
     google_genai_use_vertexai: bool = False
@@ -18,6 +20,7 @@ class WorkerSettings(BaseSettings):
     gemini_embed_model: str = "gemini-embedding-001"
 
     gcs_bucket: str = ""
+    oidc_audience: str = ""
     elasticsearch_url: str = ""
     elasticsearch_api_key: str = ""
     require_elasticsearch: bool = False
@@ -25,8 +28,6 @@ class WorkerSettings(BaseSettings):
 
     max_video_duration_seconds: int = 600
     max_inline_video_bytes: int = 20_000_000
-
-    data_retention_days: int = 30
 
     otel_exporter_otlp_endpoint: str = ""
     otel_service_name: str = "sanba-worker"
@@ -38,6 +39,10 @@ class WorkerSettings(BaseSettings):
     livekit_server_url: str = ""
     livekit_api_key: str = ""
     livekit_api_secret: str = ""
+
+    @property
+    def is_production(self) -> bool:
+        return self.environment.strip().lower() in {"production", "prod"}
 
     @property
     def livekit_publish_url(self) -> str:

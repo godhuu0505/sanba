@@ -24,7 +24,8 @@ export default function ResultsListPage() {
   const [history, setHistory] = useState<SessionHistoryItem[]>([]);
 
   useEffect(() => {
-    if (!auth.loggedIn) {
+    const canFetch = auth.devMode || auth.loggedIn;
+    if (!canFetch) {
       setHistory([]);
       return;
     }
@@ -48,7 +49,7 @@ export default function ResultsListPage() {
     return () => {
       cancelled = true;
     };
-  }, [auth.loggedIn, auth.credential]);
+  }, [auth.devMode, auth.loggedIn, auth.credential]);
 
   const gate = authGate(auth, "/results");
   if (gate) return gate;
