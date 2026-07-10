@@ -129,18 +129,17 @@ def cmd_reports(audit, units, targets, dest, head):
         "- ✓=担当エージェントが全行 Read。指摘数はそのファイルに紐づく確定 finding 件数。\n"
     )
     confirmed_by_unit = audit.get("confirmedFilesByUnit") or {}
-    confirmed_files = set()
-    for fl in confirmed_by_unit.values():
-        confirmed_files.update(fl)
     checked = 0
     unconfirmed = []
     for u in units["units"]:
+        unit_scope = set(u["files"])
+        unit_confirmed = set(confirmed_by_unit.get(u["name"], [])) & unit_scope
         L.append(f"## {u['name']} — {len(u['files'])} ファイル\n")
         L.append("| ファイル | 確認 | 指摘数 | finding ID |")
         L.append("|---|:--:|:--:|---|")
         for rf in u["files"]:
             fids = [x["_id"] for x in byfile.get(rf, [])]
-            seen = rf in confirmed_files
+            seen = rf in unit_confirmed
             if seen:
                 checked += 1
             else:
@@ -339,9 +338,18 @@ def main() -> int:
     args = ap.parse_args()
 
     audit = json.load(open(args.audit))
+
+    if args.what in ("reports", "summary") and (not args.units or not args.targets):
+        raise SystemExit(
+            f"{args.what}: --units と --targets は必須です（欠落すると対象総数 0 の偽の網羅ログを生成するため）。"
+        )
     units = json.load(open(args.units)) if args.units else {"units": []}
     targets = [l.strip() for l in open(args.targets)] if args.targets else []
     targets = [t for t in targets if t]
+    if args.what in ("reports", "summary") and not targets:
+        raise SystemExit(
+            f"{args.what}: --targets が空です。監査対象ファイル一覧を確認してください。"
+        )
 
     if args.what == "reports":
         cmd_reports(audit, units, targets, args.dest, args.head)
