@@ -1149,7 +1149,9 @@ def finalize_session_requirements(
       - 未確定セッションは、終了ゲート対象の未解消ノード（open かつ
         kind∈{contradiction,gap,check}）が 1 件でも残るなら 409 で拒否する（HP8 判定の
         「未解消 0 件で確定可」をサーバ側でも担保。ADR-0059 の agent ゲートと同義。
-        直接 POST や古いクライアント状態を防ぐ）。
+        直接 POST や古いクライアント状態を防ぐ）。例外は `end_forced_by_user`
+        （agent の complete_session が参加者の明示的な終了要求を記録した場合）で、
+        本人意思による強制終了は未解消が残っていても確定を通す。
 
     ゲスト token（ADR-0032 決定4）は確定不可: ゲストセッションの要件の承認・保全は
     owner が管理画面で行う（承認 = TTL 解除は owner の意思に限る）。
@@ -1161,8 +1163,11 @@ def finalize_session_requirements(
     if existing.status == "finalized":
         return FinalizeResponse(finalized=True, confirmed_count=existing.finalized_count or 0)
     open_inquiries = InquiryTree.from_nodes(_repo.list_inquiry_nodes(session_id))
-    if open_inquiries.gating_open_count() > 0:
+    open_count = open_inquiries.gating_open_count()
+    if open_count > 0 and not existing.end_forced_by_user:
         raise HTTPException(status_code=409, detail="unresolved inquiries remain")
+    if open_count > 0:
+        log.info("finalize_with_forced_end", session=session_id, open=open_count)
     confirmed = _confirmed_requirements(session_id)
     confirmed_ids = [r["id"] for r in confirmed]
     labels = requirements_to_issue_labels(confirmed)
@@ -1218,6 +1223,36 @@ def finalize_session_requirements(
         sub=access.sub,
     )
     return FinalizeResponse(finalized=True, confirmed_count=count)
+
+
+def _ensure_session_title(session: SessionMeta, confirmed: list[dict[str, Any]]) -> SessionMeta:
+    """起票時に、既定タイトルのままなら確定要件から標題を遅延生成して保存する（#482）。
+
+    タイトル生成は対話的 finalize でしか走らず、未解消 inquiry 等で auto-finalize（ADR-0056）に
+    倒れたセッションは既定 `要件インタビュー` のまま起票され、Issue 名と本文見出しがフォールバックに
+    なる。起票はユーザー起点の HTTP 呼び出しで退出猶予の制約が無いため、ここで生成して本文見出しと
+    Issue 標題の双方へ反映する。生成不可（認証なし/確定要件なし/失敗）なら fail-open で従来のまま。
+    """
+    title_stripped = (session.title or "").strip()
+    if title_stripped and title_stripped != DEFAULT_SESSION_TITLE:
+        return session
+    recorder = _analytics_recorder(session.id, meta=session)
+    generated = generate_requirement_title(
+        confirmed,
+        usage_hook=lambda usage: recorder.record(
+            COMPONENT_TITLE, settings.gemini_reasoning_model, usage
+        ),
+        billing_labels=billing_labels(session.id, recorder.product_id),
+    )
+    if not generated:
+        return session
+    try:
+        updated = _repo.set_session_title(session.id, generated)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("export_title_persist_failed", session=session.id, error=str(exc))
+        return session
+    log.info("export_title_generated", session=session.id, title=generated)
+    return updated or session
 
 
 def _export_appendix(session: SessionMeta, opts: ExportRequest) -> str:
@@ -1293,6 +1328,7 @@ def _perform_export(
         log.warning("export_link_missing", session=session.id, repo=export_repo, sub=actor_sub)
         return ExportResponse(exported=False, reason="github not linked")
     confirmed = _finalized_snapshot_requirements(session)
+    session = _ensure_session_title(session, confirmed)
     product = _repo.get_product(session.product_id) if session.product_id else None
     template, _ = resolve_output_format(product, Audience.DEVELOPER)
     body = render_result_document(

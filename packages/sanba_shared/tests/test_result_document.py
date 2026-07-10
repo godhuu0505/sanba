@@ -155,16 +155,23 @@ def test_unknown_placeholders_are_left_as_is() -> None:
 def test_issue_title_uses_generated_session_title() -> None:
     from sanba_shared.result_document import issue_title
 
-    assert issue_title("在庫管理アプリの通知要件", "sess-1") == "在庫管理アプリの通知要件"
+    assert issue_title("在庫管理アプリの通知要件", "sess-1") == "SANBA: 在庫管理アプリの通知要件"
 
 
 def test_issue_title_falls_back_to_session_id_when_title_is_default_or_empty() -> None:
     from sanba_shared.models import DEFAULT_SESSION_TITLE
     from sanba_shared.result_document import issue_title
 
-    assert issue_title(DEFAULT_SESSION_TITLE, "sess-1") == "要件定義: sess-1"
-    assert issue_title("", "sess-1") == "要件定義: sess-1"
-    assert issue_title("   ", "sess-1") == "要件定義: sess-1"
+    assert issue_title(DEFAULT_SESSION_TITLE, "sess-1") == "SANBA: 要件定義 sess-1"
+    assert issue_title("", "sess-1") == "SANBA: 要件定義 sess-1"
+    assert issue_title("   ", "sess-1") == "SANBA: 要件定義 sess-1"
+
+
+def test_issue_title_is_not_double_prefixed() -> None:
+    from sanba_shared.result_document import issue_title
+
+    assert issue_title("SANBA: 既に付いている", "sess-1") == "SANBA: 既に付いている"
+    assert issue_title("SANBA:スペースなし", "sess-1") == "SANBA:スペースなし"
 
 
 def test_build_title_prompt_lists_only_confirmed_statements() -> None:

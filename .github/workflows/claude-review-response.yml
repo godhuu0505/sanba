@@ -159,7 +159,7 @@ jobs:
 
       - name: Claude triage and respond
         if: ${{ steps.guard.outputs.ok == 'true' && steps.rounds.outputs.capped != 'true' }}
-        uses: anthropics/claude-code-action@f87768c6d25f92ae6efa7175e223ef77d4cbf97f # v1
+        uses: anthropics/claude-code-action@536f2c32a39763739000b0e1ac69ca2647d97ce9 # v1
         with:
           # Claude Pro/Max サブスク枠で実行（API 従量課金を避ける）。
           # トークンはローカルで `claude setup-token` を実行して生成し、Secret に登録する。

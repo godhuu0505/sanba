@@ -53,17 +53,22 @@ def _fence_untrusted(tag: str, source: str, usage: str, body: str) -> str:
     )
 
 
+ISSUE_TITLE_PREFIX = "SANBA: "
+
+
 def issue_title(session_title: str, session_id: str) -> str:
     """GitHub Issue 起票時の標題（api / agent で同一の形を保つ）。
 
-    要件確定時に Vertex AI で生成したタイトル（`SessionMeta.title` に保存済み）を
-    そのまま Issue タイトルに使う。生成前・生成失敗でセッションが既定タイトルのままの
-    ときだけ、従来のセッションID書式へフォールバックする（起票元をたどれる目印を残す）。
+    SANBA の起票だと一目で分かるよう常に `SANBA:` を接頭辞に付ける。要件確定時に Vertex AI で
+    生成したタイトル（`SessionMeta.title` に保存済み）を本体に使い、生成前・生成失敗でセッションが
+    既定タイトルのままのときだけセッションID書式へフォールバックする（起票元をたどれる目印を残す）。
     """
     title = (session_title or "").strip()
     if not title or title == DEFAULT_SESSION_TITLE:
-        return f"要件定義: {session_id}"
-    return title
+        title = f"要件定義 {session_id}"
+    if title.startswith("SANBA:"):
+        return title
+    return f"{ISSUE_TITLE_PREFIX}{title}"
 
 
 def build_title_prompt(requirements: list[dict[str, Any]]) -> str:

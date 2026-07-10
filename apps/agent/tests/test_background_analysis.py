@@ -250,6 +250,28 @@ async def test_propose_session_end_refused_before_any_requirement() -> None:
 
 
 @pytest.mark.asyncio
+async def test_propose_session_end_no_requirements_circuit_breaks() -> None:
+    """要件 0 件での終了提案が繰り返されたら stop=True で暴走ループを断つ。"""
+    transport = RecordingTransport()
+    agent = _agent(transport)
+    propose = type(agent).propose_session_end.__wrapped__
+
+    first = await propose(agent, None)
+    assert first["proposed"] is False
+    assert first["reason"] == "no_requirements"
+    assert "stop" not in first
+
+    second = await propose(agent, None)
+    assert second["stop"] is True
+    assert "guidance" in second
+    assert second["reason"] == "no_requirements"
+
+    agent.record_utterance("participant", "続きを話します")
+    reset = await propose(agent, None)
+    assert "stop" not in reset, "参加者の新しいターンでストリークはリセットされる"
+
+
+@pytest.mark.asyncio
 async def test_complete_session_requires_prior_proposal() -> None:
     """提案（同意フロー）を経ずに直接 complete_session を呼んでも終了しない（レビュー指摘）。"""
     transport = RecordingTransport()
@@ -302,6 +324,136 @@ async def test_complete_session_refuses_when_open_remains() -> None:
     assert result["open_count"] == 1
     assert result["reason"] == "open_inquiries"
     assert not any(t["event"]["type"] == "session.completed" for t in transport.sent)
+
+
+@pytest.mark.asyncio
+async def test_propose_session_end_circuit_breaks_after_repeated_declines() -> None:
+    """同一ターン内で拒否が続いたら stop=True と誘導を返し、暴走再試行を断つ（sess-29dc6e7e）。"""
+    transport = RecordingTransport()
+    agent = _agent(transport)
+    _seed_requirement(agent)
+    propose = type(agent).propose_session_end.__wrapped__
+    _seed_gap(agent, "性能要件が未確認")
+
+    first = await propose(agent, None)
+    assert first["proposed"] is False
+    assert "stop" not in first
+    assert first["open_inquiries"], "未解消の一覧を返し、解消の手がかりを渡す"
+
+    second = await propose(agent, None)
+    assert second["stop"] is True
+    assert "guidance" in second
+
+    agent.record_utterance("participant", "続きを話します")
+    reset = await propose(agent, None)
+    assert "stop" not in reset, "参加者の新しいターンでストリークはリセットされる"
+
+
+@pytest.mark.asyncio
+async def test_declined_open_inquiries_exclude_advisory_ambiguous() -> None:
+    """open_inquiries は gating 対象のみで open_count と一致させる（AMBIGUOUS は advisory）。"""
+    transport = RecordingTransport()
+    agent = _agent(transport)
+    _seed_requirement(agent)
+    propose = type(agent).propose_session_end.__wrapped__
+    _seed_gap(agent, "性能要件が未確認")
+    agent._inquiry.upsert(
+        kind=InquiryKind.AMBIGUOUS, text="対象ユーザーの範囲が曖昧", seq=agent._next_inquiry_seq()
+    )
+
+    declined = await propose(agent, None)
+    assert declined["open_count"] == 1
+    assert len(declined["open_inquiries"]) == 1
+    assert declined["open_inquiries"][0]["text"] == "性能要件が未確認"
+
+
+@pytest.mark.asyncio
+async def test_propose_session_end_user_requested_overrides_open_inquiries() -> None:
+    """参加者が終了を望むなら未解消が残っていても提案・確定できる（sess-29dc6e7e）。"""
+    transport = RecordingTransport()
+    agent = _agent(transport)
+    _seed_requirement(agent)
+    agent.set_shutdown_hook(lambda reason: None)
+    _seed_gap(agent, "性能要件が未確認")
+    propose = type(agent).propose_session_end.__wrapped__
+    complete = type(agent).complete_session.__wrapped__
+
+    proposed = await propose(agent, None, user_requested=True)
+    assert proposed["proposed"] is True
+    assert proposed["open_count"] == 1
+    sent = [t["event"] for t in transport.sent if t["event"]["type"] == "session.end_proposed"]
+    assert sent and sent[0]["open_count"] == 1
+
+    completed = await complete(agent, None)
+    assert completed["completed"] is True
+    assert any(t["event"]["type"] == "session.completed" for t in transport.sent)
+    meta = agent._repo.get_session("s1")
+    assert meta is not None and meta.end_forced_by_user is True, (
+        "強制終了は session 文書へ記録し、API finalize の gating を本人意思で通す"
+    )
+
+
+@pytest.mark.asyncio
+async def test_user_requested_end_is_retracted_by_new_gap() -> None:
+    """強制提案の後に新しい抜けが出たら、強制フラグごと取り下げる（整合性を優先）。"""
+    transport = RecordingTransport()
+    agent = _agent(transport)
+    _seed_requirement(agent)
+    agent.set_shutdown_hook(lambda reason: None)
+    _seed_gap(agent, "性能要件が未確認")
+    propose = type(agent).propose_session_end.__wrapped__
+    complete = type(agent).complete_session.__wrapped__
+    await propose(agent, None, user_requested=True)
+
+    add = type(agent).add_inquiry.__wrapped__
+    await add(agent, None, "在庫引き当ての扱い")
+
+    result = await complete(agent, None)
+    assert result["completed"] is False
+    assert result["reason"] == "not_proposed"
+
+
+@pytest.mark.asyncio
+async def test_forced_end_survives_redetection_of_existing_gap() -> None:
+    """既存 open ノードの再検知では強制終了提案を取り下げない（分析タイミング依存の失敗防止）。"""
+    transport = RecordingTransport()
+    agent = _agent(transport)
+    _seed_requirement(agent)
+    _seed_gap(agent, "性能要件が未確認")
+    propose = type(agent).propose_session_end.__wrapped__
+    await propose(agent, None, user_requested=True)
+    assert agent._end_proposed is True and agent._end_forced is True
+
+    same = AnalysisResult(
+        summary="s", open_topics=["性能要件が未確認"], next_question="q?", suggested_answer="a"
+    )
+    await agent._reconcile_inquiry(same)
+    assert agent._end_proposed is True, "同じ open ノードの再検知では取り下げない"
+    assert agent._end_forced is True
+
+    fresh = AnalysisResult(
+        summary="s", open_topics=["全く新しい論点"], next_question="q?", suggested_answer="a"
+    )
+    await agent._reconcile_inquiry(fresh)
+    assert agent._end_proposed is False, "新規の gating ノードが生えたら取り下げる"
+    assert agent._end_forced is False
+
+
+@pytest.mark.asyncio
+async def test_add_inquiry_of_existing_open_gap_keeps_end_proposal() -> None:
+    transport = RecordingTransport()
+    agent = _agent(transport)
+    _seed_requirement(agent)
+    _seed_gap(agent, "性能要件が未確認")
+    propose = type(agent).propose_session_end.__wrapped__
+    await propose(agent, None, user_requested=True)
+
+    add = type(agent).add_inquiry.__wrapped__
+    await add(agent, None, "性能要件が未確認")
+    assert agent._end_proposed is True, "既存 open ノードの再追加では取り下げない"
+
+    await add(agent, None, "新しい論点")
+    assert agent._end_proposed is False
 
 
 @pytest.mark.asyncio

@@ -84,3 +84,175 @@ async def test_publish_helpers_noop_without_publisher() -> None:
     agent.publish_agent_utterance("y")
     assert agent._pending_user_uid is None
     assert agent._agent_utterance_seq == 0
+
+
+@pytest.mark.asyncio
+async def test_transcript_hydrates_from_persisted_utterances() -> None:
+    """新プロセスがセッションを引き継ぐとき発話ログから transcript を復元する（sess-29dc6e7e）。"""
+    repo = SessionRepository()
+    repo._client = None
+    first = SANBAAgent(session_id="s1", repo=repo, grounding=GroundingStore())
+    first.record_utterance("participant", "会話ログを表示したい")
+    first.record_utterance("participant", "今回のセッション分だけでよい")
+    while first._persist_tasks:
+        await asyncio.gather(*list(first._persist_tasks))
+
+    second = SANBAAgent(session_id="s1", repo=repo, grounding=GroundingStore())
+    assert second.transcript == [
+        "[u1] participant: 会話ログを表示したい",
+        "[u2] participant: 今回のセッション分だけでよい",
+    ]
+    uid = second.record_utterance("participant", "追加の要望です")
+    assert uid == "u3", "復元後の採番は既存の発話の続きから振る"
+
+
+@pytest.mark.asyncio
+async def test_transcript_hydration_failure_is_fail_soft() -> None:
+    repo = SessionRepository()
+    repo._client = None
+
+    def _boom(session_id: str):  # type: ignore[no-untyped-def]
+        raise RuntimeError("firestore down")
+
+    repo.list_utterances = _boom  # type: ignore[assignment]
+    agent = SANBAAgent(session_id="s1", repo=repo, grounding=GroundingStore())
+    assert agent.transcript == []
+
+
+@pytest.mark.asyncio
+async def test_agent_utterance_ids_continue_from_publisher_seq_on_takeover() -> None:
+    """引き継ぎ後の SANBA 発話 id は publisher の起点 seq から続け、旧 a{n} と衝突させない。"""
+    repo = SessionRepository()
+    repo._client = None
+    transport = RecordingTransport()
+    pub = EventPublisher("s1", transport, start_seq=42)
+    agent = SANBAAgent(session_id="s1", repo=repo, grounding=GroundingStore(), publisher=pub)
+
+    agent.publish_agent_utterance("復旧しました。続きから伺います")
+    await _drain(agent)
+
+    finals = [s["event"] for s in transport.sent if s["event"]["type"] == "transcript.final"]
+    assert finals[0]["utterance_id"] == "a43", "旧プロセスが発行し得た a1..a42 と重ならない"
+
+
+@pytest.mark.asyncio
+async def test_agent_utterance_checkpoints_seq_for_takeover() -> None:
+    """SANBA 発話の送出後に seq を永続化し、質問を挟まない会話でも引き継ぎ後の id が衝突しない。"""
+    repo = SessionRepository()
+    repo._client = None
+    transport = RecordingTransport()
+    first = SANBAAgent(
+        session_id="s1",
+        repo=repo,
+        grounding=GroundingStore(),
+        publisher=EventPublisher("s1", transport, start_seq=repo.get_startup_seq("s1")),
+    )
+    first.publish_agent_utterance("こんにちは")
+    first.publish_agent_utterance("始めましょう")
+    await _drain(first)
+    checkpoint = repo.get_startup_seq("s1")
+    assert checkpoint >= 2, "transcript.final 後の seq が復元起点に含まれる"
+
+    transport2 = RecordingTransport()
+    second = SANBAAgent(
+        session_id="s1",
+        repo=repo,
+        grounding=GroundingStore(),
+        publisher=EventPublisher("s1", transport2, start_seq=repo.get_startup_seq("s1")),
+    )
+    second.publish_agent_utterance("復旧しました")
+    await _drain(second)
+    finals = [s["event"] for s in transport2.sent if s["event"]["type"] == "transcript.final"]
+    assert finals[0]["utterance_id"] not in {"a1", "a2"}, "旧プロセスの id を再利用しない"
+
+
+@pytest.mark.asyncio
+async def test_transcript_hydration_excludes_agent_utterances() -> None:
+    """SANBA 発話（#479 で永続化対象）は分析用 transcript へ復元しない（live と同じ不変条件）。"""
+    from sanba_shared.models import Utterance
+
+    repo = SessionRepository()
+    repo._client = None
+    repo.add_utterance("s1", Utterance(speaker="SANBA", text="こんにちは、始めましょう"))
+    repo.add_utterance("s1", Utterance(speaker="participant", text="会話ログを表示したい"))
+
+    agent = SANBAAgent(session_id="s1", repo=repo, grounding=GroundingStore())
+    assert agent.transcript == ["[u1] participant: 会話ログを表示したい"]
+    uid = agent.record_utterance("participant", "追加の要望です")
+    assert uid == "u2", "採番は参加者発話数のみから継ぐ（SANBA は a{n} 空間で衝突なし）"
+
+
+@pytest.mark.asyncio
+async def test_utterance_ids_stable_across_multiple_takeovers() -> None:
+    """複数回プロセス交代しても参加者発話の u{n} が変わらず citations が壊れない。"""
+    from sanba_shared.models import Utterance
+
+    repo = SessionRepository()
+    repo._client = None
+    repo.add_utterance("s1", Utterance(speaker="SANBA", text="こんにちは"))
+    repo.add_utterance("s1", Utterance(speaker="participant", text="要望A"))
+    repo.add_utterance("s1", Utterance(speaker="SANBA", text="ありがとうございます"))
+    repo.add_utterance("s1", Utterance(speaker="participant", text="要望B"))
+
+    second = SANBAAgent(session_id="s1", repo=repo, grounding=GroundingStore())
+    assert second.transcript == [
+        "[u1] participant: 要望A",
+        "[u2] participant: 要望B",
+    ]
+    uid = second.record_utterance("participant", "要望C")
+    assert uid == "u3"
+
+    repo.add_utterance("s1", Utterance(speaker="participant", text="要望C"))
+
+    third = SANBAAgent(session_id="s1", repo=repo, grounding=GroundingStore())
+    assert third.transcript == [
+        "[u1] participant: 要望A",
+        "[u2] participant: 要望B",
+        "[u3] participant: 要望C",
+    ], "再引き継ぎ後も u{n} は参加者発話位置から採番され変化しない"
+
+
+@pytest.mark.asyncio
+async def test_record_user_final_normalizes_wakachigaki_stt() -> None:
+    agent, transport, repo = _agent()
+
+    agent.record_user_final("認証 は 無し で よく て 、 Cloud Run で 実行 し ます 。")
+    await _drain(agent)
+
+    expected = "認証は無しでよくて 、 Cloud Run で実行します 。"
+    finals = [s["event"] for s in transport.sent if s["event"]["type"] == "transcript.final"]
+    assert len(finals) == 1
+    assert finals[0]["text"] == expected
+    assert [u.text for u in repo.list_utterances("s1")] == [expected]
+    assert agent.transcript == [f"[u1] participant: {expected}"]
+
+
+@pytest.mark.asyncio
+async def test_partial_then_normalized_final_share_utterance_id() -> None:
+    agent, transport, _repo = _agent()
+
+    agent.publish_user_partial("認証 は")
+    uid = agent._pending_user_uid
+    assert uid is not None
+
+    agent.record_user_final("認証 は 無し で")
+    await _drain(agent)
+
+    finals = [s["event"] for s in transport.sent if s["event"]["type"] == "transcript.final"]
+    assert len(finals) == 1
+    assert finals[0]["utterance_id"] == uid
+    assert finals[0]["text"] == "認証は無しで"
+    assert agent._pending_user_uid is None
+
+
+@pytest.mark.asyncio
+async def test_record_user_final_skips_when_normalized_empty() -> None:
+    agent, transport, repo = _agent()
+
+    result = agent.record_user_final("　  ")
+    await _drain(agent)
+
+    assert result == ""
+    assert [s["event"] for s in transport.sent if s["event"]["type"] == "transcript.final"] == []
+    assert repo.list_utterances("s1") == []
+    assert agent.transcript == []

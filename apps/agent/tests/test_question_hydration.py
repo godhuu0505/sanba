@@ -159,3 +159,120 @@ async def test_clear_without_publisher_is_noop() -> None:
     repo._client = None
     agent = SANBAAgent(session_id="s1", repo=repo, grounding=GroundingStore(), publisher=None)
     await agent.clear_current_question("q1")
+
+
+@pytest.mark.asyncio
+async def test_same_prompt_reask_same_turn_is_skipped() -> None:
+    """同一ターンで同じ問いを再掲しても supersede せず現状維持する（sess-29dc6e7e の暴走対策）。"""
+    agent, _repo, transport, _pub = _agent()
+    ask = type(agent).ask_question.__wrapped__
+    r1 = await ask(agent, None, "Q1?")
+    transport.sent.clear()
+    r2 = await ask(agent, None, "Q1?")
+    assert transport.sent == [], "再掲は publish しない（画面の問いピンを揺らさない）"
+    assert r2["asked"] == r1["asked"]
+    assert "note" in r2 and "提示済み" in r2["note"]
+    assert "stop" not in r2, "1回目の再掲はまだ打ち切らない"
+
+
+@pytest.mark.asyncio
+async def test_same_prompt_repeat_circuit_breaks() -> None:
+    """同一問いの再掲が続いたら stop=True で打ち切る（sess-29dc6e7e の同一問い33連発対策）。"""
+    agent, _repo, transport, _pub = _agent()
+    ask = type(agent).ask_question.__wrapped__
+    await ask(agent, None, "Q1?")
+    await ask(agent, None, "Q1?")
+    transport.sent.clear()
+    r3 = await ask(agent, None, "Q1?")
+    assert r3.get("stop") is True
+    assert transport.sent == []
+
+    agent.record_utterance("participant", "回答します")
+    r4 = await ask(agent, None, "Q2?")
+    assert "stop" not in r4, "新しいターンでは再び問いを立てられる"
+
+
+@pytest.mark.asyncio
+async def test_supersede_circuit_breaks_within_turn() -> None:
+    """同一ターンの差し替えが上限を超えたら stop=True で打ち切る（sess-29dc6e7e の暴走対策）。"""
+    agent, _repo, transport, _pub = _agent()
+    ask = type(agent).ask_question.__wrapped__
+    await ask(agent, None, "Q1?")
+    await ask(agent, None, "Q2?")
+    r3 = await ask(agent, None, "Q3?")
+    assert r3["asked"] != ""
+    transport.sent.clear()
+    r4 = await ask(agent, None, "Q4?")
+    assert r4.get("stop") is True
+    assert r4["asked"] == r3["asked"], "現状の問いを維持する"
+    assert transport.sent == []
+
+    agent.record_utterance("participant", "回答します")
+    r5 = await ask(agent, None, "Q5?")
+    assert "stop" not in r5, "新しいターンでは再び問いを立てられる"
+    assert agent.current_question_id == r5["asked"]
+
+
+@pytest.mark.asyncio
+async def test_same_prompt_with_options_added_still_supersedes() -> None:
+    """同じ文言でも選択肢を付け足す再質問は正当な差し替えとして通す。"""
+    agent, _repo, transport, _pub = _agent()
+    ask = type(agent).ask_question.__wrapped__
+    r1 = await ask(agent, None, "並び順は？")
+    r2 = await ask(agent, None, "並び順は？", ["関連度順", "新着順"])
+    types = [t["event"]["type"] for t in transport.sent]
+    assert types == ["question.asked", "question.cleared", "question.asked"]
+    assert r2["asked"] != r1["asked"]
+    assert agent.current_question_id == r2["asked"]
+
+
+@pytest.mark.asyncio
+async def test_current_question_hydrates_on_new_process() -> None:
+    """新プロセスがセッションを引き継ぐとき、未回答の金枠ピンの current 追跡も復元する。"""
+    repo = SessionRepository()
+    repo._client = None
+    repo.save_current_question(
+        "s1", {"id": "req_abc-8", "prompt": "並び順は？", "options": []}, asked_seq=12
+    )
+    agent = SANBAAgent(session_id="s1", repo=repo, grounding=GroundingStore(), publisher=None)
+    assert agent.current_question_id == "req_abc-8"
+    assert agent._questions["req_abc-8"] == "並び順は？"
+    assert agent._question_seq == 8, "採番は引き継いだ id の連番から続ける"
+    assert agent._question_asked_turn == agent._user_turn, (
+        "復元した未回答質問は現在のターンで提示済みとして扱い、差し替え保護を効かせる"
+    )
+
+
+@pytest.mark.asyncio
+async def test_cleared_current_question_restores_seq_but_not_current() -> None:
+    """tombstone は current に復元しないが、採番は id 連番から継いで再利用を防ぐ。"""
+    repo = SessionRepository()
+    repo._client = None
+    repo.save_current_question("s1", {"id": "req_x-5", "prompt": "済みの問い"}, asked_seq=3)
+    repo.clear_current_question("s1", "req_x-5", cleared_seq=4)
+    agent = SANBAAgent(session_id="s1", repo=repo, grounding=GroundingStore(), publisher=None)
+    assert agent.current_question_id is None
+    assert agent._question_seq == 5, "同じ prompt を再提示しても …-6 になり id 再利用しない"
+
+
+@pytest.mark.asyncio
+async def test_hydrated_options_question_survives_optionless_followup() -> None:
+    """復元した選択肢付きピンは、引き継ぎ直後の選択肢なし再質問に潰されない。"""
+    repo = SessionRepository()
+    repo._client = None
+    repo.save_current_question(
+        "s1",
+        {
+            "id": "req_abc-8",
+            "prompt": "並び順は？",
+            "options": [{"label": "関連度順", "value": "関連度順"}],
+        },
+        asked_seq=12,
+    )
+    transport = RecordingTransport()
+    pub = EventPublisher("s1", transport)
+    agent = SANBAAgent(session_id="s1", repo=repo, grounding=GroundingStore(), publisher=pub)
+    ask = type(agent).ask_question.__wrapped__
+    r = await ask(agent, None, "他に何かありますか？")
+    assert r["asked"] == "req_abc-8", "選択肢付きの復元ピンを維持する"
+    assert transport.sent == []

@@ -94,3 +94,17 @@ grounding クエリに載ると検索・分析の一致率が落ちる。独立 
 本番ログ（`query_normalized` の before/after）で崩れパターンを観測してからルールを育てる。STT 設定
 （`turn_silence_duration_ms` / sensitivity / temperature）の見直しは実データで A/B 判断する（本 ADR の
 値を安易に変えない）。
+
+## 追補（#483 / 正規化を確定発話の入口へ前倒し）
+
+上記の `normalize_query` は grounding クエリにしか掛かっておらず、保存・表示される発話は生の分かち書き
+のままだった。会話ログ（#479）・確定吹き出しが「日本語の文章に見えない」ため、正規化を**確定
+ユーザー発話の入口**（`record_user_final`）へ 1 回だけ前倒しし、表示・分析 transcript・grounding 索引の
+すべてを同じ読める日本語に揃える。適用は STT 由来の確定発話のみで、web 由来のタイプ/タップ入力
+（`record_answer` 等）は対象外。
+
+観測性: 前倒しにより `_start_prefetch` の `query_normalized`（崩れパターン観測の唯一の本番ログ）は
+入力が既に正規化済みで発火しなくなるため、同じ before/after を `record_user_final` で出し、観測の
+フィードバックループ（ルール育成の前提）を保つ。正規化後に空文字となる無音/雑音ターンは保存・
+publish・索引しない。句読点隣接の空白詰め等の正規化ルールの深掘りは grounding 品質（#442）で扱う。
+STT モデル差し替え（half-cascade / 独立 STT）の再評価は #483 の discussion で継続する。
