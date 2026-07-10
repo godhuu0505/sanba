@@ -1214,11 +1214,31 @@ class SANBAAgent(Agent):
                 ),
             }
         if superseded_in_turn and not new_has_options and self._current_question_has_options:
+            self._question_reasks_in_turn += 1
+            circuit_break = self._question_reasks_in_turn >= ASK_QUESTION_REASK_LIMIT
+            if circuit_break:
+                log.warning(
+                    "question_superseded_skipped_circuit_break",
+                    session=self._session_id,
+                    current=self._current_question_id,
+                    turn=self._user_turn,
+                    reasks=self._question_reasks_in_turn,
+                )
+                return {
+                    "asked": self._current_question_id,
+                    "stop": True,
+                    "note": (
+                        "選択肢付きの問いが未回答のため後発の問いはスキップしました。"
+                        "同一ターンで ask_question を呼びすぎています。呼び出しをやめ、"
+                        "参加者の回答を音声で待ってください。"
+                    ),
+                }
             log.info(
                 "question_superseded_skipped",
                 session=self._session_id,
                 current=self._current_question_id,
                 turn=self._user_turn,
+                reasks=self._question_reasks_in_turn,
             )
             return {
                 "asked": self._current_question_id,
