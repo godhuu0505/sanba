@@ -93,3 +93,17 @@ def test_generates_title_when_default_with_trailing_space(monkeypatch: pytest.Mo
 
     assert updated.title == "在庫アプリの通知要件"
     assert calls == [confirmed]
+
+
+def test_fails_open_when_persist_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(sess, "generate_requirement_title", lambda *_, **__: "生成タイトル")
+
+    def boom(*_: object, **__: object) -> object:
+        raise RuntimeError("firestore down")
+
+    monkeypatch.setattr(sess._repo, "set_session_title", boom)
+    session = _seed("sess-5", DEFAULT_SESSION_TITLE)
+
+    updated = sess._ensure_session_title(session, [{"status": "confirmed", "statement": "x"}])
+
+    assert updated.title == DEFAULT_SESSION_TITLE

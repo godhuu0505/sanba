@@ -1204,9 +1204,13 @@ def _ensure_session_title(session: SessionMeta, confirmed: list[dict[str, Any]])
     )
     if not generated:
         return session
-    _repo.set_session_title(session.id, generated)
+    try:
+        updated = _repo.set_session_title(session.id, generated)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("export_title_persist_failed", session=session.id, error=str(exc))
+        return session
     log.info("export_title_generated", session=session.id, title=generated)
-    return _repo.get_session(session.id) or session
+    return updated or session
 
 
 def _export_appendix(session: SessionMeta, opts: ExportRequest) -> str:

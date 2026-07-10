@@ -384,6 +384,7 @@ class _FakeAppClient:
     ) -> str:
         self._captured["installation_id"] = installation_id
         self._captured["repo"] = repo
+        self._captured["title"] = title
         self._captured["body"] = body
         self._captured["labels"] = labels
         return "https://github.com/o/r/issues/1"
@@ -806,6 +807,34 @@ def test_export_keeps_finalized_requirement_even_if_later_rejected(
     body = res.json()
     assert body["count"] == 1
     assert "確定要件" in str(captured["body"])
+
+
+def test_export_generates_prefixed_title_for_default_titled_session(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from sanba_api.routers import sessions as sessions_router
+
+    created = client.post("/api/sessions", json={"roles": ["pm"], "consent_acknowledged": True})
+    sid = created.json()["session_id"]
+    _read_repo._seed_requirement(
+        sid,
+        {"id": "c1", "statement": "スマホ対応", "category": "functional", "priority": "must"},
+    )
+    meta = _repo.get_session(sid)
+    assert meta is not None
+    _repo._mem_sessions[sid] = meta.model_copy(
+        update={"status": "finalized", "finalized_count": 1, "finalized_requirement_ids": ["c1"]}
+    )
+    monkeypatch.setattr(
+        sessions_router, "generate_requirement_title", lambda *_, **__: "スマホ対応の要件"
+    )
+    captured = _enable_github(monkeypatch)
+
+    res = client.post(f"/api/sessions/{sid}/export", headers=_auth(_token(sid)))
+
+    assert res.json()["exported"] is True
+    assert captured["title"] == "SANBA: スマホ対応の要件"
+    assert "スマホ対応の要件" in str(captured["body"])
 
 
 def test_export_falls_back_for_legacy_finalized_without_snapshot(
