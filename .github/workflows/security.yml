@@ -17,7 +17,7 @@ jobs:
     strategy:
       matrix:
         # 共有ドメイン層 (sanba_shared) も独自依存 (google-cloud-firestore 等) を持つため監査対象。
-        dir: [apps/agent, apps/api, packages/sanba_shared]
+        dir: [apps/agent, apps/api, packages/sanba_shared, elastic-agent]
     defaults:
       run:
         working-directory: ${{ matrix.dir }}
