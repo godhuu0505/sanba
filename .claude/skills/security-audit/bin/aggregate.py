@@ -49,6 +49,18 @@ def main() -> int:
     repo = os.path.abspath(args.repo)
     os.makedirs(args.out, exist_ok=True)
     data = load_result(args.input)
+    if not isinstance(data, dict) or not all(
+        k in data and isinstance(data[k], list)
+        for k in ("confirmed", "uncertain", "refuted")
+    ):
+        raise SystemExit(
+            "aggregate: 入力が Workflow 監査結果の形式ではありません（confirmed/uncertain/refuted の配列が揃っていません）。"
+            "入力ファイルの取り違えや Workflow 失敗の可能性があるため、空の監査を成功扱いにせず中断します。"
+        )
+    if "confirmedFilesByUnit" not in data or "totals" not in data:
+        raise SystemExit(
+            "aggregate: Workflow 結果に confirmedFilesByUnit / totals がありません。入力ファイルを確認してください。"
+        )
     confirmed = data.get("confirmed", [])
     uncertain = data.get("uncertain", [])
     refuted = data.get("refuted", [])
