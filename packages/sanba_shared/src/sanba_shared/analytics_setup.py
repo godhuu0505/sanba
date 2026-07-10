@@ -98,15 +98,41 @@ def event_mappings() -> dict[str, Any]:
     }
 
 
-def put_index_template(client: Any, *, with_ilm: bool) -> None:
-    settings: dict[str, Any] = {"number_of_replicas": 0}
-    if with_ilm:
-        settings["index.lifecycle.name"] = ANALYTICS_ILM_POLICY
+def is_serverless(client: Any) -> bool:
+    info = getattr(client, "info", None)
+    if not callable(info):
+        return False
+    try:
+        data = info()
+        version = data.get("version") or {}
+        return version.get("build_flavor") == "serverless"
+    except Exception as exc:  # noqa: BLE001
+        log.warning("es_flavor_detect_failed", error=str(exc))
+        return True
+
+
+def put_index_template(
+    client: Any,
+    *,
+    with_ilm: bool,
+    serverless: bool = False,
+    retention_days: int = DEFAULT_ANALYTICS_RETENTION_DAYS,
+) -> None:
+    settings: dict[str, Any] = {}
+    template: dict[str, Any] = {"mappings": event_mappings()}
+    if serverless:
+        template["lifecycle"] = {"data_retention": f"{retention_days}d"}
+    else:
+        settings["number_of_replicas"] = 0
+        if with_ilm:
+            settings["index.lifecycle.name"] = ANALYTICS_ILM_POLICY
+    if settings:
+        template["settings"] = settings
     client.indices.put_index_template(
         name=ANALYTICS_INDEX_TEMPLATE,
         index_patterns=[ANALYTICS_INDEX_PATTERN],
         data_stream={},
-        template={"settings": settings, "mappings": event_mappings()},
+        template=template,
     )
 
 
@@ -118,7 +144,7 @@ def ensure_event_stream_template(client: Any) -> bool:
     """
     if client.indices.exists_index_template(name=ANALYTICS_INDEX_TEMPLATE):
         return False
-    put_index_template(client, with_ilm=False)
+    put_index_template(client, with_ilm=False, serverless=is_serverless(client))
     return True
 
 
@@ -171,8 +197,12 @@ def seed_pricing_index(client: Any) -> int:
 
 def setup_analytics(client: Any, *, retention_days: int = DEFAULT_ANALYTICS_RETENTION_DAYS) -> None:
     """ILM・index template・データストリーム・単価 index を冪等に整える（ops 用の全量経路）。"""
-    put_ilm_policy(client, retention_days)
-    put_index_template(client, with_ilm=True)
+    serverless = is_serverless(client)
+    if not serverless:
+        put_ilm_policy(client, retention_days)
+    put_index_template(
+        client, with_ilm=not serverless, serverless=serverless, retention_days=retention_days
+    )
     if not client.indices.exists(index=ANALYTICS_DATA_STREAM):
         client.indices.create_data_stream(name=ANALYTICS_DATA_STREAM)
     seeded = seed_pricing_index(client)
@@ -180,6 +210,7 @@ def setup_analytics(client: Any, *, retention_days: int = DEFAULT_ANALYTICS_RETE
         "analytics_setup_done",
         data_stream=ANALYTICS_DATA_STREAM,
         retention_days=retention_days,
+        serverless=serverless,
         pricing_models=seeded,
     )
 
