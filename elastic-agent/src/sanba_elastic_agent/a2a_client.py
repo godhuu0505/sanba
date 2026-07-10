@@ -33,33 +33,49 @@ class DelegationResult:
 
 def build_message_send(text: str, *, message_id: str | None = None) -> dict:
     """A2A `message/send`（JSON-RPC 2.0）のリクエストボディを組み立てる。"""
+    mid = message_id or uuid.uuid4().hex
     return {
         "jsonrpc": "2.0",
-        "id": message_id or uuid.uuid4().hex,
+        "id": mid,
         "method": "message/send",
         "params": {
             "message": {
                 "role": "user",
-                "messageId": message_id or uuid.uuid4().hex,
+                "messageId": mid,
                 "parts": [{"kind": "text", "text": text}],
             }
         },
     }
 
 
+def _text_parts(parts: object) -> list[str]:
+    if not isinstance(parts, list):
+        return []
+    return [
+        p["text"]
+        for p in parts
+        if isinstance(p, dict) and p.get("kind") == "text" and p.get("text")
+    ]
+
+
 def extract_text(response: dict) -> str:
-    """A2A 応答（task/message）からテキストパートを連結して取り出す。"""
+    """A2A 応答からテキストを取り出す。
+
+    同期 `message/send` の戻りは Message か完了 Task。Task の最終回答は `artifacts[].parts` に
+    入るため（`status.message` は途中経過のことがある）、Message の `parts` → Task の
+    `artifacts[].parts` → `status.message.parts` の順に拾う。
+    """
     result = response.get("result") or {}
-    parts: list[dict] = []
-    if isinstance(result.get("parts"), list):
-        parts = result["parts"]
-    else:
+    texts = _text_parts(result.get("parts"))
+    if not texts:
+        for artifact in result.get("artifacts") or []:
+            if isinstance(artifact, dict):
+                texts.extend(_text_parts(artifact.get("parts")))
+    if not texts:
         status = result.get("status") or {}
         message = status.get("message") or result.get("message") or {}
-        if isinstance(message.get("parts"), list):
-            parts = message["parts"]
-    texts = [p.get("text", "") for p in parts if isinstance(p, dict) and p.get("kind") == "text"]
-    return "\n".join(t for t in texts if t).strip()
+        texts = _text_parts(message.get("parts"))
+    return "\n".join(texts).strip()
 
 
 class ElasticAgentClient:

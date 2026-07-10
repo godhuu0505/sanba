@@ -16,9 +16,27 @@ def test_build_message_send_shape():
     assert part == {"kind": "text", "text": "hello"}
 
 
+def test_build_message_send_reuses_one_id():
+    body = build_message_send("hi")
+    assert body["id"] == body["params"]["message"]["messageId"]
+
+
 def test_extract_text_from_direct_parts():
     resp = {"result": {"parts": [{"kind": "text", "text": "a"}, {"kind": "text", "text": "b"}]}}
     assert extract_text(resp) == "a\nb"
+
+
+def test_extract_text_from_task_artifacts():
+    resp = {
+        "result": {
+            "status": {"state": "completed"},
+            "artifacts": [
+                {"parts": [{"kind": "text", "text": "answer one"}]},
+                {"parts": [{"kind": "text", "text": "answer two"}]},
+            ],
+        }
+    }
+    assert extract_text(resp) == "answer one\nanswer two"
 
 
 def test_extract_text_from_status_message():
@@ -29,6 +47,10 @@ def test_extract_text_from_status_message():
 def test_extract_text_ignores_non_text_parts_and_empty():
     resp = {"result": {"parts": [{"kind": "data", "data": {}}, {"kind": "text", "text": ""}]}}
     assert extract_text(resp) == ""
+
+
+def test_extract_text_empty_on_missing_result():
+    assert extract_text({}) == ""
 
 
 def test_ask_is_noop_when_unconfigured():

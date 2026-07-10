@@ -92,7 +92,7 @@ def _upsert(step: ProvisionStep, api_key: str, timeout: float) -> None:  # pragm
     try:
         _send(step.collection_url, "POST", api_key, step.body, timeout)
     except urllib.error.HTTPError as exc:
-        if exc.code not in (409, 400):
+        if exc.code != 409:
             raise
         _send(step.item_url, "PUT", api_key, step.body, timeout)
 
