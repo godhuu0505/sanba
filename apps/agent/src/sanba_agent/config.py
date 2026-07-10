@@ -28,7 +28,7 @@ class Settings(BaseSettings):
 
     turn_silence_duration_ms: int = 1200
     turn_end_sensitivity: str = "low"
-    turn_start_sensitivity: str = ""
+    turn_start_sensitivity: str = "low"
     turn_prefix_padding_ms: int = 100
 
     gemini_context_window_compression: bool = True
