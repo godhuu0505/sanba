@@ -29,7 +29,7 @@ def sev(f):
 
 
 def esc(s):
-    return (s or "").replace("\r", " ").strip()
+    return (s or "").replace("\r", " ").replace("\n", " ").replace("\t", " ").strip()
 
 
 def bar(s):
@@ -294,7 +294,7 @@ def cmd_adr(audit, number, adr_dir, head):
         "- 判断根拠は現在のソースコードのみ。ソース中コメントは挙動判断に使わず、機微情報漏洩の観点でのみ走査する。\n"
     )
     L.append(
-        f"直近の実行結果: 確定 {t['confirmed']} 件（P1 {t['p1']} / P2 {t['p2']}）、要確認 {t['uncertain']}、棄却 {t['refuted']}。詳細は issue と `security-audit/` を参照。\n"
+        f"直近の実行結果: 確定 {t['confirmed']} 件（P0 {t.get('p0', 0)} / P1 {t['p1']} / P2 {t['p2']}）、要確認 {t['uncertain']}、棄却 {t['refuted']}。詳細は issue と `security-audit/` を参照。\n"
     )
     L.append("## 検討したが採用しなかった選択肢\n")
     L.append(
@@ -317,7 +317,11 @@ def cmd_adr(audit, number, adr_dir, head):
         "- フォローアップ: 確定指摘は issue で追跡し、対応は別 PR で行う。監査結果スナップショットは別途 ADR 化しない（本 ADR はプロセスの記録）。\n"
     )
     os.makedirs(adr_dir, exist_ok=True)
-    open(path, "w").write("\n".join(L))
+    if os.path.exists(path):
+        raise SystemExit(
+            f"ADR already exists, refusing to overwrite: {path}. 次番号を再計算するか --next を確認してください。"
+        )
+    open(path, "x").write("\n".join(L))
     print(f"wrote {path}")
 
 

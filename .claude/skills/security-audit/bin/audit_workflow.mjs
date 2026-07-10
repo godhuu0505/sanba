@@ -87,7 +87,16 @@ const findResults = await pipeline(
     if (!found || !found.findings || found.findings.length === 0) {
       return { unit: unit.name, confirmedFiles: (found && found.confirmedFiles) || [], verified: [] }
     }
-    return parallel(found.findings.map((f) => () =>
+    const allowed = new Set(unit.files)
+    const inScope = found.findings.filter((f) => allowed.has(f.file))
+    const dropped = found.findings.length - inScope.length
+    if (dropped > 0) {
+      log(`find:${unit.name} 担当外パスの finding を ${dropped} 件破棄（file が unit.files に不一致。パストラバーサル/幻覚対策）`)
+    }
+    if (inScope.length === 0) {
+      return { unit: unit.name, confirmedFiles: found.confirmedFiles || [], verified: [] }
+    }
+    return parallel(inScope.map((f) => () =>
       agent(
         `このリポジトリのセキュリティ監査の指摘を敵対的に検証せよ。既定は懐疑的に（自信が持てなければ REFUTED か UNCERTAIN）。\n\n対象ファイル: ${repoRoot}/${f.file}（該当行 ${f.line} 周辺を必ず Read で再読）\n観点: ${f.category} / ${f.framework}\n指摘: ${f.title}\n事実主張: ${f.fact}\n問題とする理由: ${f.why}\n顕在化条件: ${f.trigger}\n${CONSTRAINTS}\n\n該当コードを実際に読み、この指摘が現在のコードで本当に成立するか判定せよ。コメントの記述ではなく実コードで判断。誤検知なら REFUTED。成立するなら CONFIRMED と妥当な severity。`,
         { label: `verify:${f.file}:${f.line}`, phase: 'Verify', schema: VERIFY_SCHEMA }
