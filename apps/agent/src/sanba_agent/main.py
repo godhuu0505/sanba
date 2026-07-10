@@ -2054,7 +2054,7 @@ async def inject_video_analysis(
     （`session.interrupt()` は呼ばない）: 次の発話境界で自然に織り込ませ、読み上げ中の割り込みを
     避ける。dedup・モードゲートは `claim_video_injection` に集約（end_user は注入しない）。
     応答生成は guard（応答監視つき）経由で行い、無応答なら再起動で復旧する。観察は transcript に
-    載らないため reinject で再起動時に再投入し、動画の一言を失わない（#468）。
+    載らないため reinject で再起動時に再投入し、素材の一言を失わない（#468）。
     """
     if not agent.claim_video_injection(asset_id):
         return
