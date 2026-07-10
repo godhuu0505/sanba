@@ -2045,9 +2045,10 @@ async def inject_video_analysis(
     observations: list[str],
     guard: ReplyGuard,
 ) -> None:
-    """アップロード動画の解析結果を会話へ能動注入する（ADR-0040 §4）。
+    """アップロード素材（動画・画像・文書）の解析結果を会話へ能動注入する。
 
-    worker が publish した analysis.visual を受けて、エージェントが動画内容に触れて深掘り
+    worker/API が publish した analysis.visual（ADR-0040 §4・doc は ADR-0063 決定8 で対象拡大）
+    を受けて、エージェントが素材内容に触れて深掘り
     質問を投げられるようにする。ADR-0037 は非同期の会話割り込みを避ける決定だったが、本注入は
     ADR-0040 §4 が analysis.visual に限って許可する。ただし発話を遮らない穏当な注入にする
     （`session.interrupt()` は呼ばない）: 次の発話境界で自然に織り込ませ、読み上げ中の割り込みを
@@ -2059,7 +2060,8 @@ async def inject_video_analysis(
         return
     bullets = "\n".join(f"- {o}" for o in observations)
     instructions = (
-        "利用者がアップロードした動画の解析結果が届きました。動画から読み取れた観察は次のとおりです。\n"
+        "利用者がアップロードした資料（動画・画像・文書）の解析結果が届きました。"
+        "読み取れた観察は次のとおりです。\n"
         f"{bullets}\n"
         "この内容に自然に触れつつ、要件を深掘りする質問を1つだけ、日本語で簡潔に投げてください。"
         "既に会話で扱った点の繰り返しは避けてください。"

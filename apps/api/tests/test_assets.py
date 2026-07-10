@@ -374,6 +374,56 @@ def test_upload_doc_saves_extracted_texts_for_agent_seed() -> None:
     assert _doc_seed_texts(["  ", ""]) == []
 
 
+def test_upload_doc_publishes_visual_excerpt_for_active_injection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """doc 索引完了は analysis.visual を publish し、会話中の agent が能動的に触れられる
+    （ADR-0063 決定8）。イベントの観察は PII マスク済み・件数/文字数キャップ済みの抜粋。
+    """
+    from sanba_api.routers import sessions as sessions_module
+
+    calls: list[tuple[str, list[str]]] = []
+
+    class _FakePublisher:
+        def __init__(self, session_id: str, sender: object, repo: object) -> None:
+            self._session_id = session_id
+
+        async def visual(
+            self, asset_id: str, extracted: list[str], conflicts: list | None = None
+        ) -> dict:
+            calls.append((asset_id, extracted))
+            return {}
+
+    monkeypatch.setattr(sessions_module, "AnalysisPublisher", _FakePublisher)
+    sid = _new_session()
+    body = "要約機能が必要。担当は taro@example.com。\n\n対象は社内。"
+    res = client.post(
+        f"/api/sessions/{sid}/context/file",
+        files={"file": ("prd.md", body.encode(), "text/markdown")},
+        headers=_session_auth(sid),
+    )
+    assert res.status_code == 200
+    assert len(calls) == 1
+    asset_id, extracted = calls[0]
+    assert asset_id == res.json()["asset_id"]
+    assert any("要約機能が必要" in t for t in extracted)
+    assert all("taro@example.com" not in t for t in extracted)
+    assert any("[EMAIL]" in t for t in extracted)
+
+
+def test_doc_visual_observations_masks_and_caps() -> None:
+    from sanba_api.routers.sessions import (
+        DOC_VISUAL_MAX_ITEM_CHARS,
+        DOC_VISUAL_MAX_ITEMS,
+        _doc_visual_observations,
+    )
+
+    obs = _doc_visual_observations(["あ" * 500, "い", "う", "え"])
+    assert len(obs) == DOC_VISUAL_MAX_ITEMS
+    assert len(obs[0]) == DOC_VISUAL_MAX_ITEM_CHARS
+    assert _doc_visual_observations([]) == []
+
+
 def test_upload_docx_indexes_extracted_text() -> None:
     import io
 

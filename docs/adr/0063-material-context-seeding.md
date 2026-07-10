@@ -66,6 +66,13 @@ Elasticsearch grounding（kind=context）と素材メタ（`materials.extracted_
    従来どおりフォールバックで動く。
 7. **スコープはセッション単位のまま**: 資料の可視範囲は当該セッションに限る。
    product 横断の資料継承はスコープ外（必要になれば別 ADR）。
+8. **会話中の doc アップロードも能動注入する（ADR-0040 §4 の対象拡大）**: 画像（API）・
+   動画（worker）と同じく、doc の索引完了時にも `analysis.visual` を publish し、在室中の
+   agent が既存の機会注入経路（非割り込み・`claim_video_injection` の dedup と end_user
+   ゲート）で内容に触れられるようにする。新しい注入面は作らない（ADR-0037 の恒久ポリシー
+   は不変）。イベントに載せる観察は朗読ではなく認識合わせ用の抜粋（先頭 3 件・各 300 字）
+   とし、LLM コンテキストへ直行するため送信前に PII をマスクする。会話開始前のアップロード
+   分は決定 1 のシードが担い、visual は会話中の投入分を担う（役割分担）。
 
 ## 検討したが採用しなかった選択肢
 - **retrieval（search_grounding）のみで届ける現状維持**: 音声 LLM がツールを確実に
@@ -97,4 +104,4 @@ Elasticsearch grounding（kind=context）と素材メタ（`materials.extracted_
   （`docs/how-to/deploy-gcp.md`）に設定確認項目を追記済み。
 - フォローアップ（本 ADR のスコープ外・ロードマップ）: ADK 分析
   （`analyze_transcript`）への資料ノート前置（inquiry `origin=material` の実働）、
-  doc アップロードの能動注入（ADR-0040 §4 の対象拡大）、repo 前提の深化。
+  repo 前提の深化。

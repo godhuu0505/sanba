@@ -71,6 +71,7 @@ from ..observability import (
     record_question_hydration,
     record_result_document_rendered,
 )
+from ..pii import mask_pii
 from ..realtime import (
     STAGE_ANALYZING,
     STAGE_FAILED,
@@ -425,6 +426,22 @@ def get_my_session_result_document(
 
 
 DOC_SEED_MAX_CHARS = 4000
+DOC_VISUAL_MAX_ITEMS = 3
+DOC_VISUAL_MAX_ITEM_CHARS = 300
+
+
+def _doc_visual_observations(seed_texts: list[str]) -> list[str]:
+    """doc の解析完了を会話へ能動注入するための抜粋を作る（ADR-0063 決定8）。
+
+    `analysis.visual` に載せて agent が会話中の一言として触れる素材で、朗読ではなく
+    認識合わせが目的のため先頭 3 件・各 300 字に機械的に切る（全文はシード済み素材メタと
+    grounding 検索が持つ）。イベントは LLM コンテキストへ直行するため送信前に PII を
+    マスクする（シード読み取り側のマスクと同じ規律）。
+    """
+    return [
+        mask_pii(t)[:DOC_VISUAL_MAX_ITEM_CHARS] for t in seed_texts[:DOC_VISUAL_MAX_ITEMS]
+    ]
+
 
 
 def _doc_seed_texts(chunks: list[str], max_total_chars: int = DOC_SEED_MAX_CHARS) -> list[str]:
@@ -546,6 +563,20 @@ async def add_context_file(
             if seed_texts:
                 doc_material["extracted_texts"] = seed_texts
             _repo.save_material(session_id, doc_material)
+            if seed_texts:
+                sender = (
+                    build_sender(
+                        settings.livekit_publish_url,
+                        settings.livekit_api_key,
+                        settings.livekit_api_secret,
+                        session_id,
+                    )
+                    if settings.enable_realtime_publish
+                    else NullSender()
+                )
+                publisher = AnalysisPublisher(session_id, sender, _repo)
+                with contextlib.suppress(Exception):
+                    await publisher.visual(doc_asset_id, _doc_visual_observations(seed_texts))
             log.info(
                 "doc_indexed",
                 session=session_id,
