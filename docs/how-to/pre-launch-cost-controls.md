@@ -20,6 +20,14 @@ api / web / worker は min-instances=0 + リクエスト課金のため、トラ
 
 ## 2. warm / sleep 切り替え（agent + api / web ウォームアップ）
 
+> **現状 (2026-07-11): この warm/sleep 運用は停止中。** Standby ワークフローの
+> Variable 同期（`gh variable set`）が `GITHUB_TOKEN` の 403（Variables API は
+> `actions: write` では許可されない）で失敗し機能しないため、`terraform.yml` の
+> `AGENT_MIN_INSTANCES` 配線を撤去し、Terraform 変数 `agent_min_instances` の
+> 既定 `1`（常駐）で運用している。sleep に戻す場合は `variables.tf` の既定を `0` に
+> 変更して apply する。運用を再開する場合は Variables 書き込み権限のある PAT を
+> ワークフローに渡す対応とあわせて配線を戻すこと。
+
 `sanba-agent` は LiveKit へ outbound WebSocket で worker 登録する pull 型のため、
 min-instances=0 の間は**音声セッションを開始できない**（コールドスタートが遅いのではなく、
 起こすきっかけとなる inbound リクエストが存在しない）。公開前は sleep(=0) を既定とし、

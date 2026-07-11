@@ -111,7 +111,7 @@ flowchart LR
 
 | # | サービス | API | 役割（このプロジェクトでの使われ方） | 定義箇所 |
 |---|---|---|---|---|
-| 1 | **Cloud Run** | `run.googleapis.com` | `sanba-web`/`sanba-api`/`sanba-agent`/`sanba-worker` の実行基盤。web/api/worker は `min=0`+`cpu_idle=true`（scale-to-zero）、agent は `cpu_idle=false`（常駐ワーカー）。agent の `min` は **Terraform 変数の既定が `1`（常時 1 台常駐）**。コスト最小化が必要な場合は GitHub Variable `AGENT_MIN_INSTANCES=0` を設定すると次回 apply で反映される | `cloud_run.tf` / `media.tf` / `terraform.yml` |
+| 1 | **Cloud Run** | `run.googleapis.com` | `sanba-web`/`sanba-api`/`sanba-agent`/`sanba-worker` の実行基盤。web/api/worker は `min=0`+`cpu_idle=true`（scale-to-zero）、agent は `cpu_idle=false`（常駐ワーカー）。agent の `min` は **Terraform 変数 `agent_min_instances`（既定 `1` = 常駐）で制御し、CI 経由デプロイ（`terraform.yml`）も既定をそのまま使う**（scale-to-zero に戻す場合は変数を `0` にする） | `cloud_run.tf` / `media.tf` / `terraform.yml` |
 | 2 | **Firestore (Native)** | `firestore.googleapis.com` | セッション/要件/発話/検知/現在質問の永続化。`utterances`/`requirements`/`questions` に `expireAt` TTL を設定し保持期間後に自動削除 | `main.tf` |
 | 3 | **Artifact Registry** | `artifactregistry.googleapis.com` | コンテナイメージ（`api`/`web`/`agent`/`worker`）格納。cleanup policy で直近 N 個のみ保持しストレージ課金抑制 | `main.tf` |
 | 4 | **Cloud Tasks** | `cloudtasks.googleapis.com` | `video_analysis` キュー。api が upload-complete 時に 1 動画 = 1 タスクを enqueue、OIDC 付きで `sanba-worker` に push（ADR-0040） | `media.tf` |
