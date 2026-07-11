@@ -1,0 +1,76 @@
+name: Agent standby (warm/sleep)
+
+# プレスリリース前のコスト最小化運用 (docs/how-to/pre-launch-cost-controls.md)。
+# sanba-agent は LiveKit へ outbound WebSocket で worker 登録する pull 型のため、
+# min-instances=0 の間は音声セッションを開始できない。デモ・検証の直前に warm (=1) へ、
+# 使い終わったら sleep (=0) へ切り替える。GitHub Mobile の Actions → Run workflow からも使える。
+#
+# 反映は 2 段構え:
+#   1. GitHub Variable AGENT_MIN_INSTANCES を先に更新する (以後の terraform apply が
+#      巻き戻さないようにする。deploy.yml の migrate は Variable の値で apply する)。
+#   2. gcloud run services update で本番へ即時反映する (terraform apply を待たない)。
+# Variable 更新が失敗したら gcloud には進まない (drift を作らない fail fast)。
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "warm = min-instances 1 (音声セッション可・常時課金) / sleep = 0 (コスト最小)"
+        type: choice
+        default: warm
+        options: [warm, sleep]
+
+permissions:
+  contents: read
+  id-token: write # Workload Identity Federation
+  actions: write # AGENT_MIN_INSTANCES Variable の更新
+
+# terraform apply (group: terraform-<ref>) とは別系統だが、standby の連打は直列化する。
+concurrency:
+  group: agent-standby
+  cancel-in-progress: false
+
+jobs:
+  toggle:
+    runs-on: ubuntu-latest
+    # GCP 未配線 (project 未設定) のうちは skip して赤くしない (deploy.yml と同じ方針)。
+    if: ${{ vars.GCP_PROJECT_ID != '' }}
+    steps:
+      - name: Resolve min-instances
+        env:
+          MODE: ${{ inputs.mode }}
+        run: |
+          case "$MODE" in
+            warm)  echo "MIN_INSTANCES=1" >> "$GITHUB_ENV" ;;
+            sleep) echo "MIN_INSTANCES=0" >> "$GITHUB_ENV" ;;
+            *) echo "::error::unknown mode: $MODE" >&2; exit 1 ;;
+          esac
+
+      - name: Sync AGENT_MIN_INSTANCES variable
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh variable set AGENT_MIN_INSTANCES --body "$MIN_INSTANCES" --repo "$GITHUB_REPOSITORY"
+
+      - id: auth
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          # WIF パスと SA email は公開識別子なので Variables で管理する (秘匿値ではない)。
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.DEPLOY_SA }}
+
+      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3
+
+      - name: Update Cloud Run min-instances
+        env:
+          PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+          REGION: ${{ vars.GCP_REGION }}
+        run: |
+          gcloud run services update sanba-agent \
+            --project="$PROJECT_ID" \
+            --region="$REGION" \
+            --min-instances="$MIN_INSTANCES" \
+            --quiet
+          echo "sanba-agent min-instances=$MIN_INSTANCES を反映した。" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$MIN_INSTANCES" -ge 1 ]; then
+            echo "worker の LiveKit 登録まで 1〜2 分待ってからセッションを開始する。" >> "$GITHUB_STEP_SUMMARY"
+          fi

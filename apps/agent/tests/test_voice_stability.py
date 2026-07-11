@@ -86,6 +86,7 @@ class TestDefaultSettings:
 
     def test_defaults_require_sustained_speech_to_start(self) -> None:
         assert settings.turn_prefix_padding_ms >= 100
+        assert settings.turn_start_sensitivity == "low"
 
     def test_language_pinned_by_default(self) -> None:
         assert settings.gemini_language == "ja-JP"

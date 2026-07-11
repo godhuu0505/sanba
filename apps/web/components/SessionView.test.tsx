@@ -13,6 +13,10 @@ vi.mock("@livekit/components-react", () => ({
 }));
 vi.mock("livekit-client", () => ({ Track: { Source: { Microphone: "microphone" } } }));
 
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }),
+}));
+
 vi.mock("@/lib/auth", () => ({
   useAuth: () => ({
     driveGranted: null,

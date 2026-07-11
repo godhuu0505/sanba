@@ -28,6 +28,7 @@
 - [動画解析の有効化](how-to/enable-video-analysis.md) — アップロード動画の非同期解析（ADR-0040）を有効にする手順。
 - [Figma MCP](how-to/figma-mcp.md) — UI/UX を Figma で検討・実装・修正するデザインループ（リモート MCP）。
 - [ラベル運用](how-to/labels.md) — issue/PR ラベルを軸ベースで設計し `.github/labels.yml` で IaC 管理する。
+- [プレスリリース前のコスト最小化運用](how-to/pre-launch-cost-controls.md) — agent の warm/sleep 切替・billing export・Elastic/LiveKit の固定費削減。
 
 ## 📖 リファレンス（確認する）
 
