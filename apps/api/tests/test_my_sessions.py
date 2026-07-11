@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 
 import pytest
 from fastapi.testclient import TestClient
-from sanba_shared.models import SessionMeta, Utterance
+from sanba_shared.models import InquiryKind, InquiryNode, InquiryStatus, SessionMeta, Utterance
 
 from sanba_api import auth_google
 from sanba_api.auth_google import AuthUser, require_user
@@ -30,6 +30,8 @@ def _user(sub: str, email: str) -> AuthUser:
 def _reset() -> Iterator[None]:
     _repo._mem_sessions.clear()
     _repo._mem_utterances.clear()
+    _repo._mem_materials.clear()
+    _repo._mem_inquiry.clear()
     _read_repo._mem_requirements.clear()
     assert _repo._client is None, "テストは Firestore 非接続のメモリ fallback 前提"
     yield
@@ -173,6 +175,59 @@ def test_my_requirements_returns_meta_and_items() -> None:
     assert item["priority"] == "must"
     assert item["citations"] == []
     assert item["status"] == "confirmed"
+
+
+def test_my_requirements_returns_goal_materials_and_open_inquiries() -> None:
+    _repo.create_session_doc(
+        SessionMeta(
+            id="sess-1",
+            title="新機能要件定義",
+            owner_sub="alice",
+            owner_email="alice@example.com",
+            roles=["pm"],
+            created_at=datetime(2024, 6, 20, tzinfo=UTC),
+            goal="検索機能を改善する",
+            goal_detail="現状は検索が遅い。まず商品検索だけ対象にしたい。",
+        )
+    )
+    _repo.save_material(
+        "sess-1", {"id": "a1", "name": "画面設計.pdf", "kind": "doc", "status": "done"}
+    )
+    _repo.save_inquiry_node(
+        "sess-1",
+        InquiryNode(id="n1", kind=InquiryKind.GAP, text="検索対象に管理画面を含めるか未確認"),
+    )
+    _repo.save_inquiry_node(
+        "sess-1",
+        InquiryNode(
+            id="n2",
+            kind=InquiryKind.CHECK,
+            text="解決済みの確認",
+            status=InquiryStatus.RESOLVED,
+        ),
+    )
+    _login("alice")
+
+    body = client.get("/api/sessions/mine/sess-1/requirements").json()
+    assert body["goal"] == "検索機能を改善する"
+    assert body["goal_detail"] == "現状は検索が遅い。まず商品検索だけ対象にしたい。"
+    assert body["materials"] == [
+        {"id": "a1", "name": "画面設計.pdf", "kind": "doc", "status": "done"}
+    ]
+    assert body["open_inquiries"] == [
+        {"id": "n1", "kind": "gap", "text": "検索対象に管理画面を含めるか未確認"}
+    ]
+
+
+def test_my_requirements_goal_and_extras_default_empty() -> None:
+    _seed("sess-1", "alice", created=datetime(2024, 6, 20, tzinfo=UTC))
+    _login("alice")
+
+    body = client.get("/api/sessions/mine/sess-1/requirements").json()
+    assert body["goal"] is None
+    assert body["goal_detail"] is None
+    assert body["materials"] == []
+    assert body["open_inquiries"] == []
 
 
 def test_my_requirements_empty_items_when_none_recorded() -> None:
