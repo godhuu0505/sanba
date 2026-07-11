@@ -18,7 +18,7 @@
 
 api / web / worker は min-instances=0 + リクエスト課金のため、トラフィックが無ければほぼ無料枠内。
 
-## 2. agent の warm / sleep 切り替え
+## 2. warm / sleep 切り替え（agent + api / web ウォームアップ）
 
 `sanba-agent` は LiveKit へ outbound WebSocket で worker 登録する pull 型のため、
 min-instances=0 の間は**音声セッションを開始できない**（コールドスタートが遅いのではなく、
@@ -27,10 +27,16 @@ min-instances=0 の間は**音声セッションを開始できない**（コー
 
 手順（GitHub Mobile からも可）:
 
-1. Actions → **Agent standby (warm/sleep)** → Run workflow → `warm` を選択。
+1. Actions → **Standby (warm/sleep)** → Run workflow → `warm` を選択。
 2. 1〜2 分待つ（インスタンス起動 → worker の LiveKit 登録）。
 3. デモ・検証を行う。
 4. 終わったら同じワークフローで `sleep` を実行する。
+
+`warm` は agent の min-instances=1 に加えて、api（`/healthz`）と web（`/`）へ
+ウォームアップリクエストを送り、コールドスタートを済ませたうえで疎通を確認する
+（api / web の min-instances は 0 のままなので terraform とのドリフトも常時課金も発生しない）。
+`sanba-worker` は Cloud Tasks push 専用で外部から invoke できないため対象外
+（タスク投入時に自動起動される）。
 
 ワークフローは GitHub Variable `AGENT_MIN_INSTANCES` の更新と gcloud での即時反映を
 まとめて行う。手動で切り替える場合は**両方**行うこと（Variable を更新しないと、次の
