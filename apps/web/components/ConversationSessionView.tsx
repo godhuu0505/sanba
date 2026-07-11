@@ -24,8 +24,6 @@ import { ChoicePin } from "./ChoicePin";
 import { ConversationShell, type ShellTab } from "./ConversationShell";
 import { EndConfirmDialog } from "./EndConfirmDialog";
 import { EndProposalCard } from "./EndProposalCard";
-import { ForceEndConfirmDialog } from "./ForceEndConfirmDialog";
-import { JudgmentGate } from "./JudgmentGate";
 import { MaterialDetailSheet } from "./MaterialDetailSheet";
 import { MaterialsList } from "./MaterialsList";
 import { RequirementsTab } from "./RequirementsTab";
@@ -62,7 +60,7 @@ export interface ConversationSessionViewProps {
   elapsed?: string;
 }
 
-type Phase = "shell" | "judgment" | "result";
+type Phase = "shell" | "result";
 
 export function ConversationSessionView({
   state,
@@ -101,7 +99,6 @@ export function ConversationSessionView({
   const [detailId, setDetailId] = useState<string | null>(null);
   const [provisional, setProvisional] = useState(false);
   const [focusDeepDive, setFocusDeepDive] = useState(false);
-  const [finalizeError, setFinalizeError] = useState<string | null>(null);
   const [answeredQuestions, setAnsweredQuestions] = useState<ReadonlySet<string>>(new Set());
   const exportingRef = useRef(false);
   const [issueExport, setIssueExport] = useState<IssueExportStatus>({ status: "idle" });
@@ -109,7 +106,6 @@ export function ConversationSessionView({
   const eligibilityRequestedRef = useRef(false);
   const [endProposalDismissed, setEndProposalDismissed] = useState(false);
   const [autoFinalizing, setAutoFinalizing] = useState(false);
-  const [forceEndConfirm, setForceEndConfirm] = useState(false);
   const finalizingRef = useRef(false);
 
   const baseMini = selectMiniStatus(state);
@@ -173,11 +169,6 @@ export function ConversationSessionView({
           }
         : null;
 
-  function leaveConversationTo(next: Phase) {
-    onLeaveConversation?.();
-    setPhase(next);
-  }
-
   const askedQuestion = selectActiveQuestion(state);
   const activeQuestion =
     askedQuestion && !answeredQuestions.has(askedQuestion.id) ? askedQuestion : null;
@@ -187,37 +178,7 @@ export function ConversationSessionView({
     setTab("history");
   }
 
-  const finalizeAndFinish = useCallback(async () => {
-    if (finalizingRef.current) return;
-    if (readOnly) {
-      setProvisional(false);
-      setEnded(true);
-      setPhase("result");
-      return;
-    }
-    finalizingRef.current = true;
-    setAutoFinalizing(true);
-    setFinalizeError(null);
-    try {
-      await Promise.resolve(onFinalize?.());
-      setProvisional(false);
-      setEnded(true);
-      onEndSession?.();
-      setPhase("result");
-    } catch (e) {
-      console.error("finalize failed", e);
-      setFinalizeError(
-        "確定できませんでした。未解消の項目が残っていないか確かめ、再度お試しください。",
-      );
-      setTab("scroll");
-    } finally {
-      finalizingRef.current = false;
-      setAutoFinalizing(false);
-    }
-  }, [readOnly, onFinalize, onEndSession]);
-
   const endProvisional = useCallback(() => {
-    setForceEndConfirm(false);
     setEnded(true);
     onEndSession?.();
     if (!readOnly && onNavigateResults) {
@@ -227,6 +188,49 @@ export function ConversationSessionView({
     setProvisional(true);
     setPhase("result");
   }, [readOnly, onEndSession, onNavigateResults]);
+
+  const finalizeAndFinish = useCallback(async () => {
+    if (finalizingRef.current) return;
+    if (readOnly) {
+      setProvisional(false);
+      setEnded(true);
+      onEndSession?.();
+      setPhase("result");
+      return;
+    }
+    finalizingRef.current = true;
+    setAutoFinalizing(true);
+    try {
+      await Promise.resolve(onFinalize?.());
+      setProvisional(false);
+      setEnded(true);
+      onEndSession?.();
+      setPhase("result");
+    } catch (e) {
+      console.error("finalize failed", e);
+      endProvisional();
+    } finally {
+      finalizingRef.current = false;
+      setAutoFinalizing(false);
+    }
+  }, [readOnly, onFinalize, onEndSession, endProvisional]);
+
+  function finishSession() {
+    setEndOpen(false);
+    onLeaveConversation?.();
+    if (readOnly) {
+      setProvisional(mini.unresolved > 0);
+      setEnded(true);
+      onEndSession?.();
+      setPhase("result");
+      return;
+    }
+    if (mini.unresolved === 0) {
+      void finalizeAndFinish();
+      return;
+    }
+    endProvisional();
+  }
 
   useEffect(() => {
     if (state.completed && state.endProposal && phase === "shell" && !ended) {
@@ -247,58 +251,6 @@ export function ConversationSessionView({
   useEffect(() => {
     setEndProposalDismissed(false);
   }, [state.endProposal]);
-
-  if (phase === "judgment") {
-    return (
-      <>
-        <JudgmentGate
-          unresolved={mini.unresolved}
-          nodes={state.inquiryNodes}
-          onDrop={sendInquiryDrop}
-          error={finalizeError ?? undefined}
-          onBack={() => setPhase("shell")}
-          onForceEnd={() => {
-            setForceEndConfirm(true);
-          }}
-          onConfirm={() => {
-            if (readOnly) {
-              setProvisional(false);
-              setEnded(true);
-              setPhase("result");
-              return;
-            }
-            if (finalizingRef.current) return;
-            finalizingRef.current = true;
-            setFinalizeError(null);
-            Promise.resolve(onFinalize?.())
-              .then(() => {
-                setProvisional(false);
-                setEnded(true);
-                onEndSession?.();
-                setPhase("result");
-              })
-              .catch((e) => {
-                console.error("finalize failed", e);
-                setFinalizeError(
-                  "確定できませんでした。未解消の項目が残っていないか確かめ、再度お試しください。",
-                );
-              })
-              .finally(() => {
-                finalizingRef.current = false;
-              });
-          }}
-        />
-        {forceEndConfirm && (
-          <ForceEndConfirmDialog
-            onProvisional={endProvisional}
-            onCancel={() => {
-              setForceEndConfirm(false);
-            }}
-          />
-        )}
-      </>
-    );
-  }
 
   if (phase === "result") {
     const breakdown = {
@@ -479,10 +431,7 @@ export function ConversationSessionView({
           <EndConfirmDialog
             unresolved={mini.unresolved}
             onContinue={() => setEndOpen(false)}
-            onEnd={() => {
-              setEndOpen(false);
-              leaveConversationTo("judgment");
-            }}
+            onEnd={finishSession}
           />
         </div>
       )}
