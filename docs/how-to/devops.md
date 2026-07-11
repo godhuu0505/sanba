@@ -94,9 +94,8 @@ just down      # 停止
 ## 8. 本番デプロイのコスト設計
 
 - **Cloud Run**: api/web は `cpu_idle` + `min=0` で scale-to-zero（リクエスト時のみ課金）。
-  agent は常駐ワーカーのため `agent_min_instances` で制御する。**Terraform 変数の既定は 1 だが、CI 経由デプロイ
-  （`terraform.yml`）は GitHub Variable `AGENT_MIN_INSTANCES` 未設定時に `0` へ上書きする**ため、初期構築した
-  本番環境はワーカー非常駐（LiveKit を実接続したら `AGENT_MIN_INSTANCES=1` を設定して常駐させる）。
+  agent は常駐ワーカーのため `agent_min_instances` で制御する。**Terraform 変数の既定は `1`（常時 1 台常駐）**。
+  コスト最小化が必要な場合は GitHub Variable `AGENT_MIN_INSTANCES=0` を設定すると次回 `terraform apply` で反映される。
 - **CI/CD**: 変更のあった app だけビルド&デプロイ（paths-filter）、Buildx GHA キャッシュ、
   `concurrency` で古い実行をキャンセル。env/secret は Terraform が設定し CI は画像差し替えのみ。
 - **Secret Manager**: 機微情報は Terraform が宣言。本番は Vertex AI でキーレス（API キー不要）。
