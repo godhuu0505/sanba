@@ -38,7 +38,7 @@ variable "monthly_budget_jpy" {
 
 variable "agent_min_instances" {
   type        = number
-  default     = 0
+  default     = 1
   description = "Min warm agent workers. 0 = scale to zero (cheapest, but no worker registered; voice sessions cannot start). Toggle via .github/workflows/agent-standby.yml."
 }
 

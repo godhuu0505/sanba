@@ -82,7 +82,7 @@ jobs:
       # (プレスリリース前のコスト最小化運用)。切り替えは agent-standby.yml (warm/sleep) が
       # gcloud 即時反映 + この Variable の同期更新をまとめて行う。手で変える場合も
       # GitHub Variable AGENT_MIN_INSTANCES を更新する (次の apply が巻き戻すため)。
-      TF_VAR_agent_min_instances:         ${{ vars.AGENT_MIN_INSTANCES || '0' }}
+      TF_VAR_agent_min_instances:         ${{ vars.AGENT_MIN_INSTANCES || '1' }}
       TF_VAR_domain:                      ${{ vars.PROD_DOMAIN }}
       # web をサブドメインで配信する場合のみ設定 (例: "youken" → youken.<PROD_DOMAIN>)。
       # 空/未設定なら apex 配信 (従来挙動)。OSS なのでドメインはコードに焼かず Variable で各自設定。
