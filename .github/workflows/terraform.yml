@@ -1,17 +1,5 @@
 name: Terraform (infra)
 
-# 本番インフラ (Cloud Run / LB / DNS / Secret Manager 等) の IaC を CI で回す。
-#   - main 向け PR で infra/terraform を触ったら `terraform plan` を実行し、結果を PR に貼る
-#     (人間が plan を確認してからマージ → 本番反映、というフローを担保)。
-#   - main へのマージは deploy.yml の migrate ジョブが本ワークフローを workflow_call で
-#     呼び出して自動 apply する (マイグレーション工程。ADR-0026)。
-#   - GitHub Mobile の Actions → Run workflow で `apply` を選ぶと手動でも本番反映できる
-#     (ロールバック・初回構築用)。その場で plan を出し、保存した plan を適用するので
-#     「plan で問題なければ apply」になる。
-#
-# 認証は deploy.yml と同じ Workload Identity Federation (キーレス)。ただし apply は
-# LB/DNS/Secret/IAM を作るため、deploy 用 SA より広い権限を持つ Terraform 用 SA を使う
-# (vars.TF_DEPLOY_SA。SA email は公開識別子なので Variables 管理。runbook 参照)。
 on:
   pull_request:
     paths:
@@ -24,7 +12,6 @@ on:
         type: choice
         default: plan
         options: [plan, apply]
-  # deploy.yml (main マージ) から呼ばれる。inputs.action は dispatch と同じ意味。
   workflow_call:
     inputs:
       action:
@@ -34,10 +21,9 @@ on:
 
 permissions:
   contents: read
-  id-token: write # Workload Identity Federation
-  pull-requests: write # plan を PR コメントに貼る
+  id-token: write
+  pull-requests: write
 
-# apply の取りこぼし/重複適用を避ける。apply は途中キャンセルしない。
 concurrency:
   group: terraform-${{ github.ref }}
   cancel-in-progress: false
@@ -49,88 +35,43 @@ env:
 jobs:
   terraform:
     runs-on: ubuntu-latest
-    # 起動ガード (多層防御の一次防御):
-    #   - GCP 未配線 (project 未設定) のうちは skip して赤くしない (deploy.yml と同じ方針)。
-    #   - fork PR ではジョブごと起動しない。public リポジトリでは誰でも fork→PR で
-    #     infra/terraform を改変できるが、本ジョブは WIF で GCP に認証し data source 経由で
-    #     既存インフラを読めるため、fork 由来の改変コードに plan を走らせない
-    #     (claude-review-response.yml と同じ一次防御。WIF 側だけだと PR の OIDC token の
-    #     repository クレームは base リポジトリになり fork を判別できないため、ここで止める)。
-    #   - workflow_dispatch (mobile からの plan/apply) や workflow_call (main への push) では
-    #     pull_request 文脈が無く head.repo.fork は null になるので、
-    #     pull_request イベントのときだけ fork を判定する。
     if: >-
       ${{ vars.GCP_PROJECT_ID != '' &&
           (github.event_name != 'pull_request' ||
            github.event.pull_request.head.repo.fork == false) }}
-    # apply のときだけ production 環境を要求する (dispatch / workflow_call 共通。
-    # pull_request では inputs が空なので plan のみ)。リポジトリ設定で production に
-    # required reviewers を付ければ「実行 → 承認 → 反映」の承認ゲートになる。
     environment: ${{ inputs.action == 'apply' && 'production' || '' }}
     defaults:
       run:
         working-directory: ${{ env.WORKDIR }}
     env:
-      # --- 非機微の設定 (GitHub Variables から) ---
       TF_VAR_project_id:                  ${{ vars.GCP_PROJECT_ID }}
       TF_VAR_region:                      ${{ vars.GCP_REGION || 'us-central1' }}
       TF_VAR_billing_account:             ${{ vars.BILLING_ACCOUNT }}
-      # BigQuery への Detailed usage cost export 用 dataset を作るか (ADR-0061)。dataset を
-      # 作った後、請求先アカウント側のエクスポート設定はコンソールで一度だけ行う (runbook 参照)。
       TF_VAR_enable_billing_export:       ${{ vars.ENABLE_BILLING_EXPORT || 'false' }}
-      # agent ワーカーの常駐数。0 の間は音声セッションを開始できないが常時課金も無い
-      # (プレスリリース前のコスト最小化運用)。切り替えは agent-standby.yml (warm/sleep) が
-      # gcloud 即時反映 + この Variable の同期更新をまとめて行う。手で変える場合も
-      # GitHub Variable AGENT_MIN_INSTANCES を更新する (次の apply が巻き戻すため)。
       TF_VAR_agent_min_instances:         ${{ vars.AGENT_MIN_INSTANCES || '0' }}
       TF_VAR_domain:                      ${{ vars.PROD_DOMAIN }}
-      # web をサブドメインで配信する場合のみ設定 (例: "youken" → youken.<PROD_DOMAIN>)。
-      # 空/未設定なら apex 配信 (従来挙動)。OSS なのでドメインはコードに焼かず Variable で各自設定。
       TF_VAR_web_subdomain:               ${{ vars.PROD_WEB_SUBDOMAIN }}
-      # Cloud DNS マネージドゾーンの resource 名。Cloud Domains が自動作成したゾーン (例 "sanba-net")
-      # を使う場合はその名前を指定して既存ゾーンを import する。未設定なら既定 "sanba"。
       TF_VAR_dns_managed_zone_name:       ${{ vars.PROD_DNS_ZONE_NAME || 'sanba' }}
-      # 管理ゾーンの DNSSEC 状態。Cloud Domains 由来の DNSSEC 有効ゾーンを import した場合は "on"。
-      # 未設定なら空文字を渡す (#106)。variables.tf/domain.tf の dynamic block が空なら DNSSEC 設定
-      # ブロック自体を送らない (= 既存状態を変更しない / フェイルセーフ)。以前は `|| 'off'` で常に
-      # "off" を渡していたため、on のゾーンへ誤って DNSSEC 無効化を試みる恐れがあった。
-      # import 済みの DNSSEC 有効ゾーンでは必ず PROD_DNS_DNSSEC_STATE=on を設定する。
       TF_VAR_dns_dnssec_state:            ${{ vars.PROD_DNS_DNSSEC_STATE }}
       TF_VAR_livekit_url:                 ${{ vars.LIVEKIT_URL }}
-      # Google ログインの OAuth Web クライアント ID。web (NEXT_PUBLIC) と API (aud 検証) で同値を使う。
-      # 未設定だと API は認証経路を 503 でフェイルクローズする (apps/api auth_google.py)。
       TF_VAR_google_oauth_client_id:      ${{ vars.NEXT_PUBLIC_GOOGLE_CLIENT_ID }}
-      # web ビルド SA。Picker 用 API キーの Secret を build 時に読む accessor をこの SA に付与する
-      # (ADR-0049)。SA email は公開識別子なので Variable 管理。空なら付与しない (Drive 導線は無効)。
       TF_VAR_deploy_sa:                   ${{ vars.DEPLOY_SA }}
       TF_VAR_elasticsearch_url:           ${{ vars.ELASTICSEARCH_URL }}
       TF_VAR_otel_exporter_otlp_endpoint: ${{ vars.OTEL_EXPORTER_OTLP_ENDPOINT }}
-      # 値が投入済みで Cloud Run に注入する app secret の id (JSON 配列)。値そのものは GitHub には
-      # 置かず、Secret Manager に gcloud で直接投入する (secrets.tf / runbook 参照)。
       TF_VAR_active_app_secret_ids:       ${{ vars.ACTIVE_APP_SECRET_IDS || '[]' }}
-      # 注: アプリ秘匿値 (livekit/elasticsearch 等) は TF_VAR で渡さない。Secret Manager が唯一の
-      # 置き場で、terraform は箱と参照だけを管理する (値を state / GitHub に残さない)。
-      # GitHub App 連携 (ADR-0028)。id/slug/client_id は秘匿物でない公開識別子なので Variables 管理。
-      # 秘匿値 (private key / client secret) は Secret Manager に投入し ACTIVE_APP_SECRET_IDS に足す。
-      # Variables 名は GH_APP_* にする (GitHub は GITHUB_ 接頭辞の変数名を予約していて作成できない)。
       TF_VAR_github_app_enabled:          ${{ vars.GH_APP_ENABLED || 'false' }}
       TF_VAR_github_app_id:               ${{ vars.GH_APP_ID }}
       TF_VAR_github_app_slug:             ${{ vars.GH_APP_SLUG }}
       TF_VAR_github_app_client_id:        ${{ vars.GH_APP_CLIENT_ID }}
-      # session-signing-secret も terraform が自動生成するため GitHub には置かない。
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - id: auth
         uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
         with:
-          # WIF プロバイダのパスと SA email は秘匿値ではなく公開識別子なので Variables で管理する。
           workload_identity_provider: ${{ vars.WIF_PROVIDER }}
-          # apply は広い権限が要るため専用 SA。未設定なら deploy 用 SA にフォールバック。
           service_account: ${{ vars.TF_DEPLOY_SA || vars.DEPLOY_SA }}
 
-      # 第三者アクションの SHA を固定できない環境のため、バージョン固定 + 公式
-      # SHA256SUMS 照合で Terraform を入れる (改ざん検知込みで再現性を担保)。
       - name: Install Terraform (pinned + checksum)
         working-directory: /tmp
         run: |
@@ -143,7 +84,6 @@ jobs:
           sudo mv terraform /usr/local/bin/terraform
           terraform version
 
-      # state は GCS リモートバックエンド (bucket は vars.TF_STATE_BUCKET)。
       - name: Terraform Init
         run: |
           terraform init -input=false \
@@ -151,7 +91,7 @@ jobs:
             -backend-config="prefix=terraform/state"
 
       - name: Terraform Format Check
-        continue-on-error: true # フォーマット差は警告に留め、plan/validate を本ゲートにする
+        continue-on-error: true
         run: terraform fmt -check -recursive
 
       - name: Terraform Validate
@@ -159,26 +99,20 @@ jobs:
 
       - name: Terraform Plan
         id: plan
-        continue-on-error: true # 失敗してもコメントを残してから落とす
+        continue-on-error: true
         run: |
           set -o pipefail
-          # 生ログ (state refresh の進捗等) はジョブログ用に残す。PR コメントには使わない。
           terraform plan -no-color -input=false -out=tfplan 2>&1 | tee plan_log.txt
 
       - name: Render plan comment (diff only)
         if: ${{ always() && github.event_name == 'pull_request' }}
         run: |
           if [ -f tfplan ]; then
-            # 保存した plan から差分・結果だけを描画する。state refresh / provider 取得などの
-            # ノイズを含まず「何が変わるか」と「Plan: x to add ...」だけになる。
             terraform show -no-color tfplan > plan.txt
           else
-            # init/validate/plan が失敗して tfplan が無いときはエラーログ末尾を見せる。
             tail -c 20000 plan_log.txt > plan.txt
           fi
 
-      # 同じ PR への plan コメントは増やさず 1 つを更新し続ける。marker でこの workflow の
-      # コメントを一意に特定し、あれば PATCH、無ければ新規作成する。
       - name: Comment plan on PR (update in place)
         if: ${{ always() && github.event_name == 'pull_request' }}
         env:
@@ -210,8 +144,6 @@ jobs:
           echo "::error::terraform plan が失敗しました。上のログ/PRコメントを確認してください。"
           exit 1
 
-      # 保存した plan をそのまま適用 = 「plan で問題なければ apply」。
-      # dispatch (手動) と workflow_call (main マージの migrate) の両方で有効。
       - name: Terraform Apply
         if: ${{ inputs.action == 'apply' }}
         run: terraform apply -input=false -auto-approve tfplan

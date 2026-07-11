@@ -59,3 +59,22 @@ Google Drive 連携を「保留」としていた（当時は OAuth スコープ
 - 環境変数: `NEXT_PUBLIC_GOOGLE_API_KEY`（Picker 用ブラウザキー）を追加。Google Cloud 側で
   **Google Drive API と Google Picker API の有効化**、API キーの HTTP リファラ制限を推奨。
 - ADR-0007 の「Google Drive は保留」を解除する（本 ADR が優先する）。
+
+## 補遺: Picker ブラウザ API キーの IaC 払い出し（`infra/terraform/drive.tf`）
+
+Google Picker は「ユーザーの drive.file 同意（OAuth トークン）」に加えて、呼び出し元
+プロジェクトを示す**ブラウザ API キー**を必須とする。キーは JS バンドルへ焼かれ最終的に
+公開されるため、本質的な防御は秘匿ではなく **HTTP リファラ制限 + API ターゲット制限**にある。
+drive.tf はその制限付きキーを IaC で払い出す:
+
+- **リファラ制限**は web を配信するオリジン群（独自ドメイン有効時はそのホスト、常に Cloud Run
+  の run.app URL も含む）に限定し、CORS の算出（cloud_run.tf）と揃える。
+- **API ターゲット制限**でこのキーで叩ける API を Drive と Picker に限定する（最小権限）。
+- **値の唯一の置き場は Secret Manager**（NEXT_PUBLIC だが GitHub Variables には散らさない）。
+  web ビルド（deploy.yml）が WIF で読み出して焼き込む。terraform が生成するキーなので、
+  secrets.tf の「箱だけ管理・値は gcloud 投入」方針の例外として version まで terraform が作る
+  （session-signing-secret と同じ扱い。state には暗号化 + アクセス制御された GCS backend が
+  前提で、かつ露出前提の低機微値）。
+- **Secret の read は web ビルドの CI SA にだけ付与**する（最小権限）。`deploy_sa` 未指定なら
+  付与しない＝ web ビルドは値を取得できず Drive 導線は未構成で無効になる
+  （fail-safe: ローカルアップロードには影響しない）。

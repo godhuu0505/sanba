@@ -12,7 +12,6 @@ scrape_configs:
     static_configs:
       - targets: ["api:8080"]
 
-  # Four Keys / DORA self-measurement (まわす軸の中核).
   - job_name: four-keys
     metrics_path: /metrics
     scrape_interval: 60s

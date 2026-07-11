@@ -48,10 +48,24 @@
 - Elasticsearch は API キーをスコープして接続。
 
 ## 7. CI セキュリティ（#9）
-- Dependabot / pip-audit / npm audit / gitleaks / Trivy / CodeQL。
+- Dependabot / pip-audit / npm audit / gitleaks / Trivy / CodeQL / dependency-review / OpenSSF Scorecard。
+- **pip-audit / npm audit**（`security.yml`）: ブロッキングゲート。既知 advisory（npm は
+  `--audit-level=high`）を含む依存追加をマージ前に止める。
+- **gitleaks**（`security.yml`）: working tree を `.gitleaks.toml` の allowlist 付きでスキャンする。
+- **Trivy**（`security.yml` の image-scan）: ブロッキングゲート。修正版のある HIGH/CRITICAL を
+  検出したら `--exit-code 1` で job を落とす。`--ignore-unfixed` でベースイメージの修正不能な
+  OS CVE では落とさず、「更新すれば直せる（actionable）」脆弱性だけをゲート対象にする。
+  実行は install.sh 経由（GitHub API のレート制限で不安定）ではなく digest 固定の公式イメージで
+  行い、docker.sock をマウントしてビルド済みローカルイメージを走査する。
 - **CodeQL**: public リポジトリでは Code scanning が有効で SARIF アップロードが成功するため、
   `codeql.yml` は gating（init/analyze/upload の失敗で CI を赤にする）。Code scanning を無効化すると
   アップロードが失敗して merge を塞ぐため、その際は再度 advisory（`continue-on-error`）に戻す。
+- **dependency-review**（`dependency-review.yml`）: PR で新たに入る依存の既知脆弱性・非互換
+  ライセンスを検査してブロックする。Dependabot alerts が「マージ後に気づく」のに対し、これは
+  「マージ前に止める」多層防御。
+- **OpenSSF Scorecard**（`scorecard.yml`）: リポジトリのセキュリティ姿勢（branch protection・
+  依存の固定・危険な workflow パターン等）を継続採点して Code scanning（SARIF）に上げ、
+  `publish_results=true` で scorecard.dev の公開スコア/バッジも有効化する。
 
 ## 8. public リポジトリでの Actions ハードニング
 リポジトリを public 化すると、第三者が fork から PR・レビュー・コメントを送れる。
@@ -66,8 +80,9 @@
   設定しても各ワークフローが必要権限を自前で宣言しているため動作する（§8.1 手順2 の前提）。
 - **third-party Action の full SHA ピン**: GitHub 製以外の Action は commit full SHA で固定する
   （`@vX` タグ運用はしない。バージョンはコメントで併記、Dependabot が更新）。ワークフロー内で
-  `curl | sh` で入れるツール（gitleaks / Trivy / Terraform）はバージョン固定＋チェックサム照合にする
-  （`terraform.yml` は公式 SHA256SUMS と照合）。供給網（タグ書き換え・改ざん）対策。
+  ダウンロードして入れるツール（gitleaks / Terraform）はバージョン固定＋チェックサム照合にする
+  （`terraform.yml` は公式 SHA256SUMS と照合）。Trivy は digest 固定の公式イメージで実行する（§7）。
+  供給網（タグ書き換え・改ざん）対策。
 - **fork PR と secrets**: `pull_request` で fork から起動した場合、GitHub は secrets を渡さない。
   `llm-eval.yml` はこの場合 heuristic 評価に自動フォールバックする（gate は維持）。
 - **デプロイ経路の分離**: `deploy.yml` は `push:[main]` と `workflow_dispatch` のみ。fork PR からは
@@ -108,7 +123,7 @@ GUI 運用手順のため、実施したら issue #68 に**実施者・日時と
 
 **コード側で恒久対応済み**（上表の前提となる多層防御）:
 - 全ワークフローが top-level `permissions:` を宣言済み（既定 `contents: read`、書き込みが要るジョブだけ昇格。checkout しない `review-status.yml` は `pull-requests: write` のみ）→ 手順2 の read-only 既定で問題なく動く。
-- third-party Action は full SHA ピン、`curl | sh` ツールはバージョン固定＋チェックサム照合済み（gitleaks: 公式 checksums.txt 照合 / Trivy: install スクリプトを `| sudo sh` で直接実行せず sha256 照合してから実行＝スクリプト自身も binary を checksums.txt で照合する二段構え / Terraform: 公式 SHA256SUMS 照合）。
+- third-party Action は full SHA ピン、ワークフロー内で導入するツールはバージョン固定＋チェックサム照合済み（gitleaks: 公式 checksums.txt 照合 / Trivy: digest 固定の公式イメージで実行（§7） / Terraform: 公式 SHA256SUMS 照合）。
 - 特権ワークフロー（`claude-review-response.yml` 等）は fork PR・未信頼アクターでは起動しない（上記参照）。
 
 ## 残課題

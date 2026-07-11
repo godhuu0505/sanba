@@ -1,8 +1,5 @@
 name: Sync labels
 
-# .github/labels.yml を単一の真実としてリポジトリのラベルを同期する（IaC）。
-# manifest に無いラベルは削除される（skip-delete: false）。dependabot 管理ラベルも
-# manifest に含めているため消えない。手動編集は drift するので禁止（manifest を編集する）。
 on:
   push:
     branches: [main]
@@ -17,7 +14,7 @@ on:
         default: true
 
 permissions:
-  contents: read # actions/checkout に必要 (permissions を 1 つでも書くと他は none になるため明示)
+  contents: read
   issues: write
 
 jobs:

@@ -1,22 +1,4 @@
-# SANBA — 任意の補助スタック (observability / LLMOps / DORA)
-#
-# 「必須ではないが あったら便利」なコンポーネントをアプリ本体から分離したもの。
-# docker-compose.yml に *重ねて* 使う overlay。単体では起動できない (アプリの
-# network と agent/api サービス定義に依存する)。
-#
-#   just up-full      # = docker compose -f docker-compose.yml -f docker-compose.tools.yml up
-#   just tools-down   # 補助スタックだけ落とす
-#
-# 含むもの:
-#   - OpenTelemetry Collector → Prometheus / Loki / Tempo → Grafana  (可観測性)
-#   - four-keys                                                      (DORA 自己計測)
-#
-# overlay を有効にすると、agent / api に OTLP エンドポイントを注入する。
-# アプリ最小構成 (just up) では未設定 → テレメトリは graceful にスキップされ、雑音が出ない。
-# LLM 品質は CI 回帰 + 本番の Cloud Trace/Monitoring で見る（ADR-0051。ローカル Langfuse は廃止）。
-
 services:
-  # ---- アプリ側にテレメトリ送信先を注入 (overlay 適用時のみ) ----
   agent:
     environment:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
@@ -31,7 +13,6 @@ services:
       otel-collector:
         condition: service_started
 
-  # ============================ Observability ============================
   otel-collector:
     image: otel/opentelemetry-collector-contrib:0.156.0
     command: ["--config=/etc/otel/config.yaml"]
@@ -67,22 +48,15 @@ services:
   grafana:
     image: grafana/grafana:11.6.16
     environment:
-      # 匿名アクセスは残すが権限は Viewer に下げる（無認証 Admin を廃止）。
       GF_AUTH_ANONYMOUS_ENABLED: "true"
       GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
-      # iframe 埋め込みを禁止して clickjacking 面を塞ぐ。
       GF_SECURITY_ALLOW_EMBEDDING: "false"
     volumes:
       - ./infra/observability/grafana/provisioning:/etc/grafana/provisioning:ro
-    # ローカルホストのみに公開（LAN 等からの到達を防ぐ）。
     ports: ["127.0.0.1:3001:3000"]
     depends_on: [prometheus, loki, tempo]
     restart: unless-stopped
 
-  # ============================ Analytics BI (ADR-0061) ============================
-  # sanba-analytics-* のコスト/KPI ダッシュボード開発用。docker-compose.yml の
-  # elasticsearch に同居し、`just analytics-setup`（KIBANA_URL=http://localhost:5601）で
-  # ダッシュボードを import する。
   kibana:
     image: docker.elastic.co/kibana/kibana:8.14.3
     environment:
@@ -93,12 +67,9 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  # ============================ DORA self-measurement (まわす) ============================
   four-keys:
     build: ./infra/four-keys/collector
     environment:
-      # このリポジトリの deploy.yml run + incident issue を読む。GITHUB_TOKEN があると
-      # API レート上限が上がる。無い場合は同梱のサンプルデータにフォールバックする。
       GITHUB_REPOSITORY: "${GITHUB_REPOSITORY:-godhuu0505/sanba}"
       GITHUB_TOKEN: "${GITHUB_TOKEN:-}"
     command: ["serve", "--port", "9301", "--window-days", "30"]

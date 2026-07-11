@@ -31,8 +31,13 @@
 - **コメントを書かない**。コードとコメントの内容が食い違うと AI・人間ともに誤読してミスの原因になるため、
   「何をしているか」（what）はコードとネーミングで表現し、「なぜそうしたか」（why）・設計判断の理由・既知の制約・
   変更の経緯・対応した Issue もコメントではなく **コミットメッセージ / PR 説明 / ADR** に書く。
+  - 対象は Python / TypeScript だけでなく **YAML（workflows・compose 等）と Terraform も含む**（ADR-0067）。
+    ワークフローの設計判断は `docs/reference/ci-cd-workflows.md`、compose の設計メモは
+    `docs/how-to/local-dev.md` に書く。
   - 例外は、lint・型チェック・テストランナーが読む機能的なプラグマだけ（`# noqa`, `# type: ignore`,
-    `# pragma: no cover`, `// eslint-disable-next-line`, `// @ts-ignore`, `// @vitest-environment jsdom` 等）。
+    `# pragma: no cover`, `// eslint-disable-next-line`, `// @ts-ignore`, `// @vitest-environment jsdom`,
+    `# shellcheck`, `# tflint-ignore`, `# checkov:skip` 等。Action の SHA ピンに併記するバージョン注記
+    `uses: ...@<sha> # vX.Y.Z` も Dependabot が読むため許可）。
     docstring / JSDoc のうち API ドキュメントとして機能するもの（`mypy`/IDE/OpenAPI が読む型・シグネチャの説明）は対象外。
   - `just check-comments`（`scripts/check_no_comments.py` / `scripts/check-no-comments.mjs`）と CI の
     `no-comments` ジョブが上記プラグマ以外のコメントを機械的に検出し、あれば落とす。

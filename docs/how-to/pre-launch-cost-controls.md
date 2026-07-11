@@ -32,8 +32,17 @@ min-instances=0 の間は**音声セッションを開始できない**（コー
 3. デモ・検証を行う。
 4. 終わったら同じワークフローで `sleep` を実行する。
 
-ワークフローは GitHub Variable `AGENT_MIN_INSTANCES` の更新と gcloud での即時反映を
-まとめて行う。手動で切り替える場合は**両方**行うこと（Variable を更新しないと、次の
+ワークフロー（`agent-standby.yml`）は GitHub Variable `AGENT_MIN_INSTANCES` の更新と
+gcloud での即時反映をまとめて行う。反映は 2 段構えで、順序に意味がある:
+
+1. **先に** Variable `AGENT_MIN_INSTANCES` を更新する（以後の terraform apply が巻き戻さない
+   ようにする。deploy.yml の migrate は Variable の値で apply する）。
+2. `gcloud run services update` で本番へ即時反映する（terraform apply を待たない）。
+
+Variable 更新が失敗したら gcloud には進まない（drift を作らない fail fast）。standby の連打は
+concurrency で直列化される（terraform apply とは別系統）。
+
+手動で切り替える場合も**両方**行うこと（Variable を更新しないと、次の
 terraform apply（deploy.yml の migrate）が min-instances を巻き戻す）:
 
 ```bash

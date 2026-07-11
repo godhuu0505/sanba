@@ -75,5 +75,6 @@
 | [0064](0064-material-context-seeding.md) | 参考資料の解析結果を voice agent の初期前提としてシードする | Proposed |
 | [0065](0065-security-audit-remediation-fail-closed-config.md) | セキュリティ監査対応 — 本番環境の fail-closed 設定ガード | Accepted |
 | [0066](0066-voice-conversation-transcription-turn-layering.md) | 音声会話の三層分離（会話・文字起こし・ターン制御）と終了フロー是正 | Proposed |
+| [0067](0067-no-comments-policy-yaml-terraform.md) | コメント禁止規約の YAML / Terraform への拡張とコメント内容の docs 移設 | Accepted |
 
 付随資料は [`supplements/`](supplements/) に置く（特定 ADR の実測・検証データ）。

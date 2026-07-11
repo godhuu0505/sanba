@@ -1,7 +1,5 @@
 name: LLM Eval (LLMOps)
 
-# プロンプトやエージェント定義の変更時に、要件インタビューの品質を回帰評価する。
-# 「聞き漏らし率」「矛盾検知率」を代表シナリオの回帰データセットで測り、劣化したら fail（ADR-0051）。
 on:
   pull_request:
     paths:
@@ -11,8 +9,6 @@ on:
       - "apps/agent/src/sanba_agent/evaluation.py"
   workflow_dispatch:
 
-# 最小権限。評価ジョブは読み取りのみ (public 化に伴う既定権限の明示)。
-# fork PR には secrets が渡らない GitHub 仕様のため、その場合は heuristic 評価に自動フォールバックする。
 permissions:
   contents: read
 
@@ -23,13 +19,10 @@ jobs:
       run:
         working-directory: apps/agent
     env:
-      # When the key is present the real LLM judge runs; otherwise the harness
-      # falls back to deterministic heuristic scoring so the gate still works.
       GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
       - run: uv python install 3.12
       - run: uv sync --all-extras --dev
-      # Regression eval: fails if quality drops below threshold or ordering breaks.
       - run: uv run python -m sanba_agent.evaluation

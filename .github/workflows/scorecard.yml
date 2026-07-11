@@ -1,16 +1,12 @@
 name: Scorecard supply-chain security
 
-# OpenSSF Scorecard: リポジトリのセキュリティ姿勢 (branch protection・依存の固定・
-# 危険な workflow パターン等) を継続採点し、結果を Code scanning (SARIF) に上げる。
-# publish_results=true で scorecard.dev の公開スコア/バッジも有効化する。
 on:
   branch_protection_rule:
   schedule:
-    - cron: "31 5 * * 1" # 毎週月曜 05:31 UTC
+    - cron: "31 5 * * 1"
   push:
     branches: [main]
 
-# 既定は最小権限 (read-all)。書き込みが要るジョブだけ昇格する。
 permissions: read-all
 
 jobs:
@@ -18,8 +14,8 @@ jobs:
     name: Scorecard analysis
     runs-on: ubuntu-latest
     permissions:
-      security-events: write # SARIF を Code scanning にアップロード
-      id-token: write # 公開スコア (scorecard.dev) の OIDC 発行に必要
+      security-events: write
+      id-token: write
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0

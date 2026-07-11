@@ -1,4 +1,3 @@
-# Minimal single-binary Tempo config for local development.
 server:
   http_listen_port: 3200
 

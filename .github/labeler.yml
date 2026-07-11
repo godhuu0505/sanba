@@ -1,6 +1,3 @@
-# PR の変更パスから area:* を自動付与する（actions/labeler）。
-# .github/workflows/labeler.yml で実行。
-# area 軸は path で機械的に決まるので自動化する。type/priority/status/ai は人間判断のため手動。
 "area:agent":
   - changed-files:
       - any-glob-to-any-file: "apps/agent/**"
