@@ -20,36 +20,30 @@ api / web / worker は min-instances=0 + リクエスト課金のため、トラ
 
 ## 2. warm / sleep 切り替え（agent + api / web ウォームアップ）
 
+> **現状 (2026-07-11): この warm/sleep 運用は停止中で、以下の旧手順は使えない。**
+> Standby ワークフローの Variable 同期（`gh variable set`）が `GITHUB_TOKEN` の 403
+> （Variables API は `actions: write` では許可されない）で失敗し機能しないため、
+> `terraform.yml` の `AGENT_MIN_INSTANCES` 配線を撤去し、Terraform 変数
+> `agent_min_instances` の既定 `1`（常駐）で運用している。
+
 `sanba-agent` は LiveKit へ outbound WebSocket で worker 登録する pull 型のため、
 min-instances=0 の間は**音声セッションを開始できない**（コールドスタートが遅いのではなく、
-起こすきっかけとなる inbound リクエストが存在しない）。公開前は sleep(=0) を既定とし、
-使う直前だけ warm(=1) にする。
+起こすきっかけとなる inbound リクエストが存在しない）。
 
-手順（GitHub Mobile からも可）:
+現在の切り替え方法（唯一の正）:
 
-1. Actions → **Standby (warm/sleep)** → Run workflow → `warm` を選択。
-2. 1〜2 分待つ（インスタンス起動 → worker の LiveKit 登録）。
-3. デモ・検証を行う。
-4. 終わったら同じワークフローで `sleep` を実行する。
+- **sleep（=0）にする**: `infra/terraform/variables.tf` の `agent_min_instances` 既定を `0` に
+  変更して PR → main マージで apply する。`gcloud run services update --min-instances=0` での
+  即時反映は可能だが、次の terraform apply（deploy.yml の migrate）が既定 `1` に巻き戻す点に注意。
+- **warm（=1）に戻す**: 同様に既定を `1` へ戻す（現在の既定）。
+- **初回構築（bootstrap）**: LiveKit 鍵を Secret Manager に投入する前に apply する場合は
+  `agent_min_instances=0` で apply する（鍵が無い状態で常駐起動すると agent が起動時に
+  fail-fast して revision が失敗するため）。鍵投入後に `1` へ上げる。
 
-`warm` は agent の min-instances=1 に加えて、api（`/healthz`）と web（`/`）へ
-ウォームアップリクエストを送り、コールドスタートを済ませたうえで疎通を確認する
-（api / web の min-instances は 0 のままなので terraform とのドリフトも常時課金も発生しない）。
-`sanba-worker` は Cloud Tasks push 専用で外部から invoke できないため対象外
-（タスク投入時に自動起動される）。
-
-ワークフローは GitHub Variable `AGENT_MIN_INSTANCES` の更新と gcloud での即時反映を
-まとめて行う。手動で切り替える場合は**両方**行うこと（Variable を更新しないと、次の
-terraform apply（deploy.yml の migrate）が min-instances を巻き戻す）:
-
-```bash
-gh variable set AGENT_MIN_INSTANCES --body "1"
-gcloud run services update sanba-agent \
-  --project=sanba-prd --region=us-central1 --min-instances=1 --quiet
-```
-
-プレスリリース時は `warm` を実行して常態化する（`AGENT_MIN_INSTANCES=1` が terraform 経由でも
-維持される）。以後この運用自体が不要になったら、本ドキュメントとワークフローの要否を見直す。
+Standby ワークフロー（Actions → Standby (warm/sleep)）の warm/sleep 切り替えを再開する場合は、
+Variables 書き込み権限のある PAT（fine-grained: Variables write）をシークレットとして
+ワークフローに渡し、`terraform.yml` の `TF_VAR_agent_min_instances` 配線を戻すこと。
+api（`/healthz`）/ web（`/`）へのウォームアップリクエスト部分は現在も単体で有効。
 
 ## 3. billing export（実額の可視化）
 
