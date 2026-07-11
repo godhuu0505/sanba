@@ -163,6 +163,12 @@ resource "time_sleep" "bigquery_iam_propagation" {
   create_duration = "60s"
 }
 
+import {
+  for_each = var.enable_billing_export ? toset(["projects/${var.project_id}/datasets/billing_export"]) : toset([])
+  to       = google_bigquery_dataset.billing_export[0]
+  id       = each.value
+}
+
 resource "google_bigquery_dataset" "billing_export" {
   count         = var.enable_billing_export ? 1 : 0
   dataset_id    = "billing_export"

@@ -285,7 +285,7 @@ variable "enable_billing_export" {
 variable "billing_export_location" {
   description = "billing export dataset のロケーション (Cloud Billing export の対応リージョンに合わせる)"
   type        = string
-  default     = "US"
+  default     = "asia-northeast1"
 }
 
 variable "usd_jpy_rate" {
