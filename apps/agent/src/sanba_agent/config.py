@@ -31,6 +31,10 @@ class Settings(BaseSettings):
     turn_start_sensitivity: str = "low"
     turn_prefix_padding_ms: int = 100
 
+    separate_stt_enabled: bool = False
+    stt_model: str = "chirp_2"
+    stt_location: str = "us-central1"
+
     gemini_context_window_compression: bool = True
     gemini_context_trigger_tokens: int = 25600
     gemini_context_sliding_window_tokens: int = 12800
