@@ -500,11 +500,28 @@ export async function fetchGithubRepos(idToken: string | null): Promise<GithubRe
   return res.json();
 }
 
+export interface SessionMaterial {
+  id: string;
+  name: string;
+  kind: string;
+  status: string;
+}
+
+export interface OpenInquiry {
+  id: string;
+  kind: string;
+  text: string;
+}
+
 export interface MySessionRequirements {
   id: string;
   title: string;
   created_at: string;
   finalized: boolean;
+  goal?: string | null;
+  goal_detail?: string | null;
+  materials?: SessionMaterial[];
+  open_inquiries?: OpenInquiry[];
   items: Requirement[];
 }
 
