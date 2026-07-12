@@ -79,8 +79,11 @@ from .events import (
     LiveKitTransport,
     decode_analysis_visual,
     decode_user_interrupt,
+    decode_user_mic_mode,
     decode_user_selection,
     decode_user_text,
+    decode_user_turn_commit,
+    decode_user_turn_start,
 )
 from .holmes_delegation import HolmesDelegator, delegation_allowed
 from .inquiry_feeder import reconcile_analysis
@@ -2010,14 +2013,22 @@ def build_turn_detection(
     end_sensitivity: str,
     start_sensitivity: str,
     prefix_padding_ms: int,
+    manual: bool = False,
 ) -> genai_types.RealtimeInputConfig:
-    """Gemini Live の自動 VAD 設定を組み立てる（ADR-0038）。
+    """Gemini Live の VAD 設定を組み立てる（ADR-0038 / ADR-0073）。
 
-    「参加者が話し終える前にエージェントが被せて話し始める」問題への対策で、
+    自動モードは「参加者が話し終える前にエージェントが被せて話し始める」問題への対策で、
     発話終端の判定を保守側（end_sensitivity=low + 無音時間を長め）に倒す。
     値は env で調整できる（config.Settings の turn_*）。未知の感度値は警告して
     サーバ既定に倒し、設定ミスで接続自体が失敗しないようにする。
+    manual=True（PTT の手動ターン）ではサーバ VAD を全停止し、押下＝activity_start /
+    離す＝activity_end+生成でターン境界をクライアントが決める（ADR-0073）。VAD を切るので
+    感度・無音時間は無意味になり指定しない。
     """
+    if manual:
+        return genai_types.RealtimeInputConfig(
+            automatic_activity_detection=genai_types.AutomaticActivityDetection(disabled=True)
+        )
     start = _START_SENSITIVITY.get(start_sensitivity.strip().lower())
     end = _END_SENSITIVITY.get(end_sensitivity.strip().lower())
     if start_sensitivity.strip() and start is None:
@@ -2553,7 +2564,7 @@ def build_stt() -> google.STT | None:
 
 
 def build_realtime_model(
-    *, native_transcription: bool = True
+    *, native_transcription: bool = True, manual_turn: bool = False
 ) -> google.beta.realtime.RealtimeModel:
     """Gemini Live の RealtimeModel を組み立てる（ターン検出・安定化・言語固定 / ADR-0038・0039）。
 
@@ -2564,6 +2575,8 @@ def build_realtime_model(
     出力音声の language_code、`input_audio_transcription.language_codes` は入力認識の言語ヒント。
     ネイティブ音声は出力言語を自動選択する面があるため、プロンプト側（VOICE_AGENT_INSTRUCTIONS）
     でも日本語固定を明示し多層で担保する。
+    manual_turn=True（PTT の手動ターン / ADR-0073）ではサーバ VAD を切って発話終端の判定を
+    クライアントの押下/離しに委ねる。この場合 AgentSession 側も turn_detection="manual" で組む。
     """
     compression: genai_types.ContextWindowCompressionConfig | NotGiven = NOT_GIVEN
     if settings.gemini_context_window_compression:
@@ -2585,9 +2598,19 @@ def build_realtime_model(
             end_sensitivity=settings.turn_end_sensitivity,
             start_sensitivity=settings.turn_start_sensitivity,
             prefix_padding_ms=settings.turn_prefix_padding_ms,
+            manual=manual_turn,
         ),
         context_window_compression=compression,
     )
+
+
+def resolve_manual_turn(mode: str, *, enabled: bool) -> bool:
+    """mic モードと機能フラグから、手動ターン（PTT-B / ADR-0073）で組むべきかを決める。
+
+    フラグ ON かつ PTT のときだけ手動。handsfree・不明値・フラグ OFF は自動 VAD（従来挙動）に
+    倒す（回帰の既定安全側）。
+    """
+    return enabled and mode == "ptt"
 
 
 def resume_instructions(transcript: list[str], *, tail: int = 10) -> str:
@@ -2678,6 +2701,8 @@ async def entrypoint(ctx: JobContext) -> None:
     noise_cancellation_active = False
     reply_tracker = _ReplyTracker()
     pending_reinject: list[str] = []
+    manual_turn_active = resolve_manual_turn("ptt", enabled=settings.ptt_manual_turn_enabled)
+    ptt_hold_active = False
 
     async def _turn_silence_nudge() -> None:
         with contextlib.suppress(Exception):
@@ -2714,6 +2739,43 @@ async def entrypoint(ctx: JobContext) -> None:
             **gen_kwargs,
         )
 
+    async def _begin_ptt_turn() -> None:
+        """PTT 押下（user.turn_start / ADR-0073）: 読み上げ中断＋手動ターン開始。
+
+        手動時は interrupt_playback（=session.interrupt）が rt_session.interrupt→
+        start_user_activity 経由で activity_start を送り、発話ターンを開く。押下中は途中 final で
+        watchdog を arm させないよう先に disarm し、被せ発話の再発を断つ。手動でない（フラグ OFF /
+        handsfree）ときは従来の PTT-A バージインとしてのみ働く。
+        """
+        nonlocal ptt_hold_active
+        if manual_turn_active:
+            ptt_hold_active = True
+            turn_watchdog.disarm()
+        await interrupt_playback(session, session_id=session_id)
+
+    async def _commit_ptt_turn() -> None:
+        """PTT 離す（user.turn_commit / ADR-0073）: 手動ターンを確定し応答を起こす。
+
+        _guarded_turn_reply → generate_reply が activity_end + 生成をトリガし、離した瞬間に
+        エージェントが話し始める。手動でない・押下中でないときは no-op（auto VAD 任せ）。
+        """
+        nonlocal ptt_hold_active
+        if not manual_turn_active or not ptt_hold_active:
+            return
+        ptt_hold_active = False
+        log.info("ptt_turn_committed", session=session_id)
+        await _guarded_turn_reply(kind="ptt_commit", reinject=None)
+
+    def _apply_mic_mode(mode: str) -> None:
+        """user.mic_mode（ADR-0073）を受けて、VAD 構成が変わるならセッションを作り直す。"""
+        nonlocal manual_turn_active
+        desired = resolve_manual_turn(mode, enabled=settings.ptt_manual_turn_enabled)
+        log.info("ptt_mic_mode_changed", session=session_id, mode=mode, manual_turn=desired)
+        if desired == manual_turn_active:
+            return
+        manual_turn_active = desired
+        _schedule(_rebuild_for_mode())
+
     def _on_data(packet) -> None:  # type: ignore[no-untyped-def]
         topic = getattr(packet, "topic", None)
         data = getattr(packet, "data", b"")
@@ -2745,6 +2807,16 @@ async def entrypoint(ctx: JobContext) -> None:
         if text is not None:
             _schedule(respond_to_user_text(agent, session, text, _guarded_turn_reply))
             return
+        mode = decode_user_mic_mode(data, expected_session_id=session_id)
+        if mode is not None:
+            _apply_mic_mode(mode)
+            return
+        if decode_user_turn_start(data, expected_session_id=session_id):
+            _schedule(_begin_ptt_turn())
+            return
+        if decode_user_turn_commit(data, expected_session_id=session_id):
+            _schedule(_commit_ptt_turn())
+            return
         if decode_user_interrupt(data, expected_session_id=session_id):
             log.info("user_interrupt_received", session=session_id)
             _schedule(interrupt_playback(session, session_id=session_id))
@@ -2758,7 +2830,7 @@ async def entrypoint(ctx: JobContext) -> None:
             if not text:
                 return
             if getattr(ev, "is_final", False):
-                if agent.record_user_final(text):
+                if agent.record_user_final(text) and not ptt_hold_active:
                     turn_watchdog.arm()
             else:
                 agent.publish_user_partial(text)
@@ -2816,8 +2888,11 @@ async def entrypoint(ctx: JobContext) -> None:
         nonlocal noise_cancellation_active
         stt = build_stt()
         s: AgentSession = AgentSession(
-            llm=build_realtime_model(native_transcription=stt is None),
+            llm=build_realtime_model(
+                native_transcription=stt is None, manual_turn=manual_turn_active
+            ),
             stt=stt if stt is not None else NOT_GIVEN,
+            turn_detection="manual" if manual_turn_active else NOT_GIVEN,
         )
         _wire_session(s)
         noise_cancellation = build_noise_cancellation()
@@ -2909,6 +2984,38 @@ async def entrypoint(ctx: JobContext) -> None:
                 session=session_id,
                 error=str(exc),
             )
+
+    async def _rebuild_for_mode() -> None:
+        """mic モード変更で VAD 構成が変わったときにセッションを作り直す（ADR-0073）。
+
+        realtime_input_config は構築時固定で update_options では変えられないため、auto↔manual の
+        切替は再構築を要する。ユーザー起点の切替なのでエラー再起動の予算（restart_count /
+        max_restarts）は消費しない。restart_pending で error 再起動と直列化し、同室に 2 つの
+        AgentSession が立つのを防ぐ。切替は稀・意図的な操作なので発話での復旧アナウンスは出さず、
+        分析用 transcript は Python 側に保持したまま Gemini セッションのみ差し替える。
+        """
+        nonlocal session, restart_pending, ptt_hold_active
+        if restart_pending:
+            return
+        restart_pending = True
+        turn_watchdog.disarm()
+        ptt_hold_active = False
+        with contextlib.suppress(Exception):
+            usage_tracker.record_snapshot(list(session.usage.model_usage))
+        with contextlib.suppress(Exception):
+            await session.aclose()
+        try:
+            session = await _start_session()
+        except Exception as exc:  # noqa: BLE001
+            log.error("voice_session_mode_rebuild_failed", session=session_id, error=str(exc))
+            restart_pending = False
+            _request_restart()
+            return
+        usage_tracker.commit()
+        restart_pending = False
+        log.info("voice_session_mode_rebuilt", session=session_id, manual_turn=manual_turn_active)
+        with contextlib.suppress(Exception):
+            await publisher.status("listening")
 
     agent.set_shutdown_hook(lambda reason: ctx.shutdown(reason=reason))
 

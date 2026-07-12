@@ -3,8 +3,11 @@ import {
   decodeServerEvent,
   encodeUserInquiryDrop,
   encodeUserInterrupt,
+  encodeUserMicMode,
   encodeUserSelection,
   encodeUserText,
+  encodeUserTurnCommit,
+  encodeUserTurnStart,
 } from "./parse";
 
 function bytes(obj: unknown): Uint8Array {
@@ -326,6 +329,50 @@ describe("encodeUserInquiryDrop", () => {
       seq: 5,
       session_id: "s1",
       node_id: "nq-a1",
+    });
+  });
+});
+
+describe("encodeUserMicMode", () => {
+  it("マイク操作モードの user.mic_mode エンベロープを組む（ADR-0073）", () => {
+    const obj = JSON.parse(
+      new TextDecoder().decode(encodeUserMicMode("s1", "ptt", 7, "2026-07-13T00:00:00Z")),
+    );
+    expect(obj).toMatchObject({
+      v: 1,
+      type: "user.mic_mode",
+      seq: 7,
+      session_id: "s1",
+      mode: "ptt",
+      ts: "2026-07-13T00:00:00Z",
+    });
+  });
+});
+
+describe("encodeUserTurnStart", () => {
+  it("PTT 押下=発話ターン開始の user.turn_start エンベロープを組む（ADR-0073）", () => {
+    const obj = JSON.parse(
+      new TextDecoder().decode(encodeUserTurnStart("s1", 8, "2026-07-13T00:00:00Z")),
+    );
+    expect(obj).toMatchObject({
+      v: 1,
+      type: "user.turn_start",
+      seq: 8,
+      session_id: "s1",
+    });
+  });
+});
+
+describe("encodeUserTurnCommit", () => {
+  it("PTT 離す=発話ターン確定の user.turn_commit エンベロープを組む（ADR-0073）", () => {
+    const obj = JSON.parse(
+      new TextDecoder().decode(encodeUserTurnCommit("s1", 9, "2026-07-13T00:00:00Z")),
+    );
+    expect(obj).toMatchObject({
+      v: 1,
+      type: "user.turn_commit",
+      seq: 9,
+      session_id: "s1",
     });
   });
 });

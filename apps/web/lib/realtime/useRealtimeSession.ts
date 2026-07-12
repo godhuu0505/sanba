@@ -21,8 +21,11 @@ import {
   decodeServerEvent,
   encodeUserInquiryDrop,
   encodeUserInterrupt,
+  encodeUserMicMode,
   encodeUserSelection,
   encodeUserText,
+  encodeUserTurnCommit,
+  encodeUserTurnStart,
 } from "./parse";
 import { RealtimeStore, type SessionState } from "./store";
 import { EVENTS_TOPIC, WEB_EVENTS_TOPIC, type ServerEvent } from "./types";
@@ -35,6 +38,12 @@ export type SendInquiryDrop = (nodeId: string) => void;
 
 export type SendInterrupt = () => void;
 
+export type SendMicMode = (mode: "ptt" | "handsfree") => void;
+
+export type SendTurnStart = () => void;
+
+export type SendTurnCommit = () => void;
+
 const GAP_HYDRATE_MIN_INTERVAL_MS = 2000;
 
 export interface UseRealtimeSessionResult {
@@ -45,6 +54,9 @@ export interface UseRealtimeSessionResult {
   sendText: SendText;
   sendInquiryDrop: SendInquiryDrop;
   sendInterrupt: SendInterrupt;
+  sendMicMode: SendMicMode;
+  sendTurnStart: SendTurnStart;
+  sendTurnCommit: SendTurnCommit;
 }
 
 interface LiveOptions {
@@ -137,6 +149,29 @@ export function useRealtimeSession(opts: LiveOptions): UseRealtimeSessionResult 
     const payload = encodeUserInterrupt(sessionId, clientSeq.current, new Date().toISOString());
     send(payload, { reliable: true });
   }, [send, sessionId]);
+  const sendMicMode = useCallback<SendMicMode>(
+    (mode) => {
+      clientSeq.current += 1;
+      const payload = encodeUserMicMode(
+        sessionId,
+        mode,
+        clientSeq.current,
+        new Date().toISOString(),
+      );
+      send(payload, { reliable: true });
+    },
+    [send, sessionId],
+  );
+  const sendTurnStart = useCallback<SendTurnStart>(() => {
+    clientSeq.current += 1;
+    const payload = encodeUserTurnStart(sessionId, clientSeq.current, new Date().toISOString());
+    send(payload, { reliable: true });
+  }, [send, sessionId]);
+  const sendTurnCommit = useCallback<SendTurnCommit>(() => {
+    clientSeq.current += 1;
+    const payload = encodeUserTurnCommit(sessionId, clientSeq.current, new Date().toISOString());
+    send(payload, { reliable: true });
+  }, [send, sessionId]);
 
   const hydrateInFlightRef = useRef(false);
   const lastGapHydrateAtRef = useRef(0);
@@ -208,6 +243,9 @@ export function useRealtimeSession(opts: LiveOptions): UseRealtimeSessionResult 
     sendText,
     sendInquiryDrop,
     sendInterrupt,
+    sendMicMode,
+    sendTurnStart,
+    sendTurnCommit,
   };
 }
 
@@ -215,6 +253,9 @@ const noopSelection: SendSelection = () => {};
 const noopText: SendText = () => {};
 const noopInquiryDrop: SendInquiryDrop = () => {};
 const noopInterrupt: SendInterrupt = () => {};
+const noopMicMode: SendMicMode = () => {};
+const noopTurnStart: SendTurnStart = () => {};
+const noopTurnCommit: SendTurnCommit = () => {};
 
 export function useFixtureSession(
   events: ServerEvent[] = contractEventFixture,
@@ -245,5 +286,8 @@ export function useFixtureSession(
     sendText: noopText,
     sendInquiryDrop: noopInquiryDrop,
     sendInterrupt: noopInterrupt,
+    sendMicMode: noopMicMode,
+    sendTurnStart: noopTurnStart,
+    sendTurnCommit: noopTurnCommit,
   };
 }

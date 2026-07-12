@@ -177,8 +177,19 @@ export type UserInquiryDropEvent = Envelope<"user.inquiry_drop"> & {
 
 export type UserInterruptEvent = Envelope<"user.interrupt">;
 
+export type UserMicModeEvent = Envelope<"user.mic_mode"> & {
+  mode: "ptt" | "handsfree";
+};
+
+export type UserTurnStartEvent = Envelope<"user.turn_start">;
+
+export type UserTurnCommitEvent = Envelope<"user.turn_commit">;
+
 export type ClientEvent =
   | UserSelectionEvent
   | UserTextEvent
   | UserInquiryDropEvent
-  | UserInterruptEvent;
+  | UserInterruptEvent
+  | UserMicModeEvent
+  | UserTurnStartEvent
+  | UserTurnCommitEvent;

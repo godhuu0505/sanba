@@ -23,8 +23,11 @@ from sanba_agent.events import (
     RecordingTransport,
     decode_analysis_visual,
     decode_user_interrupt,
+    decode_user_mic_mode,
     decode_user_selection,
     decode_user_text,
+    decode_user_turn_commit,
+    decode_user_turn_start,
     requirement_to_contract,
 )
 
@@ -353,6 +356,69 @@ def test_decode_user_interrupt_rejects_other_session() -> None:
 
 def test_decode_user_interrupt_rejects_bad_json() -> None:
     assert decode_user_interrupt(b"\xff\xfe not json", expected_session_id="s1") is False
+
+
+def test_decode_user_mic_mode_valid_ptt() -> None:
+    payload = json.dumps(
+        {"v": 1, "type": "user.mic_mode", "session_id": "s1", "mode": "ptt"}
+    ).encode()
+    assert decode_user_mic_mode(payload, expected_session_id="s1") == "ptt"
+
+
+def test_decode_user_mic_mode_valid_handsfree() -> None:
+    payload = json.dumps({"v": 1, "type": "user.mic_mode", "mode": "handsfree"}).encode()
+    assert decode_user_mic_mode(payload) == "handsfree"
+
+
+def test_decode_user_mic_mode_rejects_unknown_mode() -> None:
+    payload = json.dumps({"v": 1, "type": "user.mic_mode", "mode": "whisper"}).encode()
+    assert decode_user_mic_mode(payload) is None
+
+
+def test_decode_user_mic_mode_rejects_missing_mode() -> None:
+    payload = json.dumps({"v": 1, "type": "user.mic_mode", "session_id": "s1"}).encode()
+    assert decode_user_mic_mode(payload) is None
+
+
+def test_decode_user_mic_mode_rejects_wrong_type() -> None:
+    payload = json.dumps({"v": 1, "type": "user.interrupt", "session_id": "s1"}).encode()
+    assert decode_user_mic_mode(payload) is None
+
+
+def test_decode_user_mic_mode_rejects_other_session() -> None:
+    payload = json.dumps(
+        {"v": 1, "type": "user.mic_mode", "session_id": "s-other", "mode": "ptt"}
+    ).encode()
+    assert decode_user_mic_mode(payload, expected_session_id="s1") is None
+
+
+def test_decode_user_turn_start_valid() -> None:
+    payload = json.dumps({"v": 1, "type": "user.turn_start", "session_id": "s1"}).encode()
+    assert decode_user_turn_start(payload, expected_session_id="s1") is True
+
+
+def test_decode_user_turn_start_rejects_wrong_type() -> None:
+    payload = json.dumps({"v": 1, "type": "user.turn_commit", "session_id": "s1"}).encode()
+    assert decode_user_turn_start(payload, expected_session_id="s1") is False
+
+
+def test_decode_user_turn_start_rejects_other_session() -> None:
+    payload = json.dumps({"v": 1, "type": "user.turn_start", "session_id": "s-x"}).encode()
+    assert decode_user_turn_start(payload, expected_session_id="s1") is False
+
+
+def test_decode_user_turn_commit_valid() -> None:
+    payload = json.dumps({"v": 1, "type": "user.turn_commit", "session_id": "s1"}).encode()
+    assert decode_user_turn_commit(payload, expected_session_id="s1") is True
+
+
+def test_decode_user_turn_commit_rejects_wrong_type() -> None:
+    payload = json.dumps({"v": 1, "type": "user.turn_start", "session_id": "s1"}).encode()
+    assert decode_user_turn_commit(payload, expected_session_id="s1") is False
+
+
+def test_decode_user_turn_commit_rejects_bad_json() -> None:
+    assert decode_user_turn_commit(b"\xff\xfe", expected_session_id="s1") is False
 
 
 def test_requirement_to_contract_handles_missing_speaker() -> None:

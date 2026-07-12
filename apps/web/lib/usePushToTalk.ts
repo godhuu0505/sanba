@@ -1,6 +1,7 @@
 "use client";
 
 import { useRoomContext } from "@livekit/components-react";
+import { ConnectionState, RoomEvent } from "livekit-client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   MouseEvent as ReactMouseEvent,
@@ -21,7 +22,9 @@ export interface PttPressProps {
 }
 
 export interface UsePushToTalkOptions {
-  sendInterrupt: () => void;
+  sendTurnStart: () => void;
+  sendTurnCommit: () => void;
+  sendMicMode?: (mode: MicMode) => void;
   onError?: (message: string) => void;
   micEnabled?: boolean;
 }
@@ -44,7 +47,9 @@ function isInteractiveTarget(target: EventTarget | null): boolean {
 }
 
 export function usePushToTalk({
-  sendInterrupt,
+  sendTurnStart,
+  sendTurnCommit,
+  sendMicMode,
   onError,
   micEnabled,
 }: UsePushToTalkOptions): UsePushToTalkResult {
@@ -58,12 +63,16 @@ export function usePushToTalk({
   const modeRef = useRef<MicMode>("ptt");
   const pressSourceRef = useRef<PressSource | null>(null);
   const restoreEnabledRef = useRef<boolean | null>(null);
-  const sendInterruptRef = useRef(sendInterrupt);
+  const sendTurnStartRef = useRef(sendTurnStart);
+  const sendTurnCommitRef = useRef(sendTurnCommit);
+  const sendMicModeRef = useRef(sendMicMode);
   const onErrorRef = useRef(onError);
   useEffect(() => {
-    sendInterruptRef.current = sendInterrupt;
+    sendTurnStartRef.current = sendTurnStart;
+    sendTurnCommitRef.current = sendTurnCommit;
+    sendMicModeRef.current = sendMicMode;
     onErrorRef.current = onError;
-  }, [sendInterrupt, onError]);
+  }, [sendTurnStart, sendTurnCommit, sendMicMode, onError]);
 
   const desiredMicRef = useRef<boolean | null>(null);
   const applyingMicRef = useRef(false);
@@ -112,7 +121,7 @@ export function usePushToTalk({
       if (pressSourceRef.current !== null) return;
       pressSourceRef.current = source;
       setPttPressed(true);
-      sendInterruptRef.current();
+      sendTurnStartRef.current();
       applyDesiredMic(true);
     },
     [applyDesiredMic],
@@ -123,7 +132,10 @@ export function usePushToTalk({
       if (pressSourceRef.current === null) return;
       if (source !== undefined && pressSourceRef.current !== source) return;
       clearPressState();
-      if (modeRef.current === "ptt") applyDesiredMic(false);
+      if (modeRef.current === "ptt") {
+        sendTurnCommitRef.current();
+        applyDesiredMic(false);
+      }
     },
     [applyDesiredMic, clearPressState],
   );
@@ -135,6 +147,7 @@ export function usePushToTalk({
       modeRef.current = next;
       clearPressState();
       setModeState(next);
+      sendMicModeRef.current?.(next);
       if (next === "ptt") {
         restoreEnabledRef.current = roomRef.current.localParticipant.isMicrophoneEnabled;
         applyDesiredMic(false);
@@ -150,6 +163,16 @@ export function usePushToTalk({
   useEffect(() => {
     if (modeRef.current === "ptt") applyDesiredMic(false);
   }, [applyDesiredMic]);
+
+  useEffect(() => {
+    const r = room;
+    const announce = () => sendMicModeRef.current?.(modeRef.current);
+    if (r.state === ConnectionState.Connected) announce();
+    r.on(RoomEvent.Connected, announce);
+    return () => {
+      r.off(RoomEvent.Connected, announce);
+    };
+  }, [room]);
 
   useEffect(() => {
     if (micEnabled !== true) return;

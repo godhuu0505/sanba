@@ -21,6 +21,7 @@ from sanba_agent.main import (
     build_realtime_model,
     build_stt,
     build_turn_detection,
+    resolve_manual_turn,
     resume_instructions,
 )
 
@@ -80,6 +81,34 @@ class TestBuildTurnDetection:
         assert aad is not None
         assert aad.end_of_speech_sensitivity is genai_types.EndSensitivity.END_SENSITIVITY_LOW
         assert aad.start_of_speech_sensitivity is genai_types.StartSensitivity.START_SENSITIVITY_LOW
+
+    def test_manual_disables_server_vad(self) -> None:
+        conf = build_turn_detection(
+            silence_duration_ms=800,
+            end_sensitivity="low",
+            start_sensitivity="low",
+            prefix_padding_ms=300,
+            manual=True,
+        )
+        aad = conf.automatic_activity_detection
+        assert aad is not None
+        assert aad.disabled is True
+        assert aad.silence_duration_ms is None
+        assert aad.end_of_speech_sensitivity is None
+
+
+class TestResolveManualTurn:
+    def test_ptt_with_flag_on_is_manual(self) -> None:
+        assert resolve_manual_turn("ptt", enabled=True) is True
+
+    def test_handsfree_is_never_manual(self) -> None:
+        assert resolve_manual_turn("handsfree", enabled=True) is False
+
+    def test_flag_off_falls_back_to_auto(self) -> None:
+        assert resolve_manual_turn("ptt", enabled=False) is False
+
+    def test_unknown_mode_is_auto(self) -> None:
+        assert resolve_manual_turn("whisper", enabled=True) is False
 
 
 class TestDefaultSettings:
@@ -191,6 +220,15 @@ class TestBuildRealtimeModel:
         assert (
             opts.context_window_compression.trigger_tokens == settings.gemini_context_trigger_tokens
         )
+
+    def test_manual_turn_disables_server_vad(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("GOOGLE_GENAI_USE_VERTEXAI", "true")
+        monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "test-project")
+        monkeypatch.setenv("GOOGLE_CLOUD_LOCATION", "us-central1")
+        opts = build_realtime_model(manual_turn=True)._opts
+        aad = opts.realtime_input_config.automatic_activity_detection
+        assert aad is not None
+        assert aad.disabled is True
 
     def test_pins_language_and_input_transcription(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("GOOGLE_GENAI_USE_VERTEXAI", "true")

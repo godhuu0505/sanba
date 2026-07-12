@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     turn_end_sensitivity: str = "low"
     turn_start_sensitivity: str = "low"
     turn_prefix_padding_ms: int = 100
+    ptt_manual_turn_enabled: bool = True
 
     separate_stt_enabled: bool = False
     stt_model: str = "chirp_2"

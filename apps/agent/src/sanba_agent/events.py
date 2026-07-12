@@ -366,6 +366,49 @@ def decode_user_interrupt(payload: bytes | str, *, expected_session_id: str | No
     return obj is not None
 
 
+_MIC_MODES = frozenset({"ptt", "handsfree"})
+
+
+def decode_user_mic_mode(
+    payload: bytes | str, *, expected_session_id: str | None = None
+) -> str | None:
+    """web → agent の user.mic_mode（契約 §4.5 / ADR-0073）をデコードする。
+
+    マイク操作モード（"ptt" / "handsfree"）の宣言。接続時と切替時に届く。検証に通れば
+    モード文字列を、不正・別セッション・未知の値なら None を返す。受信側は現在の手動/自動
+    構成と食い違うときだけセッションを再構築する。
+    """
+    obj = _decode_web_event(payload, "user.mic_mode", expected_session_id=expected_session_id)
+    if obj is None:
+        return None
+    mode = obj.get("mode")
+    if not isinstance(mode, str) or mode not in _MIC_MODES:
+        return None
+    return mode
+
+
+def decode_user_turn_start(payload: bytes | str, *, expected_session_id: str | None = None) -> bool:
+    """web → agent の user.turn_start（契約 §4.5 / ADR-0073）をデコードする。
+
+    PTT 押下＝発話ターン開始の合図。検証に通れば True。受信側は読み上げを中断（バージイン）し、
+    手動ターン構成では同時に activity_start を送って発話ターンを開く。付加フィールド無し。
+    """
+    obj = _decode_web_event(payload, "user.turn_start", expected_session_id=expected_session_id)
+    return obj is not None
+
+
+def decode_user_turn_commit(
+    payload: bytes | str, *, expected_session_id: str | None = None
+) -> bool:
+    """web → agent の user.turn_commit（契約 §4.5 / ADR-0073）をデコードする。
+
+    PTT 離す＝発話ターン確定の合図。検証に通れば True。受信側は手動ターンを確定し
+    （activity_end + 応答生成）、離した瞬間にエージェントが話し始める。付加フィールド無し。
+    """
+    obj = _decode_web_event(payload, "user.turn_commit", expected_session_id=expected_session_id)
+    return obj is not None
+
+
 MAX_INJECTED_OBSERVATIONS = 12
 
 
