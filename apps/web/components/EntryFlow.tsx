@@ -51,6 +51,7 @@ const ROLES = [
 const DEFAULT_ROLE = "customer";
 
 const HOME_PATH = "/";
+const NO_PRODUCT = "__none__";
 const PREPARE_PATH_RE = /^\/([^/]+)\/prepare\/?$/;
 const SESSION_PATH_RE = /^\/([^/]+)\/sessions\/[^/]+\/?$/;
 
@@ -122,17 +123,14 @@ export default function EntryFlow({
 
   function navigateStep(next: Step) {
     const slugForUrl = next === "prepare" ? (selectedProduct?.slug ?? urlSlug) : null;
-    if (next === "prepare" && !slugForUrl) return;
     setStep(next);
     setUrlSlug(slugForUrl);
     if (typeof window === "undefined") return;
     const path = next === "prepare" && slugForUrl ? preparePath(slugForUrl) : HOME_PATH;
-    if (window.location.pathname !== path) {
-      if (next === "prepare") {
-        window.history.pushState({ sanbaStep: next }, "", path);
-      } else {
-        window.history.replaceState({ sanbaStep: next }, "", path);
-      }
+    if (next === "prepare") {
+      window.history.pushState({ sanbaStep: next }, "", path);
+    } else if (window.location.pathname !== path) {
+      window.history.replaceState({ sanbaStep: next }, "", path);
     }
   }
 
@@ -182,6 +180,7 @@ export default function EntryFlow({
       if (bySlug && bySlug.id !== productId) setProductId(bySlug.id);
       return;
     }
+    if (productId === NO_PRODUCT) return;
     if (productId !== "" && !products.some((p) => p.id === productId)) {
       setProductId("");
       return;
@@ -434,8 +433,7 @@ export default function EntryFlow({
     const canStart =
       consent &&
       goal.trim() !== "" &&
-      selectedProduct !== undefined &&
-      !!selectedProduct.slug &&
+      (productId === NO_PRODUCT || (selectedProduct !== undefined && !!selectedProduct.slug)) &&
       auth.loggedIn &&
       !busy &&
       !driveBusy;
@@ -455,7 +453,11 @@ export default function EntryFlow({
               aria-live="polite"
               className="min-w-0 flex-1 truncate text-right text-[13px] font-bold text-sanba-cream"
             >
-              {selectedProduct ? selectedProduct.name : "確認しています…"}
+              {selectedProduct
+                ? selectedProduct.name
+                : productId === NO_PRODUCT
+                  ? "指定しない"
+                  : "確認しています…"}
             </span>
           </div>
 
@@ -702,7 +704,7 @@ export default function EntryFlow({
             label="対象のアプリ"
             marker={
               <>
-                <FieldBadge required />
+                <FieldBadge />
                 <HelpIcon term="対象のアプリ" className="ml-[6px]" />
               </>
             }
@@ -710,19 +712,16 @@ export default function EntryFlow({
             hint={
               products === null
                 ? "登録済みのアプリを確認しています…"
-                : products.length > 0
-                  ? "対象のアプリを選ぶと、その用語や前提リポジトリのコードを会話の質問の背景に取り込みます。"
-                  : "登録済みのアプリがありません。アプリ管理から登録すると選べます。"
+                : "対象のアプリを選ぶと、その用語や前提リポジトリのコードを会話の質問の背景に取り込みます。特定のアプリに紐づけない場合は「指定しない」を選んでください。"
             }
           >
             <Select
               id="product"
               value={productId}
               onChange={(e) => setProductId(e.target.value)}
-              aria-required="true"
-              disabled={(products?.length ?? 0) === 0}
             >
               <option value="">選択してください</option>
+              <option value={NO_PRODUCT}>指定しない</option>
               {(products ?? []).map((p) => (
                 <option key={p.id} value={p.id}>
                   {}
@@ -736,13 +735,13 @@ export default function EntryFlow({
             size="lg"
             block
             onClick={() => navigateStep("prepare")}
-            disabled={!selectedProduct?.slug}
+            disabled={productId !== NO_PRODUCT && !selectedProduct?.slug}
           >
             ＋ 会話を始める
           </Button>
-          {(products?.length ?? 0) > 0 && !selectedProduct && (
+          {products !== null && productId === "" && (
             <p className="text-[12px] text-sanba-muted">
-              対象のアプリを選ぶと会話を始められます。
+              対象のアプリを選ぶか、「指定しない」で会話を始められます。
             </p>
           )}
           {}

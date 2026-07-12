@@ -3,7 +3,7 @@
 > このファイルは `just docs-index`（`scripts/gen-docs-index.py`）で生成する。
 > 手で編集しない。ADR を追加・改訂したら再生成する。
 
-設計判断記録（Architecture Decision Record）の一覧。全 70 件。
+設計判断記録（Architecture Decision Record）の一覧。全 71 件。
 書き方・ステータス制御語彙は [`/adr` 雛形](../../.claude/commands/adr.md) を参照。
 
 | # | タイトル | ステータス |
@@ -51,7 +51,7 @@
 | [0041](0041-screen-share-keyframe-analysis.md) | 画面共有のキーフレーム解析（Live 併用ハイブリッド） | Proposed |
 | [0042](0042-result-output-formats-and-check-items.md) | 要件結果の対象者別出力フォーマットとセッション確認項目 | Accepted |
 | [0043](0043-audience-tagged-check-items-and-render-unification.md) | 確認項目の対象者タグと要件整形の一本化・api ルーター分割 | Accepted |
-| [0044](0044-home-app-selection-gate.md) | 対象アプリの選択を 01 ホームの開始ゲートにする | Accepted |
+| [0044](0044-home-app-selection-gate.md) | 対象アプリの選択を 01 ホームの開始ゲートにする | Superseded by ADR-0070 |
 | [0045](0045-app-slug-urls-and-access-error.md) | アプリ slug によるアプリ従属 URL と複合アクセスエラー表示 | Accepted |
 | [0046](0046-decouple-analysis-from-voice-worker.md) | 音声リアルタイム worker から要件分析（ADK 多段チェーン）を分離する | Proposed |
 | [0047](0047-app-is-canonical-figma-follows.md) | 正本の逆転 — アプリ実装を唯一の正本とし、Figma を追従させる | Accepted |
@@ -78,5 +78,6 @@
 | [0067](0067-codebase-security-audit-process.md) | 全コード セキュリティ監査プロセス（マルチエージェント並列 + 敵対的検証） | Proposed |
 | [0068](0068-no-comments-policy-yaml-terraform.md) | コメント禁止規約の YAML / Terraform への拡張とコメント内容の docs 移設 | Accepted |
 | [0069](0069-holmesgpt-first-a2a-proof-and-generic-facade.md) | HolmesGPT を external-agents の A2A 実証初弾に据える（汎用 A2A ファサード・read-only・別プロジェクト配置） | Proposed |
+| [0070](0070-optional-target-app-for-session-start.md) | 対象アプリなしでもセッションを開始できるようにする（アプリ選択を任意化） | Accepted |
 
 付随資料は [`supplements/`](supplements/) に置く（特定 ADR の実測・検証データ）。
