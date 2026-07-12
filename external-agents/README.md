@@ -39,6 +39,11 @@ external-agents/
       provision.py        Agent Builder への冪等 upsert
       definitions/        agent/tool 定義（sanba-external-context への read-only）
       sample-data/        取り込む外部要件ファイルの形式例
+    holmesgpt/            HolmesGPT プロバイダーアダプタ（ADR-0069。初弾の A2A 実証）
+      contract.py           汎用 A2A ファサード（../a2a-facade/）の URL 契約
+      config.py             env 設定（HOLMESGPT_AGENT_*）。既定 OFF・未設定は no-op 縮退
+      client.py             A2A 委譲クライアント（fail-soft・timeout 300 秒）
+      ask.py                開発者向け CLI（python -m sanba_external_agents.holmesgpt.ask）
   tests/                  ネットワーク非依存の単体テスト
 ```
 

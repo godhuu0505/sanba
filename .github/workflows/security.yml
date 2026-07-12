@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        dir: [apps/agent, apps/api, packages/sanba_shared, external-agents]
+        dir: [apps/agent, apps/api, packages/sanba_shared, external-agents, a2a-facade]
     defaults:
       run:
         working-directory: ${{ matrix.dir }}
