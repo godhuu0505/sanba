@@ -31,6 +31,7 @@ locals {
 
   session_cost_summary_filter   = "${local.agent_log_prefix} AND textPayload:\"session_cost_summary\""
   analytics_emit_failure_filter = "resource.type=\"cloud_run_revision\" AND textPayload:\"analytics_emit_failed\""
+  separate_stt_fallback_filter  = "${local.agent_log_prefix} AND textPayload:\"separate_stt_unavailable\""
 
   tf_deployer_sa = var.terraform_deployer_sa != "" ? var.terraform_deployer_sa : "tf-deployer@${var.project_id}.iam.gserviceaccount.com"
 }
@@ -190,12 +191,27 @@ resource "google_logging_metric" "analytics_emit_failures" {
   }
 }
 
+resource "google_logging_metric" "separate_stt_fallback" {
+  name   = "sanba/separate_stt_fallback"
+  filter = local.separate_stt_fallback_filter
+
+  depends_on = [time_sleep.observability_iam_propagation]
+
+  metric_descriptor {
+    metric_kind  = "DELTA"
+    value_type   = "INT64"
+    unit         = "1"
+    display_name = "分離 STT 構築失敗で native 転写へ縮退した回数 (ADR-0066 S1)"
+  }
+}
+
 resource "time_sleep" "metric_availability" {
   depends_on = [
     google_logging_metric.grounding_memory_fallback,
     google_logging_metric.background_task_failures,
     google_logging_metric.session_cost_usd,
     google_logging_metric.analytics_emit_failures,
+    google_logging_metric.separate_stt_fallback,
   ]
   create_duration = "180s"
 }
@@ -215,6 +231,37 @@ resource "google_monitoring_alert_policy" "grounding_memory_fallback" {
     display_name = "grounding_memory_fallback > 0"
     condition_threshold {
       filter          = "metric.type=\"logging.googleapis.com/user/${google_logging_metric.grounding_memory_fallback.name}\" AND resource.type=\"cloud_run_revision\""
+      comparison      = "COMPARISON_GT"
+      threshold_value = 0
+      duration        = "0s"
+      aggregations {
+        alignment_period   = "300s"
+        per_series_aligner = "ALIGN_DELTA"
+      }
+      trigger {
+        count = 1
+      }
+    }
+  }
+
+  notification_channels = var.alert_notification_channels
+}
+
+resource "google_monitoring_alert_policy" "separate_stt_fallback" {
+  display_name = "SANBA — 分離 STT が native 転写へ縮退"
+  combiner     = "OR"
+
+  depends_on = [time_sleep.metric_availability]
+
+  documentation {
+    content   = "SEPARATE_STT_ENABLED=true なのに Chirp（分離 STT）の構築に失敗し、native 転写へフォールバックした（PR #518 の fail-soft）。会話は継続するが transcript 品質が S1 導入前に戻る。STT_MODEL / STT_LOCATION の対応リージョン・Speech-to-Text v2 API の有効化・runtime SA の roles/speech.client を確認する（#516 / ADR-0066 S1）。"
+    mime_type = "text/markdown"
+  }
+
+  conditions {
+    display_name = "separate_stt_fallback > 0"
+    condition_threshold {
+      filter          = "metric.type=\"logging.googleapis.com/user/${google_logging_metric.separate_stt_fallback.name}\" AND resource.type=\"cloud_run_revision\""
       comparison      = "COMPARISON_GT"
       threshold_value = 0
       duration        = "0s"
