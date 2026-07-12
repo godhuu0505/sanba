@@ -1,0 +1,5 @@
+project_id        = "sanba-ops"
+region            = "us-central1"
+image_tag         = "latest"
+elasticsearch_url = "https://example.es.us-central1.gcp.elastic.cloud:443"
+developer_members = ["user:dev@example.com"]

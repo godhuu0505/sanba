@@ -1,0 +1,30 @@
+substitutions:
+  _REGION: us-central1
+  _REPO: agents
+  _TAG: latest
+
+steps:
+  - name: gcr.io/cloud-builders/docker
+    env:
+      - DOCKER_BUILDKIT=1
+    args:
+      - build
+      - -t
+      - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/a2a-facade:${_TAG}
+      - -f
+      - a2a-facade/Dockerfile
+      - .
+  - name: gcr.io/cloud-builders/docker
+    env:
+      - DOCKER_BUILDKIT=1
+    args:
+      - build
+      - -t
+      - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/holmes-sidecar:${_TAG}
+      - -f
+      - a2a-facade/sidecar/Dockerfile
+      - .
+
+images:
+  - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/a2a-facade:${_TAG}
+  - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/holmes-sidecar:${_TAG}
