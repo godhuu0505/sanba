@@ -67,6 +67,7 @@ type Phase = "shell" | "result";
 
 const SIDE_FIGURE_STATE: Record<VoiceStatus, FigureState> = {
   "agent-speaking": "asking",
+  thinking: "writing",
   listening: "listening",
   muted: "writing",
   idle: "walking",
@@ -401,6 +402,8 @@ export function ConversationSessionView({
                 contextProgress={state.contextProgress}
                 materials={materials}
                 userPicture={userPicture}
+                phase={state.phase}
+                agentSpeaking={agentSpeaking}
               />
             </div>
           ),
