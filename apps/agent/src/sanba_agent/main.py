@@ -2379,20 +2379,18 @@ def build_noise_cancellation() -> Any | None:
     return _noise_cancellation.BVC()
 
 
-def build_input_transcription() -> genai_types.AudioTranscriptionConfig | None:
-    """入力音声の文字起こし設定を組み立てる（ADR-0039・0066）。
+def build_input_transcription() -> genai_types.AudioTranscriptionConfig:
+    """入力音声（native 転写）の文字起こし設定を組み立てる（ADR-0039・0066）。
 
     `language_codes` に設定言語（既定 ja-JP）を与えると、Gemini Live は「入力音声はこの
     言語」というヒントとして使い、短い発話・雑音・曖昧な音で韓国語/中国語へ誤認識
     ドリフトするのを抑える。空文字なら language_codes を付けずモデルの自動判定に委ねる
     （従来挙動）。ネイティブ音声モデルでも入力文字起こしのヒントは有効。
 
-    分離 STT（`settings.separate_stt_enabled`）が有効なときは None を返す。Gemini の入力転写を
-    無効化すると realtime の user_transcription capability が外れ、別 STT（Chirp, `build_stt`）の
-    interim/final が `user_input_transcribed` を駆動できる（ADR-0066 S1）。
+    native 転写を使うか（分離 STT 有効時は無効化）は呼び出し側（`build_realtime_model` の
+    `native_transcription`）が決める。分離 STT を実際に構築できたときだけ native を外し、構築
+    失敗時は native へフォールバックして文字起こしが完全に消えるのを防ぐ（ADR-0066 S1）。
     """
-    if settings.separate_stt_enabled:
-        return None
     lang = settings.gemini_language.strip()
     return genai_types.AudioTranscriptionConfig(language_codes=[lang] if lang else None)
 
@@ -2408,19 +2406,31 @@ def build_stt() -> google.STT | None:
     `stt_location` は STT v2 の対応リージョン（Chirp 系は限定）で決まり、Gemini の
     `google_cloud_location` とは独立に設定する。`detect_language=False` 固定のため、
     `gemini_language` が空でも自動判定せず ja-JP にフォールバックする。
+    構築に失敗した場合は None を返して警告し、呼び出し側は native 転写へフォールバックする。
     """
     if not settings.separate_stt_enabled:
         return None
     lang = settings.gemini_language.strip() or "ja-JP"
-    return google.STT(
-        model=settings.stt_model,
-        languages=[lang],
-        detect_language=False,
-        location=settings.stt_location,
-    )
+    try:
+        return google.STT(
+            model=settings.stt_model,
+            languages=[lang],
+            detect_language=False,
+            location=settings.stt_location,
+        )
+    except Exception as exc:  # noqa: BLE001
+        log.warning(
+            "separate_stt_unavailable",
+            error=str(exc),
+            model=settings.stt_model,
+            location=settings.stt_location,
+        )
+        return None
 
 
-def build_realtime_model() -> google.beta.realtime.RealtimeModel:
+def build_realtime_model(
+    *, native_transcription: bool = True
+) -> google.beta.realtime.RealtimeModel:
     """Gemini Live の RealtimeModel を組み立てる（ターン検出・安定化・言語固定 / ADR-0038・0039）。
 
     再起動のたびに新しいインスタンスが要るため関数化している（AgentSession が閉じた
@@ -2445,7 +2455,7 @@ def build_realtime_model() -> google.beta.realtime.RealtimeModel:
         voice="Puck",
         language=language,
         temperature=0.7,
-        input_audio_transcription=build_input_transcription(),
+        input_audio_transcription=build_input_transcription() if native_transcription else None,
         realtime_input_config=build_turn_detection(
             silence_duration_ms=settings.turn_silence_duration_ms,
             end_sensitivity=settings.turn_end_sensitivity,
@@ -2657,7 +2667,7 @@ async def entrypoint(ctx: JobContext) -> None:
         nonlocal noise_cancellation_active
         stt = build_stt()
         s: AgentSession = AgentSession(
-            llm=build_realtime_model(),
+            llm=build_realtime_model(native_transcription=stt is None),
             stt=stt if stt is not None else NOT_GIVEN,
         )
         _wire_session(s)
