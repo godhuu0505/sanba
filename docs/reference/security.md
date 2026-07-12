@@ -89,8 +89,11 @@
   ダウンロードして入れるツール（gitleaks / Terraform）はバージョン固定＋チェックサム照合にする
   （`terraform.yml` は公式 SHA256SUMS と照合）。Trivy は digest 固定の公式イメージで実行する（§7）。
   供給網（タグ書き換え・改ざん）対策。
-- **fork PR と secrets**: `pull_request` で fork から起動した場合、GitHub は secrets を渡さない。
-  `llm-eval.yml` はこの場合 heuristic 評価に自動フォールバックする（gate は維持）。
+- **fork PR と WIF**: `pull_request` で fork から起動した場合、GitHub は secrets も
+  `id-token: write` も渡さない。`llm-eval.yml` は起動ガード（`head.repo.fork == false`）で
+  WIF auth を skip し、heuristic 評価に自動フォールバックする（gate は維持）。認証時に借用する
+  のは Vertex AI 呼び出し専用の最小権限 SA（`vars.EVAL_SA`、`roles/aiplatform.user` のみ）で、
+  `run.admin` を持つ `DEPLOY_SA` は PR 文脈では借用しない。
 - **デプロイ経路の分離**: `deploy.yml` は `push:[main]` と `workflow_dispatch` のみ。fork PR からは
   起動できず、GCP 認証は WIF（鍵レス）。
 - **terraform plan の fork ガード**: `terraform.yml` は `pull_request` で plan を走らせるため、
