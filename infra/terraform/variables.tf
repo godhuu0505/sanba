@@ -114,6 +114,12 @@ variable "guest_join_enabled" {
   description = "scope=end_user リンクをログインなしで受けるか（ADR-0032 / GUEST_JOIN_ENABLED）。段階リリース用フラグ。"
 }
 
+variable "separate_stt_enabled" {
+  type        = bool
+  default     = false
+  description = "会話とは別に描画・履歴用の分離 STT（Vertex Chirp）を有効化するか（ADR-0066 S1 / SEPARATE_STT_ENABLED）。既定 OFF・要実機検証。"
+}
+
 variable "require_login_nonce" {
   type        = bool
   default     = true

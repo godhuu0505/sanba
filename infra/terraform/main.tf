@@ -31,6 +31,7 @@ resource "google_project_service" "services" {
     "artifactregistry.googleapis.com",
     "secretmanager.googleapis.com",
     "aiplatform.googleapis.com",
+    "speech.googleapis.com",
     "cloudtasks.googleapis.com",
     "drive.googleapis.com",
     "picker.googleapis.com",
@@ -132,6 +133,7 @@ resource "google_project_iam_member" "runtime_roles" {
   for_each = toset([
     "roles/datastore.user",
     "roles/aiplatform.user",
+    "roles/speech.client",
     "roles/cloudtrace.agent",
     "roles/logging.logWriter",
     "roles/monitoring.metricWriter",
