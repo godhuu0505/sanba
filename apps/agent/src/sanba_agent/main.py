@@ -13,12 +13,11 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import os
-import re
 import threading
 import time
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
-from typing import Any, NamedTuple, NoReturn
+from typing import Any, NamedTuple
 from urllib.parse import urlparse
 
 import structlog
@@ -37,7 +36,7 @@ from livekit.agents import (
     WorkerOptions,
     cli,
 )
-from livekit.agents.llm import StopResponse, function_tool
+from livekit.agents.llm import function_tool
 from livekit.plugins import google
 
 try:  # noqa: SIM105
@@ -67,7 +66,7 @@ from sanba_shared.models import (
     RequirementCategory,
     SessionMeta,
     Utterance,
-    check_points_for_scope,
+    default_check_points,
 )
 from sanba_shared.repository import SessionRepository
 
@@ -77,10 +76,8 @@ from .events import (
     EVENTS_TOPIC,
     WEB_EVENTS_TOPIC,
     EventPublisher,
-    EventPublishError,
     LiveKitTransport,
     decode_analysis_visual,
-    decode_user_answered,
     decode_user_interrupt,
     decode_user_selection,
     decode_user_text,
@@ -277,10 +274,14 @@ def build_agent_instructions(repo: SessionRepository, session_id: str) -> AgentS
     prep_note = ""
     product = _session_product(repo, meta)
     seeded_check_items = (
-        check_points_for_scope(product.check_items, mode) if product is not None else []
+        default_check_points(product, mode)
+        if meta is not None and (product is not None or not meta.product_id)
+        else []
     )
     check_items_seed = build_check_items_seed(
-        seeded_check_items, end_user=mode is InviteScope.END_USER
+        seeded_check_items,
+        end_user=mode is InviteScope.END_USER,
+        owner_provided=product is not None,
     )
     seeded_materials = 0
     if mode is InviteScope.END_USER:
@@ -372,8 +373,6 @@ _RESOLVE_INQUIRY_KINDS = (
 )
 RESOLVE_INQUIRY_NO_MATCH_LIMIT = 3
 SESSION_END_DECLINE_LIMIT = 2
-ASK_QUESTION_REASK_LIMIT = 2
-ASK_QUESTION_RESTART_REASKS = 6
 ADD_INQUIRY_CONFIDENCE = 0.9
 
 PREFETCH_TIMEOUT_SECONDS = 5.0
@@ -458,14 +457,10 @@ class SANBAAgent(Agent):
         self._grounding = grounding
         self._publisher = publisher
         self._utterance_seq = 0
+        self._dialog_transcript: list[str] = []
         self._transcript: list[str] = self._hydrate_transcript()
         self._pending_user_uid: str | None = None
         self._agent_utterance_seq = publisher.seq if publisher is not None else 0
-        self._question_seq = 0
-        self._questions: dict[str, str] = {}
-        self._current_question_id: str | None = None
-        self._current_question_has_options = False
-        self._question_asked_turn = -1
         self._user_turn = 0
         self._inquiry_focus_id: str | None = None
         self._inquiry_seq = 0
@@ -475,8 +470,6 @@ class SANBAAgent(Agent):
         self._last_resolve_user_turn = -1
         self._end_cushion_used = False
         self._end_forced = False
-        self._question_reasks_in_turn = 0
-        self._hydrate_current_question()
         self._injected_assets: set[str] = set()
         self._publish_tasks: set[asyncio.Task[Any]] = set()
         self._persist_tasks: set[asyncio.Task[Any]] = set()
@@ -490,7 +483,6 @@ class SANBAAgent(Agent):
         self._last_analysis: AnalysisResult | None = None
         self._analysis_covered_turn = -1
         self._shutdown_hook: Callable[[str], None] | None = None
-        self._restart_hook: Callable[[], None] | None = None
         self._owner_email = setup.owner_email
         self._investigation_injector: Callable[[str], None] | None = None
         self._investigation_in_flight = False
@@ -583,14 +575,6 @@ class SANBAAgent(Agent):
         """
         self._shutdown_hook = hook
 
-    def set_restart_hook(self, hook: Callable[[], None]) -> None:
-        """Live セッションを張り直す手段（#468 の _request_restart）を注入する。
-
-        ask_question のツール livelock がサーキットブレークを超えて続くとき、
-        汚染された Gemini 側コンテキストごとセッションを作り直して復旧する。
-        """
-        self._restart_hook = hook
-
     def set_investigation_injector(self, hook: Callable[[str], None]) -> None:
         """本番調査（A2A 委譲）を音声ループ外へ流す手段を注入する（issue #547）。
 
@@ -614,34 +598,6 @@ class SANBAAgent(Agent):
 
     def release_investigation(self) -> None:
         self._investigation_in_flight = False
-
-    def _break_question_loop(self, event: str) -> NoReturn:
-        """ask_question の暴走をプログラム的に断つ（sess-ffcff138 の livelock 対策）。
-
-        ツール応答を返す限り Gemini Live は WHEN_IDLE で次の生成を続けるため、
-        打ち切りは StopResponse（応答を送らない）で行い、モデルは次のユーザー入力まで
-        待機する。再呼び出しがハード上限を超えたら restart 経路へエスカレーションし、
-        堆積したツール呼び出しでコンテキストが劣化したセッションを張り直す。
-        """
-        log.warning(
-            event,
-            session=self._session_id,
-            current=self._current_question_id,
-            turn=self._user_turn,
-            reasks=self._question_reasks_in_turn,
-        )
-        if self._question_reasks_in_turn >= ASK_QUESTION_RESTART_REASKS and (
-            hook := self._restart_hook
-        ):
-            log.warning(
-                "question_loop_restart",
-                session=self._session_id,
-                current=self._current_question_id,
-                turn=self._user_turn,
-                reasks=self._question_reasks_in_turn,
-            )
-            hook()
-        raise StopResponse()
 
     def _hydrate_inquiry(self) -> InquiryTree:
         """既存の確認事項ノードから木を復元する（再接続/新プロセスでの引き継ぎ / ADR-0059 決定④）。
@@ -668,10 +624,12 @@ class SANBAAgent(Agent):
         worker のインスタンス入れ替え等でジョブが別プロセスへ再ディスパッチされても
         ここから会話文脈を取り戻せる（inquiry の `_hydrate_inquiry` と同じ引き継ぎ経路）。
         SANBA（エージェント）発話は会話ログ表示（#479）のため utterances に永続化されて
-        いるが、分析用 transcript には従来どおり載せない（`publish_agent_utterance` と同じ
-        不変条件）ため除外する。採番 `_utterance_seq` は参加者発話数のみから続け（SANBA は
-        `a{n}` 空間なので衝突リスクなし）、再引き継ぎ時に enumerate が u{n} を再割り当て
-        しても採番がずれない。読み取り失敗は fail-soft（空の transcript で会話は成立させる）。
+        いるが、要件分析用 transcript には従来どおり載せない（`publish_agent_utterance` と同じ
+        不変条件）ため除外する。一方で観点カバレッジ判定は Q（SANBA の問い）と A（参加者の
+        回答）の対で精度が上がる（RC4）ため、両者を含む `_dialog_transcript` も同じ発話ログから
+        併せて復元する。採番 `_utterance_seq` は参加者発話数のみから続け（SANBA は `a{n}` 空間
+        なので衝突リスクなし）、再引き継ぎ時に enumerate が u{n} を再割り当てしても採番がずれ
+        ない。読み取り失敗は fail-soft（空の transcript で会話は成立させる）。
         """
         try:
             utterances = self._repo.list_utterances(self._session_id)
@@ -680,6 +638,7 @@ class SANBAAgent(Agent):
             return []
         if not utterances:
             return []
+        self._dialog_transcript = [f"{u.speaker}: {u.text}" for u in utterances]
         participant = [u for u in utterances if u.speaker != "SANBA"]
         self._utterance_seq = len(participant)
         log.info(
@@ -689,39 +648,6 @@ class SANBAAgent(Agent):
             total=len(utterances),
         )
         return [f"[u{i}] {u.speaker}: {u.text}" for i, u in enumerate(participant, start=1)]
-
-    def _hydrate_current_question(self) -> None:
-        """永続化済みの現在質問（金枠ピン）の current 追跡と採番を引き継ぐ（ADR-0020 §5-8）。
-
-        web は `questions/current` からピンを復元し続けるため、agent 側の
-        `_current_question_id` を合わせないと、引き継ぎ後の回答で
-        `clear_current_question` が呼ばれず回答済みのピンが画面に残り続ける。
-        採番 `_question_seq` は id 末尾の連番から続け、同一プロンプト再提示時の
-        id 再利用（web の answeredQuestions が回答済みと誤認しピンが出ない）を防ぐ。
-        採番の復元は cleared な tombstone からも行う。未回答の復元は現在のユーザー
-        ターンで提示済みとして扱い、差し替え保護・再掲ブレーカを引き継ぎ直後から
-        効かせる。読み取り失敗は fail-soft（未提示扱いで会話は成立させる）。
-        """
-        try:
-            doc = self._repo.get_current_question(self._session_id)
-        except Exception as exc:  # noqa: BLE001
-            log.warning(
-                "current_question_hydration_failed", session=self._session_id, error=str(exc)
-            )
-            return
-        if doc is None:
-            return
-        question_id = str(doc.get("id") or "")
-        if question_id and (match := re.search(r"-(\d+)$", question_id)) is not None:
-            self._question_seq = int(match.group(1))
-        prompt = str(doc.get("prompt") or "")
-        if doc.get("cleared") or not question_id or not prompt:
-            return
-        self._questions[question_id] = prompt
-        self._current_question_id = question_id
-        self._current_question_has_options = bool(doc.get("options"))
-        self._question_asked_turn = self._user_turn
-        log.info("current_question_hydrated", session=self._session_id, id=question_id)
 
     def _next_inquiry_seq(self) -> int:
         """ツリーのノード採番（created_seq/resolved_seq）を単調増加させる。"""
@@ -736,6 +662,24 @@ class SANBAAgent(Agent):
         """
         return self._inquiry.gating_open_count(tau=0.0)
 
+    def _session_state_hint(self) -> dict[str, Any]:
+        """未解消の確認事項を live LLM のツール返り値へ相乗りさせるスナップショット（RC1）。
+
+        背景分析の結果は木にしか反映されず、LLM が `analyze_requirements` を自発的に呼ばない
+        限り会話へ還流しない。要件保存・確認事項の解消/追加など LLM が既に呼ぶツールの返り値へ
+        毎回この一節を載せ、追加の LLM 往復やレイテンシ無しに「まだ open な論点」を提示して
+        深掘りを促す。`open_inquiries` の text はそのまま `resolve_inquiry` に渡せば確実に解消
+        できる（言い換えによる空振りループ #468 も断つ）。
+        """
+        open_items = [
+            {"id": n.id, "text": n.text} for n in self._inquiry.open_nodes(_GATING_INQUIRY_KINDS)
+        ]
+        return {
+            "open_inquiries": open_items,
+            "open_count": len(open_items),
+            "all_inquiries_resolved": not open_items,
+        }
+
     def _inquiry_summary_counts(self) -> tuple[int, int]:
         """`session.completed` の要約用に (解消した矛盾数, 見つけた抜け数) をツリーから数える。"""
         nodes = self._inquiry.nodes()
@@ -746,11 +690,6 @@ class SANBAAgent(Agent):
         )
         gaps_found = sum(1 for n in nodes if n.kind is InquiryKind.GAP)
         return contradictions_resolved, gaps_found
-
-    @property
-    def current_question_id(self) -> str | None:
-        """現在の未回答質問 id（#212 §5-6。発話受信時点で束ねるために読む）。"""
-        return self._current_question_id
 
     def _publish(self, coro) -> None:  # type: ignore[no-untyped-def]
         """同期コンテキストから publish をスケジュールする（seq は publisher 側で直列化）。"""
@@ -800,6 +739,7 @@ class SANBAAgent(Agent):
             self._utterance_seq += 1
             utterance_id = f"u{self._utterance_seq}"
         self._transcript.append(f"[{utterance_id}] {speaker}: {text}")
+        self._dialog_transcript.append(f"{speaker}: {text}")
         session_id = self._session_id
         repo = self._repo
         grounding = self._grounding
@@ -820,7 +760,6 @@ class SANBAAgent(Agent):
         if speaker == "participant":
             self._user_turn += 1
             self._end_declined_streak = 0
-            self._question_reasks_in_turn = 0
             self._start_prefetch(text)
             if self._analysis_scheduler.note_utterance():
                 self._start_background_analysis()
@@ -874,11 +813,12 @@ class SANBAAgent(Agent):
         a{n} 空間で採番する。publisher 未設定なら no-op。
 
         送出後に session の seq をチェックポイントする。transcript.final は
-        `get_startup_seq` の復元対象（last_seq / current question の seq）に含まれず、
-        質問を挟まない発話だけが続いた後にプロセス交代すると採番の起点
+        `get_startup_seq` の復元対象（last_seq）に含まれず、
+        発話だけが続いた後にプロセス交代すると採番の起点
         （`_agent_utterance_seq` = publisher の起動 seq）が旧発話より手前に戻り、
         a{n} が再利用されて web の既存吹き出しを上書きするため。
         """
+        self._dialog_transcript.append(f"SANBA: {text}")
         if self._publisher is None:
             return
         self._agent_utterance_seq += 1
@@ -894,18 +834,6 @@ class SANBAAgent(Agent):
 
         self._publish(_emit_and_checkpoint())
 
-    def record_answer(self, question_id: str, answer: str) -> str | None:
-        """通常質問（#181）への回答を、問い本文とともに発話として記録する（Codex P2）。
-
-        question_id から問い本文を引けるなら「問「…」への回答：…」の形で記録し、後続の
-        analyze_requirements が何についての回答か分かる（要件化・引用の欠落を防ぐ）。
-        引けない場合は回答のみ記録する。生成応答の文脈に使えるよう問い本文を返す。
-        """
-        prompt = self._questions.get(question_id)
-        text = f"問「{prompt}」への回答：{answer}" if prompt else answer
-        self.record_utterance("participant", text)
-        return prompt
-
     async def resolve_inquiry_selection(self, node_id: str, selected_value: str) -> None:
         """ユーザーの選択（user.selection, 契約 §4.5）を受けて確認事項ノードを解消する（ADR-0059）。
 
@@ -914,7 +842,7 @@ class SANBAAgent(Agent):
         選択内容は以後の会話の前提として記録しておく。id/剪定には触れず `InquiryTree` に委ねる。
         """
         self._transcript.append(f"[選択] {node_id} → {selected_value}")
-        node = self._inquiry.resolve(node_id, self._next_inquiry_seq())
+        node = self._inquiry.resolve(node_id, self._next_inquiry_seq(), pin=True)
         if node is not None:
             self._inquiry_focus_id = node.id
             self._resolve_no_match_streak = 0
@@ -1000,6 +928,9 @@ class SANBAAgent(Agent):
         transcript = "\n".join(self._transcript)
         if self._prep_note:
             transcript = f"{self._prep_note}\n{transcript}"
+        coverage_transcript = "\n".join(self._dialog_transcript) or transcript
+        if self._prep_note:
+            coverage_transcript = f"{self._prep_note}\n{coverage_transcript}"
         covered_turn = self._user_turn
         tracer = get_tracer("sanba.voice")
         span_cm = (
@@ -1011,10 +942,11 @@ class SANBAAgent(Agent):
         with span_cm as span:
             if span is not None:
                 span.set_attribute("sanba.analysis.trigger", trigger)
+            coro = self._analyze_off_loop(transcript, coverage_transcript)
             if timeout_seconds is not None:
-                result = await asyncio.wait_for(self._analyze_off_loop(transcript), timeout_seconds)
+                result = await asyncio.wait_for(coro, timeout_seconds)
             else:
-                result = await self._analyze_off_loop(transcript)
+                result = await coro
         duration_ms = int((time.monotonic() - started) * 1000)
         log.info(
             "analysis",
@@ -1038,14 +970,17 @@ class SANBAAgent(Agent):
         self._analysis_covered_turn = covered_turn
         return result
 
-    async def _analyze_off_loop(self, transcript: str) -> AnalysisResult:
+    async def _analyze_off_loop(
+        self, transcript: str, coverage_transcript: str | None = None
+    ) -> AnalysisResult:
         """ADK 分析を専用スレッドの独立イベントループで実行する（ADR-0046 段階1・#375）。
 
         逐次 LLM 往復（interview_lead + サブエージェント）を音声 worker のイベントループから
         隔離し、分析の遅延・失敗が音声ターンのジッタ・破綻へ波及しないようにする。
         grounding 検索（to_thread 済み）と同じ規律で、分析経路だけ残っていた非対称を解消する。
         スレッドは daemon にする: タイムアウト後に走り続けても SIGTERM 時のプロセス退出を
-        塞がない（結果は future 側のガードで破棄される）。
+        塞がない（結果は future 側のガードで破棄される）。`coverage_transcript` は観点カバレッジ
+        判定にだけ渡す SANBA 発話込みの対話 log（RC4。None なら要件分析と同じ transcript）。
         """
         loop = asyncio.get_running_loop()
         future: asyncio.Future[AnalysisResult] = loop.create_future()
@@ -1059,6 +994,7 @@ class SANBAAgent(Agent):
                         self._check_points,
                         usage_hook=self._analysis_usage_hook,
                         billing_labels=self._billing_labels,
+                        coverage_transcript=coverage_transcript,
                     )
                 )
             except Exception as exc:  # noqa: BLE001
@@ -1149,6 +1085,21 @@ class SANBAAgent(Agent):
         （`reconcile_analysis`）。新しい gating ノードが生えたら終了提案を取り下げる（HP8）。
         """
         open_before = {n.id for n in self._inquiry.open_nodes(_GATING_INQUIRY_KINDS)}
+        if self._check_points and result.coverage_open:
+            suppressed = sum(
+                1
+                for point in result.coverage_open
+                if (node := self._inquiry.get(make_inquiry_id(InquiryKind.CHECK, point)))
+                is not None
+                and node.status is InquiryStatus.RESOLVED
+                and node.pinned
+            )
+            if suppressed:
+                log.info(
+                    "inquiry_reopen_suppressed_pinned",
+                    session=self._session_id,
+                    count=suppressed,
+                )
         changed = reconcile_analysis(
             self._inquiry,
             result,
@@ -1234,150 +1185,6 @@ class SANBAAgent(Agent):
         log.info("session_auto_finalized", session=self._session_id, confirmed=len(confirmed))
 
     @function_tool
-    async def ask_question(
-        self,
-        _ctx: RunContext,
-        prompt: str,
-        options: list[str] | None = None,
-    ) -> dict:
-        """次に聞くべき問いを1つ、画面の問いピン（金枠）に提示する。
-
-        音声で問いかけると同時に呼ぶと、参加者は選択肢をタップでも答えられる（#181）。
-
-        Args:
-            prompt: 問いの一文（例「並び順は何を既定にしますか」）。
-            options: 選択肢ラベル（2〜4個。例 ["関連度順","新着順"]）。
-                自由に答えてほしい問いでは省略する（音声/テキストで回答）。
-        """
-        new_has_options = bool(options)
-        superseded_in_turn = (
-            self._current_question_id is not None and self._question_asked_turn == self._user_turn
-        )
-        if (
-            superseded_in_turn
-            and not new_has_options
-            and self._current_question_id is not None
-            and self._questions.get(self._current_question_id) == prompt
-        ):
-            self._question_reasks_in_turn += 1
-            if self._question_reasks_in_turn >= ASK_QUESTION_REASK_LIMIT:
-                self._break_question_loop("question_repeat_circuit_break")
-            log.info(
-                "question_repeat_skipped",
-                session=self._session_id,
-                current=self._current_question_id,
-                turn=self._user_turn,
-                reasks=self._question_reasks_in_turn,
-            )
-            return {
-                "asked": self._current_question_id,
-                "note": (
-                    "同じ問いは提示済みです。ask_question を再度呼ばず、"
-                    "音声で参加者の回答を待ってください。"
-                ),
-            }
-        if superseded_in_turn and self._question_reasks_in_turn >= ASK_QUESTION_REASK_LIMIT:
-            self._question_reasks_in_turn += 1
-            self._break_question_loop("question_supersede_circuit_break")
-        if superseded_in_turn and not new_has_options and self._current_question_has_options:
-            self._question_reasks_in_turn += 1
-            if self._question_reasks_in_turn >= ASK_QUESTION_REASK_LIMIT:
-                self._break_question_loop("question_superseded_skipped_circuit_break")
-            log.info(
-                "question_superseded_skipped",
-                session=self._session_id,
-                current=self._current_question_id,
-                turn=self._user_turn,
-                reasks=self._question_reasks_in_turn,
-            )
-            return {
-                "asked": self._current_question_id,
-                "note": (
-                    "選択肢付きの問いが未回答のため、選択肢の無い後発の問いはスキップしました。"
-                    "既存の選択肢付きの問いを維持します。"
-                ),
-            }
-        if superseded_in_turn:
-            superseded = self._current_question_id
-            assert superseded is not None
-            self._question_reasks_in_turn += 1
-            log.info(
-                "question_superseded",
-                session=self._session_id,
-                previous=superseded,
-                turn=self._user_turn,
-            )
-            await self.clear_current_question(superseded)
-        self._question_seq += 1
-        question_id = f"{make_requirement_id(f'q:{prompt}')}-{self._question_seq}"
-        self._questions[question_id] = prompt
-        opts = [{"label": o, "value": o} for o in (options or [])]
-        self._current_question_id = question_id
-        self._current_question_has_options = new_has_options
-        self._question_asked_turn = self._user_turn
-        if self._publisher is not None:
-
-            def _persist_current(asked_seq: int) -> None:
-                self._repo.save_current_question(
-                    self._session_id,
-                    {"id": question_id, "prompt": prompt, "options": opts},
-                    asked_seq,
-                )
-
-            try:
-                await self._publisher.question_asked(
-                    question_id, prompt, options=opts or None, on_persist=_persist_current
-                )
-            except Exception as exc:  # noqa: BLE001
-                self._current_question_id = None
-                self._current_question_has_options = False
-                log.warning(
-                    "question_persist_failed",
-                    session=self._session_id,
-                    id=question_id,
-                    error=str(exc),
-                )
-        log.info("question_asked", session=self._session_id, id=question_id, options=len(opts))
-        result = {"asked": question_id}
-        if superseded_in_turn:
-            result["note"] = (
-                "同一ターンで複数の問いを立てました。前の問いは差し替えました。"
-                "1ターンにつき問いは1つだけにし、質問を畳みかけないでください。"
-            )
-        return result
-
-    async def clear_current_question(self, question_id: str) -> None:
-        """回答を受けて現在質問をクリアし、``question.cleared`` を全参加者へ伝播する。
-
-        ADR-0020 §5-3 / §5-5 / §5-7 / §5-9: 現在質問 id == ``question_id`` のとき（Firestore CAS が
-        成功したとき）だけ tombstone 化 + publish する。タップ回答（``user.answered`` の id 一致）と
-        自由記述/音声回答（受信時点の current id を束ねたもの）の双方から呼ばれる。古い回答や再送が
-        遅れて届いても、id が一致しなければ新しい問いを消さない（CAS が守る）。
-        """
-        if self._publisher is None:
-            return
-
-        def _persist_tombstone(cleared_seq: int) -> bool:
-            return self._repo.clear_current_question(self._session_id, question_id, cleared_seq)
-
-        cleared = False
-        try:
-            env = await self._publisher.question_cleared(question_id, on_persist=_persist_tombstone)
-            cleared = env is not None
-        except EventPublishError as exc:
-            cleared = True
-            log.warning(
-                "question_cleared_publish_failed",
-                session=self._session_id,
-                id=question_id,
-                error=str(exc),
-            )
-        if cleared and self._current_question_id == question_id:
-            self._current_question_id = None
-            self._current_question_has_options = False
-        log.info("question_cleared", session=self._session_id, id=question_id, cleared=cleared)
-
-    @function_tool
     async def save_requirement(
         self,
         _ctx: RunContext,
@@ -1422,7 +1229,7 @@ class SANBAAgent(Agent):
                 self._repo.set_session_seq, self._session_id, self._publisher.seq
             )
         log.info("requirement_saved", session=self._session_id, id=requirement.id)
-        return {"saved": requirement.id}
+        return {"saved": requirement.id, "session_state": self._session_state_hint()}
 
     @function_tool
     async def note_visual_requirement(
@@ -1462,7 +1269,11 @@ class SANBAAgent(Agent):
                 self._repo.set_session_seq, self._session_id, self._publisher.seq
             )
         log.info("visual_requirement", session=self._session_id, id=requirement.id)
-        return {"saved": requirement.id, "from": "screen-share"}
+        return {
+            "saved": requirement.id,
+            "from": "screen-share",
+            "session_state": self._session_state_hint(),
+        }
 
     @function_tool
     async def search_grounding(self, _ctx: RunContext, query: str) -> dict:
@@ -1712,7 +1523,7 @@ class SANBAAgent(Agent):
             text: 解消した確認事項の要点（画面の文言に近い一文。例「並び順は関連度順で確定」）。
         """
         seq = self._next_inquiry_seq()
-        resolved = self._inquiry.resolve_best_match(_RESOLVE_INQUIRY_KINDS, text, seq)
+        resolved = self._inquiry.resolve_best_match(_RESOLVE_INQUIRY_KINDS, text, seq, pin=True)
         if resolved is None:
             self._resolve_no_match_streak += 1
             open_items = [
@@ -1758,7 +1569,11 @@ class SANBAAgent(Agent):
             id=resolved.id,
             kind=resolved.kind.value,
         )
-        return {"resolved": True, "id": resolved.id}
+        return {
+            "resolved": True,
+            "id": resolved.id,
+            "session_state": self._session_state_hint(),
+        }
 
     @function_tool
     async def add_inquiry(self, _ctx: RunContext, text: str) -> dict:
@@ -1792,7 +1607,7 @@ class SANBAAgent(Agent):
             self._end_forced = False
         await self._emit_inquiry_nodes(changed)
         log.info("add_inquiry", session=self._session_id, id=node_id, added=added)
-        return {"added": added, "id": node_id}
+        return {"added": added, "id": node_id, "session_state": self._session_state_hint()}
 
     @function_tool
     async def delegate_investigation(self, _ctx: RunContext, question: str) -> dict:
@@ -1910,8 +1725,25 @@ class SANBAAgent(Agent):
                     "反応を待ってから、あらためて propose_session_end を呼んでください。"
                 ),
             }
+        await self._publish_end_proposal(
+            open_count=open_count,
+            requirements=requirements,
+            forced=user_requested and open_count > 0,
+            trigger="propose",
+        )
+        return {"proposed": True, "open_count": open_count, "requirement_count": requirements}
+
+    async def _publish_end_proposal(
+        self, *, open_count: int, requirements: int, forced: bool, trigger: str
+    ) -> None:
+        """終了提案カードを画面へ出し、終了フローの状態を立てる共通経路（P1-b / RC5）。
+
+        `propose_session_end` と、cushion 直後に `complete_session` が直接呼ばれた自己修復経路
+        （RC5）の両方から使い、`session_end_proposed` を必ず 1 度は発火させてダイアログの
+        取りこぼしを防ぐ。`trigger` は発火経路の観測用。
+        """
         self._end_proposed = True
-        self._end_forced = user_requested and open_count > 0
+        self._end_forced = forced
         self._end_declined_streak = 0
         materials = len(await asyncio.to_thread(self._repo.list_materials, self._session_id))
         if self._publisher is not None:
@@ -1926,9 +1758,9 @@ class SANBAAgent(Agent):
             session=self._session_id,
             requirements=requirements,
             open_count=open_count,
-            user_requested=user_requested,
+            forced=forced,
+            trigger=trigger,
         )
-        return {"proposed": True, "open_count": open_count, "requirement_count": requirements}
 
     @function_tool
     async def complete_session(self, _ctx: RunContext) -> dict:
@@ -1941,8 +1773,47 @@ class SANBAAgent(Agent):
         if self._completed:
             return {"completed": True, "open_count": 0}
         if not self._end_proposed:
-            log.info("session_complete_declined_not_proposed", session=self._session_id)
-            return {"completed": False, "open_count": 0, "reason": "not_proposed"}
+            open_count = self._gating_open_count()
+            requirements = len(
+                await asyncio.to_thread(self._repo.list_requirements, self._session_id)
+            )
+            if open_count == 0 and requirements > 0:
+                await self._publish_end_proposal(
+                    open_count=0,
+                    requirements=requirements,
+                    forced=False,
+                    trigger="auto_on_complete",
+                )
+                log.info(
+                    "session_end_auto_proposed_on_complete",
+                    session=self._session_id,
+                    requirements=requirements,
+                )
+                return {
+                    "completed": False,
+                    "open_count": 0,
+                    "reason": "proposal_shown",
+                    "guidance": (
+                        "終了提案のカードを画面に出しました。参加者が画面またはお声で終了に"
+                        "同意したのを確認してから、もう一度 complete_session を呼んでください。"
+                    ),
+                }
+            log.info(
+                "session_complete_declined_not_proposed",
+                session=self._session_id,
+                open=open_count,
+            )
+            return {
+                "completed": False,
+                "open_count": open_count,
+                "reason": "not_proposed",
+                "guidance": (
+                    "まだ終了提案を出していません。complete_session の前に、残っている "
+                    "open_inquiries を resolve_inquiry で解消し、propose_session_end を呼んで"
+                    "終了提案のカードを出してください。"
+                ),
+                "session_state": self._session_state_hint(),
+            }
         open_count = self._gating_open_count()
         if open_count > 0 and not self._end_forced:
             log.info("session_complete_declined_open", session=self._session_id, open=open_count)
@@ -2485,51 +2356,20 @@ async def respond_to_user_text(
     agent: SANBAAgent,
     session: AgentSession,
     text: str,
-    current_qid: str | None,
     guard: ReplyGuard,
 ) -> None:
     """テキスト入力（user.text, 契約 §4.5 / #185）を音声発話と同じ会話ターンとして扱う。
 
-    発話を記録（transcript.final で会話履歴へ反映）し、§5-6 に従い未回答 current を
-    クリアした上で、音声のバージインと同様に読み上げ中の応答を中断してから、本文を
-    user ターンとして Live セッションの会話文脈へ注入し応答を生成する
+    発話を記録（transcript.final で会話履歴へ反映）し、音声のバージインと同様に
+    読み上げ中の応答を中断してから、本文を user ターンとして Live セッションの
+    会話文脈へ注入し応答を生成する
     （livekit-agents 既定のテキスト入力コールバックと同じ interrupt + user_input 方式）。
     応答生成は guard（応答監視つき）経由で行い、無応答なら再起動で復旧する（#468）。
     発話は transcript へ記録済みのため再起動時は resume_instructions が文脈を復元する。
     """
     agent.record_utterance("participant", text)
-    if current_qid is not None:
-        await agent.clear_current_question(current_qid)
     await session.interrupt()
     await guard(kind="user_text", reinject=None, user_input=text)
-
-
-async def respond_to_answer(
-    agent: SANBAAgent,
-    session: AgentSession,
-    question_id: str,
-    answer: str,
-    guard: ReplyGuard,
-) -> None:
-    """通常質問（金枠, #181）への回答を記録し、要件を一歩進める応答を生成する。
-
-    回答を「問い本文つき」で発話記録し（Codex P2）、何への回答か後続の
-    analyze_requirements が分かるようにする。テキスト/タップ回答も音声回答と同様、
-    読み上げ中なら中断してから応答する（user.text と同じ即時反応）。応答生成は guard
-    （応答監視つき）経由で行い、無応答なら再起動で復旧する（#468）。
-    """
-    prompt = agent.record_answer(question_id, answer)
-    await agent.clear_current_question(question_id)
-    topic = f"問い「{prompt}」" if prompt else "先ほどの問い"
-    await session.interrupt()
-    await guard(
-        kind="answer",
-        reinject=None,
-        instructions=(
-            f"{topic}に対し参加者は「{answer}」と答えました。"
-            "これを踏まえて要件を一歩進め、必要なら次の問いを1つだけ投げてください。"
-        ),
-    )
 
 
 async def interrupt_playback(session: AgentSession, *, session_id: str) -> None:
@@ -2903,16 +2743,7 @@ async def entrypoint(ctx: JobContext) -> None:
             return
         text = decode_user_text(data, expected_session_id=session_id)
         if text is not None:
-            _schedule(
-                respond_to_user_text(
-                    agent, session, text, agent.current_question_id, _guarded_turn_reply
-                )
-            )
-            return
-        answered = decode_user_answered(data, expected_session_id=session_id)
-        if answered is not None:
-            question_id, answer = answered
-            _schedule(respond_to_answer(agent, session, question_id, answer, _guarded_turn_reply))
+            _schedule(respond_to_user_text(agent, session, text, _guarded_turn_reply))
             return
         if decode_user_interrupt(data, expected_session_id=session_id):
             log.info("user_interrupt_received", session=session_id)
@@ -2927,11 +2758,8 @@ async def entrypoint(ctx: JobContext) -> None:
             if not text:
                 return
             if getattr(ev, "is_final", False):
-                current_qid = agent.current_question_id
                 if agent.record_user_final(text):
                     turn_watchdog.arm()
-                if current_qid is not None:
-                    _schedule(agent.clear_current_question(current_qid))
             else:
                 agent.publish_user_partial(text)
 
@@ -3083,7 +2911,6 @@ async def entrypoint(ctx: JobContext) -> None:
             )
 
     agent.set_shutdown_hook(lambda reason: ctx.shutdown(reason=reason))
-    agent.set_restart_hook(_request_restart)
 
     def _dispatch_investigation(question: str) -> None:
         _schedule(run_investigation(agent, session, question, _guarded_turn_reply))

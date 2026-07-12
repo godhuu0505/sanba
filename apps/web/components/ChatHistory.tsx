@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef } from "react";
 import { useInterviewMode } from "@/lib/interviewMode";
 import type { ContextProgressState, TranscriptLine } from "@/lib/realtime/store";
 import type { MaterialItem } from "@/lib/realtime/selectors";
+import type { SessionPhase } from "@/lib/realtime/types";
 
 import { ChatBubble } from "./sanba/ChatBubble";
 
@@ -28,6 +29,8 @@ export interface ChatHistoryProps {
   contextProgress?: ContextProgressState[];
   materials?: MaterialItem[];
   userPicture?: string;
+  phase?: SessionPhase;
+  agentSpeaking?: boolean;
 }
 
 function SetupBubble({
@@ -148,8 +151,15 @@ export function ChatHistory({
   contextProgress = [],
   materials = [],
   userPicture,
+  phase,
+  agentSpeaking,
 }: ChatHistoryProps) {
   const endUser = useInterviewMode() === "end_user";
+  const tail = transcript.at(-1);
+  const showThinking =
+    phase === "deliberating" &&
+    !agentSpeaking &&
+    (!tail || !AGENT_ROLES.has(tail.role) || tail.final);
   const setupItems = [...contextProgress];
   const materialBubbles = materials.filter(
     (m) => m.status !== "cancelled" && m.status !== "uploading",
@@ -181,14 +191,20 @@ export function ChatHistory({
     if (stickRef.current) {
       endRef.current?.scrollIntoView?.({ behavior: "smooth", block: "end" });
     }
-  }, [transcript.length, lastLine?.text, lastLine?.final]);
+  }, [transcript.length, lastLine?.text, lastLine?.final, showThinking]);
 
   if (transcript.length === 0 && !hasSetup) {
     return (
       <div className="flex h-full items-center justify-center px-6 py-8">
-        <p className="inline-flex items-center justify-center gap-1.5 text-center text-[13px] text-sanba-muted">
-          <Mic size={15} aria-hidden /> 話しかけてください
-        </p>
+        {showThinking ? (
+          <p className="inline-flex items-center justify-center gap-1.5 text-center text-[13px] font-bold text-sanba-speak-text">
+            <LoaderCircle size={15} aria-hidden className="animate-spin" /> 考え中…
+          </p>
+        ) : (
+          <p className="inline-flex items-center justify-center gap-1.5 text-center text-[13px] text-sanba-muted">
+            <Mic size={15} aria-hidden /> 話しかけてください
+          </p>
+        )}
       </div>
     );
   }
@@ -231,6 +247,13 @@ export function ChatHistory({
           </ChatBubble>
         );
       })}
+      {showThinking && (
+        <ChatBubble author="agent">
+          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-sanba-speak-text">
+            <LoaderCircle size={11} aria-hidden className="animate-spin" /> 考え中…
+          </span>
+        </ChatBubble>
+      )}
       <div ref={setSentinel} aria-hidden />
     </div>
   );

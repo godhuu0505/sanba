@@ -17,7 +17,6 @@ function renderShell(onEnd = vi.fn()) {
         files: <div>ファイル本文</div>,
         scroll: <div>絵巻本文</div>,
       }}
-      choicePin={<div>問いピン</div>}
       bottomBar={<div>下部バー</div>}
     />,
   );
@@ -46,12 +45,11 @@ describe("ConversationShell（共通シェル）", () => {
     expect(screen.getByRole("tab", { name: "会話履歴" }).getAttribute("aria-selected")).toBe("true");
   });
 
-  it("タブを切り替えると本文だけ変わり、常時UI（問いピン・下部バー）は出たまま", () => {
+  it("タブを切り替えると本文だけ変わり、常時UI（下部バー）は出たまま", () => {
     renderShell();
     fireEvent.click(screen.getByRole("tab", { name: "参考資料" }));
     expect(screen.getByText("ファイル本文")).toBeTruthy();
     expect(screen.queryByText("会話本文")).toBeNull();
-    expect(screen.getByText("問いピン")).toBeTruthy();
     expect(screen.getByText("下部バー")).toBeTruthy();
     expect(screen.getByText(/要件 8/)).toBeTruthy();
   });
@@ -99,7 +97,7 @@ describe("ConversationShell（共通シェル）", () => {
     expect(onUnresolvedJump).toHaveBeenCalledTimes(1);
   });
 
-  it("閲覧モード（review）では REC・終了・問いピン・下部バーを出さず、結果へ戻る導線を出す", () => {
+  it("閲覧モード（review）では REC・終了・下部バーを出さず、結果へ戻る導線を出す", () => {
     const onBackToResult = vi.fn();
     render(
       <ConversationShell
@@ -113,13 +111,11 @@ describe("ConversationShell（共通シェル）", () => {
           files: <div>ファイル本文</div>,
           scroll: <div>絵巻本文</div>,
         }}
-        choicePin={<div>問いピン</div>}
         bottomBar={<div>下部バー</div>}
       />,
     );
     expect(screen.queryByText(/REC/)).toBeNull();
     expect(screen.queryByRole("button", { name: "会話を終了" })).toBeNull();
-    expect(screen.queryByText("問いピン")).toBeNull();
     expect(screen.queryByText("下部バー")).toBeNull();
     expect(screen.getByRole("tab", { name: "会話履歴" })).toBeTruthy();
     expect(screen.getByText("会話本文")).toBeTruthy();
@@ -132,7 +128,6 @@ describe("ConversationShell（共通シェル）", () => {
       <ConversationShell
         mini={mini}
         tabs={{ history: <div>h</div>, files: <div>f</div>, scroll: <div>s</div> }}
-        choicePin={<div>問いピン</div>}
         bottomBar={<div>下部バー</div>}
         voiceStatus={<div>聞き取り中インジケータ</div>}
       />,

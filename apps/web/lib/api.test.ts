@@ -43,18 +43,20 @@ describe("setAuthNonce / X-Auth-Nonce（ADR-0047 §2）", () => {
   });
 });
 
-describe("classifyUpload / classifyFileUpload（受理判定・ADR-0049）", () => {
-  it("画像/動画に加えて資料（md/pdf/html/csv/json/Office）を受理する", () => {
+describe("classifyUpload / classifyFileUpload（受理判定：PNG/JPEG/MD/CSV/PDF のみ）", () => {
+  it("画像（png/jpeg）と資料（md/csv/pdf）だけを受理する", () => {
     expect(classifyUpload("mock.png")).toBe("image");
-    expect(classifyUpload("rec.MOV")).toBe("video");
+    expect(classifyUpload("photo.JPEG")).toBe("image");
     expect(classifyUpload("spec.md")).toBe("doc");
     expect(classifyUpload("prd.pdf")).toBe("doc");
-    expect(classifyUpload("page.html")).toBe("doc");
     expect(classifyUpload("data.csv")).toBe("doc");
-    expect(classifyUpload("conf.json")).toBe("doc");
-    expect(classifyUpload("spec.docx")).toBe("doc");
-    expect(classifyUpload("req.xlsx")).toBe("doc");
-    expect(classifyUpload("deck.pptx")).toBe("doc");
+    expect(classifyUpload("rec.MOV")).toBeNull();
+    expect(classifyUpload("demo.mp4")).toBeNull();
+    expect(classifyUpload("page.html")).toBeNull();
+    expect(classifyUpload("conf.json")).toBeNull();
+    expect(classifyUpload("spec.docx")).toBeNull();
+    expect(classifyUpload("req.xlsx")).toBeNull();
+    expect(classifyUpload("deck.pptx")).toBeNull();
     expect(classifyUpload("malware.exe")).toBeNull();
   });
 
@@ -66,7 +68,8 @@ describe("classifyUpload / classifyFileUpload（受理判定・ADR-0049）", () 
         name: "book",
         type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       }),
-    ).toBe("doc");
+    ).toBeNull();
+    expect(classifyFileUpload({ name: "clip", type: "video/mp4" })).toBeNull();
     expect(classifyFileUpload({ name: "archive", type: "application/zip" })).toBeNull();
   });
 });

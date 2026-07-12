@@ -4,7 +4,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   mergeMaterials,
-  selectActiveQuestion,
   selectConfirmedRequirements,
   selectGateCount,
   selectMaterialDetail,
@@ -14,14 +13,13 @@ import {
 } from "@/lib/realtime/selectors";
 import type { RealtimeMetricsSnapshot } from "@/lib/realtime/metrics";
 import type { SessionState } from "@/lib/realtime/store";
-import type { SendAnswer, SendInquiryDrop } from "@/lib/realtime/useRealtimeSession";
+import type { SendInquiryDrop } from "@/lib/realtime/useRealtimeSession";
 import type { ExportEligibility, ExportOptions, ExportResult } from "@/lib/api";
 import { useAuthOptional } from "@/lib/auth";
 import type { MicMode, PttPressProps } from "@/lib/usePushToTalk";
 
 import { BottomBar } from "./BottomBar";
 import { ChatHistory } from "./ChatHistory";
-import { ChoicePin } from "./ChoicePin";
 import { ConversationShell, type ShellTab } from "./ConversationShell";
 import { EndConfirmDialog } from "./EndConfirmDialog";
 import { EndProposalCard } from "./EndProposalCard";
@@ -35,7 +33,6 @@ import { Figure, type FigureState } from "./sanba";
 export interface ConversationSessionViewProps {
   state: SessionState;
   readOnly?: boolean;
-  sendAnswer?: SendAnswer;
   sendInquiryDrop?: SendInquiryDrop;
   micOn: boolean;
   muted: boolean;
@@ -70,6 +67,7 @@ type Phase = "shell" | "result";
 
 const SIDE_FIGURE_STATE: Record<VoiceStatus, FigureState> = {
   "agent-speaking": "asking",
+  thinking: "writing",
   listening: "listening",
   muted: "writing",
   idle: "walking",
@@ -78,7 +76,6 @@ const SIDE_FIGURE_STATE: Record<VoiceStatus, FigureState> = {
 export function ConversationSessionView({
   state,
   readOnly = false,
-  sendAnswer,
   sendInquiryDrop,
   micOn,
   muted,
@@ -112,11 +109,11 @@ export function ConversationSessionView({
   const [phase, setPhase] = useState<Phase>("shell");
   const [tab, setTab] = useState<ShellTab>("history");
   const [endOpen, setEndOpen] = useState(false);
+  const [ending, setEnding] = useState(false);
   const [ended, setEnded] = useState(false);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [provisional, setProvisional] = useState(false);
   const [focusDeepDive, setFocusDeepDive] = useState(false);
-  const [answeredQuestions, setAnsweredQuestions] = useState<ReadonlySet<string>>(new Set());
   const exportingRef = useRef(false);
   const [issueExport, setIssueExport] = useState<IssueExportStatus>({ status: "idle" });
   const [issueDisabledReason, setIssueDisabledReason] = useState<string | null>(null);
@@ -186,10 +183,6 @@ export function ConversationSessionView({
           }
         : null;
 
-  const askedQuestion = selectActiveQuestion(state);
-  const activeQuestion =
-    askedQuestion && !answeredQuestions.has(askedQuestion.id) ? askedQuestion : null;
-
   function jumpToConversation() {
     setPhase("shell");
     setTab("history");
@@ -243,21 +236,28 @@ export function ConversationSessionView({
     }
   }, [readOnly, onFinalize, onEndSession, onNavigateResults, endProvisional]);
 
-  function finishSession() {
-    setEndOpen(false);
+  async function finishSession() {
+    if (ending) return;
     onLeaveConversation?.();
     if (readOnly) {
+      setEndOpen(false);
       setProvisional(mini.unresolved > 0);
       setEnded(true);
       onEndSession?.();
       setPhase("result");
       return;
     }
-    if (mini.unresolved === 0) {
-      void finalizeAndFinish();
-      return;
+    setEnding(true);
+    try {
+      if (mini.unresolved === 0) {
+        await finalizeAndFinish();
+      } else {
+        await endProvisional();
+      }
+    } finally {
+      setEnding(false);
+      setEndOpen(false);
     }
-    void endProvisional();
   }
 
   useEffect(() => {
@@ -354,21 +354,6 @@ export function ConversationSessionView({
     </>
   );
 
-  const choicePin =
-    ended || !activeQuestion ? undefined : (
-      <ChoicePin
-        questionId={activeQuestion.id}
-        question={activeQuestion.prompt}
-        options={activeQuestion.options.map((o) => ({ label: o.label }))}
-        onAnswer={(i) => {
-          const opt = activeQuestion.options[i];
-          if (!opt) return;
-          sendAnswer?.(activeQuestion.id, { selectedValue: opt.value });
-          setAnsweredQuestions((prev) => new Set(prev).add(activeQuestion.id));
-        }}
-      />
-    );
-
   return (
     <>
       <ConversationShell
@@ -383,7 +368,6 @@ export function ConversationSessionView({
         onUnresolvedJump={() => setFocusDeepDive(true)}
         onEnd={ended ? undefined : () => setEndOpen(true)}
         sidePanel={sidePanel}
-        choicePin={choicePin}
         voiceStatus={
           ended ? undefined : (
             <VoiceStatusIndicator
@@ -418,6 +402,8 @@ export function ConversationSessionView({
                 contextProgress={state.contextProgress}
                 materials={materials}
                 userPicture={userPicture}
+                phase={state.phase}
+                agentSpeaking={agentSpeaking}
               />
             </div>
           ),
@@ -489,7 +475,8 @@ export function ConversationSessionView({
           <EndConfirmDialog
             unresolved={mini.unresolved}
             onContinue={() => setEndOpen(false)}
-            onEnd={finishSession}
+            onEnd={() => void finishSession()}
+            loading={ending}
           />
         </div>
       )}

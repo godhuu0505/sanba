@@ -30,7 +30,7 @@ VOICE_AGENT_INSTRUCTIONS = """\
 
 会話の原則:
 - 一度に聞くのは「1つの問い」だけにする。質問を畳みかけない。
-  1回の発話（ターン）で `ask_question` を呼ぶのは1回だけにし、複数の問いを続けて投げない。
+  問いは音声で読み上げて伝える。選択肢を示したいときも口頭で2〜3個だけ挙げる。
   相手が答えてから次の問いに進む。
 - 問いには必ず「たとえばこういう答えが考えられます」という推奨例を 1 つ添える(grill-me 流)。
   ユーザーが白紙から考えずに、反応して答えられるようにする。
@@ -61,6 +61,10 @@ VOICE_AGENT_INSTRUCTIONS = """\
 返ってきた引用元(source)に触れて根拠を示す。事前に登録された資料(kind=context)も検索対象に
 含まれるので、資料に既に書かれている事項は質問で繰り返さず、確認や深掘りに切り替える。
 重要な要件が固まったら `save_requirement` ツールで記録する。
+`save_requirement`・`resolve_inquiry`・`add_inquiry` の返り値には `session_state` が付く。
+`session_state.open_inquiries` は今まだ未解消の確認事項（矛盾・抜け・確認観点）の一覧なので、
+残っている限りその論点を次の一問で優先して深掘りし、解消できたら `resolve_inquiry` に
+`open_inquiries` の text をそのまま渡して解消する（言い換えずに渡すと確実に解消できる）。
 運用者が本番環境（SANBA 本番）のエラーやログの調査を求めたときは、`delegate_investigation`
 ツールで外部の SRE エージェントに調べさせる。調査には少し時間がかかるので、受け付けたことを
 一言添えて会話を続け、結果が届いたら自分で創作せず届いた内容だけを要約して共有する。
@@ -69,6 +73,9 @@ VOICE_AGENT_INSTRUCTIONS = """\
 会話の終わり方（重要）:
 - 終了を提案する前に、必ず「確認したかった点はこれで確認できました。今日の要点は◯◯です」と
   一言でまとめて伝え、参加者の反応をひと呼吸待ってから `propose_session_end` を呼ぶ。
+- `propose_session_end` が `reason="cushion"` を返したら、それは「まとめを伝えて反応を待つ」
+  合図。要点を一言でまとめて伝え、参加者の反応を待ってから**必ずもう一度 `propose_session_end`
+  を呼ぶ**。ここで `complete_session` を直接呼ばない（提案カードがまだ出ていない）。
 - 十分に要件を引き出し、確認したい論点（矛盾・抜け・不明瞭）がすべて解消できたと
   判断したときにだけ `propose_session_end` ツールで終了を提案する。会話の冒頭や、
   まだ要件がほとんど出ていない段階では提案しない（ツールが拒否したら深掘りを続ける）。
@@ -96,7 +103,7 @@ END_USER_VOICE_AGENT_INSTRUCTIONS = """\
 
 会話の原則:
 - 一度に聞くのは「1つの問い」だけにする。質問を畳みかけない。
-  1回の発話（ターン）で `ask_question` を呼ぶのは1回だけにし、複数の問いを続けて投げない。
+  問いは音声で読み上げて伝える。選択肢を示したいときも口頭で2〜3個だけ挙げる。
   相手が答えてから次の問いに進む。
 - 問いには必ず「たとえばこういう答えでも大丈夫です」という推奨例を 1 つ添える。
   相手が白紙から考えずに、反応して答えられるようにする。
@@ -205,19 +212,40 @@ def build_glossary_seed(product_name: str, glossary: list[str]) -> str:
     return "\n".join(lines)
 
 
-def build_check_items_seed(check_items: list[str], *, end_user: bool = False) -> str:
-    """登録された「必ず確認する項目」を初期 instructions にシードする一節（ADR-0043）。
+def build_check_items_seed(
+    check_items: list[str], *, end_user: bool = False, owner_provided: bool = True
+) -> str:
+    """このセッションでシードする確認観点を初期 instructions に載せる一節（ADR-0043 / ADR-0072）。
 
-    glossary シードと同型の「LLM 追加呼び出しなしの機械的組み立て」。項目は owner が
-    入力する非信頼データのため、共通フェンス（build_untrusted_fence）で囲む。
-    空なら空文字 = シードなしで会話は成立させる。対象タグによる絞り込みは呼び出し側
-    （check_items_for_scope）が済ませた前提で、ここは渡された項目をすべて載せる。
+    glossary シードと同型の「LLM 追加呼び出しなしの機械的組み立て」。空なら空文字 =
+    シードなしで会話は成立させる。対象タグによる絞り込みは呼び出し側（check_items_for_scope）が
+    済ませた前提で、ここは渡された観点をすべて載せる。
+    `owner_provided=True` のときはアプリ提供者入力の非信頼データとして共通フェンス
+    （build_untrusted_fence）で囲む。`owner_provided=False`（対象アプリ未指定のコーチング型
+    デフォルト）のときは提供者由来ではなく系側の信頼できる既定観点なので、提供者に帰属させず
+    フェンスも付けずに載せ、ゴールを定めるための問いの起点として使わせる。
     end_user モードでは項目を利用者に伝わる言葉へ言い換えて確認させる（開発語彙を
     そのまま読み上げない / ADR-0032 の語彙方針）。
     """
     items = [c.strip() for c in check_items if c.strip()]
     if not items:
         return ""
+    if not owner_provided:
+        return "\n".join(
+            [
+                "",
+                "## このセッションで掘り下げる観点",
+                "まだ作るものが決まっていない段階です。次の観点から、相手が本当に叶えたいこと・"
+                "解消したい困りごとを引き出し、ゴールを一言で言える状態にする。",
+                *[f"- {c}" for c in items],
+                "",
+                "観点の扱い:",
+                "- 会話の自然な流れの中で、上記の観点を一つずつ問いにして掘り下げる"
+                "（一度に列挙して尋ねない）。",
+                "- ゴールが定まったら、その達成に必要なことを要件として深掘りし、"
+                "`save_requirement` で記録する。",
+            ]
+        )
     lines = [
         "",
         "## このセッションで必ず確認する項目",

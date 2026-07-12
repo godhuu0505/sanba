@@ -14,7 +14,6 @@ import { useEffect, useRef, useState } from "react";
 import {
   ACCEPTED_DOC,
   ACCEPTED_IMAGE,
-  ACCEPTED_VIDEO,
   deleteContextFile,
   exportRequirements,
   fetchContextFiles,
@@ -28,8 +27,6 @@ import {
   type FinalizeOptions,
   type FinalizeResult,
 } from "../lib/api";
-import { useAuth } from "../lib/auth";
-import { importDriveFile, isDriveConfigured, openDrivePicker } from "../lib/googleDrive";
 import type { MaterialItem } from "../lib/realtime/selectors";
 import { useRealtimeSession } from "../lib/realtime/useRealtimeSession";
 import { usePushToTalk } from "../lib/usePushToTalk";
@@ -72,14 +69,13 @@ export function SessionView({
   readOnly?: boolean;
   resultsViewable?: boolean;
 }) {
-  const { state, metrics, sendText, sendAnswer, sendInquiryDrop, sendInterrupt } =
+  const { state, metrics, sendText, sendInquiryDrop, sendInterrupt } =
     useRealtimeSession({
       sessionId,
       sessionToken,
       hydrateInquiry: true,
       hydrateAnalysis: true,
     });
-  const auth = useAuth();
   const [sourceError, setSourceError] = useState<string | null>(null);
   const mic = useTrackToggle({ source: Track.Source.Microphone });
   const {
@@ -91,7 +87,6 @@ export function SessionView({
 
   const router = useRouter();
   const camera = useTrackToggle({ source: Track.Source.Camera });
-  const screenShare = useTrackToggle({ source: Track.Source.ScreenShare });
   const [muted, setMuted] = useState(false);
   const room = useRoomContext();
   const [startedAt] = useState(() => Date.now());
@@ -245,50 +240,6 @@ export function SessionView({
     setSourceSheetOpen(true);
   }
 
-  async function handleDriveImport() {
-    setSourceError(null);
-    if (!isDriveConfigured()) {
-      setSourceError(
-        "Google ドライブ連携はこの環境では利用できません（Google API キーが未設定です）。",
-      );
-      return;
-    }
-    const token = await auth.requestDriveAccess();
-    if (!token) {
-      setSourceError(
-        "Google ドライブへのアクセスが許可されていません。もう一度お試しいただくと、再度許可を求めます。",
-      );
-      return;
-    }
-    setSourceSheetOpen(false);
-    let picked: Awaited<ReturnType<typeof openDrivePicker>>;
-    try {
-      picked = await openDrivePicker(token);
-    } catch (e) {
-      console.error("drive picker failed", e);
-      openSourceSheet();
-      setSourceError("Google ドライブを開けませんでした。時間をおいて再度お試しください。");
-      return;
-    }
-    for (const doc of picked) {
-      try {
-        const file = await importDriveFile(token, doc);
-        await startUpload(file);
-      } catch (e) {
-        console.error("drive import failed", e);
-        setPending((p) => [
-          ...p,
-          {
-            id: `local:${tempSeq.current++}`,
-            name: `${doc.name}（Google ドライブから取得できませんでした）`,
-            pct: 0,
-            status: "failed",
-          },
-        ]);
-      }
-    }
-  }
-
   function handleRetryMaterial(id: string) {
     setPending((p) => p.filter((m) => m.id !== id));
     openSourceSheet();
@@ -301,16 +252,6 @@ export function SessionView({
     } catch (e) {
       console.error("camera toggle failed", e);
       setSourceError("カメラを開始できませんでした。ブラウザのカメラ許可をご確認ください。");
-    }
-  }
-
-  async function toggleScreenShareTrack() {
-    setSourceError(null);
-    try {
-      await screenShare.toggle();
-    } catch (e) {
-      console.error("screenShare toggle failed", e);
-      setSourceError("画面共有を開始できませんでした。共有する画面を選び直してください。");
     }
   }
 
@@ -337,7 +278,7 @@ export function SessionView({
         <input
           ref={fileInput}
           type="file"
-          accept={`${ACCEPTED_IMAGE},${ACCEPTED_VIDEO},${ACCEPTED_DOC}`}
+          accept={`${ACCEPTED_IMAGE},${ACCEPTED_DOC}`}
           onChange={handleFile}
           className="hidden"
         />
@@ -345,7 +286,6 @@ export function SessionView({
       <ConversationSessionView
         readOnly={readOnly}
         state={state}
-        sendAnswer={sendAnswer}
         sendInquiryDrop={sendInquiryDrop}
         micOn={mic.enabled}
         muted={muted}
@@ -371,7 +311,6 @@ export function SessionView({
         onLeaveConversation={() => {
           if (mic.enabled) void mic.toggle(false);
           if (camera.enabled) void camera.toggle(false);
-          if (screenShare.enabled) void screenShare.toggle(false);
         }}
         onEndSession={() => {
           setTimerRunning(false);
@@ -393,9 +332,6 @@ export function SessionView({
           }}
           onToggleCamera={toggleCameraTrack}
           cameraActive={camera.enabled}
-          onToggleScreenShare={toggleScreenShareTrack}
-          screenShareActive={screenShare.enabled}
-          onDrive={() => void handleDriveImport()}
           onSelectSource={(source) =>
             sendTelemetry(sessionId, "material.source_selected", { source }, sessionToken)
           }

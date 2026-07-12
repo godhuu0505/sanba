@@ -3,7 +3,7 @@
 > このファイルは `just docs-index`（`scripts/gen-docs-index.py`）で生成する。
 > 手で編集しない。ADR を追加・改訂したら再生成する。
 
-設計判断記録（Architecture Decision Record）の一覧。全 70 件。
+設計判断記録（Architecture Decision Record）の一覧。全 72 件。
 書き方・ステータス制御語彙は [`/adr` 雛形](../../.claude/commands/adr.md) を参照。
 
 | # | タイトル | ステータス |
@@ -27,7 +27,7 @@
 | [0017](0017-figma-canonical-onepath-archaic-copy.md) | Figma 正本を正とするデザイン方針確定（一本道フロー・全面古語・a11y は現代語で担保） | Superseded by ADR-0047 |
 | [0018](0018-conversation-experience.md) | 会話体験（会話フェーズの 3 タブ・選択肢 3 モード・二系統コントロール） | Accepted |
 | [0019](0019-google-signin-button-branding.md) | ログイン画面 Google ボタンの意匠（純正維持 + 金彩フレーム） | Superseded by ADR-0052 |
-| [0020](0020-question-asked-hydration.md) | question.asked のハイドレーション方式（サーバ保存 + GET 復元） | Accepted |
+| [0020](0020-question-asked-hydration.md) | question.asked のハイドレーション方式（サーバ保存 + GET 復元） | Superseded by ADR-0070 |
 | [0021](0021-realtime-reliable-seq-and-persistence.md) | realtime イベントの reliable-seq 名前空間と seq 永続化 | Proposed |
 | [0022](0022-conversation-realtime-model-ambiguous-and-voice-state.md) | 会話 realtime モデルの拡張 — 不明瞭検知（ambiguous）と音声状態の表現 | Proposed |
 | [0023](0023-staged-upload-analysis-progress.md) | アップロード素材の解析進捗（analysis.progress / analysis.visual）の発行設計 | Accepted |
@@ -51,7 +51,7 @@
 | [0041](0041-screen-share-keyframe-analysis.md) | 画面共有のキーフレーム解析（Live 併用ハイブリッド） | Proposed |
 | [0042](0042-result-output-formats-and-check-items.md) | 要件結果の対象者別出力フォーマットとセッション確認項目 | Accepted |
 | [0043](0043-audience-tagged-check-items-and-render-unification.md) | 確認項目の対象者タグと要件整形の一本化・api ルーター分割 | Accepted |
-| [0044](0044-home-app-selection-gate.md) | 対象アプリの選択を 01 ホームの開始ゲートにする | Accepted |
+| [0044](0044-home-app-selection-gate.md) | 対象アプリの選択を 01 ホームの開始ゲートにする | Superseded by ADR-0071 |
 | [0045](0045-app-slug-urls-and-access-error.md) | アプリ slug によるアプリ従属 URL と複合アクセスエラー表示 | Accepted |
 | [0046](0046-decouple-analysis-from-voice-worker.md) | 音声リアルタイム worker から要件分析（ADK 多段チェーン）を分離する | Proposed |
 | [0047](0047-app-is-canonical-figma-follows.md) | 正本の逆転 — アプリ実装を唯一の正本とし、Figma を追従させる | Accepted |
@@ -66,7 +66,7 @@
 | [0055](0055-end-user-detection-handling.md) | 会話でカバーする観点をモード別・設定可能にし、ハードコード NFR gap 検知を廃止する | Accepted |
 | [0056](0056-auto-finalize-on-disconnect.md) | 未確定のまま離脱したセッションを離脱後始末で自動確定し、要件を保全する | Accepted |
 | [0057](0057-dynamic-check-point-coverage.md) | 会話の観点（check-points）カバレッジを LLM で動的に判定する（増分1: パイプライン + 観測） | Accepted |
-| [0058](0058-voice-recovery-question-supersede-guard.md) | 音声リカバリが選択肢付きの問いを消さないよう supersede をガードし、深掘りの選択肢方針を定める | Accepted |
+| [0058](0058-voice-recovery-question-supersede-guard.md) | 音声リカバリが選択肢付きの問いを消さないよう supersede をガードし、深掘りの選択肢方針を定める | Superseded by ADR-0070 |
 | [0059](0059-inquiry-logic-tree.md) | 確認事項ロジックツリー（HP7）— 会話/解析で増減するノードの木を一級の状態にする | Accepted |
 | [0060](0060-server-side-session-and-cookie.md) | サーバサイドセッション（不透明 SID + HttpOnly Cookie）と Next.js 同一オリジン化 | Accepted |
 | [0061](0061-session-ai-cost-kpi-analytics.md) | セッション単位の AI コスト・KPI 分析イベント基盤（Elasticsearch + Kibana） | Proposed |
@@ -78,5 +78,7 @@
 | [0067](0067-codebase-security-audit-process.md) | 全コード セキュリティ監査プロセス（マルチエージェント並列 + 敵対的検証） | Proposed |
 | [0068](0068-no-comments-policy-yaml-terraform.md) | コメント禁止規約の YAML / Terraform への拡張とコメント内容の docs 移設 | Accepted |
 | [0069](0069-holmesgpt-first-a2a-proof-and-generic-facade.md) | HolmesGPT を external-agents の A2A 実証初弾に据える（汎用 A2A ファサード・read-only・別プロジェクト配置） | Proposed |
+| [0070](0070-remove-ask-question-tool.md) | ask_question ツールと問いピン（金枠）機構の撤廃 — 音声・テキスト自由入力へ一本化 | Accepted |
+| [0071](0071-optional-target-app-for-session-start.md) | 対象アプリなしでもセッションを開始できるようにする（アプリ選択を任意化） | Accepted |
 
 付随資料は [`supplements/`](supplements/) に置く（特定 ADR の実測・検証データ）。

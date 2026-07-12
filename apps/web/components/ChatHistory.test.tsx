@@ -23,6 +23,53 @@ describe("ChatHistory（会話履歴タブ）", () => {
     expect(screen.getByText(/話しかけてください/)).toBeTruthy();
   });
 
+  it("空でも deliberating 中は「話しかけてください」ではなく考え中を出す", () => {
+    render(<ChatHistory transcript={[]} phase="deliberating" />);
+    expect(screen.getByText(/考え中/)).toBeTruthy();
+    expect(screen.queryByText(/話しかけてください/)).toBeNull();
+  });
+
+  it("ユーザー発話の後に deliberating なら考え中の吹き出しを添える", () => {
+    render(
+      <ChatHistory
+        transcript={[line({ utterance_id: "u1", role: "participant", text: "検索を速くしたい" })]}
+        phase="deliberating"
+      />,
+    );
+    expect(screen.getByText(/考え中/)).toBeTruthy();
+  });
+
+  it("エージェント発話が確定した後の待機中（deliberating）も考え中を出す", () => {
+    render(
+      <ChatHistory
+        transcript={[line({ utterance_id: "u1", role: "assistant", text: "承知しました", final: true })]}
+        phase="deliberating"
+      />,
+    );
+    expect(screen.getByText(/考え中/)).toBeTruthy();
+  });
+
+  it("エージェント発話が未確定（生成中）なら二重で考え中を出さない", () => {
+    render(
+      <ChatHistory
+        transcript={[line({ utterance_id: "u1", role: "assistant", text: "え", final: false })]}
+        phase="deliberating"
+      />,
+    );
+    expect(screen.queryByText(/考え中…/)).toBeNull();
+  });
+
+  it("エージェント発話中は考え中を出さない", () => {
+    render(
+      <ChatHistory
+        transcript={[line({ utterance_id: "u1", role: "participant", text: "はい" })]}
+        phase="deliberating"
+        agentSpeaking
+      />,
+    );
+    expect(screen.queryByText(/考え中/)).toBeNull();
+  });
+
   it("SANBA(agent) と あなた(参加者) を author 区別で吹き出し表示する", () => {
     render(
       <ChatHistory

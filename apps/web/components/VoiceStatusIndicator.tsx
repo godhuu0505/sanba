@@ -1,11 +1,11 @@
 "use client";
 
-import { type LucideIcon, Mic, Pause, Volume2, VolumeX } from "lucide-react";
+import { type LucideIcon, LoaderCircle, Mic, Pause, Volume2, VolumeX } from "lucide-react";
 
 import { Figure, type FigureState } from "@/components/sanba";
 import type { SessionPhase } from "@/lib/realtime/types";
 
-export type VoiceStatus = "muted" | "agent-speaking" | "listening" | "idle";
+export type VoiceStatus = "muted" | "agent-speaking" | "thinking" | "listening" | "idle";
 
 export interface VoiceStatusIndicatorProps {
   phase?: SessionPhase;
@@ -26,19 +26,27 @@ export function resolveVoiceStatus({
 >): VoiceStatus {
   if (muted) return "muted";
   if (agentSpeaking) return "agent-speaking";
+  if (phase === "deliberating") return "thinking";
   if (phase === "listening" && micOn) return "listening";
   return "idle";
 }
 
 const PRESENTATION: Record<
   VoiceStatus,
-  { icon: LucideIcon; label: string; tone: string; pulse: boolean }
+  { icon: LucideIcon; label: string; tone: string; pulse: boolean; spin?: boolean }
 > = {
   "agent-speaking": {
     icon: Volume2,
     label: "発話中／読み上げ中",
     tone: "border-sanba-gold text-sanba-gold-text",
     pulse: true,
+  },
+  thinking: {
+    icon: LoaderCircle,
+    label: "考え中",
+    tone: "border-sanba-gold text-sanba-gold-text",
+    pulse: true,
+    spin: true,
   },
   listening: {
     icon: Mic,
@@ -66,7 +74,7 @@ export function figureStateForVoiceStatus(status: VoiceStatus): FigureState | nu
 
 export function VoiceStatusIndicator(props: VoiceStatusIndicatorProps) {
   const status = resolveVoiceStatus(props);
-  const { icon: Icon, label, tone, pulse } = PRESENTATION[status];
+  const { icon: Icon, label, tone, pulse, spin } = PRESENTATION[status];
   const figState = props.compact ? null : figureStateForVoiceStatus(status);
 
   return (
@@ -85,7 +93,7 @@ export function VoiceStatusIndicator(props: VoiceStatusIndicatorProps) {
           aria-hidden
           className={`inline-block h-1.5 w-1.5 rounded-full bg-current ${pulse ? "animate-pulse" : ""}`}
         />
-        <Icon size={14} aria-hidden />
+        <Icon size={14} aria-hidden className={spin ? "animate-spin" : undefined} />
         <span>{label}</span>
       </div>
     </div>
