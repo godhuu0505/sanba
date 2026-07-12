@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import structlog
 from fastapi import FastAPI, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 
 from .backends.base import AgentBackend
@@ -70,7 +71,7 @@ def create_app(
         except JsonRpcError as exc:
             return JSONResponse(content=build_error(exc.request_id, exc.code, exc.message))
         try:
-            answer = agent.ask(text, timeout=cfg.holmes_timeout_seconds)
+            answer = await run_in_threadpool(agent.ask, text, timeout=cfg.holmes_timeout_seconds)
         except Exception as exc:  # noqa: BLE001
             log.warning("a2a_backend_ask_failed", backend=cfg.backend, error=str(exc))
             return JSONResponse(
