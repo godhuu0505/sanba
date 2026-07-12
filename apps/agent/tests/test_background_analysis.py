@@ -350,6 +350,66 @@ async def test_propose_session_end_circuit_breaks_after_repeated_declines() -> N
 
 
 @pytest.mark.asyncio
+async def test_propose_session_end_cushions_right_after_last_resolve() -> None:
+    """最後の解消と同一ターンの提案は 1 回だけ保留し、まとめ→予告を促す（#534）。"""
+    transport = RecordingTransport()
+    agent = _agent(transport)
+    _seed_requirement(agent)
+    _seed_gap(agent, "性能要件が未確認")
+    resolve = type(agent).resolve_inquiry.__wrapped__
+    propose = type(agent).propose_session_end.__wrapped__
+
+    resolved = await resolve(agent, None, "性能要件が未確認")
+    assert resolved["resolved"] is True
+
+    cushioned = await propose(agent, None)
+    assert cushioned["proposed"] is False
+    assert cushioned["reason"] == "cushion"
+    assert "guidance" in cushioned
+    assert "stop" not in cushioned
+    assert agent._end_declined_streak == 0, "クッションはサーキットブレーカに数えない"
+    assert not any(t["event"]["type"] == "session.end_proposed" for t in transport.sent)
+
+    proposed = await propose(agent, None)
+    assert proposed["proposed"] is True
+    assert any(t["event"]["type"] == "session.end_proposed" for t in transport.sent)
+
+
+@pytest.mark.asyncio
+async def test_propose_session_end_skips_cushion_after_new_user_turn() -> None:
+    """解消の後に参加者の発話を挟んだ提案はクッション無しで通る（#534）。"""
+    transport = RecordingTransport()
+    agent = _agent(transport)
+    _seed_requirement(agent)
+    _seed_gap(agent, "性能要件が未確認")
+    resolve = type(agent).resolve_inquiry.__wrapped__
+    propose = type(agent).propose_session_end.__wrapped__
+
+    await resolve(agent, None, "性能要件が未確認")
+    agent.record_utterance("participant", "はい、それで大丈夫です")
+
+    proposed = await propose(agent, None)
+    assert proposed["proposed"] is True
+
+
+@pytest.mark.asyncio
+async def test_propose_session_end_user_requested_bypasses_cushion() -> None:
+    """参加者が終了を明言したときはクッションを挟まず参加者の意思を優先する（#534）。"""
+    transport = RecordingTransport()
+    agent = _agent(transport)
+    _seed_requirement(agent)
+    _seed_gap(agent, "性能要件が未確認")
+    resolve = type(agent).resolve_inquiry.__wrapped__
+    propose = type(agent).propose_session_end.__wrapped__
+
+    await resolve(agent, None, "性能要件が未確認")
+
+    proposed = await propose(agent, None, user_requested=True)
+    assert proposed["proposed"] is True
+    assert agent._end_cushion_used is False, "user_requested はクッションを消費しない"
+
+
+@pytest.mark.asyncio
 async def test_declined_open_inquiries_exclude_advisory_ambiguous() -> None:
     """open_inquiries は gating 対象のみで open_count と一致させる（AMBIGUOUS は advisory）。"""
     transport = RecordingTransport()
