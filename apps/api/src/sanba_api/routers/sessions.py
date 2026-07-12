@@ -359,6 +359,27 @@ class MySessionRequirementsResponse(BaseModel):
     items: list[dict[str, Any]]
 
 
+def _viewable_my_session(session_id: str, user: AuthUser) -> SessionMeta | None:
+    """`/mine/` 系（要件結果の閲覧・起票）の認可判定の一点集約。
+
+    閲覧できるのは (1) セッション作成者本人（owner_sub 一致）と、
+    (2) セッションが従属する product の所有者（product.owner_sub 一致）。
+    (2) はログイン参加者が product 招待から作成したセッション（owner_sub は参加者）を
+    所有者がレビューできるようにするため。それ以外・不存在は None（呼び出し側で 404 に
+    平し、他人のセッション ID の存在を応答差で漏らさない）。
+    """
+    session = _repo.get_session(session_id)
+    if session is None:
+        return None
+    if session.owner_sub == user.sub:
+        return session
+    if session.product_id:
+        product = _repo.get_product(session.product_id)
+        if product is not None and product.owner_sub == user.sub:
+            return session
+    return None
+
+
 @router.get(
     "/api/sessions/mine/{session_id}/requirements",
     response_model=MySessionRequirementsResponse,
@@ -366,15 +387,15 @@ class MySessionRequirementsResponse(BaseModel):
 def get_my_session_requirements(
     session_id: str, user: AuthUser = Depends(require_user)
 ) -> MySessionRequirementsResponse:
-    """本人 (owner_sub) の過去セッションの要件絵巻を返す。
+    """本人の過去セッションの要件絵巻を返す。
 
     ホーム「過去の要件を見る」からの詳細閲覧。join 済みトークンは会話終了後には
     残らないため、`require_session_access` ではなく idToken (ADR-0012) で本人確認し、
-    owner_sub 一致で認可する。非所有・不存在はどちらも 404 に平す (他人のセッション ID の
-    存在を応答差で漏らさない)。
+    `_viewable_my_session`（作成者本人 or 従属 product の所有者）で認可する。
+    非該当・不存在はどちらも 404 に平す (他人のセッション ID の存在を応答差で漏らさない)。
     """
-    session = _repo.get_session(session_id)
-    if session is None or session.owner_sub != user.sub:
+    session = _viewable_my_session(session_id, user)
+    if session is None:
         raise HTTPException(status_code=404, detail="session not found")
     if session.status == "finalized":
         items = _finalized_snapshot_requirements(session)
@@ -435,10 +456,10 @@ def get_my_session_result_document(
     スナップショット、進行中は現在の全要件）で、閲覧とドキュメントの内容がずれない。
     フォーマットはセッションが従属する product の登録値 →（未登録・単発セッションは）
     既定テンプレートの順で解決する（`resolve_output_format`）。認可も同エンドポイントと
-    同じ owner_sub 一致・非所有/不存在は 404 に平す。
+    同じ `_viewable_my_session`・非該当/不存在は 404 に平す。
     """
-    session = _repo.get_session(session_id)
-    if session is None or session.owner_sub != user.sub:
+    session = _viewable_my_session(session_id, user)
+    if session is None:
         raise HTTPException(status_code=404, detail="session not found")
     if session.status == "finalized":
         items = _finalized_snapshot_requirements(session)
@@ -501,12 +522,12 @@ def get_my_session_transcript(
 ) -> SessionTranscriptResponse:
     """本人 (owner_sub) のセッションの会話ログを時系列で返す。
 
-    認可は `get_my_session_requirements` と同じ（idToken で本人確認・owner_sub 一致、
-    非所有/不存在はどちらも 404 に平す）。当該セッションの発話のみを返し、閲覧権限は
+    認可は `get_my_session_requirements` と同じ（idToken で本人確認・`_viewable_my_session`、
+    非該当/不存在はどちらも 404 に平す）。当該セッションの発話のみを返し、閲覧権限は
     要件結果画面と同一（追加制限なし / #479 Must）。
     """
-    session = _repo.get_session(session_id)
-    if session is None or session.owner_sub != user.sub:
+    session = _viewable_my_session(session_id, user)
+    if session is None:
         raise HTTPException(status_code=404, detail="session not found")
     utterances = _repo.list_utterances(session_id)
     record_my_transcript_viewed(len(utterances))
@@ -1075,7 +1096,15 @@ def join_session(
 
     identity = f"{role}-{user.sub[:8]}-{uuid.uuid4().hex[:4]}"
     display_name = req.participant_name or user.name
-    joined = _mint_join_tokens(session_id, role, identity, display_name, user.sub, user.email)
+    joined = _mint_join_tokens(
+        session_id,
+        role,
+        identity,
+        display_name,
+        user.sub,
+        user.email,
+        results_viewable=_viewable_my_session(session_id, user) is not None,
+    )
     log.info("session_join", session=session_id, identity=identity, role=role, sub=user.sub)
     return joined
 
@@ -1475,11 +1504,11 @@ def my_export_eligibility_status(
 ) -> ExportEligibilityResponse:
     """結果レビュー画面（`/results/{id}`）の起票ボタン活性判定（ADR-0053 決定5）。
 
-    認可は `/mine/` 系と同じ owner_sub 一致（ゲストセッションの owner は product owner なので
-    開発者が後からレビューして判定できる）。非所有・不存在は 404 に平す。
+    認可は `/mine/` 系と同じ `_viewable_my_session`（ゲストセッションの owner は
+    product owner なので開発者が後からレビューして判定できる）。非該当・不存在は 404 に平す。
     """
-    session = _repo.get_session(session_id)
-    if session is None or session.owner_sub != user.sub:
+    session = _viewable_my_session(session_id, user)
+    if session is None:
         raise HTTPException(status_code=404, detail="session not found")
     elig = export_eligibility(user.sub, session)
     return ExportEligibilityResponse(can_export=elig.can_export, reason=elig.reason, repo=elig.repo)
@@ -1491,11 +1520,11 @@ def my_export_requirements(
 ) -> ExportResponse:
     """結果レビュー画面から確定要件を Issue 起票する（ADR-0053 決定5）。
 
-    ログイン資格（idToken）で本人確認し、owner_sub 一致で認可する（`/mine/` 系と同一）。
-    起票は操作者本人の installation token で行い、権限が無ければ理由つきで拒む
+    ログイン資格（idToken）で本人確認し、`_viewable_my_session` で認可する（`/mine/` 系と
+    同一）。起票は操作者本人の installation token で行い、権限が無ければ理由つきで拒む
     （web はボタンを disable、手動起票用に Markdown コピーを併置する）。
     """
-    session = _repo.get_session(session_id)
-    if session is None or session.owner_sub != user.sub:
+    session = _viewable_my_session(session_id, user)
+    if session is None:
         raise HTTPException(status_code=404, detail="session not found")
     return _perform_export(session, user.sub)

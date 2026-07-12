@@ -159,6 +159,7 @@ function RoomGate({
           sessionId={conn.session_id}
           sessionToken={conn.session_token}
           readOnly={readOnly}
+          resultsViewable={conn.results_viewable ?? false}
         />
       </main>
       {reconnecting && (

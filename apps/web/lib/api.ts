@@ -96,6 +96,7 @@ export interface JoinResponse {
   session_id: string;
   identity: string;
   session_token: string;
+  results_viewable?: boolean;
 }
 
 export async function createSession(
