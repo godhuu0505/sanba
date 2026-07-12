@@ -271,7 +271,11 @@ def build_agent_instructions(repo: SessionRepository, session_id: str) -> AgentS
     mode = meta.interview_mode if meta is not None else InviteScope.DEVELOPER
     prep_note = ""
     product = _session_product(repo, meta)
-    seeded_check_items = default_check_points(product, mode) if meta is not None else []
+    seeded_check_items = (
+        default_check_points(product, mode)
+        if meta is not None and (product is not None or not meta.product_id)
+        else []
+    )
     check_items_seed = build_check_items_seed(
         seeded_check_items,
         end_user=mode is InviteScope.END_USER,

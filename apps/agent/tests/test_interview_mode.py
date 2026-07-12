@@ -234,6 +234,21 @@ def test_session_without_target_app_seeds_coaching_check_points() -> None:
     assert "アプリ提供者が登録した" not in instructions
 
 
+def test_product_read_failure_seeds_no_check_points() -> None:
+    """product_id あり・product 読み取り失敗時はコーチング観点を出さずフェイルクローズする。"""
+    repo = _repo()
+    _seed_session(repo, mode=InviteScope.DEVELOPER, product_id="prod-missing")
+
+    def _boom(product_id: str) -> Product | None:
+        raise RuntimeError("firestore down")
+
+    repo.get_product = _boom  # type: ignore[method-assign]
+    instructions, _, _, *_ = build_agent_instructions(repo, "s1")
+    assert "叶えたい理想の姿" not in instructions
+    assert "困りごとの根っこ" not in instructions
+    assert "このセッションで掘り下げる観点" not in instructions
+
+
 def test_missing_session_falls_back_to_developer() -> None:
     """セッション文書が読めないときは既定 developer（既存挙動の安全側）。"""
     repo = _repo()
