@@ -352,6 +352,20 @@ def test_create_then_join_happy_path() -> None:
     assert body["token"]
     assert body["session_id"] == created["session_id"]
     assert body["identity"].startswith("pm-owner-12-")
+    assert body["results_viewable"] is True
+
+
+def test_join_marks_results_not_viewable_for_invited_participant() -> None:
+    created = _create(["pm"])
+    app.dependency_overrides[require_user] = lambda: AuthUser(
+        sub="member-999", email="member@example.com", email_verified=True, name="Member"
+    )
+    res = client.post(
+        "/api/sessions/join",
+        json={"invite": created["invites"]["pm"], "participant_name": "Bob"},
+    )
+    assert res.status_code == 200
+    assert res.json()["results_viewable"] is False
 
 
 def test_join_without_valid_invite_is_rejected() -> None:

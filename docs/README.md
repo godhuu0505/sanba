@@ -32,7 +32,7 @@
 
 ## 📖 リファレンス（確認する）
 
-- [アーキテクチャ設計（TO-BE）](reference/architecture.md) — コンポーネント / 二層構造 / データモデル / 非機能要件。
+- [アーキテクチャ設計（TO-BE）](reference/architecture.md) — コンポーネント / 三層構造 / データモデル / 非機能要件。
 - [アーキテクチャ & インフラ徹底解析（AS-IS）](reference/architecture-analysis.md) — 実装から起こした全体像。GCP サービス・外部連携・LB/CI-CD/可観測性を図示。**設計とズレたら本書を一次情報とする。**
 - [ユビキタス言語](reference/ubiquitous-language.md) — プロダクト・設計・コード・UI で同じ言葉を同じ意味で使う用語ハブ。
 - [セキュリティ & データガバナンス](reference/security.md) — アクセス制御・PII マスキング・保持期間・CI スキャン・公開化ハードニング。

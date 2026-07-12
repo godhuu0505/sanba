@@ -15,6 +15,11 @@ variable "agent_instructions" {
     セッション指定の検索は必ず {"query":{"term":{"session_id":"<id>"}}} の term クエリを使うこと。
     elasticsearch_list_indices は権限不足で失敗するため使わず、elasticsearch_search と
     elasticsearch_mappings のみを使うこと。
+    GCP のログ・メトリクス・トレースは gcp_observability ツール群で読める。対象プロジェクトは
+    sanba-prd（本番）。Cloud Run サービス名は sanba-agent / sanba-api / sanba-web / sanba-worker。
+    Firestore は firestore ツール群で読める（sanba-prd の本番 DB・read-only）。セッションや要件の
+    ドキュメントはコレクション一覧から探索できる。すべてのデータソースは読み取り専用で、
+    変更操作はできない。
   EOT
 }
 
@@ -56,4 +61,10 @@ variable "region" {
   description = "GCP region for Cloud Run and Artifact Registry"
   type        = string
   default     = "us-central1"
+}
+
+variable "production_project_id" {
+  description = "Production GCP project whose logs, metrics, traces, and Firestore the agent reads (viewer roles only; ADR-0069 decision 3)"
+  type        = string
+  default     = "sanba-prd"
 }

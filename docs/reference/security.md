@@ -57,6 +57,12 @@
   OS CVE では落とさず、「更新すれば直せる（actionable）」脆弱性だけをゲート対象にする。
   実行は install.sh 経由（GitHub API のレート制限で不安定）ではなく digest 固定の公式イメージで
   行い、docker.sock をマウントしてビルド済みローカルイメージを走査する。
+  - 誤検知・上流待ちの CVE はリポジトリ直下の `.trivyignore`（`--ignorefile` でマウント）で
+    明示的に抑止する。エントリには理由と削除条件を必ず添え、上流の修正リリースで解消したら
+    エントリを削除する。例: firestore-mcp（mcp-toolbox 1.6.0）は Go モジュールの
+    pseudo-version 埋め込みにより Trivy が修正済み CVE（CVE-2026-11717/11718/9739/11719）を
+    未修正と誤判定する。stdlib の CVE-2026-39822 は上流バイナリが Go 1.26.4 ビルドのため
+    残存し、Go >= 1.26.5 ビルドのリリースで解消し次第エントリを外す。
 - **CodeQL**: public リポジトリでは Code scanning が有効で SARIF アップロードが成功するため、
   `codeql.yml` は gating（init/analyze/upload の失敗で CI を赤にする）。Code scanning を無効化すると
   アップロードが失敗して merge を塞ぐため、その際は再度 advisory（`continue-on-error`）に戻す。

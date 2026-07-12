@@ -1,0 +1,11 @@
+# firestore-mcp (toolbox 1.6.0): Go モジュールが pseudo-version (v0.0.0-...) で埋め込まれ
+# Trivy がバージョン比較できないための誤検知。実体は 1.6.0 で下記 CVE の修正版
+# (1.2.0 / 1.4.0) を含む。経緯は docs/reference/security.md §CI スキャン運用を参照。
+CVE-2026-11717
+CVE-2026-11718
+CVE-2026-9739
+CVE-2026-11719
+# toolbox 1.6.0 が Go 1.26.4 でビルドされているため stdlib に残る。上流の次リリース
+# (Go >= 1.26.5 ビルド) で解消したら削除する。os.Root の symlink 追従で、当該コンテナは
+# 固定 tools.yaml を読むだけの用途のため悪用経路がない。
+CVE-2026-39822

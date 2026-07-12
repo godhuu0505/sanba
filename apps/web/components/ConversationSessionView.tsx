@@ -46,7 +46,7 @@ export interface ConversationSessionViewProps {
   onSendText: (text: string) => void;
   onExport: (options?: ExportOptions) => Promise<ExportResult>;
   onCheckExportEligibility?: () => Promise<ExportEligibility>;
-  onFinalize?: () => Promise<unknown>;
+  onFinalize?: (options?: { forced?: boolean }) => Promise<unknown>;
   onAddMaterial: () => void;
   extraMaterials?: MaterialItem[];
   hydratedMaterials?: MaterialItem[];
@@ -186,8 +186,15 @@ export function ConversationSessionView({
     setTab("history");
   }
 
-  const endProvisional = useCallback(() => {
+  const endProvisional = useCallback(async () => {
     setEnded(true);
+    if (!readOnly) {
+      try {
+        await Promise.resolve(onFinalize?.({ forced: true }));
+      } catch (e) {
+        console.error("forced finalize failed", e);
+      }
+    }
     onEndSession?.();
     if (!readOnly && onNavigateResults) {
       onNavigateResults();
@@ -195,7 +202,7 @@ export function ConversationSessionView({
     }
     setProvisional(true);
     setPhase("result");
-  }, [readOnly, onEndSession, onNavigateResults]);
+  }, [readOnly, onFinalize, onEndSession, onNavigateResults]);
 
   const finalizeAndFinish = useCallback(async () => {
     if (finalizingRef.current) return;
@@ -213,15 +220,19 @@ export function ConversationSessionView({
       setProvisional(false);
       setEnded(true);
       onEndSession?.();
+      if (onNavigateResults) {
+        onNavigateResults();
+        return;
+      }
       setPhase("result");
     } catch (e) {
       console.error("finalize failed", e);
-      endProvisional();
+      await endProvisional();
     } finally {
       finalizingRef.current = false;
       setAutoFinalizing(false);
     }
-  }, [readOnly, onFinalize, onEndSession, endProvisional]);
+  }, [readOnly, onFinalize, onEndSession, onNavigateResults, endProvisional]);
 
   function finishSession() {
     setEndOpen(false);
@@ -237,7 +248,7 @@ export function ConversationSessionView({
       void finalizeAndFinish();
       return;
     }
-    endProvisional();
+    void endProvisional();
   }
 
   useEffect(() => {

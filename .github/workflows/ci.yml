@@ -175,6 +175,12 @@ jobs:
           - app: holmes-sidecar
             context: .
             file: a2a-facade/sidecar/Dockerfile
+          - app: gcp-obs-mcp
+            context: .
+            file: a2a-facade/mcp/gcp-observability/Dockerfile
+          - app: firestore-mcp
+            context: .
+            file: a2a-facade/mcp/firestore/Dockerfile
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4

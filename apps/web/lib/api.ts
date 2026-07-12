@@ -96,6 +96,7 @@ export interface JoinResponse {
   session_id: string;
   identity: string;
   session_token: string;
+  results_viewable?: boolean;
 }
 
 export async function createSession(
@@ -312,13 +313,19 @@ export interface FinalizeResult {
   confirmed_count: number;
 }
 
+export interface FinalizeOptions {
+  forced?: boolean;
+}
+
 export async function finalizeSession(
   sessionId: string,
   sessionToken: string | null,
+  options: FinalizeOptions = {},
 ): Promise<FinalizeResult> {
   const res = await apiFetch(`${API_URL}/api/sessions/${sessionId}/finalize`, {
     method: "POST",
     headers: authHeaders(sessionToken),
+    body: JSON.stringify({ forced: options.forced ?? false }),
   });
   if (!res.ok) throw new Error(`finalize failed: ${res.status}`);
   return res.json();

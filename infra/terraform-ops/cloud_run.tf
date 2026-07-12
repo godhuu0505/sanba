@@ -53,8 +53,50 @@ resource "google_cloud_run_v2_service" "a2a_facade" {
     }
 
     containers {
-      name  = "holmes"
-      image = "${local.image_base}/holmes-sidecar:${var.image_tag}"
+      name  = "gcp-obs-mcp"
+      image = "${local.image_base}/gcp-obs-mcp:${var.image_tag}"
+
+      resources {
+        limits = { cpu = "1", memory = "512Mi" }
+      }
+
+      startup_probe {
+        tcp_socket {
+          port = 8002
+        }
+        initial_delay_seconds = 5
+        period_seconds        = 10
+        failure_threshold     = 18
+      }
+
+      env {
+        name  = "GOOGLE_CLOUD_PROJECT"
+        value = var.production_project_id
+      }
+    }
+
+    containers {
+      name  = "firestore-mcp"
+      image = "${local.image_base}/firestore-mcp:${var.image_tag}"
+
+      resources {
+        limits = { cpu = "1", memory = "256Mi" }
+      }
+
+      startup_probe {
+        tcp_socket {
+          port = 8003
+        }
+        initial_delay_seconds = 5
+        period_seconds        = 10
+        failure_threshold     = 18
+      }
+    }
+
+    containers {
+      name       = "holmes"
+      image      = "${local.image_base}/holmes-sidecar:${var.image_tag}"
+      depends_on = ["gcp-obs-mcp", "firestore-mcp"]
 
       resources {
         limits = { cpu = "1", memory = "2Gi" }
@@ -92,6 +134,14 @@ resource "google_cloud_run_v2_service" "a2a_facade" {
       env {
         name  = "ES_API_URL"
         value = var.elasticsearch_url
+      }
+      env {
+        name  = "GCP_OBS_MCP_URL"
+        value = "http://127.0.0.1:8002/mcp"
+      }
+      env {
+        name  = "FIRESTORE_MCP_URL"
+        value = "http://127.0.0.1:8003/mcp"
       }
       env {
         name = "ES_API_KEY"

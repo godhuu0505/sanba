@@ -24,7 +24,29 @@ steps:
       - -f
       - a2a-facade/sidecar/Dockerfile
       - .
+  - name: gcr.io/cloud-builders/docker
+    env:
+      - DOCKER_BUILDKIT=1
+    args:
+      - build
+      - -t
+      - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/gcp-obs-mcp:${_TAG}
+      - -f
+      - a2a-facade/mcp/gcp-observability/Dockerfile
+      - .
+  - name: gcr.io/cloud-builders/docker
+    env:
+      - DOCKER_BUILDKIT=1
+    args:
+      - build
+      - -t
+      - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/firestore-mcp:${_TAG}
+      - -f
+      - a2a-facade/mcp/firestore/Dockerfile
+      - .
 
 images:
   - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/a2a-facade:${_TAG}
   - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/holmes-sidecar:${_TAG}
+  - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/gcp-obs-mcp:${_TAG}
+  - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/firestore-mcp:${_TAG}

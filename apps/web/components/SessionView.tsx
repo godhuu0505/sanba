@@ -24,6 +24,7 @@ import {
   type ExportEligibility,
   type ExportOptions,
   type ExportResult,
+  type FinalizeOptions,
   type FinalizeResult,
 } from "../lib/api";
 import type { MaterialItem } from "../lib/realtime/selectors";
@@ -61,10 +62,12 @@ export function SessionView({
   sessionId,
   sessionToken,
   readOnly = false,
+  resultsViewable = false,
 }: {
   sessionId: string;
   sessionToken: string | null;
   readOnly?: boolean;
+  resultsViewable?: boolean;
 }) {
   const { state, metrics, sendText, sendInquiryDrop, sendInterrupt } =
     useRealtimeSession({
@@ -260,8 +263,8 @@ export function SessionView({
     return fetchExportEligibility(sessionId, sessionToken);
   }
 
-  function handleFinalize(): Promise<FinalizeResult> {
-    return finalizeSession(sessionId, sessionToken);
+  function handleFinalize(options?: FinalizeOptions): Promise<FinalizeResult> {
+    return finalizeSession(sessionId, sessionToken, options);
   }
 
   function handleSendText(text: string) {
@@ -314,7 +317,9 @@ export function SessionView({
           void room.disconnect();
         }}
         onRestart={() => router.push("/")}
-        onNavigateResults={() => router.push(`/results/${sessionId}`)}
+        onNavigateResults={
+          resultsViewable ? () => router.push(`/results/${sessionId}`) : undefined
+        }
         metrics={metrics}
       />
 

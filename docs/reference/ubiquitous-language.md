@@ -31,7 +31,7 @@
 | 核の一撃 | core value | **リアルタイム矛盾・抜け検知**。grill-me／産婆術の本質で、エージェントの必然性の根拠。 | [ADR-0008](../adr/0008-product-concept.md) #2 |
 | 解像度を上げる | raise resolution | 所作（聞く・話す・描く・見る）を重ねて要件を曖昧から明確へ近づけること。 | [README](../../README.md) |
 | 一問一答 | one-question-at-a-time | 一度に問うのは1つだけ・推奨回答例を必ず添える、という grill-me 流の対話原則。 | [prompts/interview.py](../../apps/agent/src/sanba_agent/prompts/interview.py) |
-| 二層構造 | two-layer architecture | 低レイテンシ音声（Gemini Live）と多段推論（ADK）を層として分ける設計。 | [architecture.md §3](architecture.md) / [ADR-0002](../adr/0002-multi-agent-topology.md) |
+| 三層構造 | three-layer architecture | 低レイテンシ音声（Gemini Live）・分離 STT（Vertex Speech / Chirp）・多段推論（ADK）を層として分ける設計（ADR-0066 で二層→三層に拡張）。 | [architecture.md §3](architecture.md) / [ADR-0066](../adr/0066-separate-stt.md) |
 
 ---
 
