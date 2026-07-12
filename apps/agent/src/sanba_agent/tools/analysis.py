@@ -122,6 +122,7 @@ async def analyze_transcript(
     *,
     usage_hook: UsageHook | None = None,
     billing_labels: dict[str, str] | None = None,
+    coverage_transcript: str | None = None,
 ) -> AnalysisResult:
     """Run the ADK interview team over the transcript and return next steps.
 
@@ -132,6 +133,10 @@ async def analyze_transcript(
     触れられていないものを LLM で判定し `coverage_open` に載せる。gap/曖昧語とは別の advisory
     シグナルで、ADK 本体と並行に走らせて遅延を足さない。
 
+    `coverage_transcript` が与えられたらカバレッジ判定にだけそれを使う（RC4。SANBA の問いを
+    含む対話 log を渡すと Q&A の対で「触れたか」の判定精度が上がる）。None なら要件分析と同じ
+    `transcript` を使う。
+
     `usage_hook(component, usage)` には ADK チーム・観点カバレッジ LLM のトークン usage を
     渡す（ADR-0061 の `ai_usage` 排出用）。hook の失敗は分析本体へ波及させない。
     `billing_labels` は Vertex 経路の直接 `generate_content`（カバレッジ判定）にだけ付与する
@@ -141,7 +146,7 @@ async def analyze_transcript(
     coverage_task = (
         asyncio.ensure_future(
             assess_check_point_coverage(
-                transcript,
+                coverage_transcript if coverage_transcript is not None else transcript,
                 check_points,
                 usage_hook=usage_hook,
                 billing_labels=billing_labels,

@@ -1,8 +1,8 @@
 # ADR-0044: 対象アプリの選択を 01 ホームの開始ゲートにする
 
-- ステータス: Superseded by ADR-0070
+- ステータス: Superseded by ADR-0071
 - 日付: 2026-07-06
-- 関連: [ADR-0070](0070-optional-target-app-for-session-start.md)（対象アプリの選択を必須ゲートから
+- 関連: [ADR-0071](0071-optional-target-app-for-session-start.md)（対象アプリの選択を必須ゲートから
   任意に改め、本 ADR を置き換える。候補 1 件の自動選択・準備からの選択 UI 撤去は継承）
 
 ## コンテキスト

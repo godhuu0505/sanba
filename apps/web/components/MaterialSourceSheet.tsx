@@ -1,19 +1,16 @@
 "use client";
 
 
-import { Camera, ChevronRight, Cloud, Monitor, Upload, X } from "lucide-react";
+import { Camera, ChevronRight, Upload, X } from "lucide-react";
 import { type ReactNode, useEffect, useRef } from "react";
 
-export type MaterialSource = "camera" | "screen" | "upload" | "drive";
+export type MaterialSource = "camera" | "upload";
 
 export interface MaterialSourceSheetProps {
   onClose: () => void;
   onUpload: () => void;
   onToggleCamera?: () => void;
   cameraActive?: boolean;
-  onToggleScreenShare?: () => void;
-  screenShareActive?: boolean;
-  onDrive: () => void;
   onSelectSource?: (source: MaterialSource) => void;
   error?: string | null;
   placement?: "bottom" | "center";
@@ -24,9 +21,6 @@ export function MaterialSourceSheet({
   onUpload,
   onToggleCamera,
   cameraActive,
-  onToggleScreenShare,
-  screenShareActive,
-  onDrive,
   onSelectSource,
   error,
   placement = "bottom",
@@ -112,7 +106,7 @@ export function MaterialSourceSheet({
           </button>
         </div>
         <p className="text-[12px] text-sanba-muted">
-          言葉以外の情報（画像・画面・カメラ）も、会話を止めずに渡せます。
+          言葉以外の情報（画像・資料・カメラ）も、会話を止めずに渡せます。
         </p>
 
         {onToggleCamera && (
@@ -129,26 +123,8 @@ export function MaterialSourceSheet({
         <SourceRow
           icon={<Upload size={20} />}
           title="ファイルをアップロード"
-          sub="写真（PNG/JPG）・録画（MP4/MOV）・文書（PDF/Office/Markdown/HTML/CSV 等）"
+          sub="対応形式は PNG / JPEG / Markdown / CSV / PDF のみです"
           onClick={() => pick("upload", onUpload)}
-        />
-
-        {onToggleScreenShare && (
-          <SourceRow
-            icon={<Monitor size={20} />}
-            title={screenShareActive ? "画面共有を停止" : "画面を共有"}
-            sub="ライブ（Figma 等）を一緒に見る"
-            active={screenShareActive}
-            actionLabel="画面共有の開始/停止"
-            onClick={() => pick("screen", onToggleScreenShare)}
-          />
-        )}
-
-        <SourceRow
-          icon={<Cloud size={20} />}
-          title="Google ドライブから選ぶ"
-          sub="Google ドキュメント・スプレッドシート・スライドも取り込めます"
-          onClick={() => pick("drive", onDrive)}
         />
 
         {error && (

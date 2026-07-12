@@ -46,7 +46,6 @@ class ReadRepository:
         self._client = self._init_client()
         self._mem_requirements: dict[str, list[dict[str, Any]]] = {}
         self._mem_seq: dict[str, int] = {}
-        self._mem_questions: dict[str, dict[str, Any]] = {}
 
     @staticmethod
     def _init_client():  # type: ignore[no-untyped-def]
@@ -63,9 +62,6 @@ class ReadRepository:
 
     def _seed_seq(self, session_id: str, seq: int) -> None:
         self._mem_seq[session_id] = seq
-
-    def _seed_question(self, session_id: str, doc: dict[str, Any]) -> None:
-        self._mem_questions[session_id] = doc
 
     def list_requirements(self, session_id: str) -> list[dict[str, Any]]:
         if self._client is not None:
@@ -106,43 +102,6 @@ class ReadRepository:
             raw = self._mem_requirements.get(session_id, [])
             by_id = {d.get("id", ""): requirement_doc_to_contract(d) for d in raw}
         return [by_id[rid] for rid in ids if rid in by_id]
-
-    def get_current_question(self, session_id: str) -> dict[str, Any]:
-        """現在質問のハイドレーション（ADR-0020 §2 / §5-4）。
-
-        返却は契約に合わせて `{"question": {id,prompt,options} | None, "seq": int}`。
-        - active（未回答）: `{question, seq=asked_seq}`。
-        - tombstone（回答済み/クリア済み）: `{None, seq=cleared_seq}`。
-        - 未提示: `{None, seq=0}`。
-
-        `question=None` でも `seq` を返すことで、web は「遅延 null が新しい live 質問を消す」
-        逆転を防げる（§5-4）。
-        """
-        doc = self._read_question_doc(session_id)
-        if doc is None:
-            return {"question": None, "seq": 0}
-        if doc.get("cleared"):
-            return {"question": None, "seq": int(doc.get("cleared_seq", 0))}
-        return {
-            "question": {
-                "id": doc.get("id", ""),
-                "prompt": doc.get("prompt", ""),
-                "options": doc.get("options") or [],
-            },
-            "seq": int(doc.get("asked_seq", 0)),
-        }
-
-    def _read_question_doc(self, session_id: str) -> dict[str, Any] | None:
-        if self._client is not None:
-            snap = (
-                self._client.collection("sessions")
-                .document(session_id)
-                .collection("questions")
-                .document("current")
-                .get()
-            )
-            return snap.to_dict() if snap.exists else None
-        return self._mem_questions.get(session_id)
 
     def get_session_seq(self, session_id: str) -> int:
         """適用済み最大 seq（ハイドレーション境界, 契約 §4）。未保存なら 0。"""

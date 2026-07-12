@@ -31,7 +31,7 @@ Figma フレーム（fileKey `eI6QvvCEO021zpdMmxr8Iq` / node `31:2`）とは 1:1
 | 01 | ホーム | [`01-home.md`](01-home.md) | P2 | 実装済（差分小） |
 | 02 | 準備 | [`02-prepare.md`](02-prepare.md) | P1 | 実装済（精緻化） |
 | 03 | 会話開始（開始前/接続/許可/失敗） | [`03-conversation-start.md`](03-conversation-start.md) | P1 | 実装済（`ConversationStart`。開始前/接続中/失敗3導線/テキスト代替） |
-| 04 | 会話履歴（音声・選択肢3モード・検知） | [`04-conversation.md`](04-conversation.md) | **P0** | 実装済（`ConversationShell`/`ChatHistory`/問いピン。検知＋通常質問 #181） |
+| 04 | 会話履歴（音声・検知） | [`04-conversation.md`](04-conversation.md) | **P0** | 実装済（`ConversationShell`/`ChatHistory`。問いは音声＋履歴で提示 / ADR-0070） |
 | 05 | 参考資料（一覧/詳細/追加・背景解析） | [`05-materials.md`](05-materials.md) | **P0** | 実装済（`MaterialsList`。アップロード＋背景解析＋#184 復元） |
 | 06 | 要件絵巻と深掘り（閲覧のみ） | [`06-requirements-scroll.md`](06-requirements-scroll.md) | **P0** | 実装済（`RequirementsTab`/`DeepDiveList`） |
 | 07 | 判定（確定ゲート） | [`07-judgment.md`](07-judgment.md) | P1 | 実装済（`JudgmentGate`。確定は #186 finalize で永続化） |
@@ -39,9 +39,8 @@ Figma フレーム（fileKey `eI6QvvCEO021zpdMmxr8Iq` / node `31:2`）とは 1:1
 
 > **結線の現状（2026-06-26 更新）**: 03〜08 は `apps/web` に結線済み（TDD）。会話の双方向は
 > リアルタイム契約に沿って実装: 確認事項の剪定（`user.inquiry_drop`）/ テキスト送信（`user.text` #185）/
-> 通常質問の回答（`question.asked`・`user.answered` #181）/ 素材復元（GET `context/files` #184）/
-> 確定の永続化（POST `finalize` #186）。残る seam は live Gemini ループ側のトリガ（ask_question の
-> 発火条件・テキスト→応答の調整）で、実キー（`GOOGLE_API_KEY` 等）での実機検証が前提。
+> 素材復元（GET `context/files` #184）/ 確定の永続化（POST `finalize` #186）。
+> 問いかけは音声＋transcript 表示のみで、回答は音声または `user.text` で受ける（ADR-0070）。
 
 ## フロー（正本）
 

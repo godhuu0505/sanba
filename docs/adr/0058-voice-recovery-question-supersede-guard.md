@@ -1,8 +1,9 @@
 # ADR-0058: 音声リカバリが選択肢付きの問いを消さないよう supersede をガードし、深掘りの選択肢方針を定める
 
-- ステータス: Accepted
+- ステータス: Superseded by ADR-0070
 - 日付: 2026-07-08
-- 関連: [ADR-0020](0020-question-asked-hydration.md)（現在質問のライフサイクル・supersede/clear）/
+- 関連: [ADR-0070](0070-remove-ask-question-tool.md)（ask_question と問いピン機構の撤廃。本 ADR を置き換える）/
+  [ADR-0020](0020-question-asked-hydration.md)（現在質問のライフサイクル・supersede/clear）/
   [ADR-0038](0038-voice-turn-detection-and-session-recovery.md)（開始一言の音声リカバリ・再試行）
 - 出典: #434 task4（冒頭でタップ可能な選択肢が消える）
 

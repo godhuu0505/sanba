@@ -48,7 +48,6 @@ const baseState = (over: Partial<SessionState> = {}): SessionState => ({
   analysis: [{ asset_id: "a1", pct: 40, stage: "OCR", extracted: [], conflicts: [] }],
   contextProgress: [],
   endProposal: null,
-  question: null,
   completed: null,
   seq: 9,
   ...over,
@@ -59,12 +58,10 @@ function renderView(props: Partial<React.ComponentProps<typeof ConversationSessi
   const onToggleMute = vi.fn();
   const onSendText = vi.fn();
   const onAddMaterial = vi.fn();
-  const sendAnswer = vi.fn();
   const sendInquiryDrop = vi.fn();
   render(
     <ConversationSessionView
       state={baseState()}
-      sendAnswer={sendAnswer}
       sendInquiryDrop={sendInquiryDrop}
       micOn
       muted={false}
@@ -76,7 +73,7 @@ function renderView(props: Partial<React.ComponentProps<typeof ConversationSessi
       {...props}
     />,
   );
-  return { sendAnswer, sendInquiryDrop, onToggleMic, onToggleMute, onSendText, onAddMaterial };
+  return { sendInquiryDrop, onToggleMic, onToggleMute, onSendText, onAddMaterial };
 }
 
 describe("ConversationSessionView（会話シェル結線）", () => {
@@ -191,26 +188,6 @@ describe("ConversationSessionView（会話シェル結線）", () => {
     const drops = screen.getAllByRole("button", { name: /不要にする/ });
     fireEvent.click(drops[0]);
     expect(sendInquiryDrop).toHaveBeenCalledWith("n1");
-  });
-
-  it("通常質問（金枠）を問いピンに出し、回答で sendAnswer を送る（#181）", () => {
-    const { sendAnswer } = renderView({
-      state: baseState({
-        inquiryNodes: [],
-        question: {
-          id: "q1",
-          prompt: "並び順は何を既定にしますか",
-          options: [
-            { label: "関連度順", value: "relevance" },
-            { label: "新着順", value: "recency" },
-          ],
-        },
-      }),
-    });
-    expect(screen.getByText("並び順は何を既定にしますか")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "関連度順" }));
-    expect(sendAnswer).toHaveBeenCalledWith("q1", { selectedValue: "relevance" });
-    expect(screen.queryByText("並び順は何を既定にしますか")).toBeNull();
   });
 
   it("ボトムバーのマイク/消音トグルとテキスト送信が配線される", () => {
@@ -544,7 +521,6 @@ describe("ConversationSessionView（end_user モード語彙 / FR-2.4）", () =>
       <InterviewModeProvider value="end_user">
         <ConversationSessionView
           state={baseState()}
-          sendAnswer={vi.fn()}
           sendInquiryDrop={vi.fn()}
           micOn
           muted={false}

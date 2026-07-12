@@ -5,7 +5,6 @@ import type {
   ContextProgressSource,
   ContextProgressStage,
   InquiryNode,
-  Question,
   Requirement,
   ServerEvent,
   SessionPhase,
@@ -55,7 +54,6 @@ export interface SessionState {
   transcript: TranscriptLine[];
   analysis: AnalysisState[];
   contextProgress: ContextProgressState[];
-  question: Question | null;
   endProposal: EndProposal | null;
   completed: SessionCompletion | null;
   seq: number;
@@ -74,7 +72,6 @@ const emptySessionState = (): SessionState => ({
   transcript: [],
   analysis: [],
   contextProgress: [],
-  question: null,
   endProposal: null,
   completed: null,
   seq: 0,
@@ -88,7 +85,6 @@ export class RealtimeStore {
   private contextProgress = new Map<string, Versioned<ContextProgressState>>();
   private phase: SessionPhase = "idle";
   private agentsActive = 0;
-  private question: Question | null = null;
   private endProposal: EndProposal | null = null;
   private lastEndProposedSeq = 0;
   private completed: SessionCompletion | null = null;
@@ -99,7 +95,6 @@ export class RealtimeStore {
   private lastStatusSeq = 0;
   private lastStatusLossySeq = 0;
   private lastCompletedSeq = 0;
-  private lastQuestionSeq = 0;
   private expectedSessionId: string | null = null;
 
   private cached: SessionState | null = null;
@@ -140,15 +135,6 @@ export class RealtimeStore {
     }
     this.requirementsHydrationSeq = Math.max(this.requirementsHydrationSeq, seq);
     this.maxSeq = Math.max(this.maxSeq, seq);
-    this.invalidate();
-  }
-
-  hydrateQuestion(question: Question | null, seq: number, advanceMaxSeq: boolean): void {
-    if (seq > this.lastQuestionSeq) {
-      this.question = question;
-      this.lastQuestionSeq = seq;
-    }
-    if (advanceMaxSeq) this.maxSeq = Math.max(this.maxSeq, seq);
     this.invalidate();
   }
 
@@ -284,24 +270,6 @@ export class RealtimeStore {
           event.requirement,
         );
 
-      case "question.asked":
-        if (event.seq <= this.lastQuestionSeq) return false;
-        this.lastQuestionSeq = event.seq;
-        this.question = {
-          id: event.id,
-          prompt: event.prompt,
-          options: event.options ?? [],
-        };
-        return true;
-
-      case "question.cleared":
-        if (event.seq <= this.lastQuestionSeq) return false;
-        this.lastQuestionSeq = event.seq;
-        if (this.question && this.question.id === event.question_id) {
-          this.question = null;
-        }
-        return true;
-
       case "analysis.progress": {
         const prev = this.analysis.get(event.asset_id)?.value;
         return this.upsert(this.analysis, event.asset_id, event.seq, {
@@ -376,7 +344,6 @@ export class RealtimeStore {
       transcript: this.sortedTranscript(),
       analysis: this.sortedValues(this.analysis),
       contextProgress: this.sortedValues(this.contextProgress),
-      question: this.question,
       endProposal: this.endProposal,
       completed: this.completed,
       seq: this.maxSeq,
@@ -410,7 +377,6 @@ export class RealtimeStore {
     this.contextProgress.clear();
     this.phase = "idle";
     this.agentsActive = 0;
-    this.question = null;
     this.endProposal = null;
     this.lastEndProposedSeq = 0;
     this.completed = null;
@@ -420,7 +386,6 @@ export class RealtimeStore {
     this.lastStatusSeq = 0;
     this.lastStatusLossySeq = 0;
     this.lastCompletedSeq = 0;
-    this.lastQuestionSeq = 0;
     this.metrics.reset();
     this.invalidate();
   }

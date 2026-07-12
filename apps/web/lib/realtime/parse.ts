@@ -7,7 +7,6 @@ import {
   type ServerEvent,
   type ServerEventType,
   type SessionPhase,
-  type UserAnsweredEvent,
   type UserInquiryDropEvent,
   type UserInterruptEvent,
   type UserSelectionEvent,
@@ -20,8 +19,6 @@ const KNOWN_TYPES: ReadonlySet<string> = new Set<ServerEventType>([
   "transcript.final",
   "inquiry.node",
   "requirement.upserted",
-  "question.asked",
-  "question.cleared",
   "analysis.progress",
   "analysis.visual",
   "context.progress",
@@ -46,8 +43,6 @@ const REQUIRED_FIELDS: Record<ServerEventType, readonly string[]> = {
   "transcript.final": ["speaker", "role", "utterance_id", "text"],
   "inquiry.node": ["op", "node"],
   "requirement.upserted": ["requirement"],
-  "question.asked": ["id", "prompt"],
-  "question.cleared": ["question_id"],
   "analysis.progress": ["asset_id", "pct", "stage"],
   "analysis.visual": ["asset_id", "extracted", "conflicts"],
   "context.progress": ["source", "stage"],
@@ -261,26 +256,6 @@ export function encodeUserText(
     ts,
     session_id: sessionId,
     text,
-  };
-  return encoder.encode(JSON.stringify(event));
-}
-
-export function encodeUserAnswered(
-  sessionId: string,
-  questionId: string,
-  answer: { selectedValue?: string; text?: string },
-  seq: number,
-  ts: string,
-): Uint8Array {
-  const event: UserAnsweredEvent = {
-    v: SCHEMA_VERSION,
-    type: "user.answered",
-    seq,
-    ts,
-    session_id: sessionId,
-    question_id: questionId,
-    ...(answer.selectedValue !== undefined ? { selected_value: answer.selectedValue } : {}),
-    ...(answer.text !== undefined ? { text: answer.text } : {}),
   };
   return encoder.encode(JSON.stringify(event));
 }

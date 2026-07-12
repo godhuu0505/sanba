@@ -18,7 +18,6 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
-from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Protocol
@@ -31,16 +30,6 @@ log = structlog.get_logger(__name__)
 SCHEMA_VERSION = 1
 EVENTS_TOPIC = "sanba.events"
 WEB_EVENTS_TOPIC = "sanba.events.web"
-
-
-class EventPublishError(RuntimeError):
-    """commit 後に publish が失敗したことを呼び出し元へ伝える（ADR-0020 §5-9）。
-
-    現在質問のクリア（`question.cleared`）は tombstone を commit してから publish する。
-    commit 後の送信失敗を握りつぶすと、接続中の他参加者に clear が届かず古いピンが残るため、
-    critical な送信の失敗はこの例外で呼び出し元へ返し、補償（再送/ログ）できるようにする。
-    最終的な耐障害境界は tombstone + ハイドレーション GET（再接続/欠番検知で確実に復元）。
-    """
 
 
 class DataTransport(Protocol):
@@ -92,8 +81,6 @@ class EventPublisher:
         self._lossy_seq = start_lossy_seq
         self._lock = asyncio.Lock()
         self.requirements_published = 0
-        self.questions_published = 0
-        self.questions_cleared = 0
         self._tracer = _get_tracer()
 
     @property
@@ -117,33 +104,6 @@ class EventPublisher:
                     type_, self._seq, payload, reliable=False, lossy_seq=self._lossy_seq
                 )
             await self._send_envelope(envelope, reliable=reliable)
-            return envelope
-
-    async def _emit_guarded(
-        self,
-        type_: str,
-        payload: dict[str, Any],
-        *,
-        before_send: Callable[[int], bool],
-        critical_send: bool = False,
-    ) -> dict[str, Any] | None:
-        """「採番 → 永続化 → 送信」を保証して publish する（ADR-0020 §5-1 / §5-9）。
-
-        seq は **予約（peek）のみ**で、``before_send(seq)`` が成功するまで ``self._seq`` を確定
-        しない。``before_send`` が False を返したら（CAS 不一致 / 既クリア）採番も送信もせず
-        ``None`` を返す＝**欠番を作らない**。例外送出（保存失敗）時も採番を確定しないため、
-        保存できなかったイベントを表に出さない。``critical_send`` のときは commit 後の送信失敗を
-        握りつぶさず ``EventPublishError`` で返す（接続中の他参加者へ確実に補償するため）。
-        """
-        async with self._lock:
-            seq = self._seq + 1
-            envelope = self._build_envelope(type_, seq, payload)
-            if not before_send(seq):
-                return None
-            self._seq = seq
-            sent = await self._send_envelope(envelope, reliable=True)
-            if critical_send and not sent:
-                raise EventPublishError(f"publish failed after commit: {type_} seq={seq}")
             return envelope
 
     def _build_envelope(
@@ -243,65 +203,6 @@ class EventPublisher:
         return await self._emit(
             "requirement.upserted", {"requirement": requirement_to_contract(requirement, status)}
         )
-
-    async def question_asked(
-        self,
-        question_id: str,
-        prompt: str,
-        *,
-        options: list[dict[str, str]] | None = None,
-        on_persist: Callable[[int], None] | None = None,
-    ) -> dict[str, Any] | None:
-        """通常質問（金枠）を web の問いピンへ出す（音声と併用）。
-
-        ``options`` があればタップで user.answered が返る。無ければ自由記述（音声/テキスト）。
-        ``on_persist`` を渡すと、**送信前に**現在質問を永続化する（ADR-0020 §5-1）。``on_persist``
-        は予約した envelope seq を ``asked_seq`` として受け取り Firestore に保存する。保存に失敗
-        したら送信せず採番も確定しない（復元できないイベントを表に出さない / 欠番も作らない）。
-        質問は seq 境界（``set_session_seq``）を進めない一過性イベントである点は従来どおり（§3）。
-        """
-        payload: dict[str, Any] = {"id": question_id, "prompt": prompt}
-        if options:
-            payload["options"] = options
-        env: dict[str, Any] | None
-        if on_persist is None:
-            env = await self._emit("question.asked", payload)
-        else:
-
-            def _before_send(seq: int) -> bool:
-                on_persist(seq)
-                return True
-
-            env = await self._emit_guarded("question.asked", payload, before_send=_before_send)
-        if env is not None:
-            self.questions_published += 1
-        return env
-
-    async def question_cleared(
-        self,
-        question_id: str,
-        *,
-        on_persist: Callable[[int], bool],
-    ) -> dict[str, Any] | None:
-        """回答済み現在質問のクリアを全参加者へ伝播する（ADR-0020 §5-5 / §5-9）。
-
-        ``on_persist(cleared_seq)`` で Firestore の tombstone を CAS commit してから publish する
-        （順序は **予約 → commit → publish**）。``on_persist`` が False を返したら（現在質問 id が
-        ``question_id`` と一致しない / 既にクリア済み）publish しない＝採番もしない（§5-3 / §5-7）。
-        ``cleared_seq`` は本イベントの **envelope seq そのもの**（二重採番しない / §5-5）で、
-        tombstone・live・GET の seq に同一値を使う。commit 後の送信失敗は ``EventPublishError``
-        で返す（§5-9）。クリア対象を持たない問いの再送に強い（tombstone は冪等）。
-        """
-        payload: dict[str, Any] = {"question_id": question_id}
-        env = await self._emit_guarded(
-            "question.cleared",
-            payload,
-            before_send=on_persist,
-            critical_send=True,
-        )
-        if env is not None:
-            self.questions_cleared += 1
-        return env
 
     async def analysis_progress(self, asset_id: str, pct: int, stage: str) -> dict[str, Any]:
         return await self._emit(
@@ -452,30 +353,6 @@ def decode_user_text(payload: bytes | str, *, expected_session_id: str | None = 
     if not isinstance(text, str) or not text.strip():
         return None
     return text.strip()[:MAX_USER_TEXT_CHARS]
-
-
-def decode_user_answered(
-    payload: bytes | str, *, expected_session_id: str | None = None
-) -> tuple[str, str] | None:
-    """web → agent の user.answered（契約 §4.5）をデコードする。
-
-    通常質問（金枠）への回答。``(question_id, answer)`` を返す。answer は選択肢値
-    （selected_value）優先、無ければ自由記述（text）。どちらも無ければ None。
-    自由記述は user.text と同じ上限（MAX_USER_TEXT_CHARS）で切り詰める。
-    user.answered.text/selected_value が user.text の防御を迂回するのを防ぐ。
-    """
-    obj = _decode_web_event(payload, "user.answered", expected_session_id=expected_session_id)
-    if obj is None:
-        return None
-    question_id = obj.get("question_id")
-    if not isinstance(question_id, str):
-        return None
-    selected = obj.get("selected_value")
-    text = obj.get("text")
-    answer = selected if isinstance(selected, str) and selected else text
-    if not isinstance(answer, str) or not answer.strip():
-        return None
-    return question_id, answer.strip()[:MAX_USER_TEXT_CHARS]
 
 
 def decode_user_interrupt(payload: bytes | str, *, expected_session_id: str | None = None) -> bool:

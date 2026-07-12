@@ -78,6 +78,30 @@ def test_uncovered_check_point_opens_and_covered_resolves() -> None:
     assert tree.get(sec_id).status is InquiryStatus.RESOLVED
 
 
+def test_pinned_check_point_is_not_reopened_by_coverage() -> None:
+    tree = InquiryTree()
+    seq = _seq()
+    points = ["セキュリティ要件"]
+    reconcile_analysis(
+        tree,
+        _result(coverage_open=["セキュリティ要件"]),
+        check_points=points,
+        focus_id=None,
+        seq=seq,
+    )
+    sec_id = make_inquiry_id(InquiryKind.CHECK, "セキュリティ要件")
+    tree.resolve(sec_id, seq(), pin=True)
+    reconcile_analysis(
+        tree,
+        _result(coverage_open=["セキュリティ要件"]),
+        check_points=points,
+        focus_id=None,
+        seq=seq,
+    )
+    assert tree.get(sec_id).status is InquiryStatus.RESOLVED
+    assert tree.gating_open_count(tau=0.0) == 0
+
+
 def test_ambiguous_nodes_do_not_gate() -> None:
     tree = InquiryTree()
     seq = _seq()

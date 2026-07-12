@@ -273,7 +273,11 @@ async def test_propose_session_end_no_requirements_circuit_breaks() -> None:
 
 @pytest.mark.asyncio
 async def test_complete_session_requires_prior_proposal() -> None:
-    """提案（同意フロー）を経ずに直接 complete_session を呼んでも終了しない（レビュー指摘）。"""
+    """提案（同意フロー）を経ずに直接 complete_session を呼んでも終了しない（レビュー指摘）。
+
+    未解消 0 件・要件ありのときは提案カードを出して同意を仕切り直すが（RC5）、その一手だけでは
+    完了しない（completed=False・session.completed 未発火）ことを担保する。
+    """
     transport = RecordingTransport()
     agent = _agent(transport)
     _seed_requirement(agent)
@@ -281,7 +285,7 @@ async def test_complete_session_requires_prior_proposal() -> None:
     complete = type(agent).complete_session.__wrapped__
     result = await complete(agent, None)
     assert result["completed"] is False
-    assert result["reason"] == "not_proposed"
+    assert result["reason"] == "proposal_shown"
     assert not any(t["event"]["type"] == "session.completed" for t in transport.sent)
 
 
@@ -324,6 +328,131 @@ async def test_complete_session_refuses_when_open_remains() -> None:
     assert result["open_count"] == 1
     assert result["reason"] == "open_inquiries"
     assert not any(t["event"]["type"] == "session.completed" for t in transport.sent)
+
+
+@pytest.mark.asyncio
+async def test_complete_session_auto_proposes_when_no_open_and_not_proposed() -> None:
+    """cushion 直後に complete_session を直接呼んでも、提案カードを出し同意を仕切り直す（RC5）。"""
+    transport = RecordingTransport()
+    agent = _agent(transport)
+    _seed_requirement(agent)
+    agent.set_shutdown_hook(lambda reason: None)
+    complete = type(agent).complete_session.__wrapped__
+
+    first = await complete(agent, None)
+    assert first["completed"] is False
+    assert first["reason"] == "proposal_shown"
+    assert "guidance" in first
+    assert agent._end_proposed is True
+    assert any(t["event"]["type"] == "session.end_proposed" for t in transport.sent)
+    assert not any(t["event"]["type"] == "session.completed" for t in transport.sent)
+
+    second = await complete(agent, None)
+    assert second["completed"] is True
+    assert any(t["event"]["type"] == "session.completed" for t in transport.sent)
+
+
+@pytest.mark.asyncio
+async def test_complete_session_not_proposed_with_open_returns_guidance() -> None:
+    """未解消が残るまま提案前に complete を呼んだら、誘導と未解消一覧を返して復帰させる（RC5）。"""
+    transport = RecordingTransport()
+    agent = _agent(transport)
+    _seed_requirement(agent)
+    agent.set_shutdown_hook(lambda reason: None)
+    _seed_gap(agent, "整合性の未確認")
+    complete = type(agent).complete_session.__wrapped__
+
+    result = await complete(agent, None)
+    assert result["completed"] is False
+    assert result["reason"] == "not_proposed"
+    assert "guidance" in result
+    assert result["session_state"]["open_count"] == 1
+    assert not any(t["event"]["type"] == "session.end_proposed" for t in transport.sent)
+    assert not any(t["event"]["type"] == "session.completed" for t in transport.sent)
+
+
+@pytest.mark.asyncio
+async def test_tool_returns_carry_session_state() -> None:
+    """要件保存・解消の返り値に未解消状態が相乗りし、live LLM の深掘りを駆動する（RC1）。"""
+    agent = _agent()
+    _seed_gap(agent, "性能要件が未確認")
+    save_requirement = type(agent).save_requirement.__wrapped__
+    resolve = type(agent).resolve_inquiry.__wrapped__
+
+    saved = await save_requirement(agent, None, "検索を新設する")
+    state = saved["session_state"]
+    assert state["open_count"] == 1
+    assert state["all_inquiries_resolved"] is False
+    assert state["open_inquiries"][0]["text"] == "性能要件が未確認"
+
+    resolved = await resolve(agent, None, "性能要件が未確認")
+    assert resolved["session_state"]["open_count"] == 0
+    assert resolved["session_state"]["all_inquiries_resolved"] is True
+
+
+@pytest.mark.asyncio
+async def test_pinned_resolve_survives_background_reopen(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """明示解消した確認観点は背景分析が未カバー判定しても再 open しない（RC3）。"""
+
+    async def _stub(
+        transcript: str, check_points: object = (), **_kwargs: object
+    ) -> AnalysisResult:
+        return AnalysisResult(
+            summary="s",
+            coverage_open=["セキュリティ面"],
+            next_question="q?",
+            suggested_answer="a",
+        )
+
+    monkeypatch.setattr("sanba_agent.main.analyze_transcript", _stub)
+    agent = _agent()
+    agent._check_points = ["セキュリティ面"]
+    check_id = make_inquiry_id(InquiryKind.CHECK, "セキュリティ面")
+    agent._inquiry.upsert(
+        kind=InquiryKind.CHECK, text="セキュリティ面", seq=agent._next_inquiry_seq()
+    )
+    resolve = type(agent).resolve_inquiry.__wrapped__
+    resolved = await resolve(agent, None, "セキュリティ面")
+    assert resolved["resolved"] is True
+
+    agent.record_utterance("participant", "認証は SSO で対応済みです")
+    agent.record_utterance("participant", "権限も RBAC で制御しています")
+    task = agent._analysis_task
+    assert task is not None
+    await task
+    assert agent._inquiry.get(check_id).status is InquiryStatus.RESOLVED
+
+
+@pytest.mark.asyncio
+async def test_coverage_transcript_includes_agent_utterances(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """観点カバレッジ判定には SANBA の問いを含む対話 log を渡す（RC4）。"""
+    captured: dict[str, str | None] = {}
+
+    async def _stub(
+        transcript: str,
+        check_points: object = (),
+        *,
+        coverage_transcript: str | None = None,
+        **_kwargs: object,
+    ) -> AnalysisResult:
+        captured["requirement"] = transcript
+        captured["coverage"] = coverage_transcript
+        return AnalysisResult(summary="s", next_question="q?", suggested_answer="a")
+
+    monkeypatch.setattr("sanba_agent.main.analyze_transcript", _stub)
+    agent = _agent()
+    agent.publish_agent_utterance("セキュリティ面は大丈夫ですか？")
+    agent.record_utterance("participant", "はい、認証は SSO で対応済みです")
+    agent.record_utterance("participant", "権限も RBAC で制御しています")
+    task = agent._analysis_task
+    assert task is not None
+    await task
+    assert "SANBA: セキュリティ面は大丈夫ですか？" in (captured["coverage"] or "")
+    assert "SANBA:" not in (captured["requirement"] or "")
 
 
 @pytest.mark.asyncio

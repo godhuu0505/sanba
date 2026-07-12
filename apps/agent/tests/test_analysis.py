@@ -99,3 +99,34 @@ async def test_analyze_transcript_without_check_points_has_no_coverage() -> None
 
     result = await analyze_transcript("[u1] participant: 要約機能をいい感じに。")
     assert result.coverage_open == []
+
+
+@pytest.mark.asyncio
+async def test_analyze_transcript_routes_coverage_transcript(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """coverage_transcript を与えるとカバレッジ判定はそれを使い、要件分析用とは別経路（RC4）。"""
+    from sanba_agent.tools import analysis as analysis_mod
+
+    captured: dict[str, object] = {}
+
+    async def _fake_coverage(transcript: str, check_points: object, **_kwargs: object) -> list[str]:
+        captured["transcript"] = transcript
+        captured["check_points"] = list(check_points)  # type: ignore[arg-type]
+        return ["性能要件"]
+
+    async def _fake_adk(transcript: str, ambiguous: object, **_kwargs: object) -> object:
+        from sanba_shared.models import AnalysisResult
+
+        return AnalysisResult(summary="s", next_question="q?", suggested_answer="a")
+
+    monkeypatch.setattr(analysis_mod, "assess_check_point_coverage", _fake_coverage)
+    monkeypatch.setattr(analysis_mod, "_run_adk", _fake_adk)
+
+    result = await analysis_mod.analyze_transcript(
+        "participant: 要約したい",
+        ["性能要件"],
+        coverage_transcript="SANBA: 性能は？\nparticipant: 1秒以内で",
+    )
+    assert result.coverage_open == ["性能要件"]
+    assert captured["transcript"] == "SANBA: 性能は？\nparticipant: 1秒以内で"

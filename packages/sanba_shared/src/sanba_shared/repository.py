@@ -37,18 +37,6 @@ log = structlog.get_logger(__name__)
 EDITABLE_REQUIREMENT_FIELDS = frozenset({"statement", "priority", "category"})
 
 
-def _mask_question_options(options: list[Any]) -> list[Any]:
-    masked: list[Any] = []
-    for option in options:
-        if isinstance(option, dict):
-            masked.append({k: mask_pii(v) if isinstance(v, str) else v for k, v in option.items()})
-        elif isinstance(option, str):
-            masked.append(mask_pii(option))
-        else:
-            masked.append(option)
-    return masked
-
-
 class RequirementNotFound(Exception):
     """対象の要件が存在しないときに送出。"""
 
@@ -124,7 +112,6 @@ class SessionRepository:
         self._seq_highwater: dict[str, int] = {}
         self._mem_lossy_epoch: dict[str, int] = {}
         self._mem_materials: dict[str, dict[str, dict[str, Any]]] = {}
-        self._mem_questions: dict[str, dict[str, Any]] = {}
         self._mem_github_links: dict[str, GitHubLink] = {}
         self._mem_products: dict[str, Product] = {}
         self._mem_invites: dict[str, dict[str, ProductInvite]] = {}
@@ -1683,103 +1670,6 @@ class SessionRepository:
             return True
         return False
 
-    def save_current_question(
-        self, session_id: str, question: dict[str, Any], asked_seq: int
-    ) -> None:
-        """現在の未回答質問を「最新1問のポインタ」として保存する（ADR-0020 §1 / §5-8）。
-
-        `sessions/{id}/questions/current` の単一ドキュメントに上書き保存する。リロード/途中参加で
-        `GET /questions/current` が金枠ピンを復元できるよう、**publish の前に**確定させる
-        （順序は §5-1。送信成功〜保存完了の窓で復元失敗が起きないようにする）。
-        `expireAt` 付き（発話/draft 要件と同じ 30 日 TTL）。承認のような保全対象ではないため、
-        未回答のまま離脱したら他の一過性データと同じく TTL で消える（§5-8）。
-        `asked_seq` はその問いが publish された envelope seq。GET の順序情報に使う（§3）。
-        """
-        prompt = question["prompt"]
-        options = question.get("options") or []
-        if self._mask_pii:
-            prompt = mask_pii(prompt)
-            options = _mask_question_options(options)
-        doc: dict[str, Any] = {
-            "id": question["id"],
-            "prompt": prompt,
-            "options": options,
-            "asked_seq": asked_seq,
-            "cleared": False,
-        }
-        if self._client is not None:
-            if (exp := self._expire_at()) is not None:
-                doc["expireAt"] = exp
-            self._question_doc(session_id).set(doc)
-            return
-        self._mem_questions[session_id] = doc
-
-    def get_current_question(self, session_id: str) -> dict[str, Any] | None:
-        """現在質問ドキュメントを返す（未提示は None、cleared な tombstone も返す）。
-
-        worker のインスタンス入れ替え等で新プロセスがセッションを引き継ぐとき、
-        agent 側の current 追跡（`_current_question_id`）を web の金枠ピンと
-        合わせるために読む（ADR-0020 §5-8 の引き継ぎ経路）。tombstone も返すのは、
-        採番 `_question_seq` を id 末尾の連番から継げるようにするため（同一プロンプト
-        再提示時の id 再利用を防ぐ）。未回答かどうかは呼び出し側が `cleared` で見る。
-        """
-        if self._client is not None:
-            snap = self._question_doc(session_id).get()
-            doc = snap.to_dict() if snap.exists else None
-        else:
-            doc = self._mem_questions.get(session_id)
-        return dict(doc) if doc is not None else None
-
-    def clear_current_question(self, session_id: str, question_id: str, cleared_seq: int) -> bool:
-        """回答済みの現在質問を tombstone 化する（ADR-0020 §5-3 / §5-7 / §5-9）。
-
-        現在質問 id == `question_id` のとき**だけ**、transaction / CAS で原子的にクリアする。
-        物理削除はせず **tombstone**（`question=null` 相当 + `cleared_seq`）にし、PII を含みうる
-        `prompt`/`options` は削除する（非 PII の `cleared_seq` だけ残す / §5-9）。tombstone も
-        §5-8 の TTL（30 日）で最終的に消える。クリアできたら True、id 不一致 / 未提示 / 既クリア
-        なら False を返す（呼び出し元はこれを見て publish するか決める）。
-        """
-        if self._client is not None:
-            return self._clear_current_question_txn(session_id, question_id, cleared_seq)
-        current = self._mem_questions.get(session_id)
-        if current is None or current.get("cleared") or current.get("id") != question_id:
-            return False
-        self._mem_questions[session_id] = {
-            "id": question_id,
-            "cleared": True,
-            "cleared_seq": cleared_seq,
-        }
-        return True
-
-    def _clear_current_question_txn(
-        self, session_id: str, question_id: str, cleared_seq: int
-    ) -> bool:
-        from google.cloud import firestore
-
-        doc_ref = self._question_doc(session_id)
-        expire_at = self._expire_at()
-
-        @firestore.transactional  # type: ignore[misc]
-        def _txn(transaction: Any) -> bool:
-            snap = doc_ref.get(transaction=transaction)
-            data = snap.to_dict() if snap.exists else None
-            if data is None or data.get("cleared") or data.get("id") != question_id:
-                return False
-            tombstone: dict[str, Any] = {
-                "id": question_id,
-                "cleared": True,
-                "cleared_seq": cleared_seq,
-                "prompt": firestore.DELETE_FIELD,
-                "options": firestore.DELETE_FIELD,
-                "asked_seq": firestore.DELETE_FIELD,
-            }
-            if expire_at is not None:
-                tombstone["expireAt"] = expire_at
-            transaction.set(doc_ref, tombstone, merge=True)
-            return True
-
-        return bool(_txn(self._client.transaction()))
-
     def set_session_end_forced(self, session_id: str) -> None:
         """参加者の明示要求による強制終了を session 文書へ記録する。
 
@@ -1838,24 +1728,9 @@ class SessionRepository:
     def get_startup_seq(self, session_id: str) -> int:
         """起動時の reliable seq シードを返す（ADR-0021）。
 
-        last_seq（set_session_seq で保存）に加え、current question の asked_seq/cleared_seq
-        も読み、その最大値を返す。question.asked/cleared は set_session_seq を呼ばないが
-        publisher._seq を消費するため（§3 設計制約）、再起動後に seq が後退して web の
-        status ガード（event.seq < lastStatusSeq）に弾かれる窓を塞ぐ。
+        last_seq（set_session_seq で保存）をそのまま返す。
         """
-        base = self.get_session_seq(session_id)
-        if self._client is not None:
-            snap = self._question_doc(session_id).get()
-            data = snap.to_dict() if snap.exists else None
-        else:
-            data = self._mem_questions.get(session_id)
-        if data is None:
-            return base
-        for key in ("asked_seq", "cleared_seq"):
-            val = data.get(key)
-            if isinstance(val, int) and val > base:
-                base = val
-        return base
+        return self.get_session_seq(session_id)
 
     def reserve_session_seq(self, session_id: str, count: int = 1) -> int:
         """次の seq を count 個アトミックに予約し、予約区間の先頭 seq を返す（ADR-0021）。
@@ -1929,12 +1804,4 @@ class SessionRepository:
             .document(session_id)
             .collection("requirements")
             .document(rid)
-        )
-
-    def _question_doc(self, session_id: str):  # type: ignore[no-untyped-def]
-        return (
-            self._client.collection("sessions")
-            .document(session_id)
-            .collection("questions")
-            .document("current")
         )
