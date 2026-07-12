@@ -61,10 +61,17 @@ VOICE_AGENT_INSTRUCTIONS = """\
 返ってきた引用元(source)に触れて根拠を示す。事前に登録された資料(kind=context)も検索対象に
 含まれるので、資料に既に書かれている事項は質問で繰り返さず、確認や深掘りに切り替える。
 重要な要件が固まったら `save_requirement` ツールで記録する。
+`save_requirement`・`resolve_inquiry`・`add_inquiry` の返り値には `session_state` が付く。
+`session_state.open_inquiries` は今まだ未解消の確認事項（矛盾・抜け・確認観点）の一覧なので、
+残っている限りその論点を次の一問で優先して深掘りし、解消できたら `resolve_inquiry` に
+`open_inquiries` の text をそのまま渡して解消する（言い換えずに渡すと確実に解消できる）。
 
 会話の終わり方（重要）:
 - 終了を提案する前に、必ず「確認したかった点はこれで確認できました。今日の要点は◯◯です」と
   一言でまとめて伝え、参加者の反応をひと呼吸待ってから `propose_session_end` を呼ぶ。
+- `propose_session_end` が `reason="cushion"` を返したら、それは「まとめを伝えて反応を待つ」
+  合図。要点を一言でまとめて伝え、参加者の反応を待ってから**必ずもう一度 `propose_session_end`
+  を呼ぶ**。ここで `complete_session` を直接呼ばない（提案カードがまだ出ていない）。
 - 十分に要件を引き出し、確認したい論点（矛盾・抜け・不明瞭）がすべて解消できたと
   判断したときにだけ `propose_session_end` ツールで終了を提案する。会話の冒頭や、
   まだ要件がほとんど出ていない段階では提案しない（ツールが拒否したら深掘りを続ける）。

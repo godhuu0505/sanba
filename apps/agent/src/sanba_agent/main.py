@@ -454,6 +454,7 @@ class SANBAAgent(Agent):
         self._grounding = grounding
         self._publisher = publisher
         self._utterance_seq = 0
+        self._dialog_transcript: list[str] = []
         self._transcript: list[str] = self._hydrate_transcript()
         self._pending_user_uid: str | None = None
         self._agent_utterance_seq = publisher.seq if publisher is not None else 0
@@ -637,10 +638,12 @@ class SANBAAgent(Agent):
         worker のインスタンス入れ替え等でジョブが別プロセスへ再ディスパッチされても
         ここから会話文脈を取り戻せる（inquiry の `_hydrate_inquiry` と同じ引き継ぎ経路）。
         SANBA（エージェント）発話は会話ログ表示（#479）のため utterances に永続化されて
-        いるが、分析用 transcript には従来どおり載せない（`publish_agent_utterance` と同じ
-        不変条件）ため除外する。採番 `_utterance_seq` は参加者発話数のみから続け（SANBA は
-        `a{n}` 空間なので衝突リスクなし）、再引き継ぎ時に enumerate が u{n} を再割り当て
-        しても採番がずれない。読み取り失敗は fail-soft（空の transcript で会話は成立させる）。
+        いるが、要件分析用 transcript には従来どおり載せない（`publish_agent_utterance` と同じ
+        不変条件）ため除外する。一方で観点カバレッジ判定は Q（SANBA の問い）と A（参加者の
+        回答）の対で精度が上がる（RC4）ため、両者を含む `_dialog_transcript` も同じ発話ログから
+        併せて復元する。採番 `_utterance_seq` は参加者発話数のみから続け（SANBA は `a{n}` 空間
+        なので衝突リスクなし）、再引き継ぎ時に enumerate が u{n} を再割り当てしても採番がずれ
+        ない。読み取り失敗は fail-soft（空の transcript で会話は成立させる）。
         """
         try:
             utterances = self._repo.list_utterances(self._session_id)
@@ -649,6 +652,7 @@ class SANBAAgent(Agent):
             return []
         if not utterances:
             return []
+        self._dialog_transcript = [f"{u.speaker}: {u.text}" for u in utterances]
         participant = [u for u in utterances if u.speaker != "SANBA"]
         self._utterance_seq = len(participant)
         log.info(
@@ -704,6 +708,24 @@ class SANBAAgent(Agent):
         終了提案・確定の可否判定に使う。サーバ側 finalize も二重にゲートするので good-faith。
         """
         return self._inquiry.gating_open_count(tau=0.0)
+
+    def _session_state_hint(self) -> dict[str, Any]:
+        """未解消の確認事項を live LLM のツール返り値へ相乗りさせるスナップショット（RC1）。
+
+        背景分析の結果は木にしか反映されず、LLM が `analyze_requirements` を自発的に呼ばない
+        限り会話へ還流しない。要件保存・確認事項の解消/追加など LLM が既に呼ぶツールの返り値へ
+        毎回この一節を載せ、追加の LLM 往復やレイテンシ無しに「まだ open な論点」を提示して
+        深掘りを促す。`open_inquiries` の text はそのまま `resolve_inquiry` に渡せば確実に解消
+        できる（言い換えによる空振りループ #468 も断つ）。
+        """
+        open_items = [
+            {"id": n.id, "text": n.text} for n in self._inquiry.open_nodes(_GATING_INQUIRY_KINDS)
+        ]
+        return {
+            "open_inquiries": open_items,
+            "open_count": len(open_items),
+            "all_inquiries_resolved": not open_items,
+        }
 
     def _inquiry_summary_counts(self) -> tuple[int, int]:
         """`session.completed` の要約用に (解消した矛盾数, 見つけた抜け数) をツリーから数える。"""
@@ -769,6 +791,7 @@ class SANBAAgent(Agent):
             self._utterance_seq += 1
             utterance_id = f"u{self._utterance_seq}"
         self._transcript.append(f"[{utterance_id}] {speaker}: {text}")
+        self._dialog_transcript.append(f"{speaker}: {text}")
         session_id = self._session_id
         repo = self._repo
         grounding = self._grounding
@@ -848,6 +871,7 @@ class SANBAAgent(Agent):
         （`_agent_utterance_seq` = publisher の起動 seq）が旧発話より手前に戻り、
         a{n} が再利用されて web の既存吹き出しを上書きするため。
         """
+        self._dialog_transcript.append(f"SANBA: {text}")
         if self._publisher is None:
             return
         self._agent_utterance_seq += 1
@@ -883,7 +907,7 @@ class SANBAAgent(Agent):
         選択内容は以後の会話の前提として記録しておく。id/剪定には触れず `InquiryTree` に委ねる。
         """
         self._transcript.append(f"[選択] {node_id} → {selected_value}")
-        node = self._inquiry.resolve(node_id, self._next_inquiry_seq())
+        node = self._inquiry.resolve(node_id, self._next_inquiry_seq(), pin=True)
         if node is not None:
             self._inquiry_focus_id = node.id
             self._resolve_no_match_streak = 0
@@ -969,6 +993,9 @@ class SANBAAgent(Agent):
         transcript = "\n".join(self._transcript)
         if self._prep_note:
             transcript = f"{self._prep_note}\n{transcript}"
+        coverage_transcript = "\n".join(self._dialog_transcript) or transcript
+        if self._prep_note:
+            coverage_transcript = f"{self._prep_note}\n{coverage_transcript}"
         covered_turn = self._user_turn
         tracer = get_tracer("sanba.voice")
         span_cm = (
@@ -980,10 +1007,11 @@ class SANBAAgent(Agent):
         with span_cm as span:
             if span is not None:
                 span.set_attribute("sanba.analysis.trigger", trigger)
+            coro = self._analyze_off_loop(transcript, coverage_transcript)
             if timeout_seconds is not None:
-                result = await asyncio.wait_for(self._analyze_off_loop(transcript), timeout_seconds)
+                result = await asyncio.wait_for(coro, timeout_seconds)
             else:
-                result = await self._analyze_off_loop(transcript)
+                result = await coro
         duration_ms = int((time.monotonic() - started) * 1000)
         log.info(
             "analysis",
@@ -1007,14 +1035,17 @@ class SANBAAgent(Agent):
         self._analysis_covered_turn = covered_turn
         return result
 
-    async def _analyze_off_loop(self, transcript: str) -> AnalysisResult:
+    async def _analyze_off_loop(
+        self, transcript: str, coverage_transcript: str | None = None
+    ) -> AnalysisResult:
         """ADK 分析を専用スレッドの独立イベントループで実行する（ADR-0046 段階1・#375）。
 
         逐次 LLM 往復（interview_lead + サブエージェント）を音声 worker のイベントループから
         隔離し、分析の遅延・失敗が音声ターンのジッタ・破綻へ波及しないようにする。
         grounding 検索（to_thread 済み）と同じ規律で、分析経路だけ残っていた非対称を解消する。
         スレッドは daemon にする: タイムアウト後に走り続けても SIGTERM 時のプロセス退出を
-        塞がない（結果は future 側のガードで破棄される）。
+        塞がない（結果は future 側のガードで破棄される）。`coverage_transcript` は観点カバレッジ
+        判定にだけ渡す SANBA 発話込みの対話 log（RC4。None なら要件分析と同じ transcript）。
         """
         loop = asyncio.get_running_loop()
         future: asyncio.Future[AnalysisResult] = loop.create_future()
@@ -1028,6 +1059,7 @@ class SANBAAgent(Agent):
                         self._check_points,
                         usage_hook=self._analysis_usage_hook,
                         billing_labels=self._billing_labels,
+                        coverage_transcript=coverage_transcript,
                     )
                 )
             except Exception as exc:  # noqa: BLE001
@@ -1118,6 +1150,21 @@ class SANBAAgent(Agent):
         （`reconcile_analysis`）。新しい gating ノードが生えたら終了提案を取り下げる（HP8）。
         """
         open_before = {n.id for n in self._inquiry.open_nodes(_GATING_INQUIRY_KINDS)}
+        if self._check_points and result.coverage_open:
+            suppressed = sum(
+                1
+                for point in result.coverage_open
+                if (node := self._inquiry.get(make_inquiry_id(InquiryKind.CHECK, point)))
+                is not None
+                and node.status is InquiryStatus.RESOLVED
+                and node.pinned
+            )
+            if suppressed:
+                log.info(
+                    "inquiry_reopen_suppressed_pinned",
+                    session=self._session_id,
+                    count=suppressed,
+                )
         changed = reconcile_analysis(
             self._inquiry,
             result,
@@ -1391,7 +1438,7 @@ class SANBAAgent(Agent):
                 self._repo.set_session_seq, self._session_id, self._publisher.seq
             )
         log.info("requirement_saved", session=self._session_id, id=requirement.id)
-        return {"saved": requirement.id}
+        return {"saved": requirement.id, "session_state": self._session_state_hint()}
 
     @function_tool
     async def note_visual_requirement(
@@ -1431,7 +1478,11 @@ class SANBAAgent(Agent):
                 self._repo.set_session_seq, self._session_id, self._publisher.seq
             )
         log.info("visual_requirement", session=self._session_id, id=requirement.id)
-        return {"saved": requirement.id, "from": "screen-share"}
+        return {
+            "saved": requirement.id,
+            "from": "screen-share",
+            "session_state": self._session_state_hint(),
+        }
 
     @function_tool
     async def search_grounding(self, _ctx: RunContext, query: str) -> dict:
@@ -1681,7 +1732,7 @@ class SANBAAgent(Agent):
             text: 解消した確認事項の要点（画面の文言に近い一文。例「並び順は関連度順で確定」）。
         """
         seq = self._next_inquiry_seq()
-        resolved = self._inquiry.resolve_best_match(_RESOLVE_INQUIRY_KINDS, text, seq)
+        resolved = self._inquiry.resolve_best_match(_RESOLVE_INQUIRY_KINDS, text, seq, pin=True)
         if resolved is None:
             self._resolve_no_match_streak += 1
             open_items = [
@@ -1727,7 +1778,11 @@ class SANBAAgent(Agent):
             id=resolved.id,
             kind=resolved.kind.value,
         )
-        return {"resolved": True, "id": resolved.id}
+        return {
+            "resolved": True,
+            "id": resolved.id,
+            "session_state": self._session_state_hint(),
+        }
 
     @function_tool
     async def add_inquiry(self, _ctx: RunContext, text: str) -> dict:
@@ -1761,7 +1816,7 @@ class SANBAAgent(Agent):
             self._end_forced = False
         await self._emit_inquiry_nodes(changed)
         log.info("add_inquiry", session=self._session_id, id=node_id, added=added)
-        return {"added": added, "id": node_id}
+        return {"added": added, "id": node_id, "session_state": self._session_state_hint()}
 
     @function_tool
     async def propose_session_end(self, _ctx: RunContext, user_requested: bool = False) -> dict:
@@ -1852,8 +1907,25 @@ class SANBAAgent(Agent):
                     "反応を待ってから、あらためて propose_session_end を呼んでください。"
                 ),
             }
+        await self._publish_end_proposal(
+            open_count=open_count,
+            requirements=requirements,
+            forced=user_requested and open_count > 0,
+            trigger="propose",
+        )
+        return {"proposed": True, "open_count": open_count, "requirement_count": requirements}
+
+    async def _publish_end_proposal(
+        self, *, open_count: int, requirements: int, forced: bool, trigger: str
+    ) -> None:
+        """終了提案カードを画面へ出し、終了フローの状態を立てる共通経路（P1-b / RC5）。
+
+        `propose_session_end` と、cushion 直後に `complete_session` が直接呼ばれた自己修復経路
+        （RC5）の両方から使い、`session_end_proposed` を必ず 1 度は発火させてダイアログの
+        取りこぼしを防ぐ。`trigger` は発火経路の観測用。
+        """
         self._end_proposed = True
-        self._end_forced = user_requested and open_count > 0
+        self._end_forced = forced
         self._end_declined_streak = 0
         materials = len(await asyncio.to_thread(self._repo.list_materials, self._session_id))
         if self._publisher is not None:
@@ -1868,9 +1940,9 @@ class SANBAAgent(Agent):
             session=self._session_id,
             requirements=requirements,
             open_count=open_count,
-            user_requested=user_requested,
+            forced=forced,
+            trigger=trigger,
         )
-        return {"proposed": True, "open_count": open_count, "requirement_count": requirements}
 
     @function_tool
     async def complete_session(self, _ctx: RunContext) -> dict:
@@ -1883,8 +1955,47 @@ class SANBAAgent(Agent):
         if self._completed:
             return {"completed": True, "open_count": 0}
         if not self._end_proposed:
-            log.info("session_complete_declined_not_proposed", session=self._session_id)
-            return {"completed": False, "open_count": 0, "reason": "not_proposed"}
+            open_count = self._gating_open_count()
+            requirements = len(
+                await asyncio.to_thread(self._repo.list_requirements, self._session_id)
+            )
+            if open_count == 0 and requirements > 0:
+                await self._publish_end_proposal(
+                    open_count=0,
+                    requirements=requirements,
+                    forced=False,
+                    trigger="auto_on_complete",
+                )
+                log.info(
+                    "session_end_auto_proposed_on_complete",
+                    session=self._session_id,
+                    requirements=requirements,
+                )
+                return {
+                    "completed": False,
+                    "open_count": 0,
+                    "reason": "proposal_shown",
+                    "guidance": (
+                        "終了提案のカードを画面に出しました。参加者が画面またはお声で終了に"
+                        "同意したのを確認してから、もう一度 complete_session を呼んでください。"
+                    ),
+                }
+            log.info(
+                "session_complete_declined_not_proposed",
+                session=self._session_id,
+                open=open_count,
+            )
+            return {
+                "completed": False,
+                "open_count": open_count,
+                "reason": "not_proposed",
+                "guidance": (
+                    "まだ終了提案を出していません。complete_session の前に、残っている "
+                    "open_inquiries を resolve_inquiry で解消し、propose_session_end を呼んで"
+                    "終了提案のカードを出してください。"
+                ),
+                "session_state": self._session_state_hint(),
+            }
         open_count = self._gating_open_count()
         if open_count > 0 and not self._end_forced:
             log.info("session_complete_declined_open", session=self._session_id, open=open_count)
