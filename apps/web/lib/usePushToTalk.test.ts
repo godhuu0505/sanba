@@ -188,6 +188,14 @@ describe("usePushToTalk（mode×pressed → mic enabled のゲーティング）
     await waitFor(() => expect(setMicrophoneEnabled).toHaveBeenLastCalledWith(true));
   });
 
+  it("押下中のままアンマウントされたら mute する（押しっぱなし漏れ防止）", async () => {
+    const { result, unmount } = renderHook(() => usePushToTalk({ sendInterrupt: vi.fn() }));
+    act(() => result.current.pressProps.onPointerDown(pointerEvent()));
+    await waitFor(() => expect(setMicrophoneEnabled).toHaveBeenLastCalledWith(true));
+    unmount();
+    await waitFor(() => expect(setMicrophoneEnabled).toHaveBeenLastCalledWith(false));
+  });
+
   it("ハンズフリー経由で PTT に入った後のアンマウントで切替前の状態を復元する", async () => {
     const { result, unmount } = renderHook(() => usePushToTalk({ sendInterrupt: vi.fn() }));
     act(() => result.current.setMode("handsfree"));

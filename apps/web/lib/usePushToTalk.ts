@@ -161,8 +161,9 @@ export function usePushToTalk({
     () => () => {
       const restore = restoreEnabledRef.current;
       restoreEnabledRef.current = null;
-      if (restore !== null) {
-        roomRef.current.localParticipant.setMicrophoneEnabled(restore).catch((e: unknown) => {
+      const target = pressSourceRef.current !== null ? false : restore;
+      if (target !== null) {
+        roomRef.current.localParticipant.setMicrophoneEnabled(target).catch((e: unknown) => {
           console.error("ptt mic restore failed", e);
         });
       }
