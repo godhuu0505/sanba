@@ -2095,8 +2095,7 @@ class _ReplyTracker:
     単一 ``asyncio.Event`` では並行ターン（テキスト連投・画像注入と音声が重なる）が互いの
     応答を取り違えて競合するため、応答数のカウンタで「自分の発行より後に応答が来たか」を
     判定する。``wait_beyond`` は ``baseline`` を超える応答が来るまで待ち、来なければ
-    ``TimeoutError``。speaking（発話開始）は ``bump_speaking`` の別カウンタで、待つ側が
-    ``speaking_baseline`` を渡したときだけ成立条件に加わる（同一応答の二重計上は構造上ない）。
+    ``TimeoutError``。``speaking_baseline`` を渡した待ちだけが発話開始カウンタでも成立する。
     """
 
     def __init__(self) -> None:
@@ -2117,12 +2116,7 @@ class _ReplyTracker:
         self._event.set()
 
     def bump_speaking(self) -> None:
-        """assistant の発話開始（state=speaking）を記録する（#522）。
-
-        conversation_item（完了）とは別カウンタにする: 開幕 watchdog は「話し始めた＝生きている」
-        で早期成立させたいが、guarded_turn_reply の 20s watchdog まで発話開始で成功扱いにすると
-        「話し始めて完了せず死ぬ」生成の検知力が下がるため、待つ側が明示的に選ぶ。
-        """
+        """assistant の発話開始（state=speaking）を専用カウンタへ記録する。"""
         self._speaking_count += 1
         self._event.set()
 
@@ -2148,22 +2142,15 @@ class _ReplyTracker:
                 await asyncio.wait_for(self._event.wait(), timeout=remaining)
 
 
+_TURN_WATCHDOG_MAX_THINKING_DEFERRALS = 3
+
+
 class _TurnReplyWatchdog:
-    """ユーザー確定発話への自動応答が沈黙したら、つつき→再起動で回復する（#522）。
+    """user final への自動応答の沈黙を、つつき→再起動で回復する監視タイマー（#522）。
 
-    voice_reply_watchdog は guarded generate_reply（開幕・ツール・テキスト経路）しか監視せず、
-    native audio のサーバ駆動自動応答が黙って死ぬと ADR-0038 の再起動機構に到達しない
-    （sess-af021ebd では user final 3 件が無応答のまま放置された）。user final で arm、assistant が
-    話し始めたら on_agent_speaking で disarm。timeout で nudge（短い再応答要求）を 1 回だけ試み、
-    なお沈黙なら request_restart へ倒す（再起動の予算・バックオフは既存機構を流用）。
-
-    armed 中の再 arm は no-op（最初の未応答発話からの経過で発火する）。タイマーを置き換えると、
-    無応答に気づいたユーザーが timeout 未満の間隔で言い直し続ける限り永久に発火しないため。
-    nudge は timeout_s で打ち切る（nudge 自体が同じ沈黙障害でハングしても 2 段目へ進む）。
-
-    世代ずれ対策（#524）: 解除シグナルは speaking 遷移（と明示的な disarm）に限定し、
-    item_added では解除しない（中断された前ターンの遅延 item が新 arm を誤解除する競合を防ぐ）。
-    is_response_active が True の間は arm をスキップし、遅延 STT final による誤 arm を防ぐ。
+    arm はエージェント発話中・参加者発話中は no-op、armed 中の再 arm も no-op。解除は
+    speaking 遷移・参加者の発話再開・明示的な disarm のみ。満了時に thinking 中なら
+    上限回数まで延期し、その後 nudge → なお沈黙なら request_restart。
     """
 
     def __init__(
@@ -2182,13 +2169,16 @@ class _TurnReplyWatchdog:
         self._register_task = register_task
         self._task: asyncio.Task[None] | None = None
         self._is_speaking = False
+        self._is_thinking = False
+        self._user_speaking = False
 
     @property
     def is_response_active(self) -> bool:
-        """エージェントが現在発話中（speaking 状態）なら True。arm の前に確認する。"""
         return self._is_speaking
 
     def arm(self) -> None:
+        if self._is_speaking or self._user_speaking:
+            return
         if self._task is not None and not self._task.done():
             return
         self._task = asyncio.create_task(self._run())
@@ -2196,27 +2186,48 @@ class _TurnReplyWatchdog:
             self._register_task(self._task)
 
     def on_agent_speaking(self) -> None:
-        """speaking 遷移を受けて watchdog を解除し、is_response_active を True にする。"""
         self._is_speaking = True
-        task = self._task
-        self._task = None
-        if task is not None and not task.done():
-            task.cancel()
+        self._is_thinking = False
+        self._cancel_timer()
+
+    def on_agent_thinking(self) -> None:
+        self._is_speaking = False
+        self._is_thinking = True
 
     def on_agent_not_speaking(self) -> None:
-        """非 speaking 遷移（listening / idle 等）を受けて is_response_active を下げる。"""
         self._is_speaking = False
+        self._is_thinking = False
+
+    def on_user_speaking(self, speaking: bool) -> None:
+        self._user_speaking = speaking
+        if speaking:
+            self._cancel_timer()
 
     def disarm(self) -> None:
-        """無条件に解除する（restart / shutdown で使う）。"""
         self._is_speaking = False
+        self._is_thinking = False
+        self._cancel_timer()
+
+    def _cancel_timer(self) -> None:
         task = self._task
         self._task = None
         if task is not None and not task.done():
             task.cancel()
 
     async def _run(self) -> None:
-        await asyncio.sleep(self._timeout_s)
+        deferrals = 0
+        while True:
+            await asyncio.sleep(self._timeout_s)
+            if self._is_thinking and deferrals < _TURN_WATCHDOG_MAX_THINKING_DEFERRALS:
+                deferrals += 1
+                log.info(
+                    "voice_turn_reply_deferred",
+                    session=self._session_id,
+                    deferrals=deferrals,
+                    timeout_s=self._timeout_s,
+                )
+                continue
+            break
         log.warning(
             "voice_turn_reply_silent",
             session=self._session_id,
@@ -2236,20 +2247,12 @@ class _TurnReplyWatchdog:
 def handle_agent_state_changed(
     new_state: str, reply_tracker: _ReplyTracker, turn_watchdog: _TurnReplyWatchdog
 ) -> None:
-    """agent_state_changed を受けて reply_tracker と turn_watchdog を更新する（#522/#524）。
-
-    speaking 遷移: conversation_item_added は生成完了まで発火せず、長い開幕発話では
-    opening watchdog と数十 ms 差でレースして発話中断が起きる（sess-af021ebd a2/a4）。
-    speaking は専用カウンタ（bump_speaking）に記録し、開幕 watchdog だけが
-    「話し始めた＝生きている」で早期成立する（guarded_turn_reply の完了検知は従来どおり）。
-    同時に on_agent_speaking で沈黙 watchdog を解除する。
-
-    非 speaking 遷移: on_agent_not_speaking で is_response_active を下げ、次の user final が
-    正しく arm できるようにする。
-    """
+    """agent_state_changed を reply_tracker（speaking 専用カウンタ）と沈黙 watchdog へ写像する。"""
     if new_state == "speaking":
         reply_tracker.bump_speaking()
         turn_watchdog.on_agent_speaking()
+    elif new_state == "thinking":
+        turn_watchdog.on_agent_thinking()
     else:
         turn_watchdog.on_agent_not_speaking()
 
@@ -2356,10 +2359,7 @@ async def open_interview(
     タイムアウト後は必ず interrupt を掛ける（最終試行も含む / 直後の enable_participant_audio で
     参加者マイクが開くため、遅延した応答と重なる二重発話を防ぐ）。成功で True、上限まで応答が
     出なければ False を返し voice_opening_exhausted を残す（会話は生き次の発話から前進できる）。
-
-    リトライ（2 回目以降）は開幕全文を再生成せず短い再呼びかけ（OPENING_RETRY_INSTRUCTIONS）に
-    固定する。全文再生成は長い発話＋ask_question 再発行になり、watchdog と再レースして発話中断・
-    質問ピンの乱高下を連鎖させるため（#522 / sess-af021ebd）。
+    リトライ（2 回目以降）は短い再呼びかけ（OPENING_RETRY_INSTRUCTIONS）に固定する。
     """
     attempts = max_attempts if max_attempts is not None else settings.voice_opening_max_attempts
     timeout_s = (
@@ -2784,7 +2784,7 @@ async def entrypoint(ctx: JobContext) -> None:
                 return
             if getattr(ev, "is_final", False):
                 current_qid = agent.current_question_id
-                if agent.record_user_final(text) and not turn_watchdog.is_response_active:
+                if agent.record_user_final(text):
                     turn_watchdog.arm()
                 if current_qid is not None:
                     _schedule(agent.clear_current_question(current_qid))
@@ -2806,6 +2806,10 @@ async def entrypoint(ctx: JobContext) -> None:
             handle_agent_state_changed(
                 str(getattr(ev, "new_state", "")), reply_tracker, turn_watchdog
             )
+
+        @s.on("user_state_changed")
+        def _on_user_state(ev) -> None:  # type: ignore[no-untyped-def]
+            turn_watchdog.on_user_speaking(str(getattr(ev, "new_state", "")) == "speaking")
 
         @s.on("error")
         def _on_session_error(ev: ErrorEvent) -> None:
