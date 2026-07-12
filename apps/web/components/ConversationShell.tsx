@@ -40,6 +40,7 @@ export interface ConversationShellProps {
   choicePin?: ReactNode;
   bottomBar?: ReactNode;
   voiceStatus?: ReactNode;
+  sidePanel?: ReactNode;
 }
 
 export function ConversationShell({
@@ -58,6 +59,7 @@ export function ConversationShell({
   choicePin,
   bottomBar,
   voiceStatus,
+  sidePanel,
 }: ConversationShellProps) {
   const [internalTab, setInternalTab] = useState<ShellTab>(defaultTab);
   const [minimized, setMinimized] = useState(false);
@@ -122,6 +124,17 @@ export function ConversationShell({
         </button>
       </header>
 
+      <div className="flex min-h-0 flex-1">
+        {sidePanel && (
+          <aside
+            aria-label="サンバの状態"
+            className="hidden shrink-0 flex-col items-center justify-center gap-6 border-r border-sanba-border px-8 lg:flex lg:w-[340px] xl:w-[420px]"
+          >
+            {sidePanel}
+          </aside>
+        )}
+
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       {!minimized && (
       <div className="px-4 pb-[6px] pt-2">
         <div
@@ -199,11 +212,17 @@ export function ConversationShell({
 
       {!review && choicePin}
       {!review && voiceStatus && (
-        <div className="flex justify-center border-b border-sanba-border bg-sanba-surface-strong px-4 py-1.5">
+        <div
+          className={`flex justify-center border-b border-sanba-border bg-sanba-surface-strong px-4 py-1.5 ${
+            sidePanel ? "lg:hidden" : ""
+          }`}
+        >
           {voiceStatus}
         </div>
       )}
       {!review && bottomBar}
+        </div>
+      </div>
     </div>
   );
 }

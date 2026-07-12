@@ -28,7 +28,8 @@ import { MaterialDetailSheet } from "./MaterialDetailSheet";
 import { MaterialsList } from "./MaterialsList";
 import { RequirementsTab } from "./RequirementsTab";
 import { ResultView, type IssueExportStatus } from "./ResultView";
-import { VoiceStatusIndicator } from "./VoiceStatusIndicator";
+import { resolveVoiceStatus, VoiceStatusIndicator, type VoiceStatus } from "./VoiceStatusIndicator";
+import { Figure, type FigureState } from "./sanba";
 
 export interface ConversationSessionViewProps {
   state: SessionState;
@@ -61,6 +62,13 @@ export interface ConversationSessionViewProps {
 }
 
 type Phase = "shell" | "result";
+
+const SIDE_FIGURE_STATE: Record<VoiceStatus, FigureState> = {
+  "agent-speaking": "asking",
+  listening: "listening",
+  muted: "writing",
+  idle: "walking",
+};
 
 export function ConversationSessionView({
   state,
@@ -301,6 +309,31 @@ export function ConversationSessionView({
     );
   }
 
+  const voiceStatus = resolveVoiceStatus({
+    phase: state.phase,
+    micOn,
+    muted,
+    agentSpeaking,
+  });
+  const sidePanel = (
+    <>
+      <Figure
+        state={ended ? "writing" : SIDE_FIGURE_STATE[voiceStatus]}
+        className="w-[150px] xl:w-[190px]"
+        label="サンバのイラスト"
+      />
+      {!ended && (
+        <VoiceStatusIndicator
+          phase={state.phase}
+          micOn={micOn}
+          muted={muted}
+          agentSpeaking={agentSpeaking}
+          compact
+        />
+      )}
+    </>
+  );
+
   const choicePin =
     ended || !activeQuestion ? undefined : (
       <ChoicePin
@@ -329,6 +362,7 @@ export function ConversationSessionView({
         onTabChange={setTab}
         onUnresolvedJump={() => setFocusDeepDive(true)}
         onEnd={ended ? undefined : () => setEndOpen(true)}
+        sidePanel={sidePanel}
         choicePin={choicePin}
         voiceStatus={
           ended ? undefined : (
