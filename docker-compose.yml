@@ -1,30 +1,13 @@
-# SANBA — アプリケーション必須スタック (local development)
-#
-# このファイルだけで「つくる」アプリ一式が動く:
-#   web (Next.js) ─→ api (FastAPI) ─→ livekit / firestore
-#   agent (LiveKit worker) ─→ livekit / firestore / elasticsearch
-#
-# 可観測性・LLMOps・DORA など「必須ではないが あったら便利」なコンポーネントは
-# docker-compose.tools.yml に分離している (overlay として重ねて起動する)。
-#
-#   just up          # このファイルだけ (アプリ最小構成)
-#   just up-full     # docker-compose.tools.yml を重ねて全部入り
-#
-# Rancher Desktop (dockerd / moby) を想定。`docker compose` が CLI として使えること。
 name: sanba
 
 services:
-  # ============================ Application ============================
   web:
     build:
       context: ./apps/web
       args:
-        # NEXT_PUBLIC_* は Next.js のビルド時にバンドルへ焼き込まれる。
-        # ブラウザから見たエンドポイントなので localhost を既定にする。
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8080}
         NEXT_PUBLIC_LIVEKIT_URL: ${NEXT_PUBLIC_LIVEKIT_URL:-ws://localhost:7880}
         NEXT_PUBLIC_RETENTION_DAYS: ${DATA_RETENTION_DAYS:-30}
-        # 空なら web は dev モード (Google ログインを出さず bypass で進む / ADR-0012)。
         NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${NEXT_PUBLIC_GOOGLE_CLIENT_ID:-}
     env_file: .env.local
     environment:
@@ -47,26 +30,11 @@ services:
       dockerfile: apps/api/Dockerfile
     env_file: .env.local
     environment:
-      # server-side publish (analysis.progress/visual を RoomService.send_data で送る / ADR-0023)
-      # は api コンテナから livekit サービスへ直接届く必要がある。.env.local の LIVEKIT_URL
-      # (ws://localhost:7880) はブラウザへ返す join URL 用でありコンテナ内では api 自身を指すため、
-      # publish 先だけを compose のサービス名へ振り向ける (agent の AGENT_LIVEKIT_URL と同じ発想。
-      # 未設定なら api は livekit_url にフォールバックする)。
       LIVEKIT_SERVER_URL: ${API_LIVEKIT_URL:-ws://livekit:7880}
-      # GOOGLE_GENAI_USE_VERTEXAI=true のとき、Vertex AI への認証は ADC に依存する。
-      # ローカルでは ~/.config/gcloud を read-only でマウントし、GOOGLE_APPLICATION_CREDENTIALS
-      # でユーザの application_default_credentials.json を指す（コンテナ内 path）。
       GOOGLE_APPLICATION_CREDENTIALS: /gcp/adc.json
     volumes:
-      # ADC を read-only でマウント。既定は /dev/null（必ず存在）にし、未ログイン時に Docker が
-      # host 側へ空ディレクトリを作ってしまう footgun を避ける（AI Studio 既定経路では ADC 不要）。
-      # Vertex AI 経路を使う場合のみ .env.local で SANBA_ADC_FILE に
-      # application_default_credentials.json のパスを指す（複数アカウントは CLOUDSDK_CONFIG 配下、
-      # 標準は ~/.config/gcloud/application_default_credentials.json）。
       - ${SANBA_ADC_FILE:-/dev/null}:/gcp/adc.json:ro
     ports: ["8080:8080"]
-    # api はセッション/要件のリーダー兼ライターになった (ADR-0014 §15)。
-    # 接続先は .env.local の FIRESTORE_EMULATOR_HOST で切り替わる。
     depends_on:
       livekit:
         condition: service_started
@@ -76,7 +44,6 @@ services:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
-      # python:slim には curl が無いので標準ライブラリで /healthz を叩く。
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8080/healthz').status==200 else 1)"]
       interval: 10s
       timeout: 5s
@@ -88,28 +55,13 @@ services:
       context: .
       dockerfile: apps/agent/Dockerfile
       args:
-        # ローカルはモデルをビルド時に同梱せずスキップ (ビルド軽量化)。
-        # 実行時に取得し、下の agent-cache volume に永続化する。
-        # 本番/CI は Dockerfile 既定 (DOWNLOAD_MODELS=1) で同梱する。
         DOWNLOAD_MODELS: "0"
     env_file: .env.local
     environment:
-      # agent は LiveKit worker として server に接続する。コンテナ内から localhost は
-      # 自分自身を指すため、.env.local の ws://localhost:7880 では届かない。docker の
-      # サービス名をデフォルトとし、.env.local で AGENT_LIVEKIT_URL を指定すれば
-      # LiveKit Cloud 等の別ホストへ向けられる (api/web が返す URL はブラウザ向けの localhost のまま)。
       LIVEKIT_URL: ${AGENT_LIVEKIT_URL:-ws://livekit:7880}
-      # Vertex AI 経由のとき ADC を参照する（GOOGLE_GENAI_USE_VERTEXAI=true 時のみ実質有効）。
       GOOGLE_APPLICATION_CREDENTIALS: /gcp/adc.json
     volumes:
-      # ADC を read-only でマウント。既定は /dev/null（必ず存在）にし、未ログイン時に Docker が
-      # host 側へ空ディレクトリを作ってしまう footgun を避ける（AI Studio 既定経路では ADC 不要）。
-      # Vertex AI 経路を使う場合のみ .env.local で SANBA_ADC_FILE に
-      # application_default_credentials.json のパスを指す（複数アカウントは CLOUDSDK_CONFIG 配下、
-      # 標準は ~/.config/gcloud/application_default_credentials.json）。
       - ${SANBA_ADC_FILE:-/dev/null}:/gcp/adc.json:ro
-      # 実行時にDLするプラグインモデル (HF/torch 等) を永続化し、再作成のたびの
-      # 再ダウンロードを防ぐ。appuser の home は /home/appuser。
       - agent-cache:/home/appuser/.cache
     command: ["start"]
     depends_on:
@@ -121,7 +73,6 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  # ============================ Realtime media ============================
   livekit:
     image: livekit/livekit-server:v1.13.3
     command: ["--dev", "--bind", "0.0.0.0"]
@@ -130,11 +81,9 @@ services:
       - "7881:7881"
       - "7882:7882/udp"
     environment:
-      # --dev は devkey/secret を有効化する。.env.local の LIVEKIT_API_KEY/SECRET と一致させる。
       LIVEKIT_KEYS: "devkey: secret"
     restart: unless-stopped
 
-  # ============================ State (Firestore emulator) ============================
   firestore:
     image: google/cloud-sdk:575.0.1-emulators
     command: >
@@ -143,7 +92,6 @@ services:
     ports: ["8200:8200"]
     restart: unless-stopped
 
-  # ============================ Search / RAG grounding ============================
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.14.3
     environment:

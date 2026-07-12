@@ -1,7 +1,5 @@
 name: Dependency review
 
-# PR で新たに入る依存に既知脆弱性・非互換ライセンスが無いかを検査してブロックする。
-# Dependabot alerts が「マージ後に気づく」のに対し、これは「マージ前に止める」多層防御。
 on:
   pull_request:
 
@@ -13,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      pull-requests: write # 結果サマリを PR にコメント (同一リポジトリ PR のみ有効)
+      pull-requests: write
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0

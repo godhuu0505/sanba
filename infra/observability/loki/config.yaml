@@ -1,4 +1,3 @@
-# Minimal single-binary Loki config for local development.
 auth_enabled: false
 
 server:

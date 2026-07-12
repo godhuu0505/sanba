@@ -24,6 +24,8 @@ SANBA の issue / PR ラベルは **軸（dimension）ベース**で設計し、
 - `needs-human` … ADR-0015 §6 の**エスカレーション・コントラクト名**。自動化が文字列一致で参照するため、
   axis prefix を付けず**この正確な綴りを維持**する（rename 禁止）。状態軸の一員として運用する。
 - `ai:build` / `ai:babysitting` … ADR-0015 §1,§3 で固定。同じく rename 禁止。
+- `ai:review-wait` / `ai:review-responding` / `ai:review-done` … `review-status.yml` /
+  `claude-review-response.yml` が文字列一致で付け外しするため rename 禁止。
 - メタ: `epic` `discussion` `hackathon`、dependabot 管理: `dependencies` `github_actions` `docker` `python` `javascript`。
 
 ## 自動付与

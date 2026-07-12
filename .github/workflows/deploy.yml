@@ -1,23 +1,8 @@
 name: Deploy (Cloud Run)
 
-# main へのマージで「マイグレーション (terraform apply) → ビルド → Cloud Run デプロイ」を
-# 自動で回すパイプライン (ADR-0026)。鍵レス認証は Workload Identity Federation。
-#
-# 順序保証: infra/terraform に変更があれば migrate (terraform.yml を workflow_call) を
-# 先に走らせ、成功後に deploy する。新コードが依存する env/secret/インデックス等の
-# 設定変更 (= このプロダクトのマイグレーション。永続層 Firestore はスキーマレスで、
-# TTL フィールド等も Terraform 管理) をイメージ差し替えより先に反映するため。
-#
-# コスト最適化:
-#   - 変更のあった app だけビルド & デプロイ (paths-filter) → Actions 分・AR ストレージ節約。
-#   - Buildx の GHA キャッシュでビルド時間短縮。
-#   - env/secret/スケールは Terraform が一度だけ設定。ここは画像の差し替えのみ
-#     (gcloud run deploy --image は既存の env/secret 設定を保持する)。
 on:
   push:
     branches: [main]
-  # 手動トリガー。GitHub Mobile の Actions → Run workflow からも実行できる。
-  # ブランチ/タグは Run workflow 画面で選択 (その ref の HEAD = GITHUB_SHA をデプロイ)。
   workflow_dispatch:
     inputs:
       apps:
@@ -30,9 +15,6 @@ on:
         type: string
         required: false
 
-# terraform apply / gcloud run deploy の途中キャンセルは中途半端な状態を残すので
-# キャンセルしない (直列化)。pending は最新 1 件だけ残るので、連続マージでも
-# 最終的に最新 SHA がデプロイされる。
 concurrency:
   group: deploy-${{ github.ref }}
   cancel-in-progress: false
@@ -43,10 +25,9 @@ env:
 
 permissions:
   contents: read
-  id-token: write # Workload Identity Federation
+  id-token: write
 
 jobs:
-  # 変更のあった app を検出する。app コード・Dockerfile が変わったものだけ後段で回す。
   changes:
     runs-on: ubuntu-latest
     if: ${{ vars.GCP_PROJECT_ID != '' }}
@@ -65,68 +46,49 @@ jobs:
             worker: ['apps/worker/**', 'packages/sanba_shared/**']
             infra: ['infra/terraform/**', '.github/workflows/terraform.yml']
       - id: decide
-        # 手動トリガー (workflow_dispatch) は差分が無く paths-filter が空を返すため、
-        # 入力 `apps` で対象を決める (all = 全 app 再デプロイ。ロールバック/強制再デプロイ用途)。
-        # push トリガーは従来どおり変更のあった app だけをデプロイする。
         env:
           APPS_INPUT: ${{ github.event.inputs.apps }}
           REASON: ${{ github.event.inputs.reason }}
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             APPS_INPUT="${APPS_INPUT:-all}"
-            # 監査用に Summary タブへ恒久的に残す (誰が何をなぜ再デプロイしたか)。
             echo "### 手動デプロイ" >> "$GITHUB_STEP_SUMMARY"
             echo "- apps: \`${APPS_INPUT}\` / reason: ${REASON:-<none>} / actor: ${{ github.actor }}" >> "$GITHUB_STEP_SUMMARY"
-            # 許可リスト照合 (choice はサーバ側で強制されないため、JSON 生成前に必ず検証する)。
             case "$APPS_INPUT" in
               all)                  echo 'apps=["agent","api","web","worker"]' >> "$GITHUB_OUTPUT" ;;
               web|api|agent|worker) echo "apps=[\"${APPS_INPUT}\"]" >> "$GITHUB_OUTPUT" ;;
               *)                    echo "::error::invalid apps input: ${APPS_INPUT}" >&2; exit 1 ;;
             esac
-            # 手動デプロイはイメージ差し替えのみ。terraform の手動 apply は
-            # terraform.yml の workflow_dispatch (action=apply) を使う。
             echo 'infra=false' >> "$GITHUB_OUTPUT"
           else
-            # infra は Cloud Run app ではないのでデプロイ matrix から除外し、
-            # 専用の boolean 出力として migrate ジョブへ渡す。
             echo 'apps='"$(echo '${{ steps.filter.outputs.changes }}' | jq -c 'map(select(. != "infra"))')" >> "$GITHUB_OUTPUT"
             echo 'infra=${{ steps.filter.outputs.infra }}' >> "$GITHUB_OUTPUT"
           fi
 
-  # infra/terraform の変更を main マージで自動 apply する (= マイグレーション工程)。
-  # 実体は terraform.yml (workflow_call)。plan → 保存した plan を apply、という流れは
-  # PR plan / 手動 apply と同一で、PR 時点で人間が plan をレビュー済み。
-  # production 環境に required reviewers を設定していればここが承認ゲートになり、
-  # 承認されるまで後段の deploy も待つ。
   migrate:
     needs: changes
     if: ${{ needs.changes.outputs.infra == 'true' }}
     permissions:
       contents: read
-      id-token: write # Workload Identity Federation
-      pull-requests: write # terraform.yml の宣言と揃える (push では PR コメントは走らない)
-    # terraform.yml の手動 apply (group: terraform-<ref>) と直列化し、state の競合を避ける。
+      id-token: write
+      pull-requests: write
     concurrency:
       group: terraform-${{ github.ref }}
       cancel-in-progress: false
-    # secrets は渡さない (terraform.yml は vars.* と github.token しか使わない。
-    # 信頼境界を明示するため secrets: inherit は付けない)。
     uses: ./.github/workflows/terraform.yml
     with:
       action: apply
 
   deploy:
     needs: [changes, migrate]
-    # migrate が走ったら成功後に、走らなければ (infra 変更なし = skipped) そのまま進む。
-    # migrate 失敗時は「新コードが依存する設定が未反映」の恐れがあるため deploy も止める。
     if: >-
       ${{ !cancelled() &&
           (needs.migrate.result == 'success' || needs.migrate.result == 'skipped') &&
           needs.changes.outputs.apps != '[]' && needs.changes.outputs.apps != '' }}
     permissions:
       contents: read
-      id-token: write # Workload Identity Federation
-      attestations: write # SLSA build provenance + SBOM attestation (actions/attest-build-provenance, actions/attest)
+      id-token: write
+      attestations: write
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -138,7 +100,6 @@ jobs:
       - id: auth
         uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
         with:
-          # WIF パスと SA email は公開識別子なので Variables で管理する (秘匿値ではない)。
           workload_identity_provider: ${{ vars.WIF_PROVIDER }}
           service_account: ${{ vars.DEPLOY_SA }}
 
@@ -149,15 +110,9 @@ jobs:
 
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
 
-      # web の NEXT_PUBLIC_* はビルド時にバンドルへ焼き込まれるため、設定漏れに気づける
-      # 最後のタイミングはビルド前しかない。未設定だと本番を黙って壊す:
-      #   - NEXT_PUBLIC_API_URL: 「空」で焼かれ、ブラウザが web 自身のオリジンに /api を投げて壊れる
-      #   - NEXT_PUBLIC_GOOGLE_CLIENT_ID: dev モードで焼かれ、Bearer を送らず API が 401/503 になる
-      # どちらも Variables 設定漏れで発生するため、ビルド前にまとめて fail fast する。
       - name: Require web build config
         if: ${{ matrix.app == 'web' }}
         env:
-          # run へ直接展開せず env 経由で渡す (インジェクション安全なイディオム)。
           NEXT_PUBLIC_API_URL: ${{ vars.NEXT_PUBLIC_API_URL }}
           NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${{ vars.NEXT_PUBLIC_GOOGLE_CLIENT_ID }}
         run: |
@@ -170,10 +125,6 @@ jobs:
           done
           [ "$missing" -eq 0 ] || exit 1
 
-      # Picker 用ブラウザ API キー (NEXT_PUBLIC_GOOGLE_API_KEY) は GitHub Variables ではなく
-      # Secret Manager を唯一の置き場にする (ADR-0049)。web ビルドは既に WIF 認証済みなので、
-      # ここで読み出して build-arg に渡す。未作成・未権限なら空のままで、Drive 導線は「利用不可」
-      # に退化するだけ (fail-safe / ローカルアップロードは無影響)。値はログでマスクする。
       - name: Fetch Picker API key from Secret Manager (web)
         id: picker_key
         if: ${{ matrix.app == 'web' }}
@@ -188,27 +139,18 @@ jobs:
         id: build
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
-          # agent/api は共有パッケージを同梱するため context=リポジトリ直下 (ADR-0014 §9)。
-          # web は従来どおり apps/web を context にする。
           context: ${{ matrix.app == 'web' && 'apps/web' || '.' }}
           file: apps/${{ matrix.app }}/Dockerfile
           push: true
           tags: ${{ env.REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ env.REPO }}/${{ matrix.app }}:${{ github.sha }}
           cache-from: type=gha,scope=${{ matrix.app }}
           cache-to: type=gha,mode=max,scope=${{ matrix.app }}
-          # web のみ NEXT_PUBLIC_* を渡す。空文字を渡すと Dockerfile の既定を上書きして
-          # しまうため、変数が設定されている行だけを生成する (未設定なら Dockerfile 既定)。
           build-args: |
             ${{ vars.NEXT_PUBLIC_API_URL != '' && format('NEXT_PUBLIC_API_URL={0}', vars.NEXT_PUBLIC_API_URL) || '' }}
             ${{ vars.NEXT_PUBLIC_LIVEKIT_URL != '' && format('NEXT_PUBLIC_LIVEKIT_URL={0}', vars.NEXT_PUBLIC_LIVEKIT_URL) || '' }}
             ${{ vars.NEXT_PUBLIC_GOOGLE_CLIENT_ID != '' && format('NEXT_PUBLIC_GOOGLE_CLIENT_ID={0}', vars.NEXT_PUBLIC_GOOGLE_CLIENT_ID) || '' }}
             ${{ steps.picker_key.outputs.value != '' && format('NEXT_PUBLIC_GOOGLE_API_KEY={0}', steps.picker_key.outputs.value) || '' }}
 
-      # worker は enable_video_analysis=false の間 Cloud Run サービスが未プロビジョニング
-      # (ADR-0040・media.tf の count)。その状態で deploy すると「サービス不在」で必ず失敗し
-      # CD が赤くなるため、サービスの存在を確認してから deploy する。イメージの
-      # build & push・attestation は上で常に実行済みなので、フラグを立てて terraform apply
-      # したときに参照するイメージは既に AR にある (ブートストラップ制約の解消)。
       - name: Deploy to Cloud Run (image only; env/secret は Terraform 管理)
         run: |
           if ! gcloud run services describe "sanba-${{ matrix.app }}" \
@@ -222,8 +164,6 @@ jobs:
             --quiet
 
       - name: Attest build provenance (SLSA)
-        # ビルドしたイメージの来歴を GitHub に署名付きで記録する (SLSA provenance)。
-        # デプロイ後に実行し、attestation の失敗が本番反映を止めないようにする。
         uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-name: ${{ env.REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ env.REPO }}/${{ matrix.app }}
@@ -239,8 +179,6 @@ jobs:
           upload-artifact: false
 
       - name: Attest SBOM
-        # SBOM を GitHub に署名付きで記録する。build provenance と同様デプロイ後に実行し、
-        # attestation の失敗が本番反映を止めないようにする。
         uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763 # v4.1.1
         with:
           subject-name: ${{ env.REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ env.REPO }}/${{ matrix.app }}

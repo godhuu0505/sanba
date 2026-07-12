@@ -1,4 +1,3 @@
-# OpenTelemetry Collector — fans telemetry out to Prometheus / Loki / Tempo.
 receivers:
   otlp:
     protocols:
@@ -14,15 +13,12 @@ processors:
     limit_mib: 256
 
 exporters:
-  # Traces -> Tempo
   otlp/tempo:
     endpoint: tempo:4317
     tls:
       insecure: true
-  # Metrics -> Prometheus (scraped from the collector)
   prometheus:
     endpoint: 0.0.0.0:8889
-  # Logs -> Loki
   otlphttp/loki:
     endpoint: http://loki:3100/otlp
   debug:

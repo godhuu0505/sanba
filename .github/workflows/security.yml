@@ -10,13 +10,10 @@ permissions:
   contents: read
 
 jobs:
-  # Dependency vulnerability audit. Blocking gate: pip-audit fails the job when a
-  # known advisory is present (HIGH/CRITICAL の既知 CVE を含む依存追加をマージ前に止める)。
   python-audit:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        # 共有ドメイン層 (sanba_shared) も独自依存 (google-cloud-firestore 等) を持つため監査対象。
         dir: [apps/agent, apps/api, packages/sanba_shared, external-agents]
     defaults:
       run:
@@ -47,9 +44,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      # Run the gitleaks binary directly (the v2 action needs a license on private
-      # org repos); scans the working tree against our allowlisted config.
-      # バージョン固定 + 公式 checksums.txt 照合で入れる (terraform.yml と同方針・改ざん検知)。
       - name: Install gitleaks (pinned + checksum)
         working-directory: /tmp
         run: |
@@ -71,19 +65,12 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Build image
-        # agent/api は共有パッケージを同梱するため context=リポジトリ直下 (ADR-0014 §9)。
-        # web は従来どおり apps/web を context にする。
         run: |
           if [ "${{ matrix.app }}" = "web" ]; then
             docker build -t sanba-${{ matrix.app }}:scan apps/web
           else
             docker build -t sanba-${{ matrix.app }}:scan -f apps/${{ matrix.app }}/Dockerfile .
           fi
-      # Trivy はブロッキングゲート: 修正版のある HIGH/CRITICAL を検出したら --exit-code 1 で
-      # job を落とす。--ignore-unfixed でベースイメージの修正不能な OS CVE では落とさず、
-      # 「更新すれば直せる（actionable）」脆弱性だけをゲート対象にする。
-      # trivy は install.sh 経由（GitHub API のレート制限で不安定）ではなく digest 固定の
-      # 公式イメージで実行する。docker.sock をマウントしてビルド済みローカルイメージを走査する。
       - name: Trivy scan
         run: |
           docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \

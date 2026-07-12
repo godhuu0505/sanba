@@ -5,12 +5,10 @@ on:
     branches: [main]
   pull_request:
 
-# 同一ブランチの古い実行はキャンセルして Actions 分を節約する (コスト最適化)。
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
-# 最小権限。CI はチェックアウトと読み取りのみで足りる (public 化に伴う既定権限の明示)。
 permissions:
   contents: read
 
@@ -40,7 +38,7 @@ jobs:
       - run: uv python install 3.13
       - run: uv sync --all-extras --dev
       - run: uv run ruff check .
-      - run: uv run mypy src # 型を quality-gate に実在させる (#58)
+      - run: uv run mypy src
       - run: uv run pytest -q
 
   agent:
@@ -55,7 +53,7 @@ jobs:
       - run: uv python install 3.13
       - run: uv sync --all-extras --dev
       - run: uv run ruff check .
-      - run: uv run mypy src # 型を quality-gate に実在させる (#58)
+      - run: uv run mypy src
       - run: uv run pytest -q
 
   api:
@@ -70,7 +68,7 @@ jobs:
       - run: uv python install 3.13
       - run: uv sync --all-extras --dev
       - run: uv run ruff check .
-      - run: uv run mypy src # 型を quality-gate に実在させる (#58)
+      - run: uv run mypy src
       - run: uv run pytest -q
 
   worker:
@@ -85,7 +83,7 @@ jobs:
       - run: uv python install 3.13
       - run: uv sync --all-extras --dev
       - run: uv run ruff check .
-      - run: uv run mypy src # 型を quality-gate に実在させる (#58)
+      - run: uv run mypy src
       - run: uv run pytest -q
 
   external-agents:
@@ -100,7 +98,7 @@ jobs:
       - run: uv python install 3.12
       - run: uv sync --all-extras --dev
       - run: uv run ruff check .
-      - run: uv run mypy src # 型を quality-gate に実在させる (#58)
+      - run: uv run mypy src
       - run: uv run pytest -q
 
   four-keys:
@@ -115,7 +113,7 @@ jobs:
       - run: uv python install 3.12
       - run: uv sync --all-extras --dev
       - run: uv run ruff check .
-      - run: uv run mypy src # 型を quality-gate に実在させる (#58)
+      - run: uv run mypy src
       - run: uv run pytest -q
 
   web:
@@ -143,8 +141,6 @@ jobs:
     needs: [shared, agent, api, worker, web]
     strategy:
       matrix:
-        # agent/api/worker は共有パッケージを同梱するため context=リポジトリ直下 (ADR-0014 §9)。
-        # web は共有パッケージ不要なので従来どおり apps/web を context にする。
         include:
           - app: agent
             context: .
@@ -166,13 +162,9 @@ jobs:
           context: ${{ matrix.context }}
           file: ${{ matrix.file }}
           push: false
-          # scope を app 単位で分け、deploy.yml のキャッシュと共有する。
           cache-from: type=gha,scope=${{ matrix.app }}
           cache-to: type=gha,mode=max,scope=${{ matrix.app }}
 
-  # ループ終端条件「mergeable」を 1 つの必須チェックに集約する (#58 / ADR-0011 §2)。
-  # branch protection (#62) はこの quality-gate だけを必須にすればよく、構成が単純になる。
-  # docker は重いため集約対象外 (web の npm run build で build は担保済み)。
   quality-gate:
     name: quality-gate
     needs: [no-comments, shared, agent, api, worker, external-agents, four-keys, web]
@@ -180,8 +172,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Verify required jobs passed
-        # 失敗・キャンセル・スキップのいずれかがあれば緑にしない。
-        # skipped も失敗扱い (path フィルタ等で必須ジョブが化けて緑になるのを防ぐ保険)。
         run: |
           if [ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || contains(needs.*.result, 'skipped') }}" = "true" ]; then
             echo "::error::必須ジョブが失敗/キャンセル/スキップされました"

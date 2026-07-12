@@ -1,21 +1,5 @@
 name: Standby (warm/sleep)
 
-# プレスリリース前のコスト最小化運用 (docs/how-to/pre-launch-cost-controls.md)。
-# sanba-agent は LiveKit へ outbound WebSocket で worker 登録する pull 型のため、
-# min-instances=0 の間は音声セッションを開始できない。デモ・検証の直前に warm (=1) へ、
-# 使い終わったら sleep (=0) へ切り替える。GitHub Mobile の Actions → Run workflow からも使える。
-#
-# warm では agent に加えて api / web にもウォームアップリクエストを送り、
-# コールドスタート済みの状態にしてから疎通を確認する (min-instances は 0 のまま。
-# terraform とのドリフトを作らず、リクエスト課金だけで温める)。
-# sanba-worker は Cloud Tasks push 専用で worker SA 以外は invoke できないため
-# 外から温められないが、タスク投入時に自動起動されるので対象外。
-#
-# agent の反映は 2 段構え:
-#   1. GitHub Variable AGENT_MIN_INSTANCES を先に更新する (以後の terraform apply が
-#      巻き戻さないようにする。deploy.yml の migrate は Variable の値で apply する)。
-#   2. gcloud run services update で本番へ即時反映する (terraform apply を待たない)。
-# Variable 更新が失敗したら gcloud には進まない (drift を作らない fail fast)。
 on:
   workflow_dispatch:
     inputs:
@@ -27,10 +11,9 @@ on:
 
 permissions:
   contents: read
-  id-token: write # Workload Identity Federation
-  actions: write # AGENT_MIN_INSTANCES Variable の更新
+  id-token: write
+  actions: write
 
-# terraform apply (group: terraform-<ref>) とは別系統だが、standby の連打は直列化する。
 concurrency:
   group: agent-standby
   cancel-in-progress: false
@@ -38,7 +21,6 @@ concurrency:
 jobs:
   toggle:
     runs-on: ubuntu-latest
-    # GCP 未配線 (project 未設定) のうちは skip して赤くしない (deploy.yml と同じ方針)。
     if: ${{ vars.GCP_PROJECT_ID != '' }}
     steps:
       - name: Resolve min-instances
@@ -60,7 +42,6 @@ jobs:
       - id: auth
         uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
         with:
-          # WIF パスと SA email は公開識別子なので Variables で管理する (秘匿値ではない)。
           workload_identity_provider: ${{ vars.WIF_PROVIDER }}
           service_account: ${{ vars.DEPLOY_SA }}
 

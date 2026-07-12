@@ -49,7 +49,8 @@ just tools-down  # 補助スタックだけ停止 (アプリは残す)
 | ws://localhost:7880 | LiveKit (dev) | 必須 |
 | http://localhost:9200 | Elasticsearch | 必須 |
 | localhost:8200 | Firestore エミュレータ | 必須 |
-| http://localhost:3001 | Grafana (anonymous admin) | 補助 |
+| http://localhost:3001 | Grafana (anonymous Viewer) | 補助 |
+| http://localhost:5601 | Kibana (analytics ダッシュボード開発用 / ADR-0061) | 補助 |
 | http://localhost:9090 | Prometheus | 補助 |
 | http://localhost:9301/metrics | four-keys (DORA) | 補助 |
 
@@ -114,6 +115,51 @@ identity (dev@sanba.local) になり、`/admin` がそのまま開ける (ADR-00
   セッション作成・招待発行。閲覧は requirements のみ（生の発話は出さない / issue #10）。
 - **注意**: `require_admin` は dev bypass でも `ADMIN_EMAILS` を照合する。本番で `GOOGLE_OAUTH_CLIENT_ID`/
   `ADMIN_EMAILS` 未設定だと認証経路はフェイルクローズ（503）する。
+
+## 5.5 compose 設計メモ（なぜそうなっているか）
+
+`docker-compose.yml`（必須スタック）と `docker-compose.tools.yml`（overlay）の設計判断。
+
+- **NEXT_PUBLIC_\* の既定が localhost**: Next.js のビルド時にバンドルへ焼き込まれる値で、
+  ブラウザから見たエンドポイントのため localhost を既定にする。`NEXT_PUBLIC_GOOGLE_CLIENT_ID` が
+  空なら web は dev モード（Google ログインを出さず bypass で進む / ADR-0012）。
+- **コンテナ内 URL の振り向け**: コンテナ内から `localhost` は自分自身を指すため、`.env.local` の
+  `ws://localhost:7880`（ブラウザへ返す join URL 用）ではコンテナから LiveKit に届かない。
+  agent は `AGENT_LIVEKIT_URL`（既定 `ws://livekit:7880`）、api の server-side publish
+  （analysis.progress/visual を RoomService.send_data で送る / ADR-0023）は `API_LIVEKIT_URL`
+  （既定 `ws://livekit:7880`）で publish 先だけを compose のサービス名へ振り向ける。
+  LiveKit Cloud 等の別ホストを使う場合は `.env.local` でこれらを上書きする
+  （未設定なら api は livekit_url にフォールバックする）。
+- **ADC マウントの footgun 回避**: Vertex AI 経路（`GOOGLE_GENAI_USE_VERTEXAI=true`）の認証は
+  ADC に依存し、`GOOGLE_APPLICATION_CREDENTIALS=/gcp/adc.json` に read-only でマウントする。
+  マウント元の既定は `/dev/null`（必ず存在する）— 未ログイン時に Docker が host 側へ
+  空**ディレクトリ**を作ってしまう footgun を避けるため。Vertex AI を使う場合のみ `.env.local` の
+  `SANBA_ADC_FILE` に `application_default_credentials.json` のパスを指定する（複数アカウントは
+  `CLOUDSDK_CONFIG` 配下、標準は `~/.config/gcloud/application_default_credentials.json`。
+  AI Studio 既定経路では ADC 不要）。
+- **agent のモデル取得**: ローカルは `DOWNLOAD_MODELS=0` でビルド時同梱をスキップし
+  （ビルド軽量化）、実行時に取得して `agent-cache` volume（appuser の home 配下 `~/.cache`）へ
+  永続化する。本番/CI は Dockerfile 既定（`DOWNLOAD_MODELS=1`）で同梱する。
+- **healthcheck**: api イメージ（python:slim）には curl が無いため、標準ライブラリで
+  `/healthz` を叩く。
+- **livekit の `--dev`**: devkey/secret を有効化する。`.env.local` の `LIVEKIT_API_KEY/SECRET` と
+  一致させる。
+- **Grafana のローカル・ハードニング**: 匿名アクセスは残すが権限は Viewer に下げる
+  （無認証 Admin を廃止）。iframe 埋め込みを禁止して clickjacking 面を塞ぎ、ポートは
+  `127.0.0.1:3001` バインドでローカルホストのみに公開する（LAN 等からの到達を防ぐ）。
+- **Kibana（overlay）**: `sanba-analytics-*` のコスト/KPI ダッシュボード開発用（ADR-0061）。
+  必須スタックの elasticsearch に同居し、`just analytics-setup`
+  （`KIBANA_URL=http://localhost:5601`）でダッシュボードを import する。
+- **four-keys（overlay）**: このリポジトリの deploy.yml run + incident issue を読む。
+  `GITHUB_TOKEN` があると API レート上限が上がり、無い場合は同梱のサンプルデータに
+  フォールバックする。
+- **overlay の仕組み**: tools 側は agent / api に `OTEL_EXPORTER_OTLP_ENDPOINT` を注入する。
+  アプリ最小構成（`just up`）では未設定のままテレメトリが graceful にスキップされ、雑音が出ない。
+  LLM 品質はローカルではなく CI 回帰 + 本番の Cloud Trace/Monitoring で見る（ADR-0051。
+  ローカル Langfuse は廃止）。
+- **image の手動ピン**: Dependabot の docker ecosystem は Dockerfile の `FROM` しか更新しない
+  ため、compose の `image:` は固定バージョンタグで手動ピンする（SEC-047 /
+  [ci-cd-workflows.md](../reference/ci-cd-workflows.md)）。
 
 ## 6. ネイティブ実行 (docker を介さない)
 
