@@ -278,6 +278,42 @@ def test_my_requirements_unknown_session_is_404() -> None:
     assert client.get("/api/sessions/mine/no-such/requirements").status_code == 404
 
 
+def _seed_product_session(sid: str, owner_sub: str, product_owner: str, product_id: str) -> None:
+    from sanba_shared.models import Product
+
+    _repo.create_product(Product(id=product_id, name="請求アプリ", owner_sub=product_owner))
+    _repo.create_session_doc(
+        SessionMeta(
+            id=sid,
+            title="t",
+            owner_sub=owner_sub,
+            owner_email=f"{owner_sub}@example.com",
+            roles=["pm"],
+            created_at=datetime(2024, 6, 20, tzinfo=UTC),
+            product_id=product_id,
+        )
+    )
+
+
+def test_my_requirements_product_owner_can_view_member_session() -> None:
+    _seed_product_session("sess-po-1", "member-1", "prod-owner-1", "prod-view-1")
+    _seed_requirement("sess-po-1")
+    _login("prod-owner-1")
+    assert client.get("/api/sessions/mine/sess-po-1/requirements").status_code == 200
+
+
+def test_my_requirements_product_session_still_404_for_unrelated_user() -> None:
+    _seed_product_session("sess-po-2", "member-1", "prod-owner-2", "prod-view-2")
+    _login("stranger")
+    assert client.get("/api/sessions/mine/sess-po-2/requirements").status_code == 404
+
+
+def test_my_transcript_product_owner_can_view_member_session() -> None:
+    _seed_product_session("sess-po-3", "member-1", "prod-owner-3", "prod-view-3")
+    _login("prod-owner-3")
+    assert client.get("/api/sessions/mine/sess-po-3/transcript").status_code == 200
+
+
 def _seed_utterance(sid: str, speaker: str, text: str, *, ts: datetime) -> None:
     _repo.add_utterance(sid, Utterance(speaker=speaker, text=text, ts=ts))
 

@@ -300,15 +300,27 @@ def _require_product_access(product_id: str, user: AuthUser, *, manage: bool = F
 
 
 class JoinResponse(BaseModel):
+    """join の応答。`results_viewable` は終了後に `/results/{id}`（`/mine/` 系 API）を
+    閲覧できるか（セッション作成者本人 or 従属 product 所有者）。web は終了時の遷移先
+    （要件結果画面 or インライン結果表示）の出し分けに使う。"""
+
     token: str
     livekit_url: str
     session_id: str
     identity: str
     session_token: str
+    results_viewable: bool = False
 
 
 def _mint_join_tokens(
-    session_id: str, role: str, identity: str, display_name: str, sub: str, email: str
+    session_id: str,
+    role: str,
+    identity: str,
+    display_name: str,
+    sub: str,
+    email: str,
+    *,
+    results_viewable: bool = False,
 ) -> JoinResponse:
     """LiveKit トークンと「join 済み」session token を発行する（発行ロジックの単一定義）。
 
@@ -351,6 +363,7 @@ def _mint_join_tokens(
         session_id=session_id,
         identity=identity,
         session_token=session_token,
+        results_viewable=results_viewable,
     )
 
 

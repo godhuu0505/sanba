@@ -224,13 +224,13 @@ describe("ConversationSessionView（会話シェル結線）", () => {
     expect(onSendText).toHaveBeenCalledWith("新着順で");
   });
 
-  it("⏹→終了確認だけで、判定/確定の中間画面を挟まず結果へ直行する（未解消2件）", () => {
+  it("⏹→終了確認だけで、判定/確定の中間画面を挟まず結果へ直行する（未解消2件）", async () => {
     const onNavigateResults = vi.fn();
     renderView({ onNavigateResults });
     fireEvent.click(screen.getByRole("button", { name: "会話を終了" }));
     expect(screen.getByRole("dialog", { name: "終了確認" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "終了する" }));
-    expect(onNavigateResults).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(onNavigateResults).toHaveBeenCalledTimes(1));
     expect(screen.queryByText("内容の確認")).toBeNull();
     expect(screen.queryByRole("button", { name: "要件を確定する" })).toBeNull();
   });
@@ -292,7 +292,7 @@ describe("ConversationSessionView（会話シェル結線）", () => {
     expect(onFinalize).toHaveBeenCalledTimes(1);
   });
 
-  it("未解消0件でも確定が失敗したら保全して結果画面へフォールバックする（#186 / Codex P2）", async () => {
+  it("未解消0件でも確定が失敗したら forced 確定を試みてから結果画面へフォールバックする（#186 / Codex P2）", async () => {
     const onFinalize = vi.fn(async () => {
       throw new Error("finalize failed: 409");
     });
@@ -301,21 +301,42 @@ describe("ConversationSessionView（会話シェル結線）", () => {
     fireEvent.click(screen.getByRole("button", { name: "会話を終了" }));
     fireEvent.click(screen.getByRole("button", { name: "終了する" }));
     await waitFor(() => expect(onNavigateResults).toHaveBeenCalledTimes(1));
-    expect(onFinalize).toHaveBeenCalledTimes(1);
+    expect(onFinalize).toHaveBeenCalledTimes(2);
+    expect(onFinalize).toHaveBeenLastCalledWith({ forced: true });
     expect(screen.queryByText(/要件がまとまりました/)).toBeNull();
   });
 
-  it("未解消>0 で終了すると onFinalize を呼ばず結果画面へ直行する（provisional / ②③）", () => {
+  it("未解消>0 の強制終了は forced 確定（タイトル・要約生成）を経て結果画面へ遷移する", async () => {
     const onFinalize = vi.fn(async () => ({ finalized: true, confirmed_count: 0 }));
     const onNavigateResults = vi.fn();
     const onEndSession = vi.fn();
     renderView({ onFinalize, onNavigateResults, onEndSession });
     fireEvent.click(screen.getByRole("button", { name: "会話を終了" }));
     fireEvent.click(screen.getByRole("button", { name: "終了する" }));
-    expect(onFinalize).not.toHaveBeenCalled();
+    await waitFor(() => expect(onNavigateResults).toHaveBeenCalledTimes(1));
+    expect(onFinalize).toHaveBeenCalledTimes(1);
+    expect(onFinalize).toHaveBeenCalledWith({ forced: true });
     expect(onEndSession).toHaveBeenCalledTimes(1);
-    expect(onNavigateResults).toHaveBeenCalledTimes(1);
     expect(screen.queryByText(/途中まで整理しました/)).toBeNull();
+  });
+
+  it("未解消0件の通常終了は確定後に要件結果画面へ遷移し、インライン結果を出さない", async () => {
+    const onFinalize = vi.fn(async () => ({ finalized: true, confirmed_count: 1 }));
+    const onNavigateResults = vi.fn();
+    const onEndSession = vi.fn();
+    renderView({
+      state: baseState({ inquiryNodes: [] }),
+      onFinalize,
+      onNavigateResults,
+      onEndSession,
+    });
+    fireEvent.click(screen.getByRole("button", { name: "会話を終了" }));
+    fireEvent.click(screen.getByRole("button", { name: "終了する" }));
+    await waitFor(() => expect(onNavigateResults).toHaveBeenCalledTimes(1));
+    expect(onFinalize).toHaveBeenCalledTimes(1);
+    expect(onFinalize).toHaveBeenCalledWith();
+    expect(onEndSession).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText(/要件がまとまりました/)).toBeNull();
   });
 
   it("AI の終了提案（session.end_proposed）でカードを出し、同意で確定→結果へ進む（P1-b）", async () => {
