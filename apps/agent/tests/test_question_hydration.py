@@ -231,6 +231,12 @@ async def test_question_loop_escalates_to_restart() -> None:
         await ask(agent, None, "Q1?")
     assert restarts == [True]
 
+    with pytest.raises(StopResponse):
+        await ask(agent, None, "Q1?")
+    assert agent._question_reasks_in_turn >= ASK_QUESTION_RESTART_REASKS, (
+        "再起動後も同一ターン中はカウンタを保持し、note 返しへ落とさない"
+    )
+
     agent.record_utterance("participant", "回答します")
     r = await ask(agent, None, "Q2?")
     assert "note" not in r, "リセット後は新しい問いを立てられる"
