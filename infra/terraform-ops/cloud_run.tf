@@ -50,6 +50,14 @@ resource "google_cloud_run_v2_service" "a2a_facade" {
         name  = "A2A_FACADE_PUBLIC_URL"
         value = var.public_url
       }
+      env {
+        name  = "A2A_FACADE_AUDIT_ENABLED"
+        value = "true"
+      }
+      env {
+        name  = "A2A_FACADE_FIRESTORE_PROJECT"
+        value = var.project_id
+      }
     }
 
     containers {
@@ -167,4 +175,12 @@ resource "google_cloud_run_v2_service_iam_member" "developer_invoker" {
   location = var.region
   role     = "roles/run.invoker"
   member   = each.key
+}
+
+resource "google_cloud_run_v2_service_iam_member" "agent_invoker" {
+  count    = var.agent_invoker_member == "" ? 0 : 1
+  name     = google_cloud_run_v2_service.a2a_facade.name
+  location = var.region
+  role     = "roles/run.invoker"
+  member   = var.agent_invoker_member
 }

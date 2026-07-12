@@ -23,6 +23,14 @@ class FacadeSettings(BaseSettings):
     holmes_url: str = "http://localhost:8081"
     holmes_timeout_seconds: float = 300.0
     public_url: str = ""
+    audit_enabled: bool = False
+    firestore_project: str = ""
+    audit_collection: str = "holmes-investigations"
+    audit_retention_days: int = 30
+
+    @property
+    def audit_configured(self) -> bool:
+        return bool(self.audit_enabled and self.firestore_project)
 
 
 settings = FacadeSettings()

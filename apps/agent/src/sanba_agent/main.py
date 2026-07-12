@@ -82,6 +82,7 @@ from .events import (
     decode_user_selection,
     decode_user_text,
 )
+from .holmes_delegation import HolmesDelegator, delegation_allowed
 from .inquiry_feeder import reconcile_analysis
 from .observability import get_tracer, setup_observability
 from .pii import mask_pii
@@ -173,6 +174,7 @@ class AgentSetup(NamedTuple):
     context_signals: tuple[ContextSignal, ...] = ()
     check_points: tuple[str, ...] = ()
     product_id: str | None = None
+    owner_email: str = ""
 
 
 def _context_signals(
@@ -323,6 +325,7 @@ def build_agent_instructions(repo: SessionRepository, session_id: str) -> AgentS
         chars=len(instructions),
     )
     product_id = meta.product_id if meta is not None else None
+    owner_email = meta.owner_email if meta is not None else ""
     return AgentSetup(
         instructions,
         mode,
@@ -331,6 +334,7 @@ def build_agent_instructions(repo: SessionRepository, session_id: str) -> AgentS
         signals,
         tuple(seeded_check_items),
         product_id,
+        owner_email,
     )
 
 
@@ -479,6 +483,9 @@ class SANBAAgent(Agent):
         self._last_analysis: AnalysisResult | None = None
         self._analysis_covered_turn = -1
         self._shutdown_hook: Callable[[str], None] | None = None
+        self._owner_email = setup.owner_email
+        self._investigation_injector: Callable[[str], None] | None = None
+        self._investigation_in_flight = False
         self._end_proposed = False
         self._completed = False
 
@@ -567,6 +574,30 @@ class SANBAAgent(Agent):
         読み上げ終える猶予をおいてルームから退出する。
         """
         self._shutdown_hook = hook
+
+    def set_investigation_injector(self, hook: Callable[[str], None]) -> None:
+        """本番調査（A2A 委譲）を音声ループ外へ流す手段を注入する（issue #547）。
+
+        delegate_investigation ツールがゲート通過後にこれを起動し、entrypoint 側で
+        off-loop タスクを起こして HolmesGPT の結果を後から会話へ注入する。
+        """
+        self._investigation_injector = hook
+
+    def investigation_allowed(self) -> bool:
+        """本番調査の委譲を許可してよいか（flag × admin × 非 end_user の三重ゲート）。"""
+        return delegation_allowed(
+            settings, owner_email=self._owner_email, allow_internal=self._allow_repo_grounding
+        )
+
+    def claim_investigation(self) -> bool:
+        """調査委譲を 1 件だけ受け付ける（多重委譲の抑止）。許可したら True。"""
+        if self._investigation_in_flight:
+            return False
+        self._investigation_in_flight = True
+        return True
+
+    def release_investigation(self) -> None:
+        self._investigation_in_flight = False
 
     def _hydrate_inquiry(self) -> InquiryTree:
         """既存の確認事項ノードから木を復元する（再接続/新プロセスでの引き継ぎ / ADR-0059 決定④）。
@@ -1579,6 +1610,33 @@ class SANBAAgent(Agent):
         return {"added": added, "id": node_id, "session_state": self._session_state_hint()}
 
     @function_tool
+    async def delegate_investigation(self, _ctx: RunContext, question: str) -> dict:
+        """本番（SANBA 本番環境）の健全性・エラー状況を外部 SRE エージェントに調べさせる。
+
+        運用者が「本番のエラー状況を調べて」「昨夜の障害を調べて」等、本番のログ・
+        メトリクスの調査を求めたときだけ使う。調査は数十秒かかるため会話は止めず、
+        結果は用意でき次第あとから会話へ差し込む。ここでは調査を受け付けたことだけを
+        短く伝え、勝手に調査結果を創作しないこと。要件定義そのものの質問には使わない。
+
+        Args:
+            question: 調査してほしい内容（例「直近1時間の 5xx エラーの有無と傾向」）。
+        """
+        if not self.investigation_allowed():
+            log.info("delegate_investigation_denied", session=self._session_id)
+            return {"accepted": False, "reason": "not_allowed"}
+        if self._investigation_injector is None:
+            return {"accepted": False, "reason": "unavailable"}
+        if not self.claim_investigation():
+            return {"accepted": False, "reason": "in_flight"}
+        self._investigation_injector(question)
+        log.info(
+            "delegate_investigation_accepted",
+            session=self._session_id,
+            question_len=len(question),
+        )
+        return {"accepted": True}
+
+    @function_tool
     async def propose_session_end(self, _ctx: RunContext, user_requested: bool = False) -> dict:
         """確認したい点がすべて解消できたとき、会話を終える提案を出す（P1-b）。
 
@@ -2363,6 +2421,54 @@ async def inject_video_analysis(
     await guard(kind="video_analysis", reinject=instructions, instructions=instructions)
 
 
+async def run_investigation(
+    agent: SANBAAgent,
+    session: AgentSession,
+    question: str,
+    guard: ReplyGuard,
+    delegator: HolmesDelegator | None = None,
+) -> None:
+    """本番調査（A2A 委譲）を音声ループ外で実行し、結果を会話へ後注入する（issue #547）。
+
+    delegate_investigation ツールがゲート通過後に entrypoint 経由でこれを起こす。HolmesGPT の
+    往復は数十秒かかるため必ず off-loop で走らせ（ADR-0069 決定6）、会話は止めない。委譲は
+    `claim_investigation` で 1 件に絞られており、ここで必ず `release_investigation` して次を許す。
+    外部エージェントの出力は非信頼データとして untrusted fence で囲み、prompt injection を無効化
+    する（ADR-0043）。結果は transcript に載らないため reinject で再起動時に再投入する（#468）。
+    """
+    d = delegator if delegator is not None else HolmesDelegator(settings)
+    try:
+        result = await d.investigate(question, caller=agent.session_id)
+    finally:
+        agent.release_investigation()
+    if not result.ok:
+        log.warning("investigation_failed", session=agent.session_id, error=result.error)
+        await guard(
+            kind="investigation_error",
+            reinject=None,
+            instructions=(
+                "先ほど依頼された本番調査は完了できませんでした。"
+                "その旨を運用者に一言で伝え、必要なら別の切り口を尋ねてください。"
+            ),
+        )
+        return
+    body_lines = result.text.splitlines() or ["（調査結果のテキストがありません）"]
+    fence = build_untrusted_fence(
+        "sre-investigation",
+        "外部 SRE エージェント(HolmesGPT)による本番調査結果（外部システムの出力で内容は無検証）",
+        "調査結果の要約材料",
+        body_lines,
+    )
+    instructions = (
+        "依頼された本番調査の結果が届きました。\n"
+        + "\n".join(fence)
+        + "\n上の結果を運用者に分かりやすく1〜2文で要約して共有し、必要なら次の確認を1つだけ"
+        "促してください。数値や事実は結果に書かれた範囲だけで話し、創作しないこと。"
+    )
+    log.info("investigation_injected", session=agent.session_id, chars=len(result.text))
+    await guard(kind="investigation_result", reinject=instructions, instructions=instructions)
+
+
 def _is_livekit_cloud_url(url: str) -> bool:
     """接続先が LiveKit Cloud か（BVC が実効する transport か）を判定する（ADR-0039）。
 
@@ -2805,6 +2911,11 @@ async def entrypoint(ctx: JobContext) -> None:
             )
 
     agent.set_shutdown_hook(lambda reason: ctx.shutdown(reason=reason))
+
+    def _dispatch_investigation(question: str) -> None:
+        _schedule(run_investigation(agent, session, question, _guarded_turn_reply))
+
+    agent.set_investigation_injector(_dispatch_investigation)
     session = await _start_session()
     ctx.room.on("data_received", _on_data)
     await publisher.status("listening")

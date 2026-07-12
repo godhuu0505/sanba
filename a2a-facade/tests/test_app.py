@@ -6,7 +6,8 @@ from fastapi.testclient import TestClient
 
 from sanba_a2a_facade.app import create_app
 from sanba_a2a_facade.config import FacadeSettings
-from sanba_a2a_facade.jsonrpc import INTERNAL_ERROR, METHOD_NOT_FOUND, PARSE_ERROR
+
+VERSION_HEADERS = {"A2A-Version": "0.3"}
 
 
 class FakeBackend:
@@ -39,27 +40,30 @@ def _client(backend: FakeBackend | None = None) -> TestClient:
     return TestClient(create_app(backend or FakeBackend(), config))
 
 
-def _send(text: str = "sess-x を調査") -> dict:
+def _send(text: str = "sess-x を調査", request_id: str = "m1") -> dict:
     return {
         "jsonrpc": "2.0",
-        "id": "m1",
+        "id": request_id,
         "method": "message/send",
         "params": {
             "message": {
-                "kind": "message",
+                "messageId": request_id,
                 "role": "user",
-                "messageId": "m1",
-                "parts": [{"kind": "text", "text": text}],
+                "parts": [{"text": text}],
             }
         },
     }
+
+
+def _post(client: TestClient, payload: dict, agent_id: str = "sanba-sre-scout"):
+    return client.post(f"/a2a/{agent_id}", json=payload, headers=VERSION_HEADERS)
 
 
 def test_agent_card_reflects_backend_and_public_url():
     card = _client().get("/.well-known/agent-card.json").json()
     assert card["name"] == "SANBA SRE Scout"
     assert card["url"] == "https://facade.example.com/a2a/sanba-sre-scout"
-    assert card["capabilities"] == {"streaming": False, "pushNotifications": False}
+    assert card["capabilities"]["streaming"] is False
     assert card["skills"][0]["id"] == "investigate"
 
 
@@ -67,37 +71,21 @@ def test_healthz():
     assert _client().get("/healthz").json()["status"] == "ok"
 
 
-def test_message_send_returns_agent_message():
+def test_message_send_returns_completed_task_with_answer():
     backend = FakeBackend(answer="110 イベント・エラー 0 件")
-    response = _client(backend).post("/a2a/sanba-sre-scout", json=_send()).json()
-    assert response["id"] == "m1"
-    assert response["result"]["parts"] == [{"kind": "text", "text": "110 イベント・エラー 0 件"}]
+    result = _post(_client(backend), _send()).json()["result"]
+    assert result["kind"] == "task"
+    assert result["status"]["state"] == "completed"
+    assert result["artifacts"][0]["parts"][0]["text"] == "110 イベント・エラー 0 件"
     assert backend.asked == ["sess-x を調査"]
 
 
 def test_unknown_agent_id_is_404():
-    assert _client().post("/a2a/other-agent", json=_send()).status_code == 404
+    assert _post(_client(), _send(), agent_id="other-agent").status_code == 404
 
 
-def test_unknown_method_returns_jsonrpc_error():
-    payload = _send()
-    payload["method"] = "message/stream"
-    response = _client().post("/a2a/sanba-sre-scout", json=payload).json()
-    assert response["error"]["code"] == METHOD_NOT_FOUND
-
-
-def test_invalid_json_returns_parse_error():
-    client = _client()
-    response = client.post(
-        "/a2a/sanba-sre-scout",
-        content=b"not-json",
-        headers={"Content-Type": "application/json"},
-    ).json()
-    assert response["error"]["code"] == PARSE_ERROR
-
-
-def test_backend_failure_is_fail_soft_internal_error():
+def test_backend_failure_yields_failed_task_without_leaking_error():
     backend = FakeBackend(error=OSError("connection refused"))
-    response = _client(backend).post("/a2a/sanba-sre-scout", json=_send()).json()
-    assert response["error"]["code"] == INTERNAL_ERROR
-    assert "connection refused" not in response["error"]["message"]
+    result = _post(_client(backend), _send()).json()["result"]
+    assert result["status"]["state"] == "failed"
+    assert "connection refused" not in str(result)
