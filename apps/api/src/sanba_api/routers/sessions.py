@@ -170,6 +170,13 @@ class ExportRequest(BaseModel):
     include_materials: bool = False
 
 
+class FinalizeRequest(BaseModel):
+    """確定要求。`forced=True` は参加者の明示的な強制終了の意思表示で、
+    未解消の確認事項が残っていても `end_forced_by_user` を記録して確定を通す。"""
+
+    forced: bool = False
+
+
 class FinalizeResponse(BaseModel):
     finalized: bool
     confirmed_count: int = 0
@@ -1172,7 +1179,9 @@ def _reconcile_stuck_materials(
 
 @router.post("/api/sessions/{session_id}/finalize", response_model=FinalizeResponse)
 def finalize_session_requirements(
-    session_id: str, access: SessionAccess = Depends(require_session_access)
+    session_id: str,
+    req: FinalizeRequest | None = None,
+    access: SessionAccess = Depends(require_session_access),
 ) -> FinalizeResponse:
     """07 判定の「確定」を永続化する。
 
@@ -1191,8 +1200,11 @@ def finalize_session_requirements(
         kind∈{contradiction,gap,check}）が 1 件でも残るなら 409 で拒否する（HP8 判定の
         「未解消 0 件で確定可」をサーバ側でも担保。ADR-0059 の agent ゲートと同義。
         直接 POST や古いクライアント状態を防ぐ）。例外は `end_forced_by_user`
-        （agent の complete_session が参加者の明示的な終了要求を記録した場合）で、
-        本人意思による強制終了は未解消が残っていても確定を通す。
+        （agent の complete_session が参加者の明示的な終了要求を記録した場合）と、
+        リクエストボディの `forced=true`（web の終了ボタンによる強制終了。ここで
+        `end_forced_by_user` を記録する）で、本人意思による強制終了は未解消が
+        残っていても確定を通す。これによりタイトル・ラベル・会話要約の生成が
+        強制終了でも通常終了と同じ経路で必ず走る。
 
     ゲスト token（ADR-0032 決定4）は確定不可: ゲストセッションの要件の承認・保全は
     owner が管理画面で行う（承認 = TTL 解除は owner の意思に限る）。
@@ -1205,10 +1217,18 @@ def finalize_session_requirements(
         return FinalizeResponse(finalized=True, confirmed_count=existing.finalized_count or 0)
     open_inquiries = InquiryTree.from_nodes(_repo.list_inquiry_nodes(session_id))
     open_count = open_inquiries.gating_open_count()
+    forced_by_client = bool(req and req.forced)
     if open_count > 0 and not existing.end_forced_by_user:
-        raise HTTPException(status_code=409, detail="unresolved inquiries remain")
+        if not forced_by_client:
+            raise HTTPException(status_code=409, detail="unresolved inquiries remain")
+        _repo.set_session_end_forced(session_id)
     if open_count > 0:
-        log.info("finalize_with_forced_end", session=session_id, open=open_count)
+        log.info(
+            "finalize_with_forced_end",
+            session=session_id,
+            open=open_count,
+            forced_by_client=forced_by_client,
+        )
     confirmed = _confirmed_requirements(session_id)
     confirmed_ids = [r["id"] for r in confirmed]
     labels = requirements_to_issue_labels(confirmed)

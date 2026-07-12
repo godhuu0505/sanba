@@ -307,6 +307,35 @@ def test_finalize_allows_open_inquiries_when_end_forced_by_user() -> None:
     assert meta.status == "finalized"
 
 
+def test_finalize_forced_request_allows_open_inquiries_and_records_end_forced() -> None:
+    """web の強制終了（forced=true）は未解消が残っていても確定し、本人意思を記録する。"""
+    from sanba_shared.models import InquiryKind, InquiryNode
+
+    created = client.post("/api/sessions", json={"roles": ["pm"], "consent_acknowledged": True})
+    sid = created.json()["session_id"]
+    _repo.save_inquiry_node(sid, InquiryNode(id="inq1", kind=InquiryKind.GAP, text="性能未確認"))
+    res = client.post(
+        f"/api/sessions/{sid}/finalize", json={"forced": True}, headers=_auth(_token(sid))
+    )
+    assert res.status_code == 200
+    meta = _repo.get_session(sid)
+    assert meta is not None
+    assert meta.status == "finalized"
+    assert meta.end_forced_by_user is True
+
+
+def test_finalize_forced_false_still_rejects_open_inquiries() -> None:
+    from sanba_shared.models import InquiryKind, InquiryNode
+
+    created = client.post("/api/sessions", json={"roles": ["pm"], "consent_acknowledged": True})
+    sid = created.json()["session_id"]
+    _repo.save_inquiry_node(sid, InquiryNode(id="inq1", kind=InquiryKind.GAP, text="性能未確認"))
+    res = client.post(
+        f"/api/sessions/{sid}/finalize", json={"forced": False}, headers=_auth(_token(sid))
+    )
+    assert res.status_code == 409
+
+
 def test_finalize_allows_when_only_advisory_ambiguous_inquiries_remain() -> None:
     """ambiguous は advisory（終了ゲート対象外）で open でも確定を止めない（ADR-0059 ⑤）。"""
     from sanba_shared.models import InquiryKind, InquiryNode

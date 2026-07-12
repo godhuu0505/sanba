@@ -25,6 +25,7 @@ import {
   type ExportEligibility,
   type ExportOptions,
   type ExportResult,
+  type FinalizeOptions,
   type FinalizeResult,
 } from "../lib/api";
 import { useAuth } from "../lib/auth";
@@ -319,8 +320,8 @@ export function SessionView({
     return fetchExportEligibility(sessionId, sessionToken);
   }
 
-  function handleFinalize(): Promise<FinalizeResult> {
-    return finalizeSession(sessionId, sessionToken);
+  function handleFinalize(options?: FinalizeOptions): Promise<FinalizeResult> {
+    return finalizeSession(sessionId, sessionToken, options);
   }
 
   function handleSendText(text: string) {
