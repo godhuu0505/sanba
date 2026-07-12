@@ -27,6 +27,10 @@ a2a-facade/
       base.py       AgentBackend Protocol（差し替え点）
       holmesgpt.py  HolmesGPT /api/chat へのブリッジ
   tests/            ネットワーク非依存の単体テスト
+  sidecar/          HolmesGPT sidecar イメージ（公式イメージ + serverless パッチ + config 生成 entrypoint）
+  mcp/
+    gcp-observability/  Google 公式 observability-mcp（Cloud Logging/Monitoring/Trace read）+ Supergateway
+    firestore/          Google 公式 MCP Toolbox（genai-toolbox）+ read-only ツール定義（tools.yaml）
   Dockerfile        非 root・最小ベース
 ```
 

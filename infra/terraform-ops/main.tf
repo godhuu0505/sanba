@@ -61,3 +61,15 @@ resource "google_secret_manager_secret_iam_member" "holmes_es_key_accessor" {
   role      = "roles/secretmanager.secretAccessor"
   member    = "serviceAccount:${google_service_account.holmes_facade.email}"
 }
+
+resource "google_project_iam_member" "holmes_production_readonly" {
+  for_each = toset([
+    "roles/logging.viewer",
+    "roles/monitoring.viewer",
+    "roles/cloudtrace.user",
+    "roles/datastore.viewer",
+  ])
+  project = var.production_project_id
+  role    = each.key
+  member  = "serviceAccount:${google_service_account.holmes_facade.email}"
+}

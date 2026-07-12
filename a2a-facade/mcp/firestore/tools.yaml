@@ -1,0 +1,25 @@
+sources:
+  sanba-prd-firestore:
+    kind: firestore
+    project: sanba-prd
+    database: "(default)"
+
+tools:
+  firestore_list_collections:
+    kind: firestore-list-collections
+    source: sanba-prd-firestore
+    description: SANBA 本番 Firestore のコレクション一覧を取得する (read-only)
+  firestore_query_collection:
+    kind: firestore-query-collection
+    source: sanba-prd-firestore
+    description: SANBA 本番 Firestore のコレクションをフィルタ・ソート付きで検索する (read-only)
+  firestore_get_documents:
+    kind: firestore-get-documents
+    source: sanba-prd-firestore
+    description: SANBA 本番 Firestore のドキュメントをパス指定で取得する (read-only)
+
+toolsets:
+  sanba-firestore-readonly:
+    - firestore_list_collections
+    - firestore_query_collection
+    - firestore_get_documents
