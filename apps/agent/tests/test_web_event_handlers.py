@@ -13,7 +13,12 @@ from typing import Any
 from sanba_shared.repository import SessionRepository
 
 from sanba_agent.events import EventPublisher, RecordingTransport
-from sanba_agent.main import SANBAAgent, respond_to_answer, respond_to_user_text
+from sanba_agent.main import (
+    SANBAAgent,
+    interrupt_playback,
+    respond_to_answer,
+    respond_to_user_text,
+)
 from sanba_agent.retrieval import GroundingStore
 
 
@@ -112,6 +117,27 @@ async def test_user_answered_interrupts_and_advances_with_question_context() -> 
     await _drain_publishes()
     finals = [s["event"] for s in transport.sent if s["event"]["type"] == "transcript.final"]
     assert any("対象OSは？" in ev["text"] and "iOS のみ" in ev["text"] for ev in finals)
+
+
+async def test_user_interrupt_stops_playback_immediately() -> None:
+    session = FakeAgentSession()
+
+    await interrupt_playback(session)  # type: ignore[arg-type]
+
+    assert [name for name, _ in session.calls] == ["interrupt"]
+
+
+async def test_user_interrupt_swallows_interrupt_failure() -> None:
+    class FailingSession(FakeAgentSession):
+        async def interrupt(self) -> None:
+            await super().interrupt()
+            raise RuntimeError("no active speech")
+
+    session = FailingSession()
+
+    await interrupt_playback(session)  # type: ignore[arg-type]
+
+    assert [name for name, _ in session.calls] == ["interrupt"]
 
 
 async def test_inject_video_analysis_generates_reply_without_interrupt() -> None:

@@ -3,6 +3,7 @@ import {
   decodeServerEvent,
   encodeUserAnswered,
   encodeUserInquiryDrop,
+  encodeUserInterrupt,
   encodeUserSelection,
   encodeUserText,
 } from "./parse";
@@ -321,6 +322,21 @@ describe("encodeUserAnswered", () => {
     );
     expect(obj).toMatchObject({ type: "user.answered", question_id: "q1", text: "関連度順" });
     expect(obj.selected_value).toBeUndefined();
+  });
+});
+
+describe("encodeUserInterrupt", () => {
+  it("PTT 押下開始の user.interrupt エンベロープを組む（§4.5 / ADR-0066 S3）", () => {
+    const obj = JSON.parse(
+      new TextDecoder().decode(encodeUserInterrupt("s1", 6, "2026-07-12T00:00:00Z")),
+    );
+    expect(obj).toMatchObject({
+      v: 1,
+      type: "user.interrupt",
+      seq: 6,
+      session_id: "s1",
+      ts: "2026-07-12T00:00:00Z",
+    });
   });
 });
 

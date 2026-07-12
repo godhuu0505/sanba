@@ -81,6 +81,7 @@ from .events import (
     LiveKitTransport,
     decode_analysis_visual,
     decode_user_answered,
+    decode_user_interrupt,
     decode_user_selection,
     decode_user_text,
 )
@@ -2310,6 +2311,17 @@ async def respond_to_answer(
     )
 
 
+async def interrupt_playback(session: AgentSession) -> None:
+    """PTT 押下開始（user.interrupt, 契約 §4.5 / ADR-0066 S3）で読み上げを即時中断する。
+
+    クライアント側 mic ゲートと対になるサーバ側の即応で、エージェントが発話中でも
+    ユーザーが話し始めた瞬間に黙る。中断対象が無い・実行中でない等の interrupt 失敗は
+    握りつぶす（発話を止める以外の副作用を持たないため、失敗しても会話は継続できる）。
+    """
+    with contextlib.suppress(Exception):
+        await session.interrupt()
+
+
 async def inject_video_analysis(
     agent: SANBAAgent,
     session: AgentSession,
@@ -2607,6 +2619,10 @@ async def entrypoint(ctx: JobContext) -> None:
         if answered is not None:
             question_id, answer = answered
             _schedule(respond_to_answer(agent, session, question_id, answer, _guarded_turn_reply))
+            return
+        if decode_user_interrupt(data, expected_session_id=session_id):
+            log.info("user_interrupt_received", session=session_id)
+            _schedule(interrupt_playback(session))
 
     def _wire_session(s: AgentSession) -> None:
         """AgentSession ごとのイベントハンドラを張る（再起動で作り直すたびに呼ぶ / ADR-0038）。"""

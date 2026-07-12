@@ -17,6 +17,7 @@ import type { SessionState } from "@/lib/realtime/store";
 import type { SendAnswer, SendInquiryDrop } from "@/lib/realtime/useRealtimeSession";
 import type { ExportEligibility, ExportOptions, ExportResult } from "@/lib/api";
 import { useAuthOptional } from "@/lib/auth";
+import type { MicMode, PttPressProps } from "@/lib/usePushToTalk";
 
 import { BottomBar } from "./BottomBar";
 import { ChatHistory } from "./ChatHistory";
@@ -39,6 +40,10 @@ export interface ConversationSessionViewProps {
   micOn: boolean;
   muted: boolean;
   agentSpeaking?: boolean;
+  micMode?: MicMode;
+  onMicModeChange?: (mode: MicMode) => void;
+  pttPressed?: boolean;
+  pttPressProps?: PttPressProps;
   onToggleMic: () => void;
   onToggleMute: () => void;
   onSendText: (text: string) => void;
@@ -78,6 +83,10 @@ export function ConversationSessionView({
   micOn,
   muted,
   agentSpeaking,
+  micMode,
+  onMicModeChange,
+  pttPressed,
+  pttPressProps,
   onToggleMic,
   onToggleMute,
   onSendText,
@@ -380,6 +389,10 @@ export function ConversationSessionView({
             <BottomBar
               micOn={micOn}
               muted={muted}
+              micMode={micMode}
+              onMicModeChange={onMicModeChange}
+              pttPressed={pttPressed}
+              pttPressProps={pttPressProps}
               onToggleMic={onToggleMic}
               onToggleMute={onToggleMute}
               onSend={onSendText}

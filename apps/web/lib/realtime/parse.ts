@@ -9,6 +9,7 @@ import {
   type SessionPhase,
   type UserAnsweredEvent,
   type UserInquiryDropEvent,
+  type UserInterruptEvent,
   type UserSelectionEvent,
   type UserTextEvent,
 } from "./types";
@@ -297,6 +298,17 @@ export function encodeUserInquiryDrop(
     ts,
     session_id: sessionId,
     node_id: nodeId,
+  };
+  return encoder.encode(JSON.stringify(event));
+}
+
+export function encodeUserInterrupt(sessionId: string, seq: number, ts: string): Uint8Array {
+  const event: UserInterruptEvent = {
+    v: SCHEMA_VERSION,
+    type: "user.interrupt",
+    seq,
+    ts,
+    session_id: sessionId,
   };
   return encoder.encode(JSON.stringify(event));
 }

@@ -78,3 +78,51 @@ describe("BottomBar（常時2行：消音/マイク・テキスト/送信）", (
     expect(screen.queryByRole("status")).toBeNull();
   });
 });
+
+describe("BottomBar（PTT モード / ADR-0066 S3）", () => {
+  afterEach(() => cleanup());
+
+  it("onMicModeChange があればモードトグルを出し、既定はハンズフリー", () => {
+    const onMicModeChange = vi.fn();
+    setup({ onMicModeChange });
+    expect(
+      screen.getByRole("button", { name: "ハンズフリー" }).getAttribute("aria-pressed"),
+    ).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: "押して話す" }));
+    expect(onMicModeChange).toHaveBeenCalledWith("ptt");
+  });
+
+  it("onMicModeChange が無ければトグルを出さない（既存利用の互換）", () => {
+    setup();
+    expect(screen.queryByRole("button", { name: "押して話す" })).toBeNull();
+  });
+
+  it("PTT モードは常設マイクボタンを隠し、大きな押下ボタンを出す", () => {
+    setup({ onMicModeChange: vi.fn(), micMode: "ptt" });
+    expect(screen.queryByRole("button", { name: "マイクをミュート" })).toBeNull();
+    const ptt = screen.getByRole("button", { name: "押しながら話す" });
+    expect(ptt.getAttribute("aria-pressed")).toBe("false");
+    expect(ptt.textContent).toContain("押しながら話す");
+  });
+
+  it("押下中は aria-pressed=true で送話中表示になり、pressProps が結線される", () => {
+    const onPointerDown = vi.fn();
+    setup({
+      onMicModeChange: vi.fn(),
+      micMode: "ptt",
+      pttPressed: true,
+      pttPressProps: {
+        onPointerDown,
+        onPointerUp: vi.fn(),
+        onPointerLeave: vi.fn(),
+        onPointerCancel: vi.fn(),
+        onContextMenu: vi.fn(),
+      },
+    });
+    const ptt = screen.getByRole("button", { name: "押しながら話す" });
+    expect(ptt.getAttribute("aria-pressed")).toBe("true");
+    expect(ptt.textContent).toContain("送話中");
+    fireEvent.pointerDown(ptt);
+    expect(onPointerDown).toHaveBeenCalledTimes(1);
+  });
+});

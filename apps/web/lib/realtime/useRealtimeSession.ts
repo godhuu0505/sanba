@@ -22,6 +22,7 @@ import {
   decodeServerEvent,
   encodeUserAnswered,
   encodeUserInquiryDrop,
+  encodeUserInterrupt,
   encodeUserSelection,
   encodeUserText,
 } from "./parse";
@@ -39,6 +40,8 @@ export type SendAnswer = (
 
 export type SendInquiryDrop = (nodeId: string) => void;
 
+export type SendInterrupt = () => void;
+
 const GAP_HYDRATE_MIN_INTERVAL_MS = 2000;
 
 export interface UseRealtimeSessionResult {
@@ -49,6 +52,7 @@ export interface UseRealtimeSessionResult {
   sendText: SendText;
   sendAnswer: SendAnswer;
   sendInquiryDrop: SendInquiryDrop;
+  sendInterrupt: SendInterrupt;
 }
 
 interface LiveOptions {
@@ -150,6 +154,11 @@ export function useRealtimeSession(opts: LiveOptions): UseRealtimeSessionResult 
     },
     [send, sessionId],
   );
+  const sendInterrupt = useCallback<SendInterrupt>(() => {
+    clientSeq.current += 1;
+    const payload = encodeUserInterrupt(sessionId, clientSeq.current, new Date().toISOString());
+    send(payload, { reliable: true });
+  }, [send, sessionId]);
 
   const hydrateInFlightRef = useRef(false);
   const lastGapHydrateAtRef = useRef(0);
@@ -222,13 +231,23 @@ export function useRealtimeSession(opts: LiveOptions): UseRealtimeSessionResult 
     wasConnected.current = true;
   }, [connState, hydrate, store]);
 
-  return { state, metrics, store, sendSelection, sendText, sendAnswer, sendInquiryDrop };
+  return {
+    state,
+    metrics,
+    store,
+    sendSelection,
+    sendText,
+    sendAnswer,
+    sendInquiryDrop,
+    sendInterrupt,
+  };
 }
 
 const noopSelection: SendSelection = () => {};
 const noopText: SendText = () => {};
 const noopAnswer: SendAnswer = () => {};
 const noopInquiryDrop: SendInquiryDrop = () => {};
+const noopInterrupt: SendInterrupt = () => {};
 
 export function useFixtureSession(
   events: ServerEvent[] = contractEventFixture,
@@ -259,5 +278,6 @@ export function useFixtureSession(
     sendText: noopText,
     sendAnswer: noopAnswer,
     sendInquiryDrop: noopInquiryDrop,
+    sendInterrupt: noopInterrupt,
   };
 }

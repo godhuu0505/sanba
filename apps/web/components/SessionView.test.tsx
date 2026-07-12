@@ -9,7 +9,10 @@ vi.mock("@livekit/components-react", () => ({
   RoomAudioRenderer: () => null,
   useTrackToggle: () => ({ enabled: false, toggle: vi.fn() }),
   useSpeakingParticipants: () => [],
-  useRoomContext: () => ({ disconnect: vi.fn() }),
+  useRoomContext: () => ({
+    disconnect: vi.fn(),
+    localParticipant: { setMicrophoneEnabled: vi.fn().mockResolvedValue(undefined) },
+  }),
 }));
 vi.mock("livekit-client", () => ({ Track: { Source: { Microphone: "microphone" } } }));
 
@@ -31,6 +34,7 @@ vi.mock("@/lib/realtime/useRealtimeSession", () => ({
     sendSelection: vi.fn(),
     sendText: vi.fn(),
     sendAnswer: vi.fn(),
+    sendInterrupt: vi.fn(),
   }),
 }));
 
