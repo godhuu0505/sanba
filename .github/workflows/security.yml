@@ -61,16 +61,29 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        app: [agent, api, web, worker]
+        include:
+          - app: agent
+            context: .
+            file: apps/agent/Dockerfile
+          - app: api
+            context: .
+            file: apps/api/Dockerfile
+          - app: web
+            context: apps/web
+            file: apps/web/Dockerfile
+          - app: worker
+            context: .
+            file: apps/worker/Dockerfile
+          - app: a2a-facade
+            context: .
+            file: a2a-facade/Dockerfile
+          - app: holmes-sidecar
+            context: .
+            file: a2a-facade/sidecar/Dockerfile
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Build image
-        run: |
-          if [ "${{ matrix.app }}" = "web" ]; then
-            docker build -t sanba-${{ matrix.app }}:scan apps/web
-          else
-            docker build -t sanba-${{ matrix.app }}:scan -f apps/${{ matrix.app }}/Dockerfile .
-          fi
+        run: DOCKER_BUILDKIT=1 docker build -t sanba-${{ matrix.app }}:scan -f ${{ matrix.file }} ${{ matrix.context }}
       - name: Trivy scan
         run: |
           docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
