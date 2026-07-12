@@ -179,22 +179,16 @@ tf-plan:
 tf-apply:
     cd infra/terraform && terraform apply
 
-# sanba-ops (ADR-0069): facade + holmes-sidecar イメージを git SHA タグで Cloud Build
+# sanba-ops (ADR-0069): facade + holmes-sidecar イメージを git SHA タグで Cloud Build (dirty tree は拒否)
 [group('ops')]
 ops-build:
-    git diff --quiet && git diff --cached --quiet || (printf 'uncommitted changes detected — commit before building\n' >&2 && exit 1)
-    gcloud builds submit --project=sanba-ops --region=us-central1       --config=a2a-facade/cloudbuild.yaml       --substitutions=_TAG=$(git rev-parse --short HEAD) .
+    git diff --quiet && git diff --cached --quiet
+    gcloud builds submit --project=sanba-ops --region=us-central1 --config=a2a-facade/cloudbuild.yaml --substitutions=_TAG=$(git rev-parse --short HEAD) .
 
-# sanba-ops (ADR-0069): 新規プロジェクト初回セットアップ — Cloud Run を除く infra のみ作成。その後 ops-build → tf-ops-apply の順で実行する
+# sanba-ops (ADR-0069): 初回のみ。イメージ push 先 (AR/SA/Secret) を Cloud Run より先に作る
 [group('ops')]
 tf-ops-bootstrap:
-    cd infra/terraform-ops && terraform apply \
-      -target=google_project_service.services \
-      -target=google_artifact_registry_repository.images \
-      -target=google_service_account.holmes_facade \
-      -target=google_project_iam_member.holmes_vertex_user \
-      -target=google_secret_manager_secret.elasticsearch_api_key \
-      -target=google_secret_manager_secret_iam_member.holmes_es_key_accessor
+    cd infra/terraform-ops && terraform apply -target=google_project_service.services -target=google_artifact_registry_repository.images -target=google_service_account.holmes_facade -target=google_project_iam_member.holmes_vertex_user -target=google_secret_manager_secret.elasticsearch_api_key -target=google_secret_manager_secret_iam_member.holmes_es_key_accessor -var "image_tag=$(git rev-parse --short HEAD)"
 
 # sanba-ops (ADR-0069): Terraform plan (image_tag は現在の git SHA)
 [group('ops')]

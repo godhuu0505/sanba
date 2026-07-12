@@ -6,6 +6,13 @@ RUN sed -i 's|self._make_request("GET", "_cluster/health", timeout=10)|self._mak
       /app/holmes/plugins/toolsets/elasticsearch/elasticsearch.py \
  && grep -q '_resolve/index/\*' /app/holmes/plugins/toolsets/elasticsearch/elasticsearch.py
 
+# 使わないツールセット用バイナリの削除 (read-only 方針 + Trivy HIGH の解消) と OS パッケージ更新
+RUN rm -f /usr/local/bin/argocd /usr/local/bin/helm /usr/local/bin/kube-lineage \
+ && apt-get update \
+ && apt-get upgrade -y --no-install-recommends \
+ && apt-get clean \
+ && rm -rf /var/lib/apt/lists/*
+
 COPY a2a-facade/sidecar/entrypoint.py /app/sidecar_entrypoint.py
 
 RUN useradd --create-home --uid 10001 holmes
