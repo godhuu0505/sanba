@@ -18,6 +18,7 @@ locals {
     GEMINI_REASONING_MODEL = var.gemini_reasoning_model
     OTEL_SERVICE_NAME      = "sanba-agent"
     USD_JPY_RATE           = var.usd_jpy_rate
+    SEPARATE_STT_ENABLED   = tostring(var.separate_stt_enabled)
   })
 
   api_env = merge(local.common_env, {
