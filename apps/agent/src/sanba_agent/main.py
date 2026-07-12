@@ -18,7 +18,7 @@ import threading
 import time
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
-from typing import Any, NamedTuple
+from typing import Any, NamedTuple, NoReturn
 from urllib.parse import urlparse
 
 import structlog
@@ -37,7 +37,7 @@ from livekit.agents import (
     WorkerOptions,
     cli,
 )
-from livekit.agents.llm import function_tool
+from livekit.agents.llm import StopResponse, function_tool
 from livekit.plugins import google
 
 try:  # noqa: SIM105
@@ -369,6 +369,7 @@ _RESOLVE_INQUIRY_KINDS = (
 RESOLVE_INQUIRY_NO_MATCH_LIMIT = 3
 SESSION_END_DECLINE_LIMIT = 2
 ASK_QUESTION_REASK_LIMIT = 2
+ASK_QUESTION_RESTART_REASKS = 6
 ADD_INQUIRY_CONFIDENCE = 0.9
 
 PREFETCH_TIMEOUT_SECONDS = 5.0
@@ -483,6 +484,7 @@ class SANBAAgent(Agent):
         self._last_analysis: AnalysisResult | None = None
         self._analysis_covered_turn = -1
         self._shutdown_hook: Callable[[str], None] | None = None
+        self._restart_hook: Callable[[], None] | None = None
         self._end_proposed = False
         self._completed = False
 
@@ -571,6 +573,43 @@ class SANBAAgent(Agent):
         読み上げ終える猶予をおいてルームから退出する。
         """
         self._shutdown_hook = hook
+
+    def set_restart_hook(self, hook: Callable[[], None]) -> None:
+        """Live セッションを張り直す手段（#468 の _request_restart）を注入する。
+
+        ask_question のツール livelock がサーキットブレークを超えて続くとき、
+        汚染された Gemini 側コンテキストごとセッションを作り直して復旧する。
+        """
+        self._restart_hook = hook
+
+    def _break_question_loop(self, event: str) -> NoReturn:
+        """ask_question の暴走をプログラム的に断つ（sess-ffcff138 の livelock 対策）。
+
+        ツール応答を返す限り Gemini Live は WHEN_IDLE で次の生成を続けるため、
+        打ち切りは StopResponse（応答を送らない）で行い、モデルは次のユーザー入力まで
+        待機する。再呼び出しがハード上限を超えたら restart 経路へエスカレーションし、
+        堆積したツール呼び出しでコンテキストが劣化したセッションを張り直す。
+        """
+        log.warning(
+            event,
+            session=self._session_id,
+            current=self._current_question_id,
+            turn=self._user_turn,
+            reasks=self._question_reasks_in_turn,
+        )
+        if self._question_reasks_in_turn >= ASK_QUESTION_RESTART_REASKS and (
+            hook := self._restart_hook
+        ):
+            log.warning(
+                "question_loop_restart",
+                session=self._session_id,
+                current=self._current_question_id,
+                turn=self._user_turn,
+                reasks=self._question_reasks_in_turn,
+            )
+            self._question_reasks_in_turn = 0
+            hook()
+        raise StopResponse()
 
     def _hydrate_inquiry(self) -> InquiryTree:
         """既存の確認事項ノードから木を復元する（再接続/新プロセスでの引き継ぎ / ADR-0059 決定④）。
@@ -1189,36 +1228,10 @@ class SANBAAgent(Agent):
             and self._questions.get(self._current_question_id) == prompt
         ):
             self._question_reasks_in_turn += 1
-            circuit_break = self._question_reasks_in_turn >= ASK_QUESTION_REASK_LIMIT
-            if circuit_break:
-                log.warning(
-                    "question_repeat_circuit_break",
-                    session=self._session_id,
-                    current=self._current_question_id,
-                    turn=self._user_turn,
-                    reasks=self._question_reasks_in_turn,
-                )
-            else:
-                log.info(
-                    "question_repeat_skipped",
-                    session=self._session_id,
-                    current=self._current_question_id,
-                    turn=self._user_turn,
-                    reasks=self._question_reasks_in_turn,
-                )
-            result: dict[str, Any] = {
-                "asked": self._current_question_id,
-                "note": (
-                    "同じ問いは提示済みです。ask_question を再度呼ばず、"
-                    "音声で参加者の回答を待ってください。"
-                ),
-            }
-            if circuit_break:
-                result["stop"] = True
-            return result
-        if superseded_in_turn and self._question_reasks_in_turn >= ASK_QUESTION_REASK_LIMIT:
-            log.warning(
-                "question_supersede_circuit_break",
+            if self._question_reasks_in_turn >= ASK_QUESTION_REASK_LIMIT:
+                self._break_question_loop("question_repeat_circuit_break")
+            log.info(
+                "question_repeat_skipped",
                 session=self._session_id,
                 current=self._current_question_id,
                 turn=self._user_turn,
@@ -1226,32 +1239,18 @@ class SANBAAgent(Agent):
             )
             return {
                 "asked": self._current_question_id,
-                "stop": True,
                 "note": (
-                    "同一ターンで問いを差し替えすぎています。ask_question の呼び出しをやめ、"
-                    "提示済みの問いへの回答を音声で待ってください。"
+                    "同じ問いは提示済みです。ask_question を再度呼ばず、"
+                    "音声で参加者の回答を待ってください。"
                 ),
             }
+        if superseded_in_turn and self._question_reasks_in_turn >= ASK_QUESTION_REASK_LIMIT:
+            self._question_reasks_in_turn += 1
+            self._break_question_loop("question_supersede_circuit_break")
         if superseded_in_turn and not new_has_options and self._current_question_has_options:
             self._question_reasks_in_turn += 1
-            circuit_break = self._question_reasks_in_turn >= ASK_QUESTION_REASK_LIMIT
-            if circuit_break:
-                log.warning(
-                    "question_superseded_skipped_circuit_break",
-                    session=self._session_id,
-                    current=self._current_question_id,
-                    turn=self._user_turn,
-                    reasks=self._question_reasks_in_turn,
-                )
-                return {
-                    "asked": self._current_question_id,
-                    "stop": True,
-                    "note": (
-                        "選択肢付きの問いが未回答のため後発の問いはスキップしました。"
-                        "同一ターンで ask_question を呼びすぎています。呼び出しをやめ、"
-                        "参加者の回答を音声で待ってください。"
-                    ),
-                }
+            if self._question_reasks_in_turn >= ASK_QUESTION_REASK_LIMIT:
+                self._break_question_loop("question_superseded_skipped_circuit_break")
             log.info(
                 "question_superseded_skipped",
                 session=self._session_id,
@@ -2958,6 +2957,7 @@ async def entrypoint(ctx: JobContext) -> None:
             )
 
     agent.set_shutdown_hook(lambda reason: ctx.shutdown(reason=reason))
+    agent.set_restart_hook(_request_restart)
     session = await _start_session()
     ctx.room.on("data_received", _on_data)
     await publisher.status("listening")

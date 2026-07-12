@@ -7,10 +7,11 @@
 from __future__ import annotations
 
 import pytest
+from livekit.agents.llm import StopResponse
 from sanba_shared.repository import SessionRepository
 
 from sanba_agent.events import EventPublisher, RecordingTransport
-from sanba_agent.main import SANBAAgent
+from sanba_agent.main import ASK_QUESTION_RESTART_REASKS, SANBAAgent
 from sanba_agent.retrieval import GroundingStore
 
 
@@ -177,24 +178,24 @@ async def test_same_prompt_reask_same_turn_is_skipped() -> None:
 
 @pytest.mark.asyncio
 async def test_same_prompt_repeat_circuit_breaks() -> None:
-    """同一問いの再掲が続いたら stop=True で打ち切る（sess-29dc6e7e の同一問い33連発対策）。"""
+    """同一問いの再掲が続いたら StopResponse で打ち切る（sess-ffcff138 の livelock 対策）。"""
     agent, _repo, transport, _pub = _agent()
     ask = type(agent).ask_question.__wrapped__
     await ask(agent, None, "Q1?")
     await ask(agent, None, "Q1?")
     transport.sent.clear()
-    r3 = await ask(agent, None, "Q1?")
-    assert r3.get("stop") is True
+    with pytest.raises(StopResponse):
+        await ask(agent, None, "Q1?")
     assert transport.sent == []
 
     agent.record_utterance("participant", "回答します")
     r4 = await ask(agent, None, "Q2?")
-    assert "stop" not in r4, "新しいターンでは再び問いを立てられる"
+    assert "note" not in r4, "新しいターンでは再び問いを立てられる"
 
 
 @pytest.mark.asyncio
 async def test_supersede_circuit_breaks_within_turn() -> None:
-    """同一ターンの差し替えが上限を超えたら stop=True で打ち切る（sess-29dc6e7e の暴走対策）。"""
+    """同一ターンの差し替えが上限を超えたら StopResponse で打ち切る（sess-ffcff138 対策）。"""
     agent, _repo, transport, _pub = _agent()
     ask = type(agent).ask_question.__wrapped__
     await ask(agent, None, "Q1?")
@@ -202,15 +203,49 @@ async def test_supersede_circuit_breaks_within_turn() -> None:
     r3 = await ask(agent, None, "Q3?")
     assert r3["asked"] != ""
     transport.sent.clear()
-    r4 = await ask(agent, None, "Q4?")
-    assert r4.get("stop") is True
-    assert r4["asked"] == r3["asked"], "現状の問いを維持する"
+    with pytest.raises(StopResponse):
+        await ask(agent, None, "Q4?")
+    assert agent.current_question_id == r3["asked"], "現状の問いを維持する"
     assert transport.sent == []
 
     agent.record_utterance("participant", "回答します")
     r5 = await ask(agent, None, "Q5?")
-    assert "stop" not in r5, "新しいターンでは再び問いを立てられる"
+    assert "note" not in r5, "新しいターンでは再び問いを立てられる"
     assert agent.current_question_id == r5["asked"]
+
+
+@pytest.mark.asyncio
+async def test_question_loop_escalates_to_restart() -> None:
+    """再呼び出しがハード上限を超えたら restart フックへエスカレーションする（#468 経路）。"""
+    agent, _repo, _transport, _pub = _agent()
+    restarts: list[bool] = []
+    agent.set_restart_hook(lambda: restarts.append(True))
+    ask = type(agent).ask_question.__wrapped__
+    await ask(agent, None, "Q1?")
+    await ask(agent, None, "Q1?")
+    for _ in range(ASK_QUESTION_RESTART_REASKS - 2):
+        with pytest.raises(StopResponse):
+            await ask(agent, None, "Q1?")
+    assert restarts == []
+    with pytest.raises(StopResponse):
+        await ask(agent, None, "Q1?")
+    assert restarts == [True]
+
+    agent.record_utterance("participant", "回答します")
+    r = await ask(agent, None, "Q2?")
+    assert "note" not in r, "リセット後は新しい問いを立てられる"
+
+
+@pytest.mark.asyncio
+async def test_question_loop_without_restart_hook_only_stops() -> None:
+    """restart フック未注入（単体テスト等）でも StopResponse で止まり続ける。"""
+    agent, _repo, _transport, _pub = _agent()
+    ask = type(agent).ask_question.__wrapped__
+    await ask(agent, None, "Q1?")
+    await ask(agent, None, "Q1?")
+    for _ in range(ASK_QUESTION_RESTART_REASKS + 2):
+        with pytest.raises(StopResponse):
+            await ask(agent, None, "Q1?")
 
 
 @pytest.mark.asyncio
