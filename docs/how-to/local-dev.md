@@ -89,8 +89,11 @@ identity (dev@sanba.local) になり、`/admin` がそのまま開ける (ADR-00
 
 ### 5.2 画像・動画解析 (マルチモーダル素材 / ADR-0004)
 - **設定**: 画像解析は `GOOGLE_API_KEY`（or Vertex）+ `GEMINI_VISION_MODEL`（既定 `gemini-2.5-flash`）。
-  保存先は `GCS_BUCKET`（空なら in-memory フォールバック）、サイズ上限 `MAX_ASSET_BYTES`（既定 25MB）。
-  動画解析は `ENABLE_VIDEO_ANALYSIS`（既定 `false`、未実装のため web ではグレーアウト）。
+  保存先は `GCS_BUCKET`（空なら in-memory フォールバック、ただし動画解析では worker から読めないため
+  実 GCS バケット必須）、サイズ上限 `MAX_ASSET_BYTES`（既定 25MB）。
+  動画解析は `ENABLE_VIDEO_ANALYSIS`（既定 `false`）で有効化し、非同期ワーカー（`apps/worker` /
+  ADR-0040）が解析する。ローカルは `GCS_BUCKET` を実バケットに設定した上で worker を別途起動して
+  `WORKER_URL` を指し、`LOCAL_DIRECT_DISPATCH=true` で Cloud Tasks を使わず直接ディスパッチする。
 - **経路**: web の素材アップロード → `POST /api/sessions/{id}/context/file` → 画像から観察文を抽出し
   共有 Elasticsearch 索引へ context として書く（言葉×画の矛盾検知の素地）。
 - **未設定時**: creds が無いと観察抽出は空配列（アップロード自体は通る）。
