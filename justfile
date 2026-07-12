@@ -179,6 +179,21 @@ tf-plan:
 tf-apply:
     cd infra/terraform && terraform apply
 
+# sanba-ops (ADR-0069): facade + holmes-sidecar イメージを git SHA タグで Cloud Build
+[group('ops')]
+ops-build:
+    gcloud builds submit --project=sanba-ops --region=us-central1       --config=a2a-facade/cloudbuild.yaml       --substitutions=_TAG=$(git rev-parse --short HEAD) .
+
+# sanba-ops (ADR-0069): Terraform plan (image_tag は現在の git SHA)
+[group('ops')]
+tf-ops-plan:
+    cd infra/terraform-ops && terraform plan -var "image_tag=$(git rev-parse --short HEAD)"
+
+# sanba-ops (ADR-0069): Terraform apply (image_tag は現在の git SHA)
+[group('ops')]
+tf-ops-apply:
+    cd infra/terraform-ops && terraform apply -var "image_tag=$(git rev-parse --short HEAD)"
+
 # sanba-analytics (ADR-0061) の ES データストリーム/ILM/単価 index と Kibana ダッシュボードを冪等セットアップ
 [group('ops')]
 analytics-setup:

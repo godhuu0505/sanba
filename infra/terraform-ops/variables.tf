@@ -36,9 +36,8 @@ variable "holmes_model" {
 }
 
 variable "image_tag" {
-  description = "Tag of the facade and sidecar images in Artifact Registry"
+  description = "Immutable tag (git short SHA) of the facade and sidecar images in Artifact Registry"
   type        = string
-  default     = "latest"
 }
 
 variable "public_url" {

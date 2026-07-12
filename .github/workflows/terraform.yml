@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "infra/terraform/**"
+      - "infra/terraform-ops/**"
       - ".github/workflows/terraform.yml"
   workflow_dispatch:
     inputs:
@@ -147,3 +148,26 @@ jobs:
       - name: Terraform Apply
         if: ${{ inputs.action == 'apply' }}
         run: terraform apply -input=false -auto-approve tfplan
+
+  terraform-ops-validate:
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'pull_request' }}
+    defaults:
+      run:
+        working-directory: infra/terraform-ops
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Install Terraform (pinned + checksum)
+        working-directory: /tmp
+        run: |
+          set -euo pipefail
+          base="https://releases.hashicorp.com/terraform/${TF_VERSION}"
+          curl -fsSLO "${base}/terraform_${TF_VERSION}_linux_amd64.zip"
+          curl -fsSLO "${base}/terraform_${TF_VERSION}_SHA256SUMS"
+          sha256sum --ignore-missing -c "terraform_${TF_VERSION}_SHA256SUMS"
+          unzip -o "terraform_${TF_VERSION}_linux_amd64.zip"
+          sudo mv terraform /usr/local/bin/terraform
+          terraform version
+      - run: terraform fmt -check -recursive
+      - run: terraform init -backend=false
+      - run: terraform validate
