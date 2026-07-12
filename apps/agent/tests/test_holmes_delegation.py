@@ -56,6 +56,7 @@ class _StubDelegator(HolmesDelegator):
         super().__init__(config)
         self._handler = handler
         self.seen_auth: str | None = None
+        self.seen_body: dict | None = None
 
     def _id_token(self) -> str:
         return "test-id-token"
@@ -65,6 +66,7 @@ class _StubDelegator(HolmesDelegator):
 
         def _capture(request: httpx.Request) -> httpx.Response:
             delegator.seen_auth = request.headers.get("Authorization")
+            delegator.seen_body = json.loads(request.content)
             return delegator._handler(request)
 
         return httpx.AsyncClient(
@@ -88,10 +90,12 @@ def _ok_handler(answer: str):
 @pytest.mark.asyncio
 async def test_investigate_returns_backend_text_with_bearer_token():
     delegator = _StubDelegator(_settings(), _ok_handler("本番のエラーは 0 件です"))
-    result = await delegator.investigate("本番のエラー状況を調べて")
+    result = await delegator.investigate("本番のエラー状況を調べて", caller="sess-xyz")
     assert result.ok is True
     assert result.text == "本番のエラーは 0 件です"
     assert delegator.seen_auth == "Bearer test-id-token"
+    assert delegator.seen_body is not None
+    assert delegator.seen_body["params"]["metadata"]["caller"] == "sess-xyz"
 
 
 @pytest.mark.asyncio

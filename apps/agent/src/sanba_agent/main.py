@@ -2598,7 +2598,7 @@ async def run_investigation(
     """
     d = delegator if delegator is not None else HolmesDelegator(settings)
     try:
-        result = await d.investigate(question)
+        result = await d.investigate(question, caller=agent.session_id)
     finally:
         agent.release_investigation()
     if not result.ok:

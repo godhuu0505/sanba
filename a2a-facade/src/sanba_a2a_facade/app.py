@@ -55,7 +55,10 @@ def create_app(
 
     card = build_agent_card(agent, cfg.agent_id, cfg.public_url)
     executor = HolmesAgentExecutor(
-        agent, timeout_seconds=cfg.holmes_timeout_seconds, audit=audit_store
+        agent,
+        timeout_seconds=cfg.holmes_timeout_seconds,
+        audit=audit_store,
+        retention_days=cfg.audit_retention_days,
     )
     handler = DefaultRequestHandler(
         agent_executor=executor,

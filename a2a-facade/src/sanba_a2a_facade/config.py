@@ -26,6 +26,7 @@ class FacadeSettings(BaseSettings):
     audit_enabled: bool = False
     firestore_project: str = ""
     audit_collection: str = "holmes-investigations"
+    audit_retention_days: int = 30
 
     @property
     def audit_configured(self) -> bool:

@@ -25,9 +25,14 @@ def build_record(
     error: str = "",
     started_at: str = "",
     finished_at: str = "",
+    expire_at: Any = None,
 ) -> dict[str, Any]:
-    """Firestore へ書く委譲レコードを組み立てる（純関数）。"""
-    return {
+    """Firestore へ書く委譲レコードを組み立てる（純関数）。
+
+    `question` / `result` は呼び出し側で PII マスキング済みの値を渡す。`expire_at` は
+    Firestore TTL 用の期限（`datetime`）で、`None` のときはフィールドを付けない。
+    """
+    record: dict[str, Any] = {
         "request_id": request_id,
         "question": question,
         "status": status,
@@ -37,6 +42,9 @@ def build_record(
         "started_at": started_at,
         "finished_at": finished_at,
     }
+    if expire_at is not None:
+        record["expire_at"] = expire_at
+    return record
 
 
 class AuditStore(Protocol):

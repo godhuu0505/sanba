@@ -61,19 +61,17 @@ class FakeBackend:
 VERSION_HEADERS = {"A2A-Version": "0.3"}
 
 
-def _send(text: str = "本番のエラーは？") -> dict:
-    return {
-        "jsonrpc": "2.0",
-        "id": "req-1",
-        "method": "message/send",
-        "params": {
-            "message": {
-                "messageId": "req-1",
-                "role": "user",
-                "parts": [{"text": text}],
-            }
-        },
+def _send(text: str = "本番のエラーは？", caller: str = "") -> dict:
+    params: dict[str, Any] = {
+        "message": {
+            "messageId": "req-1",
+            "role": "user",
+            "parts": [{"text": text}],
+        }
     }
+    if caller:
+        params["metadata"] = {"caller": caller}
+    return {"jsonrpc": "2.0", "id": "req-1", "method": "message/send", "params": params}
 
 
 def _client(backend: FakeBackend, audit: Any) -> TestClient:
@@ -81,8 +79,10 @@ def _client(backend: FakeBackend, audit: Any) -> TestClient:
     return TestClient(create_app(backend, cfg, audit))
 
 
-def _post(client: TestClient) -> dict:
-    return client.post("/a2a/sanba-sre-scout", json=_send(), headers=VERSION_HEADERS).json()
+def _post(client: TestClient, text: str = "本番のエラーは？", caller: str = "") -> dict:
+    return client.post(
+        "/a2a/sanba-sre-scout", json=_send(text, caller), headers=VERSION_HEADERS
+    ).json()
 
 
 def test_success_writes_running_then_done():
@@ -99,6 +99,27 @@ def test_running_and_done_share_the_same_doc_id():
     _post(_client(FakeBackend(answer="エラーなし"), audit))
     doc_ids = {doc_id for doc_id, _ in audit.calls}
     assert len(doc_ids) == 1
+
+
+def test_records_carry_caller_and_ttl_expiry():
+    audit = RecordingAudit()
+    _post(_client(FakeBackend(answer="エラーなし"), audit), caller="sess-abc123")
+    for _, rec in audit.calls:
+        assert rec["caller"] == "sess-abc123"
+        assert rec["expire_at"] is not None
+
+
+def test_pii_is_masked_before_persisting():
+    audit = RecordingAudit()
+    _post(
+        _client(FakeBackend(answer="連絡先は ops@example.com、電話 090-1234-5678 です"), audit),
+        text="user@example.com のセッションを調べて",
+    )
+    done = audit.calls[-1][1]
+    assert "@example.com" not in done["result"]
+    assert "090-1234-5678" not in done["result"]
+    assert "[EMAIL]" in done["result"]
+    assert "@example.com" not in done["question"]
 
 
 def test_failure_writes_running_then_error():

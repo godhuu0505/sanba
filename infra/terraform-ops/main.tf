@@ -79,3 +79,12 @@ resource "google_project_iam_member" "holmes_facade_datastore" {
   role    = "roles/datastore.user"
   member  = "serviceAccount:${google_service_account.holmes_facade.email}"
 }
+
+resource "google_firestore_field" "holmes_investigations_ttl" {
+  project    = var.project_id
+  database   = "(default)"
+  collection = "holmes-investigations"
+  field      = "expire_at"
+
+  ttl_config {}
+}

@@ -48,9 +48,11 @@ class FakeDelegator:
     def __init__(self, result: InvestigationResult) -> None:
         self._result = result
         self.asked: list[str] = []
+        self.callers: list[str] = []
 
-    async def investigate(self, question: str) -> InvestigationResult:
+    async def investigate(self, question: str, *, caller: str = "") -> InvestigationResult:
         self.asked.append(question)
+        self.callers.append(caller)
         return self._result
 
 
@@ -61,6 +63,7 @@ async def test_run_investigation_injects_fenced_result_and_releases():
     delegator = FakeDelegator(InvestigationResult(ok=True, text="5xx は 0 件\n直近1時間で異常なし"))
     await run_investigation(agent, FakeSession(), "5xx はある?", guard, delegator)  # type: ignore[arg-type]
     assert delegator.asked == ["5xx はある?"]
+    assert delegator.callers == ["s1"]
     assert agent.released == 1
     assert len(calls) == 1
     call = calls[0]

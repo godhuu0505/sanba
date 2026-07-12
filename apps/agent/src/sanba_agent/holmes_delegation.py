@@ -29,6 +29,7 @@ from a2a.types.a2a_pb2 import (
     SendMessageRequest,
 )
 from a2a.utils.constants import TransportProtocol
+from google.protobuf.struct_pb2 import Struct
 
 from .config import Settings, settings
 
@@ -64,12 +65,12 @@ class HolmesDelegator:
     def __init__(self, config: Settings | None = None) -> None:
         self._settings = config or settings
 
-    async def investigate(self, question: str) -> InvestigationResult:
+    async def investigate(self, question: str, *, caller: str = "") -> InvestigationResult:
         if not self._settings.holmesgpt_configured:
             return InvestigationResult(ok=False, error="holmesgpt_not_configured")
         try:
             token = await asyncio.to_thread(self._id_token)
-            text = await self._ask_via_a2a(question, token)
+            text = await self._ask_via_a2a(question, token, caller)
         except Exception as exc:  # noqa: BLE001
             log.warning("holmes_delegation_failed", error=str(exc))
             return InvestigationResult(ok=False, error=str(exc))
@@ -96,19 +97,29 @@ class HolmesDelegator:
             timeout=self._settings.holmesgpt_timeout_seconds,
         )
 
-    async def _ask_via_a2a(self, question: str, token: str) -> str:
+    def _request(self, question: str, caller: str) -> SendMessageRequest:
+        message = new_text_message(question, role=Role.ROLE_USER)
+        if not caller:
+            return SendMessageRequest(message=message)
+        metadata = Struct()
+        metadata.update({"caller": caller})
+        return SendMessageRequest(message=message, metadata=metadata)
+
+    async def _ask_via_a2a(self, question: str, token: str, caller: str = "") -> str:
         httpx_client = self._build_httpx_client(token)
-        config = ClientConfig(streaming=False, httpx_client=httpx_client)
-        client = await create_client(self._build_card(), client_config=config)
-        request = SendMessageRequest(message=new_text_message(question, role=Role.ROLE_USER))
-        text = ""
         try:
-            async for response in client.send_message(request):
-                chunk = get_stream_response_text(response)
-                if chunk:
-                    text = chunk
+            config = ClientConfig(streaming=False, httpx_client=httpx_client)
+            client = await create_client(self._build_card(), client_config=config)
+            request = self._request(question, caller)
+            text = ""
+            try:
+                async for response in client.send_message(request):
+                    chunk = get_stream_response_text(response)
+                    if chunk:
+                        text = chunk
+            finally:
+                await client.close()
         finally:
-            await client.close()
             await httpx_client.aclose()
         return text.strip()
 

@@ -88,7 +88,7 @@ class Settings(BaseSettings):
     holmesgpt_agent_id: str = "sanba-sre-scout"
     holmesgpt_invoker_sa: str = ""
     holmesgpt_audience: str = ""
-    holmesgpt_timeout_seconds: float = 120.0
+    holmesgpt_timeout_seconds: float = 330.0
 
     @property
     def admin_email_set(self) -> frozenset[str]:
