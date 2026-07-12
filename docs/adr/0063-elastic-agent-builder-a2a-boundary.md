@@ -8,7 +8,8 @@
   [ADR-0046](0046-decouple-analysis-from-voice-worker.md)（分析を音声ループから分離）/
   [ADR-0051](0051-google-native-observability-and-llmops.md)（観測性の統一規律）/
   [ADR-0061](0061-session-ai-cost-kpi-analytics.md)（ES + Kibana の分析イベント基盤）/
-  未マージ PR #445（A2A 委譲境界・初弾 repo-scout — 本 ADR が一般化する）
+  未マージ PR #445（A2A 委譲境界・初弾 repo-scout — 本 ADR が一般化する）/
+  [ADR-0069](0069-holmesgpt-first-a2a-proof-and-generic-facade.md)（本 ADR の決定5・7＝初弾エンジン/エージェント選定を改訂し HolmesGPT に変更。境界設計・seam・flag 方針は本 ADR のまま有効）
 - きっかけ: オーナー要望「Elasticsearch に接続した Elastic エージェントを作り、最終的にサンバの音声
   エージェントと A2A で会話・接続したい。ハッカソン機能ではなく、プロダクトを良くする追加機能企画として、
   そもそも本質的か・拡張性があるか・他の方法はないかをゼロベースで検討してほしい」。
