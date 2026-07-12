@@ -609,7 +609,6 @@ class SANBAAgent(Agent):
                 turn=self._user_turn,
                 reasks=self._question_reasks_in_turn,
             )
-            self._question_reasks_in_turn = 0
             hook()
         raise StopResponse()
 
