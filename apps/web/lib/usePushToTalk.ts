@@ -23,6 +23,7 @@ export interface PttPressProps {
 export interface UsePushToTalkOptions {
   sendInterrupt: () => void;
   onError?: (message: string) => void;
+  micEnabled?: boolean;
 }
 
 export interface UsePushToTalkResult {
@@ -45,15 +46,16 @@ function isInteractiveTarget(target: EventTarget | null): boolean {
 export function usePushToTalk({
   sendInterrupt,
   onError,
+  micEnabled,
 }: UsePushToTalkOptions): UsePushToTalkResult {
   const room = useRoomContext();
   const roomRef = useRef(room);
   useEffect(() => {
     roomRef.current = room;
   }, [room]);
-  const [mode, setModeState] = useState<MicMode>("handsfree");
+  const [mode, setModeState] = useState<MicMode>("ptt");
   const [pttPressed, setPttPressed] = useState(false);
-  const modeRef = useRef<MicMode>("handsfree");
+  const modeRef = useRef<MicMode>("ptt");
   const pressSourceRef = useRef<PressSource | null>(null);
   const restoreEnabledRef = useRef<boolean | null>(null);
   const sendInterruptRef = useRef(sendInterrupt);
@@ -140,17 +142,28 @@ export function usePushToTalk({
       }
       const restore = restoreEnabledRef.current;
       restoreEnabledRef.current = null;
-      if (restore !== null) applyDesiredMic(restore);
+      applyDesiredMic(restore ?? true);
     },
     [applyDesiredMic, clearPressState],
   );
+
+  useEffect(() => {
+    if (modeRef.current === "ptt") applyDesiredMic(false);
+  }, [applyDesiredMic]);
+
+  useEffect(() => {
+    if (micEnabled !== true) return;
+    if (modeRef.current !== "ptt" || pressSourceRef.current !== null) return;
+    applyDesiredMic(false);
+  }, [micEnabled, applyDesiredMic]);
 
   useEffect(
     () => () => {
       const restore = restoreEnabledRef.current;
       restoreEnabledRef.current = null;
-      if (restore !== null) {
-        roomRef.current.localParticipant.setMicrophoneEnabled(restore).catch((e: unknown) => {
+      const target = pressSourceRef.current !== null ? false : restore;
+      if (target !== null) {
+        roomRef.current.localParticipant.setMicrophoneEnabled(target).catch((e: unknown) => {
           console.error("ptt mic restore failed", e);
         });
       }

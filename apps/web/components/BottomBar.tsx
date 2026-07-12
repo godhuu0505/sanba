@@ -97,7 +97,7 @@ export function BottomBar({
             </>
           )}
         </button>
-        {micMode === "handsfree" && (
+        {micMode === "handsfree" ? (
           <button
             type="button"
             aria-label="マイクをミュート"
@@ -119,32 +119,31 @@ export function BottomBar({
               </>
             )}
           </button>
+        ) : (
+          <button
+            type="button"
+            aria-label="押しながら話す"
+            aria-pressed={pttPressed}
+            title="押している間だけ送話します（Space 長押しでも可）"
+            {...pttPressProps}
+            className={`flex flex-1 touch-none select-none items-center justify-center gap-1.5 rounded-[12px] border py-3 text-[13px] font-bold ${
+              pttPressed
+                ? "sanba-gold-gradient border-2 border-sanba-frame text-sanba-ink"
+                : "border-sanba-border bg-sanba-surface text-sanba-muted"
+            }`}
+          >
+            {pttPressed ? (
+              <>
+                <Mic size={15} aria-hidden /> 送話中
+              </>
+            ) : (
+              <>
+                <MicOff size={15} aria-hidden /> 押して話す
+              </>
+            )}
+          </button>
         )}
       </div>
-
-      {micMode === "ptt" && (
-        <button
-          type="button"
-          aria-label="押しながら話す"
-          aria-pressed={pttPressed}
-          {...pttPressProps}
-          className={`flex w-full touch-none select-none items-center justify-center gap-2 rounded-[14px] border-2 py-5 text-[15px] font-bold ${
-            pttPressed
-              ? "sanba-gold-gradient border-sanba-frame text-sanba-ink"
-              : "border-sanba-border bg-sanba-surface text-sanba-muted"
-          }`}
-        >
-          {pttPressed ? (
-            <>
-              <Mic size={18} aria-hidden /> 送話中（離すと停止）
-            </>
-          ) : (
-            <>
-              <MicOff size={18} aria-hidden /> 押しながら話す（Space 長押し）
-            </>
-          )}
-        </button>
-      )}
 
       <div className="flex items-center gap-2">
         <input

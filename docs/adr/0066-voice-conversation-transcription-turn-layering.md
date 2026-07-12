@@ -108,7 +108,7 @@ Elasticsearch `sanba-grounding`・Firestore・実ソースで横断復元し、3
 ## 未決事項（後続 PR / PoC で確定）
 
 1. S1 の STT モデル: `chirp_3` ストリーミング vs コスト最適 batch。
-2. 既定モード: PTT-A を既定にするか、ハンズフリー既定＋PTT オプションか。
+2. 既定モード: **決定（2026-07-12）**: PTT-A を既定にする（本番実機フィードバック。ハンズフリーはトグルで選択可）。
 3. S4（PTT-B / silero 追加）を将来スコープに残すか。
 4. 会話音声（Gemini 解釈）と表示テキスト（Chirp）の乖離の観測方法。
 5. ①の効果検証: `playback_finished text_done:false`（自己バージインの代替シグナル）のメトリクス化

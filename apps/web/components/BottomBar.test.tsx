@@ -97,12 +97,15 @@ describe("BottomBar（PTT モード / ADR-0066 S3）", () => {
     expect(screen.queryByRole("button", { name: "押して話す" })).toBeNull();
   });
 
-  it("PTT モードは常設マイクボタンを隠し、大きな押下ボタンを出す", () => {
+  it("PTT モードは集音中ボタンのスロットに押下ボタンを出す（スピーカー消音と横並び）", () => {
     setup({ onMicModeChange: vi.fn(), micMode: "ptt" });
     expect(screen.queryByRole("button", { name: "マイクをミュート" })).toBeNull();
     const ptt = screen.getByRole("button", { name: "押しながら話す" });
     expect(ptt.getAttribute("aria-pressed")).toBe("false");
-    expect(ptt.textContent).toContain("押しながら話す");
+    expect(ptt.textContent).toContain("押して話す");
+    expect(ptt.className).toContain("flex-1");
+    const mute = screen.getByRole("button", { name: "スピーカー消音" });
+    expect(ptt.parentElement).toBe(mute.parentElement);
   });
 
   it("押下中は aria-pressed=true で送話中表示になり、pressProps が結線される", () => {
