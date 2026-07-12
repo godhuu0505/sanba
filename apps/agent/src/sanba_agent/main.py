@@ -2095,46 +2095,54 @@ class _ReplyTracker:
     単一 ``asyncio.Event`` では並行ターン（テキスト連投・画像注入と音声が重なる）が互いの
     応答を取り違えて競合するため、応答数のカウンタで「自分の発行より後に応答が来たか」を
     判定する。``wait_beyond`` は ``baseline`` を超える応答が来るまで待ち、来なければ
-    ``TimeoutError``。speaking で ``bump_from_speaking``、item_added で ``bump_from_item``
-    を使い、同一応答を 2 回カウントしない（#524）。
+    ``TimeoutError``。speaking（発話開始）は ``bump_speaking`` の別カウンタで、待つ側が
+    ``speaking_baseline`` を渡したときだけ成立条件に加わる（同一応答の二重計上は構造上ない）。
     """
 
     def __init__(self) -> None:
         self._count = 0
+        self._speaking_count = 0
         self._event = asyncio.Event()
-        self._speaking_pending = False
 
     @property
     def count(self) -> int:
         return self._count
 
+    @property
+    def speaking_count(self) -> int:
+        return self._speaking_count
+
     def bump(self) -> None:
         self._count += 1
         self._event.set()
 
-    def bump_from_speaking(self) -> None:
-        """speaking 遷移時に呼ぶ。フラグを立てて bump し、item_added の二重カウントを防ぐ。"""
-        self._speaking_pending = True
-        self._count += 1
+    def bump_speaking(self) -> None:
+        """assistant の発話開始（state=speaking）を記録する（#522）。
+
+        conversation_item（完了）とは別カウンタにする: 開幕 watchdog は「話し始めた＝生きている」
+        で早期成立させたいが、guarded_turn_reply の 20s watchdog まで発話開始で成功扱いにすると
+        「話し始めて完了せず死ぬ」生成の検知力が下がるため、待つ側が明示的に選ぶ。
+        """
+        self._speaking_count += 1
         self._event.set()
 
-    def bump_from_item(self) -> None:
-        """conversation_item_added 時に呼ぶ。speaking 済みなら bump をスキップして二重計上を防ぐ。"""
-        if self._speaking_pending:
-            self._speaking_pending = False
-            return
-        self._count += 1
-        self._event.set()
-
-    async def wait_beyond(self, baseline: int, timeout_s: float) -> None:
+    async def wait_beyond(
+        self, baseline: int, timeout_s: float, *, speaking_baseline: int | None = None
+    ) -> None:
         loop = asyncio.get_event_loop()
         deadline = loop.time() + timeout_s
-        while self._count <= baseline:
+
+        def satisfied() -> bool:
+            if self._count > baseline:
+                return True
+            return speaking_baseline is not None and self._speaking_count > speaking_baseline
+
+        while not satisfied():
             remaining = deadline - loop.time()
             if remaining <= 0:
                 raise TimeoutError
             self._event.clear()
-            if self._count > baseline:
+            if satisfied():
                 return
             with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(self._event.wait(), timeout=remaining)
@@ -2149,8 +2157,12 @@ class _TurnReplyWatchdog:
     話し始めたら on_agent_speaking で disarm。timeout で nudge（短い再応答要求）を 1 回だけ試み、
     なお沈黙なら request_restart へ倒す（再起動の予算・バックオフは既存機構を流用）。
 
-    世代ずれ対策（#524）: arm 後に speaking が来るまでは item_added で解除しない
-    （中断された前ターンの遅延 item が新 arm を誤解除する競合を防ぐ）。
+    armed 中の再 arm は no-op（最初の未応答発話からの経過で発火する）。タイマーを置き換えると、
+    無応答に気づいたユーザーが timeout 未満の間隔で言い直し続ける限り永久に発火しないため。
+    nudge は timeout_s で打ち切る（nudge 自体が同じ沈黙障害でハングしても 2 段目へ進む）。
+
+    世代ずれ対策（#524）: 解除シグナルは speaking 遷移（と明示的な disarm）に限定し、
+    item_added では解除しない（中断された前ターンの遅延 item が新 arm を誤解除する競合を防ぐ）。
     is_response_active が True の間は arm をスキップし、遅延 STT final による誤 arm を防ぐ。
     """
 
@@ -2161,13 +2173,14 @@ class _TurnReplyWatchdog:
         timeout_s: float,
         nudge: Callable[[], Awaitable[Any]],
         request_restart: Callable[[], None],
+        register_task: Callable[[asyncio.Task[None]], None] | None = None,
     ) -> None:
         self._session_id = session_id
         self._timeout_s = timeout_s
         self._nudge = nudge
         self._request_restart = request_restart
+        self._register_task = register_task
         self._task: asyncio.Task[None] | None = None
-        self._spoke_since_arm = False
         self._is_speaking = False
 
     @property
@@ -2176,39 +2189,26 @@ class _TurnReplyWatchdog:
         return self._is_speaking
 
     def arm(self) -> None:
-        self._spoke_since_arm = False
-        task = self._task
-        self._task = None
-        if task is not None and not task.done():
-            task.cancel()
+        if self._task is not None and not self._task.done():
+            return
         self._task = asyncio.create_task(self._run())
+        if self._register_task is not None:
+            self._register_task(self._task)
 
     def on_agent_speaking(self) -> None:
         """speaking 遷移を受けて watchdog を解除し、is_response_active を True にする。"""
         self._is_speaking = True
-        if self._task is not None:
-            self._spoke_since_arm = True
-            if not self._task.done():
-                self._task.cancel()
-            self._task = None
+        task = self._task
+        self._task = None
+        if task is not None and not task.done():
+            task.cancel()
 
     def on_agent_not_speaking(self) -> None:
         """非 speaking 遷移（listening / idle 等）を受けて is_response_active を下げる。"""
         self._is_speaking = False
 
-    def disarm_from_item(self) -> None:
-        """item_added 受信時に呼ぶ。speaking 後の item のみ解除し、遅延 item の誤解除を防ぐ。"""
-        self._is_speaking = False
-        if self._spoke_since_arm:
-            self._spoke_since_arm = False
-            task = self._task
-            self._task = None
-            if task is not None and not task.done():
-                task.cancel()
-
     def disarm(self) -> None:
-        """無条件に解除する（shutdown / open_interview 完了後などに使う）。"""
-        self._spoke_since_arm = False
+        """無条件に解除する（restart / shutdown で使う）。"""
         self._is_speaking = False
         task = self._task
         self._task = None
@@ -2223,7 +2223,7 @@ class _TurnReplyWatchdog:
             timeout_s=self._timeout_s,
         )
         with contextlib.suppress(Exception):
-            await self._nudge()
+            await asyncio.wait_for(self._nudge(), timeout=self._timeout_s)
         await asyncio.sleep(self._timeout_s)
         log.warning(
             "voice_turn_reply_dead",
@@ -2240,15 +2240,15 @@ def handle_agent_state_changed(
 
     speaking 遷移: conversation_item_added は生成完了まで発火せず、長い開幕発話では
     opening watchdog と数十 ms 差でレースして発話中断が起きる（sess-af021ebd a2/a4）。
-    bump_from_speaking で「話し始めた＝生きている」を即時反映し、on_agent_speaking で
-    turn_watchdog を解除する。item_added との二重カウントは bump_from_speaking/_from_item
-    で防ぐ（#524）。
+    speaking は専用カウンタ（bump_speaking）に記録し、開幕 watchdog だけが
+    「話し始めた＝生きている」で早期成立する（guarded_turn_reply の完了検知は従来どおり）。
+    同時に on_agent_speaking で沈黙 watchdog を解除する。
 
     非 speaking 遷移: on_agent_not_speaking で is_response_active を下げ、次の user final が
     正しく arm できるようにする。
     """
     if new_state == "speaking":
-        reply_tracker.bump_from_speaking()
+        reply_tracker.bump_speaking()
         turn_watchdog.on_agent_speaking()
     else:
         turn_watchdog.on_agent_not_speaking()
@@ -2368,6 +2368,7 @@ async def open_interview(
     total_attempts = max(1, attempts)
     for attempt in range(1, total_attempts + 1):
         baseline = reply_tracker.count
+        speaking_baseline = reply_tracker.speaking_count
         await guarded_generate_reply(
             session,
             session_id=session_id,
@@ -2375,7 +2376,9 @@ async def open_interview(
             instructions=instructions if attempt == 1 else OPENING_RETRY_INSTRUCTIONS,
         )
         try:
-            await reply_tracker.wait_beyond(baseline, timeout_s)
+            await reply_tracker.wait_beyond(
+                baseline, timeout_s, speaking_baseline=speaking_baseline
+            )
         except TimeoutError:
             log.warning(
                 "voice_opening_no_response",
@@ -2695,6 +2698,8 @@ async def entrypoint(ctx: JobContext) -> None:
     pending_reinject: list[str] = []
 
     async def _turn_silence_nudge() -> None:
+        with contextlib.suppress(Exception):
+            await session.interrupt()
         await guarded_generate_reply(
             session,
             session_id=session_id,
@@ -2702,11 +2707,16 @@ async def entrypoint(ctx: JobContext) -> None:
             instructions=TURN_REPLY_NUDGE_INSTRUCTIONS,
         )
 
+    def _track_watchdog_task(task: asyncio.Task[None]) -> None:
+        _bg_tasks.add(task)
+        task.add_done_callback(_on_bg_done)
+
     turn_watchdog = _TurnReplyWatchdog(
         session_id=session_id,
         timeout_s=settings.voice_turn_reply_timeout_s,
         nudge=_turn_silence_nudge,
         request_restart=lambda: _request_restart(),
+        register_task=_track_watchdog_task,
     )
 
     async def _guarded_turn_reply(*, kind: str, reinject: str | None, **gen_kwargs: Any) -> None:
@@ -2784,8 +2794,7 @@ async def entrypoint(ctx: JobContext) -> None:
             item = getattr(ev, "item", None)
             if getattr(item, "role", None) != "assistant":
                 return
-            reply_tracker.bump_from_item()
-            turn_watchdog.disarm_from_item()
+            reply_tracker.bump()
             text = getattr(item, "text_content", None)
             if text:
                 agent.publish_agent_utterance(text)
@@ -2874,6 +2883,7 @@ async def entrypoint(ctx: JobContext) -> None:
         （error-close 経由は既に閉じており aclose は無害 / #468）。
         """
         nonlocal session, restart_count, restart_pending
+        turn_watchdog.disarm()
         if restart_count >= settings.voice_session_max_restarts:
             log.error(
                 "voice_session_restarts_exhausted",
