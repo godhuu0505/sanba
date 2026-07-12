@@ -82,6 +82,23 @@ class Settings(BaseSettings):
     github_token: str = ""
     github_repo: str = ""
 
+    admin_emails: str = ""
+    holmesgpt_agent_enabled: bool = False
+    holmesgpt_agent_base_url: str = ""
+    holmesgpt_agent_id: str = "sanba-sre-scout"
+    holmesgpt_invoker_sa: str = ""
+    holmesgpt_audience: str = ""
+    holmesgpt_timeout_seconds: float = 120.0
+
+    @property
+    def admin_email_set(self) -> frozenset[str]:
+        """`admin_emails`（カンマ区切り）を正規化した集合。operator ゲートの判定に使う。"""
+        return frozenset(e.strip().lower() for e in self.admin_emails.split(",") if e.strip())
+
+    @property
+    def holmesgpt_configured(self) -> bool:
+        return bool(self.holmesgpt_agent_enabled and self.holmesgpt_agent_base_url)
+
     @property
     def is_production(self) -> bool:
         """`ENVIRONMENT` が production/prod のとき真（fail-closed 検証の発火条件）。"""

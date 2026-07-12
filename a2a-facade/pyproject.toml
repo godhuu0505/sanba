@@ -4,11 +4,13 @@ version = "0.1.0"
 description = "Generic A2A server facade that fronts non-A2A OSS agents (first backend: HolmesGPT) (ADR-0069)"
 requires-python = ">=3.12"
 dependencies = [
+    "a2a-sdk[fastapi]>=1.1",
     "fastapi>=0.115",
     "uvicorn>=0.30",
     "pydantic>=2.7",
     "pydantic-settings>=2.14.2",
     "structlog>=24.1",
+    "google-cloud-firestore>=2.16",
 ]
 
 [dependency-groups]

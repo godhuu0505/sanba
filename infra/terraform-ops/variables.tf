@@ -68,3 +68,9 @@ variable "production_project_id" {
   type        = string
   default     = "sanba-prd"
 }
+
+variable "agent_invoker_member" {
+  description = "IAM member (dedicated sanba-prd SA) allowed to invoke the facade from the voice agent for off-loop delegation (issue #547). Empty disables the binding."
+  type        = string
+  default     = ""
+}

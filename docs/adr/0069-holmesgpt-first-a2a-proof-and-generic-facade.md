@@ -198,8 +198,10 @@ Go/No-Go を判断してから器を作る。会話 API のスキーマ確認も
   重い依存ツリーを自イメージに丸抱えして供給網管理（pip-audit / Trivy）が重くなる。公式イメージ
   digest 固定 + sidecar の方が境界も供給網も明瞭で、「HTTP API を持つ任意の OSS エージェント」への
   汎用性も保てる。却下。
-- **公式 a2a-sdk でファサード実装**: 受理メソッドが少ない初弾には過剰依存。最小 JSON-RPC
-  自前ハンドラで始め、Task / push notification を足す Phase 3' で再検討。
+- **公式 a2a-sdk でファサード実装**: 当初は「受理メソッドが少ない初弾には過剰依存」として
+  最小 JSON-RPC 自前ハンドラで始める判断だったが、issue #547 の実装時に**採用へ改訂**した
+  （下記「実装時の決定改訂」）。プロトコル準拠・Task ライフサイクル・agent card 配信・
+  v0.3 互換を SDK に委ねる方が、自作 JSON-RPC の保守・仕様追従コストより軽いと判断した。
 - **ファサードを HolmesGPT 専用にする**: 次の A2A 非対応 OSS エージェントでラッパーが増殖する。
   バックエンド Protocol 1 枚の差で汎用化コストは小さい。却下。
 - **本番プロジェクト（sanba-prd）同居**: 一回コストは最小だが、Vertex クォータを本番音声と共有する
@@ -238,6 +240,39 @@ Go/No-Go を判断してから器を作る。会話 API のスキーマ確認も
   代替）、(5) 専用プロジェクトの命名・課金アラート閾値、(6) Firestore read-only 接続の要否
   （Phase 0.5 の調査品質評価後に判断。対応する場合は Firestore 向けカスタム MCP サーバと
   `roles/datastore.viewer` を追加設計する）。
+
+### 実装時の決定改訂（2026-07-13、issue #547）
+
+Phase 1'/3' を先取りする形で音声セッションからの委譲を実装するにあたり、決定2・4 の一部を改訂した。
+
+- **A2A プロトコル実装は公式 `a2a-sdk`（v1.1）を採用**（「最小 JSON-RPC 自前ハンドラ」を撤回）。
+  ファサードは `HolmesAgentExecutor`（同期 `AgentBackend.ask()` を `asyncio.to_thread` で回し
+  Task の artifact として返す）+ `DefaultRequestHandler` + `InMemoryTaskStore` + FastAPI ルート
+  （`add_a2a_routes_to_fastapi`）で構成する。agent card は proto 型で組み、`/.well-known/agent-card.json`
+  は SDK が配信する。JSON-RPC は SDK ネイティブの `SendMessage`（proto）に加え、v0.3 互換の
+  `message/send` も受ける。自作の `jsonrpc.py` は撤去した。SANBA 側クライアントも
+  `a2a-sdk` の client（`create_client` + `ClientConfig(httpx_client=...)`）に置き換え、認証は
+  impersonation で発行した ID トークンを httpx の Authorization ヘッダに載せる。`AgentBackend`
+  Protocol の `submit()` / `poll()` は Task ライフサイクルを SDK が担うため不要になり、
+  同期 `ask()` に一本化した。
+- **結合面を「音声セッション中の operator 委譲（off-loop）」に拡張**（当初の開発者 CLI 単独から）。
+  `apps/agent` に `delegate_investigation` ツールと `HolmesDelegator` を追加。ゲートは
+  flag（`HOLMESGPT_AGENT_ENABLED`）× operator（`ADMIN_EMAILS`）× 非 end_user の三重で、通過時のみ
+  音声ループ外のバックグラウンドタスクで委譲を実行し、結果は untrusted fence（ADR-0043）で囲って
+  会話へ後注入する（`inject_video_analysis` と同じ穏当注入・reinject で再起動耐性）。委譲は 1 件に
+  絞り（`claim_investigation`）、多重呼び出しは抑止する。
+- **委譲の監査**: ファサードは委譲レコード（question / status / result / 所要）を sanba-ops Firestore へ
+  冪等 upsert する（RUNNING → DONE/ERROR。doc id は task_id、書き込み失敗は fail-soft）。
+  ロールは専用最小 SA（`holmes-invoker`・prod）を新設し ops ファサードの `run.invoker` を付与、
+  ファサード SA には `roles/datastore.user` を付ける。
+- **観測性・設定**: SANBA 側は `delegate_investigation_accepted/denied`・`investigation_injected`・
+  `holmes_delegation_failed` 等を structlog で構造化出力。`.env.example` に `ADMIN_EMAILS` /
+  `HOLMESGPT_INVOKER_SA` / `HOLMESGPT_AUDIENCE` を追記（タイムアウト env は
+  `HOLMESGPT_TIMEOUT_SECONDS` に統一）。
+- **テスト**: 「JSON-RPC 生成/解析の純ロジック」テストは SDK 採用で不要になり、代わりに
+  executor（Task 完了・監査 RUNNING→DONE/ERROR・fail-soft）、agent card、ゲート真理表、
+  off-loop 注入（fence・release・失敗時の一言）、および `a2a-sdk` client の実往復（httpx
+  `MockTransport` / ファサード app への in-process 結合）で固める。
 
 ### Phase 0.5 実施結果（2026-07-12、判定: 条件付き Go）
 
