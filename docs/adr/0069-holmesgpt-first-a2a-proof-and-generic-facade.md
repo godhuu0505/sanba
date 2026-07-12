@@ -35,7 +35,9 @@ ADR-0063 は external-agents 境界（プロバイダー非依存の A2A/MCP sea
 - 開発者には「sess-ID から GCP ログ / ES / Firestore を横断して本番セッションを復元する」定型の
   デバッグ手順が既にあり、HolmesGPT のエージェンティック調査はこれをそのまま自動化する
   具体的ユースケースになる（Agent Builder 初弾案の「A2A 疎通のためのサンプル知識エージェント」より
-  実利が近い）。
+  実利が近い）。初弾スコープ（Phase 0.5〜1'）の対象データは GCP ログ / ES に限定する。Firestore は
+  HolmesGPT 標準ツールセットに対応ツールがなく別途カスタム MCP サーバが要るため、Phase 1' の
+  品質評価を経てから接続要否を判断する（`実装前に確定する事項` の確認項目として追加）。
 
 ### 実証としての位置づけ
 
@@ -65,8 +67,14 @@ class AgentBackend(Protocol):
     name: str
     description: str
     def skills(self) -> list[dict]: ...
-    def ask(self, text: str) -> str: ...
+    def ask(self, text: str, *, timeout: float = 300.0) -> str: ...
+    def submit(self, text: str) -> str: ...
+    def poll(self, task_id: str) -> tuple[str, str | None]: ...
 ```
+
+`ask()` は開発者 CLI の同期パス（Phase 0・タイムアウト 300 秒）、`submit()` / `poll()` は
+Task ベース非同期パス（Phase 3'・ファサードの `message/send` が Task を返し `tasks/get` と対応）。
+HolmesGPT の Phase 0 実装は `ask()` のみ実装し、`submit()` / `poll()` は `raise NotImplementedError`。
 
 - 公開エンドポイントは A2A 標準のみ: agent card（`GET /.well-known/agent-card.json`）と
   JSON-RPC 2.0 `message/send`（`POST /a2a/{agent_id}`、初弾は同期）。書き込み系メソッドは実装しない。
@@ -106,10 +114,10 @@ flowchart LR
 |---|---|
 | プロトコル | ファサードは `message/send`（+ 後に `tasks/get`）のみ受理 |
 | HolmesGPT 設定 | read-only ツールセットのみ有効化。`bash`・kubernetes・remediation 系は明示 OFF |
-| GCP MCP | `holmes-mcp-integrations` の GCP サーバを commit pin して read 系設定で使う（任意 gcloud 実行が可能な汎用 gcloud-mcp は採らない） |
+| GCP MCP | `holmes-mcp-integrations` の observability サーバのみ有効（gcloud・storage サーバは明示 OFF）。commit pin 運用。許可ツールの最終リストは Phase 0.5 実機確認で確定する（汎用 gcloud-mcp は不採用） |
 | ES 認証 | 専用 API キーを `sanba-analytics-*` への read + view_index_metadata のみで発行（Secret Manager 管理）。grounding 索引は初弾スコープ外（ベクトル前提で相性が悪く、外せば越境データも減る） |
-| GCP IAM | holmes 用 SA に `roles/logging.viewer`（本番プロジェクトへ cross-project 付与）・`roles/monitoring.viewer`・`roles/aiplatform.user` のみ |
-| ingress | Cloud Run は IAM 認証必須（非公開）。開発者は `roles/run.invoker` 付与済み個人アカウントの ID トークンで呼ぶ |
+| GCP IAM | holmes 用 SA に `roles/logging.viewer`（本番プロジェクトへ cross-project 付与）・`roles/monitoring.viewer`・`roles/aiplatform.user` のみ。`roles/aiplatform.user` にはモデル推論以外の作成・削除系権限も含まれるため、Phase 1' 実装時にカスタムロール（`aiplatform.endpoints.predict` 等の推論系のみ）への限定を評価する |
+| ingress | Cloud Run は IAM 認証必須（非公開）。`roles/run.invoker` は本番ログ閲覧権限（`roles/logging.viewer`・`roles/monitoring.viewer`）を既に保有する開発者グループにのみ付与する（ファサード経由のデータアクセスは holmes SA 権限で行われるため、invoker と本番閲覧権限を必ず連動させる） |
 | PII | 閲覧できるのは既に本番アクセス権を持つ開発者のみ。会話還流（Phase 3'）では既存 `mask_pii` 経路を必須にする |
 
 **残余リスク（明記して受容）**: 調査対象ログには参加者発話＝ユーザー生成コンテンツが含まれ、
@@ -225,5 +233,7 @@ Go/No-Go を判断してから器を作る。会話 API のスキーマ確認も
   Phase 3'（Task 追加・ADK off-loop 統合・PR #445 との統合）。
 - **実装前に確定する事項**: (1) 本番 Elastic Cloud が serverless か（Agent Builder 再評価の前提）、
   (2) HolmesGPT 会話 API の正確なスキーマ（Phase 0.5 で実機確認）、(3) 公式イメージの取得元と
-  digest、(4) `holmes-mcp-integrations` GCP サーバの read 系機能範囲（不足なら YAML 定義の
-  read-only カスタムツールセットで代替）、(5) 専用プロジェクトの命名・課金アラート閾値。
+  digest、(4) `holmes-mcp-integrations` observability サーバの有効ツール一覧と read-only 範囲
+  （不足なら YAML 定義の read-only カスタムツールセットで代替）、(5) 専用プロジェクトの命名・
+  課金アラート閾値、(6) Firestore read-only 接続の要否（Phase 0.5 の調査品質評価後に判断。
+  対応する場合は Firestore 向けカスタム MCP サーバと `roles/datastore.viewer` を追加設計する）。
