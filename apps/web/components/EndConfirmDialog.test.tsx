@@ -31,4 +31,20 @@ describe("EndConfirmDialog（終了確認）", () => {
     expect(screen.queryByText(/確定されません/)).toBeNull();
     expect(screen.getByText(/未解消はありません/)).toBeTruthy();
   });
+
+  it("loading 中は進捗表示に切り替え、両ボタンを無効化して二重終了を防ぐ", () => {
+    const onEnd = vi.fn();
+    const onContinue = vi.fn();
+    render(
+      <EndConfirmDialog unresolved={0} onContinue={onContinue} onEnd={onEnd} loading />,
+    );
+    expect(screen.getByText(/まとめています/)).toBeTruthy();
+    const end = screen.getByRole("button", { name: /まとめています/ });
+    expect(end.getAttribute("aria-busy")).toBe("true");
+    expect((end as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(end);
+    expect(onEnd).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: /続ける/ }));
+    expect(onContinue).not.toHaveBeenCalled();
+  });
 });
