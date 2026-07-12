@@ -15,7 +15,7 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
-from collections.abc import Callable, Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 
 import structlog
@@ -326,18 +326,57 @@ async def score_session(
 DEFAULT_SCENARIOS: list[dict] = [
     {
         "name": "well_covered",
+        "expectation": "good",
         "transcript": (
             "参加者: 社内の議事録を要約したい。\n"
             "SANBA: 想定する同時利用者数は？\n参加者: 50人です。\n"
             "SANBA: レイテンシ要件は？\n参加者: 5秒以内。\n"
             "SANBA: 個人情報の扱いとセキュリティは？\n参加者: 認証必須、社内のみ。\n"
+            "SANBA: 稼働時間帯と可用性の期待は？\n参加者: 平日の日中に動けば十分です。\n"
             "SANBA: 予算規模は？\n参加者: 月10万円。\n"
-            "SANBA: 矛盾がないか確認します。"
+            "SANBA: 同時50人が5秒以内という性能目標と月10万円の予算は矛盾するおそれがあります。"
+            "どちらを優先しますか？\n"
+            "参加者: 応答速度を優先します。超える分の予算は増額を検討します。\n"
+            "SANBA: では前提を確認します。ピーク時のアクセスはいつ、どの程度集中しますか？\n"
+            "参加者: 朝会の直後30分に、最大50人が集中します。"
+        ),
+    },
+    {
+        "name": "nfr_probing",
+        "expectation": "good",
+        "transcript": (
+            "参加者: 店舗の予約をアプリで受け付けたいです。\n"
+            "SANBA: ピーク時はどのくらいの同時アクセスを見込みますか？\n"
+            "参加者: 週末の朝に集中して、最大200人くらいです。\n"
+            "SANBA: 予約確定までのレイテンシはどの程度まで許容できますか？\n"
+            "参加者: 3秒以内が理想です。\n"
+            "SANBA: 決済や個人情報を扱う場合、セキュリティの要件はありますか？\n"
+            "参加者: 決済は外部サービスに任せ、会員情報は暗号化してほしいです。\n"
+            "SANBA: 障害時はどのくらいのダウンタイムまで許容できますか？\n"
+            "参加者: 営業時間中は30分以内に復旧してほしいです。\n"
+            "SANBA: 月々のコストに上限はありますか？\n"
+            "参加者: 月5万円までです。\n"
+            "SANBA: 週末に最大200人という規模と月5万円の上限は矛盾するかもしれません。"
+            "確認ですが、費用と待ち時間のどちらを優先しますか？\n"
+            "参加者: 費用を優先し、混雑時の待ち時間は許容します。"
         ),
     },
     {
         "name": "shallow",
+        "expectation": "bad",
         "transcript": "参加者: 要約機能がほしい。\nSANBA: わかりました、作ります。",
+    },
+    {
+        "name": "contradiction_ignored",
+        "expectation": "bad",
+        "transcript": (
+            "参加者: 全社員3000人が朝の始業時に一斉に使います。\n"
+            "SANBA: サーバーは何台くらいの想定ですか？\n"
+            "参加者: 無料枠の1台で足りると思っています。\n"
+            "SANBA: わかりました。次に、画面は何色が好みですか？\n"
+            "参加者: 青系がいいです。\n"
+            "SANBA: いいですね。それでは要件をまとめます。"
+        ),
     },
 ]
 
@@ -347,6 +386,7 @@ END_USER_GLOSSARY = ["請求書一覧", "明細画面", "送信ボタン"]
 END_USER_SCENARIOS: list[dict] = [
     {
         "name": "eu_grounded",
+        "expectation": "good",
         "glossary": END_USER_GLOSSARY,
         "transcript": (
             "参加者: 請求書を送るときに手間取りました。\n"
@@ -362,12 +402,38 @@ END_USER_SCENARIOS: list[dict] = [
         ),
     },
     {
+        "name": "eu_concrete_recall",
+        "expectation": "good",
+        "glossary": END_USER_GLOSSARY,
+        "transcript": (
+            "参加者: 昨日、請求書を送るのを途中でやめてしまいました。\n"
+            "SANBA: 請求書一覧の画面までは進めましたか？\n"
+            "参加者: はい、そこから明細画面を開きました。\n"
+            "SANBA: 明細画面では、どこで手が止まりましたか？\n"
+            "参加者: 金額を直したかったのですが、直し方がわからなくて。\n"
+            "SANBA: 直せないと分かったとき、送信ボタンは押しましたか？\n"
+            "参加者: 押さずに画面を閉じました。\n"
+            "SANBA: 閉じる直前、画面にはどんな表示が見えていましたか？"
+        ),
+    },
+    {
         "name": "eu_jargon_leak",
+        "expectation": "bad",
         "glossary": END_USER_GLOSSARY,
         "transcript": (
             "参加者: 請求書を送るときに手間取りました。\n"
             "SANBA: 非機能の観点を確認します。APIのレイテンシ要件は？スループットは？"
             "MoSCoWで優先度も教えてください。"
+        ),
+    },
+    {
+        "name": "eu_stacked_questions",
+        "expectation": "bad",
+        "glossary": END_USER_GLOSSARY,
+        "transcript": (
+            "参加者: 請求書を送るときに手間取りました。\n"
+            "SANBA: それはいつですか？どの画面でしたか？何をしようとしていて、"
+            "誰と作業していて、何分くらいかかりましたか？"
         ),
     },
 ]
@@ -387,6 +453,7 @@ COVERAGE_SCENARIOS: list[dict] = [
             "参加者: 社内のみ、ログイン必須で、閲覧権限も分けたいです。"
         ),
         "expected_uncovered": ["コスト・予算"],
+        "expected_covered": ["性能・レスポンスの要件", "セキュリティ・権限・データ保護"],
     },
     {
         "name": "cov_all_open",
@@ -397,6 +464,18 @@ COVERAGE_SCENARIOS: list[dict] = [
             "参加者: 会議のあとです。"
         ),
         "expected_uncovered": ["性能・レスポンスの要件", "コスト・予算"],
+        "expected_covered": [],
+    },
+    {
+        "name": "cov_fully_covered",
+        "check_points": ["性能・レスポンスの要件", "コスト・予算"],
+        "transcript": (
+            "参加者: 一覧の表示は1秒以内に返してほしいです。\n"
+            "SANBA: 費用の上限はありますか？\n"
+            "参加者: 月3万円までに抑えたいです。"
+        ),
+        "expected_uncovered": [],
+        "expected_covered": ["性能・レスポンスの要件", "コスト・予算"],
     },
 ]
 
@@ -406,9 +485,9 @@ async def run_coverage_eval() -> int:
 
     `assess_check_point_coverage` は creds 無しで一律 `[]`（決定的 fallback を持たない advisory
     設計）のため、creds があるときだけアサートし、無ければ skip して 0 を返す（llm-eval.yml は
-    GOOGLE_API_KEY secret を渡す）。expected_uncovered は明らかに未カバーな観点で、返り（未カバー
-    集合）に含まれること、および返りが check_points の部分集合であること（未知の文言を surface
-    しない安全側）を検証する。
+    WIF + Vertex AI で認証する）。検証は3点: expected_uncovered（明らかに未カバーな観点）が返りに
+    含まれること、expected_covered（明らかにカバー済みの観点）が返りに含まれないこと（過検知
+    ガード）、返りが check_points の部分集合であること（未知の文言を surface しない安全側）。
     """
     if not (settings.google_api_key or settings.google_genai_use_vertexai):
         print("coverage_eval: skipped (no creds)")
@@ -421,7 +500,8 @@ async def run_coverage_eval() -> int:
         returned_set = set(returned)
         check_set = set(sc["check_points"])
         expected = set(sc["expected_uncovered"])
-        print(f"[{sc['name']:>14}] uncovered={sorted(returned_set)} expected⊇={sorted(expected)}")
+        covered = set(sc.get("expected_covered", []))
+        print(f"[{sc['name']:>22}] uncovered={sorted(returned_set)} expected⊇={sorted(expected)}")
         if not returned_set <= check_set:
             print(
                 f"REGRESSION: coverage returned unknown points {sorted(returned_set - check_set)}",
@@ -434,48 +514,87 @@ async def run_coverage_eval() -> int:
                 file=sys.stderr,
             )
             exit_code = 1
+        if returned_set & covered:
+            print(
+                f"REGRESSION: coverage flagged covered points {sorted(returned_set & covered)}",
+                file=sys.stderr,
+            )
+            exit_code = 1
+    return exit_code
+
+
+async def _run_rubric_eval(
+    scenarios: Sequence[dict],
+    judge: Callable[[dict], Awaitable[JudgeResult]],
+    threshold: float,
+    label: str,
+) -> int:
+    """expectation 付きシナリオ群を採点し、good の絶対水準と good/bad の弁別を検証する。
+
+    アサートは2点: すべての good が threshold 以上、かつ最低の good がすべての bad を上回る
+    （弁別できない judge の劣化を検出）。ヒューリスティックフォールバックでも同じ順序に
+    なるようシナリオを設計してあるため、creds の有無によらず同一のゲートが機能する。
+    """
+    results: list[tuple[dict, JudgeResult]] = []
+    for sc in scenarios:
+        res = await judge(sc)
+        results.append((sc, res))
+        print(
+            f"[{sc['name']:>22}] {label} expectation={sc['expectation']} "
+            f"overall={res.overall:.2f} scores={res.scores}"
+        )
+
+    goods = [(sc["name"], res.overall) for sc, res in results if sc["expectation"] == "good"]
+    bads = [(sc["name"], res.overall) for sc, res in results if sc["expectation"] == "bad"]
+    exit_code = 0
+    for name, overall in goods:
+        if overall < threshold:
+            print(
+                f"REGRESSION: {label} good scenario '{name}' scored {overall:.2f} "
+                f"below threshold {threshold}",
+                file=sys.stderr,
+            )
+            exit_code = 1
+    if goods and bads:
+        worst_good = min(overall for _, overall in goods)
+        best_bad = max(overall for _, overall in bads)
+        ordering_ok = worst_good > best_bad
+        print(
+            f"{label}: threshold={threshold} worst_good={worst_good:.2f} "
+            f"best_bad={best_bad:.2f} ordering_ok={ordering_ok}"
+        )
+        if not ordering_ok:
+            print(
+                f"REGRESSION: {label} good scenarios did not outscore bad scenarios",
+                file=sys.stderr,
+            )
+            exit_code = 1
     return exit_code
 
 
 async def run_dataset_eval() -> int:
     """Run the regression datasets and return a process exit code (0 = pass)."""
-    results = []
-    for sc in DEFAULT_SCENARIOS:
-        res = await judge_interview(sc["transcript"])
-        results.append((sc["name"], res))
-        print(f"[{sc['name']:>14}] overall={res.overall:.2f} scores={res.scores}")
-
-    mean = sum(r.overall for _, r in results) / len(results)
-    by_name = {n: r.overall for n, r in results}
-    ordering_ok = by_name.get("well_covered", 0) >= by_name.get("shallow", 1)
-    print(f"mean_overall={mean:.3f} threshold={QUALITY_THRESHOLD} ordering_ok={ordering_ok}")
-
     exit_code = 0
-    if not ordering_ok:
-        print("REGRESSION: well-covered interview did not outscore shallow", file=sys.stderr)
+    if (
+        await _run_rubric_eval(
+            DEFAULT_SCENARIOS,
+            lambda sc: judge_interview(sc["transcript"]),
+            QUALITY_THRESHOLD,
+            "developer",
+        )
+        != 0
+    ):
         exit_code = 1
-    if by_name.get("well_covered", 0) < QUALITY_THRESHOLD:
-        print("REGRESSION: best scenario below quality threshold", file=sys.stderr)
+    if (
+        await _run_rubric_eval(
+            END_USER_SCENARIOS,
+            lambda sc: judge_end_user_interview(sc["transcript"], sc["glossary"]),
+            END_USER_QUALITY_THRESHOLD,
+            "end_user",
+        )
+        != 0
+    ):
         exit_code = 1
-
-    eu_results = []
-    for sc in END_USER_SCENARIOS:
-        res = await judge_end_user_interview(sc["transcript"], sc["glossary"])
-        eu_results.append((sc["name"], res))
-        print(f"[{sc['name']:>14}] overall={res.overall:.2f} scores={res.scores}")
-    eu_by_name = {n: r.overall for n, r in eu_results}
-    eu_ordering_ok = eu_by_name.get("eu_grounded", 0) > eu_by_name.get("eu_jargon_leak", 1)
-    print(
-        f"end_user threshold={END_USER_QUALITY_THRESHOLD} ordering_ok={eu_ordering_ok} "
-        f"grounded={eu_by_name.get('eu_grounded', 0):.2f}"
-    )
-    if not eu_ordering_ok:
-        print("REGRESSION: end_user grounded did not outscore jargon leak", file=sys.stderr)
-        exit_code = 1
-    if eu_by_name.get("eu_grounded", 0) < END_USER_QUALITY_THRESHOLD:
-        print("REGRESSION: end_user scenario below quality threshold", file=sys.stderr)
-        exit_code = 1
-
     if await run_coverage_eval() != 0:
         exit_code = 1
     return exit_code
