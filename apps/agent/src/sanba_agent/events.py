@@ -478,6 +478,17 @@ def decode_user_answered(
     return question_id, answer.strip()[:MAX_USER_TEXT_CHARS]
 
 
+def decode_user_interrupt(payload: bytes | str, *, expected_session_id: str | None = None) -> bool:
+    """web → agent の user.interrupt（契約 §4.5 / ADR-0066 S3）をデコードする。
+
+    PTT 押下開始の合図。検証に通れば True、不正・別セッションなら False。
+    受信側は読み上げ中の応答を即時中断する（クライアントの mic ゲートと対で、
+    エージェント発話へのバージインを決定論的にする）。ペイロードは付加フィールド無し。
+    """
+    obj = _decode_web_event(payload, "user.interrupt", expected_session_id=expected_session_id)
+    return obj is not None
+
+
 MAX_INJECTED_OBSERVATIONS = 12
 
 

@@ -13,13 +13,18 @@ locals {
     OTEL_EXPORTER_OTLP_ENDPOINT = var.otel_exporter_otlp_endpoint
   }
 
-  agent_env = merge(local.common_env, {
-    GEMINI_LIVE_MODEL      = coalesce(var.gemini_live_model, "gemini-live-2.5-flash-native-audio")
-    GEMINI_REASONING_MODEL = var.gemini_reasoning_model
-    OTEL_SERVICE_NAME      = "sanba-agent"
-    USD_JPY_RATE           = var.usd_jpy_rate
-    SEPARATE_STT_ENABLED   = tostring(var.separate_stt_enabled)
-  })
+  agent_env = merge(
+    local.common_env,
+    {
+      GEMINI_LIVE_MODEL      = coalesce(var.gemini_live_model, "gemini-live-2.5-flash-native-audio")
+      GEMINI_REASONING_MODEL = var.gemini_reasoning_model
+      OTEL_SERVICE_NAME      = "sanba-agent"
+      USD_JPY_RATE           = var.usd_jpy_rate
+      SEPARATE_STT_ENABLED   = tostring(var.separate_stt_enabled)
+    },
+    var.stt_model != "" ? { STT_MODEL = var.stt_model } : {},
+    var.stt_location != "" ? { STT_LOCATION = var.stt_location } : {},
+  )
 
   api_env = merge(local.common_env, {
     OTEL_SERVICE_NAME           = "sanba-api"

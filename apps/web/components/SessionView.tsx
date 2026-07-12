@@ -31,8 +31,24 @@ import { useAuth } from "../lib/auth";
 import { importDriveFile, isDriveConfigured, openDrivePicker } from "../lib/googleDrive";
 import type { MaterialItem } from "../lib/realtime/selectors";
 import { useRealtimeSession } from "../lib/realtime/useRealtimeSession";
+import { usePushToTalk } from "../lib/usePushToTalk";
 import { ConversationSessionView } from "./ConversationSessionView";
 import { MaterialSourceSheet } from "./MaterialSourceSheet";
+
+const AGENT_SPEAKING_RELEASE_MS = 600;
+
+export function useTrailingLatch(value: boolean, releaseMs: number): boolean {
+  const [latched, setLatched] = useState(value);
+  useEffect(() => {
+    if (value) {
+      setLatched(true);
+      return;
+    }
+    const timer = window.setTimeout(() => setLatched(false), releaseMs);
+    return () => window.clearTimeout(timer);
+  }, [value, releaseMs]);
+  return latched;
+}
 
 function formatElapsed(ms: number): string {
   const total = Math.max(0, Math.floor(ms / 1000));
@@ -53,16 +69,24 @@ export function SessionView({
   sessionToken: string | null;
   readOnly?: boolean;
 }) {
-  const { state, metrics, sendText, sendAnswer, sendInquiryDrop } = useRealtimeSession({
-    sessionId,
-    sessionToken,
-    hydrateInquiry: true,
-    hydrateAnalysis: true,
-  });
+  const { state, metrics, sendText, sendAnswer, sendInquiryDrop, sendInterrupt } =
+    useRealtimeSession({
+      sessionId,
+      sessionToken,
+      hydrateInquiry: true,
+      hydrateAnalysis: true,
+    });
   const auth = useAuth();
+  const [sourceError, setSourceError] = useState<string | null>(null);
+  const mic = useTrackToggle({ source: Track.Source.Microphone });
+  const {
+    mode: micMode,
+    setMode: setMicMode,
+    pttPressed,
+    pressProps: pttPressProps,
+  } = usePushToTalk({ sendInterrupt, onError: setSourceError, micEnabled: mic.enabled });
 
   const router = useRouter();
-  const mic = useTrackToggle({ source: Track.Source.Microphone });
   const camera = useTrackToggle({ source: Track.Source.Camera });
   const screenShare = useTrackToggle({ source: Track.Source.ScreenShare });
   const [muted, setMuted] = useState(false);
@@ -78,9 +102,9 @@ export function SessionView({
     return () => clearInterval(id);
   }, [timerRunning, startedAt]);
   const speaking = useSpeakingParticipants();
-  const agentSpeaking = speaking.some((p) => !p.isLocal);
+  const agentSpeakingRaw = speaking.some((p) => !p.isLocal);
+  const agentSpeaking = useTrailingLatch(agentSpeakingRaw, AGENT_SPEAKING_RELEASE_MS);
   const [sourceSheetOpen, setSourceSheetOpen] = useState(false);
-  const [sourceError, setSourceError] = useState<string | null>(null);
 
   const [pending, setPending] = useState<MaterialItem[]>([]);
   const [hydratedMaterials, setHydratedMaterials] = useState<MaterialItem[]>([]);
@@ -306,7 +330,6 @@ export function SessionView({
   return (
     <>
       <RoomAudioRenderer muted={muted} />
-      {}
       {!readOnly && (
         <input
           ref={fileInput}
@@ -324,6 +347,10 @@ export function SessionView({
         micOn={mic.enabled}
         muted={muted}
         agentSpeaking={agentSpeaking}
+        micMode={micMode}
+        onMicModeChange={setMicMode}
+        pttPressed={pttPressed}
+        pttPressProps={pttPressProps}
         onToggleMic={() => void mic.toggle()}
         onToggleMute={() => setMuted((m) => !m)}
         onSendText={handleSendText}
@@ -352,7 +379,6 @@ export function SessionView({
         metrics={metrics}
       />
 
-      {}
       {sourceSheetOpen && !readOnly && (
         <MaterialSourceSheet
           onClose={() => setSourceSheetOpen(false)}

@@ -199,8 +199,11 @@ export type UserInquiryDropEvent = Envelope<"user.inquiry_drop"> & {
   node_id: string;
 };
 
+export type UserInterruptEvent = Envelope<"user.interrupt">;
+
 export type ClientEvent =
   | UserSelectionEvent
   | UserTextEvent
   | UserAnsweredEvent
-  | UserInquiryDropEvent;
+  | UserInquiryDropEvent
+  | UserInterruptEvent;
