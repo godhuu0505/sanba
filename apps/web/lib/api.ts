@@ -1,4 +1,4 @@
-import type { InquiryNode, Question, Requirement } from "./realtime/types";
+import type { InquiryNode, Requirement } from "./realtime/types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 
@@ -338,11 +338,6 @@ export interface InquirySnapshot {
   seq: number;
 }
 
-export interface CurrentQuestionSnapshot {
-  question: Question | null;
-  seq: number;
-}
-
 export interface ContextFileItem {
   id: string;
   name: string;
@@ -376,17 +371,6 @@ export async function fetchContextFiles(
     headers: authHeaders(sessionToken),
   });
   if (!res.ok) throw new Error(`fetch context files failed: ${res.status}`);
-  return res.json();
-}
-
-export async function fetchCurrentQuestion(
-  sessionId: string,
-  sessionToken: string | null,
-): Promise<CurrentQuestionSnapshot> {
-  const res = await apiFetch(`${API_URL}/api/sessions/${sessionId}/questions/current`, {
-    headers: authHeaders(sessionToken),
-  });
-  if (!res.ok) throw new Error(`fetch current question failed: ${res.status}`);
   return res.json();
 }
 

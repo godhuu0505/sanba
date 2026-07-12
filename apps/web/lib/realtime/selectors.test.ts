@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import {
   inquiryTreeStats,
   mergeMaterials,
-  selectActiveQuestion,
   selectGateCount,
   selectGateNodes,
   selectMaterialDetail,
@@ -26,24 +25,6 @@ const inqNode = (over: Partial<InquiryNode> & { id: string }): InquiryNode => ({
   created_seq: 0,
   resolved_seq: null,
   ...over,
-});
-
-describe("selectActiveQuestion", () => {
-  const state = (question: SessionState["question"]): SessionState =>
-    ({ question }) as SessionState;
-
-  it("選択肢ありの質問を返す", () => {
-    const q = { id: "q1", prompt: "並び順は？", options: [{ label: "関連度順", value: "rel" }] };
-    expect(selectActiveQuestion(state(q))).toEqual(q);
-  });
-
-  it("選択肢なし（自由記述）は問いピン対象にしない（null）", () => {
-    expect(selectActiveQuestion(state({ id: "q1", prompt: "自由に", options: [] }))).toBeNull();
-  });
-
-  it("質問未提示なら null", () => {
-    expect(selectActiveQuestion(state(null))).toBeNull();
-  });
 });
 
 describe("mergeMaterials", () => {

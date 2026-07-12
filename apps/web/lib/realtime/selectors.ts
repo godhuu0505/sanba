@@ -58,11 +58,6 @@ export function inquiryTreeStats(nodes: readonly InquiryNode[]): InquiryTreeStat
   return { unresolved, resolved, dropped, maxDepth, maxBranch };
 }
 
-export function selectActiveQuestion(state: SessionState): SessionState["question"] {
-  const q = state.question;
-  return q && q.options.length > 0 ? q : null;
-}
-
 export function selectConfirmedRequirements(state: SessionState): Requirement[] {
   return state.requirements.filter((r) => r.status === "confirmed");
 }

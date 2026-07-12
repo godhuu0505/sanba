@@ -69,7 +69,7 @@ export function SessionView({
   sessionToken: string | null;
   readOnly?: boolean;
 }) {
-  const { state, metrics, sendText, sendAnswer, sendInquiryDrop, sendInterrupt } =
+  const { state, metrics, sendText, sendInquiryDrop, sendInterrupt } =
     useRealtimeSession({
       sessionId,
       sessionToken,
@@ -342,7 +342,6 @@ export function SessionView({
       <ConversationSessionView
         readOnly={readOnly}
         state={state}
-        sendAnswer={sendAnswer}
         sendInquiryDrop={sendInquiryDrop}
         micOn={mic.enabled}
         muted={muted}

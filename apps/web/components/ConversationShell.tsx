@@ -37,7 +37,6 @@ export interface ConversationShellProps {
   review?: boolean;
   onBackToResult?: () => void;
   tabs: Record<ShellTab, ReactNode>;
-  choicePin?: ReactNode;
   bottomBar?: ReactNode;
   voiceStatus?: ReactNode;
   sidePanel?: ReactNode;
@@ -56,7 +55,6 @@ export function ConversationShell({
   review = false,
   onBackToResult,
   tabs,
-  choicePin,
   bottomBar,
   voiceStatus,
   sidePanel,
@@ -210,7 +208,6 @@ export function ConversationShell({
         {tabs[tab]}
       </main>
 
-      {!review && choicePin}
       {!review && voiceStatus && (
         <div
           className={`flex justify-center border-b border-sanba-border bg-sanba-surface-strong px-4 py-1.5 ${

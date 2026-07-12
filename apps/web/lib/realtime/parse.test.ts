@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   decodeServerEvent,
-  encodeUserAnswered,
   encodeUserInquiryDrop,
   encodeUserInterrupt,
   encodeUserSelection,
@@ -298,30 +297,6 @@ describe("encodeUserText", () => {
       new TextDecoder().decode(encodeUserText("s1", "新着順で", 2, "2026-06-24T00:00:00Z")),
     );
     expect(obj).toMatchObject({ v: 1, type: "user.text", seq: 2, session_id: "s1", text: "新着順で" });
-  });
-});
-
-describe("encodeUserAnswered", () => {
-  it("選択肢値での回答（§4.5 / #181）", () => {
-    const obj = JSON.parse(
-      new TextDecoder().decode(
-        encodeUserAnswered("s1", "q1", { selectedValue: "relevance" }, 3, "t"),
-      ),
-    );
-    expect(obj).toMatchObject({
-      type: "user.answered",
-      question_id: "q1",
-      selected_value: "relevance",
-    });
-    expect(obj.text).toBeUndefined();
-  });
-
-  it("自由記述での回答（text のみ）", () => {
-    const obj = JSON.parse(
-      new TextDecoder().decode(encodeUserAnswered("s1", "q1", { text: "関連度順" }, 4, "t")),
-    );
-    expect(obj).toMatchObject({ type: "user.answered", question_id: "q1", text: "関連度順" });
-    expect(obj.selected_value).toBeUndefined();
   });
 });
 

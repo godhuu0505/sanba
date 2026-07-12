@@ -33,7 +33,6 @@ vi.mock("@/lib/realtime/useRealtimeSession", () => ({
     metrics: {},
     sendSelection: vi.fn(),
     sendText: vi.fn(),
-    sendAnswer: vi.fn(),
     sendInterrupt: vi.fn(),
   }),
 }));

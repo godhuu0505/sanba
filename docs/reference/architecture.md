@@ -95,7 +95,7 @@ artifacts/{sessionId}           # 生成された要件ドキュメント (Cloud
 ```
 
 > **AS-IS 注記**: 上記は目標とするデータモデル。実装済みの実体はこれより広く、`sessions/{id}` 配下に
-> `detections`・`questions/current`・`materials` のサブコレクションを持ち、`utterances`/`requirements`/`questions`
+> `detections`・`materials` のサブコレクションを持ち、`utterances`/`requirements`
 > は `expireAt` の TTL で自動失効する（[architecture-analysis.md §11](architecture-analysis.md)）。また
 > `products/{id}`（＋`invites` サブコレクション / ADR-0031）と、メンバー管理のトップレベル
 > コレクション `product_members` / `member_invites`（ADR-0036）を持つ。一方

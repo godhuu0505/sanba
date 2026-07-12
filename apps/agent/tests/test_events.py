@@ -19,12 +19,9 @@ from sanba_shared.models import (
 
 from sanba_agent.events import (
     EVENTS_TOPIC,
-    DataTransport,
     EventPublisher,
-    EventPublishError,
     RecordingTransport,
     decode_analysis_visual,
-    decode_user_answered,
     decode_user_interrupt,
     decode_user_selection,
     decode_user_text,
@@ -185,138 +182,6 @@ async def test_inquiry_node_resolve_and_drop_ops() -> None:
 
 
 @pytest.mark.asyncio
-async def test_question_asked_payload() -> None:
-    t = RecordingTransport()
-    pub = EventPublisher("s1", t)
-    await pub.question_asked(
-        "q1",
-        "並び順は何を既定にしますか",
-        options=[{"label": "関連度順", "value": "関連度順"}],
-    )
-    ev = t.sent[0]["event"]
-    assert ev["type"] == "question.asked"
-    assert ev["id"] == "q1"
-    assert ev["prompt"].startswith("並び順")
-    assert ev["options"][0]["label"] == "関連度順"
-    assert t.sent[0]["reliable"] is True
-    assert pub.questions_published == 1
-
-
-@pytest.mark.asyncio
-async def test_question_asked_persists_before_send() -> None:
-    t = RecordingTransport()
-    pub = EventPublisher("s1", t)
-    order: list[str] = []
-    seen_seq: list[int] = []
-
-    def on_persist(seq: int) -> None:
-        seen_seq.append(seq)
-        order.append("persist")
-
-    orig_send = t.send
-
-    async def tracking_send(payload: bytes, *, topic: str, reliable: bool) -> None:
-        order.append("send")
-        await orig_send(payload, topic=topic, reliable=reliable)
-
-    t.send = tracking_send  # type: ignore[method-assign]
-    env = await pub.question_asked("q1", "並び順は？", on_persist=on_persist)
-    assert order == ["persist", "send"]
-    assert env is not None
-    assert seen_seq == [env["seq"]]
-    assert pub.questions_published == 1
-
-
-@pytest.mark.asyncio
-async def test_question_asked_save_failure_does_not_send_or_consume_seq() -> None:
-    t = RecordingTransport()
-    pub = EventPublisher("s1", t)
-
-    def failing_persist(seq: int) -> None:
-        raise RuntimeError("firestore down")
-
-    with pytest.raises(RuntimeError):
-        await pub.question_asked("q1", "p", on_persist=failing_persist)
-    assert t.sent == []
-    assert pub.seq == 0
-    assert pub.questions_published == 0
-    env = await pub.inquiry_node(_node(), op="upsert")
-    assert env["seq"] == 1
-
-
-@pytest.mark.asyncio
-async def test_question_cleared_uses_envelope_seq_and_persists_first() -> None:
-    t = RecordingTransport()
-    pub = EventPublisher("s1", t)
-    order: list[str] = []
-    persisted_seq: list[int] = []
-
-    def on_persist(cleared_seq: int) -> bool:
-        persisted_seq.append(cleared_seq)
-        order.append("persist")
-        return True
-
-    orig_send = t.send
-
-    async def tracking_send(payload: bytes, *, topic: str, reliable: bool) -> None:
-        order.append("send")
-        await orig_send(payload, topic=topic, reliable=reliable)
-
-    t.send = tracking_send  # type: ignore[method-assign]
-    env = await pub.question_cleared("q1", on_persist=on_persist)
-    assert env is not None
-    assert env["type"] == "question.cleared"
-    assert env["question_id"] == "q1"
-    assert order == ["persist", "send"]
-    assert persisted_seq == [env["seq"]]
-    assert pub.questions_cleared == 1
-
-
-@pytest.mark.asyncio
-async def test_question_cleared_aborts_when_cas_rejects() -> None:
-    t = RecordingTransport()
-    pub = EventPublisher("s1", t)
-
-    def on_persist(cleared_seq: int) -> bool:
-        return False
-
-    env = await pub.question_cleared("q1", on_persist=on_persist)
-    assert env is None
-    assert t.sent == []
-    assert pub.seq == 0
-    assert pub.questions_cleared == 0
-
-
-@pytest.mark.asyncio
-async def test_question_cleared_raises_when_publish_fails_after_commit() -> None:
-    class FailingTransport:
-        async def send(self, payload: bytes, *, topic: str, reliable: bool) -> None:
-            raise RuntimeError("network down")
-
-    transport: DataTransport = FailingTransport()
-    pub = EventPublisher("s1", transport)
-    committed: list[int] = []
-
-    def on_persist(cleared_seq: int) -> bool:
-        committed.append(cleared_seq)
-        return True
-
-    with pytest.raises(EventPublishError):
-        await pub.question_cleared("q1", on_persist=on_persist)
-    assert committed == [1]
-    assert pub.seq == 1
-
-
-@pytest.mark.asyncio
-async def test_question_asked_without_options() -> None:
-    t = RecordingTransport()
-    pub = EventPublisher("s1", t)
-    await pub.question_asked("q2", "自由にお聞かせください")
-    ev = t.sent[0]["event"]
-    assert "options" not in ev
-
-
-@pytest.mark.asyncio
 async def test_status_is_lossy() -> None:
     t = RecordingTransport()
     pub = EventPublisher("s1", t)
@@ -464,42 +329,6 @@ def test_decode_user_text_truncates_oversized_input() -> None:
     decoded = decode_user_text(payload)
     assert decoded is not None
     assert len(decoded) == MAX_USER_TEXT_CHARS
-
-
-def test_decode_user_answered_prefers_selected_value() -> None:
-    payload = json.dumps(
-        {
-            "type": "user.answered",
-            "session_id": "s1",
-            "question_id": "q1",
-            "selected_value": "relevance",
-            "text": "自由記述",
-        }
-    ).encode()
-    assert decode_user_answered(payload, expected_session_id="s1") == ("q1", "relevance")
-
-
-def test_decode_user_answered_falls_back_to_text() -> None:
-    payload = json.dumps(
-        {"type": "user.answered", "question_id": "q1", "text": "関連度順がよい"}
-    ).encode()
-    assert decode_user_answered(payload) == ("q1", "関連度順がよい")
-
-
-def test_decode_user_answered_rejects_missing_answer() -> None:
-    payload = json.dumps({"type": "user.answered", "question_id": "q1"}).encode()
-    assert decode_user_answered(payload) is None
-
-
-def test_decode_user_answered_truncates_oversized_text() -> None:
-    from sanba_agent.events import MAX_USER_TEXT_CHARS
-
-    payload = json.dumps(
-        {"type": "user.answered", "question_id": "q1", "text": "あ" * (MAX_USER_TEXT_CHARS + 100)}
-    ).encode()
-    result = decode_user_answered(payload)
-    assert result is not None
-    assert len(result[1]) == MAX_USER_TEXT_CHARS
 
 
 def test_decode_user_interrupt_valid() -> None:
