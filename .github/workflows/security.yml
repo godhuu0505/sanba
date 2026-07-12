@@ -93,6 +93,8 @@ jobs:
       - name: Trivy scan
         run: |
           docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$PWD/.trivyignore:/.trivyignore:ro" \
             aquasec/trivy@sha256:35e972d4c97895711cb2de6594cc1774b61e6b9dc7661ef73a76dd649f006c8d \
             image --ignore-unfixed --exit-code 1 --severity HIGH,CRITICAL --format table \
+            --ignorefile /.trivyignore \
             sanba-${{ matrix.app }}:scan
