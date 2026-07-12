@@ -33,15 +33,13 @@ def build_mcp_servers() -> dict:
     if gcp_url:
         servers["gcp_observability"] = {
             "description": "SANBA 本番 (sanba-prd) の Cloud Logging / Monitoring / Trace read-only",
-            "url": gcp_url,
-            "mode": "streamable-http",
+            "config": {"mode": "streamable-http", "url": gcp_url},
         }
     firestore_url = os.environ.get("FIRESTORE_MCP_URL", "")
     if firestore_url:
         servers["firestore"] = {
             "description": "SANBA 本番 (sanba-prd) の Firestore read-only",
-            "url": firestore_url,
-            "mode": "streamable-http",
+            "config": {"mode": "streamable-http", "url": firestore_url},
         }
     return servers
 
