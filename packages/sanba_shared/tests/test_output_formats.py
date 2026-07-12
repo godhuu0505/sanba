@@ -159,3 +159,37 @@ def test_check_points_fall_back_to_mode_defaults_when_unconfigured() -> None:
         check_points_for_scope(only_dev, InviteScope.END_USER)
         == DEFAULT_CHECK_POINTS[InviteScope.END_USER]
     )
+
+
+def test_default_check_points_uses_coaching_set_when_no_product() -> None:
+    """対象アプリ未指定の developer セッションはコーチング型の既定観点を返す（ADR-0072）。"""
+    from sanba_shared.models import (
+        NO_PRODUCT_CHECK_POINTS,
+        InviteScope,
+        default_check_points,
+    )
+
+    assert default_check_points(None, InviteScope.DEVELOPER) == NO_PRODUCT_CHECK_POINTS
+
+
+def test_default_check_points_stays_empty_for_end_user_without_product() -> None:
+    """product が無い end_user は掘る対象が無いため素のまま（ADR-0072）。"""
+    from sanba_shared.models import InviteScope, default_check_points
+
+    assert default_check_points(None, InviteScope.END_USER) == []
+
+
+def test_default_check_points_prefers_product_config() -> None:
+    """product があれば従来どおり管理者設定 / モード別デフォルトを返す（ADR-0072）。"""
+    from sanba_shared.models import (
+        InviteScope,
+        Product,
+        default_check_points,
+    )
+
+    product = Product(id="p1", name="請求アプリ", owner_sub="owner", check_items=_tagged_items())
+    assert default_check_points(product, InviteScope.DEVELOPER) == [
+        "全員向け",
+        "企画者向け",
+        "開発者向け",
+    ]

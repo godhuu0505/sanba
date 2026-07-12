@@ -1,14 +1,20 @@
 "use client";
 
-import { Scale, TriangleAlert } from "lucide-react";
+import { LoaderCircle, Scale, TriangleAlert } from "lucide-react";
 
 export interface EndConfirmDialogProps {
   unresolved: number;
   onContinue: () => void;
   onEnd: () => void;
+  loading?: boolean;
 }
 
-export function EndConfirmDialog({ unresolved, onContinue, onEnd }: EndConfirmDialogProps) {
+export function EndConfirmDialog({
+  unresolved,
+  onContinue,
+  onEnd,
+  loading = false,
+}: EndConfirmDialogProps) {
   const hasUnresolved = unresolved > 0;
   return (
     <div
@@ -36,16 +42,25 @@ export function EndConfirmDialog({ unresolved, onContinue, onEnd }: EndConfirmDi
         <button
           type="button"
           onClick={onContinue}
-          className="flex-1 rounded-[12px] border border-sanba-frame py-[13px] text-[13px] font-bold text-sanba-gold-text"
+          disabled={loading}
+          className="flex-1 rounded-[12px] border border-sanba-frame py-[13px] text-[13px] font-bold text-sanba-gold-text disabled:opacity-50"
         >
           会話を続ける
         </button>
         <button
           type="button"
           onClick={onEnd}
-          className="flex-1 rounded-[12px] bg-sanba-rec-text py-[13px] text-[13px] font-bold text-white"
+          disabled={loading}
+          aria-busy={loading}
+          className="flex flex-1 items-center justify-center gap-1.5 rounded-[12px] bg-sanba-rec-text py-[13px] text-[13px] font-bold text-white disabled:opacity-70"
         >
-          終了する
+          {loading ? (
+            <>
+              <LoaderCircle size={14} aria-hidden className="animate-spin" /> まとめています…
+            </>
+          ) : (
+            "終了する"
+          )}
         </button>
       </div>
     </div>

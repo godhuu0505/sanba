@@ -33,10 +33,23 @@ describe("resolveVoiceStatus（状態源を優先順位で畳む）", () => {
     ).toBe("idle");
   });
 
-  it("listening 以外のフェーズは idle", () => {
+  it("deliberating は考え中（thinking）", () => {
     expect(
       resolveVoiceStatus({ phase: "deliberating", micOn: true, muted: false }),
-    ).toBe("idle");
+    ).toBe("thinking");
+  });
+
+  it("deliberating でも発話中・消音が優先される", () => {
+    expect(
+      resolveVoiceStatus({ phase: "deliberating", micOn: true, muted: false, agentSpeaking: true }),
+    ).toBe("agent-speaking");
+    expect(
+      resolveVoiceStatus({ phase: "deliberating", micOn: true, muted: true }),
+    ).toBe("muted");
+  });
+
+  it("listening / deliberating 以外のフェーズは idle", () => {
+    expect(resolveVoiceStatus({ phase: "recognizing", micOn: true, muted: false })).toBe("idle");
   });
 });
 

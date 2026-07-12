@@ -208,19 +208,40 @@ def build_glossary_seed(product_name: str, glossary: list[str]) -> str:
     return "\n".join(lines)
 
 
-def build_check_items_seed(check_items: list[str], *, end_user: bool = False) -> str:
-    """登録された「必ず確認する項目」を初期 instructions にシードする一節（ADR-0043）。
+def build_check_items_seed(
+    check_items: list[str], *, end_user: bool = False, owner_provided: bool = True
+) -> str:
+    """このセッションでシードする確認観点を初期 instructions に載せる一節（ADR-0043 / ADR-0072）。
 
-    glossary シードと同型の「LLM 追加呼び出しなしの機械的組み立て」。項目は owner が
-    入力する非信頼データのため、共通フェンス（build_untrusted_fence）で囲む。
-    空なら空文字 = シードなしで会話は成立させる。対象タグによる絞り込みは呼び出し側
-    （check_items_for_scope）が済ませた前提で、ここは渡された項目をすべて載せる。
+    glossary シードと同型の「LLM 追加呼び出しなしの機械的組み立て」。空なら空文字 =
+    シードなしで会話は成立させる。対象タグによる絞り込みは呼び出し側（check_items_for_scope）が
+    済ませた前提で、ここは渡された観点をすべて載せる。
+    `owner_provided=True` のときはアプリ提供者入力の非信頼データとして共通フェンス
+    （build_untrusted_fence）で囲む。`owner_provided=False`（対象アプリ未指定のコーチング型
+    デフォルト）のときは提供者由来ではなく系側の信頼できる既定観点なので、提供者に帰属させず
+    フェンスも付けずに載せ、ゴールを定めるための問いの起点として使わせる。
     end_user モードでは項目を利用者に伝わる言葉へ言い換えて確認させる（開発語彙を
     そのまま読み上げない / ADR-0032 の語彙方針）。
     """
     items = [c.strip() for c in check_items if c.strip()]
     if not items:
         return ""
+    if not owner_provided:
+        return "\n".join(
+            [
+                "",
+                "## このセッションで掘り下げる観点",
+                "まだ作るものが決まっていない段階です。次の観点から、相手が本当に叶えたいこと・"
+                "解消したい困りごとを引き出し、ゴールを一言で言える状態にする。",
+                *[f"- {c}" for c in items],
+                "",
+                "観点の扱い:",
+                "- 会話の自然な流れの中で、上記の観点を一つずつ問いにして掘り下げる"
+                "（一度に列挙して尋ねない）。",
+                "- ゴールが定まったら、その達成に必要なことを要件として深掘りし、"
+                "`save_requirement` で記録する。",
+            ]
+        )
     lines = [
         "",
         "## このセッションで必ず確認する項目",

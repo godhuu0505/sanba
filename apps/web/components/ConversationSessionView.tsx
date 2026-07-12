@@ -67,6 +67,7 @@ type Phase = "shell" | "result";
 
 const SIDE_FIGURE_STATE: Record<VoiceStatus, FigureState> = {
   "agent-speaking": "asking",
+  thinking: "writing",
   listening: "listening",
   muted: "writing",
   idle: "walking",
@@ -108,6 +109,7 @@ export function ConversationSessionView({
   const [phase, setPhase] = useState<Phase>("shell");
   const [tab, setTab] = useState<ShellTab>("history");
   const [endOpen, setEndOpen] = useState(false);
+  const [ending, setEnding] = useState(false);
   const [ended, setEnded] = useState(false);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [provisional, setProvisional] = useState(false);
@@ -234,21 +236,28 @@ export function ConversationSessionView({
     }
   }, [readOnly, onFinalize, onEndSession, onNavigateResults, endProvisional]);
 
-  function finishSession() {
-    setEndOpen(false);
+  async function finishSession() {
+    if (ending) return;
     onLeaveConversation?.();
     if (readOnly) {
+      setEndOpen(false);
       setProvisional(mini.unresolved > 0);
       setEnded(true);
       onEndSession?.();
       setPhase("result");
       return;
     }
-    if (mini.unresolved === 0) {
-      void finalizeAndFinish();
-      return;
+    setEnding(true);
+    try {
+      if (mini.unresolved === 0) {
+        await finalizeAndFinish();
+      } else {
+        await endProvisional();
+      }
+    } finally {
+      setEnding(false);
+      setEndOpen(false);
     }
-    void endProvisional();
   }
 
   useEffect(() => {
@@ -393,6 +402,8 @@ export function ConversationSessionView({
                 contextProgress={state.contextProgress}
                 materials={materials}
                 userPicture={userPicture}
+                phase={state.phase}
+                agentSpeaking={agentSpeaking}
               />
             </div>
           ),
@@ -464,7 +475,8 @@ export function ConversationSessionView({
           <EndConfirmDialog
             unresolved={mini.unresolved}
             onContinue={() => setEndOpen(false)}
-            onEnd={finishSession}
+            onEnd={() => void finishSession()}
+            loading={ending}
           />
         </div>
       )}

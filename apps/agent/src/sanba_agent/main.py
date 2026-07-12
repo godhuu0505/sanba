@@ -66,7 +66,7 @@ from sanba_shared.models import (
     RequirementCategory,
     SessionMeta,
     Utterance,
-    check_points_for_scope,
+    default_check_points,
 )
 from sanba_shared.repository import SessionRepository
 
@@ -272,10 +272,14 @@ def build_agent_instructions(repo: SessionRepository, session_id: str) -> AgentS
     prep_note = ""
     product = _session_product(repo, meta)
     seeded_check_items = (
-        check_points_for_scope(product.check_items, mode) if product is not None else []
+        default_check_points(product, mode)
+        if meta is not None and (product is not None or not meta.product_id)
+        else []
     )
     check_items_seed = build_check_items_seed(
-        seeded_check_items, end_user=mode is InviteScope.END_USER
+        seeded_check_items,
+        end_user=mode is InviteScope.END_USER,
+        owner_provided=product is not None,
     )
     seeded_materials = 0
     if mode is InviteScope.END_USER:
