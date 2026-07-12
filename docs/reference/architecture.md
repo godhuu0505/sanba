@@ -30,21 +30,27 @@
 > 利用中の Google Cloud / 外部サービスの配置・タイミングは [`architecture-analysis.md`](architecture-analysis.md) に
 > 図つきで網羅する。両者がズレたら analysis 側を一次情報とする。
 
-## 3. 音声対話と推論の二層構造
+## 3. 音声対話・文字起こし・推論の三層構造
 
 ```mermaid
 sequenceDiagram
     participant U as 参加者(音声)
     participant LK as LiveKit Room
     participant VA as Voice Agent (Gemini Live)
+    participant STT as Vertex STT (Chirp)
     participant ADK as ADK Agent Team
     participant FS as Firestore
 
-    U->>LK: 発話 (audio)
+    U->>LK: 発話 (audio・既定 PTT)
     LK->>VA: audio track
     VA->>VA: Gemini Live で意図理解・即応
     VA-->>LK: 応答 (audio, 低レイテンシ)
     LK-->>U: 音声
+    par 非同期の文字起こし（会話を待たせない）
+        VA->>STT: BVC 後の user audio を fan-out
+        STT-->>VA: 転写 final（高精度 ja 固定）
+        VA-->>LK: 字幕描画・発話ログ/ES/要件へ
+    end
     Note over VA: 一定の区切りで function tool 起動
     VA->>ADK: analyze_requirements(transcript)
     ADK->>ADK: 非機能/スコープ/矛盾 サブエージェントが協調
@@ -53,7 +59,9 @@ sequenceDiagram
     VA-->>LK: 深掘り質問 (音声)
 ```
 
-**設計判断**: Live agent は「対話の主」、ADK は「分析の頭脳」。中井悦司氏の言う *subagent*（協調的切替）と佐藤一憲氏の言う *agent-as-a-tool*（道具としての呼び出し）を**両方**使い分ける —
+**設計判断**: Live agent は「対話の主」、ADK は「分析の頭脳」。文字起こしは第3の層として
+Vertex STT（Chirp）が非同期・傍観で担い、会話の critical path に入らない（[ADR-0066](../adr/0066-voice-conversation-transcription-turn-layering.md)。
+STT 構築失敗時は Gemini native 転写へ自動フォールバック）。中井悦司氏の言う *subagent*（協調的切替）と佐藤一憲氏の言う *agent-as-a-tool*（道具としての呼び出し）を**両方**使い分ける —
 ADK チーム内部は subagent 協調、Live agent から ADK を呼ぶ箇所は agent-as-a-tool。判断の根拠は [ADR-0002](../adr/0002-multi-agent-topology.md)。
 
 ## 4. ADK マルチエージェント・トポロジ

@@ -22,7 +22,7 @@
         <mxCell id="c4-web" value="&lt;b&gt;sanba-web&lt;/b&gt;&lt;br&gt;&lt;i&gt;[Container: Next.js App Router]&lt;/i&gt;&lt;br&gt;ルーム参加 UI・音声送受・&lt;br&gt;要件のライブ可視化" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#438DD5;fontColor=#ffffff;strokeColor=#3572B0;fontSize=12;" vertex="1" parent="1">
           <mxGeometry x="140" y="260" width="280" height="120" as="geometry" />
         </mxCell>
-        <mxCell id="c4-agent" value="&lt;b&gt;sanba-agent&lt;/b&gt;&lt;br&gt;&lt;i&gt;[Container: LiveKit Agents + Gemini Live]&lt;/i&gt;&lt;br&gt;音声対話の司会者（低遅延 S2S・&lt;br&gt;マルチモーダル受信）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#438DD5;fontColor=#ffffff;strokeColor=#3572B0;fontSize=12;" vertex="1" parent="1">
+        <mxCell id="c4-agent" value="&lt;b&gt;sanba-agent&lt;/b&gt;&lt;br&gt;&lt;i&gt;[Container: LiveKit Agents + Gemini Live]&lt;/i&gt;&lt;br&gt;音声対話の司会者（低遅延 S2S・&lt;br&gt;マルチモーダル受信・分離 STT 併走）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#438DD5;fontColor=#ffffff;strokeColor=#3572B0;fontSize=12;" vertex="1" parent="1">
           <mxGeometry x="520" y="260" width="300" height="130" as="geometry" />
         </mxCell>
         <mxCell id="c4-api" value="&lt;b&gt;sanba-api&lt;/b&gt;&lt;br&gt;&lt;i&gt;[Container: FastAPI]&lt;/i&gt;&lt;br&gt;認証検証・LiveKit トークン発行・&lt;br&gt;セッション CRUD・素材解析の入口" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#438DD5;fontColor=#ffffff;strokeColor=#3572B0;fontSize=12;" vertex="1" parent="1">
@@ -49,7 +49,7 @@
         <mxCell id="c4-lk" value="&lt;b&gt;LiveKit Cloud&lt;/b&gt;&lt;br&gt;&lt;i&gt;[外部システム: WebRTC SFU]&lt;/i&gt;&lt;br&gt;音声/映像/データの実時間配信" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#999999;fontColor=#ffffff;strokeColor=#8A8A8A;fontSize=12;" vertex="1" parent="1">
           <mxGeometry x="1240" y="260" width="240" height="120" as="geometry" />
         </mxCell>
-        <mxCell id="c4-vtx" value="&lt;b&gt;Vertex AI / Gemini&lt;/b&gt;&lt;br&gt;&lt;i&gt;[外部システム: AI]&lt;/i&gt;&lt;br&gt;Live S2S・推論・Vision・Embedding&lt;br&gt;（本番キーレス / ローカル AI Studio）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#999999;fontColor=#ffffff;strokeColor=#8A8A8A;fontSize=12;" vertex="1" parent="1">
+        <mxCell id="c4-vtx" value="&lt;b&gt;Vertex AI / Gemini&lt;/b&gt;&lt;br&gt;&lt;i&gt;[外部システム: AI]&lt;/i&gt;&lt;br&gt;Live S2S・推論・Vision・Embedding・&lt;br&gt;Chirp STT（本番キーレス / ローカル AI Studio）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#999999;fontColor=#ffffff;strokeColor=#8A8A8A;fontSize=12;" vertex="1" parent="1">
           <mxGeometry x="1240" y="440" width="240" height="120" as="geometry" />
         </mxCell>
         <mxCell id="c4-gh" value="&lt;b&gt;GitHub Issues&lt;/b&gt;&lt;br&gt;&lt;i&gt;[外部システム]&lt;/i&gt;&lt;br&gt;確定要件の起票（既定 OFF）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#999999;fontColor=#ffffff;strokeColor=#8A8A8A;fontSize=12;dashed=1;" vertex="1" parent="1">
@@ -109,7 +109,7 @@
         <mxCell id="c4-e8" value="⑥ worker 接続&lt;br&gt;（音声 S2S / data）" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;fontColor=#333333;fontSize=11;labelBackgroundColor=#FFFFFF;startArrow=classic;startFill=1;exitX=1;exitY=0.46;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="c4-agent" target="c4-lk">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="c4-e9" value="⑦ Gemini Live S2S / 推論" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;fontColor=#333333;fontSize=11;labelBackgroundColor=#FFFFFF;exitX=1;exitY=0.77;exitDx=0;exitDy=0;entryX=0;entryY=0.25;entryDx=0;entryDy=0;" edge="1" parent="1" source="c4-agent" target="c4-vtx">
+        <mxCell id="c4-e9" value="⑦ Gemini Live S2S / 推論&lt;br&gt;＋ Chirp STT 転写（非同期）" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;fontColor=#333333;fontSize=11;labelBackgroundColor=#FFFFFF;exitX=1;exitY=0.77;exitDx=0;exitDy=0;entryX=0;entryY=0.25;entryDx=0;entryDy=0;" edge="1" parent="1" source="c4-agent" target="c4-vtx">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
               <mxPoint x="1160" y="360" />
@@ -243,7 +243,7 @@
     </mxGraphModel>
   </diagram>
   <diagram id="sanba-sequence" name="2. シーケンス図（音声対話）">
-    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1654" pageHeight="1169" math="0" shadow="0">
+    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1654" pageHeight="1300" math="0" shadow="0">
       <root>
         <mxCell id="s0" />
         <mxCell id="s1" parent="s0" />
@@ -251,28 +251,28 @@
           <mxGeometry x="35" y="0" width="900" height="30" as="geometry" />
         </mxCell>
         <mxCell id="sq-h-u" value="&lt;b&gt;参加者&lt;/b&gt;&lt;br&gt;(ブラウザ)" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;dropTarget=0;collapsible=0;recursiveResize=0;outlineConnect=0;size=50;fillColor=#08427B;fontColor=#ffffff;strokeColor=#073B6F;fontSize=12;" vertex="1" parent="s1">
-          <mxGeometry x="35" y="40" width="150" height="960" as="geometry" />
+          <mxGeometry x="35" y="40" width="150" height="1105" as="geometry" />
         </mxCell>
         <mxCell id="sq-h-gis" value="&lt;b&gt;Google Identity&lt;/b&gt;&lt;br&gt;(外部)" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;dropTarget=0;collapsible=0;recursiveResize=0;outlineConnect=0;size=50;fillColor=#999999;fontColor=#ffffff;strokeColor=#8A8A8A;fontSize=12;" vertex="1" parent="s1">
-          <mxGeometry x="225" y="40" width="150" height="960" as="geometry" />
+          <mxGeometry x="225" y="40" width="150" height="1105" as="geometry" />
         </mxCell>
         <mxCell id="sq-h-api" value="&lt;b&gt;sanba-api&lt;/b&gt;&lt;br&gt;(FastAPI)" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;dropTarget=0;collapsible=0;recursiveResize=0;outlineConnect=0;size=50;fillColor=#438DD5;fontColor=#ffffff;strokeColor=#3572B0;fontSize=12;" vertex="1" parent="s1">
-          <mxGeometry x="415" y="40" width="150" height="960" as="geometry" />
+          <mxGeometry x="415" y="40" width="150" height="1105" as="geometry" />
         </mxCell>
         <mxCell id="sq-h-lk" value="&lt;b&gt;LiveKit Cloud&lt;/b&gt;&lt;br&gt;(WebRTC SFU)" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;dropTarget=0;collapsible=0;recursiveResize=0;outlineConnect=0;size=50;fillColor=#999999;fontColor=#ffffff;strokeColor=#8A8A8A;fontSize=12;" vertex="1" parent="s1">
-          <mxGeometry x="605" y="40" width="150" height="960" as="geometry" />
+          <mxGeometry x="605" y="40" width="150" height="1105" as="geometry" />
         </mxCell>
         <mxCell id="sq-h-va" value="&lt;b&gt;sanba-agent&lt;/b&gt;&lt;br&gt;(Gemini Live)" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;dropTarget=0;collapsible=0;recursiveResize=0;outlineConnect=0;size=50;fillColor=#438DD5;fontColor=#ffffff;strokeColor=#3572B0;fontSize=12;" vertex="1" parent="s1">
-          <mxGeometry x="795" y="40" width="150" height="960" as="geometry" />
+          <mxGeometry x="795" y="40" width="150" height="1105" as="geometry" />
         </mxCell>
-        <mxCell id="sq-h-vtx" value="&lt;b&gt;Vertex AI&lt;/b&gt;&lt;br&gt;(Gemini)" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;dropTarget=0;collapsible=0;recursiveResize=0;outlineConnect=0;size=50;fillColor=#999999;fontColor=#ffffff;strokeColor=#8A8A8A;fontSize=12;" vertex="1" parent="s1">
-          <mxGeometry x="985" y="40" width="150" height="960" as="geometry" />
+        <mxCell id="sq-h-vtx" value="&lt;b&gt;Vertex AI&lt;/b&gt;&lt;br&gt;(Gemini / Chirp STT)" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;dropTarget=0;collapsible=0;recursiveResize=0;outlineConnect=0;size=50;fillColor=#999999;fontColor=#ffffff;strokeColor=#8A8A8A;fontSize=12;" vertex="1" parent="s1">
+          <mxGeometry x="985" y="40" width="150" height="1105" as="geometry" />
         </mxCell>
         <mxCell id="sq-h-adk" value="&lt;b&gt;ADK Agent Team&lt;/b&gt;&lt;br&gt;(in-process)" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;dropTarget=0;collapsible=0;recursiveResize=0;outlineConnect=0;size=50;fillColor=#85BBF0;fontColor=#0B2E4F;strokeColor=#78A8D8;fontSize=12;" vertex="1" parent="s1">
-          <mxGeometry x="1175" y="40" width="150" height="960" as="geometry" />
+          <mxGeometry x="1175" y="40" width="150" height="1105" as="geometry" />
         </mxCell>
         <mxCell id="sq-h-fs" value="&lt;b&gt;Firestore&lt;/b&gt;&lt;br&gt;(状態)" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;dropTarget=0;collapsible=0;recursiveResize=0;outlineConnect=0;size=50;fillColor=#438DD5;fontColor=#ffffff;strokeColor=#3572B0;fontSize=12;" vertex="1" parent="s1">
-          <mxGeometry x="1365" y="40" width="150" height="960" as="geometry" />
+          <mxGeometry x="1365" y="40" width="150" height="1105" as="geometry" />
         </mxCell>
         <mxCell id="sq-m1" value="① Google ログイン" style="html=1;strokeColor=#333333;fontSize=11;verticalAlign=bottom;labelBackgroundColor=none;endArrow=block;" edge="1" parent="s1">
           <mxGeometry relative="1" as="geometry"><mxPoint x="110" y="130" as="sourcePoint" /><mxPoint x="300" y="130" as="targetPoint" /></mxGeometry>
@@ -299,9 +299,9 @@
           <mxGeometry relative="1" as="geometry"><mxPoint x="870" y="375" as="sourcePoint" /><mxPoint x="680" y="375" as="targetPoint" /></mxGeometry>
         </mxCell>
         <mxCell id="sq-loop" value="loop（会話ターン）" style="shape=umlFrame;whiteSpace=wrap;html=1;width=170;height=30;fillColor=none;strokeColor=#666666;fontSize=12;fontStyle=1;verticalAlign=top;align=left;spacingLeft=4;" vertex="1" parent="s1">
-          <mxGeometry x="50" y="415" width="1480" height="440" as="geometry" />
+          <mxGeometry x="50" y="415" width="1480" height="545" as="geometry" />
         </mxCell>
-        <mxCell id="sq-m9" value="発話（audio）" style="html=1;strokeColor=#333333;fontSize=11;verticalAlign=bottom;labelBackgroundColor=none;endArrow=block;" edge="1" parent="s1">
+        <mxCell id="sq-m9" value="発話（audio・既定 PTT: 押下中のみ mic publish）" style="html=1;strokeColor=#333333;fontSize=11;verticalAlign=bottom;labelBackgroundColor=none;endArrow=block;" edge="1" parent="s1">
           <mxGeometry relative="1" as="geometry"><mxPoint x="110" y="465" as="sourcePoint" /><mxPoint x="680" y="465" as="targetPoint" /></mxGeometry>
         </mxCell>
         <mxCell id="sq-m10" value="audio track" style="html=1;strokeColor=#333333;fontSize=11;verticalAlign=bottom;labelBackgroundColor=none;endArrow=block;" edge="1" parent="s1">
@@ -319,35 +319,47 @@
         <mxCell id="sq-m14" value="音声" style="html=1;strokeColor=#333333;fontSize=11;verticalAlign=bottom;labelBackgroundColor=none;endArrow=open;dashed=1;" edge="1" parent="s1">
           <mxGeometry relative="1" as="geometry"><mxPoint x="680" y="640" as="sourcePoint" /><mxPoint x="110" y="640" as="targetPoint" /></mxGeometry>
         </mxCell>
+        <mxCell id="sq-m14b" value="（並行）BVC 後の user audio を分離 STT へ fan-out（傍観・会話を待たせない）" style="html=1;strokeColor=#7fa83c;fontColor=#4a6619;fontSize=11;verticalAlign=bottom;labelBackgroundColor=none;endArrow=block;" edge="1" parent="s1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="870" y="675" as="sourcePoint" /><mxPoint x="1060" y="675" as="targetPoint" /></mxGeometry>
+        </mxCell>
+        <mxCell id="sq-m14c" value="user 転写 final（Chirp・高精度 ja 固定）" style="html=1;strokeColor=#7fa83c;fontColor=#4a6619;fontSize=11;verticalAlign=bottom;labelBackgroundColor=none;endArrow=open;dashed=1;" edge="1" parent="s1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="1060" y="710" as="sourcePoint" /><mxPoint x="870" y="710" as="targetPoint" /></mxGeometry>
+        </mxCell>
+        <mxCell id="sq-m14d" value="転写を字幕として web へ描画・record_user_final → 発話ログ/ES/要件" style="html=1;strokeColor=#7fa83c;fontColor=#4a6619;fontSize=11;verticalAlign=bottom;labelBackgroundColor=none;endArrow=block;" edge="1" parent="s1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="870" y="745" as="sourcePoint" /><mxPoint x="680" y="745" as="targetPoint" /></mxGeometry>
+        </mxCell>
         <mxCell id="sq-m15" value="区切りで analyze_requirements(transcript)（agent-as-a-tool）" style="html=1;strokeColor=#333333;fontSize=11;verticalAlign=bottom;labelBackgroundColor=none;endArrow=block;" edge="1" parent="s1">
-          <mxGeometry relative="1" as="geometry"><mxPoint x="870" y="675" as="sourcePoint" /><mxPoint x="1250" y="675" as="targetPoint" /></mxGeometry>
+          <mxGeometry relative="1" as="geometry"><mxPoint x="870" y="780" as="sourcePoint" /><mxPoint x="1250" y="780" as="targetPoint" /></mxGeometry>
         </mxCell>
         <mxCell id="sq-m16" value="推論（gemini-2.5-flash）" style="html=1;strokeColor=#333333;fontSize=11;verticalAlign=bottom;labelBackgroundColor=none;endArrow=block;" edge="1" parent="s1">
-          <mxGeometry relative="1" as="geometry"><mxPoint x="1250" y="710" as="sourcePoint" /><mxPoint x="1060" y="710" as="targetPoint" /></mxGeometry>
+          <mxGeometry relative="1" as="geometry"><mxPoint x="1250" y="815" as="sourcePoint" /><mxPoint x="1060" y="815" as="targetPoint" /></mxGeometry>
         </mxCell>
         <mxCell id="sq-m17" value="次の問い / 抜け / 矛盾" style="html=1;strokeColor=#333333;fontSize=11;verticalAlign=bottom;labelBackgroundColor=none;endArrow=open;dashed=1;" edge="1" parent="s1">
-          <mxGeometry relative="1" as="geometry"><mxPoint x="1250" y="745" as="sourcePoint" /><mxPoint x="870" y="745" as="targetPoint" /></mxGeometry>
+          <mxGeometry relative="1" as="geometry"><mxPoint x="1250" y="850" as="sourcePoint" /><mxPoint x="870" y="850" as="targetPoint" /></mxGeometry>
         </mxCell>
         <mxCell id="sq-m18" value="確定要件・発話・検知を upsert" style="html=1;strokeColor=#333333;fontSize=11;verticalAlign=bottom;labelBackgroundColor=none;endArrow=block;" edge="1" parent="s1">
-          <mxGeometry relative="1" as="geometry"><mxPoint x="870" y="780" as="sourcePoint" /><mxPoint x="1440" y="780" as="targetPoint" /></mxGeometry>
+          <mxGeometry relative="1" as="geometry"><mxPoint x="870" y="885" as="sourcePoint" /><mxPoint x="1440" y="885" as="targetPoint" /></mxGeometry>
         </mxCell>
         <mxCell id="sq-m19" value="data channel で web へ差分 publish（seq 付き）" style="html=1;strokeColor=#333333;fontSize=11;verticalAlign=bottom;labelBackgroundColor=none;endArrow=block;" edge="1" parent="s1">
-          <mxGeometry relative="1" as="geometry"><mxPoint x="870" y="815" as="sourcePoint" /><mxPoint x="680" y="815" as="targetPoint" /></mxGeometry>
+          <mxGeometry relative="1" as="geometry"><mxPoint x="870" y="920" as="sourcePoint" /><mxPoint x="680" y="920" as="targetPoint" /></mxGeometry>
         </mxCell>
         <mxCell id="sq-sep" value="— リロード / 途中参加（スナップショット復元・ADR-0021）—" style="text;html=1;fontSize=11;fontStyle=2;align=center;fontColor=#666666;" vertex="1" parent="s1">
-          <mxGeometry x="200" y="865" width="500" height="20" as="geometry" />
+          <mxGeometry x="200" y="970" width="500" height="20" as="geometry" />
         </mxCell>
         <mxCell id="sq-m20" value="GET /requirements・/inquiry・/questions/current（Bearer session_token）" style="html=1;strokeColor=#333333;fontSize=11;verticalAlign=bottom;labelBackgroundColor=none;endArrow=block;" edge="1" parent="s1">
-          <mxGeometry relative="1" as="geometry"><mxPoint x="110" y="905" as="sourcePoint" /><mxPoint x="490" y="905" as="targetPoint" /></mxGeometry>
+          <mxGeometry relative="1" as="geometry"><mxPoint x="110" y="1010" as="sourcePoint" /><mxPoint x="490" y="1010" as="targetPoint" /></mxGeometry>
         </mxCell>
         <mxCell id="sq-m21" value="読み取り" style="html=1;strokeColor=#333333;fontSize=11;verticalAlign=bottom;labelBackgroundColor=none;endArrow=block;" edge="1" parent="s1">
-          <mxGeometry relative="1" as="geometry"><mxPoint x="490" y="940" as="sourcePoint" /><mxPoint x="1440" y="940" as="targetPoint" /></mxGeometry>
+          <mxGeometry relative="1" as="geometry"><mxPoint x="490" y="1045" as="sourcePoint" /><mxPoint x="1440" y="1045" as="targetPoint" /></mxGeometry>
         </mxCell>
         <mxCell id="sq-m22" value="スナップショット + seq（live 差分と冪等 upsert で合流）" style="html=1;strokeColor=#333333;fontSize=11;verticalAlign=bottom;labelBackgroundColor=none;endArrow=open;dashed=1;" edge="1" parent="s1">
-          <mxGeometry relative="1" as="geometry"><mxPoint x="490" y="975" as="sourcePoint" /><mxPoint x="110" y="975" as="targetPoint" /></mxGeometry>
+          <mxGeometry relative="1" as="geometry"><mxPoint x="490" y="1080" as="sourcePoint" /><mxPoint x="110" y="1080" as="targetPoint" /></mxGeometry>
+        </mxCell>
+        <mxCell id="sq-note-stt" value="分離 STT（ADR-0066 層3・本番 ON）: 会話は Gemini Live native audio のまま、文字起こしだけ Vertex STT（chirp_3 / us）が非同期に担う。STT 構築失敗時は Gemini native 転写へ自動フォールバック（WARNING + ログベースメトリクスで監視・#516/#518/#520）" style="shape=note;whiteSpace=wrap;html=1;backgroundOutline=1;darkOpacity=0.05;fillColor=#FFF9B2;strokeColor=#D6B656;fontSize=11;align=left;spacing=8;" vertex="1" parent="s1">
+          <mxGeometry x="35" y="1125" width="720" height="75" as="geometry" />
         </mxCell>
         <mxCell id="sq-note" value="room close 時: LLM-as-a-judge で採点 → session_scored 構造化ログ → Cloud Logging / Cloud Monitoring（ADR-0051）" style="shape=note;whiteSpace=wrap;html=1;backgroundOutline=1;darkOpacity=0.05;fillColor=#FFF9B2;strokeColor=#D6B656;fontSize=11;align=left;spacing=8;" vertex="1" parent="s1">
-          <mxGeometry x="795" y="1020" width="720" height="60" as="geometry" />
+          <mxGeometry x="795" y="1125" width="720" height="60" as="geometry" />
         </mxCell>
       </root>
     </mxGraphModel>
@@ -660,7 +672,7 @@
         <mxCell id="g-sm" value="&lt;b&gt;Secret Manager&lt;/b&gt;&lt;br&gt;livekit-* / es-api-key /&lt;br&gt;session-signing 等&lt;br&gt;（値の唯一の置き場）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#4285F4;fontSize=11;verticalAlign=top;spacingTop=42;" vertex="1" parent="g1">
           <mxGeometry x="920" y="560" width="170" height="110" as="geometry" />
         </mxCell>
-        <mxCell id="g-vtx" value="&lt;b&gt;Vertex AI / Speech&lt;/b&gt;&lt;br&gt;Gemini Live・2.5-flash&lt;br&gt;Vision / Embedding&lt;br&gt;Chirp STT（キーレス）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#4285F4;fontSize=11;verticalAlign=top;spacingTop=42;" vertex="1" parent="g1">
+        <mxCell id="g-vtx" value="&lt;b&gt;Vertex AI / Speech&lt;/b&gt;&lt;br&gt;Gemini Live・2.5-flash&lt;br&gt;Vision / Embedding&lt;br&gt;Chirp STT chirp_3 / us（キーレス）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#4285F4;fontSize=11;verticalAlign=top;spacingTop=42;" vertex="1" parent="g1">
           <mxGeometry x="1110" y="560" width="150" height="110" as="geometry" />
         </mxCell>
         <mxCell id="g-obs" value="可観測性 / LLMOps" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#999999;dashed=1;verticalAlign=top;align=left;spacingLeft=6;spacingTop=2;fontStyle=2;fontSize=11;" vertex="1" parent="g1">
@@ -877,6 +889,47 @@
         </mxCell>
         <mxCell id="g-i-users" style="shape=mxgraph.gcp2.users;html=1;fillColor=#FFFFFF;strokeColor=none;aspect=fixed;" vertex="1" parent="g-users">
           <mxGeometry x="8" y="31" width="28" height="28" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="sanba-devops-cycle" name="5. DevOps サイクル">
+    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1654" pageHeight="1169" math="0" shadow="0">
+      <root>
+        <mxCell id="dv0" />
+        <mxCell id="dv1" parent="dv0" />
+        <mxCell id="dv-title" value="SANBA — DevOps サイクル（つくる・まわす・とどける・みる の閉ループ）" style="text;html=1;fontSize=20;fontStyle=1;align=left;verticalAlign=middle;" vertex="1" parent="dv1">
+          <mxGeometry x="40" y="10" width="1000" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="dv-plan" value="&lt;b&gt;&lt;font style=&quot;font-size:16px&quot;&gt;① つくる（Plan / Code）&lt;/font&gt;&lt;/b&gt;&lt;br&gt;&lt;br&gt;・Issue（目的ベース）＋ ADR に設計判断を記録&lt;br&gt;・AI エージェント協働（CLAUDE.md 規約 / AGENTS.md 共有）&lt;br&gt;・コメント禁止 — why はコミット / PR / ADR に書く&lt;br&gt;・Conventional Commits → Pull Request" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#438DD5;strokeColor=#3572B0;fontColor=#ffffff;fontSize=13;align=left;spacing=16;verticalAlign=top;spacingTop=8;" vertex="1" parent="dv1">
+          <mxGeometry x="60" y="120" width="640" height="210" as="geometry" />
+        </mxCell>
+        <mxCell id="dv-ci" value="&lt;b&gt;&lt;font style=&quot;font-size:16px&quot;&gt;② まわす（CI・品質ゲート）&lt;/font&gt;&lt;/b&gt;&lt;br&gt;&lt;br&gt;・ci.yml: ruff / mypy / pytest / tsc / build / no-comments&lt;br&gt;・llm-eval.yml: LLM 出力の回帰評価（Gemini judge・ゲート）&lt;br&gt;・security.yml: pip-audit / npm audit / gitleaks / Trivy、CodeQL&lt;br&gt;・自動レビュー（Codex・日本語 / P0-P2）＋ /security-review" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#438DD5;strokeColor=#3572B0;fontColor=#ffffff;fontSize=13;align=left;spacing=16;verticalAlign=top;spacingTop=8;" vertex="1" parent="dv1">
+          <mxGeometry x="950" y="120" width="640" height="210" as="geometry" />
+        </mxCell>
+        <mxCell id="dv-cd" value="&lt;b&gt;&lt;font style=&quot;font-size:16px&quot;&gt;③ とどける（CD・鍵レス）&lt;/font&gt;&lt;/b&gt;&lt;br&gt;&lt;br&gt;・deploy.yml: paths-filter → buildx → Artifact Registry → Cloud Run&lt;br&gt;　（migrate 先行・失敗時は全 app デプロイ停止）&lt;br&gt;・terraform.yml: plan / apply（IaC が単一の正・SHA256 照合）&lt;br&gt;・Workload Identity Federation（鍵レス）・SLSA provenance" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#438DD5;strokeColor=#3572B0;fontColor=#ffffff;fontSize=13;align=left;spacing=16;verticalAlign=top;spacingTop=8;" vertex="1" parent="dv1">
+          <mxGeometry x="950" y="440" width="640" height="210" as="geometry" />
+        </mxCell>
+        <mxCell id="dv-obs" value="&lt;b&gt;&lt;font style=&quot;font-size:16px&quot;&gt;④ みる（観測・LLMOps）&lt;/font&gt;&lt;/b&gt;&lt;br&gt;&lt;br&gt;・OTel trace → Cloud Trace（agent / api / worker 直送）&lt;br&gt;・structlog → Cloud Logging → ログベースメトリクス&lt;br&gt;　（STT フォールバック率・自己バージイン等）&lt;br&gt;・Cloud Monitoring: アラート / session_scored（LLM 品質）&lt;br&gt;・Kibana: AI コスト可視化　・Four Keys（DORA）自己計測" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#438DD5;strokeColor=#3572B0;fontColor=#ffffff;fontSize=13;align=left;spacing=16;verticalAlign=top;spacingTop=8;" vertex="1" parent="dv1">
+          <mxGeometry x="60" y="440" width="640" height="210" as="geometry" />
+        </mxCell>
+        <mxCell id="dv-center" value="&lt;b&gt;DevOps&lt;br&gt;closed loop&lt;/b&gt;" style="ellipse;whiteSpace=wrap;html=1;fillColor=#FFF9B2;strokeColor=#D6B656;fontSize=14;" vertex="1" parent="dv1">
+          <mxGeometry x="730" y="330" width="190" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="dv-a1" value="git push / PR" style="html=1;strokeColor=#333333;fontSize=12;verticalAlign=bottom;labelBackgroundColor=none;endArrow=block;strokeWidth=2;" edge="1" parent="dv1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="700" y="225" as="sourcePoint" /><mxPoint x="950" y="225" as="targetPoint" /></mxGeometry>
+        </mxCell>
+        <mxCell id="dv-a2" value="quality-gate ＋ レビュー 1 件 必須&lt;br&gt;→ merge main（branch protection）" style="html=1;strokeColor=#333333;fontSize=12;verticalAlign=bottom;labelBackgroundColor=none;endArrow=block;strokeWidth=2;" edge="1" parent="dv1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="1270" y="330" as="sourcePoint" /><mxPoint x="1270" y="440" as="targetPoint" /></mxGeometry>
+        </mxCell>
+        <mxCell id="dv-a3" value="本番 Cloud Run（sanba-prd）へ&lt;br&gt;テレメトリを常時放流" style="html=1;strokeColor=#333333;fontSize=12;verticalAlign=bottom;labelBackgroundColor=none;endArrow=block;strokeWidth=2;" edge="1" parent="dv1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="950" y="545" as="sourcePoint" /><mxPoint x="700" y="545" as="targetPoint" /></mxGeometry>
+        </mxCell>
+        <mxCell id="dv-a4" value="アラート・LLM 品質 / コスト・Four Keys&lt;br&gt;→ Issue / ADR / プロンプト改善へ還流" style="html=1;strokeColor=#333333;fontSize=12;verticalAlign=bottom;labelBackgroundColor=none;endArrow=block;strokeWidth=2;" edge="1" parent="dv1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="380" y="440" as="sourcePoint" /><mxPoint x="380" y="330" as="targetPoint" /></mxGeometry>
+        </mxCell>
+        <mxCell id="dv-note" value="原則: 観測できないものは運用できない（新しい処理は必ずトレース / ログ / メトリクスを通す）・指標をハックしない（Four Keys は本質的なボトルネック改善のために計測）。ワークフローの設計判断は docs/reference/ci-cd-workflows.md、リリース手順は docs/how-to/deploy-gcp.md を正とする。" style="shape=note;whiteSpace=wrap;html=1;backgroundOutline=1;darkOpacity=0.05;fillColor=#FFF9B2;strokeColor=#D6B656;fontSize=11;align=left;spacing=8;" vertex="1" parent="dv1">
+          <mxGeometry x="60" y="700" width="1530" height="60" as="geometry" />
         </mxCell>
       </root>
     </mxGraphModel>
