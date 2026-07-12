@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import re
 
-_EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
+_EMAIL = re.compile(r"[A-Za-z0-9._%+-]{1,64}@(?:[A-Za-z0-9-]{1,63}\.){1,8}[A-Za-z]{2,63}")
 _PHONE = re.compile(r"(?<!\d)(?:\+?\d[\d\-\s()]{8,}\d)(?!\d)")
 _CARD = re.compile(r"(?<!\d)(?:\d[ -]?){13,16}(?!\d)")
 _LONGNUM = re.compile(r"(?<!\d)\d{12}(?!\d)")
