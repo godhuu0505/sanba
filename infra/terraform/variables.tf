@@ -123,13 +123,13 @@ variable "separate_stt_enabled" {
 variable "stt_model" {
   type        = string
   default     = ""
-  description = "分離 STT の認識モデル（STT_MODEL）。空ならアプリ既定（chirp_2）。chirp_3 の A/B に使う（#516）。"
+  description = "分離 STT の認識モデル（STT_MODEL）。separate_stt_enabled=true の場合のみ有効。空ならアプリ既定（chirp_2）。chirp_3 の A/B に使う（#516）。"
 }
 
 variable "stt_location" {
   type        = string
   default     = ""
-  description = "分離 STT のリージョン（STT_LOCATION）。空ならアプリ既定（us-central1）。Chirp 系モデルの対応リージョンに合わせる。"
+  description = "分離 STT のリージョン（STT_LOCATION）。separate_stt_enabled=true の場合のみ有効。空ならアプリ既定（us-central1）。Chirp 系モデルの対応リージョンに合わせる。"
 }
 
 variable "require_login_nonce" {
