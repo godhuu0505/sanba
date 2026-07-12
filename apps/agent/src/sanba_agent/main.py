@@ -468,6 +468,8 @@ class SANBAAgent(Agent):
         self._inquiry = self._hydrate_inquiry()
         self._resolve_no_match_streak = 0
         self._end_declined_streak = 0
+        self._last_resolve_user_turn = -1
+        self._end_cushion_used = False
         self._end_forced = False
         self._question_reasks_in_turn = 0
         self._hydrate_current_question()
@@ -1717,6 +1719,7 @@ class SANBAAgent(Agent):
                 "open_inquiries": open_items,
             }
         self._resolve_no_match_streak = 0
+        self._last_resolve_user_turn = self._user_turn
         self._inquiry_focus_id = resolved.id
         await self._emit_inquiry_nodes([resolved])
         log.info(
@@ -1767,8 +1770,10 @@ class SANBAAgent(Agent):
 
         未解消の確認事項（矛盾・抜け・確認観点）が 0 件になったと判断したら呼ぶ（曖昧な論点は
         advisory で算入しない / ADR-0059 決定⑤）。まだ残っていれば proposed=false と残数を返すので、
-        深掘りを続ける。proposed=false が返ったら同じターン内で再試行しないこと。0 件なら画面に
-        終了提案のカードを出し、ユーザーの同意を音声で確認する（同意後に complete_session を呼ぶ）。
+        深掘りを続ける。proposed=false が返ったら同じターン内で再試行しないこと。最後の確認事項を
+        解消した直後の呼び出しは reason="cushion" で一度保留されるので、guidance に従って要点を
+        一言でまとめて伝え、参加者の反応を待ってから再提案する。0 件なら画面に終了提案のカードを
+        出し、ユーザーの同意を音声で確認する（同意後に complete_session を呼ぶ）。
 
         Args:
             user_requested: 参加者が「終わりたい」と明確に望んでいるとき true。未解消の
@@ -1832,6 +1837,22 @@ class SANBAAgent(Agent):
                     "要件がまだ 0 件です。参加者から具体的な話を引き出してから再提案してください。"
                 )
             return result_nr
+        if (
+            not user_requested
+            and not self._end_cushion_used
+            and self._last_resolve_user_turn == self._user_turn
+        ):
+            self._end_cushion_used = True
+            log.info("session_end_cushion", session=self._session_id)
+            return {
+                "proposed": False,
+                "reason": "cushion",
+                "guidance": (
+                    "いま最後の確認事項が解消されたばかりです。まず「確認したかった点は"
+                    "これで確認できました。要点は◯◯です」と一言でまとめて伝え、参加者の"
+                    "反応を待ってから、あらためて propose_session_end を呼んでください。"
+                ),
+            }
         self._end_proposed = True
         self._end_forced = user_requested and open_count > 0
         self._end_declined_streak = 0
