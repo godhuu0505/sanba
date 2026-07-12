@@ -231,9 +231,21 @@ labels.yml workflow の `contents: read` は actions/checkout に必要（permis
 ## llm-eval.yml — LLM 回帰評価
 
 プロンプトやエージェント定義の変更時に要件インタビューの品質を回帰評価し、劣化したら fail
-（ADR-0051、[devops.md §4](../how-to/devops.md)）。`GOOGLE_API_KEY` がある環境では実 LLM judge、
-無い環境（fork PR には secrets が渡らない GitHub 仕様）では決定的な heuristic 採点に自動
-フォールバックしてゲート自体は維持する（security.md §8）。
+（ADR-0051、[devops.md §4](../how-to/devops.md)）。
+
+LLM 呼び出しは WIF（`vars.EVAL_SA` = 評価専用 SA、`roles/aiplatform.user` のみ）で認証した
+Vertex AI 経由で行う（`GOOGLE_GENAI_USE_VERTEXAI=true`）。AI Studio の API キーを使わない理由:
+(1) 2026-03 以降、AI Studio 経由の Gemini API は Cloud クレジット対象外の前払い（prepay）課金と
+なり、前払い残高が切れると 429 で coverage eval が品質リグレッションと区別不能な失敗になる、
+(2) 本番 agent と同じ Vertex AI に課金経路が揃い、キーレスで secret 管理も不要になる。
+PR トリガーで借用される SA のため、`run.admin` を持つ `DEPLOY_SA` とは分離した最小権限 SA を
+使う（[deploy-gcp.md §3](../how-to/deploy-gcp.md)）。
+
+fork PR では `id-token: write` が付与されないため auth step を起動ガード
+（`head.repo.fork == false`）で skip し、`steps.auth.outcome` 経由で
+`GOOGLE_GENAI_USE_VERTEXAI=false` に倒して決定的な heuristic 採点へ自動フォールバックする
+（ゲート自体は維持。security.md §8）。creds 必須の coverage eval はこのとき skip される
+（`evaluation.py` の advisory 設計）。
 
 ## dependabot.yml — 依存更新
 
