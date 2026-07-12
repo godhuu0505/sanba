@@ -120,6 +120,18 @@ variable "separate_stt_enabled" {
   description = "会話とは別に描画・履歴用の分離 STT（Vertex Chirp）を有効化するか（ADR-0066 S1 / SEPARATE_STT_ENABLED）。既定 OFF・要実機検証。"
 }
 
+variable "stt_model" {
+  type        = string
+  default     = ""
+  description = "分離 STT の認識モデル（STT_MODEL）。空ならアプリ既定（chirp_2）。chirp_3 の A/B に使う（#516）。"
+}
+
+variable "stt_location" {
+  type        = string
+  default     = ""
+  description = "分離 STT のリージョン（STT_LOCATION）。空ならアプリ既定（us-central1）。Chirp 系モデルの対応リージョンに合わせる。"
+}
+
 variable "require_login_nonce" {
   type        = bool
   default     = true
