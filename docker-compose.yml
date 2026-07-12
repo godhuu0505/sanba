@@ -12,6 +12,7 @@ services:
     env_file: .env.local
     environment:
       INTERNAL_API_URL: ${INTERNAL_API_URL:-http://api:8080}
+      HOSTNAME: 0.0.0.0
     ports: ["3000:3000"]
     depends_on:
       api:
