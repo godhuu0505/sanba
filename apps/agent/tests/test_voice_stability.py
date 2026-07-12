@@ -413,23 +413,32 @@ class TestOpenInterview:
 
 class _FakeTurnWatchdog:
     def __init__(self) -> None:
+        self.on_speaking_calls = 0
+        self.on_not_speaking_calls = 0
         self.disarms = 0
+
+    def on_agent_speaking(self) -> None:
+        self.on_speaking_calls += 1
+
+    def on_agent_not_speaking(self) -> None:
+        self.on_not_speaking_calls += 1
 
     def disarm(self) -> None:
         self.disarms += 1
 
 
 class TestHandleAgentStateChanged:
-    def test_speaking_bumps_tracker_and_disarms_watchdog(self) -> None:
+    def test_speaking_bumps_tracker_and_signals_watchdog(self) -> None:
         from sanba_agent.main import _ReplyTracker, handle_agent_state_changed
 
         tracker = _ReplyTracker()
         watchdog = _FakeTurnWatchdog()
         handle_agent_state_changed("speaking", tracker, watchdog)  # type: ignore[arg-type]
         assert tracker.count == 1
-        assert watchdog.disarms == 1
+        assert watchdog.on_speaking_calls == 1
+        assert watchdog.on_not_speaking_calls == 0
 
-    def test_other_states_are_ignored(self) -> None:
+    def test_other_states_do_not_bump_tracker(self) -> None:
         from sanba_agent.main import _ReplyTracker, handle_agent_state_changed
 
         tracker = _ReplyTracker()
@@ -437,7 +446,8 @@ class TestHandleAgentStateChanged:
         for state in ("initializing", "idle", "listening", "thinking", ""):
             handle_agent_state_changed(state, tracker, watchdog)  # type: ignore[arg-type]
         assert tracker.count == 0
-        assert watchdog.disarms == 0
+        assert watchdog.on_not_speaking_calls == 5
+        assert watchdog.on_speaking_calls == 0
 
 
 class TestTurnReplyWatchdog:
@@ -523,6 +533,58 @@ class TestTurnReplyWatchdog:
         await asyncio.sleep(0.18)
         assert restart_calls == [True]
 
+    @pytest.mark.asyncio
+    async def test_stale_item_does_not_disarm_when_not_spoke_since_arm(self) -> None:
+        """arm 後に speaking が来る前に届いた item_added では watchdog を解除しない（#524 P1）。"""
+        from sanba_agent.main import _TurnReplyWatchdog
+
+        nudges = 0
+
+        async def nudge() -> None:
+            nonlocal nudges
+            nudges += 1
+
+        watchdog = _TurnReplyWatchdog(
+            session_id="s1", timeout_s=0.1, nudge=nudge, request_restart=lambda: None
+        )
+        watchdog.arm()
+        watchdog.disarm_from_item()
+        await asyncio.sleep(0.15)
+        assert nudges == 1
+
+    @pytest.mark.asyncio
+    async def test_speaking_then_item_disarms_watchdog(self) -> None:
+        """arm 後に speaking → item_added の順で来たら正常に解除される（#524 P1）。"""
+        from sanba_agent.main import _TurnReplyWatchdog
+
+        nudges = 0
+
+        async def nudge() -> None:
+            nonlocal nudges
+            nudges += 1
+
+        watchdog = _TurnReplyWatchdog(
+            session_id="s1", timeout_s=0.05, nudge=nudge, request_restart=lambda: None
+        )
+        watchdog.arm()
+        watchdog.on_agent_speaking()
+        watchdog.disarm_from_item()
+        await asyncio.sleep(0.15)
+        assert nudges == 0
+
+    def test_is_response_active_true_while_speaking(self) -> None:
+        """on_agent_speaking で is_response_active が True、on_agent_not_speaking で False（#524 P2）。"""
+        from sanba_agent.main import _TurnReplyWatchdog
+
+        watchdog = _TurnReplyWatchdog(
+            session_id="s1", timeout_s=1.0, nudge=lambda: None, request_restart=lambda: None  # type: ignore[arg-type, return-value]
+        )
+        assert watchdog.is_response_active is False
+        watchdog.on_agent_speaking()
+        assert watchdog.is_response_active is True
+        watchdog.on_agent_not_speaking()
+        assert watchdog.is_response_active is False
+
 
 class TestReplyTracker:
     @pytest.mark.asyncio
@@ -552,6 +614,24 @@ class TestReplyTracker:
         second_baseline = tracker.count
         with pytest.raises(TimeoutError):
             await tracker.wait_beyond(second_baseline, timeout_s=0.05)
+
+    def test_bump_from_speaking_then_item_counts_once(self) -> None:
+        """speaking と item_added を両方受けても同一応答で 2 回カウントしない（#524 P1）。"""
+        from sanba_agent.main import _ReplyTracker
+
+        tracker = _ReplyTracker()
+        tracker.bump_from_speaking()
+        assert tracker.count == 1
+        tracker.bump_from_item()
+        assert tracker.count == 1
+
+    def test_item_without_speaking_counts_normally(self) -> None:
+        """speaking が来ない応答（テキスト経路等）では item_added が正常にカウントする。"""
+        from sanba_agent.main import _ReplyTracker
+
+        tracker = _ReplyTracker()
+        tracker.bump_from_item()
+        assert tracker.count == 1
 
 
 class _WatchdogFakeSession:

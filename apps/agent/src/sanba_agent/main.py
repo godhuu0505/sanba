@@ -2094,19 +2094,35 @@ class _ReplyTracker:
 
     単一 ``asyncio.Event`` では並行ターン（テキスト連投・画像注入と音声が重なる）が互いの
     応答を取り違えて競合するため、応答数のカウンタで「自分の発行より後に応答が来たか」を
-    判定する。``bump`` は conversation_item_added（assistant）ごとに呼ぶ。``wait_beyond`` は
-    ``baseline`` を超える応答が来るまで待ち、来なければ ``TimeoutError``。
+    判定する。``wait_beyond`` は ``baseline`` を超える応答が来るまで待ち、来なければ
+    ``TimeoutError``。speaking で ``bump_from_speaking``、item_added で ``bump_from_item``
+    を使い、同一応答を 2 回カウントしない（#524）。
     """
 
     def __init__(self) -> None:
         self._count = 0
         self._event = asyncio.Event()
+        self._speaking_pending = False
 
     @property
     def count(self) -> int:
         return self._count
 
     def bump(self) -> None:
+        self._count += 1
+        self._event.set()
+
+    def bump_from_speaking(self) -> None:
+        """speaking 遷移時に呼ぶ。フラグを立てて bump し、item_added の二重カウントを防ぐ。"""
+        self._speaking_pending = True
+        self._count += 1
+        self._event.set()
+
+    def bump_from_item(self) -> None:
+        """conversation_item_added 時に呼ぶ。speaking 済みなら bump をスキップして二重計上を防ぐ。"""
+        if self._speaking_pending:
+            self._speaking_pending = False
+            return
         self._count += 1
         self._event.set()
 
@@ -2130,9 +2146,12 @@ class _TurnReplyWatchdog:
     voice_reply_watchdog は guarded generate_reply（開幕・ツール・テキスト経路）しか監視せず、
     native audio のサーバ駆動自動応答が黙って死ぬと ADR-0038 の再起動機構に到達しない
     （sess-af021ebd では user final 3 件が無応答のまま放置された）。user final で arm、assistant が
-    話し始めたら disarm。timeout で nudge（短い再応答要求）を 1 回だけ試み、なお沈黙なら
-    request_restart へ倒す（再起動の予算・バックオフは既存機構を流用）。arm は同時に 1 本だけで、
-    再 arm は前のタイマーを置き換える。
+    話し始めたら on_agent_speaking で disarm。timeout で nudge（短い再応答要求）を 1 回だけ試み、
+    なお沈黙なら request_restart へ倒す（再起動の予算・バックオフは既存機構を流用）。
+
+    世代ずれ対策（#524）: arm 後に speaking が来るまでは item_added で解除しない
+    （中断された前ターンの遅延 item が新 arm を誤解除する競合を防ぐ）。
+    is_response_active が True の間は arm をスキップし、遅延 STT final による誤 arm を防ぐ。
     """
 
     def __init__(
@@ -2148,12 +2167,49 @@ class _TurnReplyWatchdog:
         self._nudge = nudge
         self._request_restart = request_restart
         self._task: asyncio.Task[None] | None = None
+        self._spoke_since_arm = False
+        self._is_speaking = False
+
+    @property
+    def is_response_active(self) -> bool:
+        """エージェントが現在発話中（speaking 状態）なら True。arm の前に確認する。"""
+        return self._is_speaking
 
     def arm(self) -> None:
-        self.disarm()
+        self._spoke_since_arm = False
+        task = self._task
+        self._task = None
+        if task is not None and not task.done():
+            task.cancel()
         self._task = asyncio.create_task(self._run())
 
+    def on_agent_speaking(self) -> None:
+        """speaking 遷移を受けて watchdog を解除し、is_response_active を True にする。"""
+        self._is_speaking = True
+        if self._task is not None:
+            self._spoke_since_arm = True
+            if not self._task.done():
+                self._task.cancel()
+            self._task = None
+
+    def on_agent_not_speaking(self) -> None:
+        """非 speaking 遷移（listening / idle 等）を受けて is_response_active を下げる。"""
+        self._is_speaking = False
+
+    def disarm_from_item(self) -> None:
+        """item_added 受信時に呼ぶ。speaking 後の item のみ解除し、遅延 item の誤解除を防ぐ。"""
+        self._is_speaking = False
+        if self._spoke_since_arm:
+            self._spoke_since_arm = False
+            task = self._task
+            self._task = None
+            if task is not None and not task.done():
+                task.cancel()
+
     def disarm(self) -> None:
+        """無条件に解除する（shutdown / open_interview 完了後などに使う）。"""
+        self._spoke_since_arm = False
+        self._is_speaking = False
         task = self._task
         self._task = None
         if task is not None and not task.done():
@@ -2180,17 +2236,22 @@ class _TurnReplyWatchdog:
 def handle_agent_state_changed(
     new_state: str, reply_tracker: _ReplyTracker, turn_watchdog: _TurnReplyWatchdog
 ) -> None:
-    """assistant の発話開始（state=speaking）を応答の生存シグナルとして扱う（#522）。
+    """agent_state_changed を受けて reply_tracker と turn_watchdog を更新する（#522/#524）。
 
-    conversation_item_added は生成完了まで発火せず、長い開幕発話では opening watchdog の
-    タイムアウトと数十 ms 差でレースして発話中に interrupt が入る（sess-af021ebd の a2/a4 切断）。
-    speaking への遷移で reply_tracker を bump して「話し始めた＝生きている」を即時反映し、
-    同時に自動応答の沈黙 watchdog を disarm する。
+    speaking 遷移: conversation_item_added は生成完了まで発火せず、長い開幕発話では
+    opening watchdog と数十 ms 差でレースして発話中断が起きる（sess-af021ebd a2/a4）。
+    bump_from_speaking で「話し始めた＝生きている」を即時反映し、on_agent_speaking で
+    turn_watchdog を解除する。item_added との二重カウントは bump_from_speaking/_from_item
+    で防ぐ（#524）。
+
+    非 speaking 遷移: on_agent_not_speaking で is_response_active を下げ、次の user final が
+    正しく arm できるようにする。
     """
-    if new_state != "speaking":
-        return
-    reply_tracker.bump()
-    turn_watchdog.disarm()
+    if new_state == "speaking":
+        reply_tracker.bump_from_speaking()
+        turn_watchdog.on_agent_speaking()
+    else:
+        turn_watchdog.on_agent_not_speaking()
 
 
 async def guarded_generate_reply(
@@ -2711,7 +2772,7 @@ async def entrypoint(ctx: JobContext) -> None:
                 return
             if getattr(ev, "is_final", False):
                 current_qid = agent.current_question_id
-                if agent.record_user_final(text):
+                if agent.record_user_final(text) and not turn_watchdog.is_response_active:
                     turn_watchdog.arm()
                 if current_qid is not None:
                     _schedule(agent.clear_current_question(current_qid))
@@ -2723,8 +2784,8 @@ async def entrypoint(ctx: JobContext) -> None:
             item = getattr(ev, "item", None)
             if getattr(item, "role", None) != "assistant":
                 return
-            reply_tracker.bump()
-            turn_watchdog.disarm()
+            reply_tracker.bump_from_item()
+            turn_watchdog.disarm_from_item()
             text = getattr(item, "text_content", None)
             if text:
                 agent.publish_agent_utterance(text)
