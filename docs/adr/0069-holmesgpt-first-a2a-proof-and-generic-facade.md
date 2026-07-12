@@ -231,9 +231,39 @@ Go/No-Go を判断してから器を作る。会話 API のスキーマ確認も
   スケルトン、flag OFF、CI 緑のまま）→ Phase 1'（専用プロジェクト新設・Cloud Run デプロイ・
   A2A 疎通実証・観測性）→ Phase 2'（デバッグ playbook のプロンプト化、Agent Builder 再評価）→
   Phase 3'（Task 追加・ADK off-loop 統合・PR #445 との統合）。
-- **実装前に確定する事項**: (1) 本番 Elastic Cloud が serverless か（Agent Builder 再評価の前提）、
-  (2) HolmesGPT 会話 API の正確なスキーマ（Phase 0.5 で実機確認）、(3) 公式イメージの取得元と
-  digest、(4) `holmes-mcp-integrations` observability サーバの有効ツール一覧と read-only 範囲
-  （不足なら YAML 定義の read-only カスタムツールセットで代替）、(5) 専用プロジェクトの命名・
-  課金アラート閾値、(6) Firestore read-only 接続の要否（Phase 0.5 の調査品質評価後に判断。
-  対応する場合は Firestore 向けカスタム MCP サーバと `roles/datastore.viewer` を追加設計する）。
+- **実装前に確定する事項**: (1) 本番 Elastic Cloud が serverless か（Agent Builder 再評価の前提）
+  → **Phase 0.5 で serverless と確定**、(2) HolmesGPT 会話 API の正確なスキーマ（Phase 0.5 で
+  実機確認）、(3) 公式イメージの取得元と digest、(4) `holmes-mcp-integrations` observability
+  サーバの有効ツール一覧と read-only 範囲（不足なら YAML 定義の read-only カスタムツールセットで
+  代替）、(5) 専用プロジェクトの命名・課金アラート閾値、(6) Firestore read-only 接続の要否
+  （Phase 0.5 の調査品質評価後に判断。対応する場合は Firestore 向けカスタム MCP サーバと
+  `roles/datastore.viewer` を追加設計する）。
+
+### Phase 0.5 実施結果（2026-07-12、判定: 条件付き Go）
+
+HolmesGPT 0.35.0 をローカル CLI（`uvx`）+ Vertex AI Gemini 2.5 Pro（個人 ADC）+
+`sanba-analytics-*` read-only API キー（7 日期限）で実測した。
+
+- **集計・探索型の調査は実用品質**: 「直近 7 日のコスト上位 3 セッション特定 + 内訳 + 原因仮説」を
+  79 秒 / $0.107 / ツール 9 回で完遂し、手動 ES 集計の ground truth と全数値が一致（幻覚ゼロ）。
+  1 調査 $0.03〜0.11 で費用は開発者ツールとして無視できる。権限不足時は幻覚せず不足権限を
+  正確に報告する。
+- **深掘り型に偽陰性**: セッション ID 指定の検索で実在イベント（110 件）を「データ無し」と
+  誤断言（2/2 再現）。対策として、宣言的エージェント定義に索引スキーマ
+  （data stream `sanba-analytics-events`、`session_id` keyword、`payload.ai_usd` 等）と
+  クエリ実例を焼き込み、Phase 0' で再測定する。改善しなければ Claude on Vertex AI で再測定 →
+  それでも不安定なら Agent Builder 再評価へ退避（決定5 の逃げ道）。
+- **本番 ES は Elastic Cloud Serverless と確定**（`_cluster/health` が 410
+  `api_not_available_exception`）。Agent Builder の「9.3+ 障壁」は本番に存在せず、Phase 2' の
+  再評価は費用/ティアのみが論点になる。
+- **上流バグ 4 件を発見**（upstream コントリビュート候補。①は 1 行修正で解決を実証済み）:
+  (バグ①) ヘルスチェックが `_cluster/health` 固定で serverless 非互換 → `_resolve/index/*` へ
+  差し替えるローカルパッチで解消を確認、(バグ②) 410 エラー文字列中の `[...]` を Rich が
+  マークアップ解釈し `toolset refresh` がクラッシュ、(バグ③) ステータスキャッシュ経路で
+  config 有効化したツールセットが LLM に渡らない（実行前キャッシュ削除で回避）、
+  (バグ④) 最終応答 None で CLI が TypeError クラッシュ。②④は CLI 表示層の問題のため、
+  ファサードが叩く server モード（HTTP API）では無害の見込み — Phase 0' 着手前に server モードで
+  同シナリオを確認する。
+- Phase 1' の運用条件: serverless パッチがマージされるまで fork ビルド（digest 固定イメージ +
+  パッチ適用）で運用する。ES キーには `elasticsearch_list_indices` が要求する
+  monitor 権限を付けない（read + view_index_metadata のみで search/mappings は動作する）。
