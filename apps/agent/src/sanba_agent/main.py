@@ -93,6 +93,8 @@ from .prompts.interview import (
     DEVELOPER_OPENING_WITH_PREP_INSTRUCTIONS,
     END_USER_OPENING_INSTRUCTIONS,
     END_USER_VOICE_AGENT_INSTRUCTIONS,
+    OPENING_RETRY_INSTRUCTIONS,
+    TURN_REPLY_NUDGE_INSTRUCTIONS,
     VOICE_AGENT_INSTRUCTIONS,
     build_check_items_seed,
     build_glossary_seed,
@@ -2122,6 +2124,75 @@ class _ReplyTracker:
                 await asyncio.wait_for(self._event.wait(), timeout=remaining)
 
 
+class _TurnReplyWatchdog:
+    """ユーザー確定発話への自動応答が沈黙したら、つつき→再起動で回復する（#522）。
+
+    voice_reply_watchdog は guarded generate_reply（開幕・ツール・テキスト経路）しか監視せず、
+    native audio のサーバ駆動自動応答が黙って死ぬと ADR-0038 の再起動機構に到達しない
+    （sess-af021ebd では user final 3 件が無応答のまま放置された）。user final で arm、assistant が
+    話し始めたら disarm。timeout で nudge（短い再応答要求）を 1 回だけ試み、なお沈黙なら
+    request_restart へ倒す（再起動の予算・バックオフは既存機構を流用）。arm は同時に 1 本だけで、
+    再 arm は前のタイマーを置き換える。
+    """
+
+    def __init__(
+        self,
+        *,
+        session_id: str,
+        timeout_s: float,
+        nudge: Callable[[], Awaitable[Any]],
+        request_restart: Callable[[], None],
+    ) -> None:
+        self._session_id = session_id
+        self._timeout_s = timeout_s
+        self._nudge = nudge
+        self._request_restart = request_restart
+        self._task: asyncio.Task[None] | None = None
+
+    def arm(self) -> None:
+        self.disarm()
+        self._task = asyncio.create_task(self._run())
+
+    def disarm(self) -> None:
+        task = self._task
+        self._task = None
+        if task is not None and not task.done():
+            task.cancel()
+
+    async def _run(self) -> None:
+        await asyncio.sleep(self._timeout_s)
+        log.warning(
+            "voice_turn_reply_silent",
+            session=self._session_id,
+            timeout_s=self._timeout_s,
+        )
+        with contextlib.suppress(Exception):
+            await self._nudge()
+        await asyncio.sleep(self._timeout_s)
+        log.warning(
+            "voice_turn_reply_dead",
+            session=self._session_id,
+            timeout_s=self._timeout_s,
+        )
+        self._request_restart()
+
+
+def handle_agent_state_changed(
+    new_state: str, reply_tracker: _ReplyTracker, turn_watchdog: _TurnReplyWatchdog
+) -> None:
+    """assistant の発話開始（state=speaking）を応答の生存シグナルとして扱う（#522）。
+
+    conversation_item_added は生成完了まで発火せず、長い開幕発話では opening watchdog の
+    タイムアウトと数十 ms 差でレースして発話中に interrupt が入る（sess-af021ebd の a2/a4 切断）。
+    speaking への遷移で reply_tracker を bump して「話し始めた＝生きている」を即時反映し、
+    同時に自動応答の沈黙 watchdog を disarm する。
+    """
+    if new_state != "speaking":
+        return
+    reply_tracker.bump()
+    turn_watchdog.disarm()
+
+
 async def guarded_generate_reply(
     session: AgentSession, *, session_id: str, kind: str, **kwargs: Any
 ) -> bool:
@@ -2224,6 +2295,10 @@ async def open_interview(
     タイムアウト後は必ず interrupt を掛ける（最終試行も含む / 直後の enable_participant_audio で
     参加者マイクが開くため、遅延した応答と重なる二重発話を防ぐ）。成功で True、上限まで応答が
     出なければ False を返し voice_opening_exhausted を残す（会話は生き次の発話から前進できる）。
+
+    リトライ（2 回目以降）は開幕全文を再生成せず短い再呼びかけ（OPENING_RETRY_INSTRUCTIONS）に
+    固定する。全文再生成は長い発話＋ask_question 再発行になり、watchdog と再レースして発話中断・
+    質問ピンの乱高下を連鎖させるため（#522 / sess-af021ebd）。
     """
     attempts = max_attempts if max_attempts is not None else settings.voice_opening_max_attempts
     timeout_s = (
@@ -2233,7 +2308,10 @@ async def open_interview(
     for attempt in range(1, total_attempts + 1):
         baseline = reply_tracker.count
         await guarded_generate_reply(
-            session, session_id=session_id, kind="opening", instructions=instructions
+            session,
+            session_id=session_id,
+            kind="opening",
+            instructions=instructions if attempt == 1 else OPENING_RETRY_INSTRUCTIONS,
         )
         try:
             await reply_tracker.wait_beyond(baseline, timeout_s)
@@ -2555,6 +2633,21 @@ async def entrypoint(ctx: JobContext) -> None:
     reply_tracker = _ReplyTracker()
     pending_reinject: list[str] = []
 
+    async def _turn_silence_nudge() -> None:
+        await guarded_generate_reply(
+            session,
+            session_id=session_id,
+            kind="turn_silence_nudge",
+            instructions=TURN_REPLY_NUDGE_INSTRUCTIONS,
+        )
+
+    turn_watchdog = _TurnReplyWatchdog(
+        session_id=session_id,
+        timeout_s=settings.voice_turn_reply_timeout_s,
+        nudge=_turn_silence_nudge,
+        request_restart=lambda: _request_restart(),
+    )
+
     async def _guarded_turn_reply(*, kind: str, reinject: str | None, **gen_kwargs: Any) -> None:
         await guarded_turn_reply(
             session,
@@ -2618,7 +2711,8 @@ async def entrypoint(ctx: JobContext) -> None:
                 return
             if getattr(ev, "is_final", False):
                 current_qid = agent.current_question_id
-                agent.record_user_final(text)
+                if agent.record_user_final(text):
+                    turn_watchdog.arm()
                 if current_qid is not None:
                     _schedule(agent.clear_current_question(current_qid))
             else:
@@ -2630,9 +2724,16 @@ async def entrypoint(ctx: JobContext) -> None:
             if getattr(item, "role", None) != "assistant":
                 return
             reply_tracker.bump()
+            turn_watchdog.disarm()
             text = getattr(item, "text_content", None)
             if text:
                 agent.publish_agent_utterance(text)
+
+        @s.on("agent_state_changed")
+        def _on_agent_state(ev) -> None:  # type: ignore[no-untyped-def]
+            handle_agent_state_changed(
+                str(getattr(ev, "new_state", "")), reply_tracker, turn_watchdog
+            )
 
         @s.on("error")
         def _on_session_error(ev: ErrorEvent) -> None:
@@ -2779,6 +2880,7 @@ async def entrypoint(ctx: JobContext) -> None:
 
     async def _on_close() -> None:
         agent.begin_shutdown()
+        turn_watchdog.disarm()
         await _drain_tasks(set(_bg_tasks), DRAIN_GRACE_SECONDS)
         await agent.drain_background_tasks()
         try:
