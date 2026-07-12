@@ -140,52 +140,21 @@ export async function addSessionContext(
 
 
 export const ACCEPTED_IMAGE = ".png,.jpg,.jpeg,image/png,image/jpeg";
-export const ACCEPTED_VIDEO = ".mp4,.mov,video/mp4,video/quicktime";
 export const ACCEPTED_DOC =
-  ".txt,.md,.markdown,.pdf,.html,.htm,.csv,.json,.docx,.xlsx,.pptx," +
-  "text/plain,text/markdown,text/html,text/csv,application/json,application/pdf," +
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document," +
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet," +
-  "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+  ".md,.markdown,.csv,.pdf,text/markdown,text/csv,application/pdf";
 
-export const ACCEPTED_SUMMARY =
-  "画像 PNG/JPG・動画 MP4/MOV・資料 PDF/Word/Excel/PowerPoint/Markdown/HTML/CSV 等";
+export const ACCEPTED_SUMMARY = "PNG / JPEG / Markdown / CSV / PDF のみ";
 
 const IMAGE_EXT = [".png", ".jpg", ".jpeg"];
-const VIDEO_EXT = [".mp4", ".mov"];
-const DOC_EXT = [
-  ".txt",
-  ".md",
-  ".markdown",
-  ".pdf",
-  ".html",
-  ".htm",
-  ".csv",
-  ".json",
-  ".docx",
-  ".xlsx",
-  ".pptx",
-];
+const DOC_EXT = [".md", ".markdown", ".csv", ".pdf"];
 const IMAGE_MIME = ["image/png", "image/jpeg"];
-const VIDEO_MIME = ["video/mp4", "video/quicktime"];
-const DOC_MIME = [
-  "text/plain",
-  "text/markdown",
-  "text/html",
-  "text/csv",
-  "application/json",
-  "application/pdf",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-];
+const DOC_MIME = ["text/markdown", "text/csv", "application/pdf"];
 
 export type UploadKind = "image" | "video" | "doc";
 
 export function classifyUpload(filename: string): UploadKind | null {
   const name = filename.toLowerCase();
   if (IMAGE_EXT.some((e) => name.endsWith(e))) return "image";
-  if (VIDEO_EXT.some((e) => name.endsWith(e))) return "video";
   if (DOC_EXT.some((e) => name.endsWith(e))) return "doc";
   return null;
 }
@@ -195,7 +164,6 @@ export function classifyFileUpload(file: { name: string; type: string }): Upload
   if (byName) return byName;
   const type = file.type.toLowerCase();
   if (IMAGE_MIME.includes(type)) return "image";
-  if (VIDEO_MIME.includes(type)) return "video";
   if (DOC_MIME.includes(type)) return "doc";
   return null;
 }
@@ -213,10 +181,6 @@ export async function uploadContextFile(
   sessionToken: string | null,
   signal?: AbortSignal,
 ): Promise<UploadResult> {
-  if (classifyFileUpload(file) === "video") {
-    const direct = await uploadVideoDirect(sessionId, file, sessionToken, signal);
-    if (direct !== "disabled") return direct;
-  }
   const form = new FormData();
   form.append("file", file);
   const headers: Record<string, string> = {};
@@ -233,60 +197,10 @@ export async function uploadContextFile(
   return res.json();
 }
 
-interface UploadInitResult {
-  asset_id: string;
-  upload_url: string;
-  method: string;
-  headers: Record<string, string>;
-}
-
-async function uploadVideoDirect(
-  sessionId: string,
-  file: File,
-  sessionToken: string | null,
-  signal?: AbortSignal,
-): Promise<UploadResult | "disabled"> {
-  const contentType = file.type || "video/mp4";
-  const init = await apiFetch(`${API_URL}/api/sessions/${sessionId}/context/file/upload-init`, {
-    method: "POST",
-    headers: authHeaders(sessionToken),
-    body: JSON.stringify({ filename: file.name, content_type: contentType, size: file.size }),
-    signal,
-  });
-  if (init.status === 409) return "disabled";
-  if (init.status === 413) throw new Error("動画が大きすぎます（最大 200MB）");
-  if (init.status === 415) throw new Error("対応していない形式です（MP4/MOV）");
-  if (!init.ok) throw new Error(`upload-init failed: ${init.status}`);
-  const plan: UploadInitResult = await init.json();
-
-  const put = await fetch(plan.upload_url, {
-    method: plan.method || "PUT",
-    headers: plan.headers,
-    body: file,
-    signal,
-  });
-  if (!put.ok) throw new Error(`upload failed: ${put.status}`);
-
-  const done = await apiFetch(`${API_URL}/api/sessions/${sessionId}/context/file/upload-complete`, {
-    method: "POST",
-    headers: authHeaders(sessionToken),
-    body: JSON.stringify({
-      asset_id: plan.asset_id,
-      content_type: contentType,
-      filename: file.name,
-    }),
-    signal,
-  });
-  if (done.status === 413) throw new Error("動画が大きすぎます（最大 200MB）");
-  if (!done.ok) throw new Error(`upload-complete failed: ${done.status}`);
-  return done.json();
-}
-
-
 export type TelemetryEvent = "material.source_selected" | "material.cancel" | "join.abort";
 
 export interface TelemetryAttrs {
-  source?: "camera" | "screen" | "upload" | "drive";
+  source?: "camera" | "upload";
   status?: "uploading" | "analyzing";
   result?: "aborted" | "discarded" | "error";
 }

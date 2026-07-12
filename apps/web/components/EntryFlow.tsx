@@ -1,7 +1,7 @@
 "use client";
 
 
-import { Check, FileText, Film, Image as ImageIcon, Mic, Package, Plus, X } from "lucide-react";
+import { Check, FileText, Image as ImageIcon, Mic, Package, Plus, X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
@@ -19,7 +19,6 @@ import {
   ACCEPTED_DOC,
   ACCEPTED_IMAGE,
   ACCEPTED_SUMMARY,
-  ACCEPTED_VIDEO,
   addSessionContext,
   classifyFileUpload,
   createSession,
@@ -31,7 +30,6 @@ import {
 } from "../lib/api";
 import { AUDIENCE_LABELS } from "../lib/audience";
 import { useAuth } from "../lib/auth";
-import { importDriveFile, isDriveConfigured, openDrivePicker } from "../lib/googleDrive";
 import { AppShell } from "./AppShell";
 import { ConversationStart } from "./ConversationStart";
 import { MemberInviteNotices } from "./MemberInviteNotices";
@@ -113,7 +111,6 @@ export default function EntryFlow({
   const [staged, setStaged] = useState<File[]>([]);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [attachError, setAttachError] = useState<string | null>(null);
-  const [driveBusy, setDriveBusy] = useState(false);
   const [uploadedNames, setUploadedNames] = useState<string[]>([]);
   const [uploadFailedCount, setUploadFailedCount] = useState(0);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -245,7 +242,7 @@ export default function EntryFlow({
   }
 
   async function handleStart() {
-    if (busy || driveBusy) return;
+    if (busy) return;
     try {
       setBusy(true);
       setError(null);
@@ -346,7 +343,7 @@ export default function EntryFlow({
   function handleAddFiles(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? []);
     e.target.value = "";
-    if (busy || driveBusy || files.length === 0) return;
+    if (busy || files.length === 0) return;
     const accepted: File[] = [];
     const rejected: string[] = [];
     for (const f of files) {
@@ -361,52 +358,8 @@ export default function EntryFlow({
     );
   }
 
-  async function handleDriveImport() {
-    if (busy || driveBusy) return;
-    setAttachError(null);
-    if (!isDriveConfigured()) {
-      setAttachError(
-        "Google ドライブ連携はこの環境では利用できません（Google API キーが未設定です）。",
-      );
-      return;
-    }
-    const token = await auth.requestDriveAccess();
-    if (!token) {
-      setAttachError(
-        "Google ドライブへのアクセスが許可されていません。もう一度お試しいただくと、再度許可を求めます。",
-      );
-      return;
-    }
-    setSheetOpen(false);
-    let picked: Awaited<ReturnType<typeof openDrivePicker>>;
-    try {
-      picked = await openDrivePicker(token);
-    } catch (e) {
-      console.error("drive picker failed", e);
-      setAttachError("Google ドライブを開けませんでした。時間をおいて再度お試しください。");
-      return;
-    }
-    if (picked.length === 0) return;
-    setDriveBusy(true);
-    const imported: File[] = [];
-    const failed: string[] = [];
-    for (const doc of picked) {
-      try {
-        imported.push(await importDriveFile(token, doc));
-      } catch (e) {
-        console.error("drive import failed", e);
-        failed.push(doc.name);
-      }
-    }
-    setDriveBusy(false);
-    stageFiles(imported);
-    if (failed.length > 0) {
-      setAttachError(`Google ドライブから取り込めなかったファイルがあります: ${failed.join("、")}`);
-    }
-  }
-
   function removeStaged(index: number) {
-    if (busy || driveBusy) return;
+    if (busy) return;
     setStaged((prev) => prev.filter((_, i) => i !== index));
     setAttachError(null);
   }
@@ -437,8 +390,7 @@ export default function EntryFlow({
       selectedProduct !== undefined &&
       !!selectedProduct.slug &&
       auth.loggedIn &&
-      !busy &&
-      !driveBusy;
+      !busy;
     return (
       <AppShell
         current="home"
@@ -532,8 +484,7 @@ export default function EntryFlow({
               参考資料（任意）
             </span>
             <p className="text-[12px] leading-relaxed text-sanba-muted">
-              PNG・JPG・MP4・MOV・PDF・Word・Excel・PowerPoint・Markdown・HTML・CSV 等。
-              Google ドライブのドキュメント・スプレッドシート・スライドも取り込めます。
+              対応形式は PNG / JPEG / Markdown / CSV / PDF のみです。
             </p>
 
 
@@ -544,7 +495,7 @@ export default function EntryFlow({
                 setAttachError(null);
                 setSheetOpen(true);
               }}
-              disabled={busy || driveBusy}
+              disabled={busy}
               aria-haspopup="dialog"
               className="inline-flex items-center gap-1.5 rounded-[12px] border border-dashed border-sanba-gold-deep bg-sanba-surface px-3 py-[13px] text-left text-[12.5px] font-bold text-sanba-gold-text disabled:opacity-50"
             >
@@ -556,7 +507,7 @@ export default function EntryFlow({
               <ul aria-label="添付した参考資料" className="flex flex-col gap-[8px]">
                 {staged.map((file, i) => {
                   const kind = classifyFile(file);
-                  const Icon = kind === "image" ? ImageIcon : kind === "video" ? Film : FileText;
+                  const Icon = kind === "image" ? ImageIcon : FileText;
                   return (
                     <li
                       key={`${file.name}:${file.size}`}
@@ -571,7 +522,7 @@ export default function EntryFlow({
                       <button
                         type="button"
                         onClick={() => removeStaged(i)}
-                        disabled={busy || driveBusy}
+                        disabled={busy}
                         aria-label={`${file.name} を取り外す`}
                         className="flex size-[26px] shrink-0 items-center justify-center rounded-full text-sanba-muted disabled:opacity-50"
                       >
@@ -583,11 +534,6 @@ export default function EntryFlow({
               </ul>
             )}
 
-            {driveBusy && (
-              <p role="status" className="text-[12px] text-sanba-muted">
-                Google ドライブから取り込んでいます…
-              </p>
-            )}
             {attachError && (
               <p role="alert" className="text-[12px] text-sanba-rec-text">
                 {attachError}
@@ -600,7 +546,7 @@ export default function EntryFlow({
             ref={fileInput}
             type="file"
             multiple
-            accept={`${ACCEPTED_IMAGE},${ACCEPTED_VIDEO},${ACCEPTED_DOC}`}
+            accept={`${ACCEPTED_IMAGE},${ACCEPTED_DOC}`}
             onChange={handleAddFiles}
             className="hidden"
           />
@@ -669,7 +615,6 @@ export default function EntryFlow({
               setSheetOpen(false);
               fileInput.current?.click();
             }}
-            onDrive={() => void handleDriveImport()}
             onSelectSource={measureSource}
             error={attachError}
           />
