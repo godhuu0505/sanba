@@ -9,8 +9,11 @@ import {
   type SessionPhase,
   type UserInquiryDropEvent,
   type UserInterruptEvent,
+  type UserMicModeEvent,
   type UserSelectionEvent,
   type UserTextEvent,
+  type UserTurnCommitEvent,
+  type UserTurnStartEvent,
 } from "./types";
 
 const KNOWN_TYPES: ReadonlySet<string> = new Set<ServerEventType>([
@@ -281,6 +284,45 @@ export function encodeUserInterrupt(sessionId: string, seq: number, ts: string):
   const event: UserInterruptEvent = {
     v: SCHEMA_VERSION,
     type: "user.interrupt",
+    seq,
+    ts,
+    session_id: sessionId,
+  };
+  return encoder.encode(JSON.stringify(event));
+}
+
+export function encodeUserMicMode(
+  sessionId: string,
+  mode: "ptt" | "handsfree",
+  seq: number,
+  ts: string,
+): Uint8Array {
+  const event: UserMicModeEvent = {
+    v: SCHEMA_VERSION,
+    type: "user.mic_mode",
+    seq,
+    ts,
+    session_id: sessionId,
+    mode,
+  };
+  return encoder.encode(JSON.stringify(event));
+}
+
+export function encodeUserTurnStart(sessionId: string, seq: number, ts: string): Uint8Array {
+  const event: UserTurnStartEvent = {
+    v: SCHEMA_VERSION,
+    type: "user.turn_start",
+    seq,
+    ts,
+    session_id: sessionId,
+  };
+  return encoder.encode(JSON.stringify(event));
+}
+
+export function encodeUserTurnCommit(sessionId: string, seq: number, ts: string): Uint8Array {
+  const event: UserTurnCommitEvent = {
+    v: SCHEMA_VERSION,
+    type: "user.turn_commit",
     seq,
     ts,
     session_id: sessionId,

@@ -3,7 +3,7 @@
 > このファイルは `just docs-index`（`scripts/gen-docs-index.py`）で生成する。
 > 手で編集しない。ADR を追加・改訂したら再生成する。
 
-設計判断記録（Architecture Decision Record）の一覧。全 72 件。
+設計判断記録（Architecture Decision Record）の一覧。全 74 件。
 書き方・ステータス制御語彙は [`/adr` 雛形](../../.claude/commands/adr.md) を参照。
 
 | # | タイトル | ステータス |
@@ -80,5 +80,7 @@
 | [0069](0069-holmesgpt-first-a2a-proof-and-generic-facade.md) | HolmesGPT を external-agents の A2A 実証初弾に据える（汎用 A2A ファサード・read-only・別プロジェクト配置） | Proposed |
 | [0070](0070-remove-ask-question-tool.md) | ask_question ツールと問いピン（金枠）機構の撤廃 — 音声・テキスト自由入力へ一本化 | Accepted |
 | [0071](0071-optional-target-app-for-session-start.md) | 対象アプリなしでもセッションを開始できるようにする（アプリ選択を任意化） | Accepted |
+| [0072](0072-coaching-check-points-for-appless-sessions.md) | 対象アプリ未指定セッションにコーチング型の既定確認観点を載せる | Accepted |
+| [0073](0073-ptt-manual-turn-detection.md) | PTT の手動ターン化（押している間は途切れず・離したら即応答） | Accepted |
 
 付随資料は [`supplements/`](supplements/) に置く（特定 ADR の実測・検証データ）。

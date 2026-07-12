@@ -69,7 +69,7 @@ export function SessionView({
   readOnly?: boolean;
   resultsViewable?: boolean;
 }) {
-  const { state, metrics, sendText, sendInquiryDrop, sendInterrupt } =
+  const { state, metrics, sendText, sendInquiryDrop, sendMicMode, sendTurnStart, sendTurnCommit } =
     useRealtimeSession({
       sessionId,
       sessionToken,
@@ -83,7 +83,13 @@ export function SessionView({
     setMode: setMicMode,
     pttPressed,
     pressProps: pttPressProps,
-  } = usePushToTalk({ sendInterrupt, onError: setSourceError, micEnabled: mic.enabled });
+  } = usePushToTalk({
+    sendTurnStart,
+    sendTurnCommit,
+    sendMicMode,
+    onError: setSourceError,
+    micEnabled: mic.enabled,
+  });
 
   const router = useRouter();
   const camera = useTrackToggle({ source: Track.Source.Camera });
