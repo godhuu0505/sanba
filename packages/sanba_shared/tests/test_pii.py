@@ -23,3 +23,10 @@ def test_empty_input_is_returned_unchanged() -> None:
 
 def test_best_effort_limit_names_are_not_masked() -> None:
     assert mask_pii("担当は田中太郎です") == "担当は田中太郎です"
+
+
+def test_masks_deep_subdomain_email() -> None:
+    text = "contact user@a.b.c.d.e.f.g.h.i.example.com for details"
+    masked = mask_pii(text)
+    assert "user@a.b.c.d.e.f.g.h.i.example.com" not in masked
+    assert "[EMAIL]" in masked
