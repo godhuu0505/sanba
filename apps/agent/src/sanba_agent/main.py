@@ -51,6 +51,7 @@ from sanba_shared.analytics import (
     vertex_billing_labels,
 )
 from sanba_shared.analytics_sink import AnalyticsConfig, AnalyticsSink
+from sanba_shared.grounding import MATERIAL_KIND
 from sanba_shared.inquiry import InquiryTree, make_inquiry_id
 from sanba_shared.models import (
     AnalysisResult,
@@ -189,12 +190,22 @@ def _context_signals(
     そのまま写す（ready/partial=reused, indexing/pending=running, failed=failed, none=出さない）。
     repo は end_user モードでは出さない（private repo 情報を利用者会話に出さない多層防御・
     build_agent_instructions の allow_repo_grounding と揃える）。materials は実際に初期
-    instructions へシードした解析済み素材の数（ADR-0064。シードしたときだけ done で出す）。
+    instructions へシードした解析済み素材の数（ADR-0064。シードしたときだけ done で出す）で、
+    利用者由来のため両モードで出す（ADR-0032 決定8 改訂2）。
     """
     signals: list[ContextSignal] = []
     if meta is not None and (meta.goal or meta.goal_detail):
         detail = "ゴールとゴール詳細を確認" if meta.goal_detail else "ゴールを確認"
         signals.append(ContextSignal("prep", "done", "ゴールとゴール詳細", detail))
+    if seeded_materials > 0:
+        signals.append(
+            ContextSignal(
+                "materials",
+                "done",
+                f"参考資料 {seeded_materials}件",
+                "解析済みの資料を会話の前提に読み込み",
+            )
+        )
     if confirmed and mode is not InviteScope.DEVELOPER:
         return tuple(signals)
     if meta is not None and meta.github_repo and confirmed:
@@ -207,15 +218,6 @@ def _context_signals(
             signals.append(ContextSignal("repo", "running", label, "ソースコードを読み込み中"))
         elif status is GitHubIndexStatus.FAILED:
             signals.append(ContextSignal("repo", "failed", label, "索引に失敗しました"))
-    if seeded_materials > 0:
-        signals.append(
-            ContextSignal(
-                "materials",
-                "done",
-                f"参考資料 {seeded_materials}件",
-                "解析済みの資料を会話の前提に読み込み",
-            )
-        )
     return tuple(signals)
 
 
@@ -284,24 +286,26 @@ def build_agent_instructions(repo: SessionRepository, session_id: str) -> AgentS
         owner_provided=product is not None,
     )
     seeded_materials = 0
+    materials_premise = ""
+    if confirmed and meta is not None:
+        materials = _session_materials(repo, session_id)
+        materials_premise = build_materials_premise(materials)
+        if materials_premise:
+            seeded_materials = sum(1 for m in materials if m.get("status") == "done")
     if mode is InviteScope.END_USER:
         assert meta is not None
         glossary_seed = (
             build_glossary_seed(product.name, product.glossary) if product is not None else ""
         )
-        instructions = END_USER_VOICE_AGENT_INSTRUCTIONS + glossary_seed + check_items_seed
+        instructions = (
+            END_USER_VOICE_AGENT_INSTRUCTIONS + glossary_seed + materials_premise + check_items_seed
+        )
         allow_repo_grounding = False
     else:
         prep_premise = ""
         if meta is not None:
             prep_premise = build_prep_premise(meta.goal, meta.goal_detail, meta.roles)
             prep_note = build_prep_analysis_note(meta.goal, meta.goal_detail)
-        materials_premise = ""
-        if confirmed and meta is not None:
-            materials = _session_materials(repo, session_id)
-            materials_premise = build_materials_premise(materials)
-            if materials_premise:
-                seeded_materials = sum(1 for m in materials if m.get("status") == "done")
         instructions = (
             VOICE_AGENT_INSTRUCTIONS
             + prep_premise
@@ -362,7 +366,7 @@ def _is_stale_repo_passage(source: str, current_sha: str) -> bool:
     return f"@{current_sha}:" not in source
 
 
-_USER_DERIVED_KINDS = frozenset({"utterance", "requirement"})
+_USER_DERIVED_KINDS = frozenset({"utterance", "requirement", MATERIAL_KIND})
 
 _GATING_INQUIRY_KINDS = (InquiryKind.CONTRADICTION, InquiryKind.GAP, InquiryKind.CHECK)
 _RESOLVE_INQUIRY_KINDS = (
@@ -539,13 +543,13 @@ class SANBAAgent(Agent):
     def claim_video_injection(self, asset_id: str) -> bool:
         """動画解析の会話注入を 1 回だけ許可する（ADR-0040 §4）。
 
-        - end_user モードでは注入しない（grounding 出力制御 ADR-0032 決定8 と揃え、
-          内部素材の観察が Live 発話へ素通りするのを防ぐ）。allow_repo_grounding を流用する。
+        - 注入対象は参加者アップロード素材の観察（analysis.visual）のみで repo 由来を
+          含まないため、モード（および `confirmed`）に依らず許可する。素材は利用者由来で
+          `expected_session_id` により同一セッションに限定されるため越境しない。grounding の
+          material allowlist（unconfirmed でも material を返す）と揃える（ADR-0032 決定8 改訂）。
         - 同一 asset は 1 回だけ（`_injected_assets` の dedup）。
         許可したら asset_id を消費して True。以後の同一 asset は False。
         """
-        if not self._allow_repo_grounding:
-            return False
         if asset_id in self._injected_assets:
             return False
         self._injected_assets.add(asset_id)
@@ -2400,7 +2404,8 @@ async def inject_video_analysis(
     質問を投げられるようにする。ADR-0037 は非同期の会話割り込みを避ける決定だったが、本注入は
     ADR-0040 §4 が analysis.visual に限って許可する。ただし発話を遮らない穏当な注入にする
     （`session.interrupt()` は呼ばない）: 次の発話境界で自然に織り込ませ、読み上げ中の割り込みを
-    避ける。dedup・モードゲートは `claim_video_injection` に集約（end_user は注入しない）。
+    避ける。dedup は `claim_video_injection` に集約（素材観察は利用者由来のため
+    両モードで注入する）。
     応答生成は guard（応答監視つき）経由で行い、無応答なら再起動で復旧する。観察は transcript に
     載らないため reinject で再起動時に再投入し、素材の一言を失わない（#468）。
     """

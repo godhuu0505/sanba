@@ -120,6 +120,31 @@ def test_context_passages_are_scoped_to_session() -> None:
     assert src_b not in sources
 
 
+def test_uploaded_material_is_scoped_to_session() -> None:
+    store = GroundingStore()
+    mine = "asset:mine"
+    theirs = "asset:theirs"
+    store.index_passage("私のセッションへ上げた請求書の画面", mine, "material", "sess-A")
+    store.index_passage("他人のセッションへ上げた請求書の画面", theirs, "material", "sess-B")
+
+    out = store.search("請求書 画面", k=5, session_id="sess-A")
+    sources = {p.source for p in out}
+    assert mine in sources
+    assert theirs not in sources, (
+        "material も context 同様 session 越境させない（cross-tenant leak 防止）"
+    )
+
+
+def test_build_search_params_scopes_material_kind_to_session() -> None:
+    params = GroundingStore._build_search_params(
+        "x", k=3, kinds=None, embedding=None, session_id="sess-A"
+    )
+    filters = params["query"]["bool"]["filter"]
+    should = next(f["bool"]["should"] for f in filters if "bool" in f)
+    must_not = next(clause["bool"]["must_not"] for clause in should if "bool" in clause)
+    assert set(must_not["terms"]["kind"]) == {"context", "material"}
+
+
 def test_product_scoped_context_is_reachable_with_product_id() -> None:
     store = GroundingStore()
     repo_src = "github:o/r@main@sha:src/app.py"

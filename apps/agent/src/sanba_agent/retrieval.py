@@ -17,6 +17,7 @@ from dataclasses import dataclass
 
 import structlog
 from sanba_shared.analytics import TokenUsage, estimated_embedding_tokens
+from sanba_shared.grounding import SESSION_SCOPED_KINDS
 
 from .config import settings
 from .pii import mask_pii
@@ -155,9 +156,10 @@ class GroundingStore:
     ) -> list[Passage]:
         """Retrieve grounding passages.
 
-        ``session_id`` を渡すと、セッション固有の素材（``kind="context"``: ゴール文・
-        アップロード資料）を **そのセッションに限定**する。知識/過去要件
-        (knowledge/requirement/utterance) は ADR-0003 の通り横断的に呼び戻す。
+        ``session_id`` を渡すと、セッション固有の素材（``SESSION_SCOPED_KINDS``:
+        repo/ゴール文の ``context`` と参加者アップロード素材の ``material``）を
+        **そのセッションに限定**する。知識/過去要件 (knowledge/requirement/utterance) は
+        ADR-0003 の通り横断的に呼び戻す。
         これが無いと、別セッションの参加者が repo 名や実装語で検索したとき他者の private
         リポジトリ断片が返り得る（cross-tenant leak）。
 
@@ -195,7 +197,11 @@ class GroundingStore:
                     "bool": {
                         "minimum_should_match": 1,
                         "should": [
-                            {"bool": {"must_not": {"term": {"kind": "context"}}}},
+                            {
+                                "bool": {
+                                    "must_not": {"terms": {"kind": sorted(SESSION_SCOPED_KINDS)}}
+                                }
+                            },
                             {"terms": {"session_id": context_scope}},
                         ],
                     }
@@ -255,7 +261,7 @@ class GroundingStore:
                 continue
             if (
                 session_id is not None
-                and doc.kind == "context"
+                and doc.kind in SESSION_SCOPED_KINDS
                 and doc.session_id not in context_scope
             ):
                 continue

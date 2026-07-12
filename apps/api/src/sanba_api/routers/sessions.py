@@ -20,6 +20,7 @@ from sanba_shared.analytics import (
     COMPONENT_VISION,
     UsageRecorder,
 )
+from sanba_shared.grounding import MATERIAL_KIND
 from sanba_shared.inquiry import InquiryTree
 from sanba_shared.models import (
     DEFAULT_SESSION_TITLE,
@@ -593,7 +594,11 @@ def add_context(
     chunks = chunk_text(req.text)
     recorder = _analytics_recorder(session_id)
     n = _indexer.index_context(
-        session_id, chunks, req.source_name, usage_hook=embedding_hook(recorder)
+        session_id,
+        chunks,
+        req.source_name,
+        kind=MATERIAL_KIND,
+        usage_hook=embedding_hook(recorder),
     )
     log.info("context_indexed", session=session_id, chunks=n, sub=access.sub)
     return ContextResponse(indexed_chunks=n)
@@ -693,6 +698,7 @@ async def add_context_file(
                 session_id,
                 chunks,
                 f"asset:{doc_asset_id}",
+                kind=MATERIAL_KIND,
                 usage_hook=embedding_hook(recorder),
             )
             record_asset_upload("doc", "extract_failed" if extract_failed else "indexed")
@@ -810,6 +816,7 @@ async def add_context_file(
                 session_id,
                 observations,
                 f"asset:{asset.asset_id}",
+                kind=MATERIAL_KIND,
                 usage_hook=embedding_hook(recorder),
             )
         record_asset_upload(kind, "analyzed")

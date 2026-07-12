@@ -70,6 +70,16 @@
    **件数のみ**の集約シグナル（`background`）として返す（内容・出所は含めない）。
    また end_user への README/Issue シード停止（`seed_github_context` / PR7 の暫定措置）は
    出力制御導入後も**多層防御として維持**する。
+   **実装（改訂2）**: 当初は参加者アップロード素材（ファイル/画像/動画/参照テキスト）も repo
+   索引と同じ `context` kind で索引していたため、この allowlist が repo 遮断の巻き添えで
+   利用者自身の素材まで end_user から遮断し、「アップロードした画像/テキストが深掘りに使われない」
+   不具合になっていた。素材は利用者由来であり decision 8 の「利用者の発話・過去セッション由来は
+   引用できる」に本来含まれる。そこで素材投入経路（`index_context(kind="material")`）に専用
+   kind `material` を与え、allowlist（`_USER_DERIVED_KINDS`）へ追加して両モードで引用可能にする。
+   repo 由来 `context` と開発語彙 `knowledge` は従来どおり遮断のまま。`material` は `context` と
+   同じく検索側で **session（∪ product）スコープに限定**し（`SESSION_SCOPED_KINDS`）、他セッション
+   への越境（cross-tenant leak）を防ぐ。素材観察の Live 注入（`claim_video_injection`）も同様に
+   両モードで許可する（注入対象は analysis.visual 由来＝素材のみで repo を含まない）。
 9. **品質の回帰**: end_user モードの Langfuse 評価データセット（技術用語を使わない・
    一問一答維持・画面語彙の使用）を追加し、ADR-0005 の CI 回帰に載せる。
 
