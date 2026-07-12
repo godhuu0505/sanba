@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { act, cleanup, fireEvent, render, renderHook, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { MaterialItem } from "@/lib/realtime/selectors";
 
@@ -72,7 +72,7 @@ vi.mock("./ConversationSessionView", () => ({
   },
 }));
 
-import { SessionView } from "./SessionView";
+import { SessionView, useTrailingLatch } from "./SessionView";
 
 afterEach(() => {
   cleanup();
@@ -94,6 +94,49 @@ async function uploadFile(filename: string): Promise<MaterialItem> {
   await waitFor(() => expect(lastMaterials.at(-1)?.status).not.toBe("uploading"));
   return lastMaterials.at(-1) as MaterialItem;
 }
+
+describe("useTrailingLatch", () => {
+  const RELEASE_MS = 600;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function renderLatch(initial: boolean) {
+    return renderHook(({ value }) => useTrailingLatch(value, RELEASE_MS), {
+      initialProps: { value: initial },
+    });
+  }
+
+  it("false→true は即時に true になる", () => {
+    const { result, rerender } = renderLatch(false);
+    expect(result.current).toBe(false);
+    rerender({ value: true });
+    expect(result.current).toBe(true);
+  });
+
+  it("true→false は releaseMs 未満では true のまま、経過後に false になる", () => {
+    const { result, rerender } = renderLatch(true);
+    rerender({ value: false });
+    act(() => vi.advanceTimersByTime(RELEASE_MS - 1));
+    expect(result.current).toBe(true);
+    act(() => vi.advanceTimersByTime(1));
+    expect(result.current).toBe(false);
+  });
+
+  it("false 期間中に再度 true になったらタイマーがリセットされ true を維持する", () => {
+    const { result, rerender } = renderLatch(true);
+    rerender({ value: false });
+    act(() => vi.advanceTimersByTime(RELEASE_MS - 1));
+    rerender({ value: true });
+    act(() => vi.advanceTimersByTime(RELEASE_MS * 2));
+    expect(result.current).toBe(true);
+  });
+});
 
 describe("SessionView handleFile pending 行", () => {
   it("画像（analysis_pending=false）は done / pct=100", async () => {
