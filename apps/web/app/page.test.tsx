@@ -106,6 +106,8 @@ import Home from "./page";
 import EntryFlow from "../components/EntryFlow";
 import PreparePage from "./prepare/page";
 
+const NO_PRODUCT = "__none__";
+
 describe("入口フロー（#140）", () => {
   beforeEach(() => {
     authState.loggedIn = false;
@@ -189,10 +191,27 @@ describe("入口フロー（#140）", () => {
     await act(async () => {});
     const cta = screen.getByText("＋ 会話を始める") as HTMLButtonElement;
     expect(cta.disabled).toBe(true);
-    expect(screen.getByText("対象のアプリを選ぶと会話を始められます。")).toBeTruthy();
+    expect(screen.getByText("対象のアプリを選ぶか、「指定しない」で会話を始められます。")).toBeTruthy();
     selectProduct("p1");
     expect(cta.disabled).toBe(false);
-    expect(screen.queryByText("対象のアプリを選ぶと会話を始められます。")).toBeNull();
+    expect(screen.queryByText("対象のアプリを選ぶか、「指定しない」で会話を始められます。")).toBeNull();
+  });
+
+  it("「指定しない」を選ぶとアプリ無しで CTA が活性化する（ADR-0071）", async () => {
+    authState.loggedIn = true;
+    fetchMyProducts.mockResolvedValueOnce([
+      { ...DEFAULT_PRODUCT, id: "p1", name: "検索アプリ" },
+      { ...DEFAULT_PRODUCT, id: "p2", name: "別アプリ" },
+    ]);
+    render(<Home />);
+    await act(async () => {});
+    const cta = screen.getByText("＋ 会話を始める") as HTMLButtonElement;
+    expect(cta.disabled).toBe(true);
+    selectProduct(NO_PRODUCT);
+    expect(cta.disabled).toBe(false);
+    expect(
+      screen.queryByText("対象のアプリを選ぶか、「指定しない」で会話を始められます。"),
+    ).toBeNull();
   });
 
   it("候補が 1 件なら自動選択され、そのまま CTA が活性化する（ADR-0044）", async () => {
@@ -204,17 +223,16 @@ describe("入口フロー（#140）", () => {
     expect((screen.getByText("＋ 会話を始める") as HTMLButtonElement).disabled).toBe(false);
   });
 
-  it("登録済みアプリが 0 件ならセレクトを無効化し、CTA も塞いで登録導線を案内する（ADR-0044）", async () => {
+  it("登録済みアプリが 0 件でもセレクトは活性で、「指定しない」で開始できる（ADR-0071）", async () => {
     authState.loggedIn = true;
     fetchMyProducts.mockResolvedValueOnce([]);
     render(<Home />);
     await act(async () => {});
     const select = screen.getByLabelText("対象のアプリ") as HTMLSelectElement;
-    expect(select.disabled).toBe(true);
+    expect(select.disabled).toBe(false);
     expect((screen.getByText("＋ 会話を始める") as HTMLButtonElement).disabled).toBe(true);
-    expect(
-      screen.getByText("登録済みのアプリがありません。アプリ管理から登録すると選べます。"),
-    ).toBeTruthy();
+    selectProduct(NO_PRODUCT);
+    expect((screen.getByText("＋ 会話を始める") as HTMLButtonElement).disabled).toBe(false);
   });
 
   it("01 ホームは過去の要件一覧をページ内に持たず、サイドメニュー(/results)へ導く", () => {
@@ -372,6 +390,44 @@ describe("入口フロー（#140）", () => {
     expect(createSession.mock.calls[0][1]).toBe(true);
     await waitFor(() => expect(screen.getByText("準備ができました")).toBeTruthy());
     expect(window.location.pathname).toBe("/default-app/sessions/s1");
+  });
+
+  it("「指定しない」で準備に進むと URL は / のまま、開始で product_id を渡さずセッション URL も / に留まる（ADR-0071）", async () => {
+    authState.loggedIn = true;
+    fetchMyProducts.mockResolvedValueOnce([
+      { ...DEFAULT_PRODUCT, id: "p1", name: "検索アプリ" },
+      { ...DEFAULT_PRODUCT, id: "p2", name: "別アプリ" },
+    ]);
+    window.history.replaceState(null, "", "/");
+    render(<Home />);
+    await act(async () => {});
+    selectProduct(NO_PRODUCT);
+    fireEvent.click(screen.getByRole("button", { name: "＋ 会話を始める" }));
+    expect(screen.getByText("セッション準備")).toBeTruthy();
+    expect(window.location.pathname).toBe("/");
+    expect(screen.getByText("指定しない")).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("ゴール"), { target: { value: "テストゴール" } });
+    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(screen.getByRole("button", { name: "会話を始める" }));
+    await waitFor(() => expect(createSession).toHaveBeenCalledTimes(1));
+    expect(createSession.mock.calls[0][5]).toBeUndefined();
+    await waitFor(() => expect(screen.getByText("準備ができました")).toBeTruthy());
+    expect(window.location.pathname).toBe("/");
+  });
+
+  it("「指定しない」で準備に入ると防衛線の巻き戻しは起きない（ADR-0071）", async () => {
+    authState.loggedIn = true;
+    fetchMyProducts.mockResolvedValueOnce([
+      { ...DEFAULT_PRODUCT, id: "p1", name: "検索アプリ" },
+      { ...DEFAULT_PRODUCT, id: "p2", name: "別アプリ" },
+    ]);
+    render(<Home />);
+    await act(async () => {});
+    selectProduct(NO_PRODUCT);
+    fireEvent.click(screen.getByRole("button", { name: "＋ 会話を始める" }));
+    await act(async () => {});
+    expect(screen.getByText("セッション準備")).toBeTruthy();
+    expect(screen.queryByText("会議の前に、五分の会話を")).toBeNull();
   });
 
   it("slug 未設定のアプリを選ぶと CTA は無効のまま、アプリ管理への設定導線を出す（ADR-0045）", async () => {
