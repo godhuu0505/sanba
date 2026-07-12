@@ -124,9 +124,14 @@ class TestBuildInputTranscription:
         assert conf is not None
         assert conf.language_codes is None
 
-    def test_none_when_separate_stt_enabled(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_returns_config_regardless_of_separate_stt_flag(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         monkeypatch.setattr(settings, "separate_stt_enabled", True)
-        assert build_input_transcription() is None
+        monkeypatch.setattr(settings, "gemini_language", "ja-JP")
+        conf = build_input_transcription()
+        assert conf is not None
+        assert conf.language_codes == ["ja-JP"]
 
 
 class TestBuildStt:
@@ -156,6 +161,17 @@ class TestBuildStt:
         assert captured["location"] == settings.stt_location
         assert captured["detect_language"] is False
 
+    def test_fails_soft_to_none_when_construction_raises(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(settings, "separate_stt_enabled", True)
+
+        def boom(**_: object) -> object:
+            raise RuntimeError("unsupported location for chirp")
+
+        monkeypatch.setattr("sanba_agent.main.google.STT", boom)
+        assert build_stt() is None
+
 
 class TestBuildRealtimeModel:
     def test_builds_with_turn_detection_and_compression(
@@ -183,6 +199,15 @@ class TestBuildRealtimeModel:
         assert str(opts.language) == "ja-JP"
         assert opts.input_audio_transcription is not None
         assert opts.input_audio_transcription.language_codes == ["ja-JP"]
+
+    def test_native_transcription_disabled_omits_input_transcription(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("GOOGLE_GENAI_USE_VERTEXAI", "true")
+        monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "test-project")
+        monkeypatch.setenv("GOOGLE_CLOUD_LOCATION", "us-central1")
+        opts = build_realtime_model(native_transcription=False)._opts
+        assert opts.input_audio_transcription is None
 
 
 class TestResumeInstructions:
