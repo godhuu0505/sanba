@@ -46,6 +46,8 @@ class Settings(BaseSettings):
 
     voice_reply_watchdog_timeout_s: float = 20.0
 
+    voice_turn_reply_timeout_s: float = 15.0
+
     analysis_timeout_seconds: float = 20.0
     analysis_ride_along_timeout_seconds: float = 10.0
 
