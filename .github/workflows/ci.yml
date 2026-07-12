@@ -86,6 +86,21 @@ jobs:
       - run: uv run mypy src
       - run: uv run pytest -q
 
+  a2a-facade:
+    name: a2a-facade (lint + test)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: a2a-facade
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+      - run: uv python install 3.12
+      - run: uv sync --all-extras --dev
+      - run: uv run ruff check .
+      - run: uv run mypy src
+      - run: uv run pytest -q
+
   external-agents:
     name: external-agents (lint + test)
     runs-on: ubuntu-latest
@@ -154,6 +169,9 @@ jobs:
           - app: web
             context: apps/web
             file: apps/web/Dockerfile
+          - app: a2a-facade
+            context: .
+            file: a2a-facade/Dockerfile
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
@@ -167,7 +185,7 @@ jobs:
 
   quality-gate:
     name: quality-gate
-    needs: [no-comments, shared, agent, api, worker, external-agents, four-keys, web]
+    needs: [no-comments, shared, agent, api, worker, external-agents, a2a-facade, four-keys, web]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:
@@ -177,4 +195,4 @@ jobs:
             echo "::error::必須ジョブが失敗/キャンセル/スキップされました"
             exit 1
           fi
-          echo "全必須ジョブ (no-comments/shared/agent/api/worker/external-agents/four-keys/web) が成功"
+          echo "全必須ジョブ (no-comments/shared/agent/api/worker/external-agents/a2a-facade/four-keys/web) が成功"

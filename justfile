@@ -125,6 +125,7 @@ test:
     cd apps/api && uv run pytest -q
     cd apps/worker && uv run pytest -q
     cd external-agents && uv run pytest -q
+    cd a2a-facade && uv run pytest -q
     cd infra/four-keys/collector && uv run pytest -q
 
 # lint + 型チェック
@@ -135,6 +136,7 @@ lint: check-comments
     cd apps/api && uv run ruff check . && uv run mypy src
     cd apps/worker && uv run ruff check . && uv run mypy src
     cd external-agents && uv run ruff check . && uv run mypy src
+    cd a2a-facade && uv run ruff check . && uv run mypy src
     cd infra/four-keys/collector && uv run ruff check . && uv run mypy src
     cd apps/web && npm run lint && npm run typecheck
 
