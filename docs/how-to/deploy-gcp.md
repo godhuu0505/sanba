@@ -105,6 +105,15 @@ gcloud iam service-accounts add-iam-policy-binding "$DEPLOY_SA" \
 
 # deploy.yml / terraform.yml の vars.WIF_PROVIDER に入れる完全パス（識別子なので Variable）
 echo "projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/${POOL}/providers/${PROVIDER}"
+
+# LLM 評価用 SA（llm-eval.yml が Vertex AI 経由で Gemini を呼ぶ。
+# PR トリガーで借用されるため Vertex AI 呼び出しのみの最小権限に分離する）
+gcloud iam service-accounts create llm-eval --display-name="GitHub Actions LLM Eval"
+export EVAL_SA=llm-eval@${PROJECT_ID}.iam.gserviceaccount.com
+gcloud projects add-iam-policy-binding "$PROJECT_ID" --member="serviceAccount:$EVAL_SA" --role=roles/aiplatform.user
+gcloud iam service-accounts add-iam-policy-binding "$EVAL_SA" \
+  --role=roles/iam.workloadIdentityUser \
+  --member="principalSet://iam.googleapis.com/projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/${POOL}/attribute.repository/${REPO}"
 ```
 
 > セキュリティ: `attribute-condition` で `repository` を固定する。
@@ -149,6 +158,7 @@ echo "projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/${POOL}/
 | `WIF_PROVIDER` | §3 末尾で出力した WIF プロバイダの完全パス（秘匿値ではなく識別子なので Variable） |
 | `DEPLOY_SA` | §3 の `$DEPLOY_SA`（`gh-deployer@...iam.gserviceaccount.com`。SA email は公開識別子） |
 | `TF_DEPLOY_SA` | §6.6 の `tf-deployer@…`（未設定なら `DEPLOY_SA` にフォールバック） |
+| `EVAL_SA` | §3 の `$EVAL_SA`（`llm-eval@...iam.gserviceaccount.com`。`llm-eval.yml` が Vertex AI 呼び出しに借用） |
 
 ### Repository secrets（`secrets.*`）
 | 名前 | 値 |
