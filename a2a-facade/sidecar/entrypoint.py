@@ -27,6 +27,23 @@ DISABLED_TOOLSETS = [
 ]
 
 
+def build_mcp_servers() -> dict:
+    servers: dict[str, dict] = {}
+    gcp_url = os.environ.get("GCP_OBS_MCP_URL", "")
+    if gcp_url:
+        servers["gcp_observability"] = {
+            "description": "SANBA 本番 (sanba-prd) の Cloud Logging / Monitoring / Trace read-only",
+            "config": {"mode": "streamable-http", "url": gcp_url},
+        }
+    firestore_url = os.environ.get("FIRESTORE_MCP_URL", "")
+    if firestore_url:
+        servers["firestore"] = {
+            "description": "SANBA 本番 (sanba-prd) の Firestore read-only",
+            "config": {"mode": "streamable-http", "url": firestore_url},
+        }
+    return servers
+
+
 def build_config() -> dict:
     toolsets: dict[str, dict] = {name: {"enabled": False} for name in DISABLED_TOOLSETS}
     toolsets["elasticsearch/data"] = {
@@ -36,10 +53,14 @@ def build_config() -> dict:
             "api_key": os.environ["ES_API_KEY"],
         },
     }
-    return {
+    config: dict = {
         "model": os.environ.get("HOLMES_MODEL", "vertex_ai/gemini-2.5-pro"),
         "toolsets": toolsets,
     }
+    mcp_servers = build_mcp_servers()
+    if mcp_servers:
+        config["mcp_servers"] = mcp_servers
+    return config
 
 
 def main() -> None:
