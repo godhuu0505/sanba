@@ -49,6 +49,8 @@ jobs:
       TF_VAR_billing_account:             ${{ vars.BILLING_ACCOUNT }}
       TF_VAR_enable_billing_export:       ${{ vars.ENABLE_BILLING_EXPORT || 'false' }}
       TF_VAR_separate_stt_enabled:        ${{ vars.SEPARATE_STT_ENABLED || 'false' }}
+      TF_VAR_stt_model:                   ${{ vars.STT_MODEL || '' }}
+      TF_VAR_stt_location:                ${{ vars.STT_LOCATION || '' }}
       TF_VAR_domain:                      ${{ vars.PROD_DOMAIN }}
       TF_VAR_web_subdomain:               ${{ vars.PROD_WEB_SUBDOMAIN }}
       TF_VAR_dns_managed_zone_name:       ${{ vars.PROD_DNS_ZONE_NAME || 'sanba' }}
