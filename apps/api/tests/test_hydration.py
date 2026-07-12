@@ -308,7 +308,6 @@ def test_finalize_allows_open_inquiries_when_end_forced_by_user() -> None:
 
 
 def test_finalize_forced_request_allows_open_inquiries_and_records_end_forced() -> None:
-    """web の強制終了（forced=true）は未解消が残っていても確定し、本人意思を記録する。"""
     from sanba_shared.models import InquiryKind, InquiryNode
 
     created = client.post("/api/sessions", json={"roles": ["pm"], "consent_acknowledged": True})
