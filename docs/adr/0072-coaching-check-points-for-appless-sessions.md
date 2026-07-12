@@ -85,5 +85,3 @@ ADR-0071 は対象アプリの選択を任意化し、「API・agent・DB への
   end_user は素のまま / 提供者帰属文言を出さない）、packages/sanba_shared `test_output_formats.py`
   （`default_check_points` の 3 分岐）を追加・改訂。ADR-0071 で「素のまま」を保証していた旧テストを
   本 ADR の挙動へ改める。
-</content>
-</invoke>

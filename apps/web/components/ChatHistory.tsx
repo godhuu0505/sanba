@@ -191,7 +191,7 @@ export function ChatHistory({
     if (stickRef.current) {
       endRef.current?.scrollIntoView?.({ behavior: "smooth", block: "end" });
     }
-  }, [transcript.length, lastLine?.text, lastLine?.final]);
+  }, [transcript.length, lastLine?.text, lastLine?.final, showThinking]);
 
   if (transcript.length === 0 && !hasSetup) {
     return (
