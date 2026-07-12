@@ -445,7 +445,7 @@ export default function EntryFlow({
         title="セッション準備"
         onBack={() => navigateStep("home")}
       >
-        <div className="mx-auto flex w-full max-w-[480px] flex-col gap-[18px] px-4 py-4">
+        <div className="mx-auto flex w-full max-w-[480px] flex-col gap-[18px] px-4 py-4 lg:max-w-[680px] lg:py-6">
           {}
           <div className="flex items-center gap-[8px] rounded-[12px] border border-sanba-border bg-sanba-surface px-[12px] py-[10px]">
             <Package size={16} aria-hidden className="shrink-0 text-sanba-gold-text" />
@@ -681,7 +681,7 @@ export default function EntryFlow({
   return (
     <AppShell current="home">
       {}
-      <div className="m-auto flex w-full max-w-[480px] flex-col gap-[18px] px-4 py-6">
+      <div className="m-auto flex w-full max-w-[480px] flex-col gap-[18px] px-4 py-6 lg:max-w-[560px]">
         {}
         <MemberInviteNotices />
         <Card>

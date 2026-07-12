@@ -172,7 +172,7 @@ export default function ProductDetailPage() {
 
   return (
     <AppShell current="products" title="アプリ詳細" onBack={() => router.push("/products")}>
-      <div className="mx-auto flex w-full max-w-[480px] flex-1 flex-col gap-[18px] px-4 py-4">
+      <div className="mx-auto flex w-full max-w-[480px] flex-1 flex-col gap-[18px] px-4 py-4 lg:grid lg:max-w-[1040px] lg:grid-cols-2 lg:items-start lg:py-6">
         {product === null ? (
           <Card>
             <p className="text-[12px] text-sanba-muted">読み込み中…</p>

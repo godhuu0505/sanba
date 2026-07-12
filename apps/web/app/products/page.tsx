@@ -83,8 +83,10 @@ export default function ProductsPage() {
       current="products"
       title="アプリ管理"
     >
-      <div className="mx-auto flex w-full max-w-[480px] flex-col gap-[18px] px-4 py-4">
-        <MemberInviteNotices onAccepted={reload} />
+      <div className="mx-auto flex w-full max-w-[480px] flex-col gap-[18px] px-4 py-4 lg:grid lg:max-w-[1040px] lg:grid-cols-2 lg:items-start lg:py-6">
+        <div className="empty:hidden lg:col-span-2">
+          <MemberInviteNotices onAccepted={reload} />
+        </div>
         <Card>
           <CardTitle>アプリを登録</CardTitle>
           <p className="text-[12px] leading-relaxed text-sanba-muted">

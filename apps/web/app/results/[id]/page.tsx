@@ -186,7 +186,7 @@ export default function PastRequirementsPage() {
       title="要件一覧"
       onBack={() => router.push("/results")}
     >
-      <div className="mx-auto flex w-full max-w-md flex-col gap-3 px-4 pb-10 pt-3">
+      <div className="mx-auto flex w-full max-w-md flex-col gap-3 px-4 pb-10 pt-3 lg:max-w-[760px] lg:pt-6">
         {load.state === "loading" && (
           <p className="px-1 py-3 text-[13px] text-sanba-muted">読み込み中…</p>
         )}

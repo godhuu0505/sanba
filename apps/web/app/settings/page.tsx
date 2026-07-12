@@ -38,7 +38,7 @@ export default function SettingsPage() {
       title="アカウント設定"
       onBack={() => router.push("/")}
     >
-      <div className="mx-auto flex w-full max-w-[480px] flex-col gap-[18px] px-4 py-4">
+      <div className="mx-auto flex w-full max-w-[480px] flex-col gap-[18px] px-4 py-4 lg:grid lg:max-w-[1040px] lg:grid-cols-2 lg:items-start lg:py-6">
         <Card>
           <CardTitle>プロフィール</CardTitle>
           <div className="flex items-center gap-[12px]">
