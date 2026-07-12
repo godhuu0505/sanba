@@ -31,6 +31,7 @@ import { useAuth } from "../lib/auth";
 import { importDriveFile, isDriveConfigured, openDrivePicker } from "../lib/googleDrive";
 import type { MaterialItem } from "../lib/realtime/selectors";
 import { useRealtimeSession } from "../lib/realtime/useRealtimeSession";
+import { usePushToTalk } from "../lib/usePushToTalk";
 import { ConversationSessionView } from "./ConversationSessionView";
 import { MaterialSourceSheet } from "./MaterialSourceSheet";
 
@@ -53,13 +54,21 @@ export function SessionView({
   sessionToken: string | null;
   readOnly?: boolean;
 }) {
-  const { state, metrics, sendText, sendAnswer, sendInquiryDrop } = useRealtimeSession({
-    sessionId,
-    sessionToken,
-    hydrateInquiry: true,
-    hydrateAnalysis: true,
-  });
+  const { state, metrics, sendText, sendAnswer, sendInquiryDrop, sendInterrupt } =
+    useRealtimeSession({
+      sessionId,
+      sessionToken,
+      hydrateInquiry: true,
+      hydrateAnalysis: true,
+    });
   const auth = useAuth();
+  const [sourceError, setSourceError] = useState<string | null>(null);
+  const {
+    mode: micMode,
+    setMode: setMicMode,
+    pttPressed,
+    pressProps: pttPressProps,
+  } = usePushToTalk({ sendInterrupt, onError: setSourceError });
 
   const router = useRouter();
   const mic = useTrackToggle({ source: Track.Source.Microphone });
@@ -80,7 +89,6 @@ export function SessionView({
   const speaking = useSpeakingParticipants();
   const agentSpeaking = speaking.some((p) => !p.isLocal);
   const [sourceSheetOpen, setSourceSheetOpen] = useState(false);
-  const [sourceError, setSourceError] = useState<string | null>(null);
 
   const [pending, setPending] = useState<MaterialItem[]>([]);
   const [hydratedMaterials, setHydratedMaterials] = useState<MaterialItem[]>([]);
@@ -306,7 +314,6 @@ export function SessionView({
   return (
     <>
       <RoomAudioRenderer muted={muted} />
-      {}
       {!readOnly && (
         <input
           ref={fileInput}
@@ -324,6 +331,10 @@ export function SessionView({
         micOn={mic.enabled}
         muted={muted}
         agentSpeaking={agentSpeaking}
+        micMode={micMode}
+        onMicModeChange={setMicMode}
+        pttPressed={pttPressed}
+        pttPressProps={pttPressProps}
         onToggleMic={() => void mic.toggle()}
         onToggleMute={() => setMuted((m) => !m)}
         onSendText={handleSendText}
@@ -352,7 +363,6 @@ export function SessionView({
         metrics={metrics}
       />
 
-      {}
       {sourceSheetOpen && !readOnly && (
         <MaterialSourceSheet
           onClose={() => setSourceSheetOpen(false)}

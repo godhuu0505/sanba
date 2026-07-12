@@ -25,6 +25,7 @@ from sanba_agent.events import (
     RecordingTransport,
     decode_analysis_visual,
     decode_user_answered,
+    decode_user_interrupt,
     decode_user_selection,
     decode_user_text,
     requirement_to_contract,
@@ -499,6 +500,30 @@ def test_decode_user_answered_truncates_oversized_text() -> None:
     result = decode_user_answered(payload)
     assert result is not None
     assert len(result[1]) == MAX_USER_TEXT_CHARS
+
+
+def test_decode_user_interrupt_valid() -> None:
+    payload = json.dumps({"v": 1, "type": "user.interrupt", "session_id": "s1"}).encode()
+    assert decode_user_interrupt(payload, expected_session_id="s1") is True
+
+
+def test_decode_user_interrupt_without_expected_session() -> None:
+    payload = json.dumps({"v": 1, "type": "user.interrupt", "session_id": "s1"}).encode()
+    assert decode_user_interrupt(payload) is True
+
+
+def test_decode_user_interrupt_rejects_wrong_type() -> None:
+    payload = json.dumps({"v": 1, "type": "user.text", "session_id": "s1", "text": "x"}).encode()
+    assert decode_user_interrupt(payload, expected_session_id="s1") is False
+
+
+def test_decode_user_interrupt_rejects_other_session() -> None:
+    payload = json.dumps({"v": 1, "type": "user.interrupt", "session_id": "s-other"}).encode()
+    assert decode_user_interrupt(payload, expected_session_id="s1") is False
+
+
+def test_decode_user_interrupt_rejects_bad_json() -> None:
+    assert decode_user_interrupt(b"\xff\xfe not json", expected_session_id="s1") is False
 
 
 def test_requirement_to_contract_handles_missing_speaker() -> None:

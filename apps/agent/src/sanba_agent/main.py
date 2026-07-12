@@ -81,6 +81,7 @@ from .events import (
     LiveKitTransport,
     decode_analysis_visual,
     decode_user_answered,
+    decode_user_interrupt,
     decode_user_selection,
     decode_user_text,
 )
@@ -93,6 +94,8 @@ from .prompts.interview import (
     DEVELOPER_OPENING_WITH_PREP_INSTRUCTIONS,
     END_USER_OPENING_INSTRUCTIONS,
     END_USER_VOICE_AGENT_INSTRUCTIONS,
+    OPENING_RETRY_INSTRUCTIONS,
+    TURN_REPLY_NUDGE_INSTRUCTIONS,
     VOICE_AGENT_INSTRUCTIONS,
     build_check_items_seed,
     build_glossary_seed,
@@ -2092,34 +2095,167 @@ class _ReplyTracker:
 
     単一 ``asyncio.Event`` では並行ターン（テキスト連投・画像注入と音声が重なる）が互いの
     応答を取り違えて競合するため、応答数のカウンタで「自分の発行より後に応答が来たか」を
-    判定する。``bump`` は conversation_item_added（assistant）ごとに呼ぶ。``wait_beyond`` は
-    ``baseline`` を超える応答が来るまで待ち、来なければ ``TimeoutError``。
+    判定する。``wait_beyond`` は ``baseline`` を超える応答が来るまで待ち、来なければ
+    ``TimeoutError``。``speaking_baseline`` を渡した待ちだけが発話開始カウンタでも成立する。
     """
 
     def __init__(self) -> None:
         self._count = 0
+        self._speaking_count = 0
         self._event = asyncio.Event()
 
     @property
     def count(self) -> int:
         return self._count
 
+    @property
+    def speaking_count(self) -> int:
+        return self._speaking_count
+
     def bump(self) -> None:
         self._count += 1
         self._event.set()
 
-    async def wait_beyond(self, baseline: int, timeout_s: float) -> None:
+    def bump_speaking(self) -> None:
+        """assistant の発話開始（state=speaking）を専用カウンタへ記録する。"""
+        self._speaking_count += 1
+        self._event.set()
+
+    async def wait_beyond(
+        self, baseline: int, timeout_s: float, *, speaking_baseline: int | None = None
+    ) -> None:
         loop = asyncio.get_event_loop()
         deadline = loop.time() + timeout_s
-        while self._count <= baseline:
+
+        def satisfied() -> bool:
+            if self._count > baseline:
+                return True
+            return speaking_baseline is not None and self._speaking_count > speaking_baseline
+
+        while not satisfied():
             remaining = deadline - loop.time()
             if remaining <= 0:
                 raise TimeoutError
             self._event.clear()
-            if self._count > baseline:
+            if satisfied():
                 return
             with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(self._event.wait(), timeout=remaining)
+
+
+_TURN_WATCHDOG_MAX_THINKING_DEFERRALS = 3
+
+
+class _TurnReplyWatchdog:
+    """user final への自動応答の沈黙を、つつき→再起動で回復する監視タイマー（#522）。
+
+    arm はエージェント発話中・参加者発話中は no-op、armed 中の再 arm も no-op。解除は
+    speaking 遷移・参加者の発話再開・明示的な disarm のみ。満了時に thinking 中なら
+    上限回数まで延期し、その後 nudge → なお沈黙なら request_restart。
+    """
+
+    def __init__(
+        self,
+        *,
+        session_id: str,
+        timeout_s: float,
+        nudge: Callable[[], Awaitable[Any]],
+        request_restart: Callable[[], None],
+        register_task: Callable[[asyncio.Task[None]], None] | None = None,
+    ) -> None:
+        self._session_id = session_id
+        self._timeout_s = timeout_s
+        self._nudge = nudge
+        self._request_restart = request_restart
+        self._register_task = register_task
+        self._task: asyncio.Task[None] | None = None
+        self._is_speaking = False
+        self._is_thinking = False
+        self._user_speaking = False
+
+    @property
+    def is_response_active(self) -> bool:
+        return self._is_speaking
+
+    def arm(self) -> None:
+        if self._is_speaking or self._user_speaking:
+            return
+        if self._task is not None and not self._task.done():
+            return
+        self._task = asyncio.create_task(self._run())
+        if self._register_task is not None:
+            self._register_task(self._task)
+
+    def on_agent_speaking(self) -> None:
+        self._is_speaking = True
+        self._is_thinking = False
+        self._cancel_timer()
+
+    def on_agent_thinking(self) -> None:
+        self._is_speaking = False
+        self._is_thinking = True
+
+    def on_agent_not_speaking(self) -> None:
+        self._is_speaking = False
+        self._is_thinking = False
+
+    def on_user_speaking(self, speaking: bool) -> None:
+        self._user_speaking = speaking
+        if speaking:
+            self._cancel_timer()
+
+    def disarm(self) -> None:
+        self._is_speaking = False
+        self._is_thinking = False
+        self._cancel_timer()
+
+    def _cancel_timer(self) -> None:
+        task = self._task
+        self._task = None
+        if task is not None and not task.done():
+            task.cancel()
+
+    async def _run(self) -> None:
+        deferrals = 0
+        while True:
+            await asyncio.sleep(self._timeout_s)
+            if self._is_thinking and deferrals < _TURN_WATCHDOG_MAX_THINKING_DEFERRALS:
+                deferrals += 1
+                log.info(
+                    "voice_turn_reply_deferred",
+                    session=self._session_id,
+                    deferrals=deferrals,
+                    timeout_s=self._timeout_s,
+                )
+                continue
+            break
+        log.warning(
+            "voice_turn_reply_silent",
+            session=self._session_id,
+            timeout_s=self._timeout_s,
+        )
+        with contextlib.suppress(Exception):
+            await asyncio.wait_for(self._nudge(), timeout=self._timeout_s)
+        await asyncio.sleep(self._timeout_s)
+        log.warning(
+            "voice_turn_reply_dead",
+            session=self._session_id,
+            timeout_s=self._timeout_s,
+        )
+        self._request_restart()
+
+
+def handle_agent_state_changed(
+    new_state: str, reply_tracker: _ReplyTracker, turn_watchdog: _TurnReplyWatchdog
+) -> None:
+    """agent_state_changed を reply_tracker（speaking 専用カウンタ）と沈黙 watchdog へ写像する。"""
+    if new_state == "speaking":
+        reply_tracker.bump_speaking()
+        turn_watchdog.on_agent_speaking()
+    elif new_state == "thinking":
+        turn_watchdog.on_agent_thinking()
+    else:
+        turn_watchdog.on_agent_not_speaking()
 
 
 async def guarded_generate_reply(
@@ -2224,6 +2360,7 @@ async def open_interview(
     タイムアウト後は必ず interrupt を掛ける（最終試行も含む / 直後の enable_participant_audio で
     参加者マイクが開くため、遅延した応答と重なる二重発話を防ぐ）。成功で True、上限まで応答が
     出なければ False を返し voice_opening_exhausted を残す（会話は生き次の発話から前進できる）。
+    リトライ（2 回目以降）は短い再呼びかけ（OPENING_RETRY_INSTRUCTIONS）に固定する。
     """
     attempts = max_attempts if max_attempts is not None else settings.voice_opening_max_attempts
     timeout_s = (
@@ -2232,11 +2369,17 @@ async def open_interview(
     total_attempts = max(1, attempts)
     for attempt in range(1, total_attempts + 1):
         baseline = reply_tracker.count
+        speaking_baseline = reply_tracker.speaking_count
         await guarded_generate_reply(
-            session, session_id=session_id, kind="opening", instructions=instructions
+            session,
+            session_id=session_id,
+            kind="opening",
+            instructions=instructions if attempt == 1 else OPENING_RETRY_INSTRUCTIONS,
         )
         try:
-            await reply_tracker.wait_beyond(baseline, timeout_s)
+            await reply_tracker.wait_beyond(
+                baseline, timeout_s, speaking_baseline=speaking_baseline
+            )
         except TimeoutError:
             log.warning(
                 "voice_opening_no_response",
@@ -2244,8 +2387,10 @@ async def open_interview(
                 attempt=attempt,
                 timeout_s=timeout_s,
             )
-            with contextlib.suppress(Exception):
+            try:
                 await session.interrupt()
+            except Exception as exc:  # noqa: BLE001
+                log.warning("voice_opening_interrupt_failed", session=session_id, error=str(exc))
             continue
         if attempt > 1:
             log.info("voice_opening_recovered", session=session_id, attempt=attempt)
@@ -2308,6 +2453,20 @@ async def respond_to_answer(
             "これを踏まえて要件を一歩進め、必要なら次の問いを1つだけ投げてください。"
         ),
     )
+
+
+async def interrupt_playback(session: AgentSession, *, session_id: str) -> None:
+    """PTT 押下開始（user.interrupt, 契約 §4.5 / ADR-0066 S3）で読み上げを即時中断する。
+
+    クライアント側 mic ゲートと対になるサーバ側の即応で、エージェントが発話中でも
+    ユーザーが話し始めた瞬間に黙る。interrupt の失敗は会話を止めないが、主因が
+    「セッション再起動とのレース」という低頻度・高シグナルな事象のため警告で可視化する
+    （CLAUDE.md 原則3）。
+    """
+    try:
+        await session.interrupt()
+    except Exception as exc:  # noqa: BLE001
+        log.warning("user_interrupt_failed", session=session_id, error=str(exc))
 
 
 async def inject_video_analysis(
@@ -2555,6 +2714,28 @@ async def entrypoint(ctx: JobContext) -> None:
     reply_tracker = _ReplyTracker()
     pending_reinject: list[str] = []
 
+    async def _turn_silence_nudge() -> None:
+        with contextlib.suppress(Exception):
+            await session.interrupt()
+        await guarded_generate_reply(
+            session,
+            session_id=session_id,
+            kind="turn_silence_nudge",
+            instructions=TURN_REPLY_NUDGE_INSTRUCTIONS,
+        )
+
+    def _track_watchdog_task(task: asyncio.Task[None]) -> None:
+        _bg_tasks.add(task)
+        task.add_done_callback(_on_bg_done)
+
+    turn_watchdog = _TurnReplyWatchdog(
+        session_id=session_id,
+        timeout_s=settings.voice_turn_reply_timeout_s,
+        nudge=_turn_silence_nudge,
+        request_restart=lambda: _request_restart(),
+        register_task=_track_watchdog_task,
+    )
+
     async def _guarded_turn_reply(*, kind: str, reinject: str | None, **gen_kwargs: Any) -> None:
         await guarded_turn_reply(
             session,
@@ -2607,6 +2788,10 @@ async def entrypoint(ctx: JobContext) -> None:
         if answered is not None:
             question_id, answer = answered
             _schedule(respond_to_answer(agent, session, question_id, answer, _guarded_turn_reply))
+            return
+        if decode_user_interrupt(data, expected_session_id=session_id):
+            log.info("user_interrupt_received", session=session_id)
+            _schedule(interrupt_playback(session, session_id=session_id))
 
     def _wire_session(s: AgentSession) -> None:
         """AgentSession ごとのイベントハンドラを張る（再起動で作り直すたびに呼ぶ / ADR-0038）。"""
@@ -2618,7 +2803,8 @@ async def entrypoint(ctx: JobContext) -> None:
                 return
             if getattr(ev, "is_final", False):
                 current_qid = agent.current_question_id
-                agent.record_user_final(text)
+                if agent.record_user_final(text):
+                    turn_watchdog.arm()
                 if current_qid is not None:
                     _schedule(agent.clear_current_question(current_qid))
             else:
@@ -2633,6 +2819,16 @@ async def entrypoint(ctx: JobContext) -> None:
             text = getattr(item, "text_content", None)
             if text:
                 agent.publish_agent_utterance(text)
+
+        @s.on("agent_state_changed")
+        def _on_agent_state(ev) -> None:  # type: ignore[no-untyped-def]
+            handle_agent_state_changed(
+                str(getattr(ev, "new_state", "")), reply_tracker, turn_watchdog
+            )
+
+        @s.on("user_state_changed")
+        def _on_user_state(ev) -> None:  # type: ignore[no-untyped-def]
+            turn_watchdog.on_user_speaking(str(getattr(ev, "new_state", "")) == "speaking")
 
         @s.on("error")
         def _on_session_error(ev: ErrorEvent) -> None:
@@ -2712,6 +2908,7 @@ async def entrypoint(ctx: JobContext) -> None:
         （error-close 経由は既に閉じており aclose は無害 / #468）。
         """
         nonlocal session, restart_count, restart_pending
+        turn_watchdog.disarm()
         if restart_count >= settings.voice_session_max_restarts:
             log.error(
                 "voice_session_restarts_exhausted",
@@ -2779,6 +2976,7 @@ async def entrypoint(ctx: JobContext) -> None:
 
     async def _on_close() -> None:
         agent.begin_shutdown()
+        turn_watchdog.disarm()
         await _drain_tasks(set(_bg_tasks), DRAIN_GRACE_SECONDS)
         await agent.drain_background_tasks()
         try:
