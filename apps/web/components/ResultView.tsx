@@ -6,7 +6,6 @@ import { Check, ChevronRight, CircleDot, Cloud, FileText, type LucideIcon } from
 import { Button, Figure, HelpIcon } from "@/components/sanba";
 import { issueExportReasonText } from "../lib/issueExport";
 import { useInterviewMode } from "../lib/interviewMode";
-import { SideMenu } from "./SideMenu";
 import { categoryPresentation, priorityLabel } from "../lib/realtime/mapping";
 import type { Priority, Requirement } from "../lib/realtime/types";
 
@@ -89,11 +88,6 @@ export function ResultView({
 
   return (
     <div className="flex h-full flex-col items-center px-4 pb-4 pt-5">
-      {!endUser && (
-        <div className="flex w-full justify-start">
-          <SideMenu />
-        </div>
-      )}
       <Figure state={provisional ? "writing" : "insight"} className="w-[84px]" />
       <p className="mt-[10px] text-center text-[18px] font-bold text-sanba-gold-text">
         {provisional ? "途中まで整理しました" : "要件がまとまりました"}
