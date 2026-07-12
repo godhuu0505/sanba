@@ -5,16 +5,16 @@
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
         <mxCell id="c4-title" value="SANBA — C4 コンテナ図（Level 2: Container）" style="text;html=1;fontSize=20;fontStyle=1;align=left;verticalAlign=middle;" vertex="1" parent="1">
-          <mxGeometry x="80" y="0" width="700" height="30" as="geometry" />
+          <mxGeometry x="80" y="0" width="700" height="24" as="geometry" />
         </mxCell>
         <mxCell id="c4-boundary" value="SANBA システム境界（Google Cloud / Cloud Run + マネージドサービス）" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#666666;dashed=1;verticalAlign=top;align=left;spacingLeft=8;spacingTop=4;fontStyle=2;fontSize=12;" vertex="1" parent="1">
           <mxGeometry x="80" y="200" width="1080" height="860" as="geometry" />
         </mxCell>
-        <mxCell id="c4-p1" value="&lt;b&gt;参加者&lt;/b&gt;&lt;br&gt;&lt;i&gt;[Person]&lt;/i&gt;&lt;br&gt;PM / エンジニア / 顧客。&lt;br&gt;ブラウザ+マイクで対話" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#08427B;fontColor=#ffffff;strokeColor=#073B6F;fontSize=12;arcSize=20;" vertex="1" parent="1">
-          <mxGeometry x="140" y="40" width="220" height="90" as="geometry" />
+        <mxCell id="c4-p1" value="&lt;b&gt;参加者&lt;/b&gt;&lt;br&gt;PM / エンジニア / 顧客。&lt;br&gt;ブラウザ+マイクで対話" style="shape=mxgraph.c4.person2;html=1;whiteSpace=wrap;fillColor=#08427B;strokeColor=#073B6F;fontColor=#ffffff;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="140" y="25" width="220" height="115" as="geometry" />
         </mxCell>
-        <mxCell id="c4-p2" value="&lt;b&gt;管理者&lt;/b&gt;&lt;br&gt;&lt;i&gt;[Person]&lt;/i&gt;&lt;br&gt;観点設定・要件承認" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#08427B;fontColor=#ffffff;strokeColor=#073B6F;fontSize=12;arcSize=20;" vertex="1" parent="1">
-          <mxGeometry x="400" y="40" width="180" height="90" as="geometry" />
+        <mxCell id="c4-p2" value="&lt;b&gt;管理者&lt;/b&gt;&lt;br&gt;観点設定・要件承認" style="shape=mxgraph.c4.person2;html=1;whiteSpace=wrap;fillColor=#08427B;strokeColor=#073B6F;fontColor=#ffffff;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="400" y="25" width="180" height="115" as="geometry" />
         </mxCell>
         <mxCell id="c4-gis" value="&lt;b&gt;Google Identity Services&lt;/b&gt;&lt;br&gt;&lt;i&gt;[外部システム]&lt;/i&gt;&lt;br&gt;OIDC ログイン（id_token 発行）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#999999;fontColor=#ffffff;strokeColor=#8A8A8A;fontSize=12;" vertex="1" parent="1">
           <mxGeometry x="1240" y="40" width="240" height="90" as="geometry" />
@@ -69,8 +69,8 @@
         <mxCell id="c4-e3" value="⓪ Google ログイン（id_token 取得）" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;fontColor=#333333;fontSize=11;labelBackgroundColor=#FFFFFF;dashed=1;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="c4-p1" target="c4-gis">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="250" y="14" />
-              <mxPoint x="1360" y="14" />
+              <mxPoint x="250" y="10" />
+              <mxPoint x="1360" y="10" />
             </Array>
           </mxGeometry>
         </mxCell>
@@ -250,124 +250,100 @@
         <mxCell id="sq-title" value="SANBA — シーケンス図（入室 〜 音声対話 〜 スナップショット復元）" style="text;html=1;fontSize=20;fontStyle=1;align=left;verticalAlign=middle;" vertex="1" parent="s1">
           <mxGeometry x="35" y="0" width="900" height="30" as="geometry" />
         </mxCell>
-        <mxCell id="sq-h-u" value="&lt;b&gt;参加者&lt;/b&gt;&lt;br&gt;(ブラウザ)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#08427B;fontColor=#ffffff;strokeColor=#073B6F;fontSize=12;" vertex="1" parent="s1">
-          <mxGeometry x="35" y="40" width="150" height="50" as="geometry" />
+        <mxCell id="sq-h-u" value="&lt;b&gt;参加者&lt;/b&gt;&lt;br&gt;(ブラウザ)" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;dropTarget=0;collapsible=0;recursiveResize=0;outlineConnect=0;size=50;fillColor=#08427B;fontColor=#ffffff;strokeColor=#073B6F;fontSize=12;" vertex="1" parent="s1">
+          <mxGeometry x="35" y="40" width="150" height="960" as="geometry" />
         </mxCell>
-        <mxCell id="sq-h-gis" value="&lt;b&gt;Google Identity&lt;/b&gt;&lt;br&gt;(外部)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#999999;fontColor=#ffffff;strokeColor=#8A8A8A;fontSize=12;" vertex="1" parent="s1">
-          <mxGeometry x="225" y="40" width="150" height="50" as="geometry" />
+        <mxCell id="sq-h-gis" value="&lt;b&gt;Google Identity&lt;/b&gt;&lt;br&gt;(外部)" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;dropTarget=0;collapsible=0;recursiveResize=0;outlineConnect=0;size=50;fillColor=#999999;fontColor=#ffffff;strokeColor=#8A8A8A;fontSize=12;" vertex="1" parent="s1">
+          <mxGeometry x="225" y="40" width="150" height="960" as="geometry" />
         </mxCell>
-        <mxCell id="sq-h-api" value="&lt;b&gt;sanba-api&lt;/b&gt;&lt;br&gt;(FastAPI)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#438DD5;fontColor=#ffffff;strokeColor=#3572B0;fontSize=12;" vertex="1" parent="s1">
-          <mxGeometry x="415" y="40" width="150" height="50" as="geometry" />
+        <mxCell id="sq-h-api" value="&lt;b&gt;sanba-api&lt;/b&gt;&lt;br&gt;(FastAPI)" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;dropTarget=0;collapsible=0;recursiveResize=0;outlineConnect=0;size=50;fillColor=#438DD5;fontColor=#ffffff;strokeColor=#3572B0;fontSize=12;" vertex="1" parent="s1">
+          <mxGeometry x="415" y="40" width="150" height="960" as="geometry" />
         </mxCell>
-        <mxCell id="sq-h-lk" value="&lt;b&gt;LiveKit Cloud&lt;/b&gt;&lt;br&gt;(WebRTC SFU)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#999999;fontColor=#ffffff;strokeColor=#8A8A8A;fontSize=12;" vertex="1" parent="s1">
-          <mxGeometry x="605" y="40" width="150" height="50" as="geometry" />
+        <mxCell id="sq-h-lk" value="&lt;b&gt;LiveKit Cloud&lt;/b&gt;&lt;br&gt;(WebRTC SFU)" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;dropTarget=0;collapsible=0;recursiveResize=0;outlineConnect=0;size=50;fillColor=#999999;fontColor=#ffffff;strokeColor=#8A8A8A;fontSize=12;" vertex="1" parent="s1">
+          <mxGeometry x="605" y="40" width="150" height="960" as="geometry" />
         </mxCell>
-        <mxCell id="sq-h-va" value="&lt;b&gt;sanba-agent&lt;/b&gt;&lt;br&gt;(Gemini Live)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#438DD5;fontColor=#ffffff;strokeColor=#3572B0;fontSize=12;" vertex="1" parent="s1">
-          <mxGeometry x="795" y="40" width="150" height="50" as="geometry" />
+        <mxCell id="sq-h-va" value="&lt;b&gt;sanba-agent&lt;/b&gt;&lt;br&gt;(Gemini Live)" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;dropTarget=0;collapsible=0;recursiveResize=0;outlineConnect=0;size=50;fillColor=#438DD5;fontColor=#ffffff;strokeColor=#3572B0;fontSize=12;" vertex="1" parent="s1">
+          <mxGeometry x="795" y="40" width="150" height="960" as="geometry" />
         </mxCell>
-        <mxCell id="sq-h-vtx" value="&lt;b&gt;Vertex AI&lt;/b&gt;&lt;br&gt;(Gemini)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#999999;fontColor=#ffffff;strokeColor=#8A8A8A;fontSize=12;" vertex="1" parent="s1">
-          <mxGeometry x="985" y="40" width="150" height="50" as="geometry" />
+        <mxCell id="sq-h-vtx" value="&lt;b&gt;Vertex AI&lt;/b&gt;&lt;br&gt;(Gemini)" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;dropTarget=0;collapsible=0;recursiveResize=0;outlineConnect=0;size=50;fillColor=#999999;fontColor=#ffffff;strokeColor=#8A8A8A;fontSize=12;" vertex="1" parent="s1">
+          <mxGeometry x="985" y="40" width="150" height="960" as="geometry" />
         </mxCell>
-        <mxCell id="sq-h-adk" value="&lt;b&gt;ADK Agent Team&lt;/b&gt;&lt;br&gt;(in-process)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#85BBF0;fontColor=#0B2E4F;strokeColor=#78A8D8;fontSize=12;" vertex="1" parent="s1">
-          <mxGeometry x="1175" y="40" width="150" height="50" as="geometry" />
+        <mxCell id="sq-h-adk" value="&lt;b&gt;ADK Agent Team&lt;/b&gt;&lt;br&gt;(in-process)" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;dropTarget=0;collapsible=0;recursiveResize=0;outlineConnect=0;size=50;fillColor=#85BBF0;fontColor=#0B2E4F;strokeColor=#78A8D8;fontSize=12;" vertex="1" parent="s1">
+          <mxGeometry x="1175" y="40" width="150" height="960" as="geometry" />
         </mxCell>
-        <mxCell id="sq-h-fs" value="&lt;b&gt;Firestore&lt;/b&gt;&lt;br&gt;(状態)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#438DD5;fontColor=#ffffff;strokeColor=#3572B0;fontSize=12;" vertex="1" parent="s1">
-          <mxGeometry x="1365" y="40" width="150" height="50" as="geometry" />
+        <mxCell id="sq-h-fs" value="&lt;b&gt;Firestore&lt;/b&gt;&lt;br&gt;(状態)" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;dropTarget=0;collapsible=0;recursiveResize=0;outlineConnect=0;size=50;fillColor=#438DD5;fontColor=#ffffff;strokeColor=#3572B0;fontSize=12;" vertex="1" parent="s1">
+          <mxGeometry x="1365" y="40" width="150" height="960" as="geometry" />
         </mxCell>
-        <mxCell id="sq-l-u" style="endArrow=none;dashed=1;html=1;strokeColor=#999999;" edge="1" parent="s1">
-          <mxGeometry relative="1" as="geometry"><mxPoint x="110" y="90" as="sourcePoint" /><mxPoint x="110" y="1120" as="targetPoint" /></mxGeometry>
-        </mxCell>
-        <mxCell id="sq-l-gis" style="endArrow=none;dashed=1;html=1;strokeColor=#999999;" edge="1" parent="s1">
-          <mxGeometry relative="1" as="geometry"><mxPoint x="300" y="90" as="sourcePoint" /><mxPoint x="300" y="1120" as="targetPoint" /></mxGeometry>
-        </mxCell>
-        <mxCell id="sq-l-api" style="endArrow=none;dashed=1;html=1;strokeColor=#999999;" edge="1" parent="s1">
-          <mxGeometry relative="1" as="geometry"><mxPoint x="490" y="90" as="sourcePoint" /><mxPoint x="490" y="1120" as="targetPoint" /></mxGeometry>
-        </mxCell>
-        <mxCell id="sq-l-lk" style="endArrow=none;dashed=1;html=1;strokeColor=#999999;" edge="1" parent="s1">
-          <mxGeometry relative="1" as="geometry"><mxPoint x="680" y="90" as="sourcePoint" /><mxPoint x="680" y="1120" as="targetPoint" /></mxGeometry>
-        </mxCell>
-        <mxCell id="sq-l-va" style="endArrow=none;dashed=1;html=1;strokeColor=#999999;" edge="1" parent="s1">
-          <mxGeometry relative="1" as="geometry"><mxPoint x="870" y="90" as="sourcePoint" /><mxPoint x="870" y="1120" as="targetPoint" /></mxGeometry>
-        </mxCell>
-        <mxCell id="sq-l-vtx" style="endArrow=none;dashed=1;html=1;strokeColor=#999999;" edge="1" parent="s1">
-          <mxGeometry relative="1" as="geometry"><mxPoint x="1060" y="90" as="sourcePoint" /><mxPoint x="1060" y="1120" as="targetPoint" /></mxGeometry>
-        </mxCell>
-        <mxCell id="sq-l-adk" style="endArrow=none;dashed=1;html=1;strokeColor=#999999;" edge="1" parent="s1">
-          <mxGeometry relative="1" as="geometry"><mxPoint x="1250" y="90" as="sourcePoint" /><mxPoint x="1250" y="1120" as="targetPoint" /></mxGeometry>
-        </mxCell>
-        <mxCell id="sq-l-fs" style="endArrow=none;dashed=1;html=1;strokeColor=#999999;" edge="1" parent="s1">
-          <mxGeometry relative="1" as="geometry"><mxPoint x="1440" y="90" as="sourcePoint" /><mxPoint x="1440" y="1120" as="targetPoint" /></mxGeometry>
-        </mxCell>
-        <mxCell id="sq-m1" value="① Google ログイン" style="html=1;strokeColor=#333333;fontSize=11;labelBackgroundColor=#FFFFFF;endArrow=block;" edge="1" parent="s1">
+        <mxCell id="sq-m1" value="① Google ログイン" style="html=1;strokeColor=#333333;fontSize=11;verticalAlign=bottom;labelBackgroundColor=none;endArrow=block;" edge="1" parent="s1">
           <mxGeometry relative="1" as="geometry"><mxPoint x="110" y="130" as="sourcePoint" /><mxPoint x="300" y="130" as="targetPoint" /></mxGeometry>
         </mxCell>
-        <mxCell id="sq-m2" value="② id_token (OIDC)" style="html=1;strokeColor=#333333;fontSize=11;labelBackgroundColor=#FFFFFF;endArrow=open;dashed=1;" edge="1" parent="s1">
+        <mxCell id="sq-m2" value="② id_token (OIDC)" style="html=1;strokeColor=#333333;fontSize=11;verticalAlign=bottom;labelBackgroundColor=none;endArrow=open;dashed=1;" edge="1" parent="s1">
           <mxGeometry relative="1" as="geometry"><mxPoint x="300" y="165" as="sourcePoint" /><mxPoint x="110" y="165" as="targetPoint" /></mxGeometry>
         </mxCell>
-        <mxCell id="sq-m3" value="③ POST /api/sessions/join（Bearer id_token + invite）" style="html=1;strokeColor=#333333;fontSize=11;labelBackgroundColor=#FFFFFF;endArrow=block;" edge="1" parent="s1">
+        <mxCell id="sq-m3" value="③ POST /api/sessions/join（Bearer id_token + invite）" style="html=1;strokeColor=#333333;fontSize=11;verticalAlign=bottom;labelBackgroundColor=none;endArrow=block;" edge="1" parent="s1">
           <mxGeometry relative="1" as="geometry"><mxPoint x="110" y="200" as="sourcePoint" /><mxPoint x="490" y="200" as="targetPoint" /></mxGeometry>
         </mxCell>
-        <mxCell id="sq-m4" value="④ id_token 検証（aud/iss/exp）" style="html=1;strokeColor=#333333;fontSize=11;labelBackgroundColor=#FFFFFF;endArrow=block;" edge="1" parent="s1">
+        <mxCell id="sq-m4" value="④ id_token 検証（aud/iss/exp）" style="html=1;strokeColor=#333333;fontSize=11;verticalAlign=bottom;labelBackgroundColor=none;endArrow=block;" edge="1" parent="s1">
           <mxGeometry relative="1" as="geometry"><mxPoint x="490" y="235" as="sourcePoint" /><mxPoint x="300" y="235" as="targetPoint" /></mxGeometry>
         </mxCell>
-        <mxCell id="sq-m5" value="⑤ AccessToken 発行（room scoped / TTL）" style="html=1;strokeColor=#333333;fontSize=11;labelBackgroundColor=#FFFFFF;endArrow=block;" edge="1" parent="s1">
+        <mxCell id="sq-m5" value="⑤ AccessToken 発行（room scoped / TTL）" style="html=1;strokeColor=#333333;fontSize=11;verticalAlign=bottom;labelBackgroundColor=none;endArrow=block;" edge="1" parent="s1">
           <mxGeometry relative="1" as="geometry"><mxPoint x="490" y="270" as="sourcePoint" /><mxPoint x="680" y="270" as="targetPoint" /></mxGeometry>
         </mxCell>
-        <mxCell id="sq-m6" value="⑥ LiveKit token + session_token" style="html=1;strokeColor=#333333;fontSize=11;labelBackgroundColor=#FFFFFF;endArrow=open;dashed=1;" edge="1" parent="s1">
+        <mxCell id="sq-m6" value="⑥ LiveKit token + session_token" style="html=1;strokeColor=#333333;fontSize=11;verticalAlign=bottom;labelBackgroundColor=none;endArrow=open;dashed=1;" edge="1" parent="s1">
           <mxGeometry relative="1" as="geometry"><mxPoint x="490" y="305" as="sourcePoint" /><mxPoint x="110" y="305" as="targetPoint" /></mxGeometry>
         </mxCell>
-        <mxCell id="sq-m7" value="⑦ WebRTC 参加（音声/映像）" style="html=1;strokeColor=#333333;fontSize=11;labelBackgroundColor=#FFFFFF;endArrow=block;" edge="1" parent="s1">
+        <mxCell id="sq-m7" value="⑦ WebRTC 参加（音声/映像）" style="html=1;strokeColor=#333333;fontSize=11;verticalAlign=bottom;labelBackgroundColor=none;endArrow=block;" edge="1" parent="s1">
           <mxGeometry relative="1" as="geometry"><mxPoint x="110" y="340" as="sourcePoint" /><mxPoint x="680" y="340" as="targetPoint" /></mxGeometry>
         </mxCell>
-        <mxCell id="sq-m8" value="⑧ worker 接続（同一 room）" style="html=1;strokeColor=#333333;fontSize=11;labelBackgroundColor=#FFFFFF;endArrow=block;" edge="1" parent="s1">
+        <mxCell id="sq-m8" value="⑧ worker 接続（同一 room）" style="html=1;strokeColor=#333333;fontSize=11;verticalAlign=bottom;labelBackgroundColor=none;endArrow=block;" edge="1" parent="s1">
           <mxGeometry relative="1" as="geometry"><mxPoint x="870" y="375" as="sourcePoint" /><mxPoint x="680" y="375" as="targetPoint" /></mxGeometry>
         </mxCell>
         <mxCell id="sq-loop" value="loop（会話ターン）" style="shape=umlFrame;whiteSpace=wrap;html=1;width=170;height=30;fillColor=none;strokeColor=#666666;fontSize=12;fontStyle=1;verticalAlign=top;align=left;spacingLeft=4;" vertex="1" parent="s1">
           <mxGeometry x="50" y="415" width="1480" height="440" as="geometry" />
         </mxCell>
-        <mxCell id="sq-m9" value="発話（audio）" style="html=1;strokeColor=#333333;fontSize=11;labelBackgroundColor=#FFFFFF;endArrow=block;" edge="1" parent="s1">
+        <mxCell id="sq-m9" value="発話（audio）" style="html=1;strokeColor=#333333;fontSize=11;verticalAlign=bottom;labelBackgroundColor=none;endArrow=block;" edge="1" parent="s1">
           <mxGeometry relative="1" as="geometry"><mxPoint x="110" y="465" as="sourcePoint" /><mxPoint x="680" y="465" as="targetPoint" /></mxGeometry>
         </mxCell>
-        <mxCell id="sq-m10" value="audio track" style="html=1;strokeColor=#333333;fontSize=11;labelBackgroundColor=#FFFFFF;endArrow=block;" edge="1" parent="s1">
+        <mxCell id="sq-m10" value="audio track" style="html=1;strokeColor=#333333;fontSize=11;verticalAlign=bottom;labelBackgroundColor=none;endArrow=block;" edge="1" parent="s1">
           <mxGeometry relative="1" as="geometry"><mxPoint x="680" y="500" as="sourcePoint" /><mxPoint x="870" y="500" as="targetPoint" /></mxGeometry>
         </mxCell>
-        <mxCell id="sq-m11" value="Gemini Live S2S（即応）" style="html=1;strokeColor=#333333;fontSize=11;labelBackgroundColor=#FFFFFF;endArrow=block;" edge="1" parent="s1">
+        <mxCell id="sq-m11" value="Gemini Live S2S（即応）" style="html=1;strokeColor=#333333;fontSize=11;verticalAlign=bottom;labelBackgroundColor=none;endArrow=block;" edge="1" parent="s1">
           <mxGeometry relative="1" as="geometry"><mxPoint x="870" y="535" as="sourcePoint" /><mxPoint x="1060" y="535" as="targetPoint" /></mxGeometry>
         </mxCell>
-        <mxCell id="sq-m12" value="応答 audio + function 呼び出し" style="html=1;strokeColor=#333333;fontSize=11;labelBackgroundColor=#FFFFFF;endArrow=open;dashed=1;" edge="1" parent="s1">
+        <mxCell id="sq-m12" value="応答 audio + function 呼び出し" style="html=1;strokeColor=#333333;fontSize=11;verticalAlign=bottom;labelBackgroundColor=none;endArrow=open;dashed=1;" edge="1" parent="s1">
           <mxGeometry relative="1" as="geometry"><mxPoint x="1060" y="570" as="sourcePoint" /><mxPoint x="870" y="570" as="targetPoint" /></mxGeometry>
         </mxCell>
-        <mxCell id="sq-m13" value="応答（低遅延 audio）" style="html=1;strokeColor=#333333;fontSize=11;labelBackgroundColor=#FFFFFF;endArrow=block;" edge="1" parent="s1">
+        <mxCell id="sq-m13" value="応答（低遅延 audio）" style="html=1;strokeColor=#333333;fontSize=11;verticalAlign=bottom;labelBackgroundColor=none;endArrow=block;" edge="1" parent="s1">
           <mxGeometry relative="1" as="geometry"><mxPoint x="870" y="605" as="sourcePoint" /><mxPoint x="680" y="605" as="targetPoint" /></mxGeometry>
         </mxCell>
-        <mxCell id="sq-m14" value="音声" style="html=1;strokeColor=#333333;fontSize=11;labelBackgroundColor=#FFFFFF;endArrow=open;dashed=1;" edge="1" parent="s1">
+        <mxCell id="sq-m14" value="音声" style="html=1;strokeColor=#333333;fontSize=11;verticalAlign=bottom;labelBackgroundColor=none;endArrow=open;dashed=1;" edge="1" parent="s1">
           <mxGeometry relative="1" as="geometry"><mxPoint x="680" y="640" as="sourcePoint" /><mxPoint x="110" y="640" as="targetPoint" /></mxGeometry>
         </mxCell>
-        <mxCell id="sq-m15" value="区切りで analyze_requirements(transcript)（agent-as-a-tool）" style="html=1;strokeColor=#333333;fontSize=11;labelBackgroundColor=#FFFFFF;endArrow=block;" edge="1" parent="s1">
+        <mxCell id="sq-m15" value="区切りで analyze_requirements(transcript)（agent-as-a-tool）" style="html=1;strokeColor=#333333;fontSize=11;verticalAlign=bottom;labelBackgroundColor=none;endArrow=block;" edge="1" parent="s1">
           <mxGeometry relative="1" as="geometry"><mxPoint x="870" y="675" as="sourcePoint" /><mxPoint x="1250" y="675" as="targetPoint" /></mxGeometry>
         </mxCell>
-        <mxCell id="sq-m16" value="推論（gemini-2.5-flash）" style="html=1;strokeColor=#333333;fontSize=11;labelBackgroundColor=#FFFFFF;endArrow=block;" edge="1" parent="s1">
+        <mxCell id="sq-m16" value="推論（gemini-2.5-flash）" style="html=1;strokeColor=#333333;fontSize=11;verticalAlign=bottom;labelBackgroundColor=none;endArrow=block;" edge="1" parent="s1">
           <mxGeometry relative="1" as="geometry"><mxPoint x="1250" y="710" as="sourcePoint" /><mxPoint x="1060" y="710" as="targetPoint" /></mxGeometry>
         </mxCell>
-        <mxCell id="sq-m17" value="次の問い / 抜け / 矛盾" style="html=1;strokeColor=#333333;fontSize=11;labelBackgroundColor=#FFFFFF;endArrow=open;dashed=1;" edge="1" parent="s1">
+        <mxCell id="sq-m17" value="次の問い / 抜け / 矛盾" style="html=1;strokeColor=#333333;fontSize=11;verticalAlign=bottom;labelBackgroundColor=none;endArrow=open;dashed=1;" edge="1" parent="s1">
           <mxGeometry relative="1" as="geometry"><mxPoint x="1250" y="745" as="sourcePoint" /><mxPoint x="870" y="745" as="targetPoint" /></mxGeometry>
         </mxCell>
-        <mxCell id="sq-m18" value="確定要件・発話・検知を upsert" style="html=1;strokeColor=#333333;fontSize=11;labelBackgroundColor=#FFFFFF;endArrow=block;" edge="1" parent="s1">
+        <mxCell id="sq-m18" value="確定要件・発話・検知を upsert" style="html=1;strokeColor=#333333;fontSize=11;verticalAlign=bottom;labelBackgroundColor=none;endArrow=block;" edge="1" parent="s1">
           <mxGeometry relative="1" as="geometry"><mxPoint x="870" y="780" as="sourcePoint" /><mxPoint x="1440" y="780" as="targetPoint" /></mxGeometry>
         </mxCell>
-        <mxCell id="sq-m19" value="data channel で web へ差分 publish（seq 付き）" style="html=1;strokeColor=#333333;fontSize=11;labelBackgroundColor=#FFFFFF;endArrow=block;" edge="1" parent="s1">
+        <mxCell id="sq-m19" value="data channel で web へ差分 publish（seq 付き）" style="html=1;strokeColor=#333333;fontSize=11;verticalAlign=bottom;labelBackgroundColor=none;endArrow=block;" edge="1" parent="s1">
           <mxGeometry relative="1" as="geometry"><mxPoint x="870" y="815" as="sourcePoint" /><mxPoint x="680" y="815" as="targetPoint" /></mxGeometry>
         </mxCell>
         <mxCell id="sq-sep" value="— リロード / 途中参加（スナップショット復元・ADR-0021）—" style="text;html=1;fontSize=11;fontStyle=2;align=center;fontColor=#666666;" vertex="1" parent="s1">
           <mxGeometry x="200" y="865" width="500" height="20" as="geometry" />
         </mxCell>
-        <mxCell id="sq-m20" value="GET /requirements・/inquiry・/questions/current（Bearer session_token）" style="html=1;strokeColor=#333333;fontSize=11;labelBackgroundColor=#FFFFFF;endArrow=block;" edge="1" parent="s1">
+        <mxCell id="sq-m20" value="GET /requirements・/inquiry・/questions/current（Bearer session_token）" style="html=1;strokeColor=#333333;fontSize=11;verticalAlign=bottom;labelBackgroundColor=none;endArrow=block;" edge="1" parent="s1">
           <mxGeometry relative="1" as="geometry"><mxPoint x="110" y="905" as="sourcePoint" /><mxPoint x="490" y="905" as="targetPoint" /></mxGeometry>
         </mxCell>
-        <mxCell id="sq-m21" value="読み取り" style="html=1;strokeColor=#333333;fontSize=11;labelBackgroundColor=#FFFFFF;endArrow=block;" edge="1" parent="s1">
+        <mxCell id="sq-m21" value="読み取り" style="html=1;strokeColor=#333333;fontSize=11;verticalAlign=bottom;labelBackgroundColor=none;endArrow=block;" edge="1" parent="s1">
           <mxGeometry relative="1" as="geometry"><mxPoint x="490" y="940" as="sourcePoint" /><mxPoint x="1440" y="940" as="targetPoint" /></mxGeometry>
         </mxCell>
-        <mxCell id="sq-m22" value="スナップショット + seq（live 差分と冪等 upsert で合流）" style="html=1;strokeColor=#333333;fontSize=11;labelBackgroundColor=#FFFFFF;endArrow=open;dashed=1;" edge="1" parent="s1">
+        <mxCell id="sq-m22" value="スナップショット + seq（live 差分と冪等 upsert で合流）" style="html=1;strokeColor=#333333;fontSize=11;verticalAlign=bottom;labelBackgroundColor=none;endArrow=open;dashed=1;" edge="1" parent="s1">
           <mxGeometry relative="1" as="geometry"><mxPoint x="490" y="975" as="sourcePoint" /><mxPoint x="110" y="975" as="targetPoint" /></mxGeometry>
         </mxCell>
         <mxCell id="sq-note" value="room close 時: LLM-as-a-judge で採点 → session_scored 構造化ログ → Cloud Logging / Cloud Monitoring（ADR-0051）" style="shape=note;whiteSpace=wrap;html=1;backgroundOutline=1;darkOpacity=0.05;fillColor=#FFF9B2;strokeColor=#D6B656;fontSize=11;align=left;spacing=8;" vertex="1" parent="s1">
@@ -390,7 +366,7 @@
         <mxCell id="er-products" value="products/{id}" style="swimlane;fontStyle=1;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;collapsible=0;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#D5E8D4;strokeColor=#82B366;fontSize=12;" vertex="1" parent="e1">
           <mxGeometry x="60" y="80" width="280" height="250" as="geometry" />
         </mxCell>
-        <mxCell id="er-products-r1" value="id: str（prod-… ランダム採番）" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;fontStyle=5;" vertex="1" parent="er-products"><mxGeometry y="30" width="280" height="22" as="geometry" /></mxCell>
+        <mxCell id="er-products-r1" value="🔑 id: str（prod-… ランダム採番）" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;fontStyle=5;" vertex="1" parent="er-products"><mxGeometry y="30" width="280" height="22" as="geometry" /></mxCell>
         <mxCell id="er-products-r2" value="name ／ description" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;" vertex="1" parent="er-products"><mxGeometry y="52" width="280" height="22" as="geometry" /></mxCell>
         <mxCell id="er-products-r3" value="owner_sub（所有者・単一の正）" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;" vertex="1" parent="er-products"><mxGeometry y="74" width="280" height="22" as="geometry" /></mxCell>
         <mxCell id="er-products-r4" value="slug: str?（グローバル一意）" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;" vertex="1" parent="er-products"><mxGeometry y="96" width="280" height="22" as="geometry" /></mxCell>
@@ -403,19 +379,19 @@
         <mxCell id="er-slugs" value="product_slugs/{slug}" style="swimlane;fontStyle=1;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;collapsible=0;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#D5E8D4;strokeColor=#82B366;fontSize=12;" vertex="1" parent="e1">
           <mxGeometry x="60" y="400" width="280" height="74" as="geometry" />
         </mxCell>
-        <mxCell id="er-slugs-r1" value="slug（docID・一意性をTx担保）" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;fontStyle=5;" vertex="1" parent="er-slugs"><mxGeometry y="30" width="280" height="22" as="geometry" /></mxCell>
+        <mxCell id="er-slugs-r1" value="🔑 slug（docID・一意性をTx担保）" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;fontStyle=5;" vertex="1" parent="er-slugs"><mxGeometry y="30" width="280" height="22" as="geometry" /></mxCell>
         <mxCell id="er-slugs-r2" value="product_id → products.id" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;fontStyle=2;" vertex="1" parent="er-slugs"><mxGeometry y="52" width="280" height="22" as="geometry" /></mxCell>
         <mxCell id="er-users" value="users/{sub}" style="swimlane;fontStyle=1;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;collapsible=0;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#F5F5F5;strokeColor=#666666;fontSize=12;" vertex="1" parent="e1">
           <mxGeometry x="60" y="540" width="280" height="118" as="geometry" />
         </mxCell>
-        <mxCell id="er-users-r1" value="sub（Google sub = ユーザーID）" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;fontStyle=5;" vertex="1" parent="er-users"><mxGeometry y="30" width="280" height="22" as="geometry" /></mxCell>
+        <mxCell id="er-users-r1" value="🔑 sub（Google sub = ユーザーID）" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;fontStyle=5;" vertex="1" parent="er-users"><mxGeometry y="30" width="280" height="22" as="geometry" /></mxCell>
         <mxCell id="er-users-r2" value="github.installation_id: int" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;" vertex="1" parent="er-users"><mxGeometry y="52" width="280" height="22" as="geometry" /></mxCell>
         <mxCell id="er-users-r3" value="github.github_login" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;" vertex="1" parent="er-users"><mxGeometry y="74" width="280" height="22" as="geometry" /></mxCell>
         <mxCell id="er-users-r4" value="github.linked_at（生トークン非保存）" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;" vertex="1" parent="er-users"><mxGeometry y="96" width="280" height="22" as="geometry" /></mxCell>
         <mxCell id="er-members" value="product_members/{product_id}__{sub}" style="swimlane;fontStyle=1;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;collapsible=0;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#D5E8D4;strokeColor=#82B366;fontSize=12;" vertex="1" parent="e1">
           <mxGeometry x="60" y="720" width="280" height="162" as="geometry" />
         </mxCell>
-        <mxCell id="er-members-r1" value="docID = {product_id}__{sub}（複合キー）" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;fontStyle=5;" vertex="1" parent="er-members"><mxGeometry y="30" width="280" height="22" as="geometry" /></mxCell>
+        <mxCell id="er-members-r1" value="🔑 docID = {product_id}__{sub}（複合キー）" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;fontStyle=5;" vertex="1" parent="er-members"><mxGeometry y="30" width="280" height="22" as="geometry" /></mxCell>
         <mxCell id="er-members-r2" value="product_id → products.id" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;fontStyle=2;" vertex="1" parent="er-members"><mxGeometry y="52" width="280" height="22" as="geometry" /></mxCell>
         <mxCell id="er-members-r3" value="sub → users.sub" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;fontStyle=2;" vertex="1" parent="er-members"><mxGeometry y="74" width="280" height="22" as="geometry" /></mxCell>
         <mxCell id="er-members-r4" value="email ／ display_name" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;" vertex="1" parent="er-members"><mxGeometry y="96" width="280" height="22" as="geometry" /></mxCell>
@@ -424,13 +400,13 @@
         <mxCell id="er-auth" value="auth_sessions/{id}（api 層）" style="swimlane;fontStyle=1;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;collapsible=0;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#F5F5F5;strokeColor=#666666;fontSize=12;" vertex="1" parent="e1">
           <mxGeometry x="60" y="940" width="280" height="96" as="geometry" />
         </mxCell>
-        <mxCell id="er-auth-r1" value="id（ログインセッション）" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;fontStyle=5;" vertex="1" parent="er-auth"><mxGeometry y="30" width="280" height="22" as="geometry" /></mxCell>
+        <mxCell id="er-auth-r1" value="🔑 id（ログインセッション）" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;fontStyle=5;" vertex="1" parent="er-auth"><mxGeometry y="30" width="280" height="22" as="geometry" /></mxCell>
         <mxCell id="er-auth-r2" value="sub（ユーザー）" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;" vertex="1" parent="er-auth"><mxGeometry y="52" width="280" height="22" as="geometry" /></mxCell>
         <mxCell id="er-auth-r3" value="expires_at ⏳TTL" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;" vertex="1" parent="er-auth"><mxGeometry y="74" width="280" height="22" as="geometry" /></mxCell>
         <mxCell id="er-pinvites" value="products/{id}/invites/{inviteId}" style="swimlane;fontStyle=1;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;collapsible=0;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#D5E8D4;strokeColor=#82B366;fontSize=12;" vertex="1" parent="e1">
           <mxGeometry x="420" y="80" width="280" height="206" as="geometry" />
         </mxCell>
-        <mxCell id="er-pinvites-r1" value="id: str（inv-…）" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;fontStyle=5;" vertex="1" parent="er-pinvites"><mxGeometry y="30" width="280" height="22" as="geometry" /></mxCell>
+        <mxCell id="er-pinvites-r1" value="🔑 id: str（inv-…）" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;fontStyle=5;" vertex="1" parent="er-pinvites"><mxGeometry y="30" width="280" height="22" as="geometry" /></mxCell>
         <mxCell id="er-pinvites-r2" value="product_id → products.id" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;fontStyle=2;" vertex="1" parent="er-pinvites"><mxGeometry y="52" width="280" height="22" as="geometry" /></mxCell>
         <mxCell id="er-pinvites-r3" value="scope: developer | end_user" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;" vertex="1" parent="er-pinvites"><mxGeometry y="74" width="280" height="22" as="geometry" /></mxCell>
         <mxCell id="er-pinvites-r4" value="expires_at ／ max_uses" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;" vertex="1" parent="er-pinvites"><mxGeometry y="96" width="280" height="22" as="geometry" /></mxCell>
@@ -441,7 +417,7 @@
         <mxCell id="er-minvites" value="member_invites/{id}" style="swimlane;fontStyle=1;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;collapsible=0;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#D5E8D4;strokeColor=#82B366;fontSize=12;" vertex="1" parent="e1">
           <mxGeometry x="420" y="360" width="280" height="206" as="geometry" />
         </mxCell>
-        <mxCell id="er-minvites-r1" value="id: str（minv-…）" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;fontStyle=5;" vertex="1" parent="er-minvites"><mxGeometry y="30" width="280" height="22" as="geometry" /></mxCell>
+        <mxCell id="er-minvites-r1" value="🔑 id: str（minv-…）" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;fontStyle=5;" vertex="1" parent="er-minvites"><mxGeometry y="30" width="280" height="22" as="geometry" /></mxCell>
         <mxCell id="er-minvites-r2" value="product_id → products.id" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;fontStyle=2;" vertex="1" parent="er-minvites"><mxGeometry y="52" width="280" height="22" as="geometry" /></mxCell>
         <mxCell id="er-minvites-r3" value="email（宛先束縛・小文字正規化）" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;" vertex="1" parent="er-minvites"><mxGeometry y="74" width="280" height="22" as="geometry" /></mxCell>
         <mxCell id="er-minvites-r4" value="invited_by_sub ／ invited_by_email" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;" vertex="1" parent="er-minvites"><mxGeometry y="96" width="280" height="22" as="geometry" /></mxCell>
@@ -452,7 +428,7 @@
         <mxCell id="er-sessions" value="sessions/{id}（SessionMeta）" style="swimlane;fontStyle=1;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;collapsible=0;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#DAE8FC;strokeColor=#6C8EBF;fontSize=12;" vertex="1" parent="e1">
           <mxGeometry x="760" y="80" width="300" height="338" as="geometry" />
         </mxCell>
-        <mxCell id="er-sessions-r1" value="id: str" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;fontStyle=5;" vertex="1" parent="er-sessions"><mxGeometry y="30" width="300" height="22" as="geometry" /></mxCell>
+        <mxCell id="er-sessions-r1" value="🔑 id: str" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;fontStyle=5;" vertex="1" parent="er-sessions"><mxGeometry y="30" width="300" height="22" as="geometry" /></mxCell>
         <mxCell id="er-sessions-r2" value="title" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;" vertex="1" parent="er-sessions"><mxGeometry y="52" width="300" height="22" as="geometry" /></mxCell>
         <mxCell id="er-sessions-r3" value="owner_sub ／ owner_email" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;" vertex="1" parent="er-sessions"><mxGeometry y="74" width="300" height="22" as="geometry" /></mxCell>
         <mxCell id="er-sessions-r4" value="status: &quot;active&quot; | &quot;finalized&quot;（str）" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;" vertex="1" parent="er-sessions"><mxGeometry y="96" width="300" height="22" as="geometry" /></mxCell>
@@ -469,7 +445,7 @@
         <mxCell id="er-utter" value="sessions/{id}/utterances/{auto}" style="swimlane;fontStyle=1;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;collapsible=0;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#DAE8FC;strokeColor=#6C8EBF;fontSize=12;" vertex="1" parent="e1">
           <mxGeometry x="1120" y="80" width="280" height="140" as="geometry" />
         </mxCell>
-        <mxCell id="er-utter-r1" value="docID（自動採番）" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;fontStyle=5;" vertex="1" parent="er-utter"><mxGeometry y="30" width="280" height="22" as="geometry" /></mxCell>
+        <mxCell id="er-utter-r1" value="🔑 docID（自動採番）" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;fontStyle=5;" vertex="1" parent="er-utter"><mxGeometry y="30" width="280" height="22" as="geometry" /></mxCell>
         <mxCell id="er-utter-r2" value="speaker（participant identity）" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;" vertex="1" parent="er-utter"><mxGeometry y="52" width="280" height="22" as="geometry" /></mxCell>
         <mxCell id="er-utter-r3" value="text（PII マスク済）" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;" vertex="1" parent="er-utter"><mxGeometry y="74" width="280" height="22" as="geometry" /></mxCell>
         <mxCell id="er-utter-r4" value="ts: datetime ／ expireAt ⏳TTL" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;" vertex="1" parent="er-utter"><mxGeometry y="96" width="280" height="22" as="geometry" /></mxCell>
@@ -477,7 +453,7 @@
         <mxCell id="er-req" value="sessions/{id}/requirements/{rid}" style="swimlane;fontStyle=1;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;collapsible=0;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#DAE8FC;strokeColor=#6C8EBF;fontSize=12;" vertex="1" parent="e1">
           <mxGeometry x="1120" y="260" width="280" height="250" as="geometry" />
         </mxCell>
-        <mxCell id="er-req-r1" value="id: str" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;fontStyle=5;" vertex="1" parent="er-req"><mxGeometry y="30" width="280" height="22" as="geometry" /></mxCell>
+        <mxCell id="er-req-r1" value="🔑 id: str" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;fontStyle=5;" vertex="1" parent="er-req"><mxGeometry y="30" width="280" height="22" as="geometry" /></mxCell>
         <mxCell id="er-req-r2" value="category: 機能|非機能|制約|スコープ|OQ" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;" vertex="1" parent="er-req"><mxGeometry y="52" width="280" height="22" as="geometry" /></mxCell>
         <mxCell id="er-req-r3" value="statement（PII マスク）" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;" vertex="1" parent="er-req"><mxGeometry y="74" width="280" height="22" as="geometry" /></mxCell>
         <mxCell id="er-req-r4" value="priority: must|should|could|wont" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;" vertex="1" parent="er-req"><mxGeometry y="96" width="280" height="22" as="geometry" /></mxCell>
@@ -490,7 +466,7 @@
         <mxCell id="er-inq" value="sessions/{id}/inquiry_nodes/{nodeId}" style="swimlane;fontStyle=1;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;collapsible=0;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#DAE8FC;strokeColor=#6C8EBF;fontSize=12;" vertex="1" parent="e1">
           <mxGeometry x="1120" y="570" width="280" height="228" as="geometry" />
         </mxCell>
-        <mxCell id="er-inq-r1" value="id（inq-hash 決定的採番）" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;fontStyle=5;" vertex="1" parent="er-inq"><mxGeometry y="30" width="280" height="22" as="geometry" /></mxCell>
+        <mxCell id="er-inq-r1" value="🔑 id（inq-hash 決定的採番）" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;fontStyle=5;" vertex="1" parent="er-inq"><mxGeometry y="30" width="280" height="22" as="geometry" /></mxCell>
         <mxCell id="er-inq-r2" value="parent_id →（自己参照ツリー）" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;fontStyle=2;" vertex="1" parent="er-inq"><mxGeometry y="52" width="280" height="22" as="geometry" /></mxCell>
         <mxCell id="er-inq-r3" value="kind: check|gap|contradiction|ambiguous" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;" vertex="1" parent="er-inq"><mxGeometry y="74" width="280" height="22" as="geometry" /></mxCell>
         <mxCell id="er-inq-r4" value="text（PII マスク）" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;" vertex="1" parent="er-inq"><mxGeometry y="96" width="280" height="22" as="geometry" /></mxCell>
@@ -502,7 +478,7 @@
         <mxCell id="er-mat" value="sessions/{id}/materials/{asset_id}" style="swimlane;fontStyle=1;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;collapsible=0;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#FFE6CC;strokeColor=#D79B00;fontSize=12;" vertex="1" parent="e1">
           <mxGeometry x="1120" y="880" width="280" height="206" as="geometry" />
         </mxCell>
-        <mxCell id="er-mat-r1" value="id = asset_id（sha256[:16] content hash）" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;fontStyle=5;" vertex="1" parent="er-mat"><mxGeometry y="30" width="280" height="22" as="geometry" /></mxCell>
+        <mxCell id="er-mat-r1" value="🔑 id = asset_id（sha256[:16] content hash）" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;fontStyle=5;" vertex="1" parent="er-mat"><mxGeometry y="30" width="280" height="22" as="geometry" /></mxCell>
         <mxCell id="er-mat-r2" value="name" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;" vertex="1" parent="er-mat"><mxGeometry y="52" width="280" height="22" as="geometry" /></mxCell>
         <mxCell id="er-mat-r3" value="kind: doc|image|video" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;" vertex="1" parent="er-mat"><mxGeometry y="74" width="280" height="22" as="geometry" /></mxCell>
         <mxCell id="er-mat-r4" value="status: uploading→analyzing→done|failed" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;" vertex="1" parent="er-mat"><mxGeometry y="96" width="280" height="22" as="geometry" /></mxCell>
@@ -513,7 +489,7 @@
         <mxCell id="er-q" value="sessions/{id}/questions/current" style="swimlane;fontStyle=1;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;collapsible=0;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#FFE6CC;strokeColor=#D79B00;fontSize=12;" vertex="1" parent="e1">
           <mxGeometry x="760" y="470" width="300" height="162" as="geometry" />
         </mxCell>
-        <mxCell id="er-q-r1" value="docID 固定 = current（ADR-0020）" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;fontStyle=5;" vertex="1" parent="er-q"><mxGeometry y="30" width="300" height="22" as="geometry" /></mxCell>
+        <mxCell id="er-q-r1" value="🔑 docID 固定 = current（ADR-0020）" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;fontStyle=5;" vertex="1" parent="er-q"><mxGeometry y="30" width="300" height="22" as="geometry" /></mxCell>
         <mxCell id="er-q-r2" value="id ／ prompt（PII マスク）" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;" vertex="1" parent="er-q"><mxGeometry y="52" width="300" height="22" as="geometry" /></mxCell>
         <mxCell id="er-q-r3" value="options: list" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;" vertex="1" parent="er-q"><mxGeometry y="74" width="300" height="22" as="geometry" /></mxCell>
         <mxCell id="er-q-r4" value="asked_seq（CAS で単調増加）" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;" vertex="1" parent="er-q"><mxGeometry y="96" width="300" height="22" as="geometry" /></mxCell>
@@ -522,7 +498,7 @@
         <mxCell id="er-tr" value="sessions/{id}/transcripts/full" style="swimlane;fontStyle=1;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;collapsible=0;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#FFE6CC;strokeColor=#D79B00;fontSize=12;" vertex="1" parent="e1">
           <mxGeometry x="760" y="690" width="300" height="118" as="geometry" />
         </mxCell>
-        <mxCell id="er-tr-r1" value="docID 固定 = full（ADR-0061）" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;fontStyle=5;" vertex="1" parent="er-tr"><mxGeometry y="30" width="300" height="22" as="geometry" /></mxCell>
+        <mxCell id="er-tr-r1" value="🔑 docID 固定 = full（ADR-0061）" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;fontStyle=5;" vertex="1" parent="er-tr"><mxGeometry y="30" width="300" height="22" as="geometry" /></mxCell>
         <mxCell id="er-tr-r2" value="text（全文トランスクリプト・PII マスク）" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;" vertex="1" parent="er-tr"><mxGeometry y="52" width="300" height="22" as="geometry" /></mxCell>
         <mxCell id="er-tr-r3" value="line_count ／ created_at" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;" vertex="1" parent="er-tr"><mxGeometry y="74" width="300" height="22" as="geometry" /></mxCell>
         <mxCell id="er-tr-r4" value="expireAt ⏳TTL" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;" vertex="1" parent="er-tr"><mxGeometry y="96" width="300" height="22" as="geometry" /></mxCell>
@@ -568,7 +544,7 @@
         </mxCell>
         <mxCell id="er-rel7" value="product_id" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;fontSize=11;labelBackgroundColor=#FFFFFF;startArrow=ERzeroToOne;startFill=0;endArrow=ERzeroToMany;endFill=0;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0;entryY=0.2;entryDx=0;entryDy=0;" edge="1" parent="e1" source="er-products" target="er-sessions">
           <mxGeometry relative="1" as="geometry">
-            <Array as="points"><mxPoint x="200" y="40" /><mxPoint x="740" y="40" /><mxPoint x="740" y="148" /></Array>
+            <Array as="points"><mxPoint x="200" y="64" /><mxPoint x="740" y="64" /><mxPoint x="740" y="148" /></Array>
           </mxGeometry>
         </mxCell>
         <mxCell id="er-rel8" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;fontSize=11;labelBackgroundColor=#FFFFFF;startArrow=ERone;startFill=0;endArrow=ERzeroToMany;endFill=0;exitX=1;exitY=0.18;exitDx=0;exitDy=0;entryX=0;entryY=0.44;entryDx=0;entryDy=0;" edge="1" parent="e1" source="er-sessions" target="er-utter">
@@ -613,12 +589,12 @@
           </mxGeometry>
         </mxCell>
         <mxCell id="er-rel17" value="session_id（論理FK）" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#D6B656;fontColor=#996600;fontSize=11;labelBackgroundColor=#FFFFFF;dashed=1;endArrow=open;exitX=0;exitY=0.77;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="e1" source="er-sessions" target="er-esg">
-          <mxGeometry relative="1" as="geometry">
+          <mxGeometry x="0.35" relative="1" as="geometry">
             <Array as="points"><mxPoint x="410" y="340" /><mxPoint x="410" y="885" /></Array>
           </mxGeometry>
         </mxCell>
         <mxCell id="er-rel18" value="分析イベント" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#D6B656;fontColor=#996600;fontSize=11;labelBackgroundColor=#FFFFFF;dashed=1;endArrow=open;exitX=0;exitY=0.8;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="e1" source="er-sessions" target="er-esa">
-          <mxGeometry relative="1" as="geometry">
+          <mxGeometry x="0.8" relative="1" as="geometry">
             <Array as="points"><mxPoint x="400" y="352" /><mxPoint x="400" y="1070" /></Array>
           </mxGeometry>
         </mxCell>
@@ -633,10 +609,10 @@
         <mxCell id="g-title" value="SANBA — クラウド構成図（Google Cloud sanba-prd / us-central1 + 外部 SaaS + CI/CD）" style="text;html=1;fontSize=18;fontStyle=1;align=left;verticalAlign=middle;" vertex="1" parent="g1">
           <mxGeometry x="40" y="0" width="1000" height="26" as="geometry" />
         </mxCell>
-        <mxCell id="g-gcp" value="Google Cloud（sanba-prd / us-central1）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#4285F4;dashed=1;verticalAlign=top;align=left;spacingLeft=8;spacingTop=4;fontStyle=1;fontSize=13;fontColor=#4285F4;" vertex="1" parent="g1">
+        <mxCell id="g-gcp" value="Google Cloud（sanba-prd / us-central1）" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#4285F4;dashed=1;verticalAlign=top;align=left;spacingLeft=8;spacingTop=4;fontStyle=1;fontSize=13;fontColor=#4285F4;" vertex="1" parent="g1">
           <mxGeometry x="300" y="40" width="1000" height="830" as="geometry" />
         </mxCell>
-        <mxCell id="g-users" value="&lt;b&gt;参加者 / 管理者&lt;/b&gt;&lt;br&gt;ブラウザ + マイク&lt;br&gt;（PM / エンジニア / 顧客）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#08427B;fontColor=#ffffff;strokeColor=#073B6F;fontSize=12;arcSize=15;" vertex="1" parent="g1">
+        <mxCell id="g-users" value="&lt;b&gt;参加者 / 管理者&lt;/b&gt;&lt;br&gt;ブラウザ + マイク&lt;br&gt;（PM / エンジニア / 顧客）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#08427B;fontColor=#ffffff;strokeColor=#073B6F;fontSize=12;arcSize=15;align=left;spacingLeft=44;" vertex="1" parent="g1">
           <mxGeometry x="60" y="60" width="200" height="90" as="geometry" />
         </mxCell>
         <mxCell id="g-gis" value="&lt;b&gt;Google Identity Services&lt;/b&gt;&lt;br&gt;OIDC ログイン（id_token）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F5F5F5;strokeColor=#666666;fontSize=12;" vertex="1" parent="g1">
@@ -645,13 +621,13 @@
         <mxCell id="g-edge" value="エッジ / 配信（domain 設定時）" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#999999;dashed=1;verticalAlign=top;align=left;spacingLeft=6;spacingTop=2;fontStyle=2;fontSize=11;" vertex="1" parent="g1">
           <mxGeometry x="330" y="80" width="380" height="300" as="geometry" />
         </mxCell>
-        <mxCell id="g-dns" value="&lt;b&gt;Cloud DNS&lt;/b&gt;&lt;br&gt;A レコード / DNSSEC" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DAE8FC;strokeColor=#6C8EBF;fontSize=11;" vertex="1" parent="g1">
+        <mxCell id="g-dns" value="&lt;b&gt;Cloud DNS&lt;/b&gt;&lt;br&gt;A レコード / DNSSEC" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#4285F4;fontSize=11;align=left;spacingLeft=44;" vertex="1" parent="g1">
           <mxGeometry x="350" y="120" width="150" height="60" as="geometry" />
         </mxCell>
-        <mxCell id="g-alb" value="&lt;b&gt;Global External ALB&lt;/b&gt;&lt;br&gt;Anycast IP + Managed SSL + URL map（host ルーティング）&lt;br&gt;HTTP→HTTPS 301" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DAE8FC;strokeColor=#6C8EBF;fontSize=11;" vertex="1" parent="g1">
+        <mxCell id="g-alb" value="&lt;b&gt;Global External ALB&lt;/b&gt;&lt;br&gt;Anycast IP + Managed SSL + URL map（host ルーティング）&lt;br&gt;HTTP→HTTPS 301" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#4285F4;fontSize=11;align=left;spacingLeft=44;" vertex="1" parent="g1">
           <mxGeometry x="350" y="210" width="320" height="70" as="geometry" />
         </mxCell>
-        <mxCell id="g-armor" value="&lt;b&gt;Cloud Armor&lt;/b&gt; sanba-edge-armor（IP毎 600req/60s → 429）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DAE8FC;strokeColor=#6C8EBF;fontSize=11;" vertex="1" parent="g1">
+        <mxCell id="g-armor" value="&lt;b&gt;Cloud Armor&lt;/b&gt; sanba-edge-armor（IP毎 600req/60s → 429）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#4285F4;fontSize=11;align=left;spacingLeft=44;" vertex="1" parent="g1">
           <mxGeometry x="350" y="300" width="320" height="50" as="geometry" />
         </mxCell>
         <mxCell id="g-run" value="Cloud Run" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#999999;dashed=1;verticalAlign=top;align=left;spacingLeft=6;spacingTop=2;fontStyle=2;fontSize=11;" vertex="1" parent="g1">
@@ -672,34 +648,34 @@
         <mxCell id="g-data" value="データ / AI（マネージド）" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#999999;dashed=1;verticalAlign=top;align=left;spacingLeft=6;spacingTop=2;fontStyle=2;fontSize=11;" vertex="1" parent="g1">
           <mxGeometry x="330" y="520" width="950" height="180" as="geometry" />
         </mxCell>
-        <mxCell id="g-fs" value="&lt;b&gt;Firestore (Native)&lt;/b&gt;&lt;br&gt;sessions ほか&lt;br&gt;TTL: expireAt" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DAE8FC;strokeColor=#6C8EBF;fontSize=11;" vertex="1" parent="g1">
+        <mxCell id="g-fs" value="&lt;b&gt;Firestore (Native)&lt;/b&gt;&lt;br&gt;sessions ほか&lt;br&gt;TTL: expireAt" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#4285F4;fontSize=11;verticalAlign=top;spacingTop=42;" vertex="1" parent="g1">
           <mxGeometry x="350" y="560" width="170" height="110" as="geometry" />
         </mxCell>
-        <mxCell id="g-gcs" value="&lt;b&gt;Cloud Storage&lt;/b&gt;&lt;br&gt;{project}-sanba-materials&lt;br&gt;lifecycle 30日・公開禁止" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DAE8FC;strokeColor=#6C8EBF;fontSize=11;" vertex="1" parent="g1">
+        <mxCell id="g-gcs" value="&lt;b&gt;Cloud Storage&lt;/b&gt;&lt;br&gt;{project}-sanba-materials&lt;br&gt;lifecycle 30日・公開禁止" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#4285F4;fontSize=11;verticalAlign=top;spacingTop=42;" vertex="1" parent="g1">
           <mxGeometry x="540" y="560" width="170" height="110" as="geometry" />
         </mxCell>
-        <mxCell id="g-ct" value="&lt;b&gt;Cloud Tasks&lt;/b&gt;&lt;br&gt;sanba-video-analysis&lt;br&gt;5/s・並列10・retry 5" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DAE8FC;strokeColor=#6C8EBF;fontSize=11;" vertex="1" parent="g1">
+        <mxCell id="g-ct" value="&lt;b&gt;Cloud Tasks&lt;/b&gt;&lt;br&gt;sanba-video-analysis&lt;br&gt;5/s・並列10・retry 5" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#4285F4;fontSize=11;verticalAlign=top;spacingTop=42;" vertex="1" parent="g1">
           <mxGeometry x="730" y="560" width="170" height="110" as="geometry" />
         </mxCell>
-        <mxCell id="g-sm" value="&lt;b&gt;Secret Manager&lt;/b&gt;&lt;br&gt;livekit-* / es-api-key /&lt;br&gt;session-signing 等&lt;br&gt;（値の唯一の置き場）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DAE8FC;strokeColor=#6C8EBF;fontSize=11;" vertex="1" parent="g1">
+        <mxCell id="g-sm" value="&lt;b&gt;Secret Manager&lt;/b&gt;&lt;br&gt;livekit-* / es-api-key /&lt;br&gt;session-signing 等&lt;br&gt;（値の唯一の置き場）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#4285F4;fontSize=11;verticalAlign=top;spacingTop=42;" vertex="1" parent="g1">
           <mxGeometry x="920" y="560" width="170" height="110" as="geometry" />
         </mxCell>
-        <mxCell id="g-vtx" value="&lt;b&gt;Vertex AI / Speech&lt;/b&gt;&lt;br&gt;Gemini Live・2.5-flash&lt;br&gt;Vision / Embedding&lt;br&gt;Chirp STT（キーレス）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DAE8FC;strokeColor=#6C8EBF;fontSize=11;" vertex="1" parent="g1">
+        <mxCell id="g-vtx" value="&lt;b&gt;Vertex AI / Speech&lt;/b&gt;&lt;br&gt;Gemini Live・2.5-flash&lt;br&gt;Vision / Embedding&lt;br&gt;Chirp STT（キーレス）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#4285F4;fontSize=11;verticalAlign=top;spacingTop=42;" vertex="1" parent="g1">
           <mxGeometry x="1110" y="560" width="150" height="110" as="geometry" />
         </mxCell>
         <mxCell id="g-obs" value="可観測性 / LLMOps" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#999999;dashed=1;verticalAlign=top;align=left;spacingLeft=6;spacingTop=2;fontStyle=2;fontSize=11;" vertex="1" parent="g1">
           <mxGeometry x="330" y="730" width="950" height="130" as="geometry" />
         </mxCell>
-        <mxCell id="g-trace" value="&lt;b&gt;Cloud Trace&lt;/b&gt;&lt;br&gt;OTel span 直送" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DAE8FC;strokeColor=#6C8EBF;fontSize=11;" vertex="1" parent="g1">
+        <mxCell id="g-trace" value="&lt;b&gt;Cloud Trace&lt;/b&gt;&lt;br&gt;OTel span 直送" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#4285F4;fontSize=11;align=left;spacingLeft=44;" vertex="1" parent="g1">
           <mxGeometry x="350" y="765" width="210" height="70" as="geometry" />
         </mxCell>
-        <mxCell id="g-log" value="&lt;b&gt;Cloud Logging&lt;/b&gt;&lt;br&gt;structlog stdout + LB ログ" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DAE8FC;strokeColor=#6C8EBF;fontSize=11;" vertex="1" parent="g1">
+        <mxCell id="g-log" value="&lt;b&gt;Cloud Logging&lt;/b&gt;&lt;br&gt;structlog stdout + LB ログ" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#4285F4;fontSize=11;align=left;spacingLeft=44;" vertex="1" parent="g1">
           <mxGeometry x="580" y="765" width="210" height="70" as="geometry" />
         </mxCell>
-        <mxCell id="g-mon" value="&lt;b&gt;Cloud Monitoring&lt;/b&gt;&lt;br&gt;品質/コスト メトリクス&lt;br&gt;アラート・ダッシュボード" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DAE8FC;strokeColor=#6C8EBF;fontSize=11;" vertex="1" parent="g1">
+        <mxCell id="g-mon" value="&lt;b&gt;Cloud Monitoring&lt;/b&gt;&lt;br&gt;品質/コスト メトリクス&lt;br&gt;アラート・ダッシュボード" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#4285F4;fontSize=11;align=left;spacingLeft=44;" vertex="1" parent="g1">
           <mxGeometry x="810" y="765" width="210" height="70" as="geometry" />
         </mxCell>
-        <mxCell id="g-bq" value="&lt;b&gt;BigQuery&lt;/b&gt;&lt;br&gt;Billing export（任意・ADR-0061）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DAE8FC;strokeColor=#6C8EBF;fontSize=11;" vertex="1" parent="g1">
+        <mxCell id="g-bq" value="&lt;b&gt;BigQuery&lt;/b&gt;&lt;br&gt;Billing export（任意・ADR-0061）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#4285F4;fontSize=11;align=left;spacingLeft=44;" vertex="1" parent="g1">
           <mxGeometry x="1040" y="765" width="210" height="70" as="geometry" />
         </mxCell>
         <mxCell id="g-lk" value="&lt;b&gt;LiveKit Cloud&lt;/b&gt;&lt;br&gt;WebRTC SFU（外部 SaaS）&lt;br&gt;音声/映像/data channel" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F5F5F5;strokeColor=#666666;fontSize=12;" vertex="1" parent="g1">
@@ -723,10 +699,10 @@
         <mxCell id="g-act" value="&lt;b&gt;GitHub Actions&lt;/b&gt;&lt;br&gt;deploy.yml（paths-filter → buildx → AR push → run deploy）&lt;br&gt;terraform.yml（plan / apply）&lt;br&gt;ci / security / codeql / llm-eval&lt;br&gt;SLSA provenance + SBOM" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F5F5F5;strokeColor=#666666;fontSize=11;align=left;spacing=6;" vertex="1" parent="g1">
           <mxGeometry x="280" y="950" width="280" height="140" as="geometry" />
         </mxCell>
-        <mxCell id="g-wif" value="&lt;b&gt;Workload Identity Federation&lt;/b&gt;&lt;br&gt;STS・鍵レス認証" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DAE8FC;strokeColor=#6C8EBF;fontSize=11;" vertex="1" parent="g1">
+        <mxCell id="g-wif" value="&lt;b&gt;Workload Identity Federation&lt;/b&gt;&lt;br&gt;STS・鍵レス認証" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#4285F4;fontSize=11;align=left;spacingLeft=44;" vertex="1" parent="g1">
           <mxGeometry x="600" y="950" width="190" height="90" as="geometry" />
         </mxCell>
-        <mxCell id="g-ar" value="&lt;b&gt;Artifact Registry&lt;/b&gt;&lt;br&gt;sanba repo（web/api/agent/worker）&lt;br&gt;直近5世代保持" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DAE8FC;strokeColor=#6C8EBF;fontSize=11;" vertex="1" parent="g1">
+        <mxCell id="g-ar" value="&lt;b&gt;Artifact Registry&lt;/b&gt;&lt;br&gt;sanba repo（web/api/agent/worker）&lt;br&gt;直近5世代保持" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#4285F4;fontSize=11;align=left;spacingLeft=44;" vertex="1" parent="g1">
           <mxGeometry x="830" y="950" width="200" height="90" as="geometry" />
         </mxCell>
         <mxCell id="g-e1" value="HTTPS&lt;br&gt;youken.sanba.net" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;fontSize=11;labelBackgroundColor=#FFFFFF;exitX=1;exitY=0.33;exitDx=0;exitDy=0;entryX=0;entryY=0.36;entryDx=0;entryDy=0;" edge="1" parent="g1" source="g-users" target="g-alb">
@@ -751,7 +727,7 @@
           </mxGeometry>
         </mxCell>
         <mxCell id="g-e6" value="host: api.youken → api NEG" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;fontSize=11;labelBackgroundColor=#FFFFFF;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.478;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="g1" source="g-alb" target="g-api">
-          <mxGeometry relative="1" as="geometry">
+          <mxGeometry x="0.45" relative="1" as="geometry">
             <Array as="points"><mxPoint x="510" y="95" /><mxPoint x="1140" y="95" /></Array>
           </mxGeometry>
         </mxCell>
@@ -815,7 +791,7 @@
           </mxGeometry>
         </mxCell>
         <mxCell id="g-e20" value="動画取得（read）" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;fontSize=11;labelBackgroundColor=#FFFFFF;exitX=0.17;exitY=1;exitDx=0;exitDy=0;entryX=0.62;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="g1" source="g-worker" target="g-gcs">
-          <mxGeometry relative="1" as="geometry">
+          <mxGeometry x="0.5" y="12" relative="1" as="geometry">
             <Array as="points"><mxPoint x="1069" y="522" /><mxPoint x="645" y="522" /></Array>
           </mxGeometry>
         </mxCell>
@@ -823,17 +799,17 @@
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
         <mxCell id="g-e22" value="material 更新" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;fontSize=11;labelBackgroundColor=#FFFFFF;exitX=0.087;exitY=1;exitDx=0;exitDy=0;entryX=0.68;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="g1" source="g-worker" target="g-fs">
-          <mxGeometry relative="1" as="geometry">
+          <mxGeometry x="0.5" relative="1" as="geometry">
             <Array as="points"><mxPoint x="1050" y="536" /><mxPoint x="466" y="536" /></Array>
           </mxGeometry>
         </mxCell>
         <mxCell id="g-e23" value="Secret を env 注入&lt;br&gt;（value_source）" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;fontSize=11;labelBackgroundColor=#FFFFFF;dashed=1;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=1;entryY=0.92;entryDx=0;entryDy=0;" edge="1" parent="g1" source="g-sm" target="g-run">
-          <mxGeometry relative="1" as="geometry">
+          <mxGeometry x="0.7" relative="1" as="geometry">
             <Array as="points"><mxPoint x="1005" y="545" /><mxPoint x="1275" y="545" /><mxPoint x="1275" y="430" /></Array>
           </mxGeometry>
         </mxCell>
         <mxCell id="g-e24" value="OTel span / structlog stdout / log-based metrics" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;fontSize=11;labelBackgroundColor=#FFFFFF;exitX=0;exitY=0.95;exitDx=0;exitDy=0;entryX=0.41;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="g1" source="g-run" target="g-obs">
-          <mxGeometry relative="1" as="geometry">
+          <mxGeometry x="0.85" relative="1" as="geometry">
             <Array as="points"><mxPoint x="720" y="441" /></Array>
           </mxGeometry>
         </mxCell>
@@ -856,6 +832,51 @@
         </mxCell>
         <mxCell id="g-e30" value="terraform plan / apply" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;fontSize=11;labelBackgroundColor=#FFFFFF;dashed=1;exitX=0.46;exitY=0;exitDx=0;exitDy=0;entryX=0.11;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="g1" source="g-act" target="g-gcp">
           <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="g-i-fs" style="shape=mxgraph.gcp2.cloud_firestore;html=1;fillColor=#4285F4;strokeColor=none;aspect=fixed;" vertex="1" parent="g-fs">
+          <mxGeometry x="69" y="8" width="32" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="g-i-gcs" style="shape=mxgraph.gcp2.cloud_storage;html=1;fillColor=#4285F4;strokeColor=none;aspect=fixed;" vertex="1" parent="g-gcs">
+          <mxGeometry x="69" y="8" width="32" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="g-i-ct" style="shape=mxgraph.gcp2.task_queues_2;html=1;fillColor=#4285F4;strokeColor=none;aspect=fixed;" vertex="1" parent="g-ct">
+          <mxGeometry x="69" y="8" width="32" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="g-i-sm" style="shape=mxgraph.gcp2.key_management_service;html=1;fillColor=#4285F4;strokeColor=none;aspect=fixed;" vertex="1" parent="g-sm">
+          <mxGeometry x="69" y="8" width="32" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="g-i-vtx" style="shape=mxgraph.gcp2.cloud_machine_learning;html=1;fillColor=#4285F4;strokeColor=none;aspect=fixed;" vertex="1" parent="g-vtx">
+          <mxGeometry x="59" y="8" width="32" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="g-i-dns" style="shape=mxgraph.gcp2.cloud_dns;html=1;fillColor=#4285F4;strokeColor=none;aspect=fixed;" vertex="1" parent="g-dns">
+          <mxGeometry x="8" y="16" width="28" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="g-i-alb" style="shape=mxgraph.gcp2.cloud_load_balancing;html=1;fillColor=#4285F4;strokeColor=none;aspect=fixed;" vertex="1" parent="g-alb">
+          <mxGeometry x="8" y="21" width="28" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="g-i-armor" style="shape=mxgraph.gcp2.cloud_armor;html=1;fillColor=#4285F4;strokeColor=none;aspect=fixed;" vertex="1" parent="g-armor">
+          <mxGeometry x="8" y="13" width="24" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="g-i-trace" style="shape=mxgraph.gcp2.trace;html=1;fillColor=#4285F4;strokeColor=none;aspect=fixed;" vertex="1" parent="g-trace">
+          <mxGeometry x="8" y="21" width="28" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="g-i-log" style="shape=mxgraph.gcp2.logging;html=1;fillColor=#4285F4;strokeColor=none;aspect=fixed;" vertex="1" parent="g-log">
+          <mxGeometry x="8" y="21" width="28" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="g-i-mon" style="shape=mxgraph.gcp2.cloud_monitoring;html=1;fillColor=#4285F4;strokeColor=none;aspect=fixed;" vertex="1" parent="g-mon">
+          <mxGeometry x="8" y="21" width="28" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="g-i-bq" style="shape=mxgraph.gcp2.bigquery;html=1;fillColor=#4285F4;strokeColor=none;aspect=fixed;" vertex="1" parent="g-bq">
+          <mxGeometry x="8" y="21" width="28" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="g-i-wif" style="shape=mxgraph.gcp2.cloud_iam;html=1;fillColor=#4285F4;strokeColor=none;aspect=fixed;" vertex="1" parent="g-wif">
+          <mxGeometry x="8" y="31" width="28" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="g-i-ar" style="shape=mxgraph.gcp2.container_registry;html=1;fillColor=#4285F4;strokeColor=none;aspect=fixed;" vertex="1" parent="g-ar">
+          <mxGeometry x="8" y="31" width="28" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="g-i-users" style="shape=mxgraph.gcp2.users;html=1;fillColor=#FFFFFF;strokeColor=none;aspect=fixed;" vertex="1" parent="g-users">
+          <mxGeometry x="8" y="31" width="28" height="28" as="geometry" />
         </mxCell>
       </root>
     </mxGraphModel>
