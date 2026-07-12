@@ -63,15 +63,15 @@ export function SessionView({
     });
   const auth = useAuth();
   const [sourceError, setSourceError] = useState<string | null>(null);
+  const mic = useTrackToggle({ source: Track.Source.Microphone });
   const {
     mode: micMode,
     setMode: setMicMode,
     pttPressed,
     pressProps: pttPressProps,
-  } = usePushToTalk({ sendInterrupt, onError: setSourceError });
+  } = usePushToTalk({ sendInterrupt, onError: setSourceError, micEnabled: mic.enabled });
 
   const router = useRouter();
-  const mic = useTrackToggle({ source: Track.Source.Microphone });
   const camera = useTrackToggle({ source: Track.Source.Camera });
   const screenShare = useTrackToggle({ source: Track.Source.ScreenShare });
   const [muted, setMuted] = useState(false);

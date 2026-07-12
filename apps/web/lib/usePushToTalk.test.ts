@@ -37,25 +37,38 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("usePushToTalk（mode×pressed → mic enabled のゲーティング）", () => {
-  it("既定のハンズフリーでは mic に触らない（既存のミュート操作と競合しない）", async () => {
+  it("既定は PTT で、マウント時に mic を mute する", async () => {
     const { result } = renderHook(() => usePushToTalk({ sendInterrupt: vi.fn() }));
-    expect(result.current.mode).toBe("handsfree");
+    expect(result.current.mode).toBe("ptt");
     expect(result.current.pttPressed).toBe(false);
-    await act(async () => {});
-    expect(setMicrophoneEnabled).not.toHaveBeenCalled();
+    await waitFor(() => expect(setMicrophoneEnabled).toHaveBeenLastCalledWith(false));
   });
 
-  it("PTT へ切替えた瞬間に mute し、ハンズフリーへ戻すと切替前の状態を復元する", async () => {
-    const { result } = renderHook(() => usePushToTalk({ sendInterrupt: vi.fn() }));
-    act(() => result.current.setMode("ptt"));
+  it("接続後に外部要因で mic が有効化されても、PTT 待機中は mute へ戻す", async () => {
+    const { rerender } = renderHook((props: { micEnabled: boolean }) =>
+      usePushToTalk({ sendInterrupt: vi.fn(), micEnabled: props.micEnabled }),
+      { initialProps: { micEnabled: false } },
+    );
     await waitFor(() => expect(setMicrophoneEnabled).toHaveBeenLastCalledWith(false));
+    setMicrophoneEnabled.mockClear();
+    rerender({ micEnabled: true });
+    await waitFor(() => expect(setMicrophoneEnabled).toHaveBeenLastCalledWith(false));
+  });
+
+  it("ハンズフリーへ切替えると mic を有効化し、PTT へ戻すと mute する", async () => {
+    const { result } = renderHook(() => usePushToTalk({ sendInterrupt: vi.fn() }));
     act(() => result.current.setMode("handsfree"));
     await waitFor(() => expect(setMicrophoneEnabled).toHaveBeenLastCalledWith(true));
+    act(() => result.current.setMode("ptt"));
+    await waitFor(() => expect(setMicrophoneEnabled).toHaveBeenLastCalledWith(false));
   });
 
   it("手動ミュート中に PTT を往復してもミュートが解除されない", async () => {
-    participant.isMicrophoneEnabled = false;
     const { result } = renderHook(() => usePushToTalk({ sendInterrupt: vi.fn() }));
+    act(() => result.current.setMode("handsfree"));
+    await waitFor(() => expect(setMicrophoneEnabled).toHaveBeenLastCalledWith(true));
+    participant.isMicrophoneEnabled = false;
+    setMicrophoneEnabled.mockClear();
     act(() => result.current.setMode("ptt"));
     await waitFor(() => expect(setMicrophoneEnabled).toHaveBeenLastCalledWith(false));
     act(() => result.current.setMode("handsfree"));
@@ -66,7 +79,6 @@ describe("usePushToTalk（mode×pressed → mic enabled のゲーティング）
   it("押下開始で mic を有効化・capture を取り・interrupt を 1 回だけ送り、離すと mute する", async () => {
     const sendInterrupt = vi.fn();
     const { result } = renderHook(() => usePushToTalk({ sendInterrupt }));
-    act(() => result.current.setMode("ptt"));
 
     const down = pointerEvent();
     act(() => result.current.pressProps.onPointerDown(down));
@@ -88,7 +100,6 @@ describe("usePushToTalk（mode×pressed → mic enabled のゲーティング）
 
   it("pointerleave / pointercancel / lostpointercapture でも確実に mute する", () => {
     const { result } = renderHook(() => usePushToTalk({ sendInterrupt: vi.fn() }));
-    act(() => result.current.setMode("ptt"));
     for (const end of ["onPointerLeave", "onPointerCancel", "onLostPointerCapture"] as const) {
       act(() => result.current.pressProps.onPointerDown(pointerEvent()));
       expect(result.current.pttPressed).toBe(true);
@@ -100,7 +111,6 @@ describe("usePushToTalk（mode×pressed → mic enabled のゲーティング）
   it("マウスは主ボタン以外の押下を無視する", () => {
     const sendInterrupt = vi.fn();
     const { result } = renderHook(() => usePushToTalk({ sendInterrupt }));
-    act(() => result.current.setMode("ptt"));
     act(() =>
       result.current.pressProps.onPointerDown(pointerEvent({ pointerType: "mouse", button: 2 })),
     );
@@ -111,7 +121,6 @@ describe("usePushToTalk（mode×pressed → mic enabled のゲーティング）
   it("Space 長押しで押下し keyup で解除する（repeat は再送しない）", () => {
     const sendInterrupt = vi.fn();
     const { result } = renderHook(() => usePushToTalk({ sendInterrupt }));
-    act(() => result.current.setMode("ptt"));
 
     fireEvent.keyDown(window, { code: "Space" });
     expect(result.current.pttPressed).toBe(true);
@@ -126,7 +135,6 @@ describe("usePushToTalk（mode×pressed → mic enabled のゲーティング）
 
   it("input フォーカス中の Space では押下しない", () => {
     const { result } = renderHook(() => usePushToTalk({ sendInterrupt: vi.fn() }));
-    act(() => result.current.setMode("ptt"));
     const input = document.createElement("input");
     document.body.appendChild(input);
     fireEvent.keyDown(input, { code: "Space" });
@@ -136,7 +144,6 @@ describe("usePushToTalk（mode×pressed → mic enabled のゲーティング）
 
   it("button フォーカス中の Space では押下しない（Space によるボタン活性化を奪わない）", () => {
     const { result } = renderHook(() => usePushToTalk({ sendInterrupt: vi.fn() }));
-    act(() => result.current.setMode("ptt"));
     const button = document.createElement("button");
     document.body.appendChild(button);
     fireEvent.keyDown(button, { code: "Space" });
@@ -146,7 +153,6 @@ describe("usePushToTalk（mode×pressed → mic enabled のゲーティング）
 
   it("ポインタ押下中は input での Space keyup で解除されない（起点別に解除）", () => {
     const { result } = renderHook(() => usePushToTalk({ sendInterrupt: vi.fn() }));
-    act(() => result.current.setMode("ptt"));
     act(() => result.current.pressProps.onPointerDown(pointerEvent()));
     const input = document.createElement("input");
     document.body.appendChild(input);
@@ -160,6 +166,7 @@ describe("usePushToTalk（mode×pressed → mic enabled のゲーティング）
   it("ハンズフリー中は Space で押下しない", () => {
     const sendInterrupt = vi.fn();
     const { result } = renderHook(() => usePushToTalk({ sendInterrupt }));
+    act(() => result.current.setMode("handsfree"));
     fireEvent.keyDown(window, { code: "Space" });
     expect(result.current.pttPressed).toBe(false);
     expect(sendInterrupt).not.toHaveBeenCalled();
@@ -167,24 +174,24 @@ describe("usePushToTalk（mode×pressed → mic enabled のゲーティング）
 
   it("window blur で mute する（押しっぱなし漏れ防止）", async () => {
     const { result } = renderHook(() => usePushToTalk({ sendInterrupt: vi.fn() }));
-    act(() => result.current.setMode("ptt"));
     act(() => result.current.pressProps.onPointerDown(pointerEvent()));
     fireEvent.blur(window);
     expect(result.current.pttPressed).toBe(false);
     await waitFor(() => expect(setMicrophoneEnabled).toHaveBeenLastCalledWith(false));
   });
 
-  it("押下中にハンズフリーへ切替えると押下状態を捨てて切替前の状態を復元する", async () => {
+  it("押下中にハンズフリーへ切替えると押下状態を捨てて mic を有効化する", async () => {
     const { result } = renderHook(() => usePushToTalk({ sendInterrupt: vi.fn() }));
-    act(() => result.current.setMode("ptt"));
     act(() => result.current.pressProps.onPointerDown(pointerEvent()));
     act(() => result.current.setMode("handsfree"));
     expect(result.current.pttPressed).toBe(false);
     await waitFor(() => expect(setMicrophoneEnabled).toHaveBeenLastCalledWith(true));
   });
 
-  it("PTT モード中のアンマウントで切替前の状態を復元する", async () => {
+  it("ハンズフリー経由で PTT に入った後のアンマウントで切替前の状態を復元する", async () => {
     const { result, unmount } = renderHook(() => usePushToTalk({ sendInterrupt: vi.fn() }));
+    act(() => result.current.setMode("handsfree"));
+    await waitFor(() => expect(setMicrophoneEnabled).toHaveBeenLastCalledWith(true));
     act(() => result.current.setMode("ptt"));
     await waitFor(() => expect(setMicrophoneEnabled).toHaveBeenLastCalledWith(false));
     unmount();
@@ -197,7 +204,6 @@ describe("usePushToTalk（mode×pressed → mic enabled のゲーティング）
       () => new Promise<void>((resolve) => resolvers.push(resolve)),
     );
     const { result } = renderHook(() => usePushToTalk({ sendInterrupt: vi.fn() }));
-    act(() => result.current.setMode("ptt"));
     act(() => result.current.pressProps.onPointerDown(pointerEvent()));
     act(() => result.current.pressProps.onPointerUp());
 
@@ -216,7 +222,6 @@ describe("usePushToTalk（mode×pressed → mic enabled のゲーティング）
   it("mic を開けなかったら onError を呼び、押下状態を解除する", async () => {
     const onError = vi.fn();
     const { result } = renderHook(() => usePushToTalk({ sendInterrupt: vi.fn(), onError }));
-    act(() => result.current.setMode("ptt"));
     await waitFor(() => expect(setMicrophoneEnabled).toHaveBeenLastCalledWith(false));
 
     setMicrophoneEnabled.mockRejectedValueOnce(new Error("permission denied"));
