@@ -233,17 +233,42 @@ DEFAULT_CHECK_POINTS: dict[InviteScope, list[str]] = {
 }
 
 
+NO_PRODUCT_CHECK_POINTS: list[str] = [
+    "本当はどうなったら嬉しいか（叶えたい理想の姿）",
+    "いま何に困っているか、なぜ困るのか（困りごとの根っこ）",
+    "なぜ今それをやりたいのか（きっかけ・背景）",
+    "それが叶うと、誰の何がどう変わるか",
+    "どんな場面で、いつ必要になるか",
+    "いま、それをじゃましているものは何か",
+]
+
+
 def check_points_for_scope(items: list[CheckItem], scope: InviteScope) -> list[str]:
     """会話でシードする観点を返す（管理者設定を優先、無ければモード別デフォルト / ADR-0055）。
 
     対象アプリの管理者が product に登録した確認項目（`check_items_for_scope` でモード絞り込み）を
     優先し、そのモードに該当する設定が 1 件も無ければ `DEFAULT_CHECK_POINTS` のモード別デフォルトへ
     フォールバックする。end_user は現場影響（ユースケース/規模/深刻度/温度感）、developer は技術面
-    （性能/セキュリティ/コスト/整合性/運用回避策）を既定の観点にする。呼び出し側は product が
-    あるときにだけ使う（product 不在の旧 1:1 セッション・文書不読はデフォルトを載せず素のまま）。
+    （性能/セキュリティ/コスト/整合性/運用回避策）を既定の観点にする。
     """
     configured = check_items_for_scope(items, scope)
     return configured or list(DEFAULT_CHECK_POINTS.get(scope, []))
+
+
+def default_check_points(product: Product | None, scope: InviteScope) -> list[str]:
+    """このセッションでシードする確認観点を選ぶ入口（ADR-0072）。
+
+    product があれば管理者設定 or モード別デフォルト（`check_points_for_scope`）。product が
+    無い（対象アプリ未指定の発想段階）developer/PdM セッションは `NO_PRODUCT_CHECK_POINTS`＝
+    ゲイン/ペインを引き出しゴールを定めるコーチング型の観点を載せる。end_user は特定アプリの
+    利用体験へのフィードバックが前提で、product が無ければ掘る対象が無いため素のまま（空）。
+    呼び出し側はセッション文書を読めたときにだけ使う（文書不読は mode が信頼できないため空）。
+    """
+    if product is not None:
+        return check_points_for_scope(product.check_items, scope)
+    if scope is InviteScope.END_USER:
+        return []
+    return list(NO_PRODUCT_CHECK_POINTS)
 
 
 class ProductInvite(BaseModel):
