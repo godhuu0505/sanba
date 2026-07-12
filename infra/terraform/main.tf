@@ -152,7 +152,7 @@ resource "google_project_service" "bigquery" {
 resource "google_project_iam_member" "tf_deployer_bigquery" {
   count      = var.enable_billing_export ? 1 : 0
   project    = var.project_id
-  role       = "roles/bigquery.user"
+  role       = "roles/bigquery.dataOwner"
   member     = "serviceAccount:${local.tf_deployer_sa}"
   depends_on = [google_project_service.bigquery]
 }
@@ -161,6 +161,9 @@ resource "time_sleep" "bigquery_iam_propagation" {
   count           = var.enable_billing_export ? 1 : 0
   depends_on      = [google_project_iam_member.tf_deployer_bigquery]
   create_duration = "60s"
+  triggers = {
+    tf_deployer_bigquery_role = google_project_iam_member.tf_deployer_bigquery[0].role
+  }
 }
 
 resource "google_bigquery_dataset" "billing_export" {

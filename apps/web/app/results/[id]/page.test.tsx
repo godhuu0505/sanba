@@ -57,6 +57,15 @@ const SCROLL: MySessionRequirements = {
   title: "新機能要件定義",
   created_at: "2024-06-20T10:00:00Z",
   finalized: true,
+  goal: "検索機能を改善する",
+  goal_detail: "現状は検索が遅い。まず商品検索だけ対象にしたい。",
+  materials: [
+    { id: "m1", name: "画面設計.pdf", kind: "doc", status: "done" },
+    { id: "m2", name: "現行画面.png", kind: "image", status: "done" },
+  ],
+  open_inquiries: [
+    { id: "n1", kind: "gap", text: "検索対象に管理画面を含めるか未確認" },
+  ],
   items: [
     {
       id: "r1",
@@ -122,6 +131,58 @@ describe("過去要件の絵巻閲覧画面（/results/[id]）", () => {
     expect(screen.getByText("キーワード検索を新設する")).toBeTruthy();
     expect(screen.getByText("検索結果は 1 秒以内に返す")).toBeTruthy();
     expect(screen.queryByText(/認める|退ける|改める|検める/)).toBeNull();
+  });
+
+  it("ゴールはテキスト表示、ゴール詳細と参考資料は畳んだトグルで上部に出す", async () => {
+    render(<PastRequirementsPage />);
+    await waitFor(() => expect(screen.getByText("新機能要件定義")).toBeTruthy());
+    expect(screen.getByText("ゴール")).toBeTruthy();
+    expect(screen.getByText("検索機能を改善する")).toBeTruthy();
+
+    const detailToggle = screen.getByText("ゴールの詳細");
+    expect((detailToggle.closest("details") as HTMLDetailsElement).open).toBe(false);
+    fireEvent.click(detailToggle);
+    expect(screen.getByText(/現状は検索が遅い/)).toBeTruthy();
+
+    const materialsToggle = screen.getByText("参考資料（2件）");
+    expect((materialsToggle.closest("details") as HTMLDetailsElement).open).toBe(false);
+    fireEvent.click(materialsToggle);
+    expect(screen.getByText("画面設計.pdf")).toBeTruthy();
+    expect(screen.getByText("現行画面.png")).toBeTruthy();
+  });
+
+  it("goal 未入力ならゴール・詳細・参考資料の各セクションを出さない", async () => {
+    vi.mocked(fetchMySessionRequirements).mockResolvedValue({
+      ...SCROLL,
+      goal: null,
+      goal_detail: null,
+      materials: [],
+    });
+    render(<PastRequirementsPage />);
+    await waitFor(() => expect(screen.getByText("新機能要件定義")).toBeTruthy());
+    expect(screen.queryByText("ゴール")).toBeNull();
+    expect(screen.queryByText("ゴールの詳細")).toBeNull();
+    expect(screen.queryByText(/参考資料（/)).toBeNull();
+  });
+
+  it("未確認事項は畳んだトグルで件数を出し、展開で内容を出す", async () => {
+    render(<PastRequirementsPage />);
+    await waitFor(() => expect(screen.getByText("新機能要件定義")).toBeTruthy());
+    const toggle = screen.getByText("未確認事項（1件）");
+    expect((toggle.closest("details") as HTMLDetailsElement).open).toBe(false);
+    fireEvent.click(toggle);
+    expect(screen.getByText(/検索対象に管理画面を含めるか未確認/)).toBeTruthy();
+  });
+
+  it("未確認事項 0 件でもトグルを出し、展開で空状態の文言を出す", async () => {
+    vi.mocked(fetchMySessionRequirements).mockResolvedValue({
+      ...SCROLL,
+      open_inquiries: [],
+    });
+    render(<PastRequirementsPage />);
+    await waitFor(() => expect(screen.getByText("新機能要件定義")).toBeTruthy());
+    fireEvent.click(screen.getByText("未確認事項（0件）"));
+    expect(screen.getByText(/未確認の事項はありません/)).toBeTruthy();
   });
 
   it("要件 0 件なら空状態の文言を出す", async () => {

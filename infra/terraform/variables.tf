@@ -38,8 +38,8 @@ variable "monthly_budget_jpy" {
 
 variable "agent_min_instances" {
   type        = number
-  default     = 0
-  description = "Min warm agent workers. 0 = scale to zero (cheapest, but no worker registered; voice sessions cannot start). Toggle via .github/workflows/agent-standby.yml."
+  default     = 1
+  description = "Min warm agent workers. 0 = scale to zero (cheapest, but no worker registered; voice sessions cannot start). Bootstrap note: apply with 0 until LiveKit secrets are populated in Secret Manager, otherwise the always-on instance fail-fasts at startup."
 }
 
 variable "agent_max_instances" {
@@ -285,7 +285,7 @@ variable "enable_billing_export" {
 variable "billing_export_location" {
   description = "billing export dataset のロケーション (Cloud Billing export の対応リージョンに合わせる)"
   type        = string
-  default     = "US"
+  default     = "asia-northeast1"
 }
 
 variable "usd_jpy_rate" {

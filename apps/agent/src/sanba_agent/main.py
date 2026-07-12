@@ -2379,16 +2379,45 @@ def build_noise_cancellation() -> Any | None:
     return _noise_cancellation.BVC()
 
 
-def build_input_transcription() -> genai_types.AudioTranscriptionConfig:
-    """入力音声の文字起こし設定を組み立てる（ADR-0039）。
+def build_input_transcription() -> genai_types.AudioTranscriptionConfig | None:
+    """入力音声の文字起こし設定を組み立てる（ADR-0039・0066）。
 
     `language_codes` に設定言語（既定 ja-JP）を与えると、Gemini Live は「入力音声はこの
     言語」というヒントとして使い、短い発話・雑音・曖昧な音で韓国語/中国語へ誤認識
     ドリフトするのを抑える。空文字なら language_codes を付けずモデルの自動判定に委ねる
     （従来挙動）。ネイティブ音声モデルでも入力文字起こしのヒントは有効。
+
+    分離 STT（`settings.separate_stt_enabled`）が有効なときは None を返す。Gemini の入力転写を
+    無効化すると realtime の user_transcription capability が外れ、別 STT（Chirp, `build_stt`）の
+    interim/final が `user_input_transcribed` を駆動できる（ADR-0066 S1）。
     """
+    if settings.separate_stt_enabled:
+        return None
     lang = settings.gemini_language.strip()
     return genai_types.AudioTranscriptionConfig(language_codes=[lang] if lang else None)
+
+
+def build_stt() -> google.STT | None:
+    """描画・履歴・要件抽出用の分離 STT（Vertex Chirp）を組み立てる（ADR-0066 S1）。
+
+    有効時のみ生成し、AgentSession の入力パイプラインに native 併走させる（音声は realtime と
+    STT の両方へ fan-out され、STT は BVC 除去後の音声を受ける）。会話（ターン・応答）は Gemini
+    Live native audio が担い、STT は文字起こし専任で会話 critical path には入らない。無効時は
+    None を返し、従来どおり Gemini の入力転写を使う。既定 OFF（本番有効化は実機検証が前提）。
+
+    `stt_location` は STT v2 の対応リージョン（Chirp 系は限定）で決まり、Gemini の
+    `google_cloud_location` とは独立に設定する。`detect_language=False` 固定のため、
+    `gemini_language` が空でも自動判定せず ja-JP にフォールバックする。
+    """
+    if not settings.separate_stt_enabled:
+        return None
+    lang = settings.gemini_language.strip() or "ja-JP"
+    return google.STT(
+        model=settings.stt_model,
+        languages=[lang],
+        detect_language=False,
+        location=settings.stt_location,
+    )
 
 
 def build_realtime_model() -> google.beta.realtime.RealtimeModel:
@@ -2626,7 +2655,11 @@ async def entrypoint(ctx: JobContext) -> None:
         開始に失敗した中途半端なセッションは閉じてから raise する（リーク防止）。
         """
         nonlocal noise_cancellation_active
-        s: AgentSession = AgentSession(llm=build_realtime_model())
+        stt = build_stt()
+        s: AgentSession = AgentSession(
+            llm=build_realtime_model(),
+            stt=stt if stt is not None else NOT_GIVEN,
+        )
         _wire_session(s)
         noise_cancellation = build_noise_cancellation()
         noise_cancellation_active = noise_cancellation is not None

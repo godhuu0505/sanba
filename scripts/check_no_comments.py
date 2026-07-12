@@ -2,7 +2,7 @@
 """Fail if a source file contains a comment other than an allowed pragma.
 
 Covers Python (tokenize), YAML and Terraform (quote-aware line scan).
-Rationale lives in CLAUDE.md and ADR-0067: comments drift from the code they
+Rationale lives in CLAUDE.md and ADR-0068: comments drift from the code they
 describe, so design rationale belongs in commit messages / PR descriptions /
 ADRs / docs instead.
 """
@@ -236,7 +236,7 @@ def main(argv: list[str]) -> int:
                 exit_code = 1
     if exit_code:
         print(
-            "\nコメントは原則禁止です（CLAUDE.md / ADR-0067）。設計判断の理由はコミット"
+            "\nコメントは原則禁止です（CLAUDE.md / ADR-0068）。設計判断の理由はコミット"
             "メッセージ/PR説明/ADR/docs に書いてください。機能的プラグマ（noqa, type: ignore, "
             "pragma: no cover, shellcheck, tflint-ignore, checkov:skip 等）と Action の "
             "SHA ピンに併記するバージョン注記（uses: ...@<sha> # vX.Y.Z）は許可されています。",

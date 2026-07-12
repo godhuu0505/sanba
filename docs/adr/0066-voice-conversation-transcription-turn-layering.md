@@ -72,8 +72,12 @@ Elasticsearch `sanba-grounding`・Firestore・実ソースで横断復元し、3
     `JudgmentGate`「要件を確定する」経路のみに残す。文言を「保全される」実態へ合わせる。
   - ③: 「確定せず終える」を中間画面を挟まず `/results/{id}`（サーバ実態）へ遷移。「新しい会話を始める」は
     `reload` をやめホーム `/` へ。read-only ゲスト等 router が無い経路は従来の provisional 画面へフォールバック。
-- **S1（別 PR・要実機検証）**: 層3 の Chirp 分離。描画の順序を発話開始位置に固定し、partial には必ず final を返す
-  （store に行削除が無いため）。PoC で日本語精度と final 遅延を実測。
+- **S1（env-gated 実装・既定 OFF）**: 層3 の Chirp 分離を `settings.separate_stt_enabled`（既定 False）で導入。
+  有効時は `RealtimeModel(input_audio_transcription=None)` ＋ `AgentSession(stt=google.STT(model=settings.stt_model, …))`
+  で native 併走し、既存 `user_input_transcribed`→`record_user_final`→ES/要件が高精度化する（描画/記録の経路は Gemini 時と同一）。
+  **本番有効化は実機検証が前提**: agent を warm し、Cloud Speech-to-Text v2 API 有効化＋SA 権限を確認のうえ env で ON にする。
+  描画の順序を発話開始位置に固定し partial に必ず final を返す手当ては後続（現状は既存経路のまま）。PoC で日本語精度・final 遅延・
+  コストを実測して既定 ON を判断。
 - **S3（別 PR・要実機検証）**: 層2 の PTT-A（mic ゲート + モードトグル + `user.interrupt`）。
 - **S4（任意・PoC 必須）**: 決定論的な PTT-B（`turn_detection="manual"`）。Gemini manual 契約の実 API 検証と
   silero 追加（即時トグル用）が前提。初期スコープ外。

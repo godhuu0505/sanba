@@ -17,6 +17,7 @@ from sanba_agent.main import (
     build_input_transcription,
     build_noise_cancellation,
     build_realtime_model,
+    build_stt,
     build_turn_detection,
     resume_instructions,
 )
@@ -108,16 +109,52 @@ class TestDefaultSettings:
 
 class TestBuildInputTranscription:
     def test_uses_configured_language_as_hint(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(settings, "separate_stt_enabled", False)
         monkeypatch.setattr(settings, "gemini_language", "ja-JP")
         conf = build_input_transcription()
+        assert conf is not None
         assert conf.language_codes == ["ja-JP"]
 
     def test_empty_language_falls_back_to_auto_detect(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        monkeypatch.setattr(settings, "separate_stt_enabled", False)
         monkeypatch.setattr(settings, "gemini_language", "")
         conf = build_input_transcription()
+        assert conf is not None
         assert conf.language_codes is None
+
+    def test_none_when_separate_stt_enabled(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(settings, "separate_stt_enabled", True)
+        assert build_input_transcription() is None
+
+
+class TestBuildStt:
+    def test_disabled_by_default(self) -> None:
+        assert settings.separate_stt_enabled is False
+
+    def test_none_when_disabled(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(settings, "separate_stt_enabled", False)
+        assert build_stt() is None
+
+    def test_created_with_configured_model_and_language_when_enabled(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(settings, "separate_stt_enabled", True)
+        monkeypatch.setattr(settings, "stt_model", "chirp_2")
+        monkeypatch.setattr(settings, "gemini_language", "ja-JP")
+        captured: dict[str, object] = {}
+
+        def fake_stt(**kwargs: object) -> str:
+            captured.update(kwargs)
+            return "stt-instance"
+
+        monkeypatch.setattr("sanba_agent.main.google.STT", fake_stt)
+        assert build_stt() == "stt-instance"
+        assert captured["model"] == "chirp_2"
+        assert captured["languages"] == ["ja-JP"]
+        assert captured["location"] == settings.stt_location
+        assert captured["detect_language"] is False
 
 
 class TestBuildRealtimeModel:

@@ -25,6 +25,7 @@ from sanba_shared.models import (
     DEFAULT_SESSION_TITLE,
     Audience,
     InquiryNode,
+    InquiryStatus,
     Product,
     RequirementStatus,
     SessionMeta,
@@ -313,11 +314,29 @@ def list_my_sessions(user: AuthUser = Depends(require_user)) -> list[MySession]:
     ]
 
 
+class MySessionMaterial(BaseModel):
+    """結果画面の「参考資料」1 件。素材メタのうち表示に要る最小項目のみ。"""
+
+    id: str
+    name: str
+    kind: str
+    status: str
+
+
+class MySessionOpenInquiry(BaseModel):
+    """結果画面の「未確認事項」1 件。open のままの確認事項ノードの表示用最小形。"""
+
+    id: str
+    kind: str
+    text: str
+
+
 class MySessionRequirementsResponse(BaseModel):
     """`GET /api/sessions/mine/{id}/requirements` の応答。
 
     過去セッションの要件絵巻閲覧画面 (web /sessions/{id}) に、見出し用の最小メタ
-    (標題・作成時刻・確定状態) と要件スナップショットをまとめて供給する。
+    (標題・作成時刻・確定状態)・最初に入力したゴール (goal/goal_detail)・参考資料メタ・
+    未解消の確認事項と要件スナップショットをまとめて供給する。
     items は契約 §3 の requirement 形 (get_requirements と同じ contract 形) で、
     PII (owner_email/owner_sub) は MySession と同じく載せない (最小権限)。
     """
@@ -326,6 +345,10 @@ class MySessionRequirementsResponse(BaseModel):
     title: str
     created_at: datetime
     finalized: bool
+    goal: str | None = None
+    goal_detail: str | None = None
+    materials: list[MySessionMaterial] = []
+    open_inquiries: list[MySessionOpenInquiry] = []
     items: list[dict[str, Any]]
 
 
@@ -350,6 +373,20 @@ def get_my_session_requirements(
         items = _finalized_snapshot_requirements(session)
     else:
         items = _read_repo.list_requirements(session_id)
+    materials = [
+        MySessionMaterial(
+            id=str(m.get("id", "")),
+            name=str(m.get("name", "")),
+            kind=str(m.get("kind", "doc")),
+            status=str(m.get("status", "done")),
+        )
+        for m in _repo.list_materials(session_id)
+    ]
+    open_inquiries = [
+        MySessionOpenInquiry(id=n.id, kind=n.kind.value, text=n.text)
+        for n in _repo.list_inquiry_nodes(session_id)
+        if n.status == InquiryStatus.OPEN
+    ]
     record_my_requirements_viewed(len(items))
     log.info("my_requirements_viewed", session=session_id, owner=user.sub, count=len(items))
     return MySessionRequirementsResponse(
@@ -357,6 +394,10 @@ def get_my_session_requirements(
         title=session.title,
         created_at=session.created_at,
         finalized=session.status == "finalized",
+        goal=session.goal,
+        goal_detail=session.goal_detail,
+        materials=materials,
+        open_inquiries=open_inquiries,
         items=items,
     )
 

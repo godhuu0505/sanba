@@ -1,10 +1,10 @@
-name: Agent standby (warm/sleep)
+name: Standby (warm/sleep)
 
 on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "warm = min-instances 1 (音声セッション可・常時課金) / sleep = 0 (コスト最小)"
+        description: "warm = agent min-instances 1 + api/web 起動 (音声セッション可・常時課金) / sleep = 0 (コスト最小)"
         type: choice
         default: warm
         options: [warm, sleep]
@@ -47,7 +47,7 @@ jobs:
 
       - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3
 
-      - name: Update Cloud Run min-instances
+      - name: Update Cloud Run min-instances (sanba-agent)
         env:
           PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
           REGION: ${{ vars.GCP_REGION }}
@@ -61,3 +61,33 @@ jobs:
           if [ "$MIN_INSTANCES" -ge 1 ]; then
             echo "worker の LiveKit 登録まで 1〜2 分待ってからセッションを開始する。" >> "$GITHUB_STEP_SUMMARY"
           fi
+
+      - name: Warm up api / web
+        if: ${{ inputs.mode == 'warm' }}
+        env:
+          PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+          REGION: ${{ vars.GCP_REGION }}
+        run: |
+          warm() {
+            local service="$1" path="$2" url
+            url="$(gcloud run services describe "$service" \
+              --project="$PROJECT_ID" --region="$REGION" \
+              --format='value(status.url)')"
+            if [ -z "$url" ]; then
+              echo "::error::$service の URL を取得できなかった" >&2
+              return 1
+            fi
+            for attempt in $(seq 1 12); do
+              status="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 30 "$url$path" || echo 000)"
+              if [ "$status" = "200" ]; then
+                echo "$service: $url$path → 200 (attempt $attempt) 起動済み。" >> "$GITHUB_STEP_SUMMARY"
+                return 0
+              fi
+              sleep 5
+            done
+            echo "::error::$service が起動しない ($url$path → $status)" >&2
+            return 1
+          }
+          warm sanba-api /healthz
+          warm sanba-web /
+          echo "sanba-worker は Cloud Tasks push 起点のためタスク投入時に自動起動される (対象外)。" >> "$GITHUB_STEP_SUMMARY"

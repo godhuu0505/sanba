@@ -31,7 +31,7 @@
 - **コメントを書かない**。コードとコメントの内容が食い違うと AI・人間ともに誤読してミスの原因になるため、
   「何をしているか」（what）はコードとネーミングで表現し、「なぜそうしたか」（why）・設計判断の理由・既知の制約・
   変更の経緯・対応した Issue もコメントではなく **コミットメッセージ / PR 説明 / ADR** に書く。
-  - 対象は Python / TypeScript だけでなく **YAML（workflows・compose 等）と Terraform も含む**（ADR-0067）。
+  - 対象は Python / TypeScript だけでなく **YAML（workflows・compose 等）と Terraform も含む**（ADR-0068）。
     ワークフローの設計判断は `docs/reference/ci-cd-workflows.md`、compose の設計メモは
     `docs/how-to/local-dev.md` に書く。
   - 例外は、lint・型チェック・テストランナーが読む機能的なプラグマだけ（`# noqa`, `# type: ignore`,

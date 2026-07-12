@@ -138,7 +138,7 @@ lint: check-comments
     cd infra/four-keys/collector && uv run ruff check . && uv run mypy src
     cd apps/web && npm run lint && npm run typecheck
 
-# 説明的コメントの追加を禁止する (CLAUDE.md / ADR-0067。Python/TS/YAML/Terraform)。noqa 等のプラグマは許可
+# 説明的コメントの追加を禁止する (CLAUDE.md / ADR-0068。Python/TS/YAML/Terraform)。noqa 等のプラグマは許可
 [group('verify')]
 check-comments:
     python3 scripts/check_no_comments.py

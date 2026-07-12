@@ -3,7 +3,7 @@
 > このファイルは `just docs-index`（`scripts/gen-docs-index.py`）で生成する。
 > 手で編集しない。ADR を追加・改訂したら再生成する。
 
-設計判断記録（Architecture Decision Record）の一覧。全 67 件。
+設計判断記録（Architecture Decision Record）の一覧。全 68 件。
 書き方・ステータス制御語彙は [`/adr` 雛形](../../.claude/commands/adr.md) を参照。
 
 | # | タイトル | ステータス |
@@ -75,6 +75,7 @@
 | [0064](0064-material-context-seeding.md) | 参考資料の解析結果を voice agent の初期前提としてシードする | Proposed |
 | [0065](0065-security-audit-remediation-fail-closed-config.md) | セキュリティ監査対応 — 本番環境の fail-closed 設定ガード | Accepted |
 | [0066](0066-voice-conversation-transcription-turn-layering.md) | 音声会話の三層分離（会話・文字起こし・ターン制御）と終了フロー是正 | Proposed |
-| [0067](0067-no-comments-policy-yaml-terraform.md) | コメント禁止規約の YAML / Terraform への拡張とコメント内容の docs 移設 | Accepted |
+| [0067](0067-codebase-security-audit-process.md) | 全コード セキュリティ監査プロセス（マルチエージェント並列 + 敵対的検証） | Proposed |
+| [0068](0068-no-comments-policy-yaml-terraform.md) | コメント禁止規約の YAML / Terraform への拡張とコメント内容の docs 移設 | Accepted |
 
 付随資料は [`supplements/`](supplements/) に置く（特定 ADR の実測・検証データ）。

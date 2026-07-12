@@ -21,6 +21,8 @@ import {
   type SessionTranscript,
 } from "@/lib/api";
 import { AUDIENCE_LABELS, AUDIENCES } from "@/lib/audience";
+import { inquiryPresentation } from "@/lib/realtime";
+import type { InquiryKind } from "@/lib/realtime/types";
 import { useAuth } from "@/lib/auth";
 import { issueExportReasonText } from "@/lib/issueExport";
 
@@ -51,6 +53,19 @@ type TranscriptLoad =
   | { state: "loading" }
   | { state: "ok"; data: SessionTranscript }
   | { state: "error" };
+
+const MATERIAL_KIND_LABELS: Record<string, string> = {
+  image: "画像",
+  video: "動画",
+  doc: "資料",
+};
+
+const INQUIRY_KINDS: InquiryKind[] = ["gap", "contradiction", "ambiguous", "check"];
+
+function inquiryKindLabel(kind: string): string {
+  const known = INQUIRY_KINDS.find((k) => k === kind);
+  return known ? inquiryPresentation(known).label : kind;
+}
 
 function speakerLabel(speaker: string): string {
   if (speaker === "SANBA") return "SANBA";
@@ -216,10 +231,79 @@ export default function PastRequirementsPage() {
                 <HelpIcon term="確定した要件と未確定の要件" />
               </div>
             </div>
+
+            {load.data.goal && (
+              <div className="flex flex-col gap-[4px] px-1 pt-1">
+                <h3 className="text-[14px] font-bold text-sanba-cream">ゴール</h3>
+                <p className="text-[13px] leading-relaxed text-sanba-cream">{load.data.goal}</p>
+              </div>
+            )}
+
+            {load.data.goal_detail && (
+              <details className="px-1">
+                <summary className="cursor-pointer text-[14px] font-bold text-sanba-cream">
+                  ゴールの詳細
+                </summary>
+                <p className="mt-[8px] whitespace-pre-wrap rounded-[12px] border border-sanba-border bg-sanba-surface p-[12px] text-[12px] leading-relaxed text-sanba-cream">
+                  {load.data.goal_detail}
+                </p>
+              </details>
+            )}
+
+            {(load.data.materials?.length ?? 0) > 0 && (
+              <details className="px-1">
+                <summary className="cursor-pointer text-[14px] font-bold text-sanba-cream">
+                  参考資料（{load.data.materials?.length}件）
+                </summary>
+                <ul className="mt-[8px] flex flex-col gap-[6px]">
+                  {load.data.materials?.map((m) => (
+                    <li
+                      key={m.id}
+                      className="flex items-center gap-[8px] rounded-[12px] border border-sanba-border bg-sanba-surface px-[12px] py-[10px]"
+                    >
+                      <Chip tone="neutral" size="sm">
+                        {MATERIAL_KIND_LABELS[m.kind] ?? m.kind}
+                      </Chip>
+                      <span className="min-w-0 flex-1 truncate text-[12px] text-sanba-cream">
+                        {m.name}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            )}
+
             <RequirementsScrollList
               requirements={load.data.items}
               emptyText="この会話の要件はまだありません。"
             />
+
+            <details className="px-1">
+              <summary className="cursor-pointer text-[14px] font-bold text-sanba-cream">
+                未確認事項（{load.data.open_inquiries?.length ?? 0}件）
+              </summary>
+              {(load.data.open_inquiries?.length ?? 0) === 0 ? (
+                <p className="mt-[8px] text-[12px] text-sanba-muted">
+                  未確認の事項はありません。
+                </p>
+              ) : (
+                <ul className="mt-[8px] flex flex-col gap-[6px]">
+                  {load.data.open_inquiries?.map((n) => (
+                    <li
+                      key={n.id}
+                      className="flex items-start gap-[8px] rounded-[12px] border border-sanba-border bg-sanba-surface px-[12px] py-[10px]"
+                    >
+                      <Chip tone="neutral" size="sm">
+                        {inquiryKindLabel(n.kind)}
+                      </Chip>
+                      <span className="min-w-0 flex-1 text-[12px] leading-relaxed text-sanba-cream">
+                        {n.text}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </details>
 
             <div className="flex flex-col gap-[8px] px-1 pt-2">
               <div className="flex items-center gap-1">
