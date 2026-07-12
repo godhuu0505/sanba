@@ -2386,8 +2386,10 @@ async def open_interview(
                 attempt=attempt,
                 timeout_s=timeout_s,
             )
-            with contextlib.suppress(Exception):
+            try:
                 await session.interrupt()
+            except Exception as exc:  # noqa: BLE001
+                log.warning("voice_opening_interrupt_failed", session=session_id, error=str(exc))
             continue
         if attempt > 1:
             log.info("voice_opening_recovered", session=session_id, attempt=attempt)
