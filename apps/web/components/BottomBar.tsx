@@ -139,6 +139,7 @@ export function BottomBar({
             ) : (
               <>
                 <MicOff size={15} aria-hidden /> 押して話す
+                <span className="hidden font-normal sm:inline">（Space）</span>
               </>
             )}
           </button>
