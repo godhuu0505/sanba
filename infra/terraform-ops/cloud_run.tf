@@ -46,6 +46,10 @@ resource "google_cloud_run_v2_service" "a2a_facade" {
         name  = "A2A_FACADE_AGENT_INSTRUCTIONS"
         value = var.agent_instructions
       }
+      env {
+        name  = "A2A_FACADE_PUBLIC_URL"
+        value = var.public_url
+      }
     }
 
     containers {

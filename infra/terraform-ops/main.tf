@@ -39,6 +39,7 @@ resource "google_artifact_registry_repository" "images" {
 resource "google_service_account" "holmes_facade" {
   account_id   = "holmes-facade"
   display_name = "A2A facade + HolmesGPT sidecar runtime (ADR-0069)"
+  depends_on   = [google_project_service.services]
 }
 
 resource "google_project_iam_member" "holmes_vertex_user" {

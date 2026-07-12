@@ -41,6 +41,12 @@ variable "image_tag" {
   default     = "latest"
 }
 
+variable "public_url" {
+  description = "Public HTTPS URL of this Cloud Run service used in A2A agent card discovery (run 'terraform output facade_url' after first apply to get the value)"
+  type        = string
+  default     = ""
+}
+
 variable "project_id" {
   description = "GCP project hosting the external-agent runtime (quota-isolated from production; ADR-0069 decision 4)"
   type        = string
