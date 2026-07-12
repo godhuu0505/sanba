@@ -59,7 +59,7 @@ export default function ResultsListPage() {
       current="results"
       title="過去の要件一覧"
     >
-      <div className="mx-auto flex w-full max-w-[480px] flex-col gap-[18px] px-4 py-4">
+      <div className="mx-auto flex w-full max-w-[480px] flex-col gap-[18px] px-4 py-4 lg:max-w-[760px] lg:py-6">
         <SessionHistoryList items={history} />
       </div>
     </AppShell>

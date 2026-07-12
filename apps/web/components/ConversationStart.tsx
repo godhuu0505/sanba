@@ -151,7 +151,7 @@ function RoomGate({
   return (
     <Screen className="h-dvh px-4 pt-3">
       <AppHeader brand right={<StartAudio label="音声を有効に" />} />
-      <main className="mx-auto flex min-h-0 w-full max-w-[640px] flex-1 flex-col overflow-y-auto">
+      <main className="mx-auto flex min-h-0 w-full max-w-[640px] flex-1 flex-col overflow-y-auto lg:max-w-[1160px]">
         <p className="mb-2 text-[12px] text-sanba-muted">
           セッション: <code>{conn.session_id}</code>
         </p>

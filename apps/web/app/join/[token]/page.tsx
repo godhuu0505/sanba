@@ -172,7 +172,7 @@ export default function JoinPage() {
   return (
     <Screen className="px-4 py-3 sanba-scroll">
       <AppHeader title="会話に参加" onBack={() => router.push("/")} />
-      <main className="mx-auto flex w-full max-w-[480px] flex-1 flex-col gap-[18px] pt-2">
+      <main className="mx-auto flex w-full max-w-[480px] flex-1 flex-col gap-[18px] pt-2 lg:max-w-[560px] lg:pt-6">
         {error && !error.retryable ? (
           <Card>
             <CardTitle>{error.title}</CardTitle>
