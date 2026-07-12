@@ -70,12 +70,6 @@ export interface AnalysisVisualConflict {
   refs: string[];
 }
 
-export interface Question {
-  id: string;
-  prompt: string;
-  options: DetectionOption[];
-}
-
 
 interface Envelope<T extends string> {
   v: number;
@@ -138,16 +132,6 @@ export type AnalysisVisualEvent = Envelope<"analysis.visual"> & {
   conflicts: AnalysisVisualConflict[];
 };
 
-export type QuestionAskedEvent = Envelope<"question.asked"> & {
-  id: string;
-  prompt: string;
-  options?: DetectionOption[];
-};
-
-export type QuestionClearedEvent = Envelope<"question.cleared"> & {
-  question_id: string;
-};
-
 export type SessionEndProposedEvent = Envelope<"session.end_proposed"> & {
   open_count: number;
   requirement_count: number;
@@ -169,8 +153,6 @@ export type ServerEvent =
   | TranscriptFinalEvent
   | InquiryNodeEvent
   | RequirementUpsertedEvent
-  | QuestionAskedEvent
-  | QuestionClearedEvent
   | AnalysisProgressEvent
   | AnalysisVisualEvent
   | ContextProgressEvent
@@ -189,12 +171,6 @@ export type UserTextEvent = Envelope<"user.text"> & {
   text: string;
 };
 
-export type UserAnsweredEvent = Envelope<"user.answered"> & {
-  question_id: string;
-  selected_value?: string;
-  text?: string;
-};
-
 export type UserInquiryDropEvent = Envelope<"user.inquiry_drop"> & {
   node_id: string;
 };
@@ -204,6 +180,5 @@ export type UserInterruptEvent = Envelope<"user.interrupt">;
 export type ClientEvent =
   | UserSelectionEvent
   | UserTextEvent
-  | UserAnsweredEvent
   | UserInquiryDropEvent
   | UserInterruptEvent;

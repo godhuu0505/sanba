@@ -12,7 +12,6 @@ import {
 } from "react";
 import {
   fetchContextFiles,
-  fetchCurrentQuestion,
   fetchInquiry,
   fetchRequirements,
 } from "../api";
@@ -20,7 +19,6 @@ import { contractEventFixture } from "./fixtures";
 import { RealtimeMetrics, type RealtimeMetricsSnapshot } from "./metrics";
 import {
   decodeServerEvent,
-  encodeUserAnswered,
   encodeUserInquiryDrop,
   encodeUserInterrupt,
   encodeUserSelection,
@@ -32,11 +30,6 @@ import { EVENTS_TOPIC, WEB_EVENTS_TOPIC, type ServerEvent } from "./types";
 export type SendSelection = (detectionId: string, selectedValue: string) => void;
 
 export type SendText = (text: string) => void;
-
-export type SendAnswer = (
-  questionId: string,
-  answer: { selectedValue?: string; text?: string },
-) => void;
 
 export type SendInquiryDrop = (nodeId: string) => void;
 
@@ -50,7 +43,6 @@ export interface UseRealtimeSessionResult {
   store: RealtimeStore;
   sendSelection: SendSelection;
   sendText: SendText;
-  sendAnswer: SendAnswer;
   sendInquiryDrop: SendInquiryDrop;
   sendInterrupt: SendInterrupt;
 }
@@ -127,20 +119,6 @@ export function useRealtimeSession(opts: LiveOptions): UseRealtimeSessionResult 
     },
     [send, sessionId],
   );
-  const sendAnswer = useCallback<SendAnswer>(
-    (questionId, answer) => {
-      clientSeq.current += 1;
-      const payload = encodeUserAnswered(
-        sessionId,
-        questionId,
-        answer,
-        clientSeq.current,
-        new Date().toISOString(),
-      );
-      send(payload, { reliable: true });
-    },
-    [send, sessionId],
-  );
   const sendInquiryDrop = useCallback<SendInquiryDrop>(
     (nodeId) => {
       clientSeq.current += 1;
@@ -165,26 +143,17 @@ export function useRealtimeSession(opts: LiveOptions): UseRealtimeSessionResult 
 
   const hydrate = useCallback(async () => {
     if (!sessionId) return;
-    let requirementsOk = false;
-    let inquiryOk = !hydrateInquiry;
     try {
       const snap = await fetchRequirements(sessionId, sessionToken);
       store.hydrateRequirements(snap.items, snap.seq);
-      requirementsOk = true;
     } catch {
     }
     if (hydrateInquiry) {
       try {
         const snap = await fetchInquiry(sessionId, sessionToken);
         store.hydrateInquiry(snap.nodes, snap.seq ?? 0);
-        inquiryOk = true;
       } catch {
       }
-    }
-    try {
-      const snap = await fetchCurrentQuestion(sessionId, sessionToken);
-      store.hydrateQuestion(snap.question, snap.seq, requirementsOk && inquiryOk);
-    } catch {
     }
     if (hydrateAnalysis) {
       try {
@@ -237,7 +206,6 @@ export function useRealtimeSession(opts: LiveOptions): UseRealtimeSessionResult 
     store,
     sendSelection,
     sendText,
-    sendAnswer,
     sendInquiryDrop,
     sendInterrupt,
   };
@@ -245,7 +213,6 @@ export function useRealtimeSession(opts: LiveOptions): UseRealtimeSessionResult 
 
 const noopSelection: SendSelection = () => {};
 const noopText: SendText = () => {};
-const noopAnswer: SendAnswer = () => {};
 const noopInquiryDrop: SendInquiryDrop = () => {};
 const noopInterrupt: SendInterrupt = () => {};
 
@@ -276,7 +243,6 @@ export function useFixtureSession(
     store,
     sendSelection: noopSelection,
     sendText: noopText,
-    sendAnswer: noopAnswer,
     sendInquiryDrop: noopInquiryDrop,
     sendInterrupt: noopInterrupt,
   };

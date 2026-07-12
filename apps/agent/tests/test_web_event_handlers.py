@@ -1,7 +1,7 @@
-"""web → agent イベント（user.text / user.answered, 契約 §4.5）の会話ターン化テスト。
+"""web → agent イベント（user.text, 契約 §4.5）の会話ターン化テスト。
 
-テキスト入力が音声入力と同じ扱いになること——発話記録（transcript.final）→ 未回答
-current のクリア → 読み上げ中断（バージイン同等）→ user ターンとしての応答生成——を、
+テキスト入力が音声入力と同じ扱いになること——発話記録（transcript.final）→
+読み上げ中断（バージイン同等）→ user ターンとしての応答生成——を、
 LiveKit ランタイム無しの偽セッションで検証する。
 """
 
@@ -16,7 +16,6 @@ from sanba_agent.events import EventPublisher, RecordingTransport
 from sanba_agent.main import (
     SANBAAgent,
     interrupt_playback,
-    respond_to_answer,
     respond_to_user_text,
 )
 from sanba_agent.retrieval import GroundingStore
@@ -64,7 +63,7 @@ async def test_user_text_interrupts_then_replies_as_user_turn() -> None:
     session = FakeAgentSession()
 
     await respond_to_user_text(
-        agent, session, "決済は Stripe にしたい", None, _passthrough_guard(session)
+        agent, session, "決済は Stripe にしたい", _passthrough_guard(session)
     )  # type: ignore[arg-type]
 
     assert [name for name, _ in session.calls] == ["interrupt", "generate_reply"]
@@ -75,48 +74,6 @@ async def test_user_text_interrupts_then_replies_as_user_turn() -> None:
     assert len(finals) == 1
     assert finals[0]["text"] == "決済は Stripe にしたい"
     assert finals[0]["role"] == "participant"
-
-
-async def test_user_text_clears_bound_current_question() -> None:
-    agent, repo, _transport = _agent()
-    repo.save_current_question("s1", {"id": "q1", "prompt": "並び順は？"}, asked_seq=1)
-    agent._current_question_id = "q1"
-    session = FakeAgentSession()
-
-    await respond_to_user_text(agent, session, "新着順で", "q1", _passthrough_guard(session))  # type: ignore[arg-type]
-
-    assert repo._mem_questions["s1"]["cleared"] is True
-    assert agent.current_question_id is None
-    assert [name for name, _ in session.calls] == ["interrupt", "generate_reply"]
-
-
-async def test_user_text_without_current_question_skips_clear() -> None:
-    agent, repo, _transport = _agent()
-    session = FakeAgentSession()
-
-    await respond_to_user_text(agent, session, "こんにちは", None, _passthrough_guard(session))  # type: ignore[arg-type]
-
-    assert "s1" not in repo._mem_questions
-    assert [name for name, _ in session.calls] == ["interrupt", "generate_reply"]
-
-
-async def test_user_answered_interrupts_and_advances_with_question_context() -> None:
-    agent, repo, transport = _agent()
-    repo.save_current_question("s1", {"id": "q1", "prompt": "対象OSは？"}, asked_seq=1)
-    agent._current_question_id = "q1"
-    agent._questions["q1"] = "対象OSは？"
-    session = FakeAgentSession()
-
-    await respond_to_answer(agent, session, "q1", "iOS のみ", _passthrough_guard(session))  # type: ignore[arg-type]
-
-    assert repo._mem_questions["s1"]["cleared"] is True
-    assert [name for name, _ in session.calls] == ["interrupt", "generate_reply"]
-    _, kwargs = session.calls[-1]
-    assert "対象OSは？" in kwargs["instructions"]
-    assert "iOS のみ" in kwargs["instructions"]
-    await _drain_publishes()
-    finals = [s["event"] for s in transport.sent if s["event"]["type"] == "transcript.final"]
-    assert any("対象OSは？" in ev["text"] and "iOS のみ" in ev["text"] for ev in finals)
 
 
 async def test_user_interrupt_stops_playback_immediately() -> None:

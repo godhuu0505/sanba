@@ -1,8 +1,8 @@
 # ADR-0020: question.asked のハイドレーション方式（サーバ保存 + GET 復元）
 
-- ステータス: Accepted（方針確定。実装は WAVE2 / issue #212 フォローアップ）
+- ステータス: Superseded by ADR-0070
 - 日付: 2026-06-28
-- 関連: ADR-0014（ログイン/管理画面・永続化境界）、リアルタイム契約 `docs/reference/realtime-contract.md` §2/§4、PR #210（#181 実装）コメント [discussion_r3481382058](https://github.com/godhuu0505/sanba/pull/210#discussion_r3481382058)、issue #212、関連 #184/#100
+- 関連: [ADR-0070](0070-remove-ask-question-tool.md)（ask_question と問いピン機構の撤廃。本 ADR を置き換える）、ADR-0014（ログイン/管理画面・永続化境界）、リアルタイム契約 `docs/reference/realtime-contract.md` §2/§4、PR #210（#181 実装）コメント [discussion_r3481382058](https://github.com/godhuu0505/sanba/pull/210#discussion_r3481382058)、issue #212、関連 #184/#100
 
 ## コンテキスト
 

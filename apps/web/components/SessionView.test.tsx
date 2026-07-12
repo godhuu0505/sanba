@@ -20,20 +20,12 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }),
 }));
 
-vi.mock("@/lib/auth", () => ({
-  useAuth: () => ({
-    driveGranted: null,
-    requestDriveAccess: () => Promise.resolve(null),
-  }),
-}));
-
 vi.mock("@/lib/realtime/useRealtimeSession", () => ({
   useRealtimeSession: () => ({
     state: {},
     metrics: {},
     sendSelection: vi.fn(),
     sendText: vi.fn(),
-    sendAnswer: vi.fn(),
     sendInterrupt: vi.fn(),
   }),
 }));
@@ -43,7 +35,6 @@ const sendTelemetry = vi.fn();
 const deleteContextFile = vi.fn();
 vi.mock("@/lib/api", () => ({
   ACCEPTED_IMAGE: ".png",
-  ACCEPTED_VIDEO: ".mp4",
   ACCEPTED_DOC: ".md",
   uploadContextFile: (...args: unknown[]) => uploadContextFile(...args),
   fetchContextFiles: () => Promise.resolve({ items: [] }),
