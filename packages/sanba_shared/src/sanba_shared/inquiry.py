@@ -94,8 +94,9 @@ class InquiryTree:
     ) -> list[InquiryNode]:
         """ノードを冪等 upsert し、変化したノード（本体＋剪定された子）を返す。
 
-        - 既存が resolved なら再 open（同一論点の再燃）。dropped は「人間が不要と判断」した
-          ものなので再検知でも復活させない（no-op）。
+        - 既存が resolved なら再 open（同一論点の再燃）。ただし `pinned`（会話/画面での明示解消）
+          なら再検知でも再 open しない（no-op）。dropped も「人間が不要と判断」したものなので
+          復活させない（no-op）。
         - 親は与えられた `parent_id`（フォーカス）。深さ上限を超える場合は祖先へ付け替える。
         - upsert 後、同一親の open 子が上限超なら confidence 最小の open 子を drop する。
         """
@@ -105,6 +106,8 @@ class InquiryTree:
 
         if existing is not None:
             if existing.status is InquiryStatus.DROPPED:
+                return []
+            if existing.status is InquiryStatus.RESOLVED and existing.pinned:
                 return []
             existing.confidence = confidence
             if refs:
@@ -147,13 +150,19 @@ class InquiryTree:
             pruned.append(victim)
         return pruned
 
-    def resolve(self, node_id: str, seq: int) -> InquiryNode | None:
-        """ノードを解消済みにする。存在しない/既に非 open なら None。"""
+    def resolve(self, node_id: str, seq: int, *, pin: bool = False) -> InquiryNode | None:
+        """ノードを解消済みにする。存在しない/既に非 open なら None。
+
+        `pin=True`（会話/画面での明示解消）は以後の背景分析の再検知で再 open されない
+        （coverage 推定より人手の解消を優先し終了ゲートの振動を止める / RC3）。
+        """
         node = self._nodes.get(node_id)
         if node is None or node.status is not InquiryStatus.OPEN:
             return None
         node.status = InquiryStatus.RESOLVED
         node.resolved_seq = seq
+        if pin:
+            node.pinned = True
         return node
 
     def resolve_by_text(self, kind: InquiryKind, text: str, seq: int) -> InquiryNode | None:
@@ -174,18 +183,19 @@ class InquiryTree:
         seq: int,
         *,
         min_ratio: float = 0.62,
+        pin: bool = False,
     ) -> InquiryNode | None:
         """会話由来の要点テキストで open ノードを1件解消する（完全一致優先・最尤一致で補完）。
 
         まず kind ごとの冪等 id 完全一致を試し、無ければ open ノードの正規化テキストとの
         difflib 類似度が min_ratio 以上かつ単独最大のノードを解消する。近似の言い換えでも
         確実に解消でき、resolve_inquiry の空振りループを断つ（#468）。同点1位が複数のときは
-        誤解消を避けて None を返す。
+        誤解消を避けて None を返す。`pin` は `resolve` へ委譲する（RC3）。
         """
         for kind in kinds:
             node = self._nodes.get(make_inquiry_id(kind, text))
             if node is not None and node.status is InquiryStatus.OPEN:
-                return self.resolve(node.id, seq)
+                return self.resolve(node.id, seq, pin=pin)
         norm = normalize_text(text)
         if not norm:
             return None
@@ -201,7 +211,7 @@ class InquiryTree:
             return None
         if len(ranked) > 1 and ranked[1][0] >= ranked[0][0] - 1e-9:
             return None
-        return self.resolve(ranked[0][1].id, seq)
+        return self.resolve(ranked[0][1].id, seq, pin=pin)
 
     def drop(self, node_id: str, seq: int) -> InquiryNode | None:
         """ノードを不要（人間の剪定）にする。open のみ対象。"""

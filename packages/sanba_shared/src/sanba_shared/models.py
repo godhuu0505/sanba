@@ -415,6 +415,8 @@ class InquiryNode(BaseModel):
 
     深さ・枝の上限はサーバ（`InquiryTree`）が強制する。`confidence` は枝/深さ超過時の
     剪定順に使う。`refs` は根拠発話/grounding 参照で HP9 出力・トレーサビリティに使う。
+    `pinned` は会話/画面での明示解消（`resolve_inquiry`・選択）を表し、背景分析の再検知でも
+    再 open しない（coverage 推定より人手の解消を優先し終了ゲートの振動を止める）。
     """
 
     id: str
@@ -428,3 +430,4 @@ class InquiryNode(BaseModel):
     refs: list[str] = Field(default_factory=list)
     created_seq: int = 0
     resolved_seq: int | None = None
+    pinned: bool = False

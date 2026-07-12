@@ -69,6 +69,38 @@ def test_resolved_node_reopens_on_reupsert() -> None:
     assert reopened.resolved_seq is None
 
 
+def test_pinned_resolved_node_is_not_reopened_by_reupsert() -> None:
+    tree = InquiryTree()
+    seq = _seq()
+    node = tree.upsert(kind=InquiryKind.CHECK, text="セキュリティ面", seq=seq())[0]
+    tree.resolve(node.id, seq(), pin=True)
+    assert tree.get(node.id).status is InquiryStatus.RESOLVED
+    changed = tree.upsert(kind=InquiryKind.CHECK, text="セキュリティ面", seq=seq())
+    assert changed == []
+    assert tree.get(node.id).status is InquiryStatus.RESOLVED
+    assert tree.get(node.id).pinned is True
+
+
+def test_unpinned_resolved_node_still_reopens_on_reupsert() -> None:
+    tree = InquiryTree()
+    seq = _seq()
+    node = tree.upsert(kind=InquiryKind.CHECK, text="コスト面", seq=seq())[0]
+    tree.resolve(node.id, seq())
+    reopened = tree.upsert(kind=InquiryKind.CHECK, text="コスト面", seq=seq())[0]
+    assert reopened.status is InquiryStatus.OPEN
+
+
+def test_resolve_best_match_can_pin() -> None:
+    tree = InquiryTree()
+    seq = _seq()
+    tree.upsert(kind=InquiryKind.GAP, text="在庫引き当ての扱い", seq=seq())
+    resolved = tree.resolve_best_match((InquiryKind.GAP,), "在庫引き当ての扱い", seq(), pin=True)
+    assert resolved is not None
+    assert resolved.pinned is True
+    changed = tree.upsert(kind=InquiryKind.GAP, text="在庫引き当ての扱い", seq=seq())
+    assert changed == []
+
+
 def test_dropped_node_is_not_resurrected_by_reupsert() -> None:
     tree = InquiryTree()
     seq = _seq()
