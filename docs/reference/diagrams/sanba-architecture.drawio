@@ -58,7 +58,7 @@
         <mxCell id="c4-e1" value="① HTTPS&lt;br&gt;youken.sanba.net" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;fontColor=#333333;fontSize=11;labelBackgroundColor=#FFFFFF;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.4;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="c4-p1" target="c4-web">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="c4-e2" value="/admin&lt;br&gt;観点設定・承認" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;fontColor=#333333;fontSize=11;labelBackgroundColor=#FFFFFF;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.8;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="c4-p2" target="c4-web">
+        <mxCell id="c4-e2" value="products / settings&lt;br&gt;観点設定・承認" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;fontColor=#333333;fontSize=11;labelBackgroundColor=#FFFFFF;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.8;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="c4-p2" target="c4-web">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
               <mxPoint x="490" y="190" />
@@ -280,14 +280,14 @@
         <mxCell id="sq-m2" value="② id_token (OIDC)" style="html=1;strokeColor=#333333;fontSize=11;verticalAlign=bottom;labelBackgroundColor=none;endArrow=open;dashed=1;" edge="1" parent="s1">
           <mxGeometry relative="1" as="geometry"><mxPoint x="300" y="165" as="sourcePoint" /><mxPoint x="110" y="165" as="targetPoint" /></mxGeometry>
         </mxCell>
-        <mxCell id="sq-m3" value="③ POST /api/sessions/join（Bearer id_token + invite）" style="html=1;strokeColor=#333333;fontSize=11;verticalAlign=bottom;labelBackgroundColor=none;endArrow=block;" edge="1" parent="s1">
+        <mxCell id="sq-m3" value="③ POST /api/session/exchange（id_token + nonce）→ HttpOnly Cookie 発行&lt;br&gt;→ POST /api/sessions/join（Cookie）" style="html=1;strokeColor=#333333;fontSize=11;verticalAlign=bottom;labelBackgroundColor=none;endArrow=block;" edge="1" parent="s1">
           <mxGeometry relative="1" as="geometry"><mxPoint x="110" y="200" as="sourcePoint" /><mxPoint x="490" y="200" as="targetPoint" /></mxGeometry>
         </mxCell>
         <mxCell id="sq-m4" value="④ id_token 検証（aud/iss/exp）" style="html=1;strokeColor=#333333;fontSize=11;verticalAlign=bottom;labelBackgroundColor=none;endArrow=block;" edge="1" parent="s1">
           <mxGeometry relative="1" as="geometry"><mxPoint x="490" y="235" as="sourcePoint" /><mxPoint x="300" y="235" as="targetPoint" /></mxGeometry>
         </mxCell>
-        <mxCell id="sq-m5" value="⑤ AccessToken 発行（room scoped / TTL）" style="html=1;strokeColor=#333333;fontSize=11;verticalAlign=bottom;labelBackgroundColor=none;endArrow=block;" edge="1" parent="s1">
-          <mxGeometry relative="1" as="geometry"><mxPoint x="490" y="270" as="sourcePoint" /><mxPoint x="680" y="270" as="targetPoint" /></mxGeometry>
+        <mxCell id="sq-m5" value="⑤ LiveKit JWT をローカル署名&lt;br&gt;（_mint_join_tokens・LiveKit Cloud への通信なし）" style="html=1;strokeColor=#333333;fontSize=11;verticalAlign=bottom;labelBackgroundColor=none;endArrow=block;" edge="1" parent="s1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="490" y="270" as="sourcePoint" /><mxPoint x="490" y="290" as="targetPoint" /></mxGeometry>
         </mxCell>
         <mxCell id="sq-m6" value="⑥ LiveKit token + session_token" style="html=1;strokeColor=#333333;fontSize=11;verticalAlign=bottom;labelBackgroundColor=none;endArrow=open;dashed=1;" edge="1" parent="s1">
           <mxGeometry relative="1" as="geometry"><mxPoint x="490" y="305" as="sourcePoint" /><mxPoint x="110" y="305" as="targetPoint" /></mxGeometry>
@@ -393,7 +393,7 @@
         </mxCell>
         <mxCell id="er-members-r1" value="🔑 docID = {product_id}__{sub}（複合キー）" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;fontStyle=5;" vertex="1" parent="er-members"><mxGeometry y="30" width="280" height="22" as="geometry" /></mxCell>
         <mxCell id="er-members-r2" value="product_id → products.id" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;fontStyle=2;" vertex="1" parent="er-members"><mxGeometry y="52" width="280" height="22" as="geometry" /></mxCell>
-        <mxCell id="er-members-r3" value="sub → users.sub" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;fontStyle=2;" vertex="1" parent="er-members"><mxGeometry y="74" width="280" height="22" as="geometry" /></mxCell>
+        <mxCell id="er-members-r3" value="sub（GitHub 連携時のみ users.sub 参照・未連携は document なし）" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;" vertex="1" parent="er-members"><mxGeometry y="74" width="280" height="22" as="geometry" /></mxCell>
         <mxCell id="er-members-r4" value="email ／ display_name" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;" vertex="1" parent="er-members"><mxGeometry y="96" width="280" height="22" as="geometry" /></mxCell>
         <mxCell id="er-members-r5" value="invited_by_sub" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;" vertex="1" parent="er-members"><mxGeometry y="118" width="280" height="22" as="geometry" /></mxCell>
         <mxCell id="er-members-r6" value="created_at" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;" vertex="1" parent="er-members"><mxGeometry y="140" width="280" height="22" as="geometry" /></mxCell>
@@ -441,7 +441,7 @@
         <mxCell id="er-sessions-r11" value="github_repo / branch / sha / index_status" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;" vertex="1" parent="er-sessions"><mxGeometry y="250" width="300" height="22" as="geometry" /></mxCell>
         <mxCell id="er-sessions-r12" value="ai_cost{total_usd, components{…}}（埋込）" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;" vertex="1" parent="er-sessions"><mxGeometry y="272" width="300" height="22" as="geometry" /></mxCell>
         <mxCell id="er-sessions-r13" value="last_seq ／ lossy_epoch（realtime 用）" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;" vertex="1" parent="er-sessions"><mxGeometry y="294" width="300" height="22" as="geometry" /></mxCell>
-        <mxCell id="er-sessions-r14" value="expireAt ⏳TTL（既定30日）" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;" vertex="1" parent="er-sessions"><mxGeometry y="316" width="300" height="22" as="geometry" /></mxCell>
+        <mxCell id="er-sessions-r14" value="expireAt ⏳TTL（ゲストセッションのみ 30日 / ログインセッションは付与しない）" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;" vertex="1" parent="er-sessions"><mxGeometry y="316" width="300" height="22" as="geometry" /></mxCell>
         <mxCell id="er-utter" value="sessions/{id}/utterances/{auto}" style="swimlane;fontStyle=1;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;collapsible=0;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#DAE8FC;strokeColor=#6C8EBF;fontSize=12;" vertex="1" parent="e1">
           <mxGeometry x="1120" y="80" width="280" height="140" as="geometry" />
         </mxCell>
@@ -478,7 +478,7 @@
         <mxCell id="er-mat" value="sessions/{id}/materials/{asset_id}" style="swimlane;fontStyle=1;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;collapsible=0;marginBottom=0;whiteSpace=wrap;html=1;fillColor=#FFE6CC;strokeColor=#D79B00;fontSize=12;" vertex="1" parent="e1">
           <mxGeometry x="1120" y="880" width="280" height="206" as="geometry" />
         </mxCell>
-        <mxCell id="er-mat-r1" value="🔑 id = asset_id（sha256[:16] content hash）" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;fontStyle=5;" vertex="1" parent="er-mat"><mxGeometry y="30" width="280" height="22" as="geometry" /></mxCell>
+        <mxCell id="er-mat-r1" value="🔑 id = asset_id（doc/image: sha256[:16] / video: uuid[:16]）" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;fontStyle=5;" vertex="1" parent="er-mat"><mxGeometry y="30" width="280" height="22" as="geometry" /></mxCell>
         <mxCell id="er-mat-r2" value="name" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;" vertex="1" parent="er-mat"><mxGeometry y="52" width="280" height="22" as="geometry" /></mxCell>
         <mxCell id="er-mat-r3" value="kind: doc|image|video" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;" vertex="1" parent="er-mat"><mxGeometry y="74" width="280" height="22" as="geometry" /></mxCell>
         <mxCell id="er-mat-r4" value="status: uploading→analyzing→done|failed" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=6;overflow=hidden;whiteSpace=wrap;html=1;fontSize=11;" vertex="1" parent="er-mat"><mxGeometry y="96" width="280" height="22" as="geometry" /></mxCell>
