@@ -39,6 +39,26 @@ describe("ChatHistory（会話履歴タブ）", () => {
     expect(screen.getByText(/考え中/)).toBeTruthy();
   });
 
+  it("エージェント発話が確定した後の待機中（deliberating）も考え中を出す", () => {
+    render(
+      <ChatHistory
+        transcript={[line({ utterance_id: "u1", role: "assistant", text: "承知しました", final: true })]}
+        phase="deliberating"
+      />,
+    );
+    expect(screen.getByText(/考え中/)).toBeTruthy();
+  });
+
+  it("エージェント発話が未確定（生成中）なら二重で考え中を出さない", () => {
+    render(
+      <ChatHistory
+        transcript={[line({ utterance_id: "u1", role: "assistant", text: "え", final: false })]}
+        phase="deliberating"
+      />,
+    );
+    expect(screen.queryByText(/考え中…/)).toBeNull();
+  });
+
   it("エージェント発話中は考え中を出さない", () => {
     render(
       <ChatHistory
