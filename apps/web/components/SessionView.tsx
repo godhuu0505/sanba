@@ -35,6 +35,21 @@ import { usePushToTalk } from "../lib/usePushToTalk";
 import { ConversationSessionView } from "./ConversationSessionView";
 import { MaterialSourceSheet } from "./MaterialSourceSheet";
 
+const AGENT_SPEAKING_RELEASE_MS = 600;
+
+export function useTrailingLatch(value: boolean, releaseMs: number): boolean {
+  const [latched, setLatched] = useState(value);
+  useEffect(() => {
+    if (value) {
+      setLatched(true);
+      return;
+    }
+    const timer = window.setTimeout(() => setLatched(false), releaseMs);
+    return () => window.clearTimeout(timer);
+  }, [value, releaseMs]);
+  return latched;
+}
+
 function formatElapsed(ms: number): string {
   const total = Math.max(0, Math.floor(ms / 1000));
   const s = total % 60;
@@ -87,7 +102,8 @@ export function SessionView({
     return () => clearInterval(id);
   }, [timerRunning, startedAt]);
   const speaking = useSpeakingParticipants();
-  const agentSpeaking = speaking.some((p) => !p.isLocal);
+  const agentSpeakingRaw = speaking.some((p) => !p.isLocal);
+  const agentSpeaking = useTrailingLatch(agentSpeakingRaw, AGENT_SPEAKING_RELEASE_MS);
   const [sourceSheetOpen, setSourceSheetOpen] = useState(false);
 
   const [pending, setPending] = useState<MaterialItem[]>([]);
