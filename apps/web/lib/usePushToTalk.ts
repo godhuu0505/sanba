@@ -9,16 +9,20 @@ import type {
 
 export type MicMode = "handsfree" | "ptt";
 
+type PressSource = "pointer" | "key";
+
 export interface PttPressProps {
   onPointerDown: (e: ReactPointerEvent<HTMLElement>) => void;
   onPointerUp: () => void;
   onPointerLeave: () => void;
   onPointerCancel: () => void;
+  onLostPointerCapture: () => void;
   onContextMenu: (e: ReactMouseEvent<HTMLElement>) => void;
 }
 
 export interface UsePushToTalkOptions {
   sendInterrupt: () => void;
+  onError?: (message: string) => void;
 }
 
 export interface UsePushToTalkResult {
@@ -28,75 +32,143 @@ export interface UsePushToTalkResult {
   pressProps: PttPressProps;
 }
 
-function isTextEntryTarget(target: EventTarget | null): boolean {
+function isInteractiveTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
   if (target.isContentEditable) return true;
-  const tag = target.tagName;
-  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
+  return (
+    target.closest(
+      "button, [role='button'], input, textarea, select, a[href], [contenteditable='true']",
+    ) !== null
+  );
 }
 
-export function usePushToTalk({ sendInterrupt }: UsePushToTalkOptions): UsePushToTalkResult {
+export function usePushToTalk({
+  sendInterrupt,
+  onError,
+}: UsePushToTalkOptions): UsePushToTalkResult {
   const room = useRoomContext();
+  const roomRef = useRef(room);
+  useEffect(() => {
+    roomRef.current = room;
+  }, [room]);
   const [mode, setModeState] = useState<MicMode>("handsfree");
   const [pttPressed, setPttPressed] = useState(false);
-  const pressedRef = useRef(false);
-
-  const startPress = useCallback(() => {
-    if (pressedRef.current) return;
-    pressedRef.current = true;
-    setPttPressed(true);
-    sendInterrupt();
-  }, [sendInterrupt]);
-
-  const endPress = useCallback(() => {
-    if (!pressedRef.current) return;
-    pressedRef.current = false;
-    setPttPressed(false);
-  }, []);
-
-  const setMode = useCallback((next: MicMode) => {
-    pressedRef.current = false;
-    setPttPressed(false);
-    setModeState(next);
-  }, []);
-
-  const micEnabled = mode === "handsfree" || pttPressed;
-
-  const desiredMicRef = useRef(micEnabled);
-  const applyingMicRef = useRef(false);
-  const applyMic = useCallback(async () => {
-    if (applyingMicRef.current) return;
-    applyingMicRef.current = true;
-    try {
-      let want = desiredMicRef.current;
-      for (;;) {
-        await room.localParticipant.setMicrophoneEnabled(want);
-        if (desiredMicRef.current === want) break;
-        want = desiredMicRef.current;
-      }
-    } catch (e) {
-      console.error("ptt mic gate failed", e);
-    } finally {
-      applyingMicRef.current = false;
-    }
-  }, [room]);
-
+  const modeRef = useRef<MicMode>("handsfree");
+  const pressSourceRef = useRef<PressSource | null>(null);
+  const restoreEnabledRef = useRef<boolean | null>(null);
+  const sendInterruptRef = useRef(sendInterrupt);
+  const onErrorRef = useRef(onError);
   useEffect(() => {
-    desiredMicRef.current = micEnabled;
-    void applyMic();
-  }, [micEnabled, applyMic]);
+    sendInterruptRef.current = sendInterrupt;
+    onErrorRef.current = onError;
+  }, [sendInterrupt, onError]);
+
+  const desiredMicRef = useRef<boolean | null>(null);
+  const applyingMicRef = useRef(false);
+
+  const clearPressState = useCallback(() => {
+    pressSourceRef.current = null;
+    setPttPressed(false);
+  }, []);
+
+  const applyDesiredMic = useCallback(
+    (want: boolean) => {
+      desiredMicRef.current = want;
+      if (applyingMicRef.current) return;
+      applyingMicRef.current = true;
+      void (async () => {
+        try {
+          for (;;) {
+            const target = desiredMicRef.current;
+            if (target === null) break;
+            try {
+              await roomRef.current.localParticipant.setMicrophoneEnabled(target);
+            } catch (e) {
+              console.error("ptt mic gate failed", e);
+              onErrorRef.current?.(
+                target
+                  ? "マイクを開けませんでした。ブラウザのマイク許可を確認してください。"
+                  : "マイクのミュートに失敗しました。",
+              );
+              if (target) clearPressState();
+              if (desiredMicRef.current === target) break;
+              continue;
+            }
+            if (desiredMicRef.current === target) break;
+          }
+        } finally {
+          applyingMicRef.current = false;
+        }
+      })();
+    },
+    [clearPressState],
+  );
+
+  const startPress = useCallback(
+    (source: PressSource) => {
+      if (modeRef.current !== "ptt") return;
+      if (pressSourceRef.current !== null) return;
+      pressSourceRef.current = source;
+      setPttPressed(true);
+      sendInterruptRef.current();
+      applyDesiredMic(true);
+    },
+    [applyDesiredMic],
+  );
+
+  const endPress = useCallback(
+    (source?: PressSource) => {
+      if (pressSourceRef.current === null) return;
+      if (source !== undefined && pressSourceRef.current !== source) return;
+      clearPressState();
+      if (modeRef.current === "ptt") applyDesiredMic(false);
+    },
+    [applyDesiredMic, clearPressState],
+  );
+
+  const setMode = useCallback(
+    (next: MicMode) => {
+      const prev = modeRef.current;
+      if (next === prev) return;
+      modeRef.current = next;
+      clearPressState();
+      setModeState(next);
+      if (next === "ptt") {
+        restoreEnabledRef.current = roomRef.current.localParticipant.isMicrophoneEnabled;
+        applyDesiredMic(false);
+        return;
+      }
+      const restore = restoreEnabledRef.current;
+      restoreEnabledRef.current = null;
+      if (restore !== null) applyDesiredMic(restore);
+    },
+    [applyDesiredMic, clearPressState],
+  );
+
+  useEffect(
+    () => () => {
+      const restore = restoreEnabledRef.current;
+      restoreEnabledRef.current = null;
+      if (restore !== null) {
+        roomRef.current.localParticipant.setMicrophoneEnabled(restore).catch((e: unknown) => {
+          console.error("ptt mic restore failed", e);
+        });
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     if (mode !== "ptt") return;
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.code !== "Space" || e.repeat) return;
-      if (isTextEntryTarget(e.target)) return;
+      if (isInteractiveTarget(e.target)) return;
       e.preventDefault();
-      startPress();
+      startPress("key");
     };
     const onKeyUp = (e: KeyboardEvent) => {
       if (e.code !== "Space") return;
-      endPress();
+      endPress("key");
     };
     const onBlur = () => endPress();
     window.addEventListener("keydown", onKeyDown);
@@ -115,11 +187,13 @@ export function usePushToTalk({ sendInterrupt }: UsePushToTalkOptions): UsePushT
       onPointerDown: (e) => {
         if (e.pointerType === "mouse" && e.button !== 0) return;
         e.preventDefault();
-        startPress();
+        e.currentTarget.setPointerCapture?.(e.pointerId);
+        startPress("pointer");
       },
-      onPointerUp: endPress,
-      onPointerLeave: endPress,
-      onPointerCancel: endPress,
+      onPointerUp: () => endPress("pointer"),
+      onPointerLeave: () => endPress("pointer"),
+      onPointerCancel: () => endPress("pointer"),
+      onLostPointerCapture: () => endPress("pointer"),
       onContextMenu: (e) => e.preventDefault(),
     }),
     [startPress, endPress],

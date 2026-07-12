@@ -116,6 +116,7 @@ describe("BottomBar（PTT モード / ADR-0066 S3）", () => {
         onPointerUp: vi.fn(),
         onPointerLeave: vi.fn(),
         onPointerCancel: vi.fn(),
+    onLostPointerCapture: vi.fn(),
         onContextMenu: vi.fn(),
       },
     });

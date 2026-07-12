@@ -2311,15 +2311,18 @@ async def respond_to_answer(
     )
 
 
-async def interrupt_playback(session: AgentSession) -> None:
+async def interrupt_playback(session: AgentSession, *, session_id: str) -> None:
     """PTT 押下開始（user.interrupt, 契約 §4.5 / ADR-0066 S3）で読み上げを即時中断する。
 
     クライアント側 mic ゲートと対になるサーバ側の即応で、エージェントが発話中でも
-    ユーザーが話し始めた瞬間に黙る。中断対象が無い・実行中でない等の interrupt 失敗は
-    握りつぶす（発話を止める以外の副作用を持たないため、失敗しても会話は継続できる）。
+    ユーザーが話し始めた瞬間に黙る。interrupt の失敗は会話を止めないが、主因が
+    「セッション再起動とのレース」という低頻度・高シグナルな事象のため警告で可視化する
+    （CLAUDE.md 原則3）。
     """
-    with contextlib.suppress(Exception):
+    try:
         await session.interrupt()
+    except Exception as exc:  # noqa: BLE001
+        log.warning("user_interrupt_failed", session=session_id, error=str(exc))
 
 
 async def inject_video_analysis(
@@ -2622,7 +2625,7 @@ async def entrypoint(ctx: JobContext) -> None:
             return
         if decode_user_interrupt(data, expected_session_id=session_id):
             log.info("user_interrupt_received", session=session_id)
-            _schedule(interrupt_playback(session))
+            _schedule(interrupt_playback(session, session_id=session_id))
 
     def _wire_session(s: AgentSession) -> None:
         """AgentSession ごとのイベントハンドラを張る（再起動で作り直すたびに呼ぶ / ADR-0038）。"""

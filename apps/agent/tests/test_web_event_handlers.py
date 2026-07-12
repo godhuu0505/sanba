@@ -122,7 +122,7 @@ async def test_user_answered_interrupts_and_advances_with_question_context() -> 
 async def test_user_interrupt_stops_playback_immediately() -> None:
     session = FakeAgentSession()
 
-    await interrupt_playback(session)  # type: ignore[arg-type]
+    await interrupt_playback(session, session_id="s1")  # type: ignore[arg-type]
 
     assert [name for name, _ in session.calls] == ["interrupt"]
 
@@ -135,7 +135,7 @@ async def test_user_interrupt_swallows_interrupt_failure() -> None:
 
     session = FailingSession()
 
-    await interrupt_playback(session)  # type: ignore[arg-type]
+    await interrupt_playback(session, session_id="s1")  # type: ignore[arg-type]
 
     assert [name for name, _ in session.calls] == ["interrupt"]
 

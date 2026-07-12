@@ -62,12 +62,13 @@ export function SessionView({
       hydrateAnalysis: true,
     });
   const auth = useAuth();
+  const [sourceError, setSourceError] = useState<string | null>(null);
   const {
     mode: micMode,
     setMode: setMicMode,
     pttPressed,
     pressProps: pttPressProps,
-  } = usePushToTalk({ sendInterrupt });
+  } = usePushToTalk({ sendInterrupt, onError: setSourceError });
 
   const router = useRouter();
   const mic = useTrackToggle({ source: Track.Source.Microphone });
@@ -88,7 +89,6 @@ export function SessionView({
   const speaking = useSpeakingParticipants();
   const agentSpeaking = speaking.some((p) => !p.isLocal);
   const [sourceSheetOpen, setSourceSheetOpen] = useState(false);
-  const [sourceError, setSourceError] = useState<string | null>(null);
 
   const [pending, setPending] = useState<MaterialItem[]>([]);
   const [hydratedMaterials, setHydratedMaterials] = useState<MaterialItem[]>([]);
