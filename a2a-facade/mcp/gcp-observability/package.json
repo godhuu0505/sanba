@@ -1,0 +1,8 @@
+{
+  "name": "sanba-gcp-observability-mcp",
+  "private": true,
+  "dependencies": {
+    "supergateway": "3.4.3",
+    "@google-cloud/observability-mcp": "0.2.3"
+  }
+}
