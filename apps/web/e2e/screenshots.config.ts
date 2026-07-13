@@ -1,3 +1,5 @@
+import { resolve } from "node:path";
+
 import { defineConfig } from "@playwright/test";
 
 const PORT = 3210;
@@ -12,6 +14,7 @@ export default defineConfig({
   },
   webServer: {
     command: `npm run dev -- --port ${PORT}`,
+    cwd: resolve(import.meta.dirname, ".."),
     url: `http://localhost:${PORT}`,
     reuseExistingServer: false,
     timeout: 180_000,

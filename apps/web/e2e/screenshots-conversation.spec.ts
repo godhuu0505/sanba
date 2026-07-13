@@ -29,11 +29,11 @@ async function capture(page: Page, dir: string, shot: Shot) {
   await page.waitForTimeout(800);
   if (shot.tab) {
     const tabBtn = page.locator('[role="tab"]', { hasText: shot.tab }).first();
-    await tabBtn.click({ timeout: 10_000 }).catch(() => {});
+    await tabBtn.click({ timeout: 10_000 });
     await page.waitForTimeout(500);
   }
   for (const name of shot.buttons ?? []) {
-    await page.getByRole("button", { name }).first().click({ timeout: 10_000 }).catch(() => {});
+    await page.getByRole("button", { name }).first().click({ timeout: 10_000 });
     await page.waitForTimeout(600);
   }
   await page.screenshot({ path: resolve(dir, `${shot.name}.png`), fullPage: true });
