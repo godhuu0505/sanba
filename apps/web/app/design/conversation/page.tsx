@@ -1,8 +1,7 @@
 "use client";
 
-import { useMemo } from "react";
-import { notFound } from "next/navigation";
-import { useSearchParams } from "next/navigation";
+import { Suspense, useMemo } from "react";
+import { notFound, useSearchParams } from "next/navigation";
 
 import { ConversationSessionView } from "@/components/ConversationSessionView";
 import { contractEventFixture } from "@/lib/realtime/fixtures";
@@ -13,9 +12,7 @@ import type { ShellTab } from "@/components/ConversationShell";
 const noExport = async (): Promise<ExportResult> => ({ exported: false });
 const noEligibility = async (): Promise<ExportEligibility> => ({ can_export: true });
 
-export default function ConversationPreviewPage() {
-  if (process.env.NODE_ENV === "production") notFound();
-
+function ConversationPreview() {
   const q = useSearchParams();
   const upto = Number(q.get("upto") ?? contractEventFixture.length);
   const events = useMemo(
@@ -46,5 +43,14 @@ export default function ConversationPreviewPage() {
         onAddMaterial={() => {}}
       />
     </div>
+  );
+}
+
+export default function ConversationPreviewPage() {
+  if (process.env.NODE_ENV === "production") notFound();
+  return (
+    <Suspense>
+      <ConversationPreview />
+    </Suspense>
   );
 }
