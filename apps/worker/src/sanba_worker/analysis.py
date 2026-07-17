@@ -24,7 +24,7 @@ from sanba_shared.analytics import (
     UsageRecorder,
     vertex_billing_labels,
 )
-from sanba_shared.grounding import ContextIndexer
+from sanba_shared.grounding import MATERIAL_KIND, ContextIndexer
 from sanba_shared.media import VideoAnalysis, analyze_video
 from sanba_shared.repository import SessionRepository
 
@@ -154,7 +154,11 @@ def process_video(
                 recorder.record(COMPONENT_EMBEDDING, settings.gemini_embed_model, usage)
 
         indexed = indexer.index_context(
-            session_id, result.observations, f"asset:{asset_id}", usage_hook=embed_hook
+            session_id,
+            result.observations,
+            f"asset:{asset_id}",
+            kind=MATERIAL_KIND,
+            usage_hook=embed_hook,
         )
 
     done_record: dict[str, object] = {

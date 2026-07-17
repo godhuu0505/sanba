@@ -61,7 +61,7 @@ def _grounding_with_mixed_passages() -> GroundingStore:
     )
     g.index_passage("請求書アプリのREADME 画面説明", "github:octo/secret#readme", "context", "s1")
     g.index_passage("要件は MoSCoW で優先度付けし、請求書の画面も対象", "guide:moscow", "knowledge")
-    g.index_passage("アップロード資料: 請求書の画面仕様", "asset:123", "context", "s1")
+    g.index_passage("アップロード資料: 請求書の画面仕様", "asset:123", "material", "s1")
     return g
 
 
@@ -71,20 +71,32 @@ async def _search(agent: SANBAAgent) -> dict:
 
 
 @pytest.mark.asyncio
-async def test_end_user_search_returns_only_user_derived_kinds() -> None:
+async def test_end_user_search_returns_user_derived_and_uploaded_material() -> None:
     repo = _repo(InviteScope.END_USER)
     agent = SANBAAgent("s1", repo, _grounding_with_mixed_passages())
     assert agent.interview_mode is InviteScope.END_USER
     result = await _search(agent)
 
     kinds = {p["kind"] for p in result["passages"]}
-    assert kinds <= {"utterance", "requirement"}
+    assert kinds <= {"utterance", "requirement", "material"}
     assert result["passages"], "利用者由来の呼び戻しは完全遮断しない（ADR-0032 却下代替案）"
     dumped = json.dumps(result["passages"], ensure_ascii=False).lower()
     assert "github:" not in dumped
     assert "octo/secret" not in dumped
     assert "moscow" not in dumped
-    assert "asset:123" not in dumped
+
+
+@pytest.mark.asyncio
+async def test_end_user_search_includes_uploaded_material() -> None:
+    repo = _repo(InviteScope.END_USER)
+    agent = SANBAAgent("s1", repo, _grounding_with_mixed_passages())
+    result = await _search(agent)
+
+    sources = {p["source"] for p in result["passages"]}
+    assert any(s.startswith("asset:123") for s in sources), (
+        "利用者が当該セッションへアップロードした素材は end_user でも深掘りに使える"
+        "（ADR-0032 決定8 改訂2）"
+    )
 
 
 @pytest.mark.asyncio
@@ -132,8 +144,9 @@ async def test_unconfirmed_mode_fails_closed() -> None:
     result = await _search(agent)
 
     kinds = {p["kind"] for p in result["passages"]}
-    assert kinds <= {"utterance", "requirement"}
+    assert kinds <= {"utterance", "requirement", "material"}
     assert "github:" not in json.dumps(result, ensure_ascii=False).lower()
+    assert "moscow" not in json.dumps(result, ensure_ascii=False).lower()
     assert result["background"]["related_internal_hits"] == 2
 
 
@@ -150,7 +163,7 @@ async def test_missing_session_meta_fails_closed() -> None:
     result = await _search(agent)
 
     kinds = {p["kind"] for p in result["passages"]}
-    assert kinds <= {"utterance", "requirement"}
+    assert kinds <= {"utterance", "requirement", "material"}
     assert "github:" not in json.dumps(result, ensure_ascii=False).lower()
 
 
@@ -158,13 +171,14 @@ def test_partition_is_allowlist_and_resists_source_spoofing() -> None:
     passages = [
         Passage("u", "s1:participant", "utterance"),
         Passage("r", "requirement:req_1", "requirement"),
+        Passage("m", "asset:123", "material"),
         Passage("c1", " GITHUB:octo/x@b@s:p", "context"),
         Passage("c2", "GitHub:octo/x#1", "context"),
         Passage("c3", "totally-not-github", "context"),
         Passage("k", "guide:moscow", "knowledge"),
     ]
     kept, dropped_repo, dropped_other = _partition_passages_for_output(passages)
-    assert [p.kind for p in kept] == ["utterance", "requirement"]
+    assert [p.kind for p in kept] == ["utterance", "requirement", "material"]
     assert dropped_repo == 2
     assert dropped_other == 2
 

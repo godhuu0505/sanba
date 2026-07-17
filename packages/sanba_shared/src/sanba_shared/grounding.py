@@ -25,6 +25,10 @@ INDEX = "sanba-grounding"
 EMBED_DIM = 3072
 MAX_INDEX_CHUNKS = 500
 
+CONTEXT_KIND = "context"
+MATERIAL_KIND = "material"
+SESSION_SCOPED_KINDS = frozenset({CONTEXT_KIND, MATERIAL_KIND})
+
 
 @dataclass(frozen=True)
 class GroundingConfig:
@@ -147,9 +151,15 @@ class ContextIndexer:
         chunks: list[str],
         source_name: str,
         *,
+        kind: str = CONTEXT_KIND,
         usage_hook: Callable[[TokenUsage], None] | None = None,
     ) -> int:
         """Index `chunks` for a session; returns the number indexed.
+
+        `kind` は grounding の出力制御 allowlist（ADR-0032 決定8）が参照する分類。既定の
+        `context` は repo 由来（`github:` 索引）で end_user モードでは遮断される。参加者が
+        当該セッションへ投入した素材（ファイル/画像/動画/参照テキスト）は `material` を渡し、
+        利用者由来として end_user でも許可される（session スコープ限定は検索側で担保）。
 
         `usage_hook` には埋め込みに消費したトークン集計（1 呼び出しに束ねた `TokenUsage`）を
         渡す（ADR-0061 の `ai_usage` 排出用）。hook の失敗は索引処理へ波及させない。
@@ -176,7 +186,7 @@ class ContextIndexer:
                 doc: dict[str, object] = {
                     "text": text,
                     "source": source,
-                    "kind": "context",
+                    "kind": kind,
                     "session_id": session_id,
                 }
                 if embedding is not None:
@@ -184,7 +194,7 @@ class ContextIndexer:
                 self._client.index(index=INDEX, document=doc)
             else:
                 self._mem.append(
-                    {"text": text, "source": source, "kind": "context", "session_id": session_id}
+                    {"text": text, "source": source, "kind": kind, "session_id": session_id}
                 )
         if usage_hook is not None and embed_tokens > 0:
             try:

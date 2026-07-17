@@ -306,8 +306,12 @@ def test_developer_session_seeds_analyzed_materials_with_signal() -> None:
     assert "参考資料 1件" == materials_signals[0].label
 
 
-def test_end_user_session_never_seeds_materials() -> None:
-    """内部素材の解析結果は end_user の初期 instructions・シグナルに出さない（ADR-0032 と整合）。"""
+def test_end_user_session_seeds_uploaded_materials() -> None:
+    """利用者が当該セッションへ上げた素材は end_user でも初期 instructions にシードする。
+
+    素材は利用者由来（session スコープ）であり ADR-0032 決定8 改訂2 で許可される。repo 前提
+    （_repo_premise）は従来どおり end_user には出さない（別テスト）。
+    """
     repo = _repo()
     repo.create_product(Product(id="prod-1", name="請求アプリ", owner_sub="owner"))
     _seed_session(repo, mode=InviteScope.END_USER, product_id="prod-1")
@@ -315,16 +319,19 @@ def test_end_user_session_never_seeds_materials() -> None:
         "s1",
         {
             "id": "asset-1",
-            "name": "internal-prd.md",
-            "kind": "doc",
+            "name": "screenshot.png",
+            "kind": "image",
             "status": "done",
-            "extracted_texts": ["内部向けの秘密仕様"],
+            "extracted_texts": ["請求書の画面で保存ボタンが見つからない"],
         },
     )
     setup = build_agent_instructions(repo, "s1")
-    assert "internal-prd.md" not in setup.instructions
-    assert "内部向けの秘密仕様" not in setup.instructions
-    assert all(s.source != "materials" for s in setup.context_signals)
+    assert "## 参考資料" in setup.instructions
+    assert "screenshot.png" in setup.instructions
+    assert "請求書の画面で保存ボタンが見つからない" in setup.instructions
+    materials_signals = [s for s in setup.context_signals if s.source == "materials"]
+    assert len(materials_signals) == 1
+    assert materials_signals[0].stage == "done"
 
 
 def test_unreadable_session_fails_closed_for_materials_seed() -> None:

@@ -135,7 +135,11 @@ async def test_inject_video_analysis_dedups_same_asset() -> None:
     assert [name for name, _ in session.calls] == ["generate_reply"]
 
 
-async def test_inject_video_analysis_skipped_for_end_user() -> None:
+async def test_inject_video_analysis_runs_for_end_user() -> None:
+    """素材観察は利用者由来（analysis.visual 由来＝repo 非該当）のため end_user でも注入する。
+
+    ADR-0032 決定8 改訂2: material allowlist と揃え、利用者自身の素材の一言を落とさない。
+    """
     from sanba_agent.main import inject_video_analysis
 
     agent, _repo, _t = _agent()
@@ -146,8 +150,8 @@ async def test_inject_video_analysis_skipped_for_end_user() -> None:
         agent, session, "asset-y", ["[00:01] a"], _passthrough_guard(session)
     )  # type: ignore[arg-type]
 
-    assert session.calls == []
-    assert "asset-y" not in agent._injected_assets
+    assert [name for name, _ in session.calls] == ["generate_reply"]
+    assert "asset-y" in agent._injected_assets
 
 
 async def test_inject_video_analysis_fences_untrusted_observations() -> None:
