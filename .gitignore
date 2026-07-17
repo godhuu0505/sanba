@@ -50,3 +50,6 @@ grill-me-sessions/
 .idea/
 .vscode/
 *.log
+
+# Screenshot harness output (regenerated; committed copies live in site/assets/img)
+apps/web/screenshots/

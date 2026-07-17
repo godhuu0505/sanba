@@ -1,0 +1,546 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SANBA 操作マニュアル</title>
+    <meta
+      name="description"
+      content="SANBA（音声で要件を引き出すマルチエージェント）の操作マニュアル。ログインから問答・成果の確認・GitHub Issue 起票・アプリ管理までを画面キャプチャ付きで解説します。"
+    />
+    <link rel="icon" href="assets/sanba-app-icon.svg" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <button class="menu-toggle" aria-label="目次を開閉" aria-expanded="false">☰ 目次</button>
+      <img src="assets/sanba-app-icon.svg" alt="" />
+      <span class="brand">SANBA</span>
+      <span class="sep">|</span>
+      <span class="kicker">操作マニュアル</span>
+      <span class="spacer"></span>
+      <a class="repo" href="https://github.com/godhuu0505/sanba">GitHub</a>
+    </header>
+
+    <div class="layout">
+      <nav class="toc" aria-label="目次">
+        <ol>
+          <li><a href="#overview">SANBA とは</a></li>
+          <li><a href="#login">ログインする</a></li>
+          <li><a href="#prepare">会話を準備する</a></li>
+          <li>
+            <a href="#talk">音声で対話する（問答）</a>
+            <div class="sub">
+              <a href="#talk-view">画面の見方</a>
+              <a href="#talk-state">サンバの状態</a>
+              <a href="#talk-input">話す・入力する</a>
+              <a href="#talk-inquiry">食い違いと確認事項</a>
+              <a href="#talk-materials">参考資料</a>
+            </div>
+          </li>
+          <li><a href="#end">会話を終える</a></li>
+          <li><a href="#result">成果を確認する</a></li>
+          <li><a href="#issue">要件の詳細と Issue 起票</a></li>
+          <li><a href="#history">過去の要件を見る</a></li>
+          <li><a href="#products">アプリを管理する</a></li>
+          <li><a href="#invite">招待・参加する</a></li>
+          <li><a href="#settings">アカウント設定</a></li>
+          <li><a href="#appendix">デザインについて</a></li>
+        </ol>
+      </nav>
+
+      <main>
+        <div class="hero">
+          <h1>問いは、答えを<span class="u">産む</span>。</h1>
+          <p class="lead">
+            SANBA は、音声で対話しながら要件を解像度高く引き出すマルチエージェントです。会議の前の五分、
+            一問ずつ問いかけ、食い違いや抜けをその場で拾い上げ、確定した要件を GitHub Issue まで届けます。
+          </p>
+          <div class="maieutics">
+            名前の由来は<b>産婆術（Socratic maieutics）</b>。相手の中にすでにある答えを、問いによって
+            引き出す技法です。このマニュアルは、実際の画面キャプチャ（PC / スマホ）で各操作を追えます。
+          </div>
+        </div>
+
+        <section class="doc" id="overview">
+          <h2><span class="n">1</span>SANBA とは</h2>
+          <p>
+            ログインすると「ホーム」が開きます。ここから会話（問答）を始めます。左側のメニューで
+            <b>ホーム</b>・<b>過去の要件一覧</b>・<b>アプリ管理</b>を行き来します。スマホでは同じメニューが
+            右上の <kbd>☰</kbd> に畳まれます。
+          </p>
+          <figure class="shot">
+            <div class="shot-toolbar">
+              <button data-dev="pc" class="on">PC</button>
+              <button data-dev="mobile">スマホ</button>
+            </div>
+            <div class="shot-frame">
+              <img data-dev="pc" src="assets/img/pc/02-home.png" alt="ホーム画面（PC）" />
+              <img data-dev="mobile" src="assets/img/mobile/02-home.png" alt="ホーム画面（スマホ）" hidden />
+            </div>
+            <figcaption>ホーム画面。「＋ 会話を始める」から問答へ進みます。</figcaption>
+          </figure>
+        </section>
+
+        <section class="doc" id="login">
+          <h2><span class="n">2</span>ログインする</h2>
+          <p>
+            SANBA は Google アカウントでログインします。ログイン画面の
+            <span class="tag gold">インタビューを始める</span>
+            相当のボタンから Google 認証に進みます。参加リンク経由の場合はログイン不要で入れることも
+            あります（<a href="#invite">招待・参加する</a>を参照）。
+          </p>
+          <figure class="shot">
+            <div class="shot-toolbar">
+              <button data-dev="pc" class="on">PC</button>
+              <button data-dev="mobile">スマホ</button>
+            </div>
+            <div class="shot-frame">
+              <img data-dev="pc" src="assets/img/pc/01-login.png" alt="ログイン画面（PC）" />
+              <img data-dev="mobile" src="assets/img/mobile/01-login.png" alt="ログイン画面（スマホ）" hidden />
+            </div>
+            <figcaption>ログイン画面。Google アカウントで認証します。</figcaption>
+          </figure>
+        </section>
+
+        <section class="doc" id="prepare">
+          <h2><span class="n">3</span>会話を準備する</h2>
+          <p>ホームで会話を始める前に、対象アプリと話したいテーマを整えます。</p>
+          <ol class="steps">
+            <li>
+              <b>対象のアプリを選ぶ（任意）</b>。登録済みのアプリを選ぶと、そのアプリの語彙や確認観点を
+              前提に問答が進みます。未選択でも会話は始められます。
+            </li>
+            <li>
+              <b>テーマ（ゴール）を入力する</b>。「何を決めたいか」を書きます。もやっとした状態でも、
+              問答の中で少しずつ言葉になります。
+            </li>
+            <li>
+              <b>参考資料を添える（任意）</b>。画面キャプチャ・図・ドキュメントを添付すると、
+              サンバが解析して会話の材料にします。
+            </li>
+          </ol>
+          <figure class="shot">
+            <div class="shot-toolbar">
+              <button data-dev="pc" class="on">PC</button>
+              <button data-dev="mobile">スマホ</button>
+            </div>
+            <div class="shot-frame">
+              <img data-dev="pc" src="assets/img/pc/03-prepare.png" alt="準備画面（PC）" />
+              <img data-dev="mobile" src="assets/img/mobile/03-prepare.png" alt="準備画面（スマホ）" hidden />
+            </div>
+            <figcaption>準備画面。テーマの入力と参考資料の添付を行います。</figcaption>
+          </figure>
+          <div class="callout tip">
+            <span class="ic">💡</span>
+            <div>対象アプリは後からでも変えられます。まずは思いつくテーマで会話を始めてかまいません。</div>
+          </div>
+        </section>
+
+        <section class="doc" id="talk">
+          <h2><span class="n">4</span>音声で対話する（問答）</h2>
+          <p>
+            SANBA の中心が、この<b>問答</b>画面です。サンバ（産婆さん）が一問ずつ問いかけ、あなたが声で
+            答えると、その場で要件が立ち上がり、食い違いや抜けが検知されていきます。
+          </p>
+
+          <h3 id="talk-view">画面の見方</h3>
+          <p>
+            上部の帯に、いまの<span class="tag gold">要件</span>数・
+            <span class="tag" style="color: var(--caution); background: #f6efe0">未解消</span>数・
+            <span class="tag select">参考資料</span>数が並びます。右上の
+            <span class="tag rec">● REC</span> は録音中の目印と経過時間です。中央のタブで
+            <b>会話履歴 / 参考資料 / 要件一覧</b>を切り替えます。
+          </p>
+          <figure class="shot">
+            <div class="shot-toolbar">
+              <button data-dev="pc" class="on">PC</button>
+              <button data-dev="mobile">スマホ</button>
+            </div>
+            <div class="shot-frame">
+              <img data-dev="pc" src="assets/img/pc/conv-01-listening.png" alt="問答画面・聞き取り中（PC）" />
+              <img
+                data-dev="mobile"
+                src="assets/img/mobile/conv-01-listening.png"
+                alt="問答画面・聞き取り中（スマホ）"
+                hidden
+              />
+            </div>
+            <figcaption>問答画面。左にサンバ、右に会話。下部に発話・入力のバー。</figcaption>
+          </figure>
+
+          <h3 id="talk-state">サンバの状態</h3>
+          <p>左のサンバのイラストと状態表示で、いまサンバが何をしているかがわかります。</p>
+          <ul class="plain">
+            <li><b>聞いています</b> — あなたの発話を聞き取っている状態。</li>
+            <li><b>考え中…</b> — 受け取った内容を複数のエージェントが検討している状態。</li>
+            <li><b>発話中</b> — サンバが問いかけ・応答を話している状態。</li>
+          </ul>
+          <figure class="shot">
+            <div class="shot-toolbar">
+              <button data-dev="pc" class="on">PC</button>
+              <button data-dev="mobile">スマホ</button>
+            </div>
+            <div class="shot-frame">
+              <img data-dev="pc" src="assets/img/pc/conv-03-agent-speaking.png" alt="サンバ発話中（PC）" />
+              <img
+                data-dev="mobile"
+                src="assets/img/mobile/conv-03-agent-speaking.png"
+                alt="サンバ発話中（スマホ）"
+                hidden
+              />
+            </div>
+            <figcaption>サンバが話している状態。イラストと状態表示が連動します。</figcaption>
+          </figure>
+
+          <h3 id="talk-input">話す・入力する</h3>
+          <p>下部のバーで、発話とテキスト入力を操作します。</p>
+          <ul class="plain">
+            <li><b>押して話す</b> — ボタンを押している間だけマイクが入ります。PC では <kbd>Space</kbd> でも操作できます。</li>
+            <li><b>スピーカー消音</b> — サンバの音声出力を一時的に止めます。</li>
+            <li><b>テキストで入力</b> — 声が使えない場面では、テキストでも答えられます。</li>
+          </ul>
+          <figure class="shot">
+            <div class="shot-toolbar">
+              <button data-dev="pc" class="on">PC</button>
+              <button data-dev="mobile">スマホ</button>
+            </div>
+            <div class="shot-frame">
+              <img data-dev="pc" src="assets/img/pc/conv-04-active.png" alt="会話進行中（PC）" />
+              <img data-dev="mobile" src="assets/img/mobile/conv-04-active.png" alt="会話進行中（スマホ）" hidden />
+            </div>
+            <figcaption>会話が進むと、要件数や参考資料の解析状況が帯に反映されます。</figcaption>
+          </figure>
+
+          <h3 id="talk-inquiry">食い違いと確認事項</h3>
+          <p>
+            会話の中で<b>食い違い（矛盾）</b>や<b>抜け（ギャップ）</b>を見つけると、サンバがその場で拾い上げ、
+            <b>確認事項ツリー</b>に整理します。<b>要件一覧</b>タブで、確定してきた要件と、未解消／解消済みの
+            確認事項をまとめて見られます。
+          </p>
+          <div class="grid2">
+            <figure class="shot">
+              <div class="shot-toolbar">
+                <button data-dev="pc" class="on">PC</button>
+                <button data-dev="mobile">スマホ</button>
+              </div>
+              <div class="shot-frame">
+                <img data-dev="pc" src="assets/img/pc/conv-02-contradiction.png" alt="食い違い検知（PC）" />
+                <img
+                  data-dev="mobile"
+                  src="assets/img/mobile/conv-02-contradiction.png"
+                  alt="食い違い検知（スマホ）"
+                  hidden
+                />
+              </div>
+              <figcaption>「関連度順」と「新着順」の食い違いを検知した直後。</figcaption>
+            </figure>
+            <figure class="shot">
+              <div class="shot-toolbar">
+                <button data-dev="pc" class="on">PC</button>
+                <button data-dev="mobile">スマホ</button>
+              </div>
+              <div class="shot-frame">
+                <img data-dev="pc" src="assets/img/pc/conv-05-requirements-tab.png" alt="要件一覧タブ（PC）" />
+                <img
+                  data-dev="mobile"
+                  src="assets/img/mobile/conv-05-requirements-tab.png"
+                  alt="要件一覧タブ（スマホ）"
+                  hidden
+                />
+              </div>
+              <figcaption>要件一覧タブ。確認事項ツリーで解消済み／未解消がわかります。</figcaption>
+            </figure>
+          </div>
+
+          <h3 id="talk-materials">参考資料</h3>
+          <p>
+            添付した資料は<b>参考資料</b>タブに並びます。解析が終わると「解析済み・抽出 N 件」のように表示され、
+            会話の中で「画面に検索バーが無いのに検索したいと言った」といった食い違いの検知にも使われます。
+          </p>
+          <figure class="shot">
+            <div class="shot-toolbar">
+              <button data-dev="pc" class="on">PC</button>
+              <button data-dev="mobile">スマホ</button>
+            </div>
+            <div class="shot-frame">
+              <img data-dev="pc" src="assets/img/pc/conv-06-materials-tab.png" alt="参考資料タブ（PC）" />
+              <img
+                data-dev="mobile"
+                src="assets/img/mobile/conv-06-materials-tab.png"
+                alt="参考資料タブ（スマホ）"
+                hidden
+              />
+            </div>
+            <figcaption>参考資料タブ。添付ファイルの解析状況を確認できます。</figcaption>
+          </figure>
+        </section>
+
+        <section class="doc" id="end">
+          <h2><span class="n">5</span>会話を終える</h2>
+          <p>
+            右上の<span class="tag rec">■</span>（会話を終了）を押すと、終了確認が出ます。未解消の確認事項が
+            残っていると、その分は確定されない旨が案内されます。<b>会話を続ける</b>で戻るか、
+            <b>終了する</b>で成果画面へ進みます。
+          </p>
+          <figure class="shot">
+            <div class="shot-toolbar">
+              <button data-dev="pc" class="on">PC</button>
+              <button data-dev="mobile">スマホ</button>
+            </div>
+            <div class="shot-frame">
+              <img data-dev="pc" src="assets/img/pc/conv-07-end-confirm.png" alt="終了確認（PC）" />
+              <img data-dev="mobile" src="assets/img/mobile/conv-07-end-confirm.png" alt="終了確認（スマホ）" hidden />
+            </div>
+            <figcaption>終了確認。未解消が残る場合はここで知らせます。</figcaption>
+          </figure>
+          <div class="callout warn">
+            <span class="ic">⚠️</span>
+            <div>未解消を残したまま終えると、その要件は「未確定」として扱われます。後から続きの会話もできます。</div>
+          </div>
+        </section>
+
+        <section class="doc" id="result">
+          <h2><span class="n">6</span>成果を確認する</h2>
+          <p>
+            会話を終えると、その場で成果がまとまります。<b>ぜひ必要</b>／<b>あると助かる</b>で優先度別に要件が
+            並び、<b>全文を確認する</b>で詳細へ、<b>Issue</b>で GitHub への書き出しへ進めます。
+          </p>
+          <figure class="shot">
+            <div class="shot-toolbar">
+              <button data-dev="pc" class="on">PC</button>
+              <button data-dev="mobile">スマホ</button>
+            </div>
+            <div class="shot-frame">
+              <img data-dev="pc" src="assets/img/pc/conv-08-result.png" alt="成果画面（PC）" />
+              <img data-dev="mobile" src="assets/img/mobile/conv-08-result.png" alt="成果画面（スマホ）" hidden />
+            </div>
+            <figcaption>会話終了後の成果画面。要件と書き出しオプションが並びます。</figcaption>
+          </figure>
+        </section>
+
+        <section class="doc" id="issue">
+          <h2><span class="n">7</span>要件の詳細と Issue 起票</h2>
+          <p>
+            成果の全文（要件一覧）画面では、ゴール・参考資料・優先度・確信度・発言者つきで要件を確認できます。
+            読み手に合わせて<b>利用者向け / 企画者向け / 開発者向け</b>のドキュメントを出力でき、
+            紐づく GitHub リポジトリへ<b>Issue を作成</b>できます。
+          </p>
+          <figure class="shot">
+            <div class="shot-toolbar">
+              <button data-dev="pc" class="on">PC</button>
+              <button data-dev="mobile">スマホ</button>
+            </div>
+            <div class="shot-frame">
+              <img data-dev="pc" src="assets/img/pc/07-result-detail.png" alt="要件結果詳細（PC）" />
+              <img data-dev="mobile" src="assets/img/mobile/07-result-detail.png" alt="要件結果詳細（スマホ）" hidden />
+            </div>
+            <figcaption>要件結果の詳細。ドキュメント出力と Issue 起票の入口です。</figcaption>
+          </figure>
+          <div class="callout note">
+            <span class="ic">🔗</span>
+            <div>Issue 起票にはアプリと GitHub リポジトリの紐づけが必要です。<a href="#products">アプリを管理する</a>で設定します。</div>
+          </div>
+        </section>
+
+        <section class="doc" id="history">
+          <h2><span class="n">8</span>過去の要件を見る</h2>
+          <p>
+            左メニューの<b>過去の要件一覧</b>から、これまでの会話の成果を一覧できます。日付・ラベル・
+            起票済みかどうかが並び、選ぶと要件結果の詳細（<a href="#issue">7 章</a>）を開けます。
+          </p>
+          <figure class="shot">
+            <div class="shot-toolbar">
+              <button data-dev="pc" class="on">PC</button>
+              <button data-dev="mobile">スマホ</button>
+            </div>
+            <div class="shot-frame">
+              <img data-dev="pc" src="assets/img/pc/06-results.png" alt="過去の要件一覧（PC）" />
+              <img data-dev="mobile" src="assets/img/mobile/06-results.png" alt="過去の要件一覧（スマホ）" hidden />
+            </div>
+            <figcaption>過去の要件一覧。会話の成果を後から辿れます。</figcaption>
+          </figure>
+        </section>
+
+        <section class="doc" id="products">
+          <h2><span class="n">9</span>アプリを管理する</h2>
+          <p>
+            左メニューの<b>アプリ管理</b>で、対象プロダクトを登録・設定します。会話の前提となる情報を
+            ここで整えるほど、問答の解像度が上がります。
+          </p>
+          <ul class="plain">
+            <li><b>基本情報</b> — アプリ名・URL キーワード・説明。</li>
+            <li><b>利用者向け語彙</b> — 画面名や機能の呼び名。利用者との会話ではこの言葉で問いかけます。</li>
+            <li><b>要件結果の出力フォーマット</b> — 利用者／企画者／開発者ごとの文書テンプレート。</li>
+            <li><b>会話中の確認項目</b> — 毎回必ず確認したい観点（最大 20 個）。</li>
+            <li><b>前提リポジトリ</b> — 紐づけた GitHub リポジトリを索引し、会話の前提に使います。</li>
+            <li><b>メンバー</b> — メールアドレスで招待し、会話できる人を管理します。</li>
+            <li><b>会話リンク</b> — URL を開くだけで会話を始められるリンクを発行します。</li>
+          </ul>
+          <div class="grid2">
+            <figure class="shot">
+              <div class="shot-toolbar">
+                <button data-dev="pc" class="on">PC</button>
+                <button data-dev="mobile">スマホ</button>
+              </div>
+              <div class="shot-frame">
+                <img data-dev="pc" src="assets/img/pc/04-products.png" alt="アプリ一覧（PC）" />
+                <img data-dev="mobile" src="assets/img/mobile/04-products.png" alt="アプリ一覧（スマホ）" hidden />
+              </div>
+              <figcaption>アプリ一覧。ここから新規登録・詳細へ。</figcaption>
+            </figure>
+            <figure class="shot">
+              <div class="shot-toolbar">
+                <button data-dev="pc" class="on">PC</button>
+                <button data-dev="mobile">スマホ</button>
+              </div>
+              <div class="shot-frame">
+                <img data-dev="pc" src="assets/img/pc/05-product-detail.png" alt="アプリ詳細（PC）" />
+                <img data-dev="mobile" src="assets/img/mobile/05-product-detail.png" alt="アプリ詳細（スマホ）" hidden />
+              </div>
+              <figcaption>アプリ詳細。語彙・出力・確認項目・メンバー・リンクを設定。</figcaption>
+            </figure>
+          </div>
+        </section>
+
+        <section class="doc" id="invite">
+          <h2><span class="n">10</span>招待・参加する</h2>
+          <p>
+            他のメンバーは、招待を受けて参加します。メール招待のリンクを開くと<b>招待の受諾画面</b>が、
+            会話リンクを開くと<b>会話への参加（同意）画面</b>が表示されます。参加リンクは、ログイン不要で
+            利用者が入れる設定にもできます。
+          </p>
+          <div class="grid2">
+            <figure class="shot">
+              <div class="shot-toolbar">
+                <button data-dev="pc" class="on">PC</button>
+                <button data-dev="mobile">スマホ</button>
+              </div>
+              <div class="shot-frame">
+                <img data-dev="pc" src="assets/img/pc/10-member-invite.png" alt="メンバー招待の受諾（PC）" />
+                <img data-dev="mobile" src="assets/img/mobile/10-member-invite.png" alt="メンバー招待の受諾（スマホ）" hidden />
+              </div>
+              <figcaption>メンバー招待の受諾画面。</figcaption>
+            </figure>
+            <figure class="shot">
+              <div class="shot-toolbar">
+                <button data-dev="pc" class="on">PC</button>
+                <button data-dev="mobile">スマホ</button>
+              </div>
+              <div class="shot-frame">
+                <img data-dev="pc" src="assets/img/pc/09-join.png" alt="会話への参加・同意（PC）" />
+                <img data-dev="mobile" src="assets/img/mobile/09-join.png" alt="会話への参加・同意（スマホ）" hidden />
+              </div>
+              <figcaption>会話リンクからの参加（同意）画面。</figcaption>
+            </figure>
+          </div>
+        </section>
+
+        <section class="doc" id="settings">
+          <h2><span class="n">11</span>アカウント設定</h2>
+          <p>
+            右下（PC は左下）のアカウントから<b>アカウント設定</b>を開きます。プロフィールの確認、
+            <b>GitHub 連携</b>（Issue 起票やリポジトリ索引に必要）、ログアウトを行えます。
+          </p>
+          <figure class="shot">
+            <div class="shot-toolbar">
+              <button data-dev="pc" class="on">PC</button>
+              <button data-dev="mobile">スマホ</button>
+            </div>
+            <div class="shot-frame">
+              <img data-dev="pc" src="assets/img/pc/08-settings.png" alt="アカウント設定（PC）" />
+              <img data-dev="mobile" src="assets/img/mobile/08-settings.png" alt="アカウント設定（スマホ）" hidden />
+            </div>
+            <figcaption>アカウント設定。GitHub 連携はここから。</figcaption>
+          </figure>
+        </section>
+
+        <section class="doc" id="appendix">
+          <h2><span class="n">12</span>デザインについて</h2>
+          <p>
+            SANBA の画面は「白い紙 × 原色 × ステッカー × 棒人間」のデザインで統一されています。
+            再利用部品のショーケース（UI Kit）は、開発時の <code>/design</code> 画面で確認できます。
+          </p>
+          <figure class="shot">
+            <div class="shot-toolbar">
+              <button data-dev="pc" class="on">PC</button>
+              <button data-dev="mobile">スマホ</button>
+            </div>
+            <div class="shot-frame">
+              <img data-dev="pc" src="assets/img/pc/11-design-kit.png" alt="UI Kit ショーケース（PC）" />
+              <img data-dev="mobile" src="assets/img/mobile/11-design-kit.png" alt="UI Kit ショーケース（スマホ）" hidden />
+            </div>
+            <figcaption>UI Kit。SANBA の部品と主要画面の再構成。</figcaption>
+          </figure>
+        </section>
+      </main>
+    </div>
+
+    <footer class="site">
+      SANBA 操作マニュアル ・ 画面キャプチャは開発ビルドのデモデータです ・
+      <a href="https://github.com/godhuu0505/sanba">godhuu0505/sanba</a>
+    </footer>
+
+    <div class="lightbox" aria-hidden="true"><img alt="" /></div>
+
+    <script>
+      (function () {
+        const toc = document.querySelector("nav.toc");
+        const toggle = document.querySelector(".menu-toggle");
+        toggle.addEventListener("click", function () {
+          const open = toc.classList.toggle("open");
+          toggle.setAttribute("aria-expanded", String(open));
+        });
+        toc.addEventListener("click", function (e) {
+          if (e.target.tagName === "A") toc.classList.remove("open");
+        });
+
+        document.querySelectorAll("figure.shot").forEach(function (fig) {
+          const btns = fig.querySelectorAll(".shot-toolbar button");
+          const imgs = fig.querySelectorAll(".shot-frame img");
+          btns.forEach(function (btn) {
+            btn.addEventListener("click", function () {
+              const dev = btn.getAttribute("data-dev");
+              btns.forEach((b) => b.classList.toggle("on", b === btn));
+              imgs.forEach((img) => {
+                img.hidden = img.getAttribute("data-dev") !== dev;
+              });
+            });
+          });
+        });
+
+        const lb = document.querySelector(".lightbox");
+        const lbImg = lb.querySelector("img");
+        document.addEventListener("click", function (e) {
+          const t = e.target;
+          if (t.tagName === "IMG" && t.closest(".shot-frame")) {
+            lbImg.src = t.src;
+            lbImg.alt = t.alt;
+            lb.classList.add("open");
+          } else if (t === lb || t === lbImg) {
+            lb.classList.remove("open");
+          }
+        });
+        document.addEventListener("keydown", function (e) {
+          if (e.key === "Escape") lb.classList.remove("open");
+        });
+
+        const links = Array.from(document.querySelectorAll("nav.toc a"));
+        const byId = new Map(links.map((a) => [a.getAttribute("href").slice(1), a]));
+        const spy = new IntersectionObserver(
+          function (entries) {
+            entries.forEach(function (en) {
+              if (!en.isIntersecting) return;
+              const a = byId.get(en.target.id);
+              if (!a) return;
+              links.forEach((l) => l.classList.remove("active"));
+              a.classList.add("active");
+            });
+          },
+          { rootMargin: "-72px 0px -70% 0px" },
+        );
+        document.querySelectorAll("section.doc").forEach((s) => spy.observe(s));
+      })();
+    </script>
+  </body>
+</html>
