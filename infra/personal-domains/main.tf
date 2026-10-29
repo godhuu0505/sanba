@@ -45,8 +45,7 @@ resource "google_compute_backend_service" "app" {
   protocol              = "HTTP"
   backend { group = google_compute_region_network_endpoint_group.app[each.key].id }
   log_config {
-    enable      = true
-    sample_rate = 1.0
+    enable = false
   }
 }
 resource "google_compute_backend_service" "unmatched" {

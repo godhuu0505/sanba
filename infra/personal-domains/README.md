@@ -42,6 +42,11 @@ publicly reachable. All app projects belong to organization 617126998262;
 backend service, serverless NEG and Cloud Run remain in each app's project,
 with a cross-project reference from the shared URL map.
 
+Backend access logs are disabled because OAuth callback query strings contain
+short-lived authorization codes. Load balancer metrics and the existing
+application telemetry remain available; no unredacted callback URLs are added
+to access logs by this configuration.
+
 Only the three exact app hosts have DNS A records and routing rules. Unknown
 hosts go to an empty backend and cannot reach an app. HTTP redirects only the
 three configured hosts to HTTPS. The certificate contains only these hosts.
