@@ -1,5 +1,7 @@
 # Runbook: Google Cloud デプロイ & 公開化セットアップ
 
+> 2026-10-30追記: wkwk・mnmn・mfmf の `sanba.net` 独自ドメインは、専用の [infra/personal-domains](../../infra/personal-domains/README.md) で管理します。今回のDNS復旧で、この文書の旧SANBA用Terraformやyoukenへの転送設定を再適用しないでください。旧ゾーン削除の確認結果、GCS state、DNSSEC移行の待機条件は専用READMEを参照してください。
+
 SANBA を Cloud Run に本番デプロイし、リポジトリを安全に public 化するための**人手作業の手順書**。
 コード側（`deploy.yml` / Terraform）は実装済みで、ここに書くのは GUI / `gcloud` / GitHub 設定のみ。
 

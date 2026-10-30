@@ -1,0 +1,36 @@
+name: Personal domains validation
+on:
+  pull_request:
+    paths:
+      - infra/personal-domains/**
+      - .github/workflows/personal-domains.yml
+  push:
+    branches: [main]
+    paths:
+      - infra/personal-domains/**
+      - .github/workflows/personal-domains.yml
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+      - name: Install pinned Terraform
+        working-directory: ${{ runner.temp }}
+        run: |
+          set -euo pipefail
+          curl -fsSLO https://releases.hashicorp.com/terraform/1.17.1/terraform_1.17.1_linux_amd64.zip
+          curl -fsSLO https://releases.hashicorp.com/terraform/1.17.1/terraform_1.17.1_SHA256SUMS
+          sha256sum --ignore-missing -c terraform_1.17.1_SHA256SUMS
+          unzip terraform_1.17.1_linux_amd64.zip
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+      - name: Validate without cloud credentials
+        working-directory: infra/personal-domains
+        run: |
+          terraform fmt -check
+          terraform init -backend=false -lockfile=readonly
+          terraform validate
