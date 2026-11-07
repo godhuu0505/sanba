@@ -1,7 +1,7 @@
 # sanba.net personal application domains
 
 This Terraform root manages only the signed DNS zone and a shared global
-external Application Load Balancer for wkwk, mnmn and mfmf. It does not manage
+external Application Load Balancer for wkwk, mnmn, mfmf and mkmk. It does not manage
 application data, Cloud Run service deployments, authentication settings or
 the legacy SANBA application. Do not run the legacy infra/terraform root to
 restore the old youken configuration.
@@ -47,12 +47,32 @@ short-lived authorization codes. Load balancer metrics and the existing
 application telemetry remain available; no unredacted callback URLs are added
 to access logs by this configuration.
 
-Only the three exact app hosts have DNS A records and routing rules. Unknown
+Only the four exact app hosts have DNS A records and routing rules. Unknown
 hosts go to an empty backend and cannot reach an app. HTTP redirects only the
-three configured hosts to HTTPS. The certificate contains only these hosts.
+four configured hosts to HTTPS. Certificates contain only these hosts.
 There are no wildcard, mnn, youken, apex or www application records/routes.
 api.youken's record was deleted before this recovery, on 2026-08-08; this
 operation does not recreate or delete that API or its data.
+
+## mkmk domain addition
+
+`mkmk.sanba.net` uses the existing shared IP and load balancer, with a dedicated
+serverless NEG and backend for the `mkmk` Cloud Run service in `sanba-prd`.
+Its DNS A record has the same 300-second TTL as the existing application hosts.
+DNSSEC, registrar delegation and parent DS settings are unchanged.
+
+The existing `sanba-personal-apps-cert` retains its original three names in their
+existing order. A separate `sanba-mkmk-app-cert` covers only `mkmk.sanba.net` and
+is attached to the same HTTPS proxy after the A record is created. This preserves
+the active certificate for the existing applications while the new certificate
+is being issued. Before applying, confirm the plan has no deletions or resource
+replacements and changes only the mkmk DNS/backend/NEG/certificate plus the two
+shared URL maps and HTTPS proxy certificate list.
+
+Application access also requires the exact mkmk web origin in its server
+configuration and Firebase authorized domains. Keep the existing run.app origin
+and callback domain valid. Verify HTTPS, HTTP redirection, Google sign-in and
+authenticated saving on the new host before reporting completion.
 
 ## Registrar migration: staged, not complete
 

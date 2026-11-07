@@ -17,6 +17,7 @@ locals {
     wkwk = { project = "wkwk-20261027-godhuu", service = "wkwk" }
     mnmn = { project = "mnmn-512822", service = "mnmn" }
     mfmf = { project = "mfmf-499612", service = "mfmf-candidate" }
+    mkmk = { project = "sanba-prd", service = "mkmk" }
   }
 }
 resource "google_dns_managed_zone" "primary" {
@@ -73,12 +74,17 @@ resource "google_compute_url_map" "https" {
 }
 resource "google_compute_managed_ssl_certificate" "apps" {
   name = "sanba-personal-apps-cert"
-  managed { domains = [for name in keys(local.apps) : "${name}.sanba.net"] }
+  managed { domains = ["mfmf.sanba.net", "mnmn.sanba.net", "wkwk.sanba.net"] }
+}
+resource "google_compute_managed_ssl_certificate" "mkmk" {
+  name = "sanba-mkmk-app-cert"
+  managed { domains = ["mkmk.sanba.net"] }
+  depends_on = [google_dns_record_set.app["mkmk"]]
 }
 resource "google_compute_target_https_proxy" "apps" {
   name             = "sanba-apps-https-proxy"
   url_map          = google_compute_url_map.https.id
-  ssl_certificates = [google_compute_managed_ssl_certificate.apps.id]
+  ssl_certificates = [google_compute_managed_ssl_certificate.apps.id, google_compute_managed_ssl_certificate.mkmk.id]
 }
 resource "google_compute_global_forwarding_rule" "https" {
   name                  = "sanba-apps-https"
